@@ -75,7 +75,7 @@
 
   th {
     color: hsl(var(--muted-foreground)) !important;
-    font-weight: 900 !important;
+    font-weight: 700 !important;
     letter-spacing: 0.1em !important;
     text-transform: uppercase !important;
   }
