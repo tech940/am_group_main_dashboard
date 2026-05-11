@@ -10,7 +10,7 @@ interface MainLayoutProps {
 export function MainLayout({ children, hideHeader = false }: MainLayoutProps) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <div className="flex flex-1">
+      <div className="flex flex-1 pl-24">
         <Sidebar />
         <div className="flex flex-1 flex-col overflow-hidden">
           {!hideHeader && <Header />}

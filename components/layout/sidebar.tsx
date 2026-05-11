@@ -150,12 +150,21 @@ export function Sidebar() {
   }
 
   return (
-    <div
-      className={cn(
-        'flex h-screen flex-col bg-slate-900 border-r border-slate-800 transition-all duration-500 ease-in-out sticky top-0 z-50 shadow-2xl',
-        collapsed ? 'w-24' : 'w-80'
+    <>
+      {/* Semi-transparent Grey Backdrop */}
+      {!collapsed && (
+        <div 
+          className="fixed inset-0 bg-slate-900/40 z-40 transition-opacity duration-300 animate-in fade-in"
+          onClick={() => setCollapsed(true)}
+        />
       )}
-    >
+
+      <div
+        className={cn(
+          'fixed inset-y-0 left-0 flex flex-col bg-slate-900 border-r border-slate-800 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] z-50 shadow-2xl overflow-hidden',
+          collapsed ? 'w-24' : 'w-80'
+        )}
+      >
       {/* Header with Hamburger */}
       <div className={cn(
         "flex items-center transition-all duration-500 shrink-0 border-b border-slate-800/50 shadow-sm z-10",
@@ -238,8 +247,8 @@ export function Sidebar() {
                       {!collapsed && (
                         <>
                           <span className={cn(
-                            "flex-1 text-left text-[14px] font-bold tracking-tight transition-colors",
-                            (isOpen || isActive) ? "text-white" : "text-slate-400 group-hover:text-slate-200"
+                            "flex-1 text-left text-[14px] font-semibold tracking-tight transition-colors",
+                            (isOpen || isActive) ? "text-white" : "text-white/60 group-hover:text-white"
                           )}>{brand.name}</span>
                           <ChevronDown className={cn(
                             "h-4 w-4 transition-all duration-500 ease-in-out",
@@ -289,5 +298,6 @@ export function Sidebar() {
         </Link>
       </div>
     </div>
+    </>
   )
 }

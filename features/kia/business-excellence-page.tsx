@@ -419,7 +419,7 @@ export default function KiaBusinessExcellencePage() {
                                         key={`${col}-${index}`}
                                         style={isPinned ? { left: leftOffset, zIndex: 40 } : {}}
                                         className={cn(
-                                          "px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 border-b border-slate-100 whitespace-nowrap transition-all",
+                                          "px-6 py-3 text-left text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 border-b border-slate-100 whitespace-nowrap transition-all",
                                           isPinned && "sticky bg-slate-100/95 backdrop-blur-md shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-slate-200"
                                         )}
                                       >
