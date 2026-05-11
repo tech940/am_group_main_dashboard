@@ -242,8 +242,8 @@ export function Sidebar() {
                             (isOpen || isActive) ? "text-white" : "text-slate-400 group-hover:text-slate-200"
                           )}>{brand.name}</span>
                           <ChevronDown className={cn(
-                            "h-4 w-4 transition-all duration-300",
-                            isOpen ? "rotate-180 text-purple-600" : "opacity-30"
+                            "h-4 w-4 transition-all duration-500 ease-in-out",
+                            isOpen ? "rotate-180 text-white" : "text-white/30 rotate-0"
                           )} />
                         </>
                       )}

@@ -188,7 +188,7 @@ export default function KiaBusinessExcellencePage() {
       <div className="space-y-4 max-w-[1600px] mx-auto animate-in fade-in duration-500">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-800">Kia Business Excellence</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-800">Kia Business Excellence</h1>
             <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase tracking-widest">Operational performance monitoring</p>
           </div>
           <div className="flex gap-3">
@@ -276,8 +276,8 @@ export default function KiaBusinessExcellencePage() {
                 <FileSpreadsheet className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Previewing New Data</p>
-                <p className="text-lg font-black text-slate-800">{fileName}</p>
+                <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-widest">Previewing New Data</p>
+                <p className="text-lg font-semibold text-slate-800">{fileName}</p>
               </div>
             </div>
             <p className="text-sm font-bold text-emerald-600/70 italic">Click &quot;Confirm & Save All&quot; to update the database.</p>
@@ -302,13 +302,13 @@ export default function KiaBusinessExcellencePage() {
                             <TableIcon className="h-5 w-5" />
                           </div>
                           <div>
-                            <CardTitle className="text-xl font-black text-slate-800 tracking-tight">{sheet.name}</CardTitle>
+                            <CardTitle className="text-xl font-semibold text-slate-800 tracking-tight">{sheet.name}</CardTitle>
                             <div className="flex items-center gap-3 mt-0.5">
-                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                              <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest">
                                 {viewMode === 'view' && !loadedRows[sheet.id] ? 'Loading...' : `${totalRecords.toLocaleString()} Records`}
                               </span>
                               <span className="w-1 h-1 rounded-full bg-slate-200" />
-                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                              <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest">
                                 {sheet.columns.length} Columns
                               </span>
                             </div>
@@ -317,7 +317,7 @@ export default function KiaBusinessExcellencePage() {
                         
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-2 pr-3 border-r border-slate-100">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sheet:</p>
+                            <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest">Sheet:</p>
                             <Select value={activeTab} onValueChange={handleTabChange}>
                               <SelectTrigger className="w-[220px] h-9 rounded-xl border-slate-200 font-bold text-slate-700 text-xs">
                                 <SelectValue placeholder="Choose a sheet" />
@@ -351,7 +351,7 @@ export default function KiaBusinessExcellencePage() {
                           {/* Pagination Controls */}
                           {totalRecords > 0 && (
                             <div className="p-4 bg-slate-50/30 flex items-center justify-between border-b border-slate-50">
-                              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                              <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest">
                                 Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, totalRecords)} of {totalRecords.toLocaleString()} records
                               </div>
                               <div className="flex items-center gap-2">
@@ -419,7 +419,7 @@ export default function KiaBusinessExcellencePage() {
                                         key={`${col}-${index}`}
                                         style={isPinned ? { left: leftOffset, zIndex: 40 } : {}}
                                         className={cn(
-                                          "px-6 py-3 text-left text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 border-b border-slate-100 whitespace-nowrap transition-all",
+                                          "px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 border-b border-slate-100 whitespace-nowrap transition-all",
                                           isPinned && "sticky bg-slate-100/95 backdrop-blur-md shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-slate-200"
                                         )}
                                       >
