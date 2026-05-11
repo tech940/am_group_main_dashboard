@@ -1,90 +1,44 @@
 'use client'
 
-import { Bell, Search, User } from 'lucide-react'
+import { Bell, Search, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Badge } from '@/components/ui/badge'
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background px-6">
+    <header className="sticky top-0 z-40 flex h-24 items-center justify-between px-10 bg-background/50 backdrop-blur-xl">
       {/* Search */}
-      <div className="flex-1">
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search vehicles, jobs, inventory..."
-            className="pl-9"
-          />
-        </div>
+      <div className="relative w-[450px]">
+        <Search className="absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input 
+          type="text" 
+          placeholder="Search..." 
+          className="w-full h-12 pl-12 pr-4 rounded-2xl bg-white border-none shadow-sm text-sm font-semibold placeholder:text-slate-400 focus:ring-2 focus:ring-purple-100 outline-none transition-all"
+        />
       </div>
 
       {/* Right Actions */}
-      <div className="flex items-center gap-2">
-        {/* Notifications */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <Badge className="absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">
-                3
-              </Badge>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80">
-            <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <div className="flex flex-col gap-1">
-                <span className="font-medium">New job assigned</span>
-                <span className="text-xs text-muted-foreground">
-                  Workshop job #1234 assigned to you
-                </span>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <div className="flex flex-col gap-1">
-                <span className="font-medium">Low stock alert</span>
-                <span className="text-xs text-muted-foreground">
-                  Oil filter quantity below minimum
-                </span>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <div className="flex flex-col gap-1">
-                <span className="font-medium">Vehicle ready</span>
-                <span className="text-xs text-muted-foreground">
-                  VIN: ABC123456789 is ready for pickup
-                </span>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* User Menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
-              <User className="h-5 w-5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>Profile</DropdownMenuItem>
-            <DropdownMenuItem>Settings</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>Sign out</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" className="h-12 w-12 rounded-2xl bg-white shadow-sm hover:bg-slate-50 relative group transition-all duration-300">
+          <Bell className="h-5 w-5 text-slate-500 group-hover:text-purple-600 transition-colors" />
+          <div className="absolute top-3.5 right-3.5 h-2 w-2 rounded-full bg-rose-500 border-2 border-white shadow-sm" />
+        </Button>
+        
+        <div className="flex items-center gap-3 pl-6 ml-2 border-l border-slate-200">
+          <div className="h-11 w-11 rounded-2xl bg-slate-200 overflow-hidden shadow-sm border-2 border-white ring-1 ring-slate-100">
+            <img 
+              src="https://api.dicebear.com/7.x/avataaars/svg?seed=Emma" 
+              alt="Avatar" 
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <div className="hidden md:flex items-center gap-2 cursor-pointer group">
+            <div className="text-left">
+              <p className="text-sm font-black text-slate-800 leading-none">Emma Kwan</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Administrator</p>
+            </div>
+            <ChevronDown className="h-4 w-4 text-slate-400 group-hover:text-slate-600 transition-colors" />
+          </div>
+        </div>
       </div>
     </header>
   )

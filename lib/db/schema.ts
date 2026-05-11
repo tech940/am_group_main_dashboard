@@ -201,10 +201,20 @@ export const activityLogs = pgTable('activity_logs', {
   action: text('action').notNull(),
   entityType: text('entity_type').notNull(),
   entityId: uuid('entity_id').notNull(),
-  changes: jsonb('changes').$type<Record<string, { old: any; new: any }>>(),
+  changes: jsonb('changes').$type<Record<string, { old: unknown; new: unknown }>>(),
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+// Business Excellence Data table
+export const businessExcellenceData = pgTable('business_excellence_am_kia_new', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  brand: text('brand').notNull(), // 'kia', 'tata', etc.
+  sheetName: text('sheet_name').notNull(),
+  headers: jsonb('headers').$type<string[]>().notNull(),
+  rows: jsonb('rows').$type<Record<string, unknown>[]>().notNull(),
+  uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 })
 
 // Relations

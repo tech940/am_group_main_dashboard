@@ -2,26 +2,31 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 210 50% 98%; /* Very light blue-ish grey */
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 238.7 83.5% 66.7%;
-    --primary-foreground: 210 40% 98%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 262 83% 58%; /* Vibrant Purple */
+    --primary-foreground: 210 20% 98%;
     --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary-foreground: 222 47% 11%;
     --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted-foreground: 215 16% 47%;
     --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent-foreground: 222 47% 11%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 238.7 83.5% 66.7%;
-    --radius: 0.5rem;
+    --ring: 262 83% 58%;
+    --radius: 1.5rem; /* Larger radius for cleaner look */
+    --chart-1: 262 83% 58%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 24 95% 53%;
+    --chart-4: 349 83% 62%;
+    --chart-5: 210 100% 50%;
   }
 
   .dark {
@@ -31,8 +36,8 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 238.7 83.5% 66.7%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
@@ -43,7 +48,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 238.7 83.5% 66.7%;
+    --ring: 212.7 26.8% 83.9%;
   }
 }
 
@@ -54,5 +59,34 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  button, 
+  [role="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"] {
+    cursor: pointer !important;
+  }
+
+  thead tr {
+    background-color: hsl(var(--muted)) !important;
+  }
+
+  th {
+    color: hsl(var(--muted-foreground)) !important;
+    font-weight: 900 !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+  }
+}
+
+@layer utilities {
+  .card-shadow {
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.04), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  }
+  
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-md border border-white/20;
   }
 }

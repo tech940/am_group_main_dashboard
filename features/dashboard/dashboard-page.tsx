@@ -1,202 +1,120 @@
 import { MainLayout } from '@/components/layout/main-layout'
 import { KPICard } from '@/components/analytics/kpi-card'
-import { ActivityCard } from '@/components/analytics/activity-card'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import {
-  Car,
-  Wrench,
-  Package,
-  Clock,
-  TrendingUp,
-  TrendingDown,
-  ArrowRight,
-} from 'lucide-react'
+import { SalesOverview } from '@/components/analytics/sales-overview'
+import { SubscriberChart } from '@/components/analytics/subscriber-chart'
+import { SalesDistribution } from '@/components/analytics/sales-distribution'
+import { IntegrationList } from '@/components/analytics/integration-list'
+import { Car, Wrench, Package, Clock } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 
 export default function DashboardPage() {
-  const activities = [
-    {
-      id: '1',
-      title: 'New workshop job assigned',
-      description: 'Job #1234 assigned to John Doe',
-      time: '2 min ago',
-      type: 'job' as const,
-    },
-    {
-      id: '2',
-      title: 'Vehicle inspection completed',
-      description: 'VIN: ABC123456789 passed inspection',
-      time: '15 min ago',
-      type: 'vehicle' as const,
-    },
-    {
-      id: '3',
-      title: 'Inventory low stock alert',
-      description: 'Oil filter quantity below minimum',
-      time: '1 hour ago',
-      type: 'inventory' as const,
-    },
-    {
-      id: '4',
-      title: 'Recon workflow updated',
-      description: 'Vehicle XYZ987 moved to detailing stage',
-      time: '2 hours ago',
-      type: 'recon' as const,
-    },
-    {
-      id: '5',
-      title: 'New vehicle added',
-      description: '2024 Toyota Camry added to inventory',
-      time: '3 hours ago',
-      type: 'vehicle' as const,
-    },
-  ]
-
   return (
     <MainLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Overview of your operations and key metrics
-          </p>
+      <div className="space-y-8 max-w-[1600px] mx-auto">
+        {/* Dashboard Title & Stats Filter */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-black tracking-tight">Dashboard</h1>
+            <p className="text-muted-foreground mt-2">Overview of your operations and key metrics</p>
+          </div>
+          <div className="flex gap-2">
+            <div className="h-10 px-4 rounded-xl bg-white shadow-sm flex items-center gap-2 text-xs font-bold text-muted-foreground/80 border border-border/50">
+              <span className="opacity-60">Oct 18 - Nov 18</span>
+            </div>
+            <div className="h-11 px-6 rounded-xl bg-white shadow-sm flex items-center gap-2 text-xs font-bold text-muted-foreground/80 border border-border/50">
+              <span>Monthly</span>
+            </div>
+          </div>
         </div>
 
-        {/* KPI Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {/* KPI Cards Row */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           <KPICard
             title="Total Vehicles"
             value="156"
             change={12}
             changeLabel="from last month"
-            icon={<Car className="h-4 w-4" />}
+            icon={<Car className="h-full w-full" />}
             trend="up"
+            iconColor="purple"
           />
           <KPICard
             title="Active Jobs"
             value="24"
             change={8}
             changeLabel="from last week"
-            icon={<Wrench className="h-4 w-4" />}
+            icon={<Wrench className="h-full w-full" />}
             trend="up"
+            iconColor="blue"
           />
           <KPICard
             title="Inventory Items"
             value="1,234"
             change={-3}
             changeLabel="from last month"
-            icon={<Package className="h-4 w-4" />}
+            icon={<Package className="h-full w-full" />}
             trend="down"
+            iconColor="orange"
           />
           <KPICard
             title="Pending Tasks"
             value="45"
             change={5}
             changeLabel="from yesterday"
-            icon={<Clock className="h-4 w-4" />}
+            icon={<Clock className="h-full w-full" />}
             trend="up"
+            iconColor="pink"
           />
         </div>
 
         {/* Main Content Grid */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
-          {/* Chart Section */}
-          <Card className="col-span-4">
-            <CardHeader>
-              <CardTitle>Weekly Overview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                Chart placeholder - Add Recharts integration here
+        <div className="grid gap-6 lg:grid-cols-7">
+          <Card className="col-span-4 border border-border/50 shadow-lg shadow-gray-200/50">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-bold">Weekly Overview</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Performance metrics this week</p>
+                </div>
               </div>
+              <SalesOverview />
             </CardContent>
           </Card>
-
-          {/* Recent Activity */}
-          <ActivityCard
-            title="Recent Activity"
-            activities={activities}
-            className="col-span-3"
-          />
+          <Card className="col-span-3 border border-border/50 shadow-lg shadow-gray-200/50">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-bold">Subscribers</h2>
+                  <p className="text-sm text-muted-foreground mt-1">New signups this month</p>
+                </div>
+              </div>
+              <SubscriberChart />
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Quick Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm">
-                <Wrench className="mr-2 h-4 w-4" />
-                New Workshop Job
-              </Button>
-              <Button variant="outline" size="sm">
-                <Car className="mr-2 h-4 w-4" />
-                Add Vehicle
-              </Button>
-              <Button variant="outline" size="sm">
-                <Package className="mr-2 h-4 w-4" />
-                Update Inventory
-              </Button>
-              <Button variant="outline" size="sm">
-                <Clock className="mr-2 h-4 w-4" />
-                Create Task
-              </Button>
-              <Button variant="outline" size="sm">
-                <TrendingUp className="mr-2 h-4 w-4" />
-                View Reports
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Stats Grid */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Workshop Efficiency</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
+        {/* Bottom Row */}
+        <div className="grid gap-6 lg:grid-cols-7">
+          <Card className="col-span-4 border border-border/50 shadow-lg shadow-gray-200/50">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-6">
                 <div>
-                  <div className="text-2xl font-bold">87%</div>
-                  <p className="text-xs text-muted-foreground">On-time completion rate</p>
+                  <h2 className="text-xl font-bold">Sales Distribution</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Revenue by category</p>
                 </div>
-                <TrendingUp className="h-8 w-8 text-green-600" />
               </div>
+              <SalesDistribution />
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Recon Progress</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
+          <Card className="col-span-3 border border-border/50 shadow-lg shadow-gray-200/50">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-6">
                 <div>
-                  <div className="text-2xl font-bold">12/15</div>
-                  <p className="text-xs text-muted-foreground">Vehicles in progress</p>
+                  <h2 className="text-xl font-bold">Integrations</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Connected services</p>
                 </div>
-                <Clock className="h-8 w-8 text-blue-600" />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Inventory Value</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-bold">$45.2K</div>
-                  <p className="text-xs text-muted-foreground">Total inventory value</p>
-                </div>
-                <TrendingDown className="h-8 w-8 text-orange-600" />
-              </div>
+              <IntegrationList />
             </CardContent>
           </Card>
         </div>
@@ -204,3 +122,4 @@ export default function DashboardPage() {
     </MainLayout>
   )
 }
+
