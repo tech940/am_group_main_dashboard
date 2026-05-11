@@ -8,7 +8,7 @@ import * as LabelPrimitive from "@radix-ui/react-label"
 const Form = useFormContext
 
 type FormFieldContextValue<
-  TFieldValues extends Record<string, any> = Record<string, any>,
+  TFieldValues extends Record<string, unknown> = Record<string, unknown>,
   TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>
 > = {
   name: TName
@@ -19,7 +19,7 @@ const FormFieldContext = React.createContext<FormFieldContextValue>(
 )
 
 const FormField = <
-  TFieldValues extends Record<string, any> = Record<string, any>,
+  TFieldValues extends Record<string, unknown> = Record<string, unknown>,
   TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>
 >({
   ...props
