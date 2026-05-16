@@ -7,15 +7,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Save, Loader2 } from 'lucide-react'
+import { Save, Loader2, CreditCard, Receipt, FileText, CheckCircle2, TrendingUp, AlertTriangle, UploadCloud } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface Stage5FormData {
   invoiceNumber: string
   invoiceDate: string
-  amount: string
+  actualAmount: string
   paymentStatus: string
   paymentMode: string
   paymentDate: string
+  transactionReference: string
   accountsRemarks: string
   accountsImages: File[]
 }
@@ -39,10 +41,11 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
   const [formData, setFormData] = useState<Stage5FormData>({
     invoiceNumber: initialData?.invoiceNumber || '',
     invoiceDate: initialData?.invoiceDate || new Date().toISOString().split('T')[0],
-    amount: initialData?.amount || orderDetails.estimatedCost.toString(),
+    actualAmount: initialData?.actualAmount || orderDetails.estimatedCost.toString(),
     paymentStatus: initialData?.paymentStatus || '',
     paymentMode: initialData?.paymentMode || '',
     paymentDate: initialData?.paymentDate || new Date().toISOString().split('T')[0],
+    transactionReference: initialData?.transactionReference || '',
     accountsRemarks: initialData?.accountsRemarks || '',
     accountsImages: []
   })
@@ -63,7 +66,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
     if (!formData.invoiceNumber) newErrors.invoiceNumber = 'Invoice number is required'
-    if (!formData.amount) newErrors.amount = 'Amount is required'
+    if (!formData.actualAmount) newErrors.actualAmount = 'Actual amount is required'
     if (!formData.paymentStatus) newErrors.paymentStatus = 'Payment status is required'
     if (!formData.paymentMode) newErrors.paymentMode = 'Payment mode is required'
     setErrors(newErrors)
@@ -77,223 +80,245 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
     }
   }
 
+  const costDifference = parseFloat(formData.actualAmount || '0') - orderDetails.estimatedCost
+
   return (
-    <form onSubmit={handleSubmit}>
-      <Card className="border-none shadow-xl">
-        <CardHeader className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white">
-          <CardTitle className="text-2xl font-black">
-            Accounts Processing
-          </CardTitle>
-          <p className="text-sm text-emerald-50 mt-1">
-            Accounts Department: Process payment and complete the order
-          </p>
+    <form onSubmit={handleSubmit} className="relative">
+      <Card className="border-none shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)] overflow-hidden rounded-[2.5rem] bg-white">
+        <CardHeader className="bg-slate-900 p-8 text-white relative">
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-emerald-500 rounded-xl">
+                <Receipt className="h-6 w-6 text-white" />
+              </div>
+              <h2 className="text-3xl font-black tracking-tight">Accounts Processing</h2>
+            </div>
+            <p className="text-slate-400 font-medium max-w-2xl">
+              Finalize procurement lifecycle: verify invoice details, confirm payment status, and archive the transaction records.
+            </p>
+          </div>
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl -mr-20 -mt-20" />
         </CardHeader>
-        <CardContent className="p-6 space-y-6">
-          {/* Order Summary */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <h3 className="font-semibold text-lg mb-3 text-emerald-800">Order Summary</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Item Name</p>
-                <p className="font-medium text-gray-800">{orderDetails.itemName}</p>
+
+        <CardContent className="p-8 lg:p-12 space-y-12">
+          {/* Executive Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-slate-50 rounded-[2rem] p-6 border border-slate-100 transition-all hover:shadow-lg">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Estimated Cost</span>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm">
+                  <TrendingUp className="h-5 w-5 text-indigo-500" />
+                </div>
+                <span className="text-2xl font-black text-slate-900">₹{orderDetails.estimatedCost.toLocaleString('en-IN')}</span>
               </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Vendor</p>
-                <p className="font-medium text-gray-800">{orderDetails.vendorName}</p>
+            </div>
+            <div className="bg-emerald-50 rounded-[2rem] p-6 border border-emerald-100 transition-all hover:shadow-lg">
+              <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block mb-2">Actual Billed</span>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm">
+                  <CreditCard className="h-5 w-5 text-emerald-500" />
+                </div>
+                <span className="text-2xl font-black text-emerald-900">₹{parseFloat(formData.actualAmount || '0').toLocaleString('en-IN')}</span>
               </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">GRN Number</p>
-                <p className="font-medium text-gray-800">{orderDetails.grnNumber}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Ordered Qty</p>
-                <p className="font-medium text-gray-800">{orderDetails.quantity}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Received Qty</p>
-                <p className="font-medium text-gray-800">{orderDetails.receivedQuantity}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Est. Cost</p>
-                <p className="font-medium text-gray-800">₹{orderDetails.estimatedCost.toLocaleString('en-IN')}</p>
+            </div>
+            <div className={cn(
+              "rounded-[2rem] p-6 border transition-all hover:shadow-lg",
+              costDifference > 0 ? "bg-rose-50 border-rose-100" : "bg-blue-50 border-blue-100"
+            )}>
+              <span className={cn("text-[10px] font-black uppercase tracking-widest block mb-2", costDifference > 0 ? "text-rose-600" : "text-blue-600")}>Variance</span>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm">
+                  {costDifference > 0 ? <AlertTriangle className="h-5 w-5 text-rose-500" /> : <CheckCircle2 className="h-5 w-5 text-blue-500" />}
+                </div>
+                <span className={cn("text-2xl font-black", costDifference > 0 ? "text-rose-900" : "text-blue-900")}>
+                  {costDifference > 0 ? '+' : ''}₹{Math.abs(costDifference).toLocaleString('en-IN')}
+                </span>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Invoice Details Section */}
-            <div className="space-y-4 p-4 border border-gray-100 rounded-xl bg-white shadow-sm">
-              <h3 className="font-bold text-gray-700 flex items-center gap-2">
-                <span className="w-2 h-6 bg-emerald-500 rounded-full"></span>
-                Invoice Details
-              </h3>
-
-              <div>
-                <Label htmlFor="invoiceNumber">Invoice Number <span className="text-red-500">*</span></Label>
-                <Input
-                  id="invoiceNumber"
-                  value={formData.invoiceNumber}
-                  onChange={(e) => updateField('invoiceNumber', e.target.value)}
-                  placeholder="Enter invoice number"
-                  className={errors.invoiceNumber ? 'border-red-500' : ''}
-                />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            {/* Left Column: Documentation */}
+            <div className="space-y-8">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-1.5 h-6 bg-indigo-500 rounded-full" />
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Invoice Documentation</h3>
               </div>
 
-              <div>
-                <Label htmlFor="invoiceDate">Invoice Date</Label>
-                <Input
-                  id="invoiceDate"
-                  type="date"
-                  value={formData.invoiceDate}
-                  onChange={(e) => updateField('invoiceDate', e.target.value)}
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="invoiceNumber" className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Invoice Number</Label>
+                  <Input
+                    id="invoiceNumber"
+                    value={formData.invoiceNumber}
+                    onChange={(e) => updateField('invoiceNumber', e.target.value)}
+                    placeholder="INV-2024-XXXX"
+                    className={cn("rounded-2xl border-slate-200 h-14 px-5 focus:ring-emerald-500 focus:border-emerald-500", errors.invoiceNumber && "border-rose-500 bg-rose-50")}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="invoiceDate" className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Invoice Date</Label>
+                  <Input
+                    id="invoiceDate"
+                    type="date"
+                    value={formData.invoiceDate}
+                    onChange={(e) => updateField('invoiceDate', e.target.value)}
+                    className="rounded-2xl border-slate-200 h-14 px-5 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
-              <div>
-                <Label htmlFor="amount">Final Amount (₹) <span className="text-red-500">*</span></Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  value={formData.amount}
-                  onChange={(e) => updateField('amount', e.target.value)}
-                  placeholder="Enter final billed amount"
-                  className={errors.amount ? 'border-red-500' : ''}
-                />
-                {parseFloat(formData.amount) !== orderDetails.estimatedCost && formData.amount && (
-                  <p className="text-[10px] text-amber-600 font-bold mt-1 uppercase">
-                    ⚠️ Note: Differs from estimate (₹{orderDetails.estimatedCost.toLocaleString('en-IN')})
-                  </p>
-                )}
+              <div className="space-y-2">
+                <Label htmlFor="actualAmount" className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Final Amount (INR)</Label>
+                <div className="relative">
+                  <Input
+                    id="actualAmount"
+                    type="number"
+                    value={formData.actualAmount}
+                    onChange={(e) => updateField('actualAmount', e.target.value)}
+                    className={cn("rounded-2xl border-slate-200 h-14 px-5 pl-12 font-bold text-lg", errors.actualAmount && "border-rose-500 bg-rose-50")}
+                  />
+                  <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Attachments</Label>
+                <div className="group relative border-2 border-dashed border-slate-200 rounded-[2rem] p-8 bg-slate-50 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-100 hover:border-emerald-300 transition-all duration-300">
+                  <Input
+                    id="accountsImages"
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      updateField('accountsImages', files)
+                    }}
+                    className="hidden"
+                  />
+                  <Label htmlFor="accountsImages" className="cursor-pointer">
+                    <div className="flex flex-col items-center">
+                      <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <UploadCloud className="h-8 w-8 text-emerald-500" />
+                      </div>
+                      <p className="text-sm font-bold text-slate-700">
+                        {formData.accountsImages.length > 0
+                          ? `${formData.accountsImages.length} documents selected`
+                          : 'Upload Payment Proof or Invoice'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-widest">Supports PDF, JPG, PNG (Max 10MB)</p>
+                    </div>
+                  </Label>
+                </div>
               </div>
             </div>
 
-            {/* Payment Details Section */}
-            <div className="space-y-4 p-4 border border-gray-100 rounded-xl bg-white shadow-sm">
-              <h3 className="font-bold text-gray-700 flex items-center gap-2">
-                <span className="w-2 h-6 bg-blue-500 rounded-full"></span>
-                Payment Details
-              </h3>
-
-              <div>
-                <Label htmlFor="paymentStatus">Status <span className="text-red-500">*</span></Label>
-                <Select
-                  value={formData.paymentStatus}
-                  onValueChange={(value) => updateField('paymentStatus', value)}
-                >
-                  <SelectTrigger className={errors.paymentStatus ? 'border-red-500' : 'bg-white'}>
-                    <SelectValue placeholder="Select payment status" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white">
-                    <SelectItem value="no_gap_payment_released">No gap payment released</SelectItem>
-                    <SelectItem value="gap_observed_need_clarification">Gap observed need clarification</SelectItem>
-                  </SelectContent>
-                </Select>
+            {/* Right Column: Payment Details */}
+            <div className="space-y-8">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-1.5 h-6 bg-emerald-500 rounded-full" />
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Payment Confirmation</h3>
               </div>
 
-              <div>
-                <Label htmlFor="paymentMode">Payment Mode <span className="text-red-500">*</span></Label>
-                <Select
-                  value={formData.paymentMode}
-                  onValueChange={(value) => updateField('paymentMode', value)}
-                >
-                  <SelectTrigger className={errors.paymentMode ? 'border-red-500' : 'bg-white'}>
-                    <SelectValue placeholder="Select payment mode" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white">
-                    <SelectItem value="bank_transfer">Online transfer</SelectItem>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="credit_card">Credit card</SelectItem>
-                    <SelectItem value="cheque">Cheque</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Status</Label>
+                  <Select
+                    value={formData.paymentStatus}
+                    onValueChange={(value) => updateField('paymentStatus', value)}
+                  >
+                    <SelectTrigger className={cn("rounded-2xl border-slate-200 h-14 px-5 bg-white shadow-none", errors.paymentStatus && "border-rose-500 bg-rose-50")}>
+                      <SelectValue placeholder="Select Status" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl border-slate-100 shadow-2xl p-2 bg-white">
+                      <SelectItem value="no_gap_payment_released" className="rounded-xl py-3 focus:bg-emerald-50">Payment Released</SelectItem>
+                      <SelectItem value="gap_observed_need_clarification" className="rounded-xl py-3 focus:bg-amber-50">Needs Clarification</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Method</Label>
+                  <Select
+                    value={formData.paymentMode}
+                    onValueChange={(value) => updateField('paymentMode', value)}
+                  >
+                    <SelectTrigger className={cn("rounded-2xl border-slate-200 h-14 px-5 bg-white shadow-none", errors.paymentMode && "border-rose-500 bg-rose-50")}>
+                      <SelectValue placeholder="Select Mode" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl border-slate-100 shadow-2xl p-2 bg-white">
+                      <SelectItem value="bank_transfer" className="rounded-xl py-3">Bank Transfer</SelectItem>
+                      <SelectItem value="cash" className="rounded-xl py-3">Cash</SelectItem>
+                      <SelectItem value="credit_card" className="rounded-xl py-3">Credit Card</SelectItem>
+                      <SelectItem value="cheque" className="rounded-xl py-3">Cheque</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              <div>
-                <Label htmlFor="paymentDate">Payment Date</Label>
+              <div className="space-y-2">
+                <Label htmlFor="paymentDate" className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Execution Date</Label>
                 <Input
                   id="paymentDate"
                   type="date"
                   value={formData.paymentDate}
                   onChange={(e) => updateField('paymentDate', e.target.value)}
+                  className="rounded-2xl border-slate-200 h-14 px-5 focus:ring-emerald-500 focus:border-emerald-500"
                 />
               </div>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Remarks */}
-            <div>
-              <Label htmlFor="accountsRemarks">Accounts Remarks</Label>
-              <Textarea
-                id="accountsRemarks"
-                value={formData.accountsRemarks}
-                onChange={(e) => updateField('accountsRemarks', e.target.value)}
-                placeholder="Add any additional notes or comments..."
-                rows={4}
-              />
-            </div>
-
-            {/* Accounts Images */}
-            <div className="space-y-4">
-              <Label htmlFor="accountsImages">Payment Screenshot / Invoice Copy</Label>
-              <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-gray-50 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-100 transition-colors">
+              <div className="space-y-2">
+                <Label htmlFor="transactionReference" className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Reference (UTR / Check No.)</Label>
                 <Input
-                  id="accountsImages"
-                  type="file"
-                  multiple
-                  accept="image/*,.pdf"
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || [])
-                    updateField('accountsImages', files)
-                  }}
-                  className="hidden"
+                  id="transactionReference"
+                  value={formData.transactionReference}
+                  onChange={(e) => updateField('transactionReference', e.target.value)}
+                  placeholder="Enter reference number"
+                  className="rounded-2xl border-slate-200 h-14 px-5 focus:ring-emerald-500 focus:border-emerald-500"
                 />
-                <Label htmlFor="accountsImages" className="cursor-pointer">
-                  <div className="flex flex-col items-center">
-                    <Save className="h-8 w-8 text-gray-400 mb-2" />
-                    <p className="text-sm font-medium text-gray-700">
-                      {formData.accountsImages.length > 0
-                        ? `${formData.accountsImages.length} file(s) selected`
-                        : 'Click to upload payment documents'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">PDF or Images (Multiple supported)</p>
-                  </div>
-                </Label>
               </div>
-              {formData.accountsImages.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {formData.accountsImages.map((file, idx) => (
-                    <div key={idx} className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded">
-                      {file.name}
-                    </div>
-                  ))}
-                </div>
-              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="accountsRemarks" className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Internal Remarks</Label>
+                <Textarea
+                  id="accountsRemarks"
+                  value={formData.accountsRemarks}
+                  onChange={(e) => updateField('accountsRemarks', e.target.value)}
+                  placeholder="Additional processing notes for executive review..."
+                  className="rounded-[2rem] border-slate-200 p-6 min-h-[140px] focus:ring-emerald-500 focus:border-emerald-500"
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end pt-4">
+          <div className="pt-10 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="flex items-center gap-4 p-4 bg-amber-50 rounded-2xl border border-amber-100 max-w-md">
+              <AlertTriangle className="h-6 w-6 text-amber-500 flex-shrink-0" />
+              <p className="text-xs text-amber-800 font-medium">
+                Ensure all documents are verified before final submission. This action will permanently close the purchase order workflow.
+              </p>
+            </div>
+
             <Button
               type="submit"
               disabled={isLoading}
-              className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white px-10 py-6 text-lg font-bold shadow-lg shadow-emerald-200"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-[2rem] px-12 h-20 text-xl font-black shadow-2xl shadow-emerald-200 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 min-w-[320px]"
             >
               {isLoading ? (
-                <>
-                  <Loader2 className="h-6 w-6 mr-2 animate-spin" />
-                  Processing...
-                </>
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                  <span>Processing...</span>
+                </div>
               ) : (
-                <>
-                  <Save className="h-6 w-6 mr-2" />
-                  Complete & Close Order
-                </>
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="h-7 w-7" />
+                  <span>COMPLETE ORDER</span>
+                </div>
               )}
             </Button>
           </div>
-        </form>
-        )
+        </CardContent>
+      </Card>
+    </form>
+  )
 }
 
-
-// Made with Bob
