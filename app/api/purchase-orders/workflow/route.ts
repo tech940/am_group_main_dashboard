@@ -237,10 +237,11 @@ export async function POST(request: NextRequest) {
         updateData = {
           invoiceNumber: formData.invoiceNumber,
           invoiceDate: formData.invoiceDate,
-          amount: formData.actualAmount || formData.amount,
+          actualAmount: formData.actualAmount,
           paymentStatus: formData.paymentStatus,
           paymentMode: formData.paymentMode,
           paymentDate: formData.paymentDate,
+          transactionReference: formData.transactionReference,
           accountsRemarks: formData.accountsRemarks,
           accountsImages: formData.accountsImages || [],
           status: 'completed',

@@ -291,10 +291,8 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
               )}
             </Button>
           </div>
-        </CardContent>
-      </Card>
-    </form>
-  )
+        </form>
+        )
 }
 
 
