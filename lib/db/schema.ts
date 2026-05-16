@@ -2,11 +2,14 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'manager', 'technician', 'viewer'])
+export const roleEnum = pgEnum('role', ['admin', 'purchase_manager', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
 export const inventoryStatusEnum = pgEnum('inventory_status', ['in_stock', 'out_of_stock', 'low_stock', 'discontinued'])
+export const purchaseOrderStageEnum = pgEnum('purchase_order_stage', ['initial_submission', 'vendor_information', 'ea_approval', 'md_approval', 'grn', 'accounts'])
+export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['submitted', 'vendor_info_pending', 'awaiting_ea_approval', 'ea_approved', 'ea_denied', 'awaiting_md_approval', 'md_approved', 'md_denied', 'awaiting_grn', 'awaiting_accounts', 'completed', 'cancelled'])
+export const paymentModeEnum = pgEnum('payment_mode', ['cash', 'cheque', 'bank_transfer', 'upi', 'credit_card', 'other'])
 
 // Users table (extends Supabase auth.users)
 export const users = pgTable('users', {
@@ -15,6 +18,7 @@ export const users = pgTable('users', {
   email: text('email').notNull(),
   fullName: text('full_name').notNull(),
   role: roleEnum('role').default('viewer').notNull(),
+  brand: text('brand'), // Brand/Branch assignment: 'kia', 'tata', 'hyundai', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'
   department: text('department'),
   phoneNumber: text('phone_number'),
   avatarUrl: text('avatar_url'),
@@ -207,6 +211,18 @@ export const activityLogs = pgTable('activity_logs', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+// Dashboard Settings table
+export const dashboardSettings = pgTable('dashboard_settings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  key: text('key').unique().notNull(),
+  value: jsonb('value').notNull(),
+  category: text('category').notNull(), // 'general', 'security', 'notifications', 'backup'
+  description: text('description'),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
 // Business Excellence Data table
 export const businessExcellenceData = pgTable('business_excellence_am_kia_new', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -215,6 +231,102 @@ export const businessExcellenceData = pgTable('business_excellence_am_kia_new', 
   headers: jsonb('headers').$type<string[]>().notNull(),
   rows: jsonb('rows').$type<Record<string, unknown>[]>().notNull(),
   uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
+})
+
+// Purchase Orders table
+export const purchaseOrders = pgTable('purchase_orders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderNumber: text('order_number').unique().notNull(), // Auto-generated: PO-YYYYMMDD-XXX
+  currentStage: purchaseOrderStageEnum('current_stage').default('initial_submission').notNull(),
+  status: purchaseOrderStatusEnum('status').default('submitted').notNull(),
+  
+  // Stage 1: Initial Submission (Any User)
+  reqType: text('req_type'),
+  department: text('department'),
+  subDepartment: text('sub_department'),
+  specifyOther: text('specify_other'),
+  requestedBy: text('requested_by'),
+  specialInstructions: text('special_instructions'),
+  quantityRequired: text('quantity_required'),
+  estimateIfAny: text('estimate_if_any'),
+  imagesRequired: boolean('images_required').default(false),
+  supportingImages: jsonb('supporting_images').$type<string[]>().default([]),
+  
+  // Stage 2: Vendor Information (Purchase Manager)
+  vendorName: text('vendor_name'),
+  vendorImages: jsonb('vendor_images').$type<string[]>().default([]),
+  quotation1Url: text('quotation_1_url'),
+  quotation2Url: text('quotation_2_url'),
+  quotation3Url: text('quotation_3_url'),
+  
+  // Stage 3: EA & MD Approvals
+  eaApprovalStatus: text('ea_approval_status'), // 'pending', 'approved', 'denied'
+  eaApprovedBy: uuid('ea_approved_by').references(() => users.id),
+  eaApprovedAt: timestamp('ea_approved_at'),
+  eaApprovalRemarks: text('ea_approval_remarks'),
+  
+  mdApprovalStatus: text('md_approval_status'), // 'pending', 'approved', 'denied'
+  mdApprovedBy: uuid('md_approved_by').references(() => users.id),
+  mdApprovedAt: timestamp('md_approved_at'),
+  mdApprovalRemarks: text('md_approval_remarks'),
+  
+  // Stage 4: GRN (Purchase Manager)
+  receivedDateTime: timestamp('received_date_time'),
+  handoverTo: text('handover_to'),
+  remarksIfAny: text('remarks_if_any'),
+  amount: decimal('amount', { precision: 12, scale: 2 }),
+  grnImages: jsonb('grn_images').$type<string[]>().default([]),
+  invoice1Url: text('invoice_1_url'),
+  invoice2Url: text('invoice_2_url'),
+  invoice3Url: text('invoice_3_url'),
+  invoice4Url: text('invoice_4_url'),
+  
+  // Stage 5: Accounts Department
+  paymentStatus: text('payment_status'),
+  paymentMode: paymentModeEnum('payment_mode'),
+  accountRemarks: text('account_remarks'),
+  accountsImages: jsonb('accounts_images').$type<string[]>().default([]),
+  paymentScreenshotUrl: text('payment_screenshot_url'),
+  
+  // Workflow Management
+  assignedTo: uuid('assigned_to').references(() => users.id),
+  workflowLocked: boolean('workflow_locked').default(false),
+  
+  // Metadata
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  brand: text('brand'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  completedAt: timestamp('completed_at'),
+  deletedAt: timestamp('deleted_at'),
+})
+
+// Workflow History table
+export const workflowHistory = pgTable('workflow_history', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  purchaseOrderId: uuid('purchase_order_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
+  action: text('action').notNull(),
+  stage: text('stage').notNull(),
+  performedBy: uuid('performed_by').references(() => users.id).notNull(),
+  userRole: text('user_role').notNull(),
+  remarks: text('remarks'),
+  previousStatus: text('previous_status'),
+  newStatus: text('new_status'),
+  metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+// Purchase Order Approvals table
+export const purchaseOrderApprovals = pgTable('purchase_order_approvals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  purchaseOrderId: uuid('purchase_order_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
+  approverRole: text('approver_role').notNull(), // 'ea' or 'md'
+  approverId: uuid('approver_id').references(() => users.id).notNull(),
+  status: text('status').notNull(), // 'pending', 'approved', 'denied'
+  remarks: text('remarks'),
+  approvedAt: timestamp('approved_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
 // Relations
@@ -312,6 +424,21 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
   user: one(users, {
     fields: [activityLogs.userId],
+    references: [users.id],
+  }),
+}))
+
+export const purchaseOrdersRelations = relations(purchaseOrders, ({ one }) => ({
+  creator: one(users, {
+    fields: [purchaseOrders.createdBy],
+    references: [users.id],
+  }),
+  eaApprover: one(users, {
+    fields: [purchaseOrders.eaApprovedBy],
+    references: [users.id],
+  }),
+  mdApprover: one(users, {
+    fields: [purchaseOrders.mdApprovedBy],
     references: [users.id],
   }),
 }))

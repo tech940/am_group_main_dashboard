@@ -3,24 +3,24 @@
 import React from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  Users, 
-  Car, 
-  DollarSign, 
-  Wrench, 
+import {
+  Users,
+  Car,
+  DollarSign,
+  Wrench,
   MoreHorizontal
 } from 'lucide-react'
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  LineChart, 
-  Line, 
-  AreaChart, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  AreaChart,
   Area,
   PieChart,
   Pie,
@@ -29,10 +29,10 @@ import {
 import { Button } from '@/components/ui/button'
 
 const statCards = [
-  { title: 'Total Sales', value: '3,256', sub: 'Total Vehicles', icon: Car, color: 'text-purple-600', bg: 'bg-purple-100' },
-  { title: 'Available Staff', value: '394', sub: 'Service Team', icon: Users, color: 'text-blue-600', bg: 'bg-blue-100' },
-  { title: 'Avg. Sale Price', value: '$25,536', sub: 'Per Vehicle', icon: DollarSign, color: 'text-orange-600', bg: 'bg-orange-100' },
-  { title: 'Service Cars', value: '38', sub: 'In Workshop', icon: Wrench, color: 'text-pink-600', bg: 'bg-pink-100' },
+  { title: 'Total Sales', value: '3,256', sub: 'Total Vehicles', icon: Car, color: 'text-teal-600', bg: 'bg-teal-50' },
+  { title: 'Available Staff', value: '394', sub: 'Service Team', icon: Users, color: 'text-teal-secondary', bg: 'bg-teal-100' },
+  { title: 'Avg. Sale Price', value: '$25,536', sub: 'Per Vehicle', icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  { title: 'Service Cars', value: '38', sub: 'In Workshop', icon: Wrench, color: 'text-teal-700', bg: 'bg-teal-light' },
 ]
 
 const salesData = [
@@ -51,7 +51,7 @@ const pieData = [
   { name: 'EV', value: 200 },
 ]
 
-const COLORS = ['#8b5cf6', '#3b82f6', '#f97316', '#ec4899']
+const COLORS = ['#055B65', '#45828B', '#10b981', '#B2C9C5']
 
 const timelineData = [
   { time: '07 am', value: 40 },
@@ -99,11 +99,11 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded-full bg-purple-500" />
+                  <div className="h-3 w-3 rounded-full bg-teal-600" />
                   <span className="text-xs font-bold text-slate-500">Sales</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded-full bg-teal-400" />
+                  <div className="h-3 w-3 rounded-full bg-emerald-500" />
                   <span className="text-xs font-bold text-slate-500">Service</span>
                 </div>
                 <Button variant="outline" size="sm" className="rounded-xl border-slate-100 text-slate-500 font-bold ml-4">
@@ -115,24 +115,24 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={salesData} barGap={8}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis 
-                    dataKey="month" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 600}} 
+                  <XAxis
+                    dataKey="month"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }}
                     dy={10}
                   />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 600}} 
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }}
                   />
-                  <Tooltip 
-                    cursor={{fill: '#f8fafc'}}
-                    contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
+                  <Tooltip
+                    cursor={{ fill: '#f8fafc' }}
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
                   />
-                  <Bar dataKey="sales" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={12} />
-                  <Bar dataKey="service" fill="#2dd4bf" radius={[4, 4, 0, 0]} barSize={12} />
+                  <Bar dataKey="sales" fill="#055B65" radius={[4, 4, 0, 0]} barSize={12} />
+                  <Bar dataKey="service" fill="#10b981" radius={[4, 4, 0, 0]} barSize={12} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -171,7 +171,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 gap-4 mt-6">
               {pieData.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full" style={{backgroundColor: COLORS[idx]}} />
+                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: COLORS[idx] }} />
                   <span className="text-xs font-bold text-slate-600">{item.name}</span>
                 </div>
               ))}
@@ -195,12 +195,12 @@ export default function DashboardPage() {
                 <AreaChart data={timelineData}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#fb923c" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#fb923c" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <Tooltip />
-                  <Area type="monotone" dataKey="value" stroke="#fb923c" strokeWidth={4} fillOpacity={1} fill="url(#colorValue)" />
+                  <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#colorValue)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -219,13 +219,13 @@ export default function DashboardPage() {
             </div>
             <div className="space-y-6">
               {[
-                { name: 'Jammu Central', value: 247, icon: Car, color: 'text-purple-500' },
-                { name: 'Srinagar North', value: 164, icon: Wrench, color: 'text-blue-500' },
-                { name: 'Udhampur Main', value: 86, icon: DollarSign, color: 'text-teal-500' },
+                { name: 'Jammu Central', value: 247, icon: Car, color: 'text-teal-600' },
+                { name: 'Srinagar North', value: 164, icon: Wrench, color: 'text-teal-secondary' },
+                { name: 'Udhampur Main', value: 86, icon: DollarSign, color: 'text-emerald-600' },
               ].map((item, idx) => (
                 <div key={idx} className="flex items-center justify-between group cursor-pointer">
                   <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-purple-50 group-hover:text-purple-500 transition-colors">
+                    <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-teal-50 group-hover:text-teal-600 transition-colors">
                       <item.icon className="h-5 w-5" />
                     </div>
                     <span className="text-sm font-bold text-slate-700">{item.name}</span>
@@ -237,12 +237,12 @@ export default function DashboardPage() {
           </Card>
 
           {/* Colorful CTA Card */}
-          <Card className="border-none bg-gradient-to-br from-purple-600 to-indigo-700 rounded-[2rem] p-8 shadow-2xl shadow-purple-200 relative overflow-hidden group">
+          <Card className="border-none bg-gradient-to-br from-teal-600 to-teal-800 rounded-[2rem] p-8 shadow-2xl shadow-teal-200 relative overflow-hidden group">
             <div className="absolute -right-10 -bottom-10 h-64 w-64 rounded-full bg-white/10 blur-3xl group-hover:scale-125 transition-transform duration-700" />
             <div className="relative z-10 h-full flex flex-col">
               <h3 className="text-5xl font-black text-white tracking-tighter mb-2">3,240</h3>
               <p className="text-sm font-bold text-white/70 uppercase tracking-widest mb-10">Monthly Targets Reached</p>
-              
+
               <div className="mt-auto">
                 <div className="h-20 w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -252,9 +252,9 @@ export default function DashboardPage() {
                   </ResponsiveContainer>
                 </div>
                 <div className="flex justify-between mt-4">
-                   {[14, 15, 16, 17, 18, 19].map(n => (
-                     <span key={n} className="text-[10px] font-bold text-white/50">{n}</span>
-                   ))}
+                  {[14, 15, 16, 17, 18, 19].map(n => (
+                    <span key={n} className="text-[10px] font-bold text-white/50">{n}</span>
+                  ))}
                 </div>
               </div>
             </div>
