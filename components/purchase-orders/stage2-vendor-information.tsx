@@ -36,6 +36,7 @@ interface Stage2Props {
 }
 
 interface VendorInformationSummaryProps {
+  orderId?: string
   vendorName?: string | null
   vendorImages?: string[] | null
   vendorOptions?: VendorSectionData[] | null
@@ -75,6 +76,7 @@ function getCompletedVendorOptions(options: VendorSectionData[]) {
 }
 
 export function VendorInformationSummary({
+  orderId,
   vendorName,
   vendorImages,
   vendorOptions,
@@ -116,7 +118,7 @@ export function VendorInformationSummary({
           const imageUrls = option.images.filter((image): image is string => typeof image === 'string' && image.length > 0)
 
           return imageUrls.length > 0 ? (
-            <ImageGallery key={`${option.key}-images`} images={imageUrls} title={`${option.label} Documents`} />
+            <ImageGallery key={`${option.key}-images`} images={imageUrls} title={`${option.label} Documents`} orderId={orderId} />
           ) : null
         })}
       </CardContent>
@@ -124,7 +126,7 @@ export function VendorInformationSummary({
   )
 }
 
-export function Stage2VendorInformation({ initialData, onSubmit, isLoading }: Stage2Props) {
+export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoading }: Stage2Props) {
   const [vendorOptions, setVendorOptions] = useState<VendorSectionData[]>(() => normalizeVendorOptions(initialData))
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -202,6 +204,7 @@ export function Stage2VendorInformation({ initialData, onSubmit, isLoading }: St
                     images={vendor.images}
                     onImagesChange={(images) => updateVendor(vendor.key, 'images', images)}
                     maxImages={10}
+                    orderId={orderId}
                   />
                 </div>
               </div>

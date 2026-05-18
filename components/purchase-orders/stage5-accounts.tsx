@@ -40,7 +40,7 @@ interface Stage5Props {
 
 type Stage5Field = keyof Stage5FormData
 
-export function Stage5Accounts({ orderDetails, initialData, onSubmit, isLoading }: Stage5Props) {
+export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, isLoading }: Stage5Props) {
   const [formData, setFormData] = useState<Stage5FormData>({
     invoiceNumber: initialData?.invoiceNumber || '',
     invoiceDate: initialData?.invoiceDate || new Date().toISOString().split('T')[0],
@@ -214,6 +214,7 @@ export function Stage5Accounts({ orderDetails, initialData, onSubmit, isLoading 
                         images={formData.accountsImages}
                         onImagesChange={(images) => updateField('accountsImages', images)}
                         maxImages={10}
+                        orderId={orderId}
                       />
                     </div>
                   )}

@@ -12,6 +12,7 @@ interface MultipleImageUploadProps {
   onImagesChange: (images: Array<File | string>) => void
   maxImages?: number
   required?: boolean
+  orderId?: string
 }
 
 interface PreviewItem {
@@ -47,6 +48,16 @@ function isPdfUrl(value: string) {
 
 function isImageUrl(value: string) {
   return /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(value.toLowerCase().split('?')[0])
+}
+
+function getSavedFilePreviewUrl(file: string, orderId?: string) {
+  const params = new URLSearchParams({ file })
+
+  if (orderId) {
+    params.set('orderId', orderId)
+  }
+
+  return `/api/purchase-orders/file?${params.toString()}`
 }
 
 function getFileName(file: File | string, index: number) {
@@ -89,6 +100,7 @@ export function MultipleImageUpload({
   onImagesChange,
   maxImages = 10,
   required = false,
+  orderId,
 }: MultipleImageUploadProps) {
   const [showUpload, setShowUpload] = useState(images.length === 0)
   const [dragActive, setDragActive] = useState(false)
@@ -104,13 +116,17 @@ export function MultipleImageUpload({
         id: `${index}-${getFileName(file, index)}`,
         file,
         name: getFileName(file, index),
-        src: isFile && (isImage || isPdf) ? getFilePreviewUrl(file) : typeof file === 'string' ? file : null,
+        src: isFile && (isImage || isPdf)
+          ? getFilePreviewUrl(file)
+          : typeof file === 'string'
+            ? getSavedFilePreviewUrl(file, orderId)
+            : null,
         isImage,
         isPdf,
         sizeLabel: isFile ? formatFileSize(file.size) : null,
       }
     })
-  ), [images])
+  ), [images, orderId])
 
   const selectedPreview = selectedIndex === null ? null : previews[selectedIndex] || null
 

@@ -31,7 +31,7 @@ interface Stage4Props {
 
 type Stage4Field = keyof Stage4FormData
 
-export function Stage4GRN({ orderDetails, initialData, onSubmit, isLoading }: Stage4Props) {
+export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoading }: Stage4Props) {
   const [formData, setFormData] = useState<Stage4FormData>({
     receivedDateTime: initialData?.receivedDateTime || '',
     receivedTime: initialData?.receivedTime || '',
@@ -218,6 +218,7 @@ export function Stage4GRN({ orderDetails, initialData, onSubmit, isLoading }: St
                   images={formData.grnImages}
                   onImagesChange={(images) => updateField('grnImages', images)}
                   maxImages={10}
+                  orderId={orderId}
                 />
               </div>
             )}

@@ -601,7 +601,7 @@ function PurchaseOrdersPageContent() {
       }
 
       const uploadResult = await uploadResponse.json()
-      urls.push(uploadResult.url)
+      urls.push(uploadResult.path || uploadResult.url)
     }
 
     return urls
@@ -1262,21 +1262,22 @@ function PurchaseOrdersPageContent() {
                 )}
 
                 {selectedOrder.supportingImages && selectedOrder.supportingImages.length > 0 && (
-                  <ImageGallery images={selectedOrder.supportingImages} title="Initial Request Images" />
+                  <ImageGallery images={selectedOrder.supportingImages} title="Initial Request Images" orderId={selectedOrder.id} />
                 )}
                 <VendorInformationSummary
+                  orderId={selectedOrder.id}
                   vendorName={normalizeVendorName(selectedOrder) === 'Awaiting vendor details' ? '' : normalizeVendorName(selectedOrder)}
                   vendorImages={selectedOrder.vendorImages || []}
                   vendorOptions={normalizeVendorDetails(selectedOrder)}
                 />
                 {normalizeVendorDetails(selectedOrder).length === 0 && selectedOrder.vendorImages && selectedOrder.vendorImages.length > 0 && (
-                  <ImageGallery images={selectedOrder.vendorImages} title="Vendor Quotations" />
+                  <ImageGallery images={selectedOrder.vendorImages} title="Vendor Quotations" orderId={selectedOrder.id} />
                 )}
                 {selectedOrder.grnImages && selectedOrder.grnImages.length > 0 && (
-                  <ImageGallery images={selectedOrder.grnImages} title="GRN Documents" />
+                  <ImageGallery images={selectedOrder.grnImages} title="GRN Documents" orderId={selectedOrder.id} />
                 )}
                 {selectedOrder.accountsImages && selectedOrder.accountsImages.length > 0 && (
-                  <ImageGallery images={selectedOrder.accountsImages} title="Accounts Documents" />
+                  <ImageGallery images={selectedOrder.accountsImages} title="Accounts Documents" orderId={selectedOrder.id} />
                 )}
 
                 <WorkflowTimeline history={workflowHistory} currentStatus={selectedOrder.status} />
