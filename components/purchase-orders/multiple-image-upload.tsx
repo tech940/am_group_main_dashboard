@@ -104,7 +104,7 @@ export function MultipleImageUpload({
         id: `${index}-${getFileName(file, index)}`,
         file,
         name: getFileName(file, index),
-        src: isFile && isImage ? getFilePreviewUrl(file) : typeof file === 'string' ? file : null,
+        src: isFile && (isImage || isPdf) ? getFilePreviewUrl(file) : typeof file === 'string' ? file : null,
         isImage,
         isPdf,
         sizeLabel: isFile ? formatFileSize(file.size) : null,
