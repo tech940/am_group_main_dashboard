@@ -1,6 +1,7 @@
 import 'server-only'
 
-import { and, asc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull, or } from 'drizzle-orm'
+import { ALL_BRANCH_OPTION } from '@/lib/branches'
 import { db } from '@/lib/db'
 import { notifications, purchaseOrders, users, workflowHistory } from '@/lib/db/schema'
 
@@ -67,7 +68,11 @@ async function getActiveUsersByRole(role: UserRole, branch?: string | null) {
   ]
 
   if (branch) {
-    filters.push(eq(users.brand, branch))
+    filters.push(or(
+      eq(users.brand, branch),
+      eq(users.brand, ALL_BRANCH_OPTION.value),
+      isNull(users.brand)
+    )!)
   }
 
   return db

@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { BRANCH_OPTIONS, type BranchValue } from '@/lib/branches'
+import { USER_BRANCH_OPTIONS, getUserBranchLabel, type UserBranchValue } from '@/lib/branches'
 
 interface User {
   id: string
@@ -301,13 +301,13 @@ export default function AdminUsersPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="brand" className="text-sm font-bold text-slate-700">Assigned Brand</Label>
-                    <Select value={formData.brand} onValueChange={(value: BranchValue) => setFormData({ ...formData, brand: value })}>
+                    <Label htmlFor="brand" className="text-sm font-bold text-slate-700">Assigned Branch Access</Label>
+                    <Select value={formData.brand} onValueChange={(value: UserBranchValue) => setFormData({ ...formData, brand: value })}>
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
-                        <SelectValue placeholder="Select brand" />
+                        <SelectValue placeholder="Select branch access" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
-                        {BRANCH_OPTIONS.map((branch) => (
+                        {USER_BRANCH_OPTIONS.map((branch) => (
                           <SelectItem key={branch.value} value={branch.value} className="bg-white hover:bg-slate-50">
                             {branch.label}
                           </SelectItem>
@@ -402,13 +402,13 @@ export default function AdminUsersPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-brand" className="text-sm font-bold text-slate-700">Assigned Brand</Label>
-                    <Select value={editFormData.brand} onValueChange={(value: BranchValue) => setEditFormData({ ...editFormData, brand: value })}>
+                    <Label htmlFor="edit-brand" className="text-sm font-bold text-slate-700">Assigned Branch Access</Label>
+                    <Select value={editFormData.brand} onValueChange={(value: UserBranchValue) => setEditFormData({ ...editFormData, brand: value })}>
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
-                        <SelectValue placeholder="Select brand" />
+                        <SelectValue placeholder="Select branch access" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
-                        {BRANCH_OPTIONS.map((branch) => (
+                        {USER_BRANCH_OPTIONS.map((branch) => (
                           <SelectItem key={branch.value} value={branch.value} className="bg-white hover:bg-slate-50">
                             {branch.label}
                           </SelectItem>
@@ -561,6 +561,7 @@ export default function AdminUsersPage() {
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">User</th>
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Email</th>
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Role</th>
+                    <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Branch Access</th>
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Department</th>
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Status</th>
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Created</th>
@@ -570,7 +571,7 @@ export default function AdminUsersPage() {
                 <tbody className="divide-y divide-slate-100">
                   {fetchingUsers ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-20 text-center">
+                      <td colSpan={8} className="px-6 py-20 text-center">
                         <div className="flex flex-col items-center gap-3">
                           <div className="h-8 w-8 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin"></div>
                           <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">Loading users...</p>
@@ -579,7 +580,7 @@ export default function AdminUsersPage() {
                     </tr>
                   ) : filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-bold">
+                      <td colSpan={8} className="px-6 py-20 text-center text-slate-400 font-bold">
                         No users found
                       </td>
                     </tr>
@@ -600,6 +601,7 @@ export default function AdminUsersPage() {
                           {user.role}
                         </Badge>
                       </td>
+                      <td className="px-6 py-4 text-sm text-slate-600 font-semibold">{getUserBranchLabel(user.brand)}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 font-semibold">{user.department || '—'}</td>
                       <td className="px-6 py-4">
                         <Badge className={user.isActive ? 'bg-emerald-100 text-emerald-700 rounded-lg font-bold' : 'bg-slate-100 text-slate-700 rounded-lg font-bold'}>

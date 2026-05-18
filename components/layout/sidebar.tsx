@@ -141,6 +141,7 @@ const brands = [
 ]
 
 import { useSidebar } from '@/context/sidebar-context'
+import { hasAllBranchAccess } from '@/lib/branches'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 
 export function Sidebar() {
@@ -156,6 +157,7 @@ export function Sidebar() {
   const canAccessBrand = (brandKey: string) => {
     if (isAdmin) return true // Admins can access all brands
     if (!userBrand) return false // No brand assigned
+    if (hasAllBranchAccess(userBrand)) return true
     return brandKey === userBrand // Can only access assigned brand
   }
 
@@ -191,7 +193,7 @@ export function Sidebar() {
 
   // Auto-open user's assigned brand on load
   useEffect(() => {
-    if (!loading && userBrand && !isAdmin) {
+    if (!loading && userBrand && !isAdmin && !hasAllBranchAccess(userBrand)) {
       const brandName = getBrandName(userBrand)
       if (brandName) {
         const timer = window.setTimeout(() => {

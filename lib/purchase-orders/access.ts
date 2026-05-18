@@ -1,6 +1,7 @@
 import { and, eq, isNull, or } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { AppUser } from '@/lib/auth/app-user'
+import { hasAllBranchAccess } from '@/lib/branches'
 import { purchaseOrders } from '@/lib/db/schema'
 
 type PurchaseOrderRecord = typeof purchaseOrders.$inferSelect
@@ -89,7 +90,7 @@ export function isReadOnlyTrackingRole(role: PurchaseOrderRole | null | undefine
 
 export function getPurchaseOrderListVisibilityFilter(appUser: AppUser): SQL<unknown> {
   const baseFilters: SQL<unknown>[] = [isNull(purchaseOrders.deletedAt)]
-  const branchFilter = appUser.brand
+  const branchFilter = appUser.brand && !hasAllBranchAccess(appUser.brand)
     ? or(eq(purchaseOrders.brand, appUser.brand), isNull(purchaseOrders.brand))!
     : undefined
 
@@ -153,7 +154,7 @@ export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrder
     return true
   }
 
-  const branchMatches = !appUser.brand || !order.brand || order.brand === appUser.brand
+  const branchMatches = hasAllBranchAccess(appUser.brand) || !order.brand || order.brand === appUser.brand
 
   switch (appUser.role) {
     case 'md':

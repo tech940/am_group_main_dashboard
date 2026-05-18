@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { desc, eq, isNull } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { isUserBranchValue } from '@/lib/branches'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -9,6 +10,14 @@ export const dynamic = 'force-dynamic'
 
 function canAccessAdminPanel(role: string | null | undefined) {
   return role === 'admin' || role === 'md'
+}
+
+function normalizeUserBranchAccess(value: unknown) {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+
+  return isUserBranchValue(value) ? value : undefined
 }
 
 // GET - Fetch all users
@@ -61,6 +70,15 @@ export async function POST(request: Request) {
       )
     }
 
+    const normalizedBrand = normalizeUserBranchAccess(brand)
+
+    if (normalizedBrand === undefined) {
+      return NextResponse.json(
+        { error: 'Invalid branch access selected' },
+        { status: 400 }
+      )
+    }
+
     // Check if user already exists
     const existingUser = await db.select()
       .from(users)
@@ -98,7 +116,7 @@ export async function POST(request: Request) {
       email,
       fullName,
       role,
-      brand: brand || null,
+      brand: normalizedBrand,
       department: department || null,
       isActive: true,
     }).returning({
@@ -136,6 +154,19 @@ export async function PUT(request: Request) {
 
     if (!id) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+    }
+
+    if ('brand' in updateData) {
+      const normalizedBrand = normalizeUserBranchAccess(updateData.brand)
+
+      if (normalizedBrand === undefined) {
+        return NextResponse.json(
+          { error: 'Invalid branch access selected' },
+          { status: 400 }
+        )
+      }
+
+      updateData.brand = normalizedBrand
     }
 
     const [updatedUser] = await db.update(users)
