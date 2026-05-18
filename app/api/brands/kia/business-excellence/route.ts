@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { businessExcellenceData } from '@/lib/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
 import { env } from '@/config/env-config'
+import { getCachedData, invalidateCache } from '@/lib/redis/cache-utils'
+import { CACHE_KEYS, CACHE_TTL } from '@/lib/redis/client'
 
 // Allow up to 60 seconds for processing large spreadsheets
 export const maxDuration = 60;
@@ -13,6 +15,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const brand = searchParams.get('brand')
     const sheetId = searchParams.get('sheetId')
+    const skipCache = searchParams.get('skipCache') === 'true'
 
     if (!brand && !sheetId) {
       return NextResponse.json({ error: 'Brand or Sheet ID is required' }, { status: 400 })
@@ -23,42 +26,81 @@ export async function GET(request: Request) {
       const page = parseInt(searchParams.get('page') || '1')
       const limit = parseInt(searchParams.get('limit') || '10')
       const offset = (page - 1) * limit
+      
+      // Check if we need ALL rows (for analytics) or paginated rows (for display)
+      const fetchAll = searchParams.get('fetchAll') === 'true'
 
-      // We use a raw SQL query to efficiently slice the JSONB array in the database
-      // This ensures we only fetch the 10 rows we need, not all 29,000.
-      const result = await db.execute(sql`
-        SELECT 
-          id, brand, sheet_name as "sheetName", headers,
-          (SELECT jsonb_agg(elem) FROM (
-            SELECT jsonb_array_elements(rows) as elem 
-            FROM business_excellence_am_kia_new 
-            WHERE id = ${sheetId}
-            LIMIT ${limit} OFFSET ${offset}
-          ) sub) as rows,
-          jsonb_array_length(rows) as "totalRows",
-          uploaded_at as "uploadedAt"
-        FROM business_excellence_am_kia_new
-        WHERE id = ${sheetId}
-        LIMIT 1
-      `)
+      // Create cache key based on query parameters
+      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:sheet:${sheetId}:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}`
 
-      if (!result || result.length === 0) {
-        return NextResponse.json({ error: 'Sheet not found' }, { status: 404 })
-      }
+      // Fetch data with caching
+      const result = await getCachedData(
+        cacheKey,
+        async () => {
+          let queryResult;
+          
+          if (fetchAll) {
+            // Fetch ALL rows without pagination for analytics calculations
+            queryResult = await db.execute(sql`
+              SELECT
+                id, brand, sheet_name as "sheetName", headers,
+                rows,
+                jsonb_array_length(rows) as "totalRows",
+                uploaded_at as "uploadedAt"
+              FROM business_excellence_am_kia_new
+              WHERE id = ${sheetId}
+              LIMIT 1
+            `)
+          } else {
+            // Use a raw SQL query to efficiently slice the JSONB array in the database
+            // This ensures we only fetch the rows we need for pagination
+            queryResult = await db.execute(sql`
+              SELECT
+                id, brand, sheet_name as "sheetName", headers,
+                (SELECT jsonb_agg(elem) FROM (
+                  SELECT jsonb_array_elements(rows) as elem
+                  FROM business_excellence_am_kia_new
+                  WHERE id = ${sheetId}
+                  LIMIT ${limit} OFFSET ${offset}
+                ) sub) as rows,
+                jsonb_array_length(rows) as "totalRows",
+                uploaded_at as "uploadedAt"
+              FROM business_excellence_am_kia_new
+              WHERE id = ${sheetId}
+              LIMIT 1
+            `)
+          }
 
-      return NextResponse.json(result[0])
+          if (!queryResult || queryResult.length === 0) {
+            throw new Error('Sheet not found')
+          }
+
+          return queryResult[0]
+        },
+        skipCache ? 0 : (fetchAll ? CACHE_TTL.LONG : CACHE_TTL.MEDIUM)
+      )
+
+      return NextResponse.json(result)
     }
 
     // Otherwise, return metadata for all sheets of the brand (EXCLUDING 'rows' to save CPU/Memory)
-    const data = await db.select({
-      id: businessExcellenceData.id,
-      brand: businessExcellenceData.brand,
-      sheetName: businessExcellenceData.sheetName,
-      headers: businessExcellenceData.headers,
-      uploadedAt: businessExcellenceData.uploadedAt,
-    })
-      .from(businessExcellenceData)
-      .where(eq(businessExcellenceData.brand, brand!))
+    const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:metadata:${brand}`
+    
+    const data = await getCachedData(
+      cacheKey,
+      async () => {
+        return await db.select({
+          id: businessExcellenceData.id,
+          brand: businessExcellenceData.brand,
+          sheetName: businessExcellenceData.sheetName,
+          headers: businessExcellenceData.headers,
+          uploadedAt: businessExcellenceData.uploadedAt,
+        })
+          .from(businessExcellenceData)
+          .where(eq(businessExcellenceData.brand, brand!))
+      },
+      skipCache ? 0 : CACHE_TTL.MEDIUM
+    )
 
     return NextResponse.json(data)
   } catch (error) {
@@ -103,6 +145,13 @@ export async function POST(request: Request) {
         })
       }
     })
+
+    // Invalidate all caches for this brand after successful upload
+    console.log(`🗑️ Invalidating cache for brand: ${brand}`)
+    await invalidateCache(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:metadata:${brand}`)
+    
+    // Note: Individual sheet caches will expire naturally based on TTL
+    // or can be invalidated on next request with skipCache=true parameter
 
     return NextResponse.json({ success: true, message: 'Data saved successfully' })
   } catch (error) {

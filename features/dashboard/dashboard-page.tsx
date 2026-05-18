@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card'
 
 export default function DashboardPage() {
   return (
-    <MainLayout>
+    <MainLayout title="Dashboard" subtitle="Operational Monitoring">
       <div className="space-y-8 max-w-[1600px] mx-auto">
         {/* Dashboard Title & Stats Filter */}
         <div className="flex items-center justify-between">
