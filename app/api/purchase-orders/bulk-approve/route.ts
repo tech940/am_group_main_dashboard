@@ -1,110 +1,195 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { and, inArray, isNull } from 'drizzle-orm'
+import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { db } from '@/lib/db'
+import { purchaseOrders, workflowHistory } from '@/lib/db/schema'
+import { createPurchaseOrderWorkflowNotifications } from '@/lib/notifications/workflow'
+import {
+  canApproveEa,
+  canApproveMd,
+  canReadPurchaseOrder,
+} from '@/lib/purchase-orders/access'
+
+type SupportedBulkStage = 'ea_approval' | 'md_approval'
+
+function resolveBulkStage(role: string, requestedStage?: string): SupportedBulkStage | null {
+  if (requestedStage === 'ea_approval' || requestedStage === 'md_approval') {
+    return requestedStage
+  }
+
+  if (role === 'ea') {
+    return 'ea_approval'
+  }
+
+  if (role === 'md') {
+    return 'md_approval'
+  }
+
+  return null
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const appUser = await getAuthenticatedAppUser()
 
-    if (authError || !user) {
+    if (!appUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json()
-    const { orderIds, action, remarks } = body
-
-    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-      return NextResponse.json(
-        { error: 'Order IDs array is required' },
-        { status: 400 }
-      )
+    const { orderIds, action, remarks, stage } = body as {
+      orderIds?: string[]
+      action?: string
+      remarks?: string
+      stage?: string
     }
 
-    if (!['approve', 'deny'].includes(action)) {
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      return NextResponse.json({ error: 'Order IDs array is required' }, { status: 400 })
+    }
+
+    if (action !== 'approve' && action !== 'deny' && action !== 'hold') {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
     }
 
-    if (action === 'deny' && !remarks) {
-      return NextResponse.json(
-        { error: 'Remarks are required for denial' },
-        { status: 400 }
-      )
+    const bulkStage = resolveBulkStage(appUser.role, stage)
+    if (!bulkStage) {
+      return NextResponse.json({ error: 'Unsupported bulk approval stage' }, { status: 400 })
     }
 
-    // Get user details
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id, role, full_name')
-      .eq('supabase_id', user.id)
-      .single()
-
-    if (!userData || (userData.role !== 'admin' && userData.role !== 'md')) {
+    if (bulkStage === 'ea_approval' && !canApproveEa(appUser.role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
-    // Prepare update data
-    const updateData: any = {
-      updated_at: new Date().toISOString(),
-      md_approval_status: action === 'approve' ? 'approved' : 'denied',
-      md_approved_by: userData.id,
-      md_approved_at: new Date().toISOString(),
-      md_approval_remarks: remarks || null,
+    if (bulkStage === 'md_approval' && !canApproveMd(appUser.role)) {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
-    // Update status based on action
-    if (action === 'approve') {
-      updateData.status = 'awaiting_grn'
-      updateData.current_stage = 'grn'
-    } else {
-      updateData.status = 'md_denied'
-    }
-
-    // Bulk update all orders
-    const { data, error } = await supabase
-      .from('purchase_orders')
-      .update(updateData)
-      .in('id', orderIds)
+    const orders = await db
       .select()
+      .from(purchaseOrders)
+      .where(and(inArray(purchaseOrders.id, orderIds), isNull(purchaseOrders.deletedAt)))
 
-    if (error) {
-      console.error('Error bulk updating orders:', error)
-      return NextResponse.json({ error: 'Failed to update orders' }, { status: 500 })
+    const visibleOrders = orders.filter((order) => canReadPurchaseOrder(appUser, order))
+    if (visibleOrders.length === 0) {
+      return NextResponse.json({ error: 'No accessible purchase orders found' }, { status: 404 })
     }
 
-    // Create workflow history entries for each order
-    const historyEntries = orderIds.map(orderId => ({
-      purchase_order_id: orderId,
-      action: action === 'approve' ? 'md_approved' : 'md_denied',
-      stage: 'md_approval',
-      performed_by: userData.id,
-      user_role: userData.role,
-      remarks: remarks || null,
-      previous_status: 'awaiting_md_approval',
-      new_status: action === 'approve' ? 'awaiting_grn' : 'md_denied',
-      metadata: {
-        bulk_action: true,
-        total_orders: orderIds.length
+    const expectedStatuses = bulkStage === 'ea_approval'
+      ? ['awaiting_ea_approval', 'ea_denied', 'ea_on_hold']
+      : ['awaiting_md_approval', 'md_denied', 'md_on_hold']
+    const eligibleOrders = visibleOrders.filter((order) => expectedStatuses.includes(order.status))
+
+    if (eligibleOrders.length === 0) {
+      return NextResponse.json({ error: `No orders are currently awaiting ${bulkStage === 'ea_approval' ? 'EA' : 'MD'} approval` }, { status: 409 })
+    }
+
+    const now = new Date()
+    const orderIdsToUpdate = eligibleOrders.map((order) => order.id)
+    let updateSet: Partial<typeof purchaseOrders.$inferInsert>
+
+    if (bulkStage === 'ea_approval') {
+      updateSet = {
+        updatedAt: now,
+        eaApprovalStatus: action === 'approve' ? 'approved' : action === 'deny' ? 'denied' : 'pending',
+        eaApprovedBy: action === 'hold' ? null : appUser.id,
+        eaApprovedAt: action === 'hold' ? null : now,
+        eaApprovalRemarks: action === 'hold' ? null : remarks || null,
+        rejectedAt: action === 'deny' ? now : null,
+        eaHeldAt: action === 'hold' ? now : null,
+        eaHeldBy: action === 'hold' ? appUser.id : null,
+        holdRemarks: action === 'hold' ? remarks || null : null,
+        status: action === 'approve' ? 'awaiting_md_approval' : action === 'deny' ? 'ea_denied' : 'ea_on_hold',
+        currentStage: action === 'approve' ? 'md_approval' : 'ea_approval',
       }
-    }))
-
-    const { error: historyError } = await supabase
-      .from('workflow_history')
-      .insert(historyEntries)
-
-    if (historyError) {
-      console.error('Error creating workflow history:', historyError)
-      // Don't fail the request if history creation fails
+    } else {
+      updateSet = {
+        updatedAt: now,
+        mdApprovalStatus: action === 'approve' ? 'approved' : action === 'deny' ? 'denied' : 'pending',
+        mdApprovedBy: action === 'hold' ? null : appUser.id,
+        mdApprovedAt: action === 'hold' ? null : now,
+        mdApprovalRemarks: action === 'hold' ? null : remarks || null,
+        rejectedAt: action === 'deny' ? now : null,
+        mdHeldAt: action === 'hold' ? now : null,
+        mdHeldBy: action === 'hold' ? appUser.id : null,
+        holdRemarks: action === 'hold' ? remarks || null : null,
+        status: action === 'approve' ? 'awaiting_grn' : action === 'deny' ? 'md_denied' : 'md_on_hold',
+        currentStage: action === 'approve' ? 'grn' : action === 'deny' ? 'ea_approval' : 'md_approval',
+      }
     }
+
+    const updatedOrders = await db
+      .update(purchaseOrders)
+      .set(updateSet)
+      .where(inArray(purchaseOrders.id, orderIdsToUpdate))
+      .returning()
+
+    const historyEntries = await db
+      .insert(workflowHistory)
+      .values(
+        updatedOrders.map((order) => ({
+          purchaseOrderId: order.id,
+          action,
+          stage: bulkStage,
+          performedBy: appUser.id,
+          userRole: appUser.role,
+          remarks: remarks || null,
+          previousStatus: eligibleOrders.find((eligibleOrder) => eligibleOrder.id === order.id)?.status || null,
+          newStatus: order.status,
+          metadata: {
+            bulkAction: true,
+            totalOrders: updatedOrders.length,
+          },
+        }))
+      )
+      .returning({
+        id: workflowHistory.id,
+        purchaseOrderId: workflowHistory.purchaseOrderId,
+        remarks: workflowHistory.remarks,
+      })
+
+    const historyMap = new Map(historyEntries.map((entry) => [entry.purchaseOrderId, entry]))
+
+    for (const order of updatedOrders) {
+      const historyEntry = historyMap.get(order.id)
+      if (!historyEntry) {
+        continue
+      }
+
+      await createPurchaseOrderWorkflowNotifications({
+        event:
+          bulkStage === 'ea_approval'
+            ? action === 'approve'
+              ? 'ea_approved'
+              : action === 'deny'
+                ? 'ea_denied'
+                : 'ea_held'
+            : action === 'approve'
+              ? 'md_approved'
+              : action === 'deny'
+                ? 'md_denied'
+                : 'md_held',
+        order,
+        actor: {
+          id: appUser.id,
+          role: appUser.role,
+          brand: appUser.brand,
+          fullName: appUser.fullName,
+          email: appUser.email,
+        },
+        historyEntry,
+      })
+    }
+
+    const actionLabel = action === 'approve' ? 'approved' : action === 'deny' ? 'denied' : 'held'
 
     return NextResponse.json({
-      message: `Successfully ${action === 'approve' ? 'approved' : 'denied'} ${orderIds.length} orders`,
-      data,
-      count: orderIds.length
+      message: `Successfully ${actionLabel} ${updatedOrders.length} orders`,
+      data: updatedOrders,
+      count: updatedOrders.length,
     })
   } catch (error) {
     console.error('Error in POST /api/purchase-orders/bulk-approve:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-
-// Made with Bob

@@ -2,12 +2,13 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Save, Loader2, CreditCard, Receipt, FileText, CheckCircle2, TrendingUp, AlertTriangle, UploadCloud } from 'lucide-react'
+import { MultipleImageUpload } from './multiple-image-upload'
+import { Loader2, CreditCard, Receipt, CheckCircle2, TrendingUp, AlertTriangle, UploadCloud } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Stage5FormData {
@@ -19,7 +20,7 @@ interface Stage5FormData {
   paymentDate: string
   transactionReference: string
   accountsRemarks: string
-  accountsImages: File[]
+  accountsImages: Array<File | string>
 }
 
 interface Stage5Props {
@@ -37,7 +38,9 @@ interface Stage5Props {
   isLoading?: boolean
 }
 
-export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, isLoading }: Stage5Props) {
+type Stage5Field = keyof Stage5FormData
+
+export function Stage5Accounts({ orderDetails, initialData, onSubmit, isLoading }: Stage5Props) {
   const [formData, setFormData] = useState<Stage5FormData>({
     invoiceNumber: initialData?.invoiceNumber || '',
     invoiceDate: initialData?.invoiceDate || new Date().toISOString().split('T')[0],
@@ -47,12 +50,13 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
     paymentDate: initialData?.paymentDate || new Date().toISOString().split('T')[0],
     transactionReference: initialData?.transactionReference || '',
     accountsRemarks: initialData?.accountsRemarks || '',
-    accountsImages: []
+    accountsImages: initialData?.accountsImages || []
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [showAccountsUploads, setShowAccountsUploads] = useState((initialData?.accountsImages?.length || 0) > 0)
 
-  const updateField = (field: keyof Stage5FormData, value: any) => {
+  const updateField = (field: Stage5Field, value: Stage5FormData[Stage5Field]) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     if (errors[field]) {
       setErrors(prev => {
@@ -184,31 +188,35 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
 
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Attachments</Label>
-                <div className="group relative border-2 border-dashed border-slate-200 rounded-[2rem] p-8 bg-slate-50 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-100 hover:border-emerald-300 transition-all duration-300">
-                  <Input
-                    id="accountsImages"
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf"
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || [])
-                      updateField('accountsImages', files)
-                    }}
-                    className="hidden"
-                  />
-                  <Label htmlFor="accountsImages" className="cursor-pointer">
-                    <div className="flex flex-col items-center">
-                      <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                        <UploadCloud className="h-8 w-8 text-emerald-500" />
-                      </div>
-                      <p className="text-sm font-bold text-slate-700">
-                        {formData.accountsImages.length > 0
-                          ? `${formData.accountsImages.length} documents selected`
-                          : 'Upload Payment Proof or Invoice'}
+                <div className="rounded-[2rem] border border-slate-200 bg-slate-50 p-5">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">Upload Payment Proof or Invoice</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        Supports PDF, JPG, PNG (Max 10MB)
                       </p>
-                      <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-widest">Supports PDF, JPG, PNG (Max 10MB)</p>
                     </div>
-                  </Label>
+                    <Button
+                      type="button"
+                      variant={showAccountsUploads ? 'secondary' : 'outline'}
+                      onClick={() => setShowAccountsUploads((value) => !value)}
+                      className="rounded-2xl"
+                    >
+                      <UploadCloud className="mr-2 h-4 w-4" />
+                      {showAccountsUploads ? 'Hide Uploads' : 'Enable Uploads'}
+                    </Button>
+                  </div>
+
+                  {showAccountsUploads && (
+                    <div className="mt-4">
+                      <MultipleImageUpload
+                        label="Accounts Documents"
+                        images={formData.accountsImages}
+                        onImagesChange={(images) => updateField('accountsImages', images)}
+                        maxImages={10}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

@@ -1,14 +1,25 @@
 import { NextResponse } from 'next/server'
+import { desc, eq, isNull } from 'drizzle-orm'
+import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
-import { eq, isNull } from 'drizzle-orm'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
+function canAccessAdminPanel(role: string | null | undefined) {
+  return role === 'admin' || role === 'md'
+}
+
 // GET - Fetch all users
 export async function GET() {
   try {
+    const appUser = await getAuthenticatedAppUser()
+
+    if (!appUser || !canAccessAdminPanel(appUser.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const allUsers = await db.select({
       id: users.id,
       email: users.email,
@@ -19,7 +30,9 @@ export async function GET() {
       phoneNumber: users.phoneNumber,
       isActive: users.isActive,
       createdAt: users.createdAt,
-    }).from(users).where(isNull(users.deletedAt))
+    }).from(users)
+      .where(isNull(users.deletedAt))
+      .orderBy(desc(users.createdAt))
 
     return NextResponse.json(allUsers)
   } catch (error) {
@@ -31,6 +44,12 @@ export async function GET() {
 // POST - Create new user
 export async function POST(request: Request) {
   try {
+    const appUser = await getAuthenticatedAppUser()
+
+    if (!appUser || !canAccessAdminPanel(appUser.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { email, fullName, password, role, brand, department } = body
 
@@ -106,6 +125,12 @@ export async function POST(request: Request) {
 // PUT - Update user
 export async function PUT(request: Request) {
   try {
+    const appUser = await getAuthenticatedAppUser()
+
+    if (!appUser || !canAccessAdminPanel(appUser.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { id, ...updateData } = body
 
@@ -135,6 +160,12 @@ export async function PUT(request: Request) {
 // DELETE - Delete user from both Supabase Auth and database
 export async function DELETE(request: Request) {
   try {
+    const appUser = await getAuthenticatedAppUser()
+
+    if (!appUser || !canAccessAdminPanel(appUser.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 

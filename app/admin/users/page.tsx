@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { BRANCH_OPTIONS, type BranchValue } from '@/lib/branches'
 
 interface User {
   id: string
@@ -35,6 +36,8 @@ interface User {
   createdAt: string
 }
 
+type UserRole = User['role']
+
 export default function AdminUsersPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -43,14 +46,8 @@ export default function AdminUsersPage() {
   const [roleFilter, setRoleFilter] = useState<string>('all')
   const [users, setUsers] = useState<User[]>([])
   const [fetchingUsers, setFetchingUsers] = useState(true)
-  const [editingUser, setEditingUser] = useState<User | null>(null)
 
-  // Fetch users from API
-  useEffect(() => {
-    fetchUsers()
-  }, [])
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       setFetchingUsers(true)
       const response = await fetch('/api/admin/users')
@@ -63,13 +60,22 @@ export default function AdminUsersPage() {
     } finally {
       setFetchingUsers(false)
     }
-  }
+  }, [])
+
+  // Fetch users from API
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchUsers()
+    }, 0)
+
+    return () => window.clearTimeout(timer)
+  }, [fetchUsers])
 
   const [formData, setFormData] = useState({
     email: '',
     fullName: '',
     password: '',
-    role: 'viewer' as 'admin' | 'purchase_manager' | 'ea' | 'md' | 'accounts' | 'manager' | 'technician' | 'viewer',
+    role: 'viewer' as UserRole,
     brand: '',
     department: ''
   })
@@ -78,7 +84,7 @@ export default function AdminUsersPage() {
     id: '',
     email: '',
     fullName: '',
-    role: 'viewer' as 'admin' | 'purchase_manager' | 'ea' | 'md' | 'accounts' | 'manager' | 'technician' | 'viewer',
+    role: 'viewer' as UserRole,
     brand: '',
     department: '',
     isActive: true
@@ -107,7 +113,7 @@ export default function AdminUsersPage() {
         })
         alert('User created successfully!')
         // Refresh the user list
-        fetchUsers()
+        void fetchUsers()
       } else {
         const error = await response.json()
         alert(`Error: ${error.message}`)
@@ -121,7 +127,6 @@ export default function AdminUsersPage() {
   }
 
   const handleEditUser = (user: User) => {
-    setEditingUser(user)
     setEditFormData({
       id: user.id,
       email: user.email,
@@ -147,9 +152,8 @@ export default function AdminUsersPage() {
 
       if (response.ok) {
         setIsEditDialogOpen(false)
-        setEditingUser(null)
         alert('User updated successfully!')
-        fetchUsers()
+        void fetchUsers()
       } else {
         const error = await response.json()
         alert(`Error: ${error.error || 'Failed to update user'}`)
@@ -174,7 +178,7 @@ export default function AdminUsersPage() {
 
       if (response.ok) {
         alert('User deleted successfully!')
-        fetchUsers()
+        void fetchUsers()
       } else {
         const error = await response.json()
         alert(`Error: ${error.error || 'Failed to delete user'}`)
@@ -278,7 +282,7 @@ export default function AdminUsersPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="role" className="text-sm font-bold text-slate-700">Role</Label>
-                    <Select value={formData.role} onValueChange={(value: any) => setFormData({ ...formData, role: value })}>
+                    <Select value={formData.role} onValueChange={(value: UserRole) => setFormData({ ...formData, role: value })}>
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
@@ -298,19 +302,16 @@ export default function AdminUsersPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="brand" className="text-sm font-bold text-slate-700">Assigned Brand</Label>
-                    <Select value={formData.brand} onValueChange={(value: any) => setFormData({ ...formData, brand: value })}>
+                    <Select value={formData.brand} onValueChange={(value: BranchValue) => setFormData({ ...formData, brand: value })}>
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select brand" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
-                        <SelectItem value="kia" className="bg-white hover:bg-slate-50">AM Kia</SelectItem>
-                        <SelectItem value="tata" className="bg-white hover:bg-slate-50">AM Tata</SelectItem>
-                        <SelectItem value="hyundai" className="bg-white hover:bg-slate-50">AM Hyundai</SelectItem>
-                        <SelectItem value="honda" className="bg-white hover:bg-slate-50">AM Diamond Honda</SelectItem>
-                        <SelectItem value="ktm" className="bg-white hover:bg-slate-50">AM KTM</SelectItem>
-                        <SelectItem value="triumph" className="bg-white hover:bg-slate-50">AM Triumph</SelectItem>
-                        <SelectItem value="bajaj" className="bg-white hover:bg-slate-50">AM Bajaj</SelectItem>
-                        <SelectItem value="mg" className="bg-white hover:bg-slate-50">AM MG</SelectItem>
+                        {BRANCH_OPTIONS.map((branch) => (
+                          <SelectItem key={branch.value} value={branch.value} className="bg-white hover:bg-slate-50">
+                            {branch.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -384,7 +385,7 @@ export default function AdminUsersPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-role" className="text-sm font-bold text-slate-700">Role</Label>
-                    <Select value={editFormData.role} onValueChange={(value: any) => setEditFormData({ ...editFormData, role: value })}>
+                    <Select value={editFormData.role} onValueChange={(value: UserRole) => setEditFormData({ ...editFormData, role: value })}>
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
@@ -402,19 +403,16 @@ export default function AdminUsersPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-brand" className="text-sm font-bold text-slate-700">Assigned Brand</Label>
-                    <Select value={editFormData.brand} onValueChange={(value: any) => setEditFormData({ ...editFormData, brand: value })}>
+                    <Select value={editFormData.brand} onValueChange={(value: BranchValue) => setEditFormData({ ...editFormData, brand: value })}>
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select brand" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
-                        <SelectItem value="kia" className="bg-white hover:bg-slate-50">AM Kia</SelectItem>
-                        <SelectItem value="tata" className="bg-white hover:bg-slate-50">AM Tata</SelectItem>
-                        <SelectItem value="hyundai" className="bg-white hover:bg-slate-50">AM Hyundai</SelectItem>
-                        <SelectItem value="honda" className="bg-white hover:bg-slate-50">AM Diamond Honda</SelectItem>
-                        <SelectItem value="ktm" className="bg-white hover:bg-slate-50">AM KTM</SelectItem>
-                        <SelectItem value="triumph" className="bg-white hover:bg-slate-50">AM Triumph</SelectItem>
-                        <SelectItem value="bajaj" className="bg-white hover:bg-slate-50">AM Bajaj</SelectItem>
-                        <SelectItem value="mg" className="bg-white hover:bg-slate-50">AM MG</SelectItem>
+                        {BRANCH_OPTIONS.map((branch) => (
+                          <SelectItem key={branch.value} value={branch.value} className="bg-white hover:bg-slate-50">
+                            {branch.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

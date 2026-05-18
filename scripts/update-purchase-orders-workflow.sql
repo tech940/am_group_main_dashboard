@@ -140,15 +140,18 @@ DO $$ BEGIN
         'submitted',
         'vendor_info_pending',
         'awaiting_ea_approval',
-        'awaiting_md_approval',
         'ea_approved',
+        'ea_denied',
+        'awaiting_md_approval',
         'md_approved',
-        'approved',
-        'denied',
-        'grn_pending',
-        'accounts_pending',
+        'md_denied',
+        'awaiting_grn',
+        'awaiting_accounts',
         'completed',
-        'cancelled'
+        'cancelled',
+        'on_hold',
+        'ea_on_hold',
+        'md_on_hold'
     );
     
     -- Drop default first
@@ -162,9 +165,31 @@ DO $$ BEGIN
             WHEN 'draft' THEN 'submitted'::purchase_order_status
             WHEN 'pending_ea_approval' THEN 'awaiting_ea_approval'::purchase_order_status
             WHEN 'pending_management_approval' THEN 'awaiting_md_approval'::purchase_order_status
-            WHEN 'approved' THEN 'approved'::purchase_order_status
-            WHEN 'rejected' THEN 'denied'::purchase_order_status
+            WHEN 'approved' THEN 'awaiting_grn'::purchase_order_status
+            WHEN 'ea_approved' THEN 'awaiting_md_approval'::purchase_order_status
+            WHEN 'md_approved' THEN 'awaiting_grn'::purchase_order_status
+            WHEN 'rejected' THEN
+                CASE
+                    WHEN current_stage::text = 'md_approval' THEN 'md_denied'::purchase_order_status
+                    ELSE 'ea_denied'::purchase_order_status
+                END
+            WHEN 'denied' THEN
+                CASE
+                    WHEN current_stage::text = 'md_approval' THEN 'md_denied'::purchase_order_status
+                    ELSE 'ea_denied'::purchase_order_status
+                END
+            WHEN 'grn_pending' THEN 'awaiting_grn'::purchase_order_status
+            WHEN 'accounts_pending' THEN 'awaiting_accounts'::purchase_order_status
+            WHEN 'on_hold' THEN
+                CASE
+                    WHEN current_stage::text = 'md_approval' THEN 'md_on_hold'::purchase_order_status
+                    WHEN current_stage::text = 'ea_approval' THEN 'ea_on_hold'::purchase_order_status
+                    ELSE 'on_hold'::purchase_order_status
+                END
+            WHEN 'ea_on_hold' THEN 'ea_on_hold'::purchase_order_status
+            WHEN 'md_on_hold' THEN 'md_on_hold'::purchase_order_status
             WHEN 'completed' THEN 'completed'::purchase_order_status
+            WHEN 'cancelled' THEN 'cancelled'::purchase_order_status
             ELSE 'submitted'::purchase_order_status
         END;
     
@@ -182,6 +207,7 @@ ALTER TABLE purchase_orders
 ADD COLUMN IF NOT EXISTS images_required BOOLEAN DEFAULT false,
 ADD COLUMN IF NOT EXISTS supporting_images JSONB DEFAULT '[]'::jsonb,
 ADD COLUMN IF NOT EXISTS vendor_images JSONB DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS vendor_details JSONB DEFAULT '[]'::jsonb,
 ADD COLUMN IF NOT EXISTS grn_images JSONB DEFAULT '[]'::jsonb,
 ADD COLUMN IF NOT EXISTS accounts_images JSONB DEFAULT '[]'::jsonb,
 ADD COLUMN IF NOT EXISTS ea_approval_status TEXT,
@@ -189,7 +215,7 @@ ADD COLUMN IF NOT EXISTS ea_approval_remarks TEXT,
 ADD COLUMN IF NOT EXISTS md_approval_status TEXT,
 ADD COLUMN IF NOT EXISTS md_approval_remarks TEXT,
 ADD COLUMN IF NOT EXISTS md_approved_by UUID REFERENCES users(id),
-ADD COLUMN IF NOT EXISTS md_approved_at TIMESTAMP,
+ADD COLUMN IF NOT EXISTS md_approved_at TIMESTAMPTZ,
 ADD COLUMN IF NOT EXISTS assigned_to UUID REFERENCES users(id),
 ADD COLUMN IF NOT EXISTS workflow_locked BOOLEAN DEFAULT false;
 
@@ -206,7 +232,7 @@ CREATE TABLE IF NOT EXISTS workflow_history (
     previous_status TEXT,
     new_status TEXT,
     metadata JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMP DEFAULT NOW() NOT NULL
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
 -- Create index for faster queries
@@ -225,9 +251,9 @@ CREATE TABLE IF NOT EXISTS purchase_order_approvals (
     approver_id UUID REFERENCES users(id) NOT NULL,
     status TEXT NOT NULL, -- 'pending', 'approved', 'denied'
     remarks TEXT,
-    approved_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-    updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+    approved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
 -- Create indexes

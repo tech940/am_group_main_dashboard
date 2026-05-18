@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, Shield } from 'lucide-react'
+import { Loader2, Shield } from 'lucide-react'
 
 interface User {
   id: string
@@ -32,11 +31,6 @@ export default function RoleManagementPage() {
   const [isSaving, setIsSaving] = useState<string | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
 
-  useEffect(() => {
-    fetchCurrentUser()
-    fetchUsers()
-  }, [])
-
   const fetchCurrentUser = async () => {
     try {
       const response = await fetch('/api/auth/user')
@@ -55,7 +49,7 @@ export default function RoleManagementPage() {
       const response = await fetch('/api/admin/users')
       if (response.ok) {
         const data = await response.json()
-        setUsers(data.users || [])
+        setUsers(Array.isArray(data) ? data : data.users || [])
       }
     } catch (error) {
       console.error('Error fetching users:', error)
@@ -64,13 +58,24 @@ export default function RoleManagementPage() {
     }
   }
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchCurrentUser()
+      void fetchUsers()
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [])
+
   const updateUserRole = async (userId: string, newRole: string) => {
     try {
       setIsSaving(userId)
       const response = await fetch('/api/admin/users', {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, role: newRole })
+        body: JSON.stringify({ id: userId, role: newRole })
       })
 
       if (response.ok) {
@@ -96,14 +101,14 @@ export default function RoleManagementPage() {
     return ROLES.find(r => r.value === role)?.label || role
   }
 
-  if (currentUserRole !== 'admin') {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'md') {
     return (
       <MainLayout>
         <Card className="border-2 border-red-300 bg-red-50">
           <CardContent className="p-6 text-center">
             <Shield className="h-12 w-12 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-red-800 mb-2">Access Denied</h2>
-            <p className="text-red-700">Only administrators can access role management.</p>
+            <p className="text-red-700">Only administrators and MD can access role management.</p>
           </CardContent>
         </Card>
       </MainLayout>

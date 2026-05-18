@@ -11,10 +11,15 @@ const globalForDb = globalThis as unknown as {
 const client = globalForDb.postgresClient ?? postgres(env.database.url, {
   prepare: false, // Required for Supabase Transaction Mode pooler (PgBouncer)
   ssl: { rejectUnauthorized: false },
-  max: 3, // Keep low — Supavisor manages connections server-side
-  idle_timeout: 20,
-  connect_timeout: 30,
+  max: 10, // Increased for concurrent requests (was 3)
+  idle_timeout: 60, // Increased to prevent premature connection drops (was 20)
+  connect_timeout: 60, // Increased for slow networks (was 30)
+  max_lifetime: 60 * 30, // 30 minutes - recycle connections periodically
   onnotice: () => {}, // Ignore notices
+  // Add connection retry logic
+  connection: {
+    application_name: 'main_dashboard',
+  },
 })
 
 // In development, store the client on globalThis so HMR reuses it

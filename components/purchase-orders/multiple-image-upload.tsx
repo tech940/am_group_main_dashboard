@@ -1,17 +1,86 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { FileText, Image as ImageIcon, RefreshCw, Upload, X, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Upload, X, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface MultipleImageUploadProps {
   label: string
-  images: File[]
-  onImagesChange: (images: File[]) => void
+  images: Array<File | string>
+  onImagesChange: (images: Array<File | string>) => void
   maxImages?: number
   required?: boolean
+}
+
+interface PreviewItem {
+  id: string
+  file: File | string
+  name: string
+  src: string | null
+  isImage: boolean
+  isPdf: boolean
+  sizeLabel: string | null
+}
+
+const filePreviewUrls = new WeakMap<File, string>()
+
+function isBrowserFile(value: File | string): value is File {
+  return typeof File !== 'undefined' && value instanceof File
+}
+
+function getFilePreviewUrl(file: File) {
+  const existingUrl = filePreviewUrls.get(file)
+  if (existingUrl) {
+    return existingUrl
+  }
+
+  const nextUrl = URL.createObjectURL(file)
+  filePreviewUrls.set(file, nextUrl)
+  return nextUrl
+}
+
+function isPdfUrl(value: string) {
+  return value.toLowerCase().split('?')[0].endsWith('.pdf')
+}
+
+function isImageUrl(value: string) {
+  return /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(value.toLowerCase().split('?')[0])
+}
+
+function getFileName(file: File | string, index: number) {
+  if (isBrowserFile(file)) {
+    return file.name
+  }
+
+  try {
+    return decodeURIComponent(file.split('/').pop()?.split('?')[0] || `Uploaded file ${index + 1}`)
+  } catch {
+    return file.split('/').pop()?.split('?')[0] || `Uploaded file ${index + 1}`
+  }
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getRejectedFiles(files: File[]) {
+  return files.filter((file) => {
+    const isAllowedType = file.type.startsWith('image/') || file.type === 'application/pdf'
+    const isUnder10MB = file.size <= 10 * 1024 * 1024
+    return !isAllowedType || !isUnder10MB
+  })
+}
+
+function getValidFiles(files: File[]) {
+  return files.filter((file) => {
+    const isAllowedType = file.type.startsWith('image/') || file.type === 'application/pdf'
+    const isUnder10MB = file.size <= 10 * 1024 * 1024
+    return isAllowedType && isUnder10MB
+  })
 }
 
 export function MultipleImageUpload({
@@ -19,171 +88,275 @@ export function MultipleImageUpload({
   images,
   onImagesChange,
   maxImages = 10,
-  required = false
+  required = false,
 }: MultipleImageUploadProps) {
-  const [showUpload, setShowUpload] = useState(false)
+  const [showUpload, setShowUpload] = useState(images.length === 0)
   const [dragActive, setDragActive] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    const validFiles = files.filter(file => {
-      const isImage = file.type.startsWith('image/') || file.type === 'application/pdf'
-      const isUnder10MB = file.size <= 10 * 1024 * 1024
-      return isImage && isUnder10MB
+  const previews = useMemo<PreviewItem[]>(() => (
+    images.map((file, index) => {
+      const isFile = isBrowserFile(file)
+      const isImage = isFile ? file.type.startsWith('image/') : isImageUrl(file) || !isPdfUrl(file)
+      const isPdf = isFile ? file.type === 'application/pdf' : isPdfUrl(file)
+
+      return {
+        id: `${index}-${getFileName(file, index)}`,
+        file,
+        name: getFileName(file, index),
+        src: isFile && isImage ? getFilePreviewUrl(file) : typeof file === 'string' ? file : null,
+        isImage,
+        isPdf,
+        sizeLabel: isFile ? formatFileSize(file.size) : null,
+      }
     })
+  ), [images])
+
+  const selectedPreview = selectedIndex === null ? null : previews[selectedIndex] || null
+
+  const addFiles = (files: File[]) => {
+    const rejectedFiles = getRejectedFiles(files)
+    const validFiles = getValidFiles(files)
+
+    if (rejectedFiles.length > 0) {
+      alert('Some files were skipped. Only images or PDFs up to 10MB are allowed.')
+    }
+
+    if (validFiles.length === 0) {
+      return
+    }
 
     if (images.length + validFiles.length > maxImages) {
       alert(`Maximum ${maxImages} files allowed`)
       return
     }
 
+    setShowUpload(true)
     onImagesChange([...images, ...validFiles])
+  }
+
+  const replaceImage = (index: number, file: File | undefined) => {
+    if (!file) {
+      return
+    }
+
+    const [validFile] = getValidFiles([file])
+    if (!validFile) {
+      alert('Only images or PDFs up to 10MB are allowed.')
+      return
+    }
+
+    onImagesChange(images.map((current, currentIndex) => (
+      currentIndex === index ? validFile : current
+    )))
   }
 
   const removeImage = (index: number) => {
-    const newImages = images.filter((_, i) => i !== index)
-    onImagesChange(newImages)
-    if (newImages.length === 0) {
-      setShowUpload(false)
-    }
-  }
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true)
-    } else if (e.type === 'dragleave') {
-      setDragActive(false)
-    }
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
-
-    const files = Array.from(e.dataTransfer.files)
-    const validFiles = files.filter(file => {
-      const isImage = file.type.startsWith('image/') || file.type === 'application/pdf'
-      const isUnder10MB = file.size <= 10 * 1024 * 1024
-      return isImage && isUnder10MB
+    const nextImages = images.filter((_, currentIndex) => currentIndex !== index)
+    onImagesChange(nextImages)
+    setSelectedIndex((current) => {
+      if (current === null) return null
+      if (current === index) return null
+      return current > index ? current - 1 : current
     })
-
-    if (images.length + validFiles.length > maxImages) {
-      alert(`Maximum ${maxImages} files allowed`)
-      return
+    if (nextImages.length === 0) {
+      setShowUpload(true)
     }
-
-    onImagesChange([...images, ...validFiles])
   }
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    addFiles(Array.from(event.target.files || []))
+    event.target.value = ''
+  }
+
+  const handleDrag = (event: React.DragEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setDragActive(event.type === 'dragenter' || event.type === 'dragover')
+  }
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setDragActive(false)
+    addFiles(Array.from(event.dataTransfer.files || []))
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Label className="text-sm font-bold text-slate-800">
           {label} {required && <span className="text-red-500">*</span>}
         </Label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={showUpload}
-            onChange={(e) => {
-              setShowUpload(e.target.checked)
-              if (!e.target.checked) {
-                onImagesChange([])
-              }
-            }}
-            className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
-          />
-          <span className="text-sm text-slate-600">Upload Supporting Images</span>
-        </label>
+        <Button
+          type="button"
+          variant={showUpload ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => setShowUpload((value) => !value)}
+          className="rounded-xl"
+        >
+          <Upload className="mr-2 h-4 w-4" />
+          {showUpload ? 'Hide Uploader' : 'Add More'}
+        </Button>
       </div>
 
-      {showUpload && (
-        <div className="space-y-3">
-          {/* Upload Area */}
-          {images.length < maxImages && (
+      {showUpload && images.length < maxImages && (
+        <div
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+          className={cn(
+            'relative rounded-2xl border-2 border-dashed p-6 transition-all duration-200',
+            dragActive
+              ? 'border-teal-500 bg-teal-50 shadow-inner'
+              : 'border-slate-300 bg-white hover:border-teal-400 hover:bg-teal-50/40'
+          )}
+        >
+          <input
+            type="file"
+            multiple
+            accept="image/*,.pdf"
+            onChange={handleFileChange}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            aria-label={`Upload ${label}`}
+          />
+          <div className="text-center">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+              <Upload className="h-7 w-7" />
+            </div>
+            <p className="text-sm font-bold text-slate-800">Click to upload or drag and drop</p>
+            <p className="mt-1 text-xs text-slate-500">Images or PDF, 10MB each</p>
+            <p className="mt-2 text-[11px] font-black uppercase tracking-widest text-slate-400">
+              {images.length} / {maxImages} uploaded
+            </p>
+          </div>
+        </div>
+      )}
+
+      {images.length >= maxImages && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+          Maximum {maxImages} files added. Delete or replace an existing file to upload another.
+        </div>
+      )}
+
+      {previews.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {previews.map((preview, index) => (
             <div
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-              className={cn(
-                'relative border-2 border-dashed rounded-lg p-6 transition-colors',
-                dragActive
-                  ? 'border-teal-500 bg-teal-50'
-                  : 'border-slate-300 hover:border-teal-400'
-              )}
+              key={preview.id}
+              className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-lg"
             >
-              <input
-                type="file"
-                multiple
-                accept="image/*,.pdf"
-                onChange={handleFileChange}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              />
-              <div className="text-center">
-                <Upload className="h-10 w-10 mx-auto text-slate-400 mb-3" />
-                <p className="text-sm font-medium text-slate-700 mb-1">
-                  Click to upload or drag and drop
-                </p>
-                <p className="text-xs text-slate-500">
-                  Images or PDF (Max {maxImages} files, 10MB each)
-                </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  {images.length} / {maxImages} files uploaded
-                </p>
+              <button
+                type="button"
+                onClick={() => setSelectedIndex(index)}
+                className="relative block aspect-square w-full overflow-hidden bg-slate-100"
+              >
+                {preview.isImage && preview.src ? (
+                  <img
+                    src={preview.src}
+                    alt={preview.name}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    onError={(event) => {
+                      event.currentTarget.style.display = 'none'
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-slate-500">
+                    {preview.isPdf ? <FileText className="h-9 w-9" /> : <ImageIcon className="h-9 w-9" />}
+                    <span className="text-xs font-bold uppercase tracking-widest">
+                      {preview.isPdf ? 'PDF' : 'File'}
+                    </span>
+                  </div>
+                )}
+                <span className="absolute inset-x-2 bottom-2 rounded-xl bg-slate-950/70 px-2 py-1 text-center text-[10px] font-black uppercase tracking-widest text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
+                  Click to preview
+                </span>
+              </button>
+
+              <div className="space-y-3 p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold text-slate-800">{preview.name}</p>
+                  <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                    {preview.sizeLabel || 'Saved file'}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label
+                    className="inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-colors hover:bg-slate-50"
+                    title="Replace"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      className="sr-only"
+                      onChange={(event) => {
+                        replaceImage(index, event.target.files?.[0])
+                        event.target.value = ''
+                      }}
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => removeImage(index)}
+                    className="h-9 rounded-xl border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700"
+                    title="Delete"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
-          )}
+          ))}
+        </div>
+      )}
 
-          {/* Image Preview Grid */}
-          {images.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {images.map((file, index) => (
-                <div
-                  key={index}
-                  className="relative group bg-slate-50 rounded-lg border border-slate-200 p-2"
-                >
-                  <div className="aspect-square rounded-md bg-slate-100 flex items-center justify-center overflow-hidden">
-                    {file.type.startsWith('image/') ? (
-                      <img
-                        src={URL.createObjectURL(file)}
-                        alt={file.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center">
-                        <ImageIcon className="h-8 w-8 text-slate-400 mb-1" />
-                        <span className="text-xs text-slate-500">PDF</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-2">
-                    <p className="text-xs font-medium text-slate-700 truncate">
-                      {file.name}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {formatFileSize(file.size)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => removeImage(index)}
-                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
+      {selectedPreview && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+          <div className="relative max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-slate-900">{selectedPreview.name}</p>
+                <p className="text-xs text-slate-500">{selectedPreview.sizeLabel || 'Saved file'}</p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setSelectedIndex(null)}
+                className="rounded-xl"
+                aria-label="Close preview"
+              >
+                <X className="h-5 w-5" />
+              </Button>
             </div>
-          )}
+
+            <div className="flex max-h-[calc(90vh-76px)] items-center justify-center bg-slate-950 p-4">
+              {selectedPreview.isImage && selectedPreview.src ? (
+                <img
+                  src={selectedPreview.src}
+                  alt={selectedPreview.name}
+                  className="max-h-[calc(90vh-108px)] max-w-full rounded-2xl object-contain"
+                />
+              ) : selectedPreview.src ? (
+                <iframe
+                  src={selectedPreview.src}
+                  title={selectedPreview.name}
+                  className="h-[calc(90vh-108px)] w-full rounded-2xl bg-white"
+                />
+              ) : (
+                <div className="rounded-2xl bg-white p-8 text-center">
+                  <FileText className="mx-auto mb-3 h-10 w-10 text-slate-400" />
+                  <p className="text-sm font-semibold text-slate-700">Preview is not available for this file.</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

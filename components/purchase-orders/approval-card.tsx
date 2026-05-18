@@ -1,23 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
-import { 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
-  User,
-  Calendar,
-  Package,
-  Building2,
-  FileText,
-  DollarSign,
-  MessageSquare
-} from 'lucide-react'
+import { CheckCircle, Loader2, MessageSquare, XCircle } from 'lucide-react'
+import { WorkflowStatusCard } from '@/components/purchase-orders/workflow-status-card'
+import { formatWorkflowStageLabel, getWorkflowStatusPresentation } from '@/components/purchase-orders/workflow-card-theme'
+import { formatIndiaDateTime } from '@/lib/date-time'
 
 interface PurchaseOrder {
   id: string
@@ -53,9 +42,11 @@ export function ApprovalCard({ order, userRole, onApprove, onReject }: ApprovalC
     if (userRole === 'ea' && (!order.ea_approval || order.ea_approval === 'pending')) {
       return true
     }
+
     if (userRole === 'management' && order.ea_approval === 'approved' && (!order.management_approval || order.management_approval === 'pending')) {
       return true
     }
+
     return false
   }
 
@@ -74,6 +65,7 @@ export function ApprovalCard({ order, userRole, onApprove, onReject }: ApprovalC
       alert('Please provide remarks for rejection')
       return
     }
+
     setIsLoading(true)
     try {
       await onReject(order.id, remarks)
@@ -83,177 +75,91 @@ export function ApprovalCard({ order, userRole, onApprove, onReject }: ApprovalC
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const statusConfig: Record<string, { color: string; label: string }> = {
-      draft: { color: 'bg-slate-100 text-slate-700', label: 'Draft' },
-      pending_ea_approval: { color: 'bg-yellow-100 text-yellow-700', label: 'Pending EA Approval' },
-      pending_management_approval: { color: 'bg-orange-100 text-orange-700', label: 'Pending Management Approval' },
-      approved: { color: 'bg-green-100 text-green-700', label: 'Approved' },
-      rejected: { color: 'bg-red-100 text-red-700', label: 'Rejected' },
-      completed: { color: 'bg-blue-100 text-blue-700', label: 'Completed' }
-    }
-    const config = statusConfig[status] || statusConfig.draft
-    return <Badge className={cn('font-semibold', config.color)}>{config.label}</Badge>
-  }
-
-  const getApprovalIcon = (approval?: string) => {
-    if (approval === 'approved') return <CheckCircle className="h-5 w-5 text-green-500" />
-    if (approval === 'rejected') return <XCircle className="h-5 w-5 text-red-500" />
-    return <Clock className="h-5 w-5 text-yellow-500" />
-  }
+  const status = getWorkflowStatusPresentation(order.status)
+  const timestampLabel = formatIndiaDateTime(order.created_at, {
+    year: 'numeric',
+  })
 
   return (
-    <Card className="border-none shadow-xl hover:shadow-2xl transition-shadow">
-      <CardHeader className="bg-gradient-to-r from-slate-700 to-slate-800 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-lg font-black">{order.order_number}</CardTitle>
-            <p className="text-xs text-slate-300 mt-1">
-              Created: {new Date(order.created_at).toLocaleDateString('en-IN')}
-            </p>
-          </div>
-          {getStatusBadge(order.status)}
-        </div>
-      </CardHeader>
-      <CardContent className="p-6 space-y-4">
-        {/* Order Details */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex items-start gap-2">
-            <Building2 className="h-4 w-4 text-slate-500 mt-0.5" />
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">Department</p>
-              <p className="text-sm font-medium text-slate-700">{order.department || 'N/A'}</p>
-              {order.sub_department && (
-                <p className="text-xs text-slate-500">{order.sub_department}</p>
-              )}
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-2">
-            <User className="h-4 w-4 text-slate-500 mt-0.5" />
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">Requested By</p>
-              <p className="text-sm font-medium text-slate-700">{order.requested_by || 'N/A'}</p>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-2">
-            <Package className="h-4 w-4 text-slate-500 mt-0.5" />
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">Quantity</p>
-              <p className="text-sm font-medium text-slate-700">{order.quantity_required || 'N/A'}</p>
-            </div>
-          </div>
-          
-          {order.amount && (
-            <div className="flex items-start gap-2">
-              <DollarSign className="h-4 w-4 text-slate-500 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase">Amount</p>
-                <p className="text-sm font-medium text-slate-700">₹{parseFloat(order.amount).toLocaleString('en-IN')}</p>
+    <WorkflowStatusCard
+      orderNumber={order.order_number}
+      statusLabel={status.label}
+      stageLabel={formatWorkflowStageLabel(order.current_stage)}
+      description={order.special_instructions || order.vendor_name || 'Approval review pending'}
+      departmentLine={`${order.department || 'Department'}${order.sub_department ? ` - ${order.sub_department}` : ''}`}
+      timestampLabel={timestampLabel}
+      tone={status.tone}
+      metrics={[
+        {
+          label: 'Requested By',
+          value: order.requested_by || 'Not specified',
+          icon: 'requester',
+        },
+        {
+          label: 'Vendor',
+          value: order.vendor_name || 'Awaiting vendor details',
+          icon: 'assignee',
+        },
+        {
+          label: 'Quantity',
+          value: order.quantity_required || 'N/A',
+          icon: 'quantity',
+        },
+        {
+          label: 'Estimate',
+          value: order.amount ? `Rs ${parseFloat(order.amount).toLocaleString('en-IN')}` : 'Not shared',
+          icon: 'time',
+        },
+      ]}
+      actions={(
+        <div className="space-y-3">
+          {(order.ea_remarks || order.management_remarks) && (
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-3 text-sm text-white/90">
+              <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/65">
+                <MessageSquare className="h-3.5 w-3.5" />
+                Latest remarks
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* Special Instructions */}
-        {order.special_instructions && (
-          <div className="bg-slate-50 p-3 rounded-lg">
-            <div className="flex items-start gap-2">
-              <FileText className="h-4 w-4 text-slate-500 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Special Instructions</p>
-                <p className="text-sm text-slate-700">{order.special_instructions}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Vendor Information */}
-        {order.vendor_name && (
-          <div className="bg-blue-50 p-3 rounded-lg">
-            <div className="flex items-start gap-2">
-              <Building2 className="h-4 w-4 text-blue-600 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-xs font-semibold text-blue-600 uppercase mb-1">Vendor</p>
-                <p className="text-sm text-slate-700">{order.vendor_name}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Approval Status */}
-        <div className="border-t pt-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {getApprovalIcon(order.ea_approval)}
-              <span className="text-sm font-semibold text-slate-700">EA Approval</span>
-            </div>
-            <span className="text-xs font-medium text-slate-500">
-              {order.ea_approval === 'approved' ? 'Approved' : order.ea_approval === 'rejected' ? 'Rejected' : 'Pending'}
-            </span>
-          </div>
-          {order.ea_remarks && (
-            <div className="ml-7 bg-slate-50 p-2 rounded text-xs text-slate-600">
-              <MessageSquare className="h-3 w-3 inline mr-1" />
-              {order.ea_remarks}
+              {order.management_remarks || order.ea_remarks}
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {getApprovalIcon(order.management_approval)}
-              <span className="text-sm font-semibold text-slate-700">Management Approval</span>
-            </div>
-            <span className="text-xs font-medium text-slate-500">
-              {order.management_approval === 'approved' ? 'Approved' : order.management_approval === 'rejected' ? 'Rejected' : 'Pending'}
-            </span>
-          </div>
-          {order.management_remarks && (
-            <div className="ml-7 bg-slate-50 p-2 rounded text-xs text-slate-600">
-              <MessageSquare className="h-3 w-3 inline mr-1" />
-              {order.management_remarks}
-            </div>
-          )}
-        </div>
-
-        {/* Approval Actions */}
-        {canApprove() && (
-          <div className="border-t pt-4 space-y-3">
-            <div>
-              <Label htmlFor={`remarks-${order.id}`}>Remarks</Label>
-              <textarea
-                id={`remarks-${order.id}`}
+          {canApprove() && (
+            <>
+              <Textarea
                 value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Enter your remarks (optional for approval, required for rejection)"
-                rows={3}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm mt-1"
+                onChange={(event) => setRemarks(event.target.value)}
+                placeholder="Enter remarks. Optional for approval, required for rejection."
+                className="min-h-24 rounded-2xl border-white/15 bg-white/10 text-white placeholder:text-white/55 focus-visible:ring-white/30"
               />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={handleApprove}
-                disabled={isLoading}
-                className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
-              >
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Approve
-              </Button>
-              <Button
-                onClick={handleReject}
-                disabled={isLoading}
-                variant="destructive"
-                className="flex-1"
-              >
-                <XCircle className="h-4 w-4 mr-2" />
-                Reject
-              </Button>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  onClick={() => void handleApprove()}
+                  disabled={isLoading}
+                  className="rounded-2xl bg-white text-emerald-800 hover:bg-emerald-50"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Approve
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={() => void handleReject()}
+                  disabled={isLoading}
+                  className="rounded-2xl bg-rose-500 text-white hover:bg-rose-600"
+                >
+                  <XCircle className="mr-2 h-4 w-4" />
+                  Reject
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    />
   )
 }
 

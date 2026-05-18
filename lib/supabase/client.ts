@@ -4,6 +4,13 @@ import { env } from '@/config/env-config'
 export function createClient() {
   return createBrowserClient(
     env.supabase.url,
-    env.supabase.anonKey
+    env.supabase.anonKey,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    }
   )
 }

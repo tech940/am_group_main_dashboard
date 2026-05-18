@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
@@ -8,7 +8,7 @@ export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
 export const inventoryStatusEnum = pgEnum('inventory_status', ['in_stock', 'out_of_stock', 'low_stock', 'discontinued'])
 export const purchaseOrderStageEnum = pgEnum('purchase_order_stage', ['initial_submission', 'vendor_information', 'ea_approval', 'md_approval', 'grn', 'accounts'])
-export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['submitted', 'vendor_info_pending', 'awaiting_ea_approval', 'ea_approved', 'ea_denied', 'awaiting_md_approval', 'md_approved', 'md_denied', 'awaiting_grn', 'awaiting_accounts', 'completed', 'cancelled'])
+export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['submitted', 'vendor_info_pending', 'awaiting_ea_approval', 'ea_approved', 'ea_denied', 'awaiting_md_approval', 'md_approved', 'md_denied', 'awaiting_grn', 'awaiting_accounts', 'completed', 'cancelled', 'on_hold', 'ea_on_hold', 'md_on_hold'])
 export const paymentModeEnum = pgEnum('payment_mode', ['cash', 'cheque', 'bank_transfer', 'upi', 'credit_card', 'other'])
 
 // Users table (extends Supabase auth.users)
@@ -23,9 +23,9 @@ export const users = pgTable('users', {
   phoneNumber: text('phone_number'),
   avatarUrl: text('avatar_url'),
   isActive: boolean('is_active').default(true).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-  deletedAt: timestamp('deleted_at'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
 // Permissions table
@@ -193,10 +193,20 @@ export const notifications = pgTable('notifications', {
   message: text('message').notNull(),
   type: text('type').notNull(), // 'info', 'success', 'warning', 'error'
   actionUrl: text('action_url'),
+  purchaseOrderId: uuid('purchase_order_id'),
+  referenceNumber: text('reference_number'),
+  workflowStage: text('workflow_stage'),
+  targetRole: roleEnum('target_role'),
+  dedupeKey: text('dedupe_key').notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
   isRead: boolean('is_read').default(false).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  readAt: timestamp('read_at'),
-})
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  readAt: timestamp('read_at', { withTimezone: true }),
+}, (table) => ({
+  notificationsUserReadCreatedIdx: index('notifications_user_read_created_idx').on(table.userId, table.isRead, table.createdAt),
+  notificationsPurchaseOrderIdx: index('notifications_purchase_order_idx').on(table.purchaseOrderId),
+  notificationsUserDedupeIdx: uniqueIndex('notifications_user_dedupe_idx').on(table.userId, table.dedupeKey),
+}))
 
 // Activity logs table
 export const activityLogs = pgTable('activity_logs', {
@@ -233,6 +243,13 @@ export const businessExcellenceData = pgTable('business_excellence_am_kia_new', 
   uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 })
 
+export type PurchaseOrderVendorOption = {
+  key: 'vendorA' | 'vendorB' | 'vendorC'
+  label: string
+  name: string
+  images: string[]
+}
+
 // Purchase Orders table
 export const purchaseOrders = pgTable('purchase_orders', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -255,6 +272,7 @@ export const purchaseOrders = pgTable('purchase_orders', {
   // Stage 2: Vendor Information (Purchase Manager)
   vendorName: text('vendor_name'),
   vendorImages: jsonb('vendor_images').$type<string[]>().default([]),
+  vendorDetails: jsonb('vendor_details').$type<PurchaseOrderVendorOption[]>().default([]),
   quotation1Url: text('quotation_1_url'),
   quotation2Url: text('quotation_2_url'),
   quotation3Url: text('quotation_3_url'),
@@ -262,16 +280,23 @@ export const purchaseOrders = pgTable('purchase_orders', {
   // Stage 3: EA & MD Approvals
   eaApprovalStatus: text('ea_approval_status'), // 'pending', 'approved', 'denied'
   eaApprovedBy: uuid('ea_approved_by').references(() => users.id),
-  eaApprovedAt: timestamp('ea_approved_at'),
+  eaApprovedAt: timestamp('ea_approved_at', { withTimezone: true }),
   eaApprovalRemarks: text('ea_approval_remarks'),
+  eaHeldAt: timestamp('ea_held_at', { withTimezone: true }),
+  eaHeldBy: uuid('ea_held_by').references(() => users.id),
   
   mdApprovalStatus: text('md_approval_status'), // 'pending', 'approved', 'denied'
   mdApprovedBy: uuid('md_approved_by').references(() => users.id),
-  mdApprovedAt: timestamp('md_approved_at'),
+  mdApprovedAt: timestamp('md_approved_at', { withTimezone: true }),
   mdApprovalRemarks: text('md_approval_remarks'),
+  mdHeldAt: timestamp('md_held_at', { withTimezone: true }),
+  mdHeldBy: uuid('md_held_by').references(() => users.id),
+  
+  // Hold management
+  holdRemarks: text('hold_remarks'),
   
   // Stage 4: GRN (Purchase Manager)
-  receivedDateTime: timestamp('received_date_time'),
+  receivedDateTime: timestamp('received_date_time', { withTimezone: true }),
   handoverTo: text('handover_to'),
   remarksIfAny: text('remarks_if_any'),
   amount: decimal('amount', { precision: 12, scale: 2 }),
@@ -295,11 +320,26 @@ export const purchaseOrders = pgTable('purchase_orders', {
   // Metadata
   createdBy: uuid('created_by').references(() => users.id).notNull(),
   brand: text('brand'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-  completedAt: timestamp('completed_at'),
-  deletedAt: timestamp('deleted_at'),
+  rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
+
+// User Preferences table
+export const userPreferences = pgTable('user_preferences', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  preferenceKey: text('preference_key').notNull(),
+  preferenceValue: jsonb('preference_value').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  userPreferencesUniqueIdx: uniqueIndex('user_preferences_user_key_idx').on(table.userId, table.preferenceKey),
+  userPreferencesUserIdIdx: index('user_preferences_user_id_idx').on(table.userId),
+  userPreferencesKeyIdx: index('user_preferences_key_idx').on(table.preferenceKey),
+}))
 
 // Workflow History table
 export const workflowHistory = pgTable('workflow_history', {
@@ -312,8 +352,8 @@ export const workflowHistory = pgTable('workflow_history', {
   remarks: text('remarks'),
   previousStatus: text('previous_status'),
   newStatus: text('new_status'),
-  metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 // Purchase Order Approvals table
@@ -324,9 +364,9 @@ export const purchaseOrderApprovals = pgTable('purchase_order_approvals', {
   approverId: uuid('approver_id').references(() => users.id).notNull(),
   status: text('status').notNull(), // 'pending', 'approved', 'denied'
   remarks: text('remarks'),
-  approvedAt: timestamp('approved_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 // Relations
@@ -439,6 +479,21 @@ export const purchaseOrdersRelations = relations(purchaseOrders, ({ one }) => ({
   }),
   mdApprover: one(users, {
     fields: [purchaseOrders.mdApprovedBy],
+    references: [users.id],
+  }),
+  eaHolder: one(users, {
+    fields: [purchaseOrders.eaHeldBy],
+    references: [users.id],
+  }),
+  mdHolder: one(users, {
+    fields: [purchaseOrders.mdHeldBy],
+    references: [users.id],
+  }),
+}))
+
+export const userPreferencesRelations = relations(userPreferences, ({ one }) => ({
+  user: one(users, {
+    fields: [userPreferences.userId],
     references: [users.id],
   }),
 }))
