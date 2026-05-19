@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { RemarksDialog } from './remarks-dialog'
 import { usePurchaseOrdersViewPreference } from '@/lib/hooks/use-user-preferences'
+import { formatIndiaDateTime } from '@/lib/date-time'
 import { cn } from '@/lib/utils'
 
 interface PurchaseOrder {
@@ -98,15 +99,13 @@ function hasRenderableValue(value: unknown) {
 }
 
 function formatDate(dateString: string) {
-  try {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    })
-  } catch {
-    return dateString
-  }
+  // Use the timezone-aware formatter from lib/date-time.ts
+  const formatted = formatIndiaDateTime(dateString, {
+    year: 'numeric',
+    day: '2-digit',
+    month: 'short',
+  })
+  return formatted || dateString
 }
 
 function formatCurrency(value: unknown) {

@@ -3,13 +3,14 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTopLoader } from 'nextjs-toploader'
-import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, LayoutGrid, Table } from 'lucide-react'
+import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, LayoutGrid, Table, TableProperties } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ImageGallery } from '@/components/purchase-orders/image-gallery'
 import { MDGridView } from '@/components/purchase-orders/md-grid-view'
 import { MDTableView } from '@/components/purchase-orders/md-table-view'
+import { POTableView } from '@/components/purchase-orders/po-table-view'
 import { Stage1InitialSubmission } from '@/components/purchase-orders/stage1-initial-submission'
 import { usePurchaseOrdersViewPreference } from '@/lib/hooks/use-user-preferences'
 import {
@@ -355,6 +356,7 @@ function PurchaseOrdersPageContent() {
   const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
   const [isSwitchingView, setIsSwitchingView] = useState(false)
+  const [showPOTableView, setShowPOTableView] = useState(false)
 
   // View mode preference for MD/EA users
   const { value: viewMode, savePreference: saveViewMode, setValue: setViewModePreference } = usePurchaseOrdersViewPreference()
@@ -1299,6 +1301,25 @@ function PurchaseOrdersPageContent() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
+              {canCreateOrders && (
+                <Button
+                  onClick={() => setShowPOTableView((value) => !value)}
+                  variant="outline"
+                  className="rounded-2xl border-teal-200 text-teal-700 hover:bg-teal-50"
+                >
+                  {showPOTableView ? (
+                    <>
+                      <LayoutGrid className="mr-2 h-4 w-4" />
+                      Card View
+                    </>
+                  ) : (
+                    <>
+                      <TableProperties className="mr-2 h-4 w-4" />
+                      PO Table View
+                    </>
+                  )}
+                </Button>
+              )}
               <Button
                 onClick={() => setShowCompleted((value) => !value)}
                 variant="outline"
@@ -1653,6 +1674,11 @@ function PurchaseOrdersPageContent() {
                 )}
                 </div>
               </div>
+            ) : showPOTableView && canCreateOrders ? (
+              <POTableView
+                orders={listedOrders}
+                onOrderClick={async (order) => openOrderDetails(order.id)}
+              />
             ) : (
               <Card className="rounded-[28px] border-none shadow-sm">
                 <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
