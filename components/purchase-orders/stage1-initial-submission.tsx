@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -86,7 +86,7 @@ export function Stage1InitialSubmission({
   initialData,
   mode = 'create',
 }: Stage1Props) {
-  const [formData, setFormData] = useState<Stage1FormData>({
+  const initialFormData = useMemo<Stage1FormData>(() => ({
     branch: initialData?.branch || '',
     department: initialData?.department || '',
     subDepartment: initialData?.subDepartment || '',
@@ -95,19 +95,31 @@ export function Stage1InitialSubmission({
     specialInstructions: initialData?.specialInstructions || '',
     quantityRequired: initialData?.quantityRequired || '',
     estimateIfAny: initialData?.estimateIfAny || '',
-  })
+  }), [
+    initialData?.branch,
+    initialData?.department,
+    initialData?.estimateIfAny,
+    initialData?.quantityRequired,
+    initialData?.requestedBy,
+    initialData?.specialInstructions,
+    initialData?.specifyOther,
+    initialData?.subDepartment,
+  ])
+  const [formData, setFormData] = useState<Stage1FormData>(initialFormData)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const isDirty = Boolean(
-    formData.department
-    || formData.branch
-    || formData.subDepartment
-    || formData.specifyOther
-    || formData.requestedBy
-    || formData.specialInstructions
-    || formData.quantityRequired
-    || formData.estimateIfAny
-  )
+  const isDirty = mode === 'edit'
+    ? JSON.stringify(formData) !== JSON.stringify(initialFormData)
+    : Boolean(
+      formData.department
+      || formData.branch
+      || formData.subDepartment
+      || formData.specifyOther
+      || formData.requestedBy
+      || formData.specialInstructions
+      || formData.quantityRequired
+      || formData.estimateIfAny
+    )
 
   useEffect(() => {
     onDirtyChange?.(isDirty)

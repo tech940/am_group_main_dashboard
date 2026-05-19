@@ -273,6 +273,7 @@ export const purchaseOrders = pgTable('purchase_orders', {
   vendorName: text('vendor_name'),
   vendorImages: jsonb('vendor_images').$type<string[]>().default([]),
   vendorDetails: jsonb('vendor_details').$type<PurchaseOrderVendorOption[]>().default([]),
+  billImages: jsonb('bill_images').$type<string[]>().default([]),
   quotation1Url: text('quotation_1_url'),
   quotation2Url: text('quotation_2_url'),
   quotation3Url: text('quotation_3_url'),

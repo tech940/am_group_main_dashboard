@@ -9,6 +9,7 @@ import { getSignedUrl } from '@/lib/supabase/storage'
 const ALLOWED_FOLDERS = new Set([
   'supporting-images',
   'vendor-images',
+  'bill-images',
   'grn-images',
   'accounts-images',
 ])

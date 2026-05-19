@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTopLoader } from 'nextjs-toploader'
-import { ArrowLeft, Loader2, Plus, RefreshCw, LayoutGrid, Table } from 'lucide-react'
+import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, LayoutGrid, Table } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,6 +25,7 @@ import { WorkflowTimeline } from '@/components/purchase-orders/workflow-timeline
 import { formatWorkflowStageLabel, getWorkflowStatusPresentation } from '@/components/purchase-orders/workflow-card-theme'
 import { WorkflowStatusCard, WorkflowStatusCardSkeleton } from '@/components/purchase-orders/workflow-status-card'
 import { formatIndiaDateTime } from '@/lib/date-time'
+import { getBranchLabel } from '@/lib/branches'
 import { createClient } from '@/lib/supabase/client'
 
 interface PurchaseOrder {
@@ -56,9 +57,15 @@ interface PurchaseOrder {
   eaApprovalRemarks?: string
   mdApprovalRemarks?: string
   amount?: string
+  brand?: string
+  specifyOther?: string
+  specify_other?: string
   supportingImages?: string[]
   vendorImages?: string[]
+  billImages?: string[]
+  bill_images?: string[]
   grnImages?: string[]
+  received_date_time?: string
   accountsImages?: string[]
   receivedDateTime?: string
   handoverTo?: string
@@ -100,6 +107,7 @@ interface PurchaseOrderStagePayload {
   action?: string
   vendorImages?: Array<File | string>
   vendorOptions?: VendorSectionData[]
+  billImages?: Array<File | string>
   grnImages?: Array<File | string>
   accountsImages?: Array<File | string>
 }
@@ -134,6 +142,14 @@ function normalizeDescription(order: PurchaseOrder) {
   return order.special_instructions || order.specialInstructions || 'No description provided'
 }
 
+function normalizeBranch(order: PurchaseOrder) {
+  return order.brand || ''
+}
+
+function normalizeSpecifyOther(order: PurchaseOrder) {
+  return order.specify_other || order.specifyOther || ''
+}
+
 function normalizeDepartmentLine(order: PurchaseOrder) {
   const subDepartment = order.sub_department || order.subDepartment
   return `${order.department || 'Department'}${subDepartment ? ` - ${subDepartment}` : ''}`
@@ -159,6 +175,10 @@ function normalizeVendorDetails(order: PurchaseOrder) {
   return order.vendor_details || order.vendorDetails || []
 }
 
+function normalizeBillImages(order: PurchaseOrder) {
+  return order.bill_images || order.billImages || []
+}
+
 function normalizeOrderAmount(order: PurchaseOrder) {
   const rawAmount = order.amount || normalizeEstimate(order)
   const numericAmount = Number.parseFloat(String(rawAmount || '0').replace(/[^0-9.-]/g, ''))
@@ -171,6 +191,37 @@ function getCompletedDate(order: PurchaseOrder) {
   const parsedDate = rawDate ? new Date(rawDate) : null
 
   return parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : null
+}
+
+function getOrderReceivedDate(order: PurchaseOrder) {
+  return order.received_date_time || order.receivedDateTime || ''
+}
+
+function getDateInputValue(value: string | undefined) {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value.split('T')[0] || ''
+  }
+
+  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+}
+
+function getTimeInputValue(value: string | undefined) {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value.includes('T') ? value.split('T')[1]?.slice(0, 5) || '' : ''
+  }
+
+  return date.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Kolkata',
+  })
 }
 
 function isCompletedInDateRange(order: PurchaseOrder, startDate: string, endDate: string) {
@@ -295,6 +346,10 @@ function PurchaseOrdersPageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showNewOrderForm, setShowNewOrderForm] = useState(false)
   const [isNewOrderDirty, setIsNewOrderDirty] = useState(false)
+  const [isEditingOrder, setIsEditingOrder] = useState(false)
+  const [isEditOrderDirty, setIsEditOrderDirty] = useState(false)
+  const [isEditingVendorInfo, setIsEditingVendorInfo] = useState(false)
+  const [isEditingGrn, setIsEditingGrn] = useState(false)
   const [isLoadingDetails, setIsLoadingDetails] = useState(false)
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
   const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null)
@@ -314,6 +369,7 @@ function PurchaseOrdersPageContent() {
   const canApproveMD = userRole === 'admin' || userRole === 'md'
   const canSubmitGRN = canCreateOrders
   const canProcessAccounts = userRole === 'admin' || userRole === 'accounts'
+  const canEditInitialOrder = Boolean(canCreateOrders && selectedOrder && !['completed', 'cancelled'].includes(selectedOrder.status))
 
   const queueTitle = useMemo(() => {
     switch (userRole) {
@@ -429,7 +485,7 @@ function PurchaseOrdersPageContent() {
   }, [topLoader])
 
   useEffect(() => {
-    if (!showNewOrderForm || !isNewOrderDirty) {
+    if ((!showNewOrderForm || !isNewOrderDirty) && (!isEditingOrder || !isEditOrderDirty)) {
       return undefined
     }
 
@@ -442,7 +498,7 @@ function PurchaseOrdersPageContent() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [isNewOrderDirty, showNewOrderForm])
+  }, [isEditOrderDirty, isEditingOrder, isNewOrderDirty, showNewOrderForm])
 
   const fetchOrderDetails = useCallback(async (orderId: string): Promise<void> => {
     activeOrderRequestRef.current?.abort()
@@ -468,6 +524,10 @@ function PurchaseOrdersPageContent() {
       setSelectedOrder(data.order)
       setWorkflowHistory(data.history || [])
       setPersonnel(data.personnel || null)
+      setIsEditingOrder(false)
+      setIsEditOrderDirty(false)
+      setIsEditingVendorInfo(false)
+      setIsEditingGrn(false)
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         return
@@ -498,6 +558,10 @@ function PurchaseOrdersPageContent() {
       setSelectedOrder(null)
       setWorkflowHistory([])
       setPersonnel(null)
+      setIsEditingOrder(false)
+      setIsEditOrderDirty(false)
+      setIsEditingVendorInfo(false)
+      setIsEditingGrn(false)
       setIsLoadingDetails(false)
       setLoadingOrderId(null)
       topLoaderRef.current.done()
@@ -553,9 +617,17 @@ function PurchaseOrdersPageContent() {
   }
 
   const closeOrderDetails = () => {
+    if (isEditingOrder && isEditOrderDirty && !window.confirm('You have unsaved changes. Are you sure you want to leave?')) {
+      return
+    }
+
     setSelectedOrder(null)
     setWorkflowHistory([])
     setPersonnel(null)
+    setIsEditingOrder(false)
+    setIsEditOrderDirty(false)
+    setIsEditingVendorInfo(false)
+    setIsEditingGrn(false)
     router.push('/purchase-orders')
   }
 
@@ -566,6 +638,23 @@ function PurchaseOrdersPageContent() {
 
     setShowNewOrderForm(false)
     setIsNewOrderDirty(false)
+  }
+
+  const closeEditOrderForm = () => {
+    if (isEditOrderDirty && !window.confirm('You have unsaved changes. Are you sure you want to close the edit form?')) {
+      return
+    }
+
+    setIsEditingOrder(false)
+    setIsEditOrderDirty(false)
+  }
+
+  const closeVendorInfoEditor = () => {
+    setIsEditingVendorInfo(false)
+  }
+
+  const closeGrnEditor = () => {
+    setIsEditingGrn(false)
   }
 
   const uploadFiles = async (
@@ -611,6 +700,10 @@ function PurchaseOrdersPageContent() {
     try {
       setIsSubmitting(true)
       const stagePayload = { ...(formData as PurchaseOrderStagePayload) }
+      const isEditingInitialSubmission = stage === 'initial_submission' && Boolean(orderId)
+      if (isEditingInitialSubmission) {
+        stagePayload.action = 'edit'
+      }
       tempUploadCounterRef.current += 1
       const currentOrderId = orderId || selectedOrder?.id || `temp-${tempUploadCounterRef.current}`
 
@@ -630,6 +723,10 @@ function PurchaseOrdersPageContent() {
 
       if (stagePayload.vendorImages?.length) {
         stagePayload.vendorImages = await uploadFiles(stagePayload.vendorImages, 'vendor-images', currentOrderId)
+      }
+
+      if (stagePayload.billImages?.length) {
+        stagePayload.billImages = await uploadFiles(stagePayload.billImages, 'bill-images', currentOrderId)
       }
 
       if (stagePayload.grnImages?.length) {
@@ -658,6 +755,22 @@ function PurchaseOrdersPageContent() {
       }
 
       await fetchOrders()
+      if (isEditingInitialSubmission && orderId) {
+        setIsEditingOrder(false)
+        setIsEditOrderDirty(false)
+        await fetchOrderDetails(orderId)
+        alert('Purchase order updated successfully!')
+        return
+      }
+
+      if (orderId && (stage === 'vendor_information' || stage === 'grn')) {
+        setIsEditingVendorInfo(false)
+        setIsEditingGrn(false)
+        await fetchOrderDetails(orderId)
+        alert(stage === 'vendor_information' ? 'Vendor information updated successfully!' : 'GRN details updated successfully!')
+        return
+      }
+
       setShowNewOrderForm(false)
       setIsNewOrderDirty(false)
       setSelectedOrder(null)
@@ -887,20 +1000,98 @@ function PurchaseOrdersPageContent() {
   )
 
   const renderVendorInfoSection = (order: PurchaseOrder) => {
-    if (!canManageVendorInfo || hasVendorInformation(order) || order.status === 'completed' || order.status === 'cancelled') {
+    if (!canManageVendorInfo || order.status === 'completed' || order.status === 'cancelled') {
       return null
+    }
+
+    const hasSubmittedVendorInfo = hasVendorInformation(order) || normalizeBillImages(order).length > 0
+
+    if (hasSubmittedVendorInfo && !isEditingVendorInfo) {
+      return (
+        <Card className="rounded-[28px] border-none shadow-xl">
+          <CardContent className="flex flex-col gap-4 p-6 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-lg font-black text-slate-900">Vendor Information</p>
+              <p className="text-sm text-slate-500">Update vendor details, quotation images, or bill images if a correction is needed.</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setIsEditingVendorInfo(true)}
+              className="rounded-2xl bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <Edit3 className="mr-2 h-4 w-4" />
+              Edit Vendor Information
+            </Button>
+          </CardContent>
+        </Card>
+      )
     }
 
     return (
       <Stage2VendorInformation
+        key={`vendor-${order.id}-${isEditingVendorInfo ? 'edit' : 'new'}`}
         orderId={order.id}
         initialData={{
           vendorName: normalizeVendorName(order) === 'Awaiting vendor details' ? '' : normalizeVendorName(order),
           vendorImages: order.vendorImages || [],
           vendorOptions: normalizeVendorDetails(order),
+          billImages: normalizeBillImages(order),
         }}
         onSubmit={(data) => handleStageSubmit('vendor_information', data, order.id)}
         isLoading={isSubmitting}
+        onCancel={hasSubmittedVendorInfo ? closeVendorInfoEditor : undefined}
+      />
+    )
+  }
+
+  const renderGrnEditSection = (order: PurchaseOrder) => {
+    if (!canSubmitGRN || !['awaiting_accounts', 'completed'].includes(order.status)) {
+      return null
+    }
+
+    if (!isEditingGrn) {
+      return (
+        <Card className="rounded-[28px] border-none shadow-xl">
+          <CardContent className="flex flex-col gap-4 p-6 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-lg font-black text-slate-900">GRN Details</p>
+              <p className="text-sm text-slate-500">Edit goods receipt details or upload additional GRN documents after submission.</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setIsEditingGrn(true)}
+              className="rounded-2xl bg-teal-600 text-white hover:bg-teal-700"
+            >
+              <Edit3 className="mr-2 h-4 w-4" />
+              Edit GRN
+            </Button>
+          </CardContent>
+        </Card>
+      )
+    }
+
+    const receivedDate = getOrderReceivedDate(order)
+
+    return (
+      <Stage4GRN
+        key={`grn-edit-${order.id}`}
+        orderId={order.id}
+        isLoading={isSubmitting}
+        orderDetails={{
+          itemName: normalizeDescription(order),
+          quantity: parseInt(normalizeQuantity(order), 10) || 0,
+          vendorName: normalizeVendorName(order),
+        }}
+        initialData={{
+          receivedDateTime: getDateInputValue(receivedDate),
+          receivedTime: getTimeInputValue(receivedDate),
+          grnImages: order.grnImages || [],
+          amount: order.amount || '',
+          handoverTo: order.handoverTo || '',
+          remarksIfAny: order.remarksIfAny || '',
+        }}
+        onSubmit={(data) => handleStageSubmit('grn', data, order.id)}
+        onCancel={closeGrnEditor}
       />
     )
   }
@@ -1169,13 +1360,60 @@ function PurchaseOrdersPageContent() {
               </Card>
             ) : (
               <>
+                {isEditingOrder && (
+                  <Stage1InitialSubmission
+                    key={`edit-${selectedOrder.id}`}
+                    mode="edit"
+                    initialData={{
+                      branch: normalizeBranch(selectedOrder),
+                      department: selectedOrder.department || '',
+                      subDepartment: selectedOrder.sub_department || selectedOrder.subDepartment || '',
+                      specifyOther: normalizeSpecifyOther(selectedOrder),
+                      requestedBy: normalizeRequestedBy(selectedOrder),
+                      specialInstructions: normalizeDescription(selectedOrder) === 'No description provided' ? '' : normalizeDescription(selectedOrder),
+                      quantityRequired: normalizeQuantity(selectedOrder) === 'N/A' ? '' : normalizeQuantity(selectedOrder),
+                      estimateIfAny: normalizeEstimate(selectedOrder) === '0' ? '' : normalizeEstimate(selectedOrder),
+                    }}
+                    onSubmit={(data) => handleStageSubmit('initial_submission', data, selectedOrder.id)}
+                    isLoading={isSubmitting}
+                    onCancel={closeEditOrderForm}
+                    onDirtyChange={setIsEditOrderDirty}
+                  />
+                )}
+
                 <Card className="rounded-[28px] border-none shadow-xl">
                   <CardHeader className="bg-gradient-to-r from-slate-900 to-teal-800 text-white">
-                    <CardTitle className="text-2xl font-black">
-                      Purchase Order Details - {normalizeOrderNumber(selectedOrder)}
-                    </CardTitle>
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <CardTitle className="text-2xl font-black">
+                        Purchase Order Details - {normalizeOrderNumber(selectedOrder)}
+                      </CardTitle>
+                      {canEditInitialOrder && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => {
+                            if (isEditingOrder) {
+                              closeEditOrderForm()
+                              return
+                            }
+
+                            setShowNewOrderForm(false)
+                            setIsNewOrderDirty(false)
+                            setIsEditingOrder(true)
+                          }}
+                          className="rounded-2xl border border-white/20 bg-white/10 text-white hover:bg-white/20"
+                        >
+                          <Edit3 className="mr-2 h-4 w-4" />
+                          {isEditingOrder ? 'Hide Edit Form' : 'Edit Order'}
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-3">
+                    <div>
+                      <p className="text-sm text-slate-500">Branch</p>
+                      <p className="font-semibold text-slate-900">{getBranchLabel(normalizeBranch(selectedOrder))}</p>
+                    </div>
                     <div>
                       <p className="text-sm text-slate-500">Department</p>
                       <p className="font-semibold text-slate-900">{selectedOrder.department || 'N/A'}</p>
@@ -1269,6 +1507,7 @@ function PurchaseOrdersPageContent() {
                   vendorName={normalizeVendorName(selectedOrder) === 'Awaiting vendor details' ? '' : normalizeVendorName(selectedOrder)}
                   vendorImages={selectedOrder.vendorImages || []}
                   vendorOptions={normalizeVendorDetails(selectedOrder)}
+                  billImages={normalizeBillImages(selectedOrder)}
                 />
                 {normalizeVendorDetails(selectedOrder).length === 0 && selectedOrder.vendorImages && selectedOrder.vendorImages.length > 0 && (
                   <ImageGallery images={selectedOrder.vendorImages} title="Vendor Quotations" orderId={selectedOrder.id} />
@@ -1283,6 +1522,7 @@ function PurchaseOrdersPageContent() {
                 <WorkflowTimeline history={workflowHistory} currentStatus={selectedOrder.status} />
 
                 {renderVendorInfoSection(selectedOrder)}
+                {renderGrnEditSection(selectedOrder)}
                 {renderActionPanel(selectedOrder)}
               </>
             )}

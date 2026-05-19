@@ -75,6 +75,7 @@ export function canManagePurchaseOrderUploads(role: PurchaseOrderRole | null | u
   switch (folder) {
     case 'supporting-images':
     case 'vendor-images':
+    case 'bill-images':
     case 'grn-images':
       return role === 'admin' || role === 'purchase_manager'
     case 'accounts-images':
