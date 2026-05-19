@@ -72,6 +72,25 @@ function assertStagePermission(roleAllowed: boolean, message = 'Unauthorized for
   return null
 }
 
+function hasFormField(formData: Record<string, unknown>, field: string) {
+  return Object.prototype.hasOwnProperty.call(formData, field)
+}
+
+function getEditableTextValue(
+  formData: Record<string, unknown>,
+  field: string,
+  fallback: string | null
+) {
+  if (!hasFormField(formData, field)) {
+    return fallback
+  }
+
+  const value = formData[field]
+  return value === null || value === undefined || String(value).trim() === ''
+    ? null
+    : String(value)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const appUser = await getAuthenticatedAppUser()
@@ -222,13 +241,13 @@ export async function POST(request: NextRequest) {
         updateData = {
           ...updateData,
           brand: branch,
-          department: formData.department ? String(formData.department) : order.department,
-          subDepartment: formData.subDepartment ? String(formData.subDepartment) : order.subDepartment,
-          specifyOther: formData.specifyOther ? String(formData.specifyOther) : null,
-          requestedBy: formData.requestedBy ? String(formData.requestedBy) : order.requestedBy,
-          specialInstructions: formData.specialInstructions ? String(formData.specialInstructions) : order.specialInstructions,
-          quantityRequired: formData.quantityRequired ? String(formData.quantityRequired) : order.quantityRequired,
-          estimateIfAny: formData.estimateIfAny ? String(formData.estimateIfAny) : order.estimateIfAny,
+          department: getEditableTextValue(formData, 'department', order.department),
+          subDepartment: getEditableTextValue(formData, 'subDepartment', order.subDepartment),
+          specifyOther: getEditableTextValue(formData, 'specifyOther', order.specifyOther),
+          requestedBy: getEditableTextValue(formData, 'requestedBy', order.requestedBy),
+          specialInstructions: getEditableTextValue(formData, 'specialInstructions', order.specialInstructions),
+          quantityRequired: getEditableTextValue(formData, 'quantityRequired', order.quantityRequired),
+          estimateIfAny: getEditableTextValue(formData, 'estimateIfAny', order.estimateIfAny),
           supportingImages: order.supportingImages,
           currentStage: order.currentStage || 'ea_approval',
           status: order.status || 'awaiting_ea_approval',
@@ -253,12 +272,16 @@ export async function POST(request: NextRequest) {
         const vendorImages = Array.isArray(formData.vendorImages)
           ? formData.vendorImages.filter((value): value is string => typeof value === 'string')
           : vendorOptions.flatMap((vendor) => vendor.images)
+        const billImages = Array.isArray(formData.billImages)
+          ? formData.billImages.filter((value): value is string => typeof value === 'string')
+          : order.billImages
 
         updateData = {
           ...updateData,
           vendorName: vendorName || order.vendorName,
           vendorImages: vendorImages.length > 0 ? vendorImages : order.vendorImages,
           vendorDetails: vendorOptions.length > 0 ? vendorOptions : order.vendorDetails,
+          billImages,
           currentStage: shouldAdvanceLegacyVendorFlow ? 'ea_approval' : order.currentStage,
           status: shouldAdvanceLegacyVendorFlow ? 'awaiting_ea_approval' : order.status,
           assignedTo: order.assignedTo || appUser.id,
@@ -392,7 +415,9 @@ export async function POST(request: NextRequest) {
         break
       }
       case 'grn': {
-        if (order.status !== 'awaiting_grn') {
+        const canEditSubmittedGrn = ['awaiting_accounts', 'completed'].includes(order.status)
+
+        if (order.status !== 'awaiting_grn' && !canEditSubmittedGrn) {
           return NextResponse.json({ error: 'This order is not awaiting GRN submission' }, { status: 409 })
         }
 
@@ -407,12 +432,12 @@ export async function POST(request: NextRequest) {
           grnImages: Array.isArray(formData.grnImages)
             ? formData.grnImages.filter((value): value is string => typeof value === 'string')
             : order.grnImages,
-          currentStage: 'accounts',
-          status: 'awaiting_accounts',
+          currentStage: order.status === 'awaiting_grn' ? 'accounts' : order.currentStage,
+          status: order.status === 'awaiting_grn' ? 'awaiting_accounts' : order.status,
         }
-        newStage = 'accounts'
-        newStatus = 'awaiting_accounts'
-        notificationEvent = 'grn_submitted'
+        newStage = updateData.currentStage || order.currentStage
+        newStatus = updateData.status || order.status
+        notificationEvent = order.status === 'awaiting_grn' ? 'grn_submitted' : null
         break
       }
       case 'accounts': {

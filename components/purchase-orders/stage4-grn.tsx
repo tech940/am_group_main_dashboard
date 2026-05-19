@@ -27,11 +27,12 @@ interface Stage4Props {
   initialData?: Partial<Stage4FormData>
   onSubmit: (data: Stage4FormData) => Promise<void>
   isLoading?: boolean
+  onCancel?: () => void
 }
 
 type Stage4Field = keyof Stage4FormData
 
-export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoading }: Stage4Props) {
+export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoading, onCancel }: Stage4Props) {
   const [formData, setFormData] = useState<Stage4FormData>({
     receivedDateTime: initialData?.receivedDateTime || '',
     receivedTime: initialData?.receivedTime || '',
@@ -224,7 +225,17 @@ export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoad
             )}
           </div>
 
-          <div className="flex justify-end pt-4">
+          <div className="flex flex-col gap-3 pt-4 md:flex-row md:justify-end">
+            {onCancel && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onCancel}
+                className="px-8 py-6 text-lg font-semibold"
+              >
+                Cancel
+              </Button>
+            )}
             <Button
               type="submit"
               disabled={isLoading}

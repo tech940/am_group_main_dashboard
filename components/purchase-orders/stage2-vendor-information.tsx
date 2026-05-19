@@ -22,6 +22,7 @@ export interface Stage2FormData {
   vendorOptions: VendorSectionData[]
   vendorName: string
   vendorImages: Array<File | string>
+  billImages: Array<File | string>
 }
 
 interface Stage2Props {
@@ -30,9 +31,11 @@ interface Stage2Props {
     vendorName?: string
     vendorImages?: string[]
     vendorOptions?: VendorSectionData[]
+    billImages?: string[]
   }
   onSubmit: (data: Stage2FormData) => Promise<void>
   isLoading?: boolean
+  onCancel?: () => void
 }
 
 interface VendorInformationSummaryProps {
@@ -40,6 +43,7 @@ interface VendorInformationSummaryProps {
   vendorName?: string | null
   vendorImages?: string[] | null
   vendorOptions?: VendorSectionData[] | null
+  billImages?: string[] | null
 }
 
 const VENDOR_SECTIONS: Array<{ key: VendorSectionKey; label: string }> = [
@@ -80,6 +84,7 @@ export function VendorInformationSummary({
   vendorName,
   vendorImages,
   vendorOptions,
+  billImages,
 }: VendorInformationSummaryProps) {
   const options = useMemo(() => {
     const normalized = normalizeVendorOptions({
@@ -91,7 +96,9 @@ export function VendorInformationSummary({
     return getCompletedVendorOptions(normalized)
   }, [vendorImages, vendorName, vendorOptions])
 
-  if (options.length === 0) {
+  const billImageUrls = (billImages || []).filter((image): image is string => typeof image === 'string' && image.length > 0)
+
+  if (options.length === 0 && billImageUrls.length === 0) {
     return null
   }
 
@@ -121,13 +128,18 @@ export function VendorInformationSummary({
             <ImageGallery key={`${option.key}-images`} images={imageUrls} title={`${option.label} Documents`} orderId={orderId} />
           ) : null
         })}
+
+        {billImageUrls.length > 0 && (
+          <ImageGallery images={billImageUrls} title="Bill Images" orderId={orderId} />
+        )}
       </CardContent>
     </Card>
   )
 }
 
-export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoading }: Stage2Props) {
+export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoading, onCancel }: Stage2Props) {
   const [vendorOptions, setVendorOptions] = useState<VendorSectionData[]>(() => normalizeVendorOptions(initialData))
+  const [billImages, setBillImages] = useState<Array<File | string>>(() => initialData?.billImages || [])
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const updateVendor = (
@@ -170,6 +182,7 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
       vendorOptions,
       vendorName: completedOptions.map((vendor) => vendor.name).filter(Boolean).join(', '),
       vendorImages: completedOptions.flatMap((vendor) => vendor.images),
+      billImages,
     })
   }
 
@@ -211,7 +224,33 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
             ))}
           </div>
 
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+            <div className="mb-4">
+              <p className="text-base font-black text-slate-900">Bill Images</p>
+              <p className="text-xs font-medium text-slate-500">
+                Upload bills separately from vendor quotations. You can add these now or edit vendor information later.
+              </p>
+            </div>
+            <MultipleImageUpload
+              label="Upload Bill Images"
+              images={billImages}
+              onImagesChange={setBillImages}
+              maxImages={10}
+              orderId={orderId}
+            />
+          </div>
+
           <div className="flex justify-end pt-2">
+            {onCancel && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onCancel}
+                className="mr-3 rounded-2xl px-8 py-6 text-lg font-semibold"
+              >
+                Cancel
+              </Button>
+            )}
             <Button
               type="submit"
               disabled={isLoading}

@@ -2,10 +2,8 @@
 
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { X, FileText, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import * as VisuallyHidden from '@radix-ui/react-visually-hidden'
 
 interface ImageGalleryProps {
   images: string[]
@@ -112,41 +110,44 @@ export function ImageGallery({ images, title, className, orderId }: ImageGallery
         </CardContent>
       </Card>
 
-      {/* Fullscreen File Preview Dialog */}
-      <Dialog open={!!selectedFile} onOpenChange={() => setSelectedFile(null)}>
-        <DialogContent className="max-w-none w-screen h-screen p-0 bg-black border-none m-0">
-          <VisuallyHidden.Root>
-            <DialogTitle>Document Preview</DialogTitle>
-          </VisuallyHidden.Root>
-          <div className="relative w-full h-full bg-black flex items-center justify-center">
-            <button
-              onClick={() => setSelectedFile(null)}
-              className="absolute top-6 right-6 z-50 bg-white/10 backdrop-blur-md hover:bg-white/20 text-white rounded-full p-3 transition-all border border-white/20"
-              aria-label="Close document preview"
-            >
-              <X className="h-6 w-6" />
-            </button>
-            {selectedFile && selectedIsImage && (
+      {selectedFile && (
+        <div
+          className="fixed inset-0 z-[100] flex animate-in fade-in duration-200 items-center justify-center bg-slate-950/95 p-3 backdrop-blur-sm sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Document preview"
+        >
+          <button
+            type="button"
+            onClick={() => setSelectedFile(null)}
+            className="absolute right-4 top-4 z-50 rounded-full border border-white/20 bg-white/10 p-3 text-white shadow-xl backdrop-blur-md transition-all hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/60"
+            aria-label="Close document preview"
+          >
+            <X className="h-6 w-6" />
+          </button>
+
+          <div className="flex h-full w-full items-center justify-center overflow-auto rounded-2xl">
+            {selectedIsImage && (
               <img
                 src={selectedPreviewUrl}
                 alt={selectedFileName || 'Full size preview'}
-                className="w-full h-full object-contain"
+                className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"
                 onError={(e) => {
                   console.error('Image failed to load. URL:', selectedFile)
                   e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23333" width="400" height="300"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em" font-size="20"%3EImage not available%3C/text%3E%3C/svg%3E'
                 }}
               />
             )}
-            {selectedFile && selectedIsPdf && (
+            {selectedIsPdf && (
               <iframe
                 src={selectedPreviewUrl}
                 title={selectedFileName || 'PDF preview'}
-                className="h-full w-full bg-white"
+                className="h-full min-h-[70vh] w-full max-w-6xl rounded-xl bg-white shadow-2xl"
               />
             )}
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </>
   )
 }
