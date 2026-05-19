@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MultipleImageUpload } from './multiple-image-upload'
 import { ImageGallery } from './image-gallery'
-import { Save, Loader2 } from 'lucide-react'
+import { ArrowRight, Save, Loader2 } from 'lucide-react'
 
 export type VendorSectionKey = 'vendorA' | 'vendorB' | 'vendorC'
 
@@ -19,6 +19,7 @@ export interface VendorSectionData {
 }
 
 export interface Stage2FormData {
+  action?: 'save' | 'push_to_grn_images'
   vendorOptions: VendorSectionData[]
   vendorName: string
   vendorImages: Array<File | string>
@@ -162,9 +163,7 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
     return true
   }
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-
+  const submitVendorInformation = async (action: Stage2FormData['action'] = 'save') => {
     if (!validate()) {
       return
     }
@@ -172,11 +171,17 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
     const completedOptions = getCompletedVendorOptions(vendorOptions)
 
     await onSubmit({
+      action,
       vendorOptions,
       vendorName: completedOptions.map((vendor) => vendor.name).filter(Boolean).join(', '),
       vendorImages: completedOptions.flatMap((vendor) => vendor.images),
       billImages,
     })
+  }
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    await submitVendorInformation('save')
   }
 
   return (
@@ -244,6 +249,25 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
                 Cancel
               </Button>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isLoading}
+              onClick={() => void submitVendorInformation('push_to_grn_images')}
+              className="mr-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-8 py-6 text-lg font-semibold text-emerald-700 hover:bg-emerald-100"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Pushing...
+                </>
+              ) : (
+                <>
+                  <ArrowRight className="mr-2 h-5 w-5" />
+                  Push to GRN
+                </>
+              )}
+            </Button>
             <Button
               type="submit"
               disabled={isLoading}

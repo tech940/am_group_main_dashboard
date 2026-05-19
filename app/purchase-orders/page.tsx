@@ -114,6 +114,16 @@ interface PurchaseOrderStagePayload {
 }
 
 type ApprovalFilter = 'all' | 'pending' | 'rejected' | 'hold' | 'completed'
+type WorkflowStageFilter =
+  | 'all'
+  | 'vendor_info_pending'
+  | 'ea_pending'
+  | 'md_pending'
+  | 'grn_pending'
+  | 'accounts_pending'
+  | 'completed'
+  | 'rejected'
+  | 'hold'
 
 const APPROVAL_FILTER_OPTIONS: Array<{ value: ApprovalFilter; label: string }> = [
   { value: 'all', label: 'All' },
@@ -121,6 +131,18 @@ const APPROVAL_FILTER_OPTIONS: Array<{ value: ApprovalFilter; label: string }> =
   { value: 'rejected', label: 'Rejected' },
   { value: 'hold', label: 'Hold' },
   { value: 'completed', label: 'Completed' },
+]
+
+const WORKFLOW_STAGE_FILTER_OPTIONS: Array<{ value: WorkflowStageFilter; label: string }> = [
+  { value: 'all', label: 'All Stages' },
+  { value: 'vendor_info_pending', label: 'Vendor Info Pending' },
+  { value: 'ea_pending', label: 'EA Approval Pending' },
+  { value: 'md_pending', label: 'MD Approval Pending' },
+  { value: 'grn_pending', label: 'GRN Pending' },
+  { value: 'accounts_pending', label: 'Accounts Pending' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'hold', label: 'Hold' },
 ]
 
 function normalizeOrderNumber(order: PurchaseOrder) {
@@ -255,7 +277,7 @@ function isCompletedInDateRange(order: PurchaseOrder, startDate: string, endDate
 function getOptimizedImageName(fileName: string) {
   const dotIndex = fileName.lastIndexOf('.')
   const baseName = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
-  return `${baseName || 'upload'}.jpg`
+  return `${baseName || 'upload'}.webp`
 }
 
 async function compressImageBeforeUpload(file: File) {
@@ -263,7 +285,7 @@ async function compressImageBeforeUpload(file: File) {
     !file.type.startsWith('image/')
     || file.type === 'image/svg+xml'
     || file.type === 'image/gif'
-    || file.size < 450 * 1024
+    || file.size < 60 * 1024
   ) {
     return file
   }
@@ -276,7 +298,7 @@ async function compressImageBeforeUpload(file: File) {
     image.src = imageUrl
     await image.decode()
 
-    const maxDimension = 1800
+    const maxDimension = 1400
     const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight))
     const width = Math.max(1, Math.round(image.naturalWidth * scale))
     const height = Math.max(1, Math.round(image.naturalHeight * scale))
@@ -294,16 +316,23 @@ async function compressImageBeforeUpload(file: File) {
     context.fillRect(0, 0, width, height)
     context.drawImage(image, 0, 0, width, height)
 
-    const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.76)
+    const webpBlob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/webp', 0.58)
     })
+    const jpegBlob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.62)
+    })
+    const candidates = [webpBlob, jpegBlob]
+      .filter((blob): blob is Blob => Boolean(blob))
+      .sort((a, b) => a.size - b.size)
+    const blob = candidates[0]
 
     if (!blob || blob.size >= file.size) {
       return file
     }
 
     return new File([blob], getOptimizedImageName(file.name), {
-      type: 'image/jpeg',
+      type: blob.type || 'image/webp',
       lastModified: Date.now(),
     })
   } catch (error) {
@@ -346,6 +375,35 @@ function isApprovalRole(role: string) {
 
 function isRejectedWorkflowStatus(status: string) {
   return status === 'ea_denied' || status === 'md_denied'
+}
+
+function isHoldWorkflowStatus(status: string) {
+  return status === 'on_hold' || status === 'ea_on_hold' || status === 'md_on_hold'
+}
+
+function matchesWorkflowStageFilter(order: PurchaseOrder, filter: WorkflowStageFilter) {
+  switch (filter) {
+    case 'all':
+      return true
+    case 'vendor_info_pending':
+      return order.status === 'vendor_info_pending' || normalizeStage(order) === 'vendor_information'
+    case 'ea_pending':
+      return order.status === 'awaiting_ea_approval'
+    case 'md_pending':
+      return order.status === 'awaiting_md_approval'
+    case 'grn_pending':
+      return order.status === 'awaiting_grn'
+    case 'accounts_pending':
+      return order.status === 'awaiting_accounts'
+    case 'completed':
+      return order.status === 'completed'
+    case 'rejected':
+      return isRejectedWorkflowStatus(order.status)
+    case 'hold':
+      return isHoldWorkflowStatus(order.status)
+    default:
+      return true
+  }
 }
 
 function isActionableApprovalOrder(order: Pick<PurchaseOrder, 'status'>, role: string) {
@@ -419,6 +477,7 @@ function PurchaseOrdersPageContent() {
   const [showCompleted, setShowCompleted] = useState(false)
   const [isSwitchingView, setIsSwitchingView] = useState(false)
   const [showPOTableView, setShowPOTableView] = useState(false)
+  const [workflowStageFilter, setWorkflowStageFilter] = useState<WorkflowStageFilter>('all')
 
   // View mode preference for MD/EA users
   const { value: viewMode, savePreference: saveViewMode, setValue: setViewModePreference } = usePurchaseOrdersViewPreference()
@@ -455,24 +514,32 @@ function PurchaseOrdersPageContent() {
   const listedOrders = useMemo(() => {
     const completedMatchesRange = (order: PurchaseOrder) =>
       isCompletedInDateRange(order, completedDateStart, completedDateEnd)
+    const applyWorkflowStageFilter = (candidateOrders: PurchaseOrder[]) =>
+      workflowStageFilter === 'all'
+        ? candidateOrders
+        : candidateOrders.filter((order) => matchesWorkflowStageFilter(order, workflowStageFilter))
 
     if (isApprovalRole(userRole)) {
       const statusSet = getApprovalStatusSet(userRole)
 
       switch (approvalFilter) {
         case 'all':
-          return orders.filter((order) => !isRejectedWorkflowStatus(order.status) && order.status !== 'cancelled')
+          return applyWorkflowStageFilter(orders.filter((order) => !isRejectedWorkflowStatus(order.status) && order.status !== 'cancelled'))
         case 'pending':
-          return orders.filter((order) => order.status === statusSet.pending)
+          return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.pending))
         case 'rejected':
-          return orders.filter((order) => order.status === statusSet.rejected || order.status === statusSet.extraRejected)
+          return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.rejected || order.status === statusSet.extraRejected))
         case 'hold':
-          return orders.filter((order) => order.status === statusSet.hold || order.status === statusSet.extraHold)
+          return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.hold || order.status === statusSet.extraHold))
         case 'completed':
-          return orders.filter(completedMatchesRange)
+          return applyWorkflowStageFilter(orders.filter(completedMatchesRange))
         default:
-          return orders.filter((order) => order.status === statusSet.pending)
+          return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.pending))
       }
+    }
+
+    if (workflowStageFilter !== 'all') {
+      return applyWorkflowStageFilter(orders)
     }
 
     if (showCompleted) {
@@ -487,7 +554,7 @@ function PurchaseOrdersPageContent() {
       default:
         return orders.filter((order) => order.status !== 'completed')
     }
-  }, [approvalFilter, completedDateEnd, completedDateStart, orders, showCompleted, userRole])
+  }, [approvalFilter, completedDateEnd, completedDateStart, orders, showCompleted, userRole, workflowStageFilter])
 
   const listedCompletedOrders = useMemo(
     () => listedOrders.filter((order) => order.status === 'completed'),
@@ -765,6 +832,15 @@ function PurchaseOrdersPageContent() {
       }
 
       const uploadFile = await compressImageBeforeUpload(file)
+      if (uploadFile !== file) {
+        console.info('Purchase order image compressed before upload', {
+          file: file.name,
+          originalKB: Math.round(file.size / 1024),
+          compressedKB: Math.round(uploadFile.size / 1024),
+          reduction: `${Math.round((1 - uploadFile.size / file.size) * 100)}%`,
+          type: uploadFile.type,
+        })
+      }
       const uploadFormData = new FormData()
       uploadFormData.append('file', uploadFile)
       uploadFormData.append('folder', folder)
@@ -781,6 +857,13 @@ function PurchaseOrdersPageContent() {
       }
 
       const uploadResult = await uploadResponse.json()
+      if (uploadResult.uploadedSizeBytes) {
+        console.info('Purchase order file uploaded to storage', {
+          folder,
+          path: uploadResult.path || uploadResult.url,
+          uploadedKB: Math.round(uploadResult.uploadedSizeBytes / 1024),
+        })
+      }
       urls.push(uploadResult.path || uploadResult.url)
     }
 
@@ -859,7 +942,13 @@ function PurchaseOrdersPageContent() {
         setIsEditingVendorInfo(false)
         setIsEditingGrn(false)
         await fetchOrderDetails(orderId)
-        alert(stage === 'vendor_information' ? 'Vendor information updated successfully!' : 'GRN details updated successfully!')
+        alert(
+          stagePayload.action === 'push_to_grn_images'
+            ? 'Vendor images pushed to GRN successfully!'
+            : stage === 'vendor_information'
+              ? 'Vendor information updated successfully!'
+              : 'GRN details updated successfully!'
+        )
         return
       }
 
@@ -961,6 +1050,51 @@ function PurchaseOrdersPageContent() {
       approvalFilter: filter,
     })
   }
+
+  const setWorkflowStageFilterPreference = (filter: WorkflowStageFilter) => {
+    setWorkflowStageFilter(filter)
+
+    if (filter === 'completed') {
+      setShowCompleted(true)
+      setShowPOTableView(false)
+    } else if (filter !== 'all') {
+      setShowCompleted(false)
+    }
+
+    if (isApprovalRole(userRole) && filter !== 'all') {
+      void saveViewMode({
+        ...viewMode,
+        approvalFilter: 'all',
+      })
+    }
+  }
+
+  const getWorkflowStageFilterCount = (filter: WorkflowStageFilter) => (
+    orders.filter((order) => matchesWorkflowStageFilter(order, filter)).length
+  )
+
+  const renderWorkflowStageFilters = () => (
+    <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      {WORKFLOW_STAGE_FILTER_OPTIONS.map((option) => {
+        const isActive = workflowStageFilter === option.value
+
+        return (
+          <Button
+            key={option.value}
+            type="button"
+            variant={isActive ? 'default' : 'outline'}
+            onClick={() => setWorkflowStageFilterPreference(option.value)}
+            className={`rounded-xl ${isActive ? 'bg-teal-700 text-white hover:bg-teal-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+          >
+            {option.label}
+            <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+              {getWorkflowStageFilterCount(option.value)}
+            </span>
+          </Button>
+        )
+      })}
+    </div>
+  )
 
   const setCompletedDatePreference = (field: 'completedDateStart' | 'completedDateEnd', value: string) => {
     void saveViewMode({
@@ -1398,6 +1532,7 @@ function PurchaseOrdersPageContent() {
                       const nextValue = !value
                       if (nextValue) {
                         setShowCompleted(false)
+                        setWorkflowStageFilter('all')
                       }
                       return nextValue
                     })
@@ -1424,6 +1559,9 @@ function PurchaseOrdersPageContent() {
                     const nextValue = !value
                     if (nextValue) {
                       setShowPOTableView(false)
+                      setWorkflowStageFilter('completed')
+                    } else {
+                      setWorkflowStageFilter('all')
                     }
                     return nextValue
                   })
@@ -1453,6 +1591,8 @@ function PurchaseOrdersPageContent() {
             </div>
           </div>
         )}
+
+        {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && !selectedOrder && renderWorkflowStageFilters()}
 
         {userRole !== 'md' && userRole !== 'ea' && showCompleted && renderCompletedAnalyticsControls()}
 
@@ -1723,7 +1863,9 @@ function PurchaseOrdersPageContent() {
                   })}
                 </div>
 
-                {approvalFilter === 'completed' && renderCompletedAnalyticsControls()}
+                {renderWorkflowStageFilters()}
+
+                {(approvalFilter === 'completed' || workflowStageFilter === 'completed') && renderCompletedAnalyticsControls()}
 
                 <div className="animate-in fade-in duration-200">
                 {activeViewMode === 'table' ? (
