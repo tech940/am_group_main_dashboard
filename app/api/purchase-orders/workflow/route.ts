@@ -213,8 +213,15 @@ export async function POST(request: NextRequest) {
 
     switch (stage) {
       case 'initial_submission': {
+        if (['completed', 'cancelled'].includes(order.status)) {
+          return NextResponse.json({ error: 'Completed or cancelled orders cannot be edited' }, { status: 409 })
+        }
+
+        const branch = isBranchValue(formData.branch) ? formData.branch : order.brand
+
         updateData = {
           ...updateData,
+          brand: branch,
           department: formData.department ? String(formData.department) : order.department,
           subDepartment: formData.subDepartment ? String(formData.subDepartment) : order.subDepartment,
           specifyOther: formData.specifyOther ? String(formData.specifyOther) : null,

@@ -26,6 +26,8 @@ interface Stage1Props {
   isLoading?: boolean
   onCancel?: () => void
   onDirtyChange?: (isDirty: boolean) => void
+  initialData?: Partial<Stage1FormData>
+  mode?: 'create' | 'edit'
 }
 
 const departments = [
@@ -76,16 +78,23 @@ const subDepartments = [
 
 type Stage1Field = keyof Stage1FormData
 
-export function Stage1InitialSubmission({ onSubmit, isLoading, onCancel, onDirtyChange }: Stage1Props) {
+export function Stage1InitialSubmission({
+  onSubmit,
+  isLoading,
+  onCancel,
+  onDirtyChange,
+  initialData,
+  mode = 'create',
+}: Stage1Props) {
   const [formData, setFormData] = useState<Stage1FormData>({
-    branch: '',
-    department: '',
-    subDepartment: '',
-    specifyOther: '',
-    requestedBy: '',
-    specialInstructions: '',
-    quantityRequired: '',
-    estimateIfAny: '',
+    branch: initialData?.branch || '',
+    department: initialData?.department || '',
+    subDepartment: initialData?.subDepartment || '',
+    specifyOther: initialData?.specifyOther || '',
+    requestedBy: initialData?.requestedBy || '',
+    specialInstructions: initialData?.specialInstructions || '',
+    quantityRequired: initialData?.quantityRequired || '',
+    estimateIfAny: initialData?.estimateIfAny || '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -143,10 +152,12 @@ export function Stage1InitialSubmission({ onSubmit, isLoading, onCancel, onDirty
           <div className="flex items-center justify-between gap-4">
             <div>
           <CardTitle className="text-2xl font-black">
-            Initial Purchase Request
+            {mode === 'edit' ? 'Edit Purchase Request' : 'Initial Purchase Request'}
           </CardTitle>
           <p className="text-sm text-teal-50 mt-1">
-                Fill in the details below to submit your purchase request for EA approval
+                {mode === 'edit'
+                  ? 'Update the purchase request details and save the correction'
+                  : 'Fill in the details below to submit your purchase request for EA approval'}
           </p>
             </div>
             {onCancel && (
@@ -339,12 +350,12 @@ export function Stage1InitialSubmission({ onSubmit, isLoading, onCancel, onDirty
               {isLoading ? (
                 <>
                   <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                  Submitting...
+                  {mode === 'edit' ? 'Saving...' : 'Submitting...'}
                 </>
               ) : (
                 <>
                   <Send className="h-5 w-5 mr-2" />
-                  Submit Request
+                  {mode === 'edit' ? 'Save Changes' : 'Submit Request'}
                 </>
               )}
             </Button>
@@ -353,7 +364,9 @@ export function Stage1InitialSubmission({ onSubmit, isLoading, onCancel, onDirty
           {/* Info Box */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p className="text-sm text-blue-800">
-              <strong>Note:</strong> After submission, this purchase order moves directly into the EA approval queue. Vendor information can be added later by the Purchase Manager without blocking approvals.
+              <strong>Note:</strong> {mode === 'edit'
+                ? 'Saving changes updates this purchase order without changing its current workflow stage.'
+                : 'After submission, this purchase order moves directly into the EA approval queue. Vendor information can be added later by the Purchase Manager without blocking approvals.'}
             </p>
           </div>
         </CardContent>
