@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import {
   LayoutDashboard,
   Wrench,
@@ -18,7 +17,6 @@ import {
   X,
   Settings,
   Users,
-  UserPlus,
   Shield,
   Lock,
   ShoppingCart
@@ -143,6 +141,7 @@ const brands = [
 ]
 
 import { useSidebar } from '@/context/sidebar-context'
+import { hasAllBranchAccess } from '@/lib/branches'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 
 export function Sidebar() {
@@ -152,12 +151,13 @@ export function Sidebar() {
   const { collapsed, setCollapsed } = useSidebar()
   const [openBrand, setOpenBrand] = useState<string | null>(null)
   const [openAdmin, setOpenAdmin] = useState(false)
-  const { isAdmin, userBrand, loading } = useUserRole()
+  const { isAdmin, canAccessAdmin, userBrand, loading } = useUserRole()
 
   // Helper function to check if user can access a brand
   const canAccessBrand = (brandKey: string) => {
     if (isAdmin) return true // Admins can access all brands
     if (!userBrand) return false // No brand assigned
+    if (hasAllBranchAccess(userBrand)) return true
     return brandKey === userBrand // Can only access assigned brand
   }
 
@@ -193,10 +193,16 @@ export function Sidebar() {
 
   // Auto-open user's assigned brand on load
   useEffect(() => {
-    if (!loading && userBrand && !isAdmin) {
+    if (!loading && userBrand && !isAdmin && !hasAllBranchAccess(userBrand)) {
       const brandName = getBrandName(userBrand)
       if (brandName) {
-        setOpenBrand(brandName)
+        const timer = window.setTimeout(() => {
+          setOpenBrand(brandName)
+        }, 0)
+
+        return () => {
+          window.clearTimeout(timer)
+        }
       }
     }
   }, [userBrand, isAdmin, loading])
@@ -216,7 +222,7 @@ export function Sidebar() {
 
   const toggleAdmin = () => {
     // Only allow toggling if user is admin
-    if (isAdmin) {
+    if (canAccessAdmin) {
       setOpenAdmin(!openAdmin)
       if (collapsed) setCollapsed(false)
     }
@@ -342,12 +348,12 @@ export function Sidebar() {
                 <div className="space-y-2">
                   <button
                     onClick={toggleAdmin}
-                    disabled={!isAdmin}
+                    disabled={!canAccessAdmin}
                     className={cn(
                       'flex items-center gap-3 rounded-xl transition-all duration-300 outline-none border w-full relative',
                       (openAdmin || pathname?.startsWith('/admin'))
                         ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 border-emerald-400 shadow-lg shadow-emerald-500/30'
-                        : isAdmin
+                        : canAccessAdmin
                           ? 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300 cursor-pointer group'
                           : 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed',
                       collapsed ? 'h-14 w-14 justify-center p-0 mx-auto' : 'p-3'
@@ -368,7 +374,7 @@ export function Sidebar() {
                           "flex-1 text-left text-[12px] font-semibold tracking-tight transition-colors",
                           (openAdmin || pathname?.startsWith('/admin')) ? "text-white" : "text-slate-700 group-hover:text-emerald-600"
                         )}>Admin Panel</span>
-                        {!isAdmin ? (
+                        {!canAccessAdmin ? (
                           <Lock className="h-4 w-4 text-slate-400" />
                         ) : (
                           <ChevronDown className={cn(

@@ -1,7 +1,6 @@
 'use client'
 
-import { Bell, Search, ChevronDown, Menu, LogOut, User, Mail } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Search, ChevronDown, Menu, LogOut, User, Mail } from 'lucide-react'
 import { useSidebar } from '@/context/sidebar-context'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -14,8 +13,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { NotificationBell } from '@/components/layout/notification-bell'
 
 interface UserData {
+  id: string
   email: string
   fullName: string
   role: string
@@ -36,31 +37,19 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const { data: { user: authUser } } = await supabase.auth.getUser()
-        
-        if (authUser) {
-          // Fetch user details from database
-          const { data: userData } = await supabase
-            .from('users')
-            .select('email, full_name, role')
-            .eq('supabase_id', authUser.id)
-            .single()
+        const response = await fetch('/api/auth/user', { cache: 'no-store' })
 
-          if (userData) {
-            setUser({
-              email: userData.email,
-              fullName: userData.full_name,
-              role: userData.role
-            })
-          } else {
-            // Fallback to auth user data
-            setUser({
-              email: authUser.email || '',
-              fullName: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-              role: 'viewer'
-            })
-          }
+        if (!response.ok) {
+          throw new Error('Failed to fetch current user')
         }
+
+        const userData = await response.json()
+        setUser({
+          id: userData.id,
+          email: userData.email,
+          fullName: userData.fullName,
+          role: userData.role
+        })
       } catch (error) {
         console.error('Error fetching user:', error)
       } finally {
@@ -69,7 +58,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
     }
 
     fetchUser()
-  }, [supabase])
+  }, [])
 
   const handleLogout = async () => {
     try {
@@ -126,10 +115,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
 
         {/* Right Actions */}
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl bg-white border border-slate-100 shadow-sm hover:bg-slate-50 relative group transition-all">
-            <Bell className="h-5 w-5 text-slate-500 group-hover:text-teal-600" />
-            <div className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-rose-500 border-2 border-white" />
-          </Button>
+          <NotificationBell userId={user?.id || null} />
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

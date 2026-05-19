@@ -36,12 +36,13 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   
   -- Stage 2: Vendor Information
   vendor_name TEXT,
+  vendor_details JSONB DEFAULT '[]'::jsonb,
   quotation_1_url TEXT,
   quotation_2_url TEXT,
   quotation_3_url TEXT,
   
   -- Stage 3: GRN (Goods Receipt Note)
-  received_date_time TIMESTAMP,
+  received_date_time TIMESTAMPTZ,
   handover_to TEXT,
   remarks_if_any TEXT,
   amount DECIMAL(12, 2),
@@ -59,21 +60,21 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   -- Approvals
   ea_approval TEXT,
   ea_approved_by UUID REFERENCES users(id),
-  ea_approved_at TIMESTAMP,
+  ea_approved_at TIMESTAMPTZ,
   ea_remarks TEXT,
   
   management_approval TEXT,
   management_approved_by UUID REFERENCES users(id),
-  management_approved_at TIMESTAMP,
+  management_approved_at TIMESTAMPTZ,
   management_remarks TEXT,
   
   -- Metadata
   created_by UUID REFERENCES users(id) NOT NULL,
   brand TEXT,
-  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
-  completed_at TIMESTAMP,
-  deleted_at TIMESTAMP
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+  completed_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ
 );
 
 -- Create indexes for better query performance (skip if exists)
@@ -108,7 +109,7 @@ DECLARE
   sequence_part TEXT;
   next_sequence INTEGER;
 BEGIN
-  date_part := TO_CHAR(NOW(), 'YYYYMMDD');
+  date_part := TO_CHAR(timezone('Asia/Kolkata', NOW()), 'YYYYMMDD');
   
   -- Get the next sequence number for today
   SELECT COALESCE(MAX(CAST(SUBSTRING(order_number FROM 13) AS INTEGER)), 0) + 1

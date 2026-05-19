@@ -28,7 +28,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <NextTopLoader 
-          color="hsl(250 85% 55%)"
+          color="hsl(172 72% 42%)"
           initialPosition={0.08}
           crawlSpeed={200}
           height={3}
@@ -36,7 +36,7 @@ export default function RootLayout({
           showSpinner={false}
           easing="ease"
           speed={200}
-          shadow="0 0 10px hsl(250 85% 55%),0 0 5px hsl(250 85% 55%)"
+          shadow="0 0 10px hsl(172 72% 42%),0 0 5px hsl(172 72% 42%)"
         />
         <SidebarProvider>
           {children}

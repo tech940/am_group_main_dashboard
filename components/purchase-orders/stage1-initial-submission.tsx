@@ -1,16 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { MultipleImageUpload } from './multiple-image-upload'
-import { Send, Loader2 } from 'lucide-react'
+import { Send, Loader2, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BRANCH_OPTIONS } from '@/lib/branches'
 
 interface Stage1FormData {
+  branch: string
   department: string
   subDepartment: string
   specifyOther?: string
@@ -23,6 +24,10 @@ interface Stage1FormData {
 interface Stage1Props {
   onSubmit: (data: Stage1FormData) => Promise<void>
   isLoading?: boolean
+  onCancel?: () => void
+  onDirtyChange?: (isDirty: boolean) => void
+  initialData?: Partial<Stage1FormData>
+  mode?: 'create' | 'edit'
 }
 
 const departments = [
@@ -71,20 +76,44 @@ const subDepartments = [
   'FUEL STOCK TRANSFER'
 ]
 
-export function Stage1InitialSubmission({ onSubmit, isLoading }: Stage1Props) {
-  const [formData, setFormData] = useState<Stage1FormData>({
-    department: '',
-    subDepartment: '',
-    specifyOther: '',
-    requestedBy: '',
-    specialInstructions: '',
-    quantityRequired: '',
-    estimateIfAny: ''
-  })
+type Stage1Field = keyof Stage1FormData
 
+export function Stage1InitialSubmission({
+  onSubmit,
+  isLoading,
+  onCancel,
+  onDirtyChange,
+  initialData,
+  mode = 'create',
+}: Stage1Props) {
+  const [formData, setFormData] = useState<Stage1FormData>({
+    branch: initialData?.branch || '',
+    department: initialData?.department || '',
+    subDepartment: initialData?.subDepartment || '',
+    specifyOther: initialData?.specifyOther || '',
+    requestedBy: initialData?.requestedBy || '',
+    specialInstructions: initialData?.specialInstructions || '',
+    quantityRequired: initialData?.quantityRequired || '',
+    estimateIfAny: initialData?.estimateIfAny || '',
+  })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const updateField = (field: keyof Stage1FormData, value: any) => {
+  const isDirty = Boolean(
+    formData.department
+    || formData.branch
+    || formData.subDepartment
+    || formData.specifyOther
+    || formData.requestedBy
+    || formData.specialInstructions
+    || formData.quantityRequired
+    || formData.estimateIfAny
+  )
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty)
+  }, [isDirty, onDirtyChange])
+
+  const updateField = (field: Stage1Field, value: Stage1FormData[Stage1Field]) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     if (errors[field]) {
       setErrors(prev => {
@@ -98,6 +127,7 @@ export function Stage1InitialSubmission({ onSubmit, isLoading }: Stage1Props) {
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
 
+    if (!formData.branch) newErrors.branch = 'Branch is required'
     if (!formData.department) newErrors.department = 'Department is required'
     if (!formData.subDepartment) newErrors.subDepartment = 'Sub Department is required'
     if (!formData.requestedBy) newErrors.requestedBy = 'Requested By is required'
@@ -119,16 +149,57 @@ export function Stage1InitialSubmission({ onSubmit, isLoading }: Stage1Props) {
     <form onSubmit={handleSubmit}>
       <Card className="border-none shadow-xl">
         <CardHeader className="bg-gradient-to-r from-teal-500 to-teal-600 text-white">
+          <div className="flex items-center justify-between gap-4">
+            <div>
           <CardTitle className="text-2xl font-black">
-            Initial Purchase Request
+            {mode === 'edit' ? 'Edit Purchase Request' : 'Initial Purchase Request'}
           </CardTitle>
           <p className="text-sm text-teal-50 mt-1">
-            Fill in the details below to submit your purchase request
+                {mode === 'edit'
+                  ? 'Update the purchase request details and save the correction'
+                  : 'Fill in the details below to submit your purchase request for EA approval'}
           </p>
+            </div>
+            {onCancel && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onCancel}
+                className="rounded-2xl border border-white/20 bg-white/10 text-white hover:bg-white/20"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-6 space-y-6">
-          {/* Department Selection */}
+          {/* Branch and Department Selection */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <Label htmlFor="branch" className="mb-2 block">
+                Branch <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={formData.branch}
+                onValueChange={(value) => updateField('branch', value)}
+              >
+                <SelectTrigger className={cn('bg-white', errors.branch ? 'border-red-500' : '')}>
+                  <SelectValue placeholder="Select branch" />
+                </SelectTrigger>
+                <SelectContent className="bg-white max-h-60">
+                  {BRANCH_OPTIONS.map((branch) => (
+                    <SelectItem key={branch.value} value={branch.value}>
+                      {branch.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.branch && (
+                <p className="text-xs text-red-500 mt-1">{errors.branch}</p>
+              )}
+            </div>
+
             <div>
               <Label htmlFor="department" className="mb-2 block">
                 Department <span className="text-red-500">*</span>
@@ -260,21 +331,31 @@ export function Stage1InitialSubmission({ onSubmit, isLoading }: Stage1Props) {
           </div>
 
           {/* Submit Button */}
-          <div className="flex justify-end pt-4">
+          <div className="flex flex-col gap-3 pt-4 md:flex-row md:justify-end">
+            {onCancel && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onCancel}
+                className="rounded-2xl border-slate-300 px-6 py-6"
+              >
+                Close
+              </Button>
+            )}
             <Button
               type="submit"
               disabled={isLoading}
-              className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white px-8 py-6 text-lg font-semibold"
+              className="rounded-2xl bg-gradient-to-r from-teal-500 to-teal-600 px-8 py-6 text-lg font-semibold text-white hover:from-teal-600 hover:to-teal-700"
             >
               {isLoading ? (
                 <>
                   <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                  Submitting...
+                  {mode === 'edit' ? 'Saving...' : 'Submitting...'}
                 </>
               ) : (
                 <>
                   <Send className="h-5 w-5 mr-2" />
-                  Submit Request
+                  {mode === 'edit' ? 'Save Changes' : 'Submit Request'}
                 </>
               )}
             </Button>
@@ -283,7 +364,9 @@ export function Stage1InitialSubmission({ onSubmit, isLoading }: Stage1Props) {
           {/* Info Box */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p className="text-sm text-blue-800">
-              <strong>Note:</strong> After submission, your request will be sent to the Purchase Manager for vendor information and further processing. You will not be able to edit this request once submitted.
+              <strong>Note:</strong> {mode === 'edit'
+                ? 'Saving changes updates this purchase order without changing its current workflow stage.'
+                : 'After submission, this purchase order moves directly into the EA approval queue. Vendor information can be added later by the Purchase Manager without blocking approvals.'}
             </p>
           </div>
         </CardContent>

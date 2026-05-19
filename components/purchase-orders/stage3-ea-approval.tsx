@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { CheckCircle, XCircle, PauseCircle, Loader2 } from 'lucide-react'
 
 interface Stage3EAFormData {
-  action: 'approve' | 'deny'
+  action: 'approve' | 'deny' | 'hold'
   remarks: string
 }
 
@@ -26,34 +26,19 @@ interface Stage3EAProps {
   isLoading?: boolean
 }
 
-export function Stage3EAApproval({ orderId, orderDetails, onSubmit, isLoading }: Stage3EAProps) {
+export function Stage3EAApproval({ orderDetails, onSubmit, isLoading }: Stage3EAProps) {
   const [formData, setFormData] = useState<Stage3EAFormData>({
     action: 'approve',
     remarks: ''
   })
 
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  const validate = (): boolean => {
-    const newErrors: Record<string, string> = {}
-    if (formData.action === 'deny' && !formData.remarks.trim()) {
-      newErrors.remarks = 'Remarks are mandatory when denying a request'
-    }
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  const handleSubmit = async (action: 'approve' | 'deny') => {
+  const handleSubmit = async (action: 'approve' | 'deny' | 'hold') => {
     const data = {
       action,
       remarks: action === 'approve' ? '' : formData.remarks
     }
     setFormData(prev => ({ ...prev, action }))
-    
-    if (action === 'deny' && !validate()) {
-      return
-    }
-    
+
     await onSubmit(data)
   }
 
@@ -90,7 +75,7 @@ export function Stage3EAApproval({ orderId, orderDetails, onSubmit, isLoading }:
             </div>
             <div>
               <p className="text-sm text-gray-600">Estimated Cost</p>
-              <p className="font-medium">₹{orderDetails.estimatedCost.toLocaleString('en-IN')}</p>
+              <p className="font-medium">Rs. {orderDetails.estimatedCost.toLocaleString('en-IN')}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600">Vendor Name</p>
@@ -100,7 +85,7 @@ export function Stage3EAApproval({ orderId, orderDetails, onSubmit, isLoading }:
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-4 pt-4">
+        <div className="grid gap-4 pt-4 md:grid-cols-3">
           <Button
             type="button"
             onClick={() => {
@@ -125,6 +110,17 @@ export function Stage3EAApproval({ orderId, orderDetails, onSubmit, isLoading }:
           <Button
             type="button"
             onClick={() => {
+              setFormData(prev => ({ ...prev, action: 'hold' }))
+            }}
+            disabled={isLoading}
+            className="flex-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white py-6 text-lg font-semibold"
+          >
+            <PauseCircle className="h-5 w-5 mr-2" />
+            Hold
+          </Button>
+          <Button
+            type="button"
+            onClick={() => {
               setFormData(prev => ({ ...prev, action: 'deny' }))
             }}
             disabled={isLoading}
@@ -135,48 +131,40 @@ export function Stage3EAApproval({ orderId, orderDetails, onSubmit, isLoading }:
           </Button>
         </div>
 
-        {/* Remarks - Only shown when Deny is clicked */}
-        {formData.action === 'deny' && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
-            <Label htmlFor="remarks" className="mb-2 block font-semibold text-red-900">
-              Reason for Denial <span className="text-red-500">*</span>
+        {/* Remarks - Optional for Deny/Hold */}
+        {(formData.action === 'deny' || formData.action === 'hold') && (
+          <div className={`${formData.action === 'deny' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'} border rounded-lg p-4 space-y-3`}>
+            <Label htmlFor="remarks" className={`mb-2 block font-semibold ${formData.action === 'deny' ? 'text-red-900' : 'text-amber-900'}`}>
+              Optional Remarks
             </Label>
             <Textarea
               id="remarks"
               value={formData.remarks}
-              onChange={(e) => {
-                setFormData(prev => ({ ...prev, remarks: e.target.value }))
-                if (errors.remarks) {
-                  setErrors(prev => {
-                    const newErrors = { ...prev }
-                    delete newErrors.remarks
-                    return newErrors
-                  })
-                }
-              }}
-              placeholder="Please provide a detailed reason for denying this request..."
+              onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
+              placeholder={formData.action === 'deny' ? 'Add denial remarks if needed...' : 'Add hold remarks if needed...'}
               rows={4}
-              className={errors.remarks ? 'border-red-500' : ''}
             />
-            {errors.remarks && (
-              <p className="text-xs text-red-500 mt-1">{errors.remarks}</p>
-            )}
             <Button
               type="button"
-              onClick={() => handleSubmit('deny')}
+              onClick={() => handleSubmit(formData.action)}
               disabled={isLoading}
-              variant="destructive"
+              variant={formData.action === 'deny' ? 'destructive' : 'default'}
               className="w-full py-3 text-base font-semibold"
             >
               {isLoading ? (
                 <>
                   <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                  Submitting Denial...
+                  Submitting...
                 </>
-              ) : (
+              ) : formData.action === 'deny' ? (
                 <>
                   <XCircle className="h-5 w-5 mr-2" />
                   Confirm Denial
+                </>
+              ) : (
+                <>
+                  <PauseCircle className="h-5 w-5 mr-2" />
+                  Confirm Hold
                 </>
               )}
             </Button>

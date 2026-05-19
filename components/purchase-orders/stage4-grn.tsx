@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MultipleImageUpload } from './multiple-image-upload'
-import { Save, Loader2 } from 'lucide-react'
+import { Save, Loader2, ImagePlus } from 'lucide-react'
 
 interface Stage4FormData {
   receivedDateTime: string
@@ -14,7 +14,7 @@ interface Stage4FormData {
   handoverTo: string
   remarksIfAny: string
   amount: string
-  grnImages: File[]
+  grnImages: Array<File | string>
 }
 
 interface Stage4Props {
@@ -29,6 +29,8 @@ interface Stage4Props {
   isLoading?: boolean
 }
 
+type Stage4Field = keyof Stage4FormData
+
 export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoading }: Stage4Props) {
   const [formData, setFormData] = useState<Stage4FormData>({
     receivedDateTime: initialData?.receivedDateTime || '',
@@ -38,10 +40,10 @@ export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoad
     amount: initialData?.amount || '',
     grnImages: initialData?.grnImages || []
   })
-
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [showGrnUploads, setShowGrnUploads] = useState((initialData?.grnImages?.length || 0) > 0)
 
-  const updateField = (field: keyof Stage4FormData, value: any) => {
+  const updateField = (field: Stage4Field, value: Stage4FormData[Stage4Field]) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     if (errors[field]) {
       setErrors(prev => {
@@ -190,12 +192,37 @@ export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoad
           </div>
 
           {/* GRN Images */}
-          <MultipleImageUpload
-            label="GRN Documents & Photos"
-            images={formData.grnImages}
-            onImagesChange={(images) => updateField('grnImages', images)}
-            maxImages={10}
-          />
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Upload GRN Documents</p>
+                <p className="text-xs text-slate-500">
+                  Keep this hidden unless you want to attach GRN photos or receiving documents.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant={showGrnUploads ? 'secondary' : 'outline'}
+                onClick={() => setShowGrnUploads((value) => !value)}
+                className="rounded-2xl"
+              >
+                <ImagePlus className="mr-2 h-4 w-4" />
+                {showGrnUploads ? 'Hide Uploads' : 'Enable Uploads'}
+              </Button>
+            </div>
+
+            {showGrnUploads && (
+              <div className="mt-4">
+                <MultipleImageUpload
+                  label="GRN Documents & Photos"
+                  images={formData.grnImages}
+                  onImagesChange={(images) => updateField('grnImages', images)}
+                  maxImages={10}
+                  orderId={orderId}
+                />
+              </div>
+            )}
+          </div>
 
           <div className="flex justify-end pt-4">
             <Button
