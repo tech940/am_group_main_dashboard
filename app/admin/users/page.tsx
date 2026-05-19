@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -38,38 +38,121 @@ interface User {
 
 type UserRole = User['role']
 
+interface UsersPagination {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+interface UsersSummary {
+  totalUsers: number
+  admins: number
+  managers: number
+  active: number
+}
+
+const DEFAULT_PAGINATION: UsersPagination = {
+  page: 1,
+  pageSize: 10,
+  total: 0,
+  totalPages: 1,
+}
+
+const ROLE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All Roles & Departments' },
+  { value: 'role:admin', label: 'Admin' },
+  { value: 'role:purchase_manager', label: 'Purchase Managers' },
+  { value: 'role:ea', label: 'EA' },
+  { value: 'role:md', label: 'MD' },
+  { value: 'role:accounts', label: 'Accounts Team' },
+  { value: 'role:manager', label: 'Managers' },
+  { value: 'role:technician', label: 'Technicians' },
+  { value: 'role:viewer', label: 'Viewers' },
+  { value: 'combo:hr_managers', label: 'HR Managers' },
+  { value: 'combo:sales_managers', label: 'Sales Managers' },
+] as const
+
+function getRoleAndDepartmentFromFilter(filter: string) {
+  switch (filter) {
+    case 'combo:hr_managers':
+      return { role: 'manager', department: 'HR' }
+    case 'combo:sales_managers':
+      return { role: 'manager', department: 'SALES' }
+    default:
+      return filter.startsWith('role:')
+        ? { role: filter.replace('role:', ''), department: 'all' }
+        : { role: 'all', department: 'all' }
+  }
+}
+
 export default function AdminUsersPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('all')
+  const [departmentFilter, setDepartmentFilter] = useState<string>('all')
+  const [branchFilter, setBranchFilter] = useState<string>('any')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [users, setUsers] = useState<User[]>([])
   const [fetchingUsers, setFetchingUsers] = useState(true)
+  const [pagination, setPagination] = useState<UsersPagination>(DEFAULT_PAGINATION)
+  const [summary, setSummary] = useState<UsersSummary>({
+    totalUsers: 0,
+    admins: 0,
+    managers: 0,
+    active: 0,
+  })
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>([])
 
-  const fetchUsers = useCallback(async () => {
+  const fetchUsers = useCallback(async (page = 1) => {
     try {
       setFetchingUsers(true)
-      const response = await fetch('/api/admin/users')
+      const quickFilter = getRoleAndDepartmentFromFilter(roleFilter)
+      const resolvedDepartment = departmentFilter !== 'all' ? departmentFilter : quickFilter.department
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: '10',
+        search: searchQuery.trim(),
+        role: quickFilter.role,
+        department: resolvedDepartment,
+        branch: branchFilter,
+        status: statusFilter,
+      })
+      const response = await fetch(`/api/admin/users?${params.toString()}`)
       if (response.ok) {
         const data = await response.json()
-        setUsers(data)
+        setUsers(data.users || [])
+        setPagination(data.pagination || DEFAULT_PAGINATION)
+        setSummary(data.summary || { totalUsers: 0, admins: 0, managers: 0, active: 0 })
+        setDepartmentOptions(data.filterOptions?.departments || [])
       }
     } catch (error) {
       console.error('Error fetching users:', error)
     } finally {
       setFetchingUsers(false)
     }
-  }, [])
+  }, [branchFilter, departmentFilter, roleFilter, searchQuery, statusFilter])
 
   // Fetch users from API
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void fetchUsers()
-    }, 0)
+      void fetchUsers(1)
+    }, 250)
 
     return () => window.clearTimeout(timer)
   }, [fetchUsers])
+
+  const goToPage = (page: number) => {
+    const nextPage = Math.min(Math.max(1, page), pagination.totalPages)
+    void fetchUsers(nextPage)
+  }
+
+  const resetToFirstPage = (callback: () => void) => {
+    callback()
+    setPagination((current) => ({ ...current, page: 1 }))
+  }
 
   const [formData, setFormData] = useState({
     email: '',
@@ -89,6 +172,13 @@ export default function AdminUsersPage() {
     department: '',
     isActive: true
   })
+
+  const pageNumbers = useMemo(() => {
+    const totalPages = pagination.totalPages || 1
+    const start = Math.max(1, pagination.page - 2)
+    const end = Math.min(totalPages, start + 4)
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index)
+  }, [pagination.page, pagination.totalPages])
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -116,7 +206,7 @@ export default function AdminUsersPage() {
         void fetchUsers()
       } else {
         const error = await response.json()
-        alert(`Error: ${error.message}`)
+        alert(`Error: ${error.error || error.message || 'Failed to create user'}`)
       }
     } catch (error) {
       console.error('Error creating user:', error)
@@ -210,13 +300,6 @@ export default function AdminUsersPage() {
     }
   }
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = user.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesRole = roleFilter === 'all' || user.role === roleFilter
-    return matchesSearch && matchesRole
-  })
-
   return (
     <MainLayout title="User Management" subtitle="Admin Panel">
       <div className="space-y-6 max-w-[1600px] mx-auto animate-in fade-in duration-500">
@@ -241,7 +324,7 @@ export default function AdminUsersPage() {
                   Add a new user to the system with specific credentials and role.
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleCreateUser} className="space-y-4 mt-4">
+              <form onSubmit={handleCreateUser} autoComplete="off" className="space-y-4 mt-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="fullName" className="text-sm font-bold text-slate-700">Full Name</Label>
@@ -356,7 +439,7 @@ export default function AdminUsersPage() {
                   Update user information and permissions.
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleUpdateUser} className="space-y-4 mt-4">
+              <form onSubmit={handleUpdateUser} autoComplete="off" className="space-y-4 mt-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-fullName" className="text-sm font-bold text-slate-700">Full Name</Label>
@@ -470,7 +553,7 @@ export default function AdminUsersPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Users</p>
-                  <p className="text-3xl font-black text-slate-800 mt-2">{users.length}</p>
+                  <p className="text-3xl font-black text-slate-800 mt-2">{summary.totalUsers}</p>
                 </div>
                 <div className="h-12 w-12 rounded-xl bg-teal-50 flex items-center justify-center">
                   <Users className="h-6 w-6 text-teal-600" />
@@ -484,7 +567,7 @@ export default function AdminUsersPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Admins</p>
-                  <p className="text-3xl font-black text-slate-800 mt-2">{users.filter(u => u.role === 'admin').length}</p>
+                  <p className="text-3xl font-black text-slate-800 mt-2">{summary.admins}</p>
                 </div>
                 <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center">
                   <Shield className="h-6 w-6 text-emerald-600" />
@@ -498,7 +581,7 @@ export default function AdminUsersPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Managers</p>
-                  <p className="text-3xl font-black text-slate-800 mt-2">{users.filter(u => u.role === 'manager').length}</p>
+                  <p className="text-3xl font-black text-slate-800 mt-2">{summary.managers}</p>
                 </div>
                 <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center">
                   <Users className="h-6 w-6 text-blue-600" />
@@ -512,7 +595,7 @@ export default function AdminUsersPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Active</p>
-                  <p className="text-3xl font-black text-slate-800 mt-2">{users.filter(u => u.isActive).length}</p>
+                  <p className="text-3xl font-black text-slate-800 mt-2">{summary.active}</p>
                 </div>
                 <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center">
                   <Users className="h-6 w-6 text-emerald-600" />
@@ -525,29 +608,70 @@ export default function AdminUsersPage() {
         {/* Users Table */}
         <Card className="border-none shadow-xl shadow-slate-200/50 rounded-2xl overflow-hidden">
           <CardHeader className="border-b border-slate-100 bg-slate-50/50 p-6">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xl font-black text-slate-800">All Users</CardTitle>
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <CardTitle className="text-xl font-black text-slate-800">All Users</CardTitle>
+                <p className="mt-1 text-sm font-semibold text-slate-500">
+                  Showing {users.length} of {pagination.total} matching user{pagination.total === 1 ? '' : 's'}
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:flex xl:items-center">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <Input
                     placeholder="Search users..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 rounded-xl border-slate-200 w-64"
+                    onChange={(e) => resetToFirstPage(() => setSearchQuery(e.target.value))}
+                    className="pl-10 rounded-xl border-slate-200 w-full xl:w-64"
                   />
                 </div>
-                <Select value={roleFilter} onValueChange={setRoleFilter}>
-                  <SelectTrigger className="w-40 rounded-xl border-slate-200 bg-white">
+                <Select value={roleFilter} onValueChange={(value) => resetToFirstPage(() => setRoleFilter(value))}>
+                  <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white xl:w-56">
                     <Filter className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Filter by role" />
+                    <SelectValue placeholder="Role or team" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
-                    <SelectItem value="all" className="bg-white hover:bg-slate-50">All Roles</SelectItem>
-                    <SelectItem value="admin" className="bg-white hover:bg-slate-50">Admin</SelectItem>
-                    <SelectItem value="manager" className="bg-white hover:bg-slate-50">Manager</SelectItem>
-                    <SelectItem value="technician" className="bg-white hover:bg-slate-50">Technician</SelectItem>
-                    <SelectItem value="viewer" className="bg-white hover:bg-slate-50">Viewer</SelectItem>
+                    {ROLE_FILTER_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value} className="bg-white hover:bg-slate-50">
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={departmentFilter} onValueChange={(value) => resetToFirstPage(() => setDepartmentFilter(value))}>
+                  <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white xl:w-48">
+                    <SelectValue placeholder="Department" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                    <SelectItem value="all" className="bg-white hover:bg-slate-50">All Departments</SelectItem>
+                    {departmentOptions.map((department) => (
+                      <SelectItem key={department} value={department} className="bg-white hover:bg-slate-50">
+                        {department}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={branchFilter} onValueChange={(value) => resetToFirstPage(() => setBranchFilter(value))}>
+                  <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white xl:w-48">
+                    <SelectValue placeholder="Branch" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                    <SelectItem value="any" className="bg-white hover:bg-slate-50">All Branch Access</SelectItem>
+                    {USER_BRANCH_OPTIONS.map((branch) => (
+                      <SelectItem key={branch.value} value={branch.value} className="bg-white hover:bg-slate-50">
+                        {branch.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={(value) => resetToFirstPage(() => setStatusFilter(value))}>
+                  <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white xl:w-36">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                    <SelectItem value="all" className="bg-white hover:bg-slate-50">All Status</SelectItem>
+                    <SelectItem value="active" className="bg-white hover:bg-slate-50">Active</SelectItem>
+                    <SelectItem value="inactive" className="bg-white hover:bg-slate-50">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -578,14 +702,14 @@ export default function AdminUsersPage() {
                         </div>
                       </td>
                     </tr>
-                  ) : filteredUsers.length === 0 ? (
+                  ) : users.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-6 py-20 text-center text-slate-400 font-bold">
                         No users found
                       </td>
                     </tr>
                   ) : (
-                    filteredUsers.map((user) => (
+                    users.map((user) => (
                     <tr key={user.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -642,6 +766,45 @@ export default function AdminUsersPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/70 px-6 py-4 md:flex-row md:items-center md:justify-between">
+              <p className="text-sm font-semibold text-slate-500">
+                Page {pagination.page} of {pagination.totalPages}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => goToPage(pagination.page - 1)}
+                  disabled={fetchingUsers || pagination.page <= 1}
+                  className="rounded-xl border-slate-200 bg-white"
+                >
+                  Previous
+                </Button>
+                {pageNumbers.map((pageNumber) => (
+                  <Button
+                    key={pageNumber}
+                    type="button"
+                    variant={pageNumber === pagination.page ? 'default' : 'outline'}
+                    onClick={() => goToPage(pageNumber)}
+                    disabled={fetchingUsers}
+                    className={pageNumber === pagination.page
+                      ? 'rounded-xl bg-teal-600 text-white hover:bg-teal-700'
+                      : 'rounded-xl border-slate-200 bg-white'}
+                  >
+                    {pageNumber}
+                  </Button>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => goToPage(pagination.page + 1)}
+                  disabled={fetchingUsers || pagination.page >= pagination.totalPages}
+                  className="rounded-xl border-slate-200 bg-white"
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

@@ -158,7 +158,7 @@ export function Stage1InitialSubmission({
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} autoComplete="off">
       <Card className="border-none shadow-xl">
         <CardHeader className="bg-gradient-to-r from-teal-500 to-teal-600 text-white">
           <div className="flex items-center justify-between gap-4">
@@ -328,6 +328,7 @@ export function Stage1InitialSubmission({
             </Label>
             <textarea
               id="specialInstructions"
+              autoComplete="off"
               value={formData.specialInstructions}
               onChange={(e) => updateField('specialInstructions', e.target.value)}
               placeholder="Enter detailed instructions about what you need"

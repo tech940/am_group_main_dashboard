@@ -158,13 +158,6 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
   }
 
   const validate = () => {
-    const completedOptions = getCompletedVendorOptions(vendorOptions)
-
-    if (completedOptions.length === 0) {
-      setErrors({ vendorA: 'Enter at least one vendor name' })
-      return false
-    }
-
     setErrors({})
     return true
   }
@@ -187,7 +180,7 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} autoComplete="off">
       <Card className="border-none shadow-xl">
         <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
           <CardTitle className="text-2xl font-black">Vendor Information</CardTitle>

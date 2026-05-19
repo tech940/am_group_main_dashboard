@@ -374,7 +374,7 @@ export function MDTableView({
               {visibleColumns.map((col) => (
                 <th
                   key={col.key}
-                  className={cn('px-4 py-3 text-left font-semibold text-white', col.width)}
+                  className={cn('px-4 py-3 text-left text-[12px] font-semibold text-white', col.width)}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span>{col.label}</span>
@@ -390,7 +390,7 @@ export function MDTableView({
                 </th>
               ))}
 
-              <th className="sticky right-0 z-20 w-48 border-l border-teal-500 bg-teal-800 px-4 py-3 text-center font-semibold text-white">
+              <th className="sticky right-0 z-20 w-48 border-l border-teal-500 bg-teal-800 px-4 py-3 text-center text-[12px] font-semibold text-white">
                 Actions
               </th>
             </tr>

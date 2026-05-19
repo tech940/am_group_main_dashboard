@@ -252,6 +252,68 @@ function isCompletedInDateRange(order: PurchaseOrder, startDate: string, endDate
   return true
 }
 
+function getOptimizedImageName(fileName: string) {
+  const dotIndex = fileName.lastIndexOf('.')
+  const baseName = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
+  return `${baseName || 'upload'}.jpg`
+}
+
+async function compressImageBeforeUpload(file: File) {
+  if (
+    !file.type.startsWith('image/')
+    || file.type === 'image/svg+xml'
+    || file.type === 'image/gif'
+    || file.size < 450 * 1024
+  ) {
+    return file
+  }
+
+  const imageUrl = URL.createObjectURL(file)
+
+  try {
+    const image = new Image()
+    image.decoding = 'async'
+    image.src = imageUrl
+    await image.decode()
+
+    const maxDimension = 1800
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight))
+    const width = Math.max(1, Math.round(image.naturalWidth * scale))
+    const height = Math.max(1, Math.round(image.naturalHeight * scale))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+
+    if (!context) {
+      return file
+    }
+
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, width, height)
+    context.drawImage(image, 0, 0, width, height)
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.76)
+    })
+
+    if (!blob || blob.size >= file.size) {
+      return file
+    }
+
+    return new File([blob], getOptimizedImageName(file.name), {
+      type: 'image/jpeg',
+      lastModified: Date.now(),
+    })
+  } catch (error) {
+    console.error('Image compression failed, uploading original file:', error)
+    return file
+  } finally {
+    URL.revokeObjectURL(imageUrl)
+  }
+}
+
 function hasVendorInformation(order: PurchaseOrder) {
   return normalizeVendorName(order) !== 'Awaiting vendor details'
     || normalizeVendorDetails(order).some((vendor) => vendor.name || vendor.images?.length)
@@ -633,6 +695,32 @@ function PurchaseOrdersPageContent() {
     router.push('/purchase-orders')
   }
 
+  const openFreshNewOrderForm = () => {
+    if (isNewOrderDirty && !window.confirm('You have unsaved changes. Start a fresh new order?')) {
+      return
+    }
+
+    if (isEditingOrder && isEditOrderDirty && !window.confirm('You have unsaved edit changes. Start a fresh new order?')) {
+      return
+    }
+
+    activeOrderRequestRef.current?.abort()
+    setSelectedOrder(null)
+    setWorkflowHistory([])
+    setPersonnel(null)
+    setIsEditingOrder(false)
+    setIsEditOrderDirty(false)
+    setIsEditingVendorInfo(false)
+    setIsEditingGrn(false)
+    setIsLoadingDetails(false)
+    setLoadingOrderId(null)
+    setShowCompleted(false)
+    setShowPOTableView(false)
+    setIsNewOrderDirty(false)
+    setShowNewOrderForm(true)
+    router.push('/purchase-orders')
+  }
+
   const closeNewOrderForm = () => {
     if (isNewOrderDirty && !window.confirm('You have unsaved changes. Are you sure you want to leave?')) {
       return
@@ -676,8 +764,9 @@ function PurchaseOrdersPageContent() {
         continue
       }
 
+      const uploadFile = await compressImageBeforeUpload(file)
       const uploadFormData = new FormData()
-      uploadFormData.append('file', file)
+      uploadFormData.append('file', uploadFile)
       uploadFormData.append('folder', folder)
       uploadFormData.append('orderId', orderId)
 
@@ -707,7 +796,8 @@ function PurchaseOrdersPageContent() {
         stagePayload.action = 'edit'
       }
       tempUploadCounterRef.current += 1
-      const currentOrderId = orderId || selectedOrder?.id || `temp-${tempUploadCounterRef.current}`
+      const fallbackSelectedOrderId = stage === 'initial_submission' ? undefined : selectedOrder?.id
+      const currentOrderId = orderId || fallbackSelectedOrderId || `temp-${tempUploadCounterRef.current}`
 
       if (stagePayload.vendorOptions?.length) {
         const uploadedVendorOptions = []
@@ -743,7 +833,7 @@ function PurchaseOrdersPageContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          orderId: orderId || selectedOrder?.id,
+          orderId: orderId || fallbackSelectedOrderId,
           stage,
           action: stagePayload.action,
           data: stagePayload,
@@ -1303,7 +1393,15 @@ function PurchaseOrdersPageContent() {
             <div className="flex flex-wrap gap-3">
               {canCreateOrders && (
                 <Button
-                  onClick={() => setShowPOTableView((value) => !value)}
+                  onClick={() => {
+                    setShowPOTableView((value) => {
+                      const nextValue = !value
+                      if (nextValue) {
+                        setShowCompleted(false)
+                      }
+                      return nextValue
+                    })
+                  }}
                   variant="outline"
                   className="rounded-2xl border-teal-200 text-teal-700 hover:bg-teal-50"
                 >
@@ -1321,7 +1419,15 @@ function PurchaseOrdersPageContent() {
                 </Button>
               )}
               <Button
-                onClick={() => setShowCompleted((value) => !value)}
+                onClick={() => {
+                  setShowCompleted((value) => {
+                    const nextValue = !value
+                    if (nextValue) {
+                      setShowPOTableView(false)
+                    }
+                    return nextValue
+                  })
+                }}
                 variant="outline"
                 className="rounded-2xl border-emerald-200 text-emerald-700 hover:bg-emerald-50"
               >
@@ -1337,7 +1443,7 @@ function PurchaseOrdersPageContent() {
               </Button>
               {canCreateOrders && (
                 <Button
-                  onClick={() => setShowNewOrderForm(true)}
+                  onClick={openFreshNewOrderForm}
                   className="rounded-2xl border border-teal-300 bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-100 hover:from-teal-700 hover:to-emerald-700"
                 >
                   <Plus className="mr-2 h-4 w-4" />

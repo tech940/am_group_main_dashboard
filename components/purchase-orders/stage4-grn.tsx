@@ -73,7 +73,7 @@ export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoad
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} autoComplete="off">
       <Card className="border-none shadow-xl">
         <CardHeader className="bg-gradient-to-r from-teal-500 to-teal-600 text-white">
           <CardTitle className="text-2xl font-black">
@@ -164,6 +164,7 @@ export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoad
             </Label>
             <textarea
               id="remarksIfAny"
+              autoComplete="off"
               value={formData.remarksIfAny}
               onChange={(e) => updateField('remarksIfAny', e.target.value)}
               placeholder="Add any additional notes or comments..."

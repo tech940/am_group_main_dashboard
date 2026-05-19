@@ -265,6 +265,9 @@ export async function POST(request: NextRequest) {
         const shouldAdvanceLegacyVendorFlow =
           order.currentStage === 'vendor_information' || order.status === 'vendor_info_pending'
 
+        const hasVendorOptions = hasFormField(formData, 'vendorOptions')
+        const hasVendorImages = hasFormField(formData, 'vendorImages')
+        const hasBillImages = hasFormField(formData, 'billImages')
         const vendorOptions = normalizeVendorOptions(formData.vendorOptions)
         const vendorName = formData.vendorName
           ? String(formData.vendorName)
@@ -278,10 +281,10 @@ export async function POST(request: NextRequest) {
 
         updateData = {
           ...updateData,
-          vendorName: vendorName || order.vendorName,
-          vendorImages: vendorImages.length > 0 ? vendorImages : order.vendorImages,
-          vendorDetails: vendorOptions.length > 0 ? vendorOptions : order.vendorDetails,
-          billImages,
+          vendorName: hasVendorOptions || hasVendorImages ? vendorName : order.vendorName,
+          vendorImages: hasVendorImages || hasVendorOptions ? vendorImages : order.vendorImages,
+          vendorDetails: hasVendorOptions ? vendorOptions : order.vendorDetails,
+          billImages: hasBillImages ? billImages : order.billImages,
           currentStage: shouldAdvanceLegacyVendorFlow ? 'ea_approval' : order.currentStage,
           status: shouldAdvanceLegacyVendorFlow ? 'awaiting_ea_approval' : order.status,
           assignedTo: order.assignedTo || appUser.id,

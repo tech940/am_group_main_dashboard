@@ -118,7 +118,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
   const [formData, setFormData] = useState<FormData>(initialData || {})
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const updateFormData = (field: keyof FormData, value: any) => {
+  const updateFormData = (field: keyof FormData, value: FormData[keyof FormData]) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     // Clear error for this field
     if (errors[field]) {
@@ -324,6 +324,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
                 </Label>
                 <textarea
                   id="specialInstructions"
+                  autoComplete="off"
                   value={formData.specialInstructions || ''}
                   onChange={(e) => updateFormData('specialInstructions', e.target.value)}
                   placeholder="Enter detailed instructions"
@@ -558,6 +559,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
                 <Label htmlFor="accountRemarks" className="mb-2 block">Remarks</Label>
                 <textarea
                   id="accountRemarks"
+                  autoComplete="off"
                   value={formData.accountRemarks || ''}
                   onChange={(e) => updateFormData('accountRemarks', e.target.value)}
                   placeholder="Enter remarks"

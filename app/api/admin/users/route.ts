@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { desc, eq, isNull } from 'drizzle-orm'
+import { and, count, desc, eq, ilike, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { isUserBranchValue } from '@/lib/branches'
 import { db } from '@/lib/db'
@@ -20,14 +20,70 @@ function normalizeUserBranchAccess(value: unknown) {
   return isUserBranchValue(value) ? value : undefined
 }
 
-// GET - Fetch all users
-export async function GET() {
+// GET - Fetch paginated users
+export async function GET(request: Request) {
   try {
     const appUser = await getAuthenticatedAppUser()
 
     if (!appUser || !canAccessAdminPanel(appUser.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    const { searchParams } = new URL(request.url)
+    const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
+    const pageSize = Math.min(10, Math.max(1, Number.parseInt(searchParams.get('pageSize') || '10', 10) || 10))
+    const search = (searchParams.get('search') || '').trim()
+    const role = searchParams.get('role') || 'all'
+    const department = searchParams.get('department') || 'all'
+    const branch = searchParams.get('branch') || 'any'
+    const status = searchParams.get('status') || 'all'
+
+    const conditions = [isNull(users.deletedAt)]
+
+    if (search) {
+      conditions.push(or(
+        ilike(users.fullName, `%${search}%`),
+        ilike(users.email, `%${search}%`),
+        ilike(users.department, `%${search}%`)
+      )!)
+    }
+
+    if (role !== 'all') {
+      conditions.push(eq(users.role, role as typeof users.role.enumValues[number]))
+    }
+
+    if (department !== 'all') {
+      conditions.push(ilike(users.department, department))
+    }
+
+    if (branch !== 'any') {
+      conditions.push(eq(users.brand, branch))
+    }
+
+    if (status !== 'all') {
+      conditions.push(eq(users.isActive, status === 'active'))
+    }
+
+    const whereClause = and(...conditions)
+    const offset = (page - 1) * pageSize
+
+    const [totalResult] = await db.select({ total: count() })
+      .from(users)
+      .where(whereClause)
+
+    const [summaryResult] = await db.select({
+      totalUsers: count(),
+      admins: sql<number>`count(*) filter (where ${users.role} = 'admin')`,
+      managers: sql<number>`count(*) filter (where ${users.role} in ('manager', 'purchase_manager'))`,
+      active: sql<number>`count(*) filter (where ${users.isActive} = true)`,
+    })
+      .from(users)
+      .where(isNull(users.deletedAt))
+
+    const departmentRows = await db.selectDistinct({ department: users.department })
+      .from(users)
+      .where(and(isNull(users.deletedAt), isNotNull(users.department)))
+      .orderBy(users.department)
 
     const allUsers = await db.select({
       id: users.id,
@@ -40,10 +96,33 @@ export async function GET() {
       isActive: users.isActive,
       createdAt: users.createdAt,
     }).from(users)
-      .where(isNull(users.deletedAt))
+      .where(whereClause)
       .orderBy(desc(users.createdAt))
+      .limit(pageSize)
+      .offset(offset)
 
-    return NextResponse.json(allUsers)
+    const total = Number(totalResult?.total || 0)
+
+    return NextResponse.json({
+      users: allUsers,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+      summary: {
+        totalUsers: Number(summaryResult?.totalUsers || 0),
+        admins: Number(summaryResult?.admins || 0),
+        managers: Number(summaryResult?.managers || 0),
+        active: Number(summaryResult?.active || 0),
+      },
+      filterOptions: {
+        departments: departmentRows
+          .map((row) => row.department)
+          .filter((value): value is string => Boolean(value?.trim())),
+      },
+    })
   } catch (error) {
     console.error('Error fetching users:', error)
     return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
@@ -156,6 +235,20 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
 
+    const [existingUser] = await db.select({
+      id: users.id,
+      email: users.email,
+      supabaseId: users.supabaseId,
+      fullName: users.fullName,
+    })
+      .from(users)
+      .where(and(eq(users.id, id), isNull(users.deletedAt)))
+      .limit(1)
+
+    if (!existingUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
     if ('brand' in updateData) {
       const normalizedBrand = normalizeUserBranchAccess(updateData.brand)
 
@@ -167,6 +260,49 @@ export async function PUT(request: Request) {
       }
 
       updateData.brand = normalizedBrand
+    }
+
+    if (typeof updateData.email === 'string') {
+      updateData.email = updateData.email.trim().toLowerCase()
+
+      if (!updateData.email) {
+        return NextResponse.json({ error: 'Email is required' }, { status: 400 })
+      }
+
+      if (updateData.email !== existingUser.email) {
+        const duplicateUser = await db.select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.email, updateData.email), ne(users.id, id), isNull(users.deletedAt)))
+          .limit(1)
+
+        if (duplicateUser.length > 0) {
+          return NextResponse.json({ error: 'User with this email already exists' }, { status: 409 })
+        }
+      }
+    }
+
+    const authUpdates: Record<string, unknown> = {}
+    if (typeof updateData.email === 'string' && updateData.email !== existingUser.email) {
+      authUpdates.email = updateData.email
+      authUpdates.email_confirm = true
+    }
+    if (typeof updateData.fullName === 'string' && updateData.fullName !== existingUser.fullName) {
+      authUpdates.user_metadata = { full_name: updateData.fullName }
+    }
+
+    if (Object.keys(authUpdates).length > 0) {
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+        existingUser.supabaseId,
+        authUpdates
+      )
+
+      if (authError) {
+        console.error('Error updating Supabase Auth user:', authError)
+        return NextResponse.json(
+          { error: authError.message || 'Failed to update authentication user' },
+          { status: 500 }
+        )
+      }
     }
 
     const [updatedUser] = await db.update(users)
