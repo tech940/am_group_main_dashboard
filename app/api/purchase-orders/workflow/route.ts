@@ -305,7 +305,7 @@ export async function POST(request: NextRequest) {
         break
       }
       case 'ea_approval': {
-        if (!['awaiting_ea_approval', 'ea_denied', 'md_denied', 'ea_on_hold', 'md_on_hold'].includes(order.status)) {
+        if (!['awaiting_ea_approval', 'awaiting_md_approval', 'ea_denied', 'md_denied', 'ea_on_hold', 'md_on_hold'].includes(order.status)) {
           return NextResponse.json({ error: 'This order is not awaiting EA approval' }, { status: 409 })
         }
 
@@ -316,7 +316,10 @@ export async function POST(request: NextRequest) {
             eaApprovedBy: appUser.id,
             eaApprovedAt: new Date(),
             eaApprovalRemarks: formData.remarks ? String(formData.remarks) : null,
-            mdApprovalStatus: ['md_denied', 'md_on_hold'].includes(order.status) ? 'pending' : order.mdApprovalStatus,
+            mdApprovalStatus: 'pending',
+            mdApprovedBy: null,
+            mdApprovedAt: null,
+            mdApprovalRemarks: null,
             rejectedAt: null,
             eaHeldAt: null,
             eaHeldBy: null,
@@ -336,6 +339,10 @@ export async function POST(request: NextRequest) {
             eaApprovedBy: appUser.id,
             eaApprovedAt: new Date(),
             eaApprovalRemarks: formData.remarks ? String(formData.remarks).trim() : null,
+            mdApprovalStatus: null,
+            mdApprovedBy: null,
+            mdApprovedAt: null,
+            mdApprovalRemarks: null,
             rejectedAt: new Date(),
             eaHeldAt: null,
             eaHeldBy: null,
@@ -352,6 +359,11 @@ export async function POST(request: NextRequest) {
             eaApprovalStatus: 'pending',
             eaApprovedBy: null,
             eaApprovedAt: null,
+            eaApprovalRemarks: formData.remarks ? String(formData.remarks).trim() : order.eaApprovalRemarks,
+            mdApprovalStatus: null,
+            mdApprovedBy: null,
+            mdApprovedAt: null,
+            mdApprovalRemarks: null,
             rejectedAt: null,
             eaHeldAt: new Date(),
             eaHeldBy: appUser.id,
