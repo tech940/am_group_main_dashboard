@@ -414,6 +414,7 @@ function isActionableApprovalOrder(order: Pick<PurchaseOrder, 'status'>, role: s
   const statusSet = getApprovalStatusSet(role)
   if (role === 'ea') {
     return order.status === statusSet.pending
+      || order.status === 'awaiting_md_approval'
       || order.status === statusSet.rejected
       || order.status === statusSet.extraRejected
       || order.status === statusSet.hold
@@ -1401,6 +1402,24 @@ function PurchaseOrdersPageContent() {
     }
 
     if (currentStage === 'md_approval') {
+      if (userRole === 'ea' && canApproveEA && order.status === 'awaiting_md_approval') {
+        return (
+          <Stage3EAApproval
+            orderId={order.id}
+            isLoading={isSubmitting}
+            orderDetails={{
+              itemName: normalizeDescription(order),
+              department: order.department,
+              subDepartment: order.subDepartment,
+              quantity: parseInt(normalizeQuantity(order), 10) || 0,
+              estimatedCost: parseFloat(normalizeEstimate(order)) || 0,
+              vendorName: normalizeVendorName(order),
+            }}
+            onSubmit={(data) => handleStageSubmit('ea_approval', data, order.id)}
+          />
+        )
+      }
+
       if (canApproveMD && ['awaiting_md_approval', 'md_denied', 'md_on_hold'].includes(order.status)) {
         return (
           <Stage3MDApproval
