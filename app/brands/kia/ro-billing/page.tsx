@@ -9,16 +9,23 @@ import { cn } from '@/lib/utils'
 interface ROBillingReportSectionProps {
   activeSheet: string | null
   sharedData?: DataRow[]
+  dateFilter?: {
+    mode: 'month' | 'range'
+    month: number
+    year: number
+    startDate: string
+    endDate: string
+  } | null
 }
 
 interface RevenueMetrics {
-  mtd: { cy: number; ly: number; growth: number }
-  qtd: { cy: number; ly: number; growth: number }
-  ytd: { cy: number; ly: number; growth: number }
+  mtd: { cy: number; ly: number; growth: number | 'N/A' }
+  qtd: { cy: number; ly: number; growth: number | 'N/A' }
+  ytd: { cy: number; ly: number; growth: number | 'N/A' }
 }
 
 interface GrowthStats {
-  load: { value: number; trend: 'up' | 'down' | 'neutral' }
+  load: { value: number | string | 'N/A'; trend: 'up' | 'down' | 'neutral' }
   paidService: { value: number; trend: 'up' | 'down' | 'neutral' }
 }
 
@@ -35,11 +42,12 @@ interface ROBillingSheetData {
   rows: DataRow[]
 }
 
-export default function ROBillingReportSection({ activeSheet, sharedData }: ROBillingReportSectionProps) {
+export default function ROBillingReportSection({ activeSheet, sharedData, dateFilter }: ROBillingReportSectionProps) {
   console.log('🚀 ROBillingReportSection RENDERED:', {
     activeSheet,
     hasSharedData: !!(sharedData && sharedData.length > 0),
-    sharedDataLength: sharedData?.length || 0
+    sharedDataLength: sharedData?.length || 0,
+    dateFilter
   })
 
   const [loading, setLoading] = useState(!sharedData)
@@ -54,9 +62,9 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
   const processRevenueData = useCallback((rows: DataRow[]) => {
     if (!rows || rows.length === 0) {
       const emptyMetrics = {
-        mtd: { cy: 0, ly: 0, growth: 0 },
-        qtd: { cy: 0, ly: 0, growth: 0 },
-        ytd: { cy: 0, ly: 0, growth: 0 }
+        mtd: { cy: 0, ly: 0, growth: 'N/A' as const },
+        qtd: { cy: 0, ly: 0, growth: 'N/A' as const },
+        ytd: { cy: 0, ly: 0, growth: 'N/A' as const }
       }
       setLabourRevenue(emptyMetrics)
       setPartsRevenue(emptyMetrics)
@@ -69,28 +77,41 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
 
     const findCol = (searchTerms: string[]) => {
       const headers = Object.keys(rows[0] || {})
-      return headers.find(h => searchTerms.some(term => h.toLowerCase().includes(term.toLowerCase())))
+      return headers.find(h => searchTerms.some(term => h.toLowerCase().trim() === term.toLowerCase().trim() || h.toLowerCase().includes(term.toLowerCase())))
     }
 
     const getVal = (row: DataRow, col?: string) => {
       if (!col) return 0
       const val = row[col]
       if (typeof val === 'number') return val
-      return parseFloat(String(val).replace(/[^0-9.-]/g, '')) || 0
+      if (val === null || val === undefined) return 0
+      const parsed = parseFloat(String(val).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
+      return isNaN(parsed) ? 0 : parsed
     }
 
-    // Parse date from DD/MM/YYYY format
-    // Handle both DD/MM/YYYY and MM/DD/YYYY formats (some dates may be swapped)
+    // Parse date from DD/MM/YYYY or YYYY-MM-DD formats
     const parseDate = (dateStr: string): Date | null => {
       if (!dateStr || dateStr === '—' || dateStr === '-' || dateStr === '') return null
-      const parts = String(dateStr).trim().split('/')
+      const trimmed = String(dateStr).trim()
+      // Check YYYY-MM-DD
+      if (trimmed.includes('-')) {
+        const parts = trimmed.split('-')
+        if (parts.length === 3) {
+          const year = parseInt(parts[0], 10)
+          const month = parseInt(parts[1], 10) - 1
+          const day = parseInt(parts[2], 10)
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            return new Date(year, month, day)
+          }
+        }
+      }
+      // Check DD/MM/YYYY
+      const parts = trimmed.split('/')
       if (parts.length === 3) {
         let day = parseInt(parts[0], 10)
-        let month = parseInt(parts[1], 10) - 1 // JS months are 0-indexed
+        let month = parseInt(parts[1], 10) - 1
         const year = parseInt(parts[2], 10)
         
-        // If month > 12, it's likely DD/MM/YYYY format but was entered as MM/DD/YYYY
-        // Swap day and month
         if (month > 11) {
           const temp = day
           day = month + 1
@@ -111,100 +132,148 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
     const roDateCol = findCol(['ro date', 'rodate'])
     const serviceTypeCol = findCol(['service type', 'work type'])
 
-    // Get current date context by scanning ALL rows to find the true maximum year
-    const allYearsInData = new Set<number>()
-    const monthsInCurrentYear: number[] = []
-    
-    rows.forEach(row => {
-      const dateStr = String(row[billDateCol || roDateCol || ''] || '')
-      const date = parseDate(dateStr)
-      if (date) {
-        allYearsInData.add(date.getFullYear())
-      }
-    })
-    
-    // Dynamically detect the current year from the data (use the maximum year found)
-    const currentYear = allYearsInData.size > 0
-      ? Math.max(...Array.from(allYearsInData))
-      : new Date().getFullYear()
-    
-    // Find all months that have data in the current year
-    rows.forEach(row => {
-      const dateStr = String(row[billDateCol || roDateCol || ''] || '')
-      const date = parseDate(dateStr)
-      if (date && date.getFullYear() === currentYear) {
-        const month = date.getMonth()
-        if (!monthsInCurrentYear.includes(month)) {
-          monthsInCurrentYear.push(month)
+    // Boundary generator
+    const getBoundaries = (): {
+      cyMtdStart: Date; cyMtdEnd: Date; lyMtdStart: Date; lyMtdEnd: Date
+      cyQtdStart: Date; cyQtdEnd: Date; lyQtdStart: Date; lyQtdEnd: Date
+      cyYtdStart: Date; cyYtdEnd: Date; lyYtdStart: Date; lyYtdEnd: Date
+      currentYear: number; currentMonth: number; currentDay: number; daysInMonth: number
+    } => {
+      const today = new Date()
+      const todayYear = today.getFullYear()
+      const todayMonth = today.getMonth()
+      const todayDay = today.getDate()
+
+      // Parse all dates to find default max year and month in dataset
+      let maxDate = new Date(2025, 2, 31) // default fallback
+      let foundAny = false
+      rows.forEach(row => {
+        const col = billDateCol || roDateCol
+        const dateStr = String(row[col || ''] || '')
+        const date = parseDate(dateStr)
+        if (date) {
+          if (!foundAny || date > maxDate) {
+            maxDate = date
+            foundAny = true
+          }
+        }
+      })
+
+      const defaultYear = maxDate.getFullYear()
+      const defaultMonth = maxDate.getMonth()
+
+      let cyYear = defaultYear
+      let cyMonth = defaultMonth
+      let cyDay = 31
+
+      let isRangeMode = false
+      let rangeStart = new Date()
+      let rangeEnd = new Date()
+
+      if (dateFilter) {
+        if (dateFilter.mode === 'month') {
+          cyYear = dateFilter.year
+          cyMonth = dateFilter.month
+          if (cyYear === todayYear && cyMonth === todayMonth) {
+            cyDay = todayDay
+          } else {
+            cyDay = new Date(cyYear, cyMonth + 1, 0).getDate()
+          }
+        } else if (dateFilter.mode === 'range' && dateFilter.startDate && dateFilter.endDate) {
+          isRangeMode = true
+          rangeStart = parseDate(dateFilter.startDate) || new Date()
+          rangeEnd = parseDate(dateFilter.endDate) || new Date()
+          cyYear = rangeEnd.getFullYear()
+          cyMonth = rangeEnd.getMonth()
+          cyDay = rangeEnd.getDate()
+        }
+      } else {
+        if (cyYear === todayYear && cyMonth === todayMonth) {
+          cyDay = todayDay
+        } else {
+          cyDay = new Date(cyYear, cyMonth + 1, 0).getDate()
         }
       }
-    })
-    
-    // Use the most recent month that has data in the current year
-    const currentMonth = monthsInCurrentYear.length > 0
-      ? Math.max(...monthsInCurrentYear)
-      : new Date().getMonth()
-    
-    const currentQuarter = Math.floor(currentMonth / 3)
-    
-    // Use TODAY'S calendar date for MTD calculations
-    // This ensures MTD Target is proportional to actual days elapsed in the current month
-    const today = new Date()
-    const todayYear = today.getFullYear()
-    const todayMonth = today.getMonth()
-    const todayDay = today.getDate()
-    
-    // Always use today's day for current calendar month calculations
-    const currentDay = todayDay
-    const daysInMonth = new Date(todayYear, todayMonth + 1, 0).getDate()
-    
-    // Update year and month to current calendar date (not data date)
-    const actualCurrentYear = todayYear
-    const actualCurrentMonth = todayMonth
-    
-    // Store date context for KPI calculations (using actual calendar date)
-    setDateContext({
-      currentYear: actualCurrentYear,
-      currentMonth: actualCurrentMonth,
-      currentDay,
-      daysInMonth
-    })
-    
-    console.log('📅 RO Billing - Date context:', {
-      dataYear: currentYear,
-      dataMonth: currentMonth + 1,
-      actualCurrentYear,
-      actualCurrentMonth: actualCurrentMonth + 1,
-      currentDay,
-      daysInMonth,
-      note: 'Using TODAY\'S date (May 14) for MTD calculations, not last date in data (April 30)',
-      monthsWithDataInCY: monthsInCurrentYear.map(m => m + 1).sort(),
-      allYearsInData: Array.from(allYearsInData).sort(),
-      totalRecords: rows.length
-    })
 
-    // Helper to check if date falls in specific period
-    const isInPeriod = (date: Date | null, year: number, periodType: 'mtd' | 'qtd' | 'ytd') => {
-      if (!date) return false
-      const dateYear = date.getFullYear()
-      const dateMonth = date.getMonth()
-      const dateQuarter = Math.floor(dateMonth / 3)
+      const daysInMonth = new Date(cyYear, cyMonth + 1, 0).getDate()
 
-      if (dateYear !== year) return false
+      let cyMtdStart: Date, cyMtdEnd: Date, lyMtdStart: Date, lyMtdEnd: Date
 
-      switch (periodType) {
-        case 'mtd':
-          return dateMonth === currentMonth
-        case 'qtd':
-          return dateQuarter === currentQuarter
-        case 'ytd':
-          return true // All dates in the year
-        default:
-          return false
+      if (isRangeMode) {
+        cyMtdStart = new Date(rangeStart)
+        cyMtdStart.setHours(0, 0, 0, 0)
+        cyMtdEnd = new Date(rangeEnd)
+        cyMtdEnd.setHours(23, 59, 59, 999)
+
+        lyMtdStart = new Date(rangeStart)
+        lyMtdStart.setFullYear(lyMtdStart.getFullYear() - 1)
+        lyMtdStart.setHours(0, 0, 0, 0)
+        lyMtdEnd = new Date(rangeEnd)
+        lyMtdEnd.setFullYear(lyMtdEnd.getFullYear() - 1)
+        lyMtdEnd.setHours(23, 59, 59, 999)
+      } else {
+        cyMtdStart = new Date(cyYear, cyMonth, 1, 0, 0, 0, 0)
+        cyMtdEnd = new Date(cyYear, cyMonth, cyDay, 23, 59, 59, 999)
+
+        lyMtdStart = new Date(cyYear - 1, cyMonth, 1, 0, 0, 0, 0)
+        lyMtdEnd = new Date(cyYear - 1, cyMonth, cyDay, 23, 59, 59, 999)
+      }
+
+      const quarterStartMonth = Math.floor(cyMonth / 3) * 3
+      const cyQtdStart = new Date(cyYear, quarterStartMonth, 1, 0, 0, 0, 0)
+      const cyQtdEnd = new Date(cyMtdEnd)
+
+      const lyQtdStart = new Date(cyYear - 1, quarterStartMonth, 1, 0, 0, 0, 0)
+      const lyQtdEnd = new Date(lyMtdEnd)
+
+      let fiscalYearStartCY = cyYear
+      if (cyMonth < 3) {
+        fiscalYearStartCY = cyYear - 1
+      }
+      const cyYtdStart = new Date(fiscalYearStartCY, 3, 1, 0, 0, 0, 0)
+      const cyYtdEnd = new Date(cyMtdEnd)
+
+      const lyYtdStart = new Date(fiscalYearStartCY - 1, 3, 1, 0, 0, 0, 0)
+      const lyYtdEnd = new Date(lyMtdEnd)
+
+      return {
+        cyMtdStart, cyMtdEnd, lyMtdStart, lyMtdEnd,
+        cyQtdStart, cyQtdEnd, lyQtdStart, lyQtdEnd,
+        cyYtdStart, cyYtdEnd, lyYtdStart, lyYtdEnd,
+        currentYear: cyYear, currentMonth: cyMonth, currentDay: cyDay, daysInMonth
       }
     }
 
-    // Calculate metrics based on date filtering
+    const bounds = getBoundaries()
+    const {
+      cyMtdStart, cyMtdEnd, lyMtdStart, lyMtdEnd,
+      cyQtdStart, cyQtdEnd, lyQtdStart, lyQtdEnd,
+      cyYtdStart, cyYtdEnd, lyYtdStart, lyYtdEnd,
+      currentYear, currentMonth, currentDay, daysInMonth
+    } = bounds
+
+    setDateContext({
+      currentYear,
+      currentMonth,
+      currentDay,
+      daysInMonth
+    })
+
+    console.log('📅 RO Billing Report Section - Derived Boundaries:', {
+      currentYear,
+      currentMonth: currentMonth + 1,
+      currentDay,
+      daysInMonth,
+      cyMtd: `[${cyMtdStart.toISOString()} -> ${cyMtdEnd.toISOString()}]`,
+      lyMtd: `[${lyMtdStart.toISOString()} -> ${lyMtdEnd.toISOString()}]`,
+      cyQtd: `[${cyQtdStart.toISOString()} -> ${cyQtdEnd.toISOString()}]`,
+      lyQtd: `[${lyQtdStart.toISOString()} -> ${lyQtdEnd.toISOString()}]`,
+      cyYtd: `[${cyYtdStart.toISOString()} -> ${cyYtdEnd.toISOString()}]`,
+      lyYtd: `[${lyYtdStart.toISOString()} -> ${lyYtdEnd.toISOString()}]`,
+      totalRows: rows.length
+    })
+
+    // Calculate metrics based on boundaries
     const calculateMetrics = (amountCol?: string) => {
       let mtd_cy = 0, mtd_ly = 0, qtd_cy = 0, qtd_ly = 0, ytd_cy = 0, ytd_ly = 0
       let mtd_cy_count = 0, mtd_ly_count = 0
@@ -215,32 +284,40 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
         const amount = getVal(row, amountCol)
 
         if (date) {
-          // Current Year (CY)
-          if (isInPeriod(date, currentYear, 'mtd')) {
+          // MTD
+          if (date >= cyMtdStart && date <= cyMtdEnd) {
             mtd_cy += amount
             mtd_cy_count++
           }
-          if (isInPeriod(date, currentYear, 'qtd')) qtd_cy += amount
-          if (isInPeriod(date, currentYear, 'ytd')) ytd_cy += amount
-
-          // Last Year (LY)
-          if (isInPeriod(date, currentYear - 1, 'mtd')) {
+          if (date >= lyMtdStart && date <= lyMtdEnd) {
             mtd_ly += amount
             mtd_ly_count++
           }
-          if (isInPeriod(date, currentYear - 1, 'qtd')) qtd_ly += amount
-          if (isInPeriod(date, currentYear - 1, 'ytd')) ytd_ly += amount
+          // QTD
+          if (date >= cyQtdStart && date <= cyQtdEnd) {
+            qtd_cy += amount
+          }
+          if (date >= lyQtdStart && date <= lyQtdEnd) {
+            qtd_ly += amount
+          }
+          // YTD
+          if (date >= cyYtdStart && date <= cyYtdEnd) {
+            ytd_cy += amount
+          }
+          if (date >= lyYtdStart && date <= lyYtdEnd) {
+            ytd_ly += amount
+          }
         }
       })
 
-      console.log(`💰 ${amountCol} Revenue:`, {
+      console.log(`💰 ${amountCol} Aggregated Revenue:`, {
         mtd: { cy: mtd_cy, ly: mtd_ly, cy_count: mtd_cy_count, ly_count: mtd_ly_count },
         qtd: { cy: qtd_cy, ly: qtd_ly },
         ytd: { cy: ytd_cy, ly: ytd_ly }
       })
 
       // Growth helper
-      const calcGrowth = (cy: number, ly: number) => (ly > 0 ? ((cy - ly) / ly) * 100 : 0)
+      const calcGrowth = (cy: number, ly: number): number | 'N/A' => (ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A')
 
       return {
         mtd: { cy: mtd_cy, ly: mtd_ly, growth: calcGrowth(mtd_cy, mtd_ly) },
@@ -249,49 +326,34 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
       }
     }
 
-    // Calculate Load (count of entries) based on dates
+    // Calculate Load (count of entries) based on boundaries
     const calculateLoadMetrics = () => {
       let mtd_cy = 0, mtd_ly = 0, qtd_cy = 0, qtd_ly = 0, ytd_cy = 0, ytd_ly = 0
-      let validDates = 0, invalidDates = 0
 
       rows.forEach(row => {
         const dateStr = String(row[billDateCol || roDateCol || ''] || '')
         const date = parseDate(dateStr)
 
         if (date) {
-          validDates++
-          // Current Year (CY) - count entries
-          if (isInPeriod(date, currentYear, 'mtd')) mtd_cy++
-          if (isInPeriod(date, currentYear, 'qtd')) qtd_cy++
-          if (isInPeriod(date, currentYear, 'ytd')) ytd_cy++
-
-          // Last Year (LY) - count entries
-          if (isInPeriod(date, currentYear - 1, 'mtd')) mtd_ly++
-          if (isInPeriod(date, currentYear - 1, 'qtd')) qtd_ly++
-          if (isInPeriod(date, currentYear - 1, 'ytd')) ytd_ly++
-        } else {
-          invalidDates++
+          // MTD
+          if (date >= cyMtdStart && date <= cyMtdEnd) mtd_cy++
+          if (date >= lyMtdStart && date <= lyMtdEnd) mtd_ly++
+          // QTD
+          if (date >= cyQtdStart && date <= cyQtdEnd) qtd_cy++
+          if (date >= lyQtdStart && date <= lyQtdEnd) qtd_ly++
+          // YTD
+          if (date >= cyYtdStart && date <= cyYtdEnd) ytd_cy++
+          if (date >= lyYtdStart && date <= lyYtdEnd) ytd_ly++
         }
       })
 
-      console.log('📅 Date parsing results:', {
-        totalRows: rows.length,
-        validDates,
-        invalidDates,
-        billDateCol,
-        roDateCol,
-        currentYear,
-        currentMonth,
-        currentQuarter
-      })
-      
-      console.log('📊 Load counts:', {
+      console.log('📊 Load counts (Load Trend):', {
         mtd: { cy: mtd_cy, ly: mtd_ly },
         qtd: { cy: qtd_cy, ly: qtd_ly },
         ytd: { cy: ytd_cy, ly: ytd_ly }
       })
 
-      const calcGrowth = (cy: number, ly: number) => (ly > 0 ? ((cy - ly) / ly) * 100 : 0)
+      const calcGrowth = (cy: number, ly: number): number | 'N/A' => (ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A')
 
       return {
         mtd: { cy: mtd_cy, ly: mtd_ly, growth: calcGrowth(mtd_cy, mtd_ly) },
@@ -303,7 +365,7 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
     setLabourRevenue(calculateMetrics(labourCol))
     setPartsRevenue(calculateMetrics(partCol))
 
-    // Calculate Load growth (count-based)
+    // Calculate Load growth
     const loadMetrics = calculateLoadMetrics()
     
     // Growth Contribution calculation
@@ -313,19 +375,19 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
     })
     
     const paidServiceRate = rows.length > 0 ? (paidServiceRows.length / rows.length) * 100 : 0
-    const loadGrowthValue = loadMetrics.ytd.growth // Use YTD growth for load
+    const loadGrowthValue = loadMetrics.ytd.growth
     
     setGrowthContribution({
       load: {
         value: loadGrowthValue,
-        trend: loadGrowthValue > 0 ? 'up' : loadGrowthValue < 0 ? 'down' : 'neutral'
+        trend: loadGrowthValue === 'N/A' ? 'neutral' : (loadGrowthValue > 0 ? 'up' : loadGrowthValue < 0 ? 'down' : 'neutral')
       },
       paidService: {
         value: paidServiceRate,
         trend: paidServiceRate > 50 ? 'up' : 'neutral'
       }
     })
-  }, [])
+  }, [dateFilter])
 
   const fetchROBillingData = useCallback(async () => {
     // If shared data is provided, use it directly
@@ -387,6 +449,7 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
     } finally {
       setLoading(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processRevenueData, sharedData, activeSheet])
 
   // 2. Guard Clauses & Render Helpers
@@ -402,14 +465,20 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
     }).format(value)
   }
 
-  const formatGrowth = (value: number) => {
-    return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
+  const formatGrowth = (value: number | string | 'N/A') => {
+    if (value === 'N/A') return 'N/A'
+    const num = typeof value === 'string' ? parseFloat(value) : value
+    if (isNaN(num)) return 'N/A'
+    return `${num >= 0 ? '+' : ''}${num.toFixed(1)}%`
   }
 
   // 3. Effects
   useEffect(() => {
     if (isROBillingSheet) {
-      fetchROBillingData()
+      const timer = setTimeout(() => {
+        fetchROBillingData()
+      }, 0)
+      return () => clearTimeout(timer)
     }
   }, [fetchROBillingData, isROBillingSheet, sharedData])
 
@@ -473,7 +542,12 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
     })
     
     // Month Target: Based on YTD average with 10% growth
-    const monthsElapsed = currentMonth + 1 // Months from Jan to current month
+    const getFiscalMonthsElapsed = (m: number) => {
+      // m is 0-indexed month: Jan=0, Feb=1, Mar=2, Apr=3, ..., Dec=11
+      // Fiscal year starts in April (3)
+      return m >= 3 ? m - 2 : m + 10
+    }
+    const monthsElapsed = getFiscalMonthsElapsed(currentMonth)
     const avgMonthlyRevenue = monthsElapsed > 0 ? ytdCY / monthsElapsed : ytdCY
     const monthTarget = avgMonthlyRevenue * 1.1 // 10% growth target
     
@@ -720,7 +794,11 @@ export default function ROBillingReportSection({ activeSheet, sharedData }: ROBi
                             <td className="px-4 py-6 text-sm font-medium text-center text-slate-400">{formatCurrency(data[period].ly)}</td>
                             <td className={cn(
                               "px-4 py-6 text-sm font-black text-center border-r border-slate-50 last:border-r-0",
-                              data[period].growth >= 0 ? "text-green-600" : "text-rose-600"
+                              data[period].growth === 'N/A'
+                                ? "text-slate-400"
+                                : Number(data[period].growth) >= 0
+                                ? "text-green-600"
+                                : "text-rose-600"
                             )}>
                               {formatGrowth(data[period].growth)}
                             </td>

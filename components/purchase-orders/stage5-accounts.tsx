@@ -87,7 +87,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
   const costDifference = parseFloat(formData.actualAmount || '0') - orderDetails.estimatedCost
 
   return (
-    <form onSubmit={handleSubmit} className="relative">
+    <form onSubmit={handleSubmit} autoComplete="off" className="relative">
       <Card className="border-none shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)] overflow-hidden rounded-[2.5rem] bg-white">
         <CardHeader className="bg-slate-900 p-8 text-white relative">
           <div className="relative z-10">

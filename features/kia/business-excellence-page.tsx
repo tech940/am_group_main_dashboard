@@ -59,7 +59,11 @@ interface StatRow {
   cy: number
   ly: number
   growth: string
+  qtdCY: number
+  qtdLY: number
   qtdGrowth: string
+  ytdCY: number
+  ytdLY: number
   ytdGrowth: string
   subRows: StatRow[]
 }
@@ -607,7 +611,7 @@ export default function KiaBusinessExcellencePage() {
                                 Performance analytics are only available for RO Billing sheets.
                               </p>
                               <p className="text-xs text-slate-400 mt-2">
-                                Select "RO Billing Report March 25" to view detailed analytics.
+                                Select &quot;RO Billing Report March 25&quot; to view detailed analytics.
                               </p>
                             </div>
                           )}
@@ -657,8 +661,11 @@ function ROBillingAnalytics({
   useEffect(() => {
     if (prefetchedData && prefetchedData.length > 0) {
       console.log('⚡ Using pre-fetched RO Billing data (instant load):', prefetchedData.length, 'records')
-      setData(prefetchedData)
-      setLoading(false)
+      const timer = setTimeout(() => {
+        setData(prefetchedData)
+        setLoading(false)
+      }, 0)
+      return () => clearTimeout(timer)
     } else if (!isPrefetching) {
       // Fallback: fetch if pre-fetch didn't happen or failed
       const fetchAllData = async () => {
@@ -722,7 +729,8 @@ function ROBillingRevenueSection({
   isAdmin,
   activeSheet,
   prefetchedData,
-  isPrefetching
+  isPrefetching,
+  dateFilter
 }: {
   sheetId: string
   sheetName: string
@@ -730,6 +738,13 @@ function ROBillingRevenueSection({
   activeSheet: string | null
   prefetchedData: Record<string, unknown>[] | null
   isPrefetching: boolean
+  dateFilter: {
+    mode: 'month' | 'range'
+    month: number
+    year: number
+    startDate: string
+    endDate: string
+  } | null
 }) {
   const [data, setData] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)
@@ -738,8 +753,11 @@ function ROBillingRevenueSection({
   useEffect(() => {
     if (prefetchedData && prefetchedData.length > 0) {
       console.log('⚡ Using pre-fetched RO Billing data for Revenue section:', prefetchedData.length, 'records')
-      setData(prefetchedData)
-      setLoading(false)
+      const timer = setTimeout(() => {
+        setData(prefetchedData)
+        setLoading(false)
+      }, 0)
+      return () => clearTimeout(timer)
     } else if (!isPrefetching) {
       // Fallback: fetch if pre-fetch didn't happen or failed
       const fetchAllData = async () => {
@@ -780,7 +798,7 @@ function ROBillingRevenueSection({
 
   return (
     <div className="space-y-6">
-      <ROBillingReportSection activeSheet={activeSheet} sharedData={data} />
+      <ROBillingReportSection activeSheet={activeSheet} sharedData={data} dateFilter={dateFilter} />
     </div>
   )
 }
@@ -840,173 +858,247 @@ function ServiceTypePerformance({
   const statsData = useMemo(() => {
     if (!data || data.length === 0) return []
 
-    // Helper to parse dates from DD/MM/YYYY format
+    // Helper to parse dates from DD/MM/YYYY or YYYY-MM-DD formats
     const parseDate = (dateStr: string): Date | null => {
       if (!dateStr || dateStr === '—' || dateStr === '-' || dateStr === '') return null
-      const parts = String(dateStr).trim().split('/')
+      const trimmed = String(dateStr).trim()
+      // Check YYYY-MM-DD
+      if (trimmed.includes('-')) {
+        const parts = trimmed.split('-')
+        if (parts.length === 3) {
+          const year = parseInt(parts[0], 10)
+          const month = parseInt(parts[1], 10) - 1
+          const day = parseInt(parts[2], 10)
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            return new Date(year, month, day)
+          }
+        }
+      }
+      // Check DD/MM/YYYY
+      const parts = trimmed.split('/')
       if (parts.length === 3) {
-        const day = parseInt(parts[0], 10)
-        const month = parseInt(parts[1], 10) - 1
+        let day = parseInt(parts[0], 10)
+        let month = parseInt(parts[1], 10) - 1
         const year = parseInt(parts[2], 10)
-        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        
+        if (month > 11) {
+          const temp = day
+          day = month + 1
+          month = temp - 1
+        }
+        
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year) && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
           return new Date(year, month, day)
         }
       }
       return null
     }
 
-    // Filter data based on date filter
-    let filteredData = data
-    if (dateFilter) {
-      filteredData = data.filter(row => {
-        const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
-        const date = parseDate(dateStr)
-        if (!date) return false
-
-        if (dateFilter.mode === 'month') {
-          // Filter by selected month and year
-          return date.getMonth() === dateFilter.month && date.getFullYear() === dateFilter.year
-        } else if (dateFilter.mode === 'range') {
-          // Filter by date range
-          if (!dateFilter.startDate || !dateFilter.endDate) return true
-          const start = new Date(dateFilter.startDate)
-          const end = new Date(dateFilter.endDate)
-          return date >= start && date <= end
-        }
-        return true
-      })
-      
-      console.log('🔍 Date Filter Applied:', {
-        mode: dateFilter.mode,
-        month: dateFilter.mode === 'month' ? dateFilter.month + 1 : 'N/A',
-        year: dateFilter.year,
-        startDate: dateFilter.startDate,
-        endDate: dateFilter.endDate,
-        originalRecords: data.length,
-        filteredRecords: filteredData.length
-      })
-    }
-
-    // Detect the current year from filtered data
-    const allYearsInData = new Set<number>()
-    filteredData.forEach(row => {
+    // Parse all dates to find default max year and month in dataset
+    let maxDate = new Date(2025, 2, 31) // default fallback
+    let foundAny = false
+    data.forEach(row => {
       const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
       const date = parseDate(dateStr)
       if (date) {
-        allYearsInData.add(date.getFullYear())
+        if (!foundAny || date > maxDate) {
+          maxDate = date
+          foundAny = true
+        }
       }
     })
-    
-    // Use the maximum year found in the dataset as current year
-    const currentYear = allYearsInData.size > 0
-      ? Math.max(...Array.from(allYearsInData))
-      : new Date().getFullYear()
-    
-    console.log('📊 Performance Analysis - Year Context:', {
-      currentYear,
-      lastYear: currentYear - 1,
-      allYearsInDataset: Array.from(allYearsInData).sort(),
-      totalRecords: filteredData.length,
-      originalRecords: data.length,
-      hasCYData: allYearsInData.has(currentYear),
-      hasLYData: allYearsInData.has(currentYear - 1),
-      dateFilterActive: !!dateFilter
+
+    const today = new Date()
+    const todayYear = today.getFullYear()
+    const todayMonth = today.getMonth()
+    const todayDay = today.getDate()
+
+    const defaultYear = maxDate.getFullYear()
+    const defaultMonth = maxDate.getMonth()
+
+    let cyYear = defaultYear
+    let cyMonth = defaultMonth
+    let cyDay = 31
+
+    let isRangeMode = false
+    let rangeStart = new Date()
+    let rangeEnd = new Date()
+
+    if (dateFilter) {
+      if (dateFilter.mode === 'month') {
+        cyYear = dateFilter.year
+        cyMonth = dateFilter.month
+        if (cyYear === todayYear && cyMonth === todayMonth) {
+          cyDay = todayDay
+        } else {
+          cyDay = new Date(cyYear, cyMonth + 1, 0).getDate()
+        }
+      } else if (dateFilter.mode === 'range' && dateFilter.startDate && dateFilter.endDate) {
+        isRangeMode = true
+        rangeStart = parseDate(dateFilter.startDate) || new Date()
+        rangeEnd = parseDate(dateFilter.endDate) || new Date()
+        cyYear = rangeEnd.getFullYear()
+        cyMonth = rangeEnd.getMonth()
+        cyDay = rangeEnd.getDate()
+      }
+    } else {
+      if (cyYear === todayYear && cyMonth === todayMonth) {
+        cyDay = todayDay
+      } else {
+        cyDay = new Date(cyYear, cyMonth + 1, 0).getDate()
+      }
+    }
+
+    const daysInMonth = new Date(cyYear, cyMonth + 1, 0).getDate()
+
+    let cyMtdStart: Date, cyMtdEnd: Date, lyMtdStart: Date, lyMtdEnd: Date
+
+    if (isRangeMode) {
+      cyMtdStart = new Date(rangeStart)
+      cyMtdStart.setHours(0, 0, 0, 0)
+      cyMtdEnd = new Date(rangeEnd)
+      cyMtdEnd.setHours(23, 59, 59, 999)
+
+      lyMtdStart = new Date(rangeStart)
+      lyMtdStart.setFullYear(lyMtdStart.getFullYear() - 1)
+      lyMtdStart.setHours(0, 0, 0, 0)
+      lyMtdEnd = new Date(rangeEnd)
+      lyMtdEnd.setFullYear(lyMtdEnd.getFullYear() - 1)
+      lyMtdEnd.setHours(23, 59, 59, 999)
+    } else {
+      cyMtdStart = new Date(cyYear, cyMonth, 1, 0, 0, 0, 0)
+      cyMtdEnd = new Date(cyYear, cyMonth, cyDay, 23, 59, 59, 999)
+
+      lyMtdStart = new Date(cyYear - 1, cyMonth, 1, 0, 0, 0, 0)
+      lyMtdEnd = new Date(cyYear - 1, cyMonth, cyDay, 23, 59, 59, 999)
+    }
+
+    const quarterStartMonth = Math.floor(cyMonth / 3) * 3
+    const cyQtdStart = new Date(cyYear, quarterStartMonth, 1, 0, 0, 0, 0)
+    const cyQtdEnd = new Date(cyMtdEnd)
+
+    const lyQtdStart = new Date(cyYear - 1, quarterStartMonth, 1, 0, 0, 0, 0)
+    const lyQtdEnd = new Date(lyMtdEnd)
+
+    let fiscalYearStartCY = cyYear
+    if (cyMonth < 3) {
+      fiscalYearStartCY = cyYear - 1
+    }
+    const cyYtdStart = new Date(fiscalYearStartCY, 3, 1, 0, 0, 0, 0)
+    const cyYtdEnd = new Date(cyMtdEnd)
+
+    const lyYtdStart = new Date(fiscalYearStartCY - 1, 3, 1, 0, 0, 0, 0)
+    const lyYtdEnd = new Date(lyMtdEnd)
+
+    console.log('📅 statsData Boundaries Derived:', {
+      cyMtd: `[${cyMtdStart.toISOString()} -> ${cyMtdEnd.toISOString()}]`,
+      lyMtd: `[${lyMtdStart.toISOString()} -> ${lyMtdEnd.toISOString()}]`,
+      cyQtd: `[${cyQtdStart.toISOString()} -> ${cyQtdEnd.toISOString()}]`,
+      lyQtd: `[${lyQtdStart.toISOString()} -> ${lyQtdEnd.toISOString()}]`,
+      cyYtd: `[${cyYtdStart.toISOString()} -> ${cyYtdEnd.toISOString()}]`,
+      lyYtd: `[${lyYtdStart.toISOString()} -> ${lyYtdEnd.toISOString()}]`
     })
 
+    const calcGrowth = (cyVal: number, lyVal: number): string => {
+      if (lyVal <= 0) return 'N/A'
+      return (((cyVal - lyVal) / lyVal) * 100).toFixed(1)
+    }
+
     const calculateForTypes = (name: string, types: string[], isParent = false): StatRow => {
-      const catData = filteredData.filter(d => {
+      const catData = data.filter(d => {
         const type = String(d['Service Type'] || d['Category'] || '').toLowerCase()
         return types.some(t => type.includes(t.toLowerCase()))
       })
-      
-      // Determine if we're calculating amounts, per-vehicle, or counts
+
       const isLabourPerVehicle = activeTrend === 'Labour Per Vehicle Trend'
       const isPartsPerVehicle = activeTrend === 'Parts Per Vehicle Trend'
       const isLabourTrend = activeTrend === 'Labour Trend'
       const isPartsTrend = activeTrend === 'Parts Trend'
       const isAmountBased = isLabourTrend || isPartsTrend
       const isPerVehicle = isLabourPerVehicle || isPartsPerVehicle
-      
-      // Sum amounts or count entries by year based on Bill Date or RO Date
-      let cyValue = 0
-      let lyValue = 0
-      let cyCount = 0
-      let lyCount = 0
-      const yearBreakdown: Record<number, number> = {}
-      
+
+      let cyMtd = 0, lyMtd = 0
+      let cyQtd = 0, lyQtd = 0
+      let cyYtd = 0, lyYtd = 0
+
+      let cyCountMtd = 0, lyCountMtd = 0
+      let cyCountQtd = 0, lyCountQtd = 0
+      let cyCountYtd = 0, lyCountYtd = 0
+
       catData.forEach(d => {
         const dateStr = String(d['Bill Date'] || d['RO Date'] || '')
         const date = parseDate(dateStr)
-        
+
         if (date) {
-          const year = date.getFullYear()
-          
-          // Get value based on trend type
-          let value = 1 // Default for count-based
+          let value = 1
           if (isLabourTrend || isLabourPerVehicle) {
             value = parseFloat(String(d['Labour Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
           } else if (isPartsTrend || isPartsPerVehicle) {
             value = parseFloat(String(d['Part Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
           }
-          
-          // Track year breakdown
-          yearBreakdown[year] = (yearBreakdown[year] || 0) + value
-          
-          if (year === currentYear) {
-            cyValue += value
-            cyCount++
-          } else if (year === currentYear - 1) {
-            lyValue += value
-            lyCount++
+
+          // MTD checks
+          if (date >= cyMtdStart && date <= cyMtdEnd) {
+            cyMtd += value
+            cyCountMtd++
+          }
+          if (date >= lyMtdStart && date <= lyMtdEnd) {
+            lyMtd += value
+            lyCountMtd++
+          }
+
+          // QTD checks
+          if (date >= cyQtdStart && date <= cyQtdEnd) {
+            cyQtd += value
+            cyCountQtd++
+          }
+          if (date >= lyQtdStart && date <= lyQtdEnd) {
+            lyQtd += value
+            lyCountQtd++
+          }
+
+          // YTD checks
+          if (date >= cyYtdStart && date <= cyYtdEnd) {
+            cyYtd += value
+            cyCountYtd++
+          }
+          if (date >= lyYtdStart && date <= lyYtdEnd) {
+            lyYtd += value
+            lyCountYtd++
           }
         }
       })
-      
-      // For per-vehicle trends, divide by vehicle count
+
       if (isPerVehicle) {
-        cyValue = cyCount > 0 ? cyValue / cyCount : 0
-        lyValue = lyCount > 0 ? lyValue / lyCount : 0
+        cyMtd = cyCountMtd > 0 ? cyMtd / cyCountMtd : 0
+        lyMtd = lyCountMtd > 0 ? lyMtd / lyCountMtd : 0
+
+        cyQtd = cyCountQtd > 0 ? cyQtd / cyCountQtd : 0
+        lyQtd = lyCountQtd > 0 ? lyQtd / lyCountQtd : 0
+
+        cyYtd = cyCountYtd > 0 ? cyYtd / cyCountYtd : 0
+        lyYtd = lyCountYtd > 0 ? lyYtd / lyCountYtd : 0
       }
 
-      // Debug logging for ALL categories to diagnose LY issue
-      if (Object.keys(yearBreakdown).length > 0) {
-        console.log(`📊 ${name} (${isParent ? 'PARENT' : 'CHILD'}):`, {
-          trend: activeTrend,
-          currentYear,
-          yearBreakdown,
-          cyValue: isAmountBased ? cyValue : cyValue,
-          lyValue: isAmountBased ? lyValue : lyValue,
-          cyValueInLakhs: isAmountBased ? Math.floor(cyValue / 100000) : 'N/A',
-          lyValueInLakhs: isAmountBased ? Math.floor(lyValue / 100000) : 'N/A',
-          cyCount,
-          lyCount,
-          totalRecords: catData.length,
-          hasLYData: lyValue > 0
-        })
-      }
-
-      // Calculate growth for MTD (base values)
-      const mtdGrowth = lyValue > 0 ? ((cyValue - lyValue) / lyValue) * 100 : 0
-      
-      // Calculate growth for QTD (with multipliers 3.2 and 3.1)
-      const qtdCY = cyValue * 3.2
-      const qtdLY = lyValue * 3.1
-      const qtdGrowth = qtdLY > 0 ? ((qtdCY - qtdLY) / qtdLY) * 100 : 0
-      
-      // Calculate growth for YTD (with multipliers 12.5 and 12.1)
-      const ytdCY = cyValue * 12.5
-      const ytdLY = lyValue * 12.1
-      const ytdGrowth = ytdLY > 0 ? ((ytdCY - ytdLY) / ytdLY) * 100 : 0
+      const tdValue = isAmountBased
+        ? Math.floor(cyMtd / 100000)
+        : isPerVehicle
+        ? Math.floor(cyMtd / 1000)
+        : Math.floor(cyMtd / 25)
 
       return {
         name,
         isParent,
-        td: isAmountBased ? Math.floor(cyValue / 100000) : isPerVehicle ? Math.floor(cyValue / 1000) : Math.floor(cyValue / 25), // TD in lakhs for amounts, thousands for per-vehicle
-        cy: cyValue,
-        ly: lyValue,
-        growth: mtdGrowth.toFixed(1),
-        qtdGrowth: qtdGrowth.toFixed(1),
-        ytdGrowth: ytdGrowth.toFixed(1),
+        td: tdValue,
+        cy: cyMtd,
+        ly: lyMtd,
+        growth: calcGrowth(cyMtd, lyMtd),
+        qtdCY: cyQtd,
+        qtdLY: lyQtd,
+        qtdGrowth: calcGrowth(cyQtd, lyQtd),
+        ytdCY: cyYtd,
+        ytdLY: lyYtd,
+        ytdGrowth: calcGrowth(cyYtd, lyYtd),
         subRows: []
       }
     }
@@ -1037,78 +1129,82 @@ function ServiceTypePerformance({
       result.push({ ...parent, subRows: item.sub.map(s => calculateForTypes(s, [s])) })
     })
 
-    // 4. Extract base rows for calculations
     const paidRow = result.find(r => r.name === 'Paid Service')!
     const freeRow = result.find(r => r.name === 'Free Services')!
     const runningRow = result.find(r => r.name === 'Running Repairs')!
     const others = result.find(r => r.name === 'Others')!
     const accident = result.find(r => r.name === 'Accident')!
 
-    // 5. MECH (Sum of Paid + Free + Running)
     const calcTotal = (name: string, rows: StatRow[]): StatRow => {
       const cy = rows.reduce((acc, r) => acc + r.cy, 0)
       const ly = rows.reduce((acc, r) => acc + r.ly, 0)
-      
-      // Calculate growth for MTD (base values)
-      const mtdGrowth = ly > 0 ? ((cy - ly) / ly) * 100 : 0
-      
-      // Calculate growth for QTD (with multipliers 3.2 and 3.1)
-      const qtdCY = cy * 3.2
-      const qtdLY = ly * 3.1
-      const qtdGrowth = qtdLY > 0 ? ((qtdCY - qtdLY) / qtdLY) * 100 : 0
-      
-      // Calculate growth for YTD (with multipliers 12.5 and 12.1)
-      const ytdCY = cy * 12.5
-      const ytdLY = ly * 12.1
-      const ytdGrowth = ytdLY > 0 ? ((ytdCY - ytdLY) / ytdLY) * 100 : 0
-      
+      const qtdCY = rows.reduce((acc, r) => acc + r.qtdCY, 0)
+      const qtdLY = rows.reduce((acc, r) => acc + r.qtdLY, 0)
+      const ytdCY = rows.reduce((acc, r) => acc + r.ytdCY, 0)
+      const ytdLY = rows.reduce((acc, r) => acc + r.ytdLY, 0)
+
       return {
         name,
         isParent: false,
         td: rows.reduce((acc, r) => acc + r.td, 0),
         cy,
         ly,
-        growth: mtdGrowth.toFixed(1),
-        qtdGrowth: qtdGrowth.toFixed(1),
-        ytdGrowth: ytdGrowth.toFixed(1),
+        growth: calcGrowth(cy, ly),
+        qtdCY,
+        qtdLY,
+        qtdGrowth: calcGrowth(qtdCY, qtdLY),
+        ytdCY,
+        ytdLY,
+        ytdGrowth: calcGrowth(ytdCY, ytdLY),
         subRows: []
       }
     }
 
     const mechSubTotal = calcTotal('MECH', [paidRow, freeRow, runningRow])
-
     const mechTotal = calcTotal('MECH TOTAL', [mechSubTotal, others])
-
     const grandTotal = calcTotal('Grand Total', [mechTotal, accident])
 
-    // 6. Scale values based on trend BUT recalculate growth after scaling
     const scale = activeTrend.includes('Labour') ? 18.5 : activeTrend.includes('Parts') ? 22.3 : 1
     const processRow = (r: StatRow): StatRow => {
       const scaledCY = r.cy * scale
       const scaledLY = r.ly * scale
-      const recalculatedGrowth = scaledLY > 0 ? ((scaledCY - scaledLY) / scaledLY) * 100 : 0
-      
+      const scaledQtdCY = r.qtdCY * scale
+      const scaledQtdLY = r.qtdLY * scale
+      const scaledYtdCY = r.ytdCY * scale
+      const scaledYtdLY = r.ytdLY * scale
+
       return {
         ...r,
         td: r.td * scale,
         cy: scaledCY,
         ly: scaledLY,
-        growth: recalculatedGrowth.toFixed(1),
-        qtdGrowth: recalculatedGrowth.toFixed(1),
-        ytdGrowth: recalculatedGrowth.toFixed(1),
+        growth: calcGrowth(scaledCY, scaledLY),
+        qtdCY: scaledQtdCY,
+        qtdLY: scaledQtdLY,
+        qtdGrowth: calcGrowth(scaledQtdCY, scaledQtdLY),
+        ytdCY: scaledYtdCY,
+        ytdLY: scaledYtdLY,
+        ytdGrowth: calcGrowth(scaledYtdCY, scaledYtdLY),
         subRows: r.subRows.map((s: StatRow) => {
           const subScaledCY = s.cy * scale
           const subScaledLY = s.ly * scale
-          const subGrowth = subScaledLY > 0 ? ((subScaledCY - subScaledLY) / subScaledLY) * 100 : 0
-          
+          const subScaledQtdCY = s.qtdCY * scale
+          const subScaledQtdLY = s.qtdLY * scale
+          const subScaledYtdCY = s.ytdCY * scale
+          const subScaledYtdLY = s.ytdLY * scale
+
           return {
             ...s,
             td: s.td * scale,
             cy: subScaledCY,
             ly: subScaledLY,
-            growth: subGrowth.toFixed(1),
-            qtdGrowth: subGrowth.toFixed(1),
-            ytdGrowth: subGrowth.toFixed(1),
+            growth: calcGrowth(subScaledCY, subScaledLY),
+            qtdCY: subScaledQtdCY,
+            qtdLY: subScaledQtdLY,
+            qtdGrowth: calcGrowth(subScaledQtdCY, subScaledQtdLY),
+            ytdCY: subScaledYtdCY,
+            ytdLY: subScaledYtdLY,
+            ytdGrowth: calcGrowth(subScaledYtdCY, subScaledYtdLY),
             subRows: []
           }
         })
@@ -1125,7 +1221,7 @@ function ServiceTypePerformance({
       processRow(accident),
       processRow(grandTotal)
     ]
-  }, [data, activeTrend])
+  }, [data, activeTrend, dateFilter])
 
   const trendData = useMemo(() => {
     if (!data || data.length === 0) return []
@@ -1216,7 +1312,7 @@ function ServiceTypePerformance({
     let processedCount = 0
     let totalLabourSum = 0
     let totalPartSum = 0
-    let monthCounts: { [key: string]: number } = {}
+    const monthCounts: { [key: string]: number } = {}
     
     data.forEach((row, index) => {
       const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
@@ -1420,12 +1516,19 @@ function ServiceTypePerformance({
       note: 'Using TODAY\'S date (May 14) for MTD calculations, not last date in data (April 30)'
     })
     
-    // Calculate YTD total for target calculation (using filtered data and actual current year)
+    // Calculate YTD total for target calculation (using filtered data starting from Indian fiscal year April 1st)
+    let fiscalYearStartCY = actualCurrentYear
+    if (actualCurrentMonth < 3) {
+      fiscalYearStartCY = actualCurrentYear - 1
+    }
+    const ytdStart = new Date(fiscalYearStartCY, 3, 1, 0, 0, 0, 0)
+    const ytdEnd = new Date(actualCurrentYear, actualCurrentMonth, currentDay, 23, 59, 59, 999)
+
     let ytdTotal = 0
     filteredData.forEach(row => {
       const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
       const date = parseDate(dateStr)
-      if (date && date.getFullYear() === actualCurrentYear) {
+      if (date && date >= ytdStart && date <= ytdEnd) {
         let value = 1
         if (activeTrend.includes('Labour')) {
           const rawValue = row['Labour Amt']
@@ -1443,8 +1546,11 @@ function ServiceTypePerformance({
       .slice(0, currentDay)
       .reduce((acc, curr) => acc + curr.cy, 0)
     
-    // Month Target: Based on YTD average with 10% growth
-    const monthsElapsed = actualCurrentMonth + 1
+    // Month Target: Based on YTD average with 10% growth (using standard Indian fiscal offsets)
+    const getFiscalMonthsElapsed = (m: number) => {
+      return m >= 3 ? m - 2 : m + 10
+    }
+    const monthsElapsed = getFiscalMonthsElapsed(actualCurrentMonth)
     const avgMonthlyValue = monthsElapsed > 0 ? ytdTotal / monthsElapsed : ytdTotal
     const monthTarget = avgMonthlyValue * 1.1
     
@@ -1514,30 +1620,89 @@ function ServiceTypePerformance({
 
   // Calculate daily target for the trend chart reference line
   const dailyTarget = useMemo(() => {
-    if (!trendData || trendData.length === 0) return 0
+    if (!trendData || trendData.length === 0 || !data || data.length === 0) return 0
     
-    // Get the month target from kpiStats
-    const monthTargetKpi = kpiStats.find(kpi => kpi.label === 'Month Target')
-    if (!monthTargetKpi) return 0
-    
-    // Extract numeric value from formatted string (e.g., "₹5.0 L" or "₹50.00 K")
-    const valueStr = monthTargetKpi.value.toString()
-    const numMatch = valueStr.match(/[\d.]+/)
-    if (!numMatch) return 0
-    
-    let monthTargetValue = parseFloat(numMatch[0])
-    
-    // Convert back to actual value based on unit
-    if (valueStr.includes(' L')) {
-      monthTargetValue *= 100000 // Lakhs to actual value
-    } else if (valueStr.includes(' K')) {
-      monthTargetValue *= 1000 // Thousands to actual value
+    const parseDate = (dateStr: string): Date | null => {
+      if (!dateStr || dateStr === '—' || dateStr === '-' || dateStr === '') return null
+      const parts = String(dateStr).trim().split('/')
+      if (parts.length === 3) {
+        let day = parseInt(parts[0], 10)
+        let month = parseInt(parts[1], 10) - 1
+        const year = parseInt(parts[2], 10)
+        if (month > 11) {
+          const temp = day
+          day = month + 1
+          month = temp - 1
+        }
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year) && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
+          return new Date(year, month, day)
+        }
+      }
+      return null
     }
+
+    let filteredData = data
+    if (dateFilter) {
+      filteredData = data.filter(row => {
+        const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
+        const date = parseDate(dateStr)
+        if (!date) return false
+
+        if (dateFilter.mode === 'month') {
+          return date.getMonth() === dateFilter.month && date.getFullYear() === dateFilter.year
+        } else if (dateFilter.mode === 'range') {
+          if (!dateFilter.startDate || !dateFilter.endDate) return true
+          const start = new Date(dateFilter.startDate)
+          const end = new Date(dateFilter.endDate)
+          return date >= start && date <= end
+        }
+        return true
+      })
+    }
+
+    const today = new Date()
+    const todayYear = today.getFullYear()
+    const todayMonth = today.getMonth()
+    const todayDay = today.getDate()
     
-    // Calculate daily target
-    const daysInMonth = trendData.length
-    return daysInMonth > 0 ? monthTargetValue / daysInMonth : 0
-  }, [kpiStats, trendData])
+    const actualCurrentYear = todayYear
+    const actualCurrentMonth = todayMonth
+    const currentDay = todayDay
+    const daysInMonth = new Date(todayYear, todayMonth + 1, 0).getDate()
+
+    let fiscalYearStartCY = actualCurrentYear
+    if (actualCurrentMonth < 3) {
+      fiscalYearStartCY = actualCurrentYear - 1
+    }
+    const ytdStart = new Date(fiscalYearStartCY, 3, 1, 0, 0, 0, 0)
+    const ytdEnd = new Date(actualCurrentYear, actualCurrentMonth, currentDay, 23, 59, 59, 999)
+
+    let ytdTotal = 0
+    filteredData.forEach(row => {
+      const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
+      const date = parseDate(dateStr)
+      if (date && date >= ytdStart && date <= ytdEnd) {
+        let value = 1
+        if (activeTrend.includes('Labour')) {
+          const rawValue = row['Labour Amt']
+          value = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+        } else if (activeTrend.includes('Parts')) {
+          const rawValue = row['Part Amt']
+          value = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+        }
+        ytdTotal += value
+      }
+    })
+
+    const getFiscalMonthsElapsed = (m: number) => {
+      return m >= 3 ? m - 2 : m + 10
+    }
+    const monthsElapsed = getFiscalMonthsElapsed(actualCurrentMonth)
+    const avgMonthlyValue = monthsElapsed > 0 ? ytdTotal / monthsElapsed : ytdTotal
+    const monthTarget = avgMonthlyValue * 1.1
+    
+    return daysInMonth > 0 ? monthTarget / daysInMonth : 0
+  }, [data, activeTrend, dateFilter, trendData.length])
 
   // Historical FY Trends Data
   const fyTrendsData = useMemo(() => {
@@ -1590,7 +1755,7 @@ function ServiceTypePerformance({
         
         // Financial year starts in April (month 3)
         const fyYear = month >= 3 ? year : year - 1
-        const fy = `${fyYear}-${fyYear + 1}`
+        const fy = `FY ${fyYear}-${String(fyYear + 1).slice(-2)}`
         
         if (!fyData[fy]) {
           fyData[fy] = { load: 0, labour: 0, parts: 0 }
@@ -1618,7 +1783,7 @@ function ServiceTypePerformance({
         partsPerRO: values.load > 0 ? Math.round(values.parts / values.load) : 0
       }))
       .sort((a, b) => b.fy.localeCompare(a.fy))
-      .slice(0, 3) // Show last 3 FYs
+      .slice(0, 3) // Show last 3 FYs // Show last 3 FYs
   }, [data, dateFilter])
 
   return (
@@ -1809,35 +1974,41 @@ function ServiceTypePerformance({
                           <td className={cn("px-4 py-4 text-center", isTotal ? "bg-emerald-500/20" : "bg-slate-50/50")}>
                             <span className={cn(
                               "px-2.5 py-1 rounded-full text-[10px] font-black border shadow-sm",
-                              Number(row.growth) >= 0
+                              row.growth === 'N/A'
+                                ? "text-slate-400 bg-slate-50 border-slate-200"
+                                : Number(row.growth) >= 0
                                 ? "text-emerald-600 bg-emerald-50 border-emerald-100"
                                 : "text-rose-600 bg-rose-50 border-rose-100"
                             )}>
-                              {Number(row.growth) >= 0 ? '+' : ''}{row.growth}%
+                              {row.growth === 'N/A' ? 'N/A' : `${Number(row.growth) >= 0 ? '+' : ''}${row.growth}%`}
                             </span>
                           </td>
-                          <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.cy * 3.2, activeTrend)}</td>
-                          <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly * 3.1, activeTrend)}</td>
+                          <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.qtdCY, activeTrend)}</td>
+                          <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.qtdLY, activeTrend)}</td>
                           <td className="px-4 py-4 text-center">
                             <span className={cn(
                               "text-[10px] font-black px-2 py-0.5 rounded-full border",
-                              Number(row.qtdGrowth) >= 0
+                              row.qtdGrowth === 'N/A'
+                                ? "text-slate-400 bg-slate-50 border-slate-200"
+                                : Number(row.qtdGrowth) >= 0
                                 ? "text-emerald-600 bg-emerald-50 border-emerald-100"
                                 : "text-rose-600 bg-rose-50 border-rose-100"
                             )}>
-                              {Number(row.qtdGrowth) >= 0 ? '+' : ''}{row.qtdGrowth}%
+                              {row.qtdGrowth === 'N/A' ? 'N/A' : `${Number(row.qtdGrowth) >= 0 ? '+' : ''}${row.qtdGrowth}%`}
                             </span>
                           </td>
-                          <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.cy * 12.5, activeTrend)}</td>
-                          <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly * 12.1, activeTrend)}</td>
+                          <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.ytdCY, activeTrend)}</td>
+                          <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ytdLY, activeTrend)}</td>
                           <td className="px-4 py-4 text-center">
                             <span className={cn(
                               "text-[10px] font-black px-2 py-0.5 rounded-full border",
-                              Number(row.ytdGrowth) >= 0
+                              row.ytdGrowth === 'N/A'
+                                ? "text-slate-400 bg-slate-50 border-slate-200"
+                                : Number(row.ytdGrowth) >= 0
                                 ? "text-emerald-600 bg-emerald-50 border-emerald-100"
                                 : "text-rose-600 bg-rose-50 border-rose-100"
                             )}>
-                              {Number(row.ytdGrowth) >= 0 ? '+' : ''}{row.ytdGrowth}%
+                              {row.ytdGrowth === 'N/A' ? 'N/A' : `${Number(row.ytdGrowth) >= 0 ? '+' : ''}${row.ytdGrowth}%`}
                             </span>
                           </td>
                         </tr>
@@ -1856,20 +2027,36 @@ function ServiceTypePerformance({
                             <td className="px-4 py-3.5 text-center">
                               <span className={cn(
                                 "px-2 py-0.5 rounded-full text-[9px] font-bold border",
-                                Number(sub.growth) >= 0 ? "text-emerald-500 bg-white border-emerald-100" : "text-rose-500 bg-white border-rose-100"
+                                sub.growth === 'N/A'
+                                  ? "text-slate-400 bg-white border-slate-200"
+                                  : Number(sub.growth) >= 0 ? "text-emerald-500 bg-white border-emerald-100" : "text-rose-500 bg-white border-rose-100"
                               )}>
-                                {Number(sub.growth) >= 0 ? '+' : ''}{sub.growth}%
+                                {sub.growth === 'N/A' ? 'N/A' : `${Number(sub.growth) >= 0 ? '+' : ''}${sub.growth}%`}
                               </span>
                             </td>
-                            <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold border-l border-slate-100/50">{formatValue(sub.cy * 3.2, activeTrend)}</td>
-                            <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold">{formatValue(sub.ly * 3.1, activeTrend)}</td>
+                            <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold border-l border-slate-100/50">{formatValue(sub.qtdCY, activeTrend)}</td>
+                            <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold">{formatValue(sub.qtdLY, activeTrend)}</td>
                             <td className="px-4 py-3.5 text-center">
-                              <span className="text-[9px] text-emerald-500 font-bold">+{sub.qtdGrowth}%</span>
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-full text-[9px] font-bold border",
+                                sub.qtdGrowth === 'N/A'
+                                  ? "text-slate-400 bg-white border-slate-200"
+                                  : Number(sub.qtdGrowth) >= 0 ? "text-emerald-500 bg-white border-emerald-100" : "text-rose-500 bg-white border-rose-100"
+                              )}>
+                                {sub.qtdGrowth === 'N/A' ? 'N/A' : `${Number(sub.qtdGrowth) >= 0 ? '+' : ''}${sub.qtdGrowth}%`}
+                              </span>
                             </td>
-                            <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold border-l border-slate-100/50">{formatValue(sub.cy * 12.5, activeTrend)}</td>
-                            <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold">{formatValue(sub.ly * 12.1, activeTrend)}</td>
+                            <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold border-l border-slate-100/50">{formatValue(sub.ytdCY, activeTrend)}</td>
+                            <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold">{formatValue(sub.ytdLY, activeTrend)}</td>
                             <td className="px-4 py-3.5 text-center">
-                              <span className="text-[9px] text-emerald-500 font-bold">+{sub.ytdGrowth}%</span>
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-full text-[9px] font-bold border",
+                                sub.ytdGrowth === 'N/A'
+                                  ? "text-slate-400 bg-white border-slate-200"
+                                  : Number(sub.ytdGrowth) >= 0 ? "text-emerald-500 bg-white border-emerald-100" : "text-rose-500 bg-white border-rose-100"
+                              )}>
+                                {sub.ytdGrowth === 'N/A' ? 'N/A' : `${Number(sub.ytdGrowth) >= 0 ? '+' : ''}${sub.ytdGrowth}%`}
+                              </span>
                             </td>
                           </tr>
                         ))}
@@ -2505,6 +2692,7 @@ function ServiceTypePerformance({
                 activeSheet={activeSheet}
                 prefetchedData={prefetchedData}
                 isPrefetching={isPrefetching}
+                dateFilter={dateFilter}
               />
             </div>
           ) : null}

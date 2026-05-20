@@ -240,7 +240,7 @@ export function Sidebar() {
 
       <div
         className={cn(
-          'fixed inset-y-0 left-0 flex flex-col bg-white border-r border-slate-200 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] z-50 shadow-2xl overflow-hidden',
+          'fixed inset-y-0 left-0 flex flex-col bg-slate-50 border-r border-slate-200 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] z-50 shadow-2xl overflow-hidden',
           collapsed ? 'w-0 border-none' : 'w-72'
         )}
       >
@@ -288,60 +288,74 @@ export function Sidebar() {
                   Main Menu
                 </p>
               )}
-              <nav className="space-y-3">
-                <Link
-                  href="/dashboard"
-                  onClick={() => setCollapsed(true)}
-                  className={cn(
-                    'flex items-center gap-3 rounded-xl transition-all duration-300 outline-none cursor-pointer group border',
-                    pathname === '/dashboard'
-                      ? 'bg-gradient-to-r from-teal-500 to-teal-600 border-teal-400 shadow-lg shadow-teal-500/30'
-                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300',
-                    collapsed ? 'h-14 w-14 justify-center p-0 mx-auto' : 'w-full p-3'
-                  )}
-                >
-                  <div className={cn(
-                    "h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300",
-                    pathname === '/dashboard' ? "bg-white/20" : "bg-white"
-                  )}>
-                    <LayoutDashboard className={cn(
-                      "h-5 w-5 transition-all duration-300",
-                      pathname === '/dashboard' ? "text-white" : "text-slate-600 group-hover:text-teal-600"
-                    )} />
+              <nav className="space-y-2">
+                {isAdmin ? (
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setCollapsed(true)}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
+                      pathname === '/dashboard'
+                        ? 'bg-white border-l-4 border-teal-600 text-teal-700 font-semibold shadow-sm pl-3'
+                        : 'bg-white border-l-4 border-transparent text-slate-600 hover:shadow-sm hover:border-teal-200 pl-3',
+                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                    )}
+                  >
+                    <div className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      pathname === '/dashboard' ? "bg-teal-50" : "bg-slate-50 group-hover:bg-teal-50"
+                    )}>
+                      <LayoutDashboard className={cn(
+                        "h-4.5 w-4.5 transition-colors",
+                        pathname === '/dashboard' ? "text-teal-600" : "text-slate-600 group-hover:text-teal-600"
+                      )} />
+                    </div>
+                    {!collapsed && (
+                      <span className="flex-1 text-left text-sm">Dashboard</span>
+                    )}
+                  </Link>
+                ) : (
+                  <div
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none opacity-60 cursor-not-allowed',
+                      'bg-white border-l-4 border-transparent text-slate-400 pl-3',
+                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                    )}
+                  >
+                    <div className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-slate-50">
+                      <LayoutDashboard className="h-4.5 w-4.5 text-slate-400" />
+                    </div>
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1 text-left text-sm">Dashboard</span>
+                        <Lock className="h-4 w-4 text-slate-400" />
+                      </>
+                    )}
                   </div>
-                  {!collapsed && (
-                    <span className={cn(
-                      "flex-1 text-left text-[12px] font-semibold tracking-tight transition-colors",
-                      pathname === '/dashboard' ? "text-white" : "text-slate-700 group-hover:text-teal-600"
-                    )}>Dashboard</span>
-                  )}
-                </Link>
+                )}
 
                 <Link
                   href="/purchase-orders"
                   onClick={() => setCollapsed(true)}
                   className={cn(
-                    'flex items-center gap-3 rounded-xl transition-all duration-300 outline-none cursor-pointer group border',
+                    'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
                     pathname === '/purchase-orders'
-                      ? 'bg-gradient-to-r from-purple-500 to-purple-600 border-purple-400 shadow-lg shadow-purple-500/30'
-                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300',
-                    collapsed ? 'h-14 w-14 justify-center p-0 mx-auto' : 'w-full p-3'
+                      ? 'bg-white border-l-4 border-purple-600 text-purple-700 font-semibold shadow-sm pl-3'
+                      : 'bg-white border-l-4 border-transparent text-slate-600 hover:shadow-sm hover:border-purple-200 pl-3',
+                    collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
                   )}
                 >
                   <div className={cn(
-                    "h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300",
-                    pathname === '/purchase-orders' ? "bg-white/20" : "bg-white"
+                    "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                    pathname === '/purchase-orders' ? "bg-purple-50" : "bg-slate-50 group-hover:bg-purple-50"
                   )}>
                     <ShoppingCart className={cn(
-                      "h-5 w-5 transition-all duration-300",
-                      pathname === '/purchase-orders' ? "text-white" : "text-slate-600 group-hover:text-purple-600"
+                      "h-4.5 w-4.5 transition-colors",
+                      pathname === '/purchase-orders' ? "text-purple-600" : "text-slate-600 group-hover:text-purple-600"
                     )} />
                   </div>
                   {!collapsed && (
-                    <span className={cn(
-                      "flex-1 text-left text-[12px] font-semibold tracking-tight transition-colors",
-                      pathname === '/purchase-orders' ? "text-white" : "text-slate-700 group-hover:text-purple-600"
-                    )}>Purchase Orders</span>
+                    <span className="flex-1 text-left text-sm">Purchase Orders</span>
                   )}
                 </Link>
 
@@ -350,36 +364,33 @@ export function Sidebar() {
                     onClick={toggleAdmin}
                     disabled={!canAccessAdmin}
                     className={cn(
-                      'flex items-center gap-3 rounded-xl transition-all duration-300 outline-none border w-full relative',
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none w-full relative',
                       (openAdmin || pathname?.startsWith('/admin'))
-                        ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 border-emerald-400 shadow-lg shadow-emerald-500/30'
+                        ? 'bg-white border-l-4 border-emerald-600 text-emerald-700 font-semibold shadow-sm pl-3'
                         : canAccessAdmin
-                          ? 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300 cursor-pointer group'
-                          : 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed',
-                      collapsed ? 'h-14 w-14 justify-center p-0 mx-auto' : 'p-3'
+                          ? 'bg-white border-l-4 border-transparent text-slate-600 hover:shadow-sm hover:border-emerald-200 cursor-pointer group pl-3'
+                          : 'bg-white border-l-4 border-transparent text-slate-400 opacity-60 cursor-not-allowed pl-3',
+                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'py-3 pr-3'
                     )}
                   >
                     <div className={cn(
-                      "h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300",
-                      (openAdmin || pathname?.startsWith('/admin')) ? "bg-white/20" : "bg-white"
+                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      (openAdmin || pathname?.startsWith('/admin')) ? "bg-emerald-50" : "bg-slate-50 group-hover:bg-emerald-50"
                     )}>
                       <Shield className={cn(
-                        "h-5 w-5 transition-all duration-300",
-                        (openAdmin || pathname?.startsWith('/admin')) ? "text-white" : "text-slate-600 group-hover:text-emerald-600"
+                        "h-4.5 w-4.5 transition-colors",
+                        (openAdmin || pathname?.startsWith('/admin')) ? "text-emerald-600" : "text-slate-600 group-hover:text-emerald-600"
                       )} />
                     </div>
                     {!collapsed && (
                       <>
-                        <span className={cn(
-                          "flex-1 text-left text-[12px] font-semibold tracking-tight transition-colors",
-                          (openAdmin || pathname?.startsWith('/admin')) ? "text-white" : "text-slate-700 group-hover:text-emerald-600"
-                        )}>Admin Panel</span>
+                        <span className="flex-1 text-left text-sm">Admin Panel</span>
                         {!canAccessAdmin ? (
                           <Lock className="h-4 w-4 text-slate-400" />
                         ) : (
                           <ChevronDown className={cn(
-                            "h-4 w-4 transition-all duration-500 ease-in-out",
-                            openAdmin ? "rotate-180 text-white" : "text-slate-400 rotate-0"
+                            "h-4 w-4 transition-transform duration-300",
+                            openAdmin ? "rotate-180 text-emerald-600" : "text-slate-400"
                           )} />
                         )}
                       </>
@@ -387,31 +398,31 @@ export function Sidebar() {
                   </button>
 
                   {!collapsed && openAdmin && (
-                    <div className="mt-1 space-y-1 rounded-2xl bg-slate-50 p-3 border border-slate-200 shadow-inner animate-in slide-in-from-top-2 duration-300">
+                    <div className="ml-4 space-y-1.5 pl-4 border-l-2 border-slate-200 animate-in slide-in-from-top-2 duration-200">
                       <Link
                         href="/admin/users"
                         onClick={() => setCollapsed(true)}
                         className={cn(
-                          'block px-4 py-2 text-[10px] font-semibold uppercase tracking-widest rounded-lg transition-all',
+                          'flex items-center gap-2 px-3 py-2.5 text-xs font-medium rounded-lg transition-all bg-white shadow-sm',
                           pathname === '/admin/users'
-                            ? 'bg-emerald-600 text-white shadow-md'
-                            : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50'
+                            ? 'border-l-2 border-emerald-600 text-emerald-700 font-semibold'
+                            : 'border-l-2 border-transparent text-slate-600 hover:text-emerald-600 hover:border-emerald-200'
                         )}
                       >
-                        <Users className="inline-block h-3 w-3 mr-2" />
+                        <Users className="h-3.5 w-3.5" />
                         User Management
                       </Link>
                       <Link
                         href="/admin/settings"
                         onClick={() => setCollapsed(true)}
                         className={cn(
-                          'block px-4 py-2 text-[10px] font-semibold uppercase tracking-widest rounded-lg transition-all',
+                          'flex items-center gap-2 px-3 py-2.5 text-xs font-medium rounded-lg transition-all bg-white shadow-sm',
                           pathname === '/admin/settings'
-                            ? 'bg-emerald-600 text-white shadow-md'
-                            : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50'
+                            ? 'border-l-2 border-emerald-600 text-emerald-700 font-semibold'
+                            : 'border-l-2 border-transparent text-slate-600 hover:text-emerald-600 hover:border-emerald-200'
                         )}
                       >
-                        <Settings className="inline-block h-3 w-3 mr-2" />
+                        <Settings className="h-3.5 w-3.5" />
                         Dashboard Settings
                       </Link>
                     </div>
@@ -420,16 +431,17 @@ export function Sidebar() {
               </nav>
             </div>
 
-            {/* Brands Section */}
-            <div>
-              {!collapsed && (
-                <p className="mb-6 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
-                  Managed Brands
-                </p>
-              )}
+            {/* Brands Section - Only for Admin */}
+            {isAdmin && (
+              <div>
+                {!collapsed && (
+                  <p className="mb-6 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
+                    Managed Brands
+                  </p>
+                )}
               <nav className="space-y-4">
-                {/* Sort brands: user's assigned brand first, then others */}
-                {[...brands].sort((a, b) => {
+                {/* Only show brands to admin users */}
+                {isAdmin && [...brands].sort((a, b) => {
                   const aKey = getBrandKey(a.name)
                   const bKey = getBrandKey(b.name)
                   
@@ -444,55 +456,49 @@ export function Sidebar() {
                   const isOpen = openBrand === brand.name
                   const isActive = pathname?.startsWith(brand.href)
                   const brandKey = getBrandKey(brand.name)
-                  const hasAccess = canAccessBrand(brandKey)
+                  const hasAccess = isAdmin && canAccessBrand(brandKey)
 
                   return (
-                    <div key={brand.name} className="space-y-2">
+                    <div key={brand.name} className="space-y-1.5">
                       <button
                         onClick={() => toggleBrand(brand.name)}
                         disabled={!hasAccess}
                         className={cn(
-                          'flex items-center gap-3 rounded-xl transition-all duration-300 outline-none border relative',
+                          'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none relative w-full',
                           (isOpen || isActive)
-                            ? `bg-gradient-to-r ${brand.bgColor} border-white/20 shadow-lg`
+                            ? `bg-white border-l-4 ${brand.color.replace('text-', 'border-')} font-semibold shadow-sm pl-3`
                             : hasAccess
-                              ? 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300 cursor-pointer group'
-                              : 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed',
-                          collapsed ? 'h-14 w-14 justify-center p-0 mx-auto' : 'w-full p-3'
+                              ? 'bg-white border-l-4 border-transparent hover:shadow-sm cursor-pointer group pl-3'
+                              : 'bg-white border-l-4 border-transparent opacity-60 cursor-not-allowed pl-3',
+                          collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'py-3 pr-3'
                         )}
                       >
                         <div className={cn(
-                          "h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300 overflow-hidden",
-                          (isOpen || isActive) ? "bg-white/20" : "bg-white"
+                          "h-8 w-8 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0 transition-all",
+                          (isOpen || isActive) ? "bg-slate-800" : "bg-slate-700 group-hover:bg-slate-800"
                         )}>
                           {brand.logo ? (
                             <img
                               src={brand.logo}
                               alt={brand.name}
-                              className={cn(
-                                "h-full w-full object-contain p-1.5",
-                                !(isOpen || isActive) && brand.name !== 'AM Kia' && "brightness-0"
-                              )}
+                              className="h-full w-full object-contain p-1.5"
                             />
                           ) : (
-                            <brand.icon className={cn(
-                              "h-6 w-6 transition-all duration-300",
-                              (isOpen || isActive) ? "text-white" : "text-slate-600 group-hover:text-slate-900"
-                            )} />
+                            <brand.icon className="h-5 w-5 text-white" />
                           )}
                         </div>
                         {!collapsed && (
                           <>
                             <span className={cn(
-                              "flex-1 text-left text-[12px] font-semibold tracking-tight transition-colors",
-                              (isOpen || isActive) ? "text-white" : "text-slate-700 group-hover:text-slate-900"
+                              "flex-1 text-left text-sm transition-colors",
+                              (isOpen || isActive) ? "text-slate-900" : "text-slate-600 group-hover:text-slate-900"
                             )}>{brand.name}</span>
                             {!hasAccess ? (
                               <Lock className="h-4 w-4 text-slate-400" />
                             ) : (
                               <ChevronDown className={cn(
-                                "h-4 w-4 transition-all duration-500 ease-in-out",
-                                isOpen ? "rotate-180 text-white" : "text-slate-400 rotate-0"
+                                "h-4 w-4 transition-transform duration-300",
+                                isOpen ? "rotate-180 text-slate-600" : "text-slate-400"
                               )} />
                             )}
                           </>
@@ -500,17 +506,17 @@ export function Sidebar() {
                       </button>
 
                       {!collapsed && isOpen && (
-                        <div className="mt-1 space-y-1 rounded-2xl bg-slate-50 p-3 border border-slate-200 shadow-inner animate-in slide-in-from-top-2 duration-300">
+                        <div className="ml-4 space-y-1.5 pl-4 border-l-2 border-slate-200 animate-in slide-in-from-top-2 duration-200">
                           {brand.submenus.map((sub) => (
                             <Link
                               key={sub.name}
                               href={sub.href}
                               onClick={() => setCollapsed(true)}
                               className={cn(
-                                'block px-4 py-2 text-[10px] font-semibold uppercase tracking-widest rounded-lg transition-all',
+                                'block px-3 py-2.5 text-xs font-medium rounded-lg transition-all bg-white shadow-sm',
                                 pathname === sub.href
-                                  ? `${brand.bgColor} text-white shadow-md`
-                                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                  ? `border-l-2 ${brand.color.replace('text-', 'border-')} ${brand.color} font-semibold`
+                                  : 'border-l-2 border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
                               )}
                             >
                               {sub.name}
@@ -522,7 +528,8 @@ export function Sidebar() {
                   )
                 })}
               </nav>
-            </div>
+              </div>
+            )}
           </div>
         </div>
 

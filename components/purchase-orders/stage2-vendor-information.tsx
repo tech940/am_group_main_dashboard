@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MultipleImageUpload } from './multiple-image-upload'
 import { ImageGallery } from './image-gallery'
-import { Save, Loader2 } from 'lucide-react'
+import { ArrowRight, Save, Loader2 } from 'lucide-react'
 
 export type VendorSectionKey = 'vendorA' | 'vendorB' | 'vendorC'
 
@@ -19,6 +19,7 @@ export interface VendorSectionData {
 }
 
 export interface Stage2FormData {
+  action?: 'save' | 'push_to_grn_images'
   vendorOptions: VendorSectionData[]
   vendorName: string
   vendorImages: Array<File | string>
@@ -158,20 +159,11 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
   }
 
   const validate = () => {
-    const completedOptions = getCompletedVendorOptions(vendorOptions)
-
-    if (completedOptions.length === 0) {
-      setErrors({ vendorA: 'Enter at least one vendor name' })
-      return false
-    }
-
     setErrors({})
     return true
   }
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-
+  const submitVendorInformation = async (action: Stage2FormData['action'] = 'save') => {
     if (!validate()) {
       return
     }
@@ -179,6 +171,7 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
     const completedOptions = getCompletedVendorOptions(vendorOptions)
 
     await onSubmit({
+      action,
       vendorOptions,
       vendorName: completedOptions.map((vendor) => vendor.name).filter(Boolean).join(', '),
       vendorImages: completedOptions.flatMap((vendor) => vendor.images),
@@ -186,8 +179,13 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
     })
   }
 
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    await submitVendorInformation('save')
+  }
+
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} autoComplete="off">
       <Card className="border-none shadow-xl">
         <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
           <CardTitle className="text-2xl font-black">Vendor Information</CardTitle>
@@ -251,6 +249,25 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
                 Cancel
               </Button>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isLoading}
+              onClick={() => void submitVendorInformation('push_to_grn_images')}
+              className="mr-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-8 py-6 text-lg font-semibold text-emerald-700 hover:bg-emerald-100"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Pushing...
+                </>
+              ) : (
+                <>
+                  <ArrowRight className="mr-2 h-5 w-5" />
+                  Push to GRN
+                </>
+              )}
+            </Button>
             <Button
               type="submit"
               disabled={isLoading}

@@ -262,9 +262,14 @@ export async function POST(request: NextRequest) {
           return stagePermissionError
         }
 
+        const shouldPushVendorImagesToGrn = action === 'push_to_grn_images'
         const shouldAdvanceLegacyVendorFlow =
-          order.currentStage === 'vendor_information' || order.status === 'vendor_info_pending'
+          !shouldPushVendorImagesToGrn
+          && (order.currentStage === 'vendor_information' || order.status === 'vendor_info_pending')
 
+        const hasVendorOptions = hasFormField(formData, 'vendorOptions')
+        const hasVendorImages = hasFormField(formData, 'vendorImages')
+        const hasBillImages = hasFormField(formData, 'billImages')
         const vendorOptions = normalizeVendorOptions(formData.vendorOptions)
         const vendorName = formData.vendorName
           ? String(formData.vendorName)
@@ -275,13 +280,21 @@ export async function POST(request: NextRequest) {
         const billImages = Array.isArray(formData.billImages)
           ? formData.billImages.filter((value): value is string => typeof value === 'string')
           : order.billImages
+        const nextGrnImages = shouldPushVendorImagesToGrn
+          ? Array.from(new Set([...(order.grnImages || []), ...vendorImages]))
+          : order.grnImages
+
+        if (shouldPushVendorImagesToGrn && vendorImages.length === 0) {
+          return NextResponse.json({ error: 'No vendor images available to push to GRN' }, { status: 400 })
+        }
 
         updateData = {
           ...updateData,
-          vendorName: vendorName || order.vendorName,
-          vendorImages: vendorImages.length > 0 ? vendorImages : order.vendorImages,
-          vendorDetails: vendorOptions.length > 0 ? vendorOptions : order.vendorDetails,
-          billImages,
+          vendorName: hasVendorOptions || hasVendorImages ? vendorName : order.vendorName,
+          vendorImages: hasVendorImages || hasVendorOptions ? vendorImages : order.vendorImages,
+          vendorDetails: hasVendorOptions ? vendorOptions : order.vendorDetails,
+          billImages: hasBillImages ? billImages : order.billImages,
+          grnImages: nextGrnImages,
           currentStage: shouldAdvanceLegacyVendorFlow ? 'ea_approval' : order.currentStage,
           status: shouldAdvanceLegacyVendorFlow ? 'awaiting_ea_approval' : order.status,
           assignedTo: order.assignedTo || appUser.id,

@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { RemarksDialog } from './remarks-dialog'
 import { usePurchaseOrdersViewPreference } from '@/lib/hooks/use-user-preferences'
+import { formatIndiaDateTime } from '@/lib/date-time'
 import { cn } from '@/lib/utils'
 
 interface PurchaseOrder {
@@ -98,15 +99,13 @@ function hasRenderableValue(value: unknown) {
 }
 
 function formatDate(dateString: string) {
-  try {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    })
-  } catch {
-    return dateString
-  }
+  // Use the timezone-aware formatter from lib/date-time.ts
+  const formatted = formatIndiaDateTime(dateString, {
+    year: 'numeric',
+    day: '2-digit',
+    month: 'short',
+  })
+  return formatted || dateString
 }
 
 function formatCurrency(value: unknown) {
@@ -375,7 +374,7 @@ export function MDTableView({
               {visibleColumns.map((col) => (
                 <th
                   key={col.key}
-                  className={cn('px-4 py-3 text-left font-semibold text-white', col.width)}
+                  className={cn('px-4 py-3 text-left text-[12px] font-semibold text-white', col.width)}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span>{col.label}</span>
@@ -391,7 +390,7 @@ export function MDTableView({
                 </th>
               ))}
 
-              <th className="sticky right-0 z-20 w-48 border-l border-teal-500 bg-teal-800 px-4 py-3 text-center font-semibold text-white">
+              <th className="sticky right-0 z-20 w-48 border-l border-teal-500 bg-teal-800 px-4 py-3 text-center text-[12px] font-semibold text-white">
                 Actions
               </th>
             </tr>

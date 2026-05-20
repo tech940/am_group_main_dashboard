@@ -140,6 +140,67 @@ Main_Dashboard/
 
 ## Key Features
 
+### Latest Purchase Orders Context (UPDATED - 2026-05-19)
+
+The Purchase Orders workflow has been significantly expanded since the original 2026-05-16 notes below. Treat this section as the current source of truth for active purchase-order behavior.
+
+#### Current Workflow
+- New Purchase Order is created by Admin or Purchase Manager and goes directly to `awaiting_ea_approval`.
+- EA approves to `awaiting_md_approval`.
+- MD approves to `awaiting_grn`.
+- Purchase Manager submits GRN to `awaiting_accounts`.
+- Accounts completes the order.
+- EA/MD can deny or hold orders using optional remarks.
+- EA can review and re-approve MD-denied or MD-held orders to continue the workflow.
+
+#### Branch Access
+- Purchase orders are branch-based using `purchase_orders.brand`.
+- Admin User creation/editing supports an `All Branches` option stored as `users.brand = 'all'`.
+- Users assigned `All Branches` can view/approve all branch purchase orders.
+- Branch-targeted workflow notifications include users for the matching branch plus `All Branches` users.
+
+#### Editing Rules
+- Admin and Purchase Manager can edit active Purchase Order details after submission.
+- Admin and Purchase Manager can edit submitted Vendor Information.
+- Admin and Purchase Manager can edit submitted GRN details after GRN submission.
+- Correction edits preserve the current workflow status and are written to `workflow_history`.
+- Completed/cancelled orders remain restricted for Purchase Order/Vendor edits; GRN correction is available on submitted GRN states where supported.
+
+#### Vendor Information
+- Vendor Information contains three separate vendor sections: Vendor A, Vendor B, Vendor C.
+- Each vendor section has its own name and separate upload list.
+- Vendor quotation/document images remain mapped only to their specific vendor.
+- Bill uploads are separate from vendor quotation images and are stored in `purchase_orders.bill_images`.
+- Bill images can be uploaded later by editing Vendor Information.
+- Migration/script: `scripts/add-purchase-order-bill-images.sql`.
+
+#### File Preview And Uploads
+- Uploads support images and PDFs.
+- Saved file previews use authenticated signed URLs through `GET /api/purchase-orders/file`.
+- Supabase Storage folders include `vendor-images`, `bill-images`, `grn-images`, `accounts-images`, and legacy `supporting-images`.
+- `ImageGallery` now uses a single full-screen lightbox close button and `object-contain` image fitting to avoid cropped previews.
+- `MultipleImageUpload` supports preview, delete, replace, multiple uploads, and saved-file preview routing.
+
+#### MD/EA Approval UI
+- MD defaults to Table View with Card View available.
+- MD table has selectable rows, bulk approve/deny/hold, sticky action column, hidden-column persistence, and restore columns.
+- MD table Instructions column appears after the fourth data column.
+- EA has filters for All, Pending, Rejected, Hold, and Completed.
+- Deny/Hold remarks are optional; MD approve does not request remarks.
+
+#### Notifications
+- Workflow notifications use Supabase Realtime for live navbar bell updates.
+- Notification timestamps are stored/serialized with timezone-safe values.
+- Foreground and browser notification behavior is handled in `components/layout/notification-bell.tsx`.
+
+#### Current Purchase Order API Surface
+- `GET /api/purchase-orders`: role/branch-filtered list.
+- `POST /api/purchase-orders/workflow`: stage transitions and correction edits.
+- `GET /api/purchase-orders/workflow?orderId={id}`: order details, history, and personnel.
+- `POST /api/purchase-orders/upload`: authenticated upload route.
+- `GET /api/purchase-orders/file?file={path}&orderId={id}`: authenticated image/PDF preview redirect.
+- `POST /api/purchase-orders/bulk-approve`: bulk approve/deny/hold support.
+
 ### 1. Business Excellence Dashboard
 - **Location**: `app/brands/kia/business-excellence/`
 - **Purpose**: Display and manage Excel sheet data for business metrics
@@ -880,6 +941,6 @@ const dailyTarget = useMemo(() => {
 
 ---
 
-**Last Updated**: 2026-05-14
-**Version**: 1.2
+**Last Updated**: 2026-05-19
+**Version**: 1.3
 **Maintained By**: Development Team

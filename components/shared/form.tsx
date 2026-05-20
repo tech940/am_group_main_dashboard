@@ -55,7 +55,7 @@ export function ReusableForm<T extends z.ZodType>({
 
   return (
     <FormProvider {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(onSubmit as any)} autoComplete="off" className="space-y-6">
         {fields.map((field) => (
           <FormField
             key={field.name}
