@@ -40,7 +40,9 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  Legend
+  Legend,
+  AreaChart,
+  Area
 } from 'recharts'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
@@ -57,13 +59,13 @@ interface StatRow {
   isParent: boolean
   td: number
   cy: number
-  ly: number
+  ly: number | 'N/A'
   growth: string
   qtdCY: number
-  qtdLY: number
+  qtdLY: number | 'N/A'
   qtdGrowth: string
   ytdCY: number
-  ytdLY: number
+  ytdLY: number | 'N/A'
   ytdGrowth: string
   subRows: StatRow[]
 }
@@ -834,19 +836,11 @@ function ServiceTypePerformance({
   const [searchQuery, setSearchQuery] = useState('')
   const [fySearchQuery, setFySearchQuery] = useState('')
 
-  const formatValue = (val: number, trend: string) => {
-    if (trend === 'Labour Per Vehicle Trend' || trend === 'Parts Per Vehicle Trend') {
-      // Show in Lakhs if value is 6 figures or more (100,000+), otherwise in thousands
-      if (val >= 100000) {
-        return `₹${(val / 100000).toFixed(1)} L`
-      } else {
-        return `₹${(val / 1000).toFixed(2)} K`
-      }
-    } else if (trend === 'Labour Trend' || trend === 'Parts Trend') {
-      // Show in Lakhs for total Labour/Parts trends
-      return `₹${(val / 100000).toFixed(2)} L`
-    }
-    return Math.floor(val).toLocaleString()
+  const formatValue = (val: number | string | 'N/A' | undefined | null, trend: string) => {
+    if (val === 'N/A' || val === undefined || val === null) return 'N/A'
+    const num = typeof val === 'string' ? parseFloat(val) : val
+    if (isNaN(num)) return 'N/A'
+    return Math.round(num).toLocaleString('en-IN')
   }
 
   const toggleRow = (name: string) => {
@@ -999,10 +993,20 @@ function ServiceTypePerformance({
       lyYtd: `[${lyYtdStart.toISOString()} -> ${lyYtdEnd.toISOString()}]`
     })
 
-    const calcGrowth = (cyVal: number, lyVal: number): string => {
-      if (lyVal <= 0) return 'N/A'
+    const calcGrowth = (cyVal: number, lyVal: number | 'N/A'): string => {
+      if (lyVal === 'N/A' || lyVal <= 0) return 'N/A'
       return (((cyVal - lyVal) / lyVal) * 100).toFixed(1)
     }
+
+    // Detect if we actually have previous year data in this dataset
+    let hasLyData = false
+    data.forEach(row => {
+      const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
+      const date = parseDate(dateStr)
+      if (date && date.getFullYear() === cyYear - 1) {
+        hasLyData = true
+      }
+    })
 
     const calculateForTypes = (name: string, types: string[], isParent = false): StatRow => {
       const catData = data.filter(d => {
@@ -1010,95 +1014,81 @@ function ServiceTypePerformance({
         return types.some(t => type.includes(t.toLowerCase()))
       })
 
-      const isLabourPerVehicle = activeTrend === 'Labour Per Vehicle Trend'
-      const isPartsPerVehicle = activeTrend === 'Parts Per Vehicle Trend'
-      const isLabourTrend = activeTrend === 'Labour Trend'
-      const isPartsTrend = activeTrend === 'Parts Trend'
-      const isAmountBased = isLabourTrend || isPartsTrend
-      const isPerVehicle = isLabourPerVehicle || isPartsPerVehicle
+      const isLabour = activeTrend.includes('Labour')
+      const isParts = activeTrend.includes('Parts')
 
       let cyMtd = 0, lyMtd = 0
       let cyQtd = 0, lyQtd = 0
       let cyYtd = 0, lyYtd = 0
-
-      let cyCountMtd = 0, lyCountMtd = 0
-      let cyCountQtd = 0, lyCountQtd = 0
-      let cyCountYtd = 0, lyCountYtd = 0
+      let cyTd = 0, lyTd = 0
 
       catData.forEach(d => {
         const dateStr = String(d['Bill Date'] || d['RO Date'] || '')
         const date = parseDate(dateStr)
 
         if (date) {
-          let value = 1
-          if (isLabourTrend || isLabourPerVehicle) {
-            value = parseFloat(String(d['Labour Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
-          } else if (isPartsTrend || isPartsPerVehicle) {
-            value = parseFloat(String(d['Part Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
+          let shouldCount = true
+          if (isLabour) {
+            const labourAmt = parseFloat(String(d['Labour Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
+            shouldCount = labourAmt > 0
+          } else if (isParts) {
+            const partAmt = parseFloat(String(d['Part Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
+            shouldCount = partAmt > 0
           }
 
-          // MTD checks
-          if (date >= cyMtdStart && date <= cyMtdEnd) {
-            cyMtd += value
-            cyCountMtd++
-          }
-          if (date >= lyMtdStart && date <= lyMtdEnd) {
-            lyMtd += value
-            lyCountMtd++
-          }
+          if (shouldCount) {
+            // MTD checks
+            if (date >= cyMtdStart && date <= cyMtdEnd) {
+              cyMtd++
+            }
+            if (date >= lyMtdStart && date <= lyMtdEnd) {
+              lyMtd++
+            }
 
-          // QTD checks
-          if (date >= cyQtdStart && date <= cyQtdEnd) {
-            cyQtd += value
-            cyCountQtd++
-          }
-          if (date >= lyQtdStart && date <= lyQtdEnd) {
-            lyQtd += value
-            lyCountQtd++
-          }
+            // QTD checks
+            if (date >= cyQtdStart && date <= cyQtdEnd) {
+              cyQtd++
+            }
+            if (date >= lyQtdStart && date <= lyQtdEnd) {
+              lyQtd++
+            }
 
-          // YTD checks
-          if (date >= cyYtdStart && date <= cyYtdEnd) {
-            cyYtd += value
-            cyCountYtd++
-          }
-          if (date >= lyYtdStart && date <= lyYtdEnd) {
-            lyYtd += value
-            lyCountYtd++
+            // YTD checks
+            if (date >= cyYtdStart && date <= cyYtdEnd) {
+              cyYtd++
+            }
+            if (date >= lyYtdStart && date <= lyYtdEnd) {
+              lyYtd++
+            }
+
+            // TD (Till Date) checks
+            if (date <= cyMtdEnd) {
+              cyTd++
+            }
+            if (date <= lyMtdEnd) {
+              lyTd++
+            }
           }
         }
       })
 
-      if (isPerVehicle) {
-        cyMtd = cyCountMtd > 0 ? cyMtd / cyCountMtd : 0
-        lyMtd = lyCountMtd > 0 ? lyMtd / lyCountMtd : 0
-
-        cyQtd = cyCountQtd > 0 ? cyQtd / cyCountQtd : 0
-        lyQtd = lyCountQtd > 0 ? lyQtd / lyCountQtd : 0
-
-        cyYtd = cyCountYtd > 0 ? cyYtd / cyCountYtd : 0
-        lyYtd = lyCountYtd > 0 ? lyYtd / lyCountYtd : 0
-      }
-
-      const tdValue = isAmountBased
-        ? Math.floor(cyMtd / 100000)
-        : isPerVehicle
-        ? Math.floor(cyMtd / 1000)
-        : Math.floor(cyMtd / 25)
+      const displayLy = hasLyData ? lyMtd : 'N/A'
+      const displayQtdLy = hasLyData ? lyQtd : 'N/A'
+      const displayYtdLy = hasLyData ? lyYtd : 'N/A'
 
       return {
         name,
         isParent,
-        td: tdValue,
+        td: cyTd,
         cy: cyMtd,
-        ly: lyMtd,
-        growth: calcGrowth(cyMtd, lyMtd),
+        ly: displayLy,
+        growth: calcGrowth(cyMtd, displayLy),
         qtdCY: cyQtd,
-        qtdLY: lyQtd,
-        qtdGrowth: calcGrowth(cyQtd, lyQtd),
+        qtdLY: displayQtdLy,
+        qtdGrowth: calcGrowth(cyQtd, displayQtdLy),
         ytdCY: cyYtd,
-        ytdLY: lyYtd,
-        ytdGrowth: calcGrowth(cyYtd, lyYtd),
+        ytdLY: displayYtdLy,
+        ytdGrowth: calcGrowth(cyYtd, displayYtdLy),
         subRows: []
       }
     }
@@ -1126,7 +1116,10 @@ function ServiceTypePerformance({
     const result: StatRow[] = []
     hierarchy.forEach(item => {
       const parent = calculateForTypes(item.name, item.types, item.sub.length > 0)
-      result.push({ ...parent, subRows: item.sub.map(s => calculateForTypes(s, [s])) })
+      result.push({ 
+        ...parent, 
+        subRows: item.sub.map(s => calculateForTypes(s, [s])) 
+      })
     })
 
     const paidRow = result.find(r => r.name === 'Paid Service')!
@@ -1137,11 +1130,23 @@ function ServiceTypePerformance({
 
     const calcTotal = (name: string, rows: StatRow[]): StatRow => {
       const cy = rows.reduce((acc, r) => acc + r.cy, 0)
-      const ly = rows.reduce((acc, r) => acc + r.ly, 0)
+      
+      const sumLyField = (field: 'ly' | 'qtdLY' | 'ytdLY'): number | 'N/A' => {
+        if (!hasLyData) return 'N/A'
+        let sum = 0
+        for (const r of rows) {
+          const val = r[field]
+          if (val === 'N/A') return 'N/A'
+          sum += val
+        }
+        return sum
+      }
+
+      const ly = sumLyField('ly')
       const qtdCY = rows.reduce((acc, r) => acc + r.qtdCY, 0)
-      const qtdLY = rows.reduce((acc, r) => acc + r.qtdLY, 0)
+      const qtdLY = sumLyField('qtdLY')
       const ytdCY = rows.reduce((acc, r) => acc + r.ytdCY, 0)
-      const ytdLY = rows.reduce((acc, r) => acc + r.ytdLY, 0)
+      const ytdLY = sumLyField('ytdLY')
 
       return {
         name,
@@ -1164,70 +1169,21 @@ function ServiceTypePerformance({
     const mechTotal = calcTotal('MECH TOTAL', [mechSubTotal, others])
     const grandTotal = calcTotal('Grand Total', [mechTotal, accident])
 
-    const scale = activeTrend.includes('Labour') ? 18.5 : activeTrend.includes('Parts') ? 22.3 : 1
-    const processRow = (r: StatRow): StatRow => {
-      const scaledCY = r.cy * scale
-      const scaledLY = r.ly * scale
-      const scaledQtdCY = r.qtdCY * scale
-      const scaledQtdLY = r.qtdLY * scale
-      const scaledYtdCY = r.ytdCY * scale
-      const scaledYtdLY = r.ytdLY * scale
-
-      return {
-        ...r,
-        td: r.td * scale,
-        cy: scaledCY,
-        ly: scaledLY,
-        growth: calcGrowth(scaledCY, scaledLY),
-        qtdCY: scaledQtdCY,
-        qtdLY: scaledQtdLY,
-        qtdGrowth: calcGrowth(scaledQtdCY, scaledQtdLY),
-        ytdCY: scaledYtdCY,
-        ytdLY: scaledYtdLY,
-        ytdGrowth: calcGrowth(scaledYtdCY, scaledYtdLY),
-        subRows: r.subRows.map((s: StatRow) => {
-          const subScaledCY = s.cy * scale
-          const subScaledLY = s.ly * scale
-          const subScaledQtdCY = s.qtdCY * scale
-          const subScaledQtdLY = s.qtdLY * scale
-          const subScaledYtdCY = s.ytdCY * scale
-          const subScaledYtdLY = s.ytdLY * scale
-
-          return {
-            ...s,
-            td: s.td * scale,
-            cy: subScaledCY,
-            ly: subScaledLY,
-            growth: calcGrowth(subScaledCY, subScaledLY),
-            qtdCY: subScaledQtdCY,
-            qtdLY: subScaledQtdLY,
-            qtdGrowth: calcGrowth(subScaledQtdCY, subScaledQtdLY),
-            ytdCY: subScaledYtdCY,
-            ytdLY: subScaledYtdLY,
-            ytdGrowth: calcGrowth(subScaledYtdCY, subScaledYtdLY),
-            subRows: []
-          }
-        })
-      }
-    }
-
     return [
-      processRow(paidRow),
-      processRow(freeRow),
-      processRow(runningRow),
-      processRow(mechSubTotal),
-      processRow(others),
-      processRow(mechTotal),
-      processRow(accident),
-      processRow(grandTotal)
+      paidRow,
+      freeRow,
+      runningRow,
+      mechSubTotal,
+      others,
+      mechTotal,
+      accident,
+      grandTotal
     ]
   }, [data, activeTrend, dateFilter])
 
   const trendData = useMemo(() => {
     if (!data || data.length === 0) return []
 
-    // Parse dates and group by day of month
-    // Handle both DD/MM/YYYY and MM/DD/YYYY formats
     const parseDate = (dateStr: string): Date | null => {
       if (!dateStr || dateStr === '—' || dateStr === '-' || dateStr === '') return null
       const parts = String(dateStr).trim().split('/')
@@ -1235,15 +1191,11 @@ function ServiceTypePerformance({
         let day = parseInt(parts[0], 10)
         let month = parseInt(parts[1], 10) - 1
         const year = parseInt(parts[2], 10)
-        
-        // If month > 12, it's likely DD/MM/YYYY format but was entered as MM/DD/YYYY
-        // Swap day and month
         if (month > 11) {
           const temp = day
           day = month + 1
           month = temp - 1
         }
-        
         if (!isNaN(day) && !isNaN(month) && !isNaN(year) && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
           return new Date(year, month, day)
         }
@@ -1251,7 +1203,6 @@ function ServiceTypePerformance({
       return null
     }
 
-    // Dynamically detect the current year and month from the data
     const allYearsInTrendData = new Set<number>()
     const monthsInCurrentYear: number[] = []
     
@@ -1263,12 +1214,10 @@ function ServiceTypePerformance({
       }
     })
     
-    // Use the maximum year found in the dataset as target year
     const targetYear = allYearsInTrendData.size > 0
       ? Math.max(...Array.from(allYearsInTrendData))
       : new Date().getFullYear()
     
-    // Find all months that have data in the target year
     data.forEach(row => {
       const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
       const date = parseDate(dateStr)
@@ -1280,148 +1229,93 @@ function ServiceTypePerformance({
       }
     })
     
-    // Use the most recent month that has data in the target year
     const targetMonth = monthsInCurrentYear.length > 0
       ? Math.max(...monthsInCurrentYear)
       : new Date().getMonth()
-    
-    console.log('🔍 DEBUG - Trend Chart Year Context:', {
-      targetYear,
-      lastYear: targetYear - 1,
-      targetMonth: targetMonth + 1,
-      monthsWithDataInCY: monthsInCurrentYear.map(m => m + 1).sort(),
-      allYearsInData: Array.from(allYearsInTrendData).sort()
-    })
-    
-    // Determine trend type for proper calculation
-    const isLabourPerVehicle = activeTrend === 'Labour Per Vehicle Trend'
-    const isPartsPerVehicle = activeTrend === 'Parts Per Vehicle Trend'
-    const isLabourTrend = activeTrend === 'Labour Trend'
-    const isPartsTrend = activeTrend === 'Parts Trend'
-    
-    // Group data by day of month for the target month
-    // Store actual amounts for Labour/Parts, or counts for other metrics
-    // For per-vehicle, we need to track both totals and counts
-    const dayData: { [day: number]: { cy: number; ly: number; cyCount: number; lyCount: number } } = {}
-    
-    // DEBUG: Log first few rows to see data structure
-    console.log('🔍 DEBUG - First 3 rows of filtered data:', data.slice(0, 3))
-    console.log('🔍 DEBUG - Active Trend:', activeTrend)
-    console.log('🔍 DEBUG - Total records in filtered data:', data.length)
-    
-    let processedCount = 0
-    let totalLabourSum = 0
-    let totalPartSum = 0
-    const monthCounts: { [key: string]: number } = {}
-    
-    data.forEach((row, index) => {
+
+    const isLabour = activeTrend.includes('Labour')
+    const isParts = activeTrend.includes('Parts')
+
+    const dayData: { [day: number]: { cy: number; ly: number } } = {}
+
+    data.forEach(row => {
       const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
       const date = parseDate(dateStr)
-      
-      // DEBUG: Log first few date parsing attempts
-      if (index < 3) {
-        console.log(`🔍 DEBUG - Row ${index}: Bill Date = "${dateStr}", Parsed = ${date}`)
-      }
-      
+
       if (date) {
         const year = date.getFullYear()
         const month = date.getMonth()
         const day = date.getDate()
-        
-        // Track which months we have data for
-        const monthKey = `${year}-${month + 1}`
-        monthCounts[monthKey] = (monthCounts[monthKey] || 0) + 1
-        
-        // Process data for target month across years
+
         if (month === targetMonth) {
           if (!dayData[day]) {
-            dayData[day] = { cy: 0, ly: 0, cyCount: 0, lyCount: 0 }
+            dayData[day] = { cy: 0, ly: 0 }
           }
-          
-          // For Labour/Parts trends, sum actual amounts instead of counting
-          let value = 1 // Default for count-based metrics
-          if (isLabourTrend || isLabourPerVehicle) {
-            const rawValue = row['Labour Amt']
-            value = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
-            totalLabourSum += value
-            // DEBUG: Log first few labour amounts
-            if (processedCount < 3) {
-              console.log(`🔍 DEBUG - Labour Amt raw: "${rawValue}", parsed: ${value}`)
-            }
-          } else if (isPartsTrend || isPartsPerVehicle) {
-            const rawValue = row['Part Amt']
-            value = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
-            totalPartSum += value
-            // DEBUG: Log first few part amounts
-            if (processedCount < 3) {
-              console.log(`🔍 DEBUG - Part Amt raw: "${rawValue}", parsed: ${value}`)
+
+          let shouldCount = true
+          if (isLabour) {
+            const labourAmt = parseFloat(String(row['Labour Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
+            shouldCount = labourAmt > 0
+          } else if (isParts) {
+            const partAmt = parseFloat(String(row['Part Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
+            shouldCount = partAmt > 0
+          }
+
+          if (shouldCount) {
+            if (year === targetYear) {
+              dayData[day].cy++
+            } else if (year === targetYear - 1) {
+              dayData[day].ly++
             }
           }
-          
-          if (year === targetYear) {
-            dayData[day].cy += value
-            dayData[day].cyCount++
-          } else if (year === targetYear - 1) {
-            dayData[day].ly += value
-            dayData[day].lyCount++
-          }
-          
-          processedCount++
         }
       }
     })
 
-    console.log(`🔍 DEBUG - Processed ${processedCount} rows for ${targetMonth + 1}/${targetYear}`)
-    console.log(`🔍 DEBUG - Total Labour Sum: ${totalLabourSum}, Total Part Sum: ${totalPartSum}`)
-    console.log('🔍 DEBUG - Month distribution in data:', monthCounts)
-    console.log('🔍 DEBUG - Day Data Sample:', Object.entries(dayData).slice(0, 5))
-
-    // Create array for all days of month (1-31)
     const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
     const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
-    
-    const result = Array.from({ length: daysInMonth }, (_, i) => {
+
+    return Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1
       const date = new Date(targetYear, targetMonth, day)
       const dayName = dayNames[date.getDay()]
-      const amounts = dayData[day] || { cy: 0, ly: 0, cyCount: 0, lyCount: 0 }
-      
-      // For per-vehicle trends, calculate average
-      let cyValue = amounts.cy
-      let lyValue = amounts.ly
-      
-      if (isLabourPerVehicle || isPartsPerVehicle) {
-        cyValue = amounts.cyCount > 0 ? amounts.cy / amounts.cyCount : 0
-        lyValue = amounts.lyCount > 0 ? amounts.ly / amounts.lyCount : 0
-      }
-      
+      const counts = dayData[day] || { cy: 0, ly: 0 }
+
       return {
         day: `${String(day).padStart(2, '0')} ${dayName}`,
-        cy: cyValue,
-        ly: lyValue,
-        target: Math.max(cyValue, lyValue) * 1.1 // 10% above max
+        cy: counts.cy,
+        ly: counts.ly,
+        target: Math.max(counts.cy, counts.ly) * 1.1
       }
     })
-    
-    console.log('🔍 DEBUG - Trend Data Sample (first 5 days):', result.slice(0, 5))
-    
-    return result
   }, [data, activeTrend, dateFilter])
+
+  const cumulativeTrendData = useMemo(() => {
+    let cySum = 0
+    let lySum = 0
+    return trendData.map(d => {
+      cySum += d.cy
+      lySum += d.ly
+      return {
+        day: d.day,
+        cy: cySum,
+        ly: lySum
+      }
+    })
+  }, [trendData])
 
   const kpiStats = useMemo(() => {
     if (!data || data.length === 0 || trendData.length === 0) {
       return [
-        { label: 'Month Target', value: '₹0.00 L' },
-        { label: 'MTD Target', value: '₹0.00 L' },
-        { label: 'Ach Till Date', value: '₹0.00 L' },
-        { label: 'Shortfall T.D', value: '₹0.00 L', color: 'text-rose-600' },
-        { label: 'Monthly Shortfall', value: '₹0.00 L', color: 'text-rose-600' },
-        { label: 'Projected Closing', value: '₹0.00 L' },
-        { label: 'Asking Rate', value: '₹0.00 L' }
+        { label: 'Month Target', value: 'N/A' },
+        { label: 'MTD Target', value: 'N/A' },
+        { label: 'Ach Till Date', value: 'N/A' },
+        { label: 'Shortfall T.D', value: 'N/A', color: 'text-rose-600' },
+        { label: 'Monthly Shortfall', value: 'N/A', color: 'text-rose-600' },
+        { label: 'Projected Closing', value: 'N/A' },
+        { label: 'Asking Rate', value: 'N/A' }
       ]
     }
-    
-    const isFinancial = activeTrend.includes('Labour') || activeTrend.includes('Parts')
     
     // Parse dates to get year context
     const parseDate = (dateStr: string): Date | null => {
@@ -1491,7 +1385,6 @@ function ServiceTypePerformance({
     const currentMonth = monthsInCurrentYear.length > 0 ? Math.max(...monthsInCurrentYear) : new Date().getMonth()
     
     // Use TODAY'S calendar date for MTD calculations
-    // This ensures MTD Target is proportional to actual days elapsed in the current month
     const today = new Date()
     const todayYear = today.getFullYear()
     const todayMonth = today.getMonth()
@@ -1501,20 +1394,9 @@ function ServiceTypePerformance({
     const currentDay = todayDay
     const daysInMonth = new Date(todayYear, todayMonth + 1, 0).getDate()
     
-    // Update year and month to current calendar date (not data date)
+    // Update year and month to current calendar date
     const actualCurrentYear = todayYear
     const actualCurrentMonth = todayMonth
-    
-    console.log('📅 Trend KPI - Date Context:', {
-      dataYear: currentYear,
-      dataMonth: currentMonth + 1,
-      actualCurrentYear,
-      actualCurrentMonth: actualCurrentMonth + 1,
-      currentDay,
-      daysInMonth,
-      activeTrend,
-      note: 'Using TODAY\'S date (May 14) for MTD calculations, not last date in data (April 30)'
-    })
     
     // Calculate YTD total for target calculation (using filtered data starting from Indian fiscal year April 1st)
     let fiscalYearStartCY = actualCurrentYear
@@ -1529,15 +1411,19 @@ function ServiceTypePerformance({
       const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
       const date = parseDate(dateStr)
       if (date && date >= ytdStart && date <= ytdEnd) {
-        let value = 1
+        let shouldCount = true
         if (activeTrend.includes('Labour')) {
           const rawValue = row['Labour Amt']
-          value = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+          const labourAmt = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+          shouldCount = labourAmt > 0
         } else if (activeTrend.includes('Parts')) {
           const rawValue = row['Part Amt']
-          value = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+          const partAmt = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+          shouldCount = partAmt > 0
         }
-        ytdTotal += value
+        if (shouldCount) {
+          ytdTotal++
+        }
       }
     })
     
@@ -1570,8 +1456,6 @@ function ServiceTypePerformance({
     const remainingDays = daysInMonth - currentDay
     const askingRate = remainingDays > 0 ? monthlyShortfall / remainingDays : 0
     
-    // When shortfall is negative, it means we exceeded target (surplus)
-    // Display as positive surplus with green color
     const shortfallDisplay = Math.abs(shortfall)
     const monthlyShortfallDisplay = Math.abs(monthlyShortfall)
     const isShortfallSurplus = shortfall < 0
@@ -1682,15 +1566,19 @@ function ServiceTypePerformance({
       const dateStr = String(row['Bill Date'] || row['RO Date'] || '')
       const date = parseDate(dateStr)
       if (date && date >= ytdStart && date <= ytdEnd) {
-        let value = 1
+        let shouldCount = true
         if (activeTrend.includes('Labour')) {
           const rawValue = row['Labour Amt']
-          value = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+          const labourAmt = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+          shouldCount = labourAmt > 0
         } else if (activeTrend.includes('Parts')) {
           const rawValue = row['Part Amt']
-          value = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+          const partAmt = parseFloat(String(rawValue || 0).replace(/[^0-9.-]/g, '')) || 0
+          shouldCount = partAmt > 0
         }
-        ytdTotal += value
+        if (shouldCount) {
+          ytdTotal++
+        }
       }
     })
 
@@ -1767,8 +1655,12 @@ function ServiceTypePerformance({
         const labourAmt = parseFloat(String(row['Labour Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
         const partAmt = parseFloat(String(row['Part Amt'] || 0).replace(/[^0-9.-]/g, '')) || 0
         
-        fyData[fy].labour += labourAmt
-        fyData[fy].parts += partAmt
+        if (labourAmt > 0) {
+          fyData[fy].labour++
+        }
+        if (partAmt > 0) {
+          fyData[fy].parts++
+        }
       }
     })
 
@@ -1778,12 +1670,10 @@ function ServiceTypePerformance({
         fy,
         load: values.load,
         labour: values.labour,
-        parts: values.parts,
-        labourPerRO: values.load > 0 ? Math.round(values.labour / values.load) : 0,
-        partsPerRO: values.load > 0 ? Math.round(values.parts / values.load) : 0
+        parts: values.parts
       }))
       .sort((a, b) => b.fy.localeCompare(a.fy))
-      .slice(0, 3) // Show last 3 FYs // Show last 3 FYs
+      .slice(0, 3) // Show last 3 FYs
   }, [data, dateFilter])
 
   return (
@@ -2185,7 +2075,7 @@ function ServiceTypePerformance({
                       <td className="px-6 py-4 text-sm font-bold text-slate-700">Labour</td>
                       {fyTrendsData.map((fy) => (
                         <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
-                          ₹{(fy.labour / 100000).toFixed(2)} L
+                          {fy.labour.toLocaleString()}
                         </td>
                       ))}
                     </tr>
@@ -2193,23 +2083,7 @@ function ServiceTypePerformance({
                       <td className="px-6 py-4 text-sm font-bold text-slate-700">Part</td>
                       {fyTrendsData.map((fy) => (
                         <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
-                          ₹{(fy.parts / 100000).toFixed(2)} L
-                        </td>
-                      ))}
-                    </tr>
-                    <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100">
-                      <td className="px-6 py-4 text-sm font-bold text-slate-700">Labour Per RO</td>
-                      {fyTrendsData.map((fy) => (
-                        <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
-                          ₹{fy.labourPerRO.toLocaleString()}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr className="hover:bg-slate-50 transition-colors border-b border-slate-100">
-                      <td className="px-6 py-4 text-sm font-bold text-slate-700">Parts Per RO</td>
-                      {fyTrendsData.map((fy) => (
-                        <td key={fy.fy} className="px-6 py-4 text-center text-sm font-mono font-bold text-slate-900">
-                          ₹{fy.partsPerRO.toLocaleString()}
+                          {fy.parts.toLocaleString()}
                         </td>
                       ))}
                     </tr>
@@ -2221,29 +2095,37 @@ function ServiceTypePerformance({
             <div className="p-8 space-y-6">
               {/* KPI Cards Row */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {statsData.slice(0, 8).map((stat, idx) => (
-                  <div key={idx} className="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow-lg transition-all duration-300">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">{stat.name}</h4>
-                      <div className={cn(
-                        "px-2 py-1 rounded-lg text-xs font-bold",
-                        parseFloat(stat.growth) >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-                      )}>
-                        {parseFloat(stat.growth) >= 0 ? '↑' : '↓'} {Math.abs(parseFloat(stat.growth))}%
+                {statsData.slice(0, 8).map((stat, idx) => {
+                  const growthVal = parseFloat(stat.growth)
+                  const isGrowthNa = stat.growth === 'N/A' || isNaN(growthVal)
+                  const formattedGrowth = isGrowthNa ? 'N/A' : `${growthVal >= 0 ? '↑' : '↓'} ${Math.abs(growthVal)}%`
+                  const growthColor = isGrowthNa 
+                    ? "bg-slate-100 text-slate-500" 
+                    : (growthVal >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700")
+
+                  return (
+                    <div key={idx} className="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow-lg transition-all duration-300">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">{stat.name}</h4>
+                        <div className={cn("px-2 py-1 rounded-lg text-xs font-bold", growthColor)}>
+                          {formattedGrowth}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-3xl font-black text-slate-900">{stat.cy.toLocaleString()}</span>
+                          <span className="text-sm font-bold text-slate-400">CY</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-bold text-slate-500">LY:</span>
+                          <span className="font-mono font-bold text-slate-700">
+                            {typeof stat.ly === 'number' ? stat.ly.toLocaleString() : stat.ly}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-black text-slate-900">{stat.cy.toLocaleString()}</span>
-                        <span className="text-sm font-bold text-slate-400">CY</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="font-bold text-slate-500">LY:</span>
-                        <span className="font-mono font-bold text-slate-700">{stat.ly.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               {/* Row 1: Service Distribution & Performance Comparison */}
@@ -2303,7 +2185,10 @@ function ServiceTypePerformance({
                     <div className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold">CY vs LY</div>
                   </div>
                   <ResponsiveContainer width="100%" height={350}>
-                    <BarChart data={statsData.slice(0, 5)} barGap={8}>
+                    <BarChart data={statsData.slice(0, 5).map(row => ({
+                      ...row,
+                      ly: row.ly === 'N/A' ? 0 : row.ly
+                    }))} barGap={8}>
                       <defs>
                         <linearGradient id="cyGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#0d9488" stopOpacity={1}/>
@@ -2344,6 +2229,46 @@ function ServiceTypePerformance({
                 </div>
               </div>
 
+              {/* Row 1.5: Cumulative Growth Progression - Full Width */}
+              <div className="bg-gradient-to-br from-white via-teal-50/20 to-white rounded-2xl p-6 border border-slate-200 shadow-lg">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-700">MTD Cumulative Growth Progression</h3>
+                    <p className="text-xs font-bold text-slate-400 mt-1">Month-to-Date running sum comparing Current Year vs. Last Year counts</p>
+                  </div>
+                  <div className="px-3 py-1 bg-teal-100 text-teal-700 rounded-lg text-xs font-bold">CY vs LY Running Sum</div>
+                </div>
+                <ResponsiveContainer width="100%" height={400}>
+                  <AreaChart data={cumulativeTrendData}>
+                    <defs>
+                      <linearGradient id="cyAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0d9488" stopOpacity={0.4}/>
+                        <stop offset="100%" stopColor="#0d9488" stopOpacity={0.0}/>
+                      </linearGradient>
+                      <linearGradient id="lyAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#94a3b8" stopOpacity={0.4}/>
+                        <stop offset="100%" stopColor="#94a3b8" stopOpacity={0.0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="day" tick={{ fontSize: 9, fontWeight: 'bold', fill: '#475569' }} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'white',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        padding: '12px',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '12px', fontWeight: 'bold' }} iconType="circle" />
+                    <Area type="monotone" dataKey="cy" stroke="#0d9488" strokeWidth={3} fill="url(#cyAreaGradient)" name="Current Year (CY) Cumulative" />
+                    <Area type="monotone" dataKey="ly" stroke="#94a3b8" strokeWidth={3} fill="url(#lyAreaGradient)" name="Last Year (LY) Cumulative" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
               {/* Row 2: Growth Analysis & Trend Performance */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Growth Rate Analysis - Enhanced Bar Chart */}
@@ -2353,10 +2278,13 @@ function ServiceTypePerformance({
                     <div className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold">% Change</div>
                   </div>
                   <ResponsiveContainer width="100%" height={350}>
-                    <BarChart data={statsData.slice(0, 8).map(row => ({
-                      name: row.name,
-                      growth: parseFloat(row.growth)
-                    }))}>
+                    <BarChart data={statsData.slice(0, 8).map(row => {
+                      const growthVal = parseFloat(row.growth)
+                      return {
+                        name: row.name,
+                        growth: isNaN(growthVal) ? 0 : growthVal
+                      }
+                    })}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                       <XAxis
                         dataKey="name"
@@ -2386,12 +2314,16 @@ function ServiceTypePerformance({
                       />
                       <ReferenceLine y={0} stroke="#64748b" strokeWidth={2} strokeDasharray="3 3" />
                       <Bar dataKey="growth" radius={[8, 8, 0, 0]}>
-                        {statsData.slice(0, 8).map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={parseFloat(entry.growth) >= 0 ? '#10b981' : '#ef4444'}
-                          />
-                        ))}
+                        {statsData.slice(0, 8).map((entry, index) => {
+                          const val = parseFloat(entry.growth)
+                          const color = isNaN(val) ? '#94a3b8' : (val >= 0 ? '#10b981' : '#ef4444')
+                          return (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={color}
+                            />
+                          )
+                        })}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -2404,7 +2336,10 @@ function ServiceTypePerformance({
                     <div className="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg text-xs font-bold">Multi-Year</div>
                   </div>
                   <ResponsiveContainer width="100%" height={350}>
-                    <BarChart data={statsData.slice(0, 5)}>
+                    <BarChart data={statsData.slice(0, 5).map(row => ({
+                      ...row,
+                      ly: row.ly === 'N/A' ? 0 : row.ly
+                    }))}>
                       <defs>
                         <linearGradient id="tdGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#8b5cf6" stopOpacity={1}/>
@@ -2495,20 +2430,20 @@ function ServiceTypePerformance({
                     />
                     <Line
                       type="monotone"
-                      dataKey="labourPerRO"
+                      dataKey="labour"
                       stroke="#3b82f6"
                       strokeWidth={4}
-                      name="Labour Per RO"
+                      name="Labour"
                       dot={{ r: 6, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }}
                       activeDot={{ r: 8 }}
                       fill="url(#labourGradient)"
                     />
                     <Line
                       type="monotone"
-                      dataKey="partsPerRO"
+                      dataKey="parts"
                       stroke="#8b5cf6"
                       strokeWidth={4}
-                      name="Parts Per RO"
+                      name="Parts"
                       dot={{ r: 6, fill: '#8b5cf6', strokeWidth: 2, stroke: '#fff' }}
                       activeDot={{ r: 8 }}
                       fill="url(#partsGradient)"
@@ -2526,10 +2461,13 @@ function ServiceTypePerformance({
                     <div className="px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-bold">QTD</div>
                   </div>
                   <ResponsiveContainer width="100%" height={350}>
-                    <BarChart data={statsData.slice(0, 5).map(row => ({
-                      name: row.name,
-                      qtd: parseFloat(row.qtdGrowth)
-                    }))}>
+                    <BarChart data={statsData.slice(0, 5).map(row => {
+                      const qtdVal = parseFloat(row.qtdGrowth)
+                      return {
+                        name: row.name,
+                        qtd: isNaN(qtdVal) ? 0 : qtdVal
+                      }
+                    })}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                       <XAxis
                         dataKey="name"
@@ -2559,12 +2497,16 @@ function ServiceTypePerformance({
                       />
                       <ReferenceLine y={0} stroke="#64748b" strokeWidth={2} strokeDasharray="3 3" />
                       <Bar dataKey="qtd" radius={[8, 8, 0, 0]} name="QTD Growth">
-                        {statsData.slice(0, 5).map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={parseFloat(entry.qtdGrowth) >= 0 ? '#f59e0b' : '#ef4444'}
-                          />
-                        ))}
+                        {statsData.slice(0, 5).map((entry, index) => {
+                          const val = parseFloat(entry.qtdGrowth)
+                          const color = isNaN(val) ? '#94a3b8' : (val >= 0 ? '#f59e0b' : '#ef4444')
+                          return (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={color}
+                            />
+                          )
+                        })}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -2577,10 +2519,13 @@ function ServiceTypePerformance({
                     <div className="px-3 py-1 bg-rose-100 text-rose-700 rounded-lg text-xs font-bold">YTD</div>
                   </div>
                   <ResponsiveContainer width="100%" height={350}>
-                    <BarChart data={statsData.slice(0, 5).map(row => ({
-                      name: row.name,
-                      ytd: parseFloat(row.ytdGrowth)
-                    }))}>
+                    <BarChart data={statsData.slice(0, 5).map(row => {
+                      const ytdVal = parseFloat(row.ytdGrowth)
+                      return {
+                        name: row.name,
+                        ytd: isNaN(ytdVal) ? 0 : ytdVal
+                      }
+                    })}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                       <XAxis
                         dataKey="name"
@@ -2610,12 +2555,16 @@ function ServiceTypePerformance({
                       />
                       <ReferenceLine y={0} stroke="#64748b" strokeWidth={2} strokeDasharray="3 3" />
                       <Bar dataKey="ytd" radius={[8, 8, 0, 0]} name="YTD Growth">
-                        {statsData.slice(0, 5).map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={parseFloat(entry.ytdGrowth) >= 0 ? '#ec4899' : '#ef4444'}
-                          />
-                        ))}
+                        {statsData.slice(0, 5).map((entry, index) => {
+                          const val = parseFloat(entry.ytdGrowth)
+                          const color = isNaN(val) ? '#94a3b8' : (val >= 0 ? '#ec4899' : '#ef4444')
+                          return (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={color}
+                            />
+                          )
+                        })}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -2629,7 +2578,10 @@ function ServiceTypePerformance({
                   <div className="px-3 py-1 bg-cyan-100 text-cyan-700 rounded-lg text-xs font-bold">All Metrics</div>
                 </div>
                 <ResponsiveContainer width="100%" height={400}>
-                  <LineChart data={statsData.slice(0, 8)}>
+                  <LineChart data={statsData.slice(0, 8).map(row => ({
+                    ...row,
+                    ly: row.ly === 'N/A' ? 0 : row.ly
+                  }))}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis
                       dataKey="name"
