@@ -25,7 +25,7 @@ import { Stage5Accounts } from '@/components/purchase-orders/stage5-accounts'
 import { WorkflowTimeline } from '@/components/purchase-orders/workflow-timeline'
 import { formatWorkflowStageLabel, getWorkflowStatusPresentation } from '@/components/purchase-orders/workflow-card-theme'
 import { WorkflowStatusCard, WorkflowStatusCardSkeleton } from '@/components/purchase-orders/workflow-status-card'
-import { formatIndiaDateTime } from '@/lib/date-time'
+import { formatIndiaDateTime, getIndiaDatePart, parseAppDate } from '@/lib/date-time'
 import { getBranchLabel } from '@/lib/branches'
 import { createClient } from '@/lib/supabase/client'
 
@@ -272,6 +272,16 @@ function isCompletedInDateRange(order: PurchaseOrder, startDate: string, endDate
   }
 
   return true
+}
+
+function isOrderCreatedTodayInIndia(order: PurchaseOrder) {
+  const createdDate = parseAppDate(order.created_at || order.createdAt)
+
+  if (!createdDate) {
+    return false
+  }
+
+  return getIndiaDatePart(createdDate) === getIndiaDatePart()
 }
 
 function getOptimizedImageName(fileName: string) {
@@ -564,6 +574,13 @@ function PurchaseOrdersPageContent() {
   const listedCompletedSpend = useMemo(
     () => listedCompletedOrders.reduce((total, order) => total + normalizeOrderAmount(order), 0),
     [listedCompletedOrders]
+  )
+
+  const poTableOrders = useMemo(
+    () => userRole === 'purchase_manager'
+      ? listedOrders.filter(isOrderCreatedTodayInIndia)
+      : listedOrders,
+    [listedOrders, userRole]
   )
 
   const fetchUserRole = useCallback(async () => {
@@ -1924,7 +1941,7 @@ function PurchaseOrdersPageContent() {
               </div>
             ) : showPOTableView && canCreateOrders ? (
               <POTableView
-                orders={listedOrders}
+                orders={poTableOrders}
                 onOrderClick={async (order) => openOrderDetails(order.id)}
               />
             ) : (
