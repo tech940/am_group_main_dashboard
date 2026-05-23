@@ -26,7 +26,7 @@ interface RevenueMetrics {
 }
 
 interface GrowthStats {
-  load: { value: number | string | 'N/A'; trend: 'up' | 'down' | 'neutral' }
+  totalRevenue: { value: number | string | 'N/A'; trend: 'up' | 'down' | 'neutral' }
   paidService: { value: number; trend: 'up' | 'down' | 'neutral' }
 }
 
@@ -39,25 +39,18 @@ interface DataRow {
 interface ROBillingSheetData {
   sheetId: string
   sheetName: string
-  headers: string[]
+  columns: string[]
   rows: DataRow[]
 }
 
 export default function ROBillingReportSection({ activeSheet, sharedData, dateFilter }: ROBillingReportSectionProps) {
-  console.log('🚀 ROBillingReportSection RENDERED:', {
-    activeSheet,
-    hasSharedData: !!(sharedData && sharedData.length > 0),
-    sharedDataLength: sharedData?.length || 0,
-    dateFilter
-  })
-
   const [loading, setLoading] = useState(!sharedData)
   const [roBillingData, setRoBillingData] = useState<ROBillingSheetData | null>(null)
   const [labourRevenue, setLabourRevenue] = useState<RevenueMetrics | null>(null)
   const [partsRevenue, setPartsRevenue] = useState<RevenueMetrics | null>(null)
   const [growthContribution, setGrowthContribution] = useState<GrowthStats | null>(null)
   const [activeView, setActiveView] = useState<RevenueView>('labour')
-  const [dateContext, setDateContext] = useState<{currentYear: number, currentMonth: number, currentDay: number, daysInMonth: number} | null>(null)
+  const [dateContext, setDateContext] = useState<{ currentYear: number, currentMonth: number, currentDay: number, daysInMonth: number } | null>(null)
 
   // 1. Logic Helpers (Declared first to avoid hoisting issues)
   const processRevenueData = useCallback((rows: DataRow[]) => {
@@ -71,7 +64,7 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
       setLabourRevenue(emptyMetrics)
       setPartsRevenue(emptyMetrics)
       setGrowthContribution({
-        load: { value: 0, trend: 'neutral' },
+        totalRevenue: { value: 0, trend: 'neutral' },
         paidService: { value: 0, trend: 'neutral' }
       })
       return
@@ -89,6 +82,29 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
       if (val === null || val === undefined) return 0
       const parsed = parseFloat(String(val).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
       return isNaN(parsed) ? 0 : parsed
+    }
+
+    const getUniqueBillKey = (row: DataRow, fallbackIndex: number) => {
+      const billNo = row.bill_no ?? row['Bill No']
+      const roNo = row.ro_no ?? row['RO No']
+      const primary = billNo !== null && billNo !== undefined && String(billNo).trim() !== ''
+        ? String(billNo).trim()
+        : roNo !== null && roNo !== undefined && String(roNo).trim() !== ''
+          ? String(roNo).trim()
+          : null
+
+      return primary || `row-${fallbackIndex}`
+    }
+
+    const addBillAmount = (bucket: Map<string, number>, billKey: string, amount: number) => {
+      const existing = bucket.get(billKey)
+      if (existing === undefined || Math.abs(amount) > Math.abs(existing)) {
+        bucket.set(billKey, amount)
+      }
+    }
+
+    const sumBillAmounts = (bucket: Map<string, number>) => {
+      return Array.from(bucket.values()).reduce((total, amount) => total + amount, 0)
     }
 
     // Parse date from DD/MM/YYYY or YYYY-MM-DD formats
@@ -113,13 +129,13 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
         let day = parseInt(parts[0], 10)
         let month = parseInt(parts[1], 10) - 1
         const year = parseInt(parts[2], 10)
-        
+
         if (month > 11) {
           const temp = day
           day = month + 1
           month = temp - 1
         }
-        
+
         if (!isNaN(day) && !isNaN(month) && !isNaN(year) && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
           return new Date(year, month, day)
         }
@@ -128,11 +144,12 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
     }
 
     // Detect Columns
-    const labourCol = findCol(['labour amt', 'labour amount', 'labour total'])
-    const partCol = findCol(['part amt', 'part amount', 'part total', 'parts amt'])
-    const billDateCol = findCol(['bill date', 'billdate'])
-    const roDateCol = findCol(['ro date', 'rodate'])
-    const serviceTypeCol = findCol(['service type', 'work type'])
+    const labourCol = findCol(['labour_amt', 'labour amt', 'labour amount', 'labour total'])
+    const partCol = findCol(['part_amt', 'part amt', 'part amount', 'part total', 'parts amt'])
+    const totalCol = findCol(['total_amt', 'total amt', 'total amount', 'grand total'])
+    const billDateCol = findCol(['bill_date', 'bill date', 'billdate'])
+    const roDateCol = findCol(['ro_date', 'ro date', 'rodate'])
+    const serviceTypeCol = findCol(['work_type', 'service_type', 'work type', 'service type'])
 
     // Boundary generator
     const getBoundaries = (): {
@@ -272,7 +289,7 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
       }
     })
 
-    console.log('📅 RO Billing Report Section - Derived Boundaries:', {
+    console.log('?? RO Billing Report Section - Derived Boundaries:', {
       currentYear,
       currentMonth: currentMonth + 1,
       currentDay,
@@ -283,54 +300,91 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
       totalRows: rows.length
     })
 
-    // Calculate metrics based on boundaries (Simple entry counts)
+    // Calculate metrics based on boundaries. Revenue views must sum amounts, not count rows.
     const calculateMetrics = (amountCol?: string) => {
-      let mtd_cy = 0, mtd_ly = 0
-      let qtd_cy = 0, qtd_ly = 0
-      let ytd_cy = 0, ytd_ly = 0
-      let td_cy = 0, td_ly = 0
+      const cyMtdKeys = new Set<string>()
+      const lyMtdKeys = new Set<string>()
+      const cyQtdKeys = new Set<string>()
+      const lyQtdKeys = new Set<string>()
+      const cyYtdKeys = new Set<string>()
+      const lyYtdKeys = new Set<string>()
+      const cyTdKeys = new Set<string>()
+      const lyTdKeys = new Set<string>()
+      const cyMtdAmounts = new Map<string, number>()
+      const lyMtdAmounts = new Map<string, number>()
+      const cyQtdAmounts = new Map<string, number>()
+      const lyQtdAmounts = new Map<string, number>()
+      const cyYtdAmounts = new Map<string, number>()
+      const lyYtdAmounts = new Map<string, number>()
+      const cyTdAmounts = new Map<string, number>()
+      const lyTdAmounts = new Map<string, number>()
 
-      rows.forEach(row => {
+      const addMetric = (keys: Set<string>, amounts: Map<string, number>, billKey: string, amount: number) => {
+        keys.add(billKey)
+        if (amountCol) addBillAmount(amounts, billKey, amount)
+      }
+
+      const cyTdStart = new Date(cyMtdEnd)
+      cyTdStart.setHours(0, 0, 0, 0)
+      const cyTdEnd = new Date(cyMtdEnd)
+      cyTdEnd.setHours(23, 59, 59, 999)
+      const lyTdStart = new Date(lyMtdEnd)
+      lyTdStart.setHours(0, 0, 0, 0)
+      const lyTdEnd = new Date(lyMtdEnd)
+      lyTdEnd.setHours(23, 59, 59, 999)
+
+      rows.forEach((row, index) => {
         const dateStr = String(row[billDateCol || roDateCol || ''] || '')
         const date = parseDate(dateStr)
         const amount = getVal(row, amountCol)
 
-        // For Labour view, count records with Labour Amt > 0
-        // For Part view, count records with Part Amt > 0
-        // If amountCol is undefined/null, count all records (Load)
-        const shouldCount = amountCol ? amount > 0 : true
+        const shouldCount = amountCol ? amount !== 0 : true
 
         if (date && shouldCount) {
+          const billKey = getUniqueBillKey(row, index)
           // MTD
           if (date >= cyMtdStart && date <= cyMtdEnd) {
-            mtd_cy++
+            addMetric(cyMtdKeys, cyMtdAmounts, billKey, amount)
           }
           if (date >= lyMtdStart && date <= lyMtdEnd) {
-            mtd_ly++
+            addMetric(lyMtdKeys, lyMtdAmounts, billKey, amount)
           }
           // QTD
           if (date >= cyQtdStart && date <= cyQtdEnd) {
-            qtd_cy++
+            addMetric(cyQtdKeys, cyQtdAmounts, billKey, amount)
           }
           if (date >= lyQtdStart && date <= lyQtdEnd) {
-            qtd_ly++
+            addMetric(lyQtdKeys, lyQtdAmounts, billKey, amount)
           }
           // YTD
           if (date >= cyYtdStart && date <= cyYtdEnd) {
-            ytd_cy++
+            addMetric(cyYtdKeys, cyYtdAmounts, billKey, amount)
           }
           if (date >= lyYtdStart && date <= lyYtdEnd) {
-            ytd_ly++
+            addMetric(lyYtdKeys, lyYtdAmounts, billKey, amount)
           }
-          // TD (Till Date): Count entries till selected/current date
-          if (date <= cyMtdEnd) {
-            td_cy++
+          // TD uses only the selected/current Bill Date, not every historical row before it.
+          if (date >= cyTdStart && date <= cyTdEnd) {
+            addMetric(cyTdKeys, cyTdAmounts, billKey, amount)
           }
-          if (date <= lyMtdEnd) {
-            td_ly++
+          if (date >= lyTdStart && date <= lyTdEnd) {
+            addMetric(lyTdKeys, lyTdAmounts, billKey, amount)
           }
         }
       })
+
+      const getPeriodValue = (keys: Set<string>, amounts: Map<string, number>) => {
+        return amountCol ? sumBillAmounts(amounts) : keys.size
+      }
+
+      const mtd_cy = getPeriodValue(cyMtdKeys, cyMtdAmounts)
+      const mtd_ly = getPeriodValue(lyMtdKeys, lyMtdAmounts)
+      const qtd_cy = getPeriodValue(cyQtdKeys, cyQtdAmounts)
+      const qtd_ly = getPeriodValue(lyQtdKeys, lyQtdAmounts)
+      const ytd_cy = getPeriodValue(cyYtdKeys, cyYtdAmounts)
+      const ytd_ly = getPeriodValue(lyYtdKeys, lyYtdAmounts)
+      const td_cy = getPeriodValue(cyTdKeys, cyTdAmounts)
+      const td_ly = getPeriodValue(lyTdKeys, lyTdAmounts)
 
       // Growth helper
       const calcGrowth = (cy: number, ly: number | 'N/A'): number | 'N/A' => {
@@ -343,7 +397,7 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
       const displayYtdLy = hasLyData ? ytd_ly : 'N/A'
       const displayTdLy = hasLyData ? td_ly : 'N/A'
 
-      console.log(`📊 ${amountCol || 'Load'} Simple Counts:`, {
+      console.log(`?? ${amountCol || 'Load'} Simple Counts:`, {
         mtd: { cy: mtd_cy, ly: displayLy },
         qtd: { cy: qtd_cy, ly: displayQtdLy },
         ytd: { cy: ytd_cy, ly: displayYtdLy },
@@ -358,29 +412,50 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
       }
     }
 
-    const calculateLoadMetrics = () => {
-      return calculateMetrics()
+    const labourMetrics = calculateMetrics(labourCol)
+    const partsMetrics = calculateMetrics(partCol)
+    const totalRevenueMetrics = totalCol ? calculateMetrics(totalCol) : {
+      mtd: {
+        cy: labourMetrics.mtd.cy + partsMetrics.mtd.cy,
+        ly: typeof labourMetrics.mtd.ly === 'number' && typeof partsMetrics.mtd.ly === 'number' ? labourMetrics.mtd.ly + partsMetrics.mtd.ly : 'N/A' as const,
+        growth: 'N/A' as const,
+      },
+      qtd: {
+        cy: labourMetrics.qtd.cy + partsMetrics.qtd.cy,
+        ly: typeof labourMetrics.qtd.ly === 'number' && typeof partsMetrics.qtd.ly === 'number' ? labourMetrics.qtd.ly + partsMetrics.qtd.ly : 'N/A' as const,
+        growth: 'N/A' as const,
+      },
+      ytd: {
+        cy: labourMetrics.ytd.cy + partsMetrics.ytd.cy,
+        ly: typeof labourMetrics.ytd.ly === 'number' && typeof partsMetrics.ytd.ly === 'number' ? labourMetrics.ytd.ly + partsMetrics.ytd.ly : 'N/A' as const,
+        growth: 'N/A' as const,
+      },
+      td: {
+        cy: labourMetrics.td.cy + partsMetrics.td.cy,
+        ly: typeof labourMetrics.td.ly === 'number' && typeof partsMetrics.td.ly === 'number' ? labourMetrics.td.ly + partsMetrics.td.ly : 'N/A' as const,
+        growth: 'N/A' as const,
+      },
     }
+    setLabourRevenue(labourMetrics)
+    setPartsRevenue(partsMetrics)
 
-    setLabourRevenue(calculateMetrics(labourCol))
-    setPartsRevenue(calculateMetrics(partCol))
-
-    // Calculate Load growth
-    const loadMetrics = calculateLoadMetrics()
-    
-    // Growth Contribution calculation
+    // Growth contribution is based on revenue movement, not RO/load counts.
     const paidServiceRows = rows.filter(row => {
       const type = String(row[serviceTypeCol || ''] || '').toLowerCase()
       return type.includes('paid') && !type.includes('free')
     })
-    
+
     const paidServiceRate = rows.length > 0 ? (paidServiceRows.length / rows.length) * 100 : 0
-    const loadGrowthValue = loadMetrics.ytd.growth
-    
+    const totalRevenueCy = totalRevenueMetrics.ytd.cy
+    const totalRevenueLy = totalRevenueMetrics.ytd.ly
+    const totalRevenueGrowthValue = typeof totalRevenueLy === 'number' && totalRevenueLy > 0
+      ? ((totalRevenueCy - totalRevenueLy) / totalRevenueLy) * 100
+      : 'N/A'
+
     setGrowthContribution({
-      load: {
-        value: loadGrowthValue,
-        trend: loadGrowthValue === 'N/A' ? 'neutral' : (loadGrowthValue > 0 ? 'up' : loadGrowthValue < 0 ? 'down' : 'neutral')
+      totalRevenue: {
+        value: totalRevenueGrowthValue,
+        trend: totalRevenueGrowthValue === 'N/A' ? 'neutral' : (totalRevenueGrowthValue > 0 ? 'up' : totalRevenueGrowthValue < 0 ? 'down' : 'neutral')
       },
       paidService: {
         value: paidServiceRate,
@@ -392,11 +467,11 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
   const fetchROBillingData = useCallback(async () => {
     // If shared data is provided, use it directly
     if (sharedData && sharedData.length > 0) {
-      console.log('✅ Using shared RO Billing data for Revenue Performance:', sharedData.length, 'records')
+      console.log('? Using shared RO Billing data for Revenue Performance:', sharedData.length, 'records')
       setRoBillingData({
         sheetId: 'shared',
         sheetName: activeSheet || 'RO Billing Report March 25',
-        headers: Object.keys(sharedData[0] || {}),
+        columns: Object.keys(sharedData[0] || {}),
         rows: sharedData
       })
       processRevenueData(sharedData)
@@ -407,76 +482,69 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
     // Otherwise, fetch data independently (fallback)
     try {
       if (!loading) setLoading(true)
-      console.log('🔍 Fetching RO Billing data for Revenue Performance...')
-      
+      console.log('?? Fetching RO Billing data for Revenue Performance...')
+
       const response = await fetch('/api/brands/kia/business-excellence?brand=kia')
       if (response.ok) {
         const sheets = await response.json()
-        console.log('📊 Available sheets:', sheets.map((s: { sheetName: string }) => s.sheetName))
-        
-        const roBillingSheet = sheets.find((sheet: { sheetName: string; id: string; headers: string[] }) =>
+        console.log('?? Available sheets:', sheets.map((s: { sheetName: string }) => s.sheetName))
+
+        const roBillingSheet = sheets.find((sheet: { sheetName: string; id: string; columns: string[] }) =>
           sheet.sheetName.toLowerCase().includes('ro billing report march 25')
         )
-        
+
         if (roBillingSheet) {
-          console.log('✅ Found RO Billing sheet:', roBillingSheet.sheetName, 'ID:', roBillingSheet.id)
-          
+          console.log('? Found RO Billing sheet:', roBillingSheet.sheetName, 'ID:', roBillingSheet.id)
+
           const dataResponse = await fetch(`/api/brands/kia/business-excellence?sheetId=${roBillingSheet.id}&fetchAll=true`)
           if (dataResponse.ok) {
             const data = await dataResponse.json()
             const allRows = data.rows || []
-            
-            console.log('📈 Fetched ALL rows for analytics:', allRows.length, 'records')
-            console.log('📋 Total rows in database:', data.totalRows)
-            
+
+            console.log('?? Fetched ALL rows for analytics:', allRows.length, 'records')
+            console.log('?? Total rows in database:', data.totalRows)
+
             setRoBillingData({
               sheetId: roBillingSheet.id,
               sheetName: roBillingSheet.sheetName,
-              headers: roBillingSheet.headers,
+              columns: roBillingSheet.columns,
               rows: allRows
             })
-            
+
             processRevenueData(allRows)
           } else {
-            console.error('❌ Failed to fetch sheet data:', dataResponse.status)
+            console.error('? Failed to fetch sheet data:', dataResponse.status)
           }
         } else {
-          console.warn('⚠️ RO Billing Report March 25 sheet not found')
+          console.warn('?? RO Billing Report March 25 sheet not found')
         }
       }
     } catch (error) {
-      console.error('❌ Error fetching RO Billing data:', error)
+      console.error('? Error fetching RO Billing data:', error)
     } finally {
       setLoading(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processRevenueData, sharedData, activeSheet])
 
   // 2. Guard Clauses & Render Helpers
-  console.log('🔍 RO Billing Check - activeSheet:', activeSheet)
-  const isROBillingSheet = activeSheet?.toLowerCase().includes('ro billing report march 25')
-  console.log('🔍 RO Billing Check - isROBillingSheet:', isROBillingSheet)
+  const isROBillingSheet = activeSheet?.toLowerCase().includes('ro billing')
 
-  const formatCount = (value: number | string | undefined | null) => {
-    if (value === 'N/A' || value === undefined || value === null || isNaN(Number(value))) return 'N/A'
-    return Math.round(Number(value)).toLocaleString('en-IN')
+  const renderMoney = (val: number | string | undefined | null) => {
+    if (val === 'N/A' || val === undefined || val === null || isNaN(Number(val))) return 'N/A'
+    return `₹ ${Math.round(Number(val)).toLocaleString('en-IN')}`
   }
 
-  const renderCount = (val: number | string | undefined | null) => {
-    if (val === 'N/A' || val === undefined || val === null || isNaN(Number(val))) return 'N/A'
-    return Math.round(Number(val)).toLocaleString('en-IN')
-  }
-
-  const renderCountAbs = (val: number | string | undefined | null) => {
-    if (val === 'N/A' || val === undefined || val === null || isNaN(Number(val))) return 'N/A'
-    return Math.round(Math.abs(Number(val))).toLocaleString('en-IN')
+  const moneyTextClass = (val: number | string | undefined | null, fallback = 'text-slate-900') => {
+    if (val === 'N/A' || val === undefined || val === null || isNaN(Number(val))) return 'text-slate-400'
+    return Number(val) < 0 ? 'text-rose-600' : fallback
   }
 
   const formatGrowth = (value: number | string | 'N/A') => {
     if (value === 'N/A') return 'N/A'
     const num = typeof value === 'string' ? parseFloat(value) : value
     if (isNaN(num)) return 'N/A'
-    return `${num >= 0 ? '+' : ''}${num.toFixed(1)}%`
+    return `${num >= 0 ? '+' : '-'}${Math.abs(num).toFixed(1)}%`
   }
 
   // 3. Effects
@@ -514,22 +582,23 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
   // Calculate KPI metrics
   const calculateKPIs = () => {
     const currentData = activeView === 'labour' ? labourRevenue : partsRevenue
-    
-    console.log('🔍 Current Data for KPIs:', {
+
+    console.log('?? Current Data for KPIs:', {
       activeView,
       labourRevenue,
       partsRevenue,
       currentData
     })
-    
+
     const mtdCY = currentData.mtd.cy
-    const ytdCY = currentData.ytd.cy
-    
+    const lyTotal = typeof currentData.mtd.ly === 'number' ? currentData.mtd.ly : 0
+
     // Use the date context from processRevenueData
     if (!dateContext) {
-      console.warn('⚠️ No date context available for KPI calculations')
+      console.warn('?? No date context available for KPI calculations')
       return {
         monthTarget: 0,
+        mtdAchieved: 0,
         mtdTarget: 0,
         achTillDate: 0,
         shortfallTD: 0,
@@ -538,70 +607,52 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
         askingRate: 0
       }
     }
-    
+
     const { currentYear, currentMonth, currentDay, daysInMonth } = dateContext
-    
-    console.log('📅 Using Date Context for KPIs:', {
+
+    console.log('?? Using Date Context for KPIs:', {
       currentYear,
       currentMonth: currentMonth + 1,
       currentDay,
       daysInMonth
     })
-    
-    // Month Target: Based on YTD average with 10% growth
-    const getFiscalMonthsElapsed = (m: number) => {
-      // m is 0-indexed month: Jan=0, Feb=1, Mar=2, Apr=3, ..., Dec=11
-      // Fiscal year starts in April (3)
-      return m >= 3 ? m - 2 : m + 10
-    }
-    const monthsElapsed = getFiscalMonthsElapsed(currentMonth)
-    const avgMonthlyRevenue = monthsElapsed > 0 ? ytdCY / monthsElapsed : ytdCY
-    const monthTarget = avgMonthlyRevenue * 1.1 // 10% growth target
-    
-    // MTD Target: Proportional target for current day
+
+    const monthTarget = lyTotal * 1.1
+    const mtdAchieved = mtdCY
     const mtdTarget = monthTarget * (currentDay / daysInMonth)
-    
-    console.log('🔢 MTD Calculation Breakdown:', {
-      monthTarget,
-      currentDay,
-      daysInMonth,
-      ratio: currentDay / daysInMonth,
-      mtdTarget,
-      'MTD = Month Target?': mtdTarget === monthTarget,
-      'Reason': currentDay === daysInMonth ? 'currentDay equals daysInMonth (end of month)' : 'Should be different'
-    })
-    
+
     // Ach Till Date: Current MTD CY
-    const achTillDate = mtdCY
-    
+    const achTillDate = mtdAchieved
+
     // Shortfall T.D: Difference between MTD target and achieved
-    const shortfallTD = mtdTarget - achTillDate
-    
+    const shortfallTD = mtdTarget - mtdAchieved
+
     // Projected Closing: Based on current pace
     const projectedClosing = achTillDate * (daysInMonth / currentDay)
-    
+
     // Monthly Shortfall: Difference between month target and projected closing
     const monthlyShortfall = monthTarget - projectedClosing
-    
+
     // Asking Rate: Required daily rate to meet target
     const remainingDays = daysInMonth - currentDay
     const askingRate = remainingDays > 0 ? monthlyShortfall / remainingDays : 0
-    
-    console.log('📊 KPI Calculations:', {
+
+    console.log('?? KPI Calculations:', {
       activeView,
       mtdCY,
-      ytdCY,
-      avgMonthlyRevenue,
+      lyTotal,
       monthTarget,
+      mtdAchieved,
       mtdTarget,
       achTillDate,
       projectedClosing,
       currentDay,
       daysInMonth
     })
-    
+
     return {
       monthTarget,
+      mtdAchieved,
       mtdTarget,
       achTillDate,
       shortfallTD,
@@ -611,7 +662,7 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
     }
   }
 
-  console.log('🔍 Before calculateKPIs:', {
+  console.log('?? Before calculateKPIs:', {
     hasLabourRevenue: !!labourRevenue,
     hasPartsRevenue: !!partsRevenue,
     hasSharedData: !!(sharedData && sharedData.length > 0),
@@ -622,7 +673,7 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
 
   const kpis = labourRevenue && partsRevenue ? calculateKPIs() : null
 
-  console.log('🔍 After calculateKPIs:', { kpis })
+  console.log('?? After calculateKPIs:', { kpis })
 
   if (!kpis) {
     return (
@@ -674,29 +725,29 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
         <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
           <CardContent className="p-4">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Month Target</p>
-            <p className="text-xl font-black text-slate-900">
-              {renderCount(kpis.monthTarget)}
+            <p className={cn("text-xl font-black", moneyTextClass(kpis.monthTarget))}>
+              {renderMoney(kpis.monthTarget)}
             </p>
           </CardContent>
         </Card>
-
         <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
           <CardContent className="p-4">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">MTD Target</p>
-            <p className="text-xl font-black text-slate-900">
-              {renderCount(kpis.mtdTarget)}
+            <p className={cn("text-xl font-black", moneyTextClass(kpis.mtdTarget))}>
+              {renderMoney(kpis.mtdTarget)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
+          <CardContent className="p-4">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">MTD Achieved</p>
+            <p className={cn("text-xl font-black", moneyTextClass(kpis.mtdAchieved))}>
+              {renderMoney(kpis.mtdAchieved)}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
-          <CardContent className="p-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Ach Till Date</p>
-            <p className="text-xl font-black text-slate-900">
-              {renderCount(kpis.achTillDate)}
-            </p>
-          </CardContent>
-        </Card>
+
 
         <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
           <CardContent className="p-4">
@@ -705,7 +756,7 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
               "text-xl font-black",
               kpis.shortfallTD > 0 ? "text-rose-600" : "text-emerald-600"
             )}>
-              {renderCountAbs(kpis.shortfallTD)}
+              {renderMoney(Math.abs(kpis.shortfallTD))}
             </p>
           </CardContent>
         </Card>
@@ -717,7 +768,7 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
               "text-xl font-black",
               kpis.monthlyShortfall > 0 ? "text-rose-600" : "text-emerald-600"
             )}>
-              {renderCountAbs(kpis.monthlyShortfall)}
+              {renderMoney(Math.abs(kpis.monthlyShortfall))}
             </p>
           </CardContent>
         </Card>
@@ -725,8 +776,8 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
         <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
           <CardContent className="p-4">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Projected Closing</p>
-            <p className="text-xl font-black text-slate-900">
-              {renderCount(kpis.projectedClosing)}
+            <p className={cn("text-xl font-black", moneyTextClass(kpis.projectedClosing))}>
+              {renderMoney(kpis.projectedClosing)}
             </p>
           </CardContent>
         </Card>
@@ -734,8 +785,8 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
         <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
           <CardContent className="p-4">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Asking Rate</p>
-            <p className="text-xl font-black text-slate-900">
-              {renderCount(kpis.askingRate)}
+            <p className={cn("text-xl font-black", moneyTextClass(kpis.askingRate))}>
+              {renderMoney(kpis.askingRate)}
             </p>
           </CardContent>
         </Card>
@@ -782,15 +833,15 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
                         <td className="px-6 py-6 text-sm font-black text-slate-700">Total {activeView.charAt(0).toUpperCase() + activeView.slice(1)}</td>
                         {(['mtd', 'qtd', 'ytd'] as const).map(period => (
                           <React.Fragment key={period}>
-                            <td className="px-4 py-6 text-sm font-bold text-center text-slate-900">{formatCount(data[period].cy)}</td>
-                            <td className="px-4 py-6 text-sm font-medium text-center text-slate-400">{formatCount(data[period].ly)}</td>
+                            <td className={cn("px-4 py-6 text-sm font-bold text-center", moneyTextClass(data[period].cy))}>{renderMoney(data[period].cy)}</td>
+                            <td className={cn("px-4 py-6 text-sm font-medium text-center", moneyTextClass(data[period].ly, 'text-slate-400'))}>{renderMoney(data[period].ly)}</td>
                             <td className={cn(
                               "px-4 py-6 text-sm font-black text-center border-r border-slate-50 last:border-r-0",
                               data[period].growth === 'N/A'
                                 ? "text-slate-400"
                                 : Number(data[period].growth) >= 0
-                                ? "text-green-600"
-                                : "text-rose-600"
+                                  ? "text-teal-700"
+                                  : "text-rose-600"
                             )}>
                               {formatGrowth(data[period].growth)}
                             </td>
@@ -811,11 +862,14 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card className="rounded-3xl border-none shadow-xl shadow-slate-200/50">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-bold text-slate-500 uppercase tracking-wider">Load Growth</CardTitle>
-              <BarChart3 className="h-4 w-4 text-emerald-500" />
+              <CardTitle className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Revenue Growth</CardTitle>
+              <BarChart3 className={cn("h-4 w-4", growthContribution.totalRevenue.trend === 'down' ? "text-rose-500" : "text-teal-600")} />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-black text-slate-800">{formatGrowth(growthContribution.load.value)}</div>
+              <div className={cn(
+                "text-3xl font-black",
+                growthContribution.totalRevenue.trend === 'down' ? "text-rose-600" : growthContribution.totalRevenue.trend === 'up' ? "text-teal-700" : "text-slate-800"
+              )}>{formatGrowth(growthContribution.totalRevenue.value)}</div>
               <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold">Month over Month</p>
             </CardContent>
           </Card>
@@ -835,3 +889,4 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
     </div>
   )
 }
+

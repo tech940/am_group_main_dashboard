@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTopLoader } from 'nextjs-toploader'
-import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, LayoutGrid, Table, TableProperties } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Edit3, Loader2, Plus, RefreshCw, LayoutGrid, Table, TableProperties } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,7 +25,7 @@ import { Stage5Accounts } from '@/components/purchase-orders/stage5-accounts'
 import { WorkflowTimeline } from '@/components/purchase-orders/workflow-timeline'
 import { formatWorkflowStageLabel, getWorkflowStatusPresentation } from '@/components/purchase-orders/workflow-card-theme'
 import { WorkflowStatusCard, WorkflowStatusCardSkeleton } from '@/components/purchase-orders/workflow-status-card'
-import { formatIndiaDateTime, getIndiaDatePart, parseAppDate } from '@/lib/date-time'
+import { formatIndiaDateTime } from '@/lib/date-time'
 import { getBranchLabel } from '@/lib/branches'
 import { createClient } from '@/lib/supabase/client'
 
@@ -77,6 +77,26 @@ interface PurchaseOrder {
   payment_status?: string
   payment_mode?: string
   account_remarks?: string
+}
+
+type PurchaseOrderListMode = 'today' | 'all'
+
+interface PurchaseOrderPagination {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+  mode: PurchaseOrderListMode
+}
+
+const PURCHASE_ORDER_PAGE_SIZE = 9
+
+const DEFAULT_PURCHASE_ORDER_PAGINATION: PurchaseOrderPagination = {
+  page: 1,
+  pageSize: PURCHASE_ORDER_PAGE_SIZE,
+  total: 0,
+  totalPages: 1,
+  mode: 'today',
 }
 
 interface WorkflowHistoryItem {
@@ -274,16 +294,6 @@ function isCompletedInDateRange(order: PurchaseOrder, startDate: string, endDate
   return true
 }
 
-function isOrderCreatedTodayInIndia(order: PurchaseOrder) {
-  const createdDate = parseAppDate(order.created_at || order.createdAt)
-
-  if (!createdDate) {
-    return false
-  }
-
-  return getIndiaDatePart(createdDate) === getIndiaDatePart()
-}
-
 function getOptimizedImageName(fileName: string) {
   const dotIndex = fileName.lastIndexOf('.')
   const baseName = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
@@ -465,6 +475,7 @@ function PurchaseOrdersPageContent() {
   const activeOrderRequestRef = useRef<AbortController | null>(null)
   const viewSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tempUploadCounterRef = useRef(0)
+  const hasLoadedOrdersRef = useRef(false)
   const selectedOrderId = searchParams.get('orderId')
 
   const [userRole, setUserRole] = useState('')
@@ -474,6 +485,7 @@ function PurchaseOrdersPageContent() {
   const [personnel, setPersonnel] = useState<Personnel | null>(null)
   const [allPersonnel, setAllPersonnel] = useState<Map<string, Personnel>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
+  const [isListRefreshing, setIsListRefreshing] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showNewOrderForm, setShowNewOrderForm] = useState(false)
   const [isNewOrderDirty, setIsNewOrderDirty] = useState(false)
@@ -488,6 +500,9 @@ function PurchaseOrdersPageContent() {
   const [isSwitchingView, setIsSwitchingView] = useState(false)
   const [showPOTableView, setShowPOTableView] = useState(false)
   const [workflowStageFilter, setWorkflowStageFilter] = useState<WorkflowStageFilter>('all')
+  const [purchaseOrderListMode, setPurchaseOrderListMode] = useState<PurchaseOrderListMode>('today')
+  const [purchaseOrderPage, setPurchaseOrderPage] = useState(1)
+  const [purchaseOrderPagination, setPurchaseOrderPagination] = useState<PurchaseOrderPagination>(DEFAULT_PURCHASE_ORDER_PAGINATION)
 
   // View mode preference for MD/EA users
   const { value: viewMode, savePreference: saveViewMode, setValue: setViewModePreference } = usePurchaseOrdersViewPreference()
@@ -497,6 +512,8 @@ function PurchaseOrdersPageContent() {
   const completedDateEnd = viewMode.completedDateEnd || ''
 
   const canCreateOrders = userRole === 'admin' || userRole === 'purchase_manager'
+  const canViewPurchaseOrderTable = userRole === 'purchase_manager'
+  const usesPurchaseOrderPagination = userRole !== ''
   const canManageVendorInfo = canCreateOrders
   const canApproveEA = userRole === 'admin' || userRole === 'ea'
   const canApproveMD = userRole === 'admin' || userRole === 'md'
@@ -576,17 +593,13 @@ function PurchaseOrdersPageContent() {
     [listedCompletedOrders]
   )
 
-  const poTableOrders = useMemo(
-    () => userRole === 'purchase_manager'
-      ? listedOrders.filter(isOrderCreatedTodayInIndia)
-      : listedOrders,
-    [listedOrders, userRole]
-  )
+  const poTableOrders = useMemo(() => listedOrders, [listedOrders])
 
   const fetchUserRole = useCallback(async () => {
     try {
       const response = await fetch('/api/auth/user')
       if (!response.ok) {
+        setIsLoading(false)
         return
       }
 
@@ -594,39 +607,99 @@ function PurchaseOrdersPageContent() {
       setUserRole(data.role || '')
     } catch (error) {
       console.error('Error fetching user role:', error)
+      setIsLoading(false)
     }
   }, [])
 
   const fetchOrders = useCallback(async (showSpinner = true) => {
+    if (!userRole) {
+      return
+    }
+
     try {
       if (showSpinner) {
-        setIsLoading(true)
+        if (hasLoadedOrdersRef.current) {
+          setIsListRefreshing(true)
+        } else {
+          setIsLoading(true)
+        }
       }
-      const response = await fetch('/api/purchase-orders')
+      const params = new URLSearchParams()
+
+      if (usesPurchaseOrderPagination) {
+        params.set('paginate', 'true')
+        params.set('mode', purchaseOrderListMode)
+        params.set('page', String(purchaseOrderPage))
+        params.set('pageSize', String(PURCHASE_ORDER_PAGE_SIZE))
+        params.set('scope', showCompleted ? 'completed' : 'active')
+
+        if (userRole === 'purchase_manager') {
+          params.set('view', 'table')
+        }
+
+        if (isApprovalRole(userRole)) {
+          params.set('approvalFilter', approvalFilter)
+        }
+
+        if (workflowStageFilter !== 'all') {
+          params.set('workflowFilter', workflowStageFilter)
+        }
+      }
+
+      const query = params.toString()
+      const response = await fetch(`/api/purchase-orders${query ? `?${query}` : ''}`)
       if (!response.ok) {
         return
       }
 
       const data = await response.json()
       setOrders(data.orders || [])
+      if (data.pagination) {
+        setPurchaseOrderPagination({
+          page: data.pagination.page || 1,
+          pageSize: data.pagination.pageSize || PURCHASE_ORDER_PAGE_SIZE,
+          total: data.pagination.total || 0,
+          totalPages: data.pagination.totalPages || 1,
+          mode: data.pagination.mode === 'all' ? 'all' : 'today',
+        })
+      } else {
+        setPurchaseOrderPagination({
+          ...DEFAULT_PURCHASE_ORDER_PAGINATION,
+          mode: purchaseOrderListMode,
+          total: Array.isArray(data.orders) ? data.orders.length : 0,
+        })
+      }
       setAllPersonnel(new Map())
     } catch (error) {
       console.error('Error fetching orders:', error)
     } finally {
+      hasLoadedOrdersRef.current = true
       if (showSpinner) {
         setIsLoading(false)
+        setIsListRefreshing(false)
       }
     }
-  }, [])
+  }, [approvalFilter, purchaseOrderListMode, purchaseOrderPage, showCompleted, userRole, usesPurchaseOrderPagination, workflowStageFilter])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void fetchUserRole()
+    }, 0)
+
+    return () => window.clearTimeout(timer)
+  }, [fetchUserRole])
+
+  useEffect(() => {
+    if (!userRole) {
+      return undefined
+    }
+
+    const timer = window.setTimeout(() => {
       void fetchOrders()
     }, 0)
 
     return () => window.clearTimeout(timer)
-  }, [fetchOrders, fetchUserRole])
+  }, [fetchOrders, userRole])
 
   useEffect(() => {
     topLoaderRef.current = topLoader
@@ -1062,6 +1135,7 @@ function PurchaseOrdersPageContent() {
   }
 
   const setApprovalFilterPreference = (filter: ApprovalFilter) => {
+    setPurchaseOrderPage(1)
     void saveViewMode({
       ...viewMode,
       approvalFilter: filter,
@@ -1069,6 +1143,7 @@ function PurchaseOrdersPageContent() {
   }
 
   const setWorkflowStageFilterPreference = (filter: WorkflowStageFilter) => {
+    setPurchaseOrderPage(1)
     setWorkflowStageFilter(filter)
 
     if (filter === 'completed') {
@@ -1112,6 +1187,84 @@ function PurchaseOrdersPageContent() {
       })}
     </div>
   )
+
+  const setPurchaseOrderMode = (mode: PurchaseOrderListMode) => {
+    setPurchaseOrderListMode(mode)
+    setPurchaseOrderPage(1)
+  }
+
+  const renderPurchaseOrderPaginationControls = () => {
+    if (!usesPurchaseOrderPagination) {
+      return null
+    }
+
+    const page = purchaseOrderPagination.page
+    const totalPages = Math.max(1, purchaseOrderPagination.totalPages)
+    const total = purchaseOrderPagination.total
+    const pageSize = purchaseOrderPagination.pageSize || PURCHASE_ORDER_PAGE_SIZE
+    const firstItem = total === 0 ? 0 : ((page - 1) * pageSize) + 1
+    const lastItem = Math.min(total, page * pageSize)
+    const isFirstPage = page <= 1
+    const isLastPage = page >= totalPages
+
+    return (
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          {(['today', 'all'] as const).map((mode) => {
+              const isActive = purchaseOrderListMode === mode
+
+              return (
+                <Button
+                  key={mode}
+                  type="button"
+                  variant={isActive ? 'default' : 'outline'}
+                  onClick={() => setPurchaseOrderMode(mode)}
+                  className={`rounded-xl ${isActive ? 'bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                >
+                  {mode === 'today' ? 'Today' : 'All Orders'}
+                </Button>
+              )
+            })}
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            {purchaseOrderListMode === 'today' ? 'Current day orders' : 'All orders'} · {total} total
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-slate-600">
+            Showing {firstItem}-{lastItem} of {total}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isFirstPage || isLoading || isListRefreshing}
+              onClick={() => setPurchaseOrderPage((current) => Math.max(1, current - 1))}
+              className="rounded-xl border-slate-200"
+            >
+              <ChevronLeft className="mr-1 h-4 w-4" />
+              Prev
+            </Button>
+            <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
+              Page {page} / {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isLastPage || isLoading || isListRefreshing}
+              onClick={() => setPurchaseOrderPage((current) => Math.min(totalPages, current + 1))}
+              className="rounded-xl border-slate-200"
+            >
+              Next
+              <ChevronRight className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const setCompletedDatePreference = (field: 'completedDateStart' | 'completedDateEnd', value: string) => {
     void saveViewMode({
@@ -1518,7 +1671,7 @@ function PurchaseOrdersPageContent() {
               <div className="h-4 w-72 animate-pulse rounded bg-slate-100" />
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 6 }).map((_, index) => (
               <WorkflowStatusCardSkeleton key={`po-skeleton-${index}`} />
             ))}
@@ -1542,7 +1695,7 @@ function PurchaseOrdersPageContent() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              {canCreateOrders && (
+              {canViewPurchaseOrderTable && (
                 <Button
                   onClick={() => {
                     setShowPOTableView((value) => {
@@ -1572,6 +1725,7 @@ function PurchaseOrdersPageContent() {
               )}
               <Button
                 onClick={() => {
+                  setPurchaseOrderPage(1)
                   setShowCompleted((value) => {
                     const nextValue = !value
                     if (nextValue) {
@@ -1610,6 +1764,8 @@ function PurchaseOrdersPageContent() {
         )}
 
         {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && !selectedOrder && renderWorkflowStageFilters()}
+
+        {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && !selectedOrder && renderPurchaseOrderPaginationControls()}
 
         {userRole !== 'md' && userRole !== 'ea' && showCompleted && renderCompletedAnalyticsControls()}
 
@@ -1882,6 +2038,8 @@ function PurchaseOrdersPageContent() {
 
                 {renderWorkflowStageFilters()}
 
+                {renderPurchaseOrderPaginationControls()}
+
                 {(approvalFilter === 'completed' || workflowStageFilter === 'completed') && renderCompletedAnalyticsControls()}
 
                 <div className="animate-in fade-in duration-200">
@@ -1906,7 +2064,7 @@ function PurchaseOrdersPageContent() {
                     onBulkAction={handleBulkActionSelected}
                     onOrderClick={async (order) => openOrderDetails(order.id)}
                     canActOnOrder={(order) => isActionableApprovalOrder(order, userRole)}
-                    loading={isBulkProcessing}
+                    loading={isBulkProcessing || isListRefreshing}
                   />
                 ) : (
                   <MDGridView
@@ -1934,14 +2092,17 @@ function PurchaseOrdersPageContent() {
                     showHeader={false}
                     reviewerLabel={userRole === 'ea' ? 'Purchase Manager' : 'EA Review'}
                     emptyMessage={userRole === 'ea' ? 'No purchase orders found for this EA filter' : 'No purchase orders found for this MD filter'}
-                    isLoading={isBulkProcessing}
+                    isLoading={isBulkProcessing || isListRefreshing}
                   />
                 )}
                 </div>
               </div>
-            ) : showPOTableView && canCreateOrders ? (
+            ) : showPOTableView && canViewPurchaseOrderTable ? (
               <POTableView
                 orders={poTableOrders}
+                totalOrders={purchaseOrderPagination.total}
+                listMode={purchaseOrderListMode}
+                isLoading={isListRefreshing}
                 onOrderClick={async (order) => openOrderDetails(order.id)}
               />
             ) : (
@@ -1957,12 +2118,18 @@ function PurchaseOrdersPageContent() {
                   </p>
                 </CardHeader>
                 <CardContent>
-                  {listedOrders.length === 0 ? (
+                  {isListRefreshing ? (
+                    <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+                      {Array.from({ length: PURCHASE_ORDER_PAGE_SIZE }).map((_, index) => (
+                        <WorkflowStatusCardSkeleton key={`po-list-refresh-skeleton-${index}`} />
+                      ))}
+                    </div>
+                  ) : listedOrders.length === 0 ? (
                     <p className="py-8 text-center text-gray-500">
                       {showCompleted ? 'No completed orders found' : 'No purchase orders found in your queue'}
                     </p>
                   ) : (
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
                       {listedOrders.map((order) => {
                         const isLoadingThisOrder = loadingOrderId === order.id
                         const orderPersonnel = allPersonnel.get(order.id)
