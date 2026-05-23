@@ -75,7 +75,7 @@ function tableSql(table: BusinessExcellenceTable) {
   return sql.raw(`"${table.table}"`)
 }
 
-function roBillingProjectedRowsSql(table: BusinessExcellenceTable, selectedLimit: number, selectedOffset: number, startDate?: string | null, endDate?: string | null) {
+function roBillingProjectedRowsSql(table: BusinessExcellenceTable, selectedLimit: number, selectedOffset: number, startDate?: string | null, endDate?: string | null, skipSort = false) {
   const dateFilter = startDate && endDate
     ? sql`WHERE bill_date BETWEEN ${startDate}::date AND ${endDate}::date`
     : sql``
@@ -109,7 +109,7 @@ function roBillingProjectedRowsSql(table: BusinessExcellenceTable, selectedLimit
       uploaded_at
     FROM ${tableSql(table)}
     ${dateFilter}
-    ORDER BY bill_date, id
+    ${skipSort ? sql`` : sql`ORDER BY bill_date, id`}
     LIMIT ${selectedLimit}
     OFFSET ${selectedOffset}
   `
@@ -230,7 +230,7 @@ async function fetchTableRows({
   const useBillDateWindow = table.slug === 'ro_billing_report' && startDate && endDate
 
   if (table.slug === 'ro_billing_report' && fetchAll) {
-    const rowsResult = await db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate))
+    const rowsResult = await db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate, true))
 
     return {
       id: table.slug,
@@ -307,7 +307,7 @@ export async function GET(request: Request) {
       const fetchAll = searchParams.get('fetchAll') === 'true'
       const startDate = searchParams.get('startDate')
       const endDate = searchParams.get('endDate')
-      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v4:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}`
+      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v5:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}`
       const data = await timer.time(skipCache ? 'db' : 'cache-db', () => skipCache
         ? fetchTableRows({ table, page, limit, fetchAll, startDate, endDate })
         : getCachedData(cacheKey, () => fetchTableRows({ table, page, limit, fetchAll, startDate, endDate }), CACHE_TTL_SECONDS))

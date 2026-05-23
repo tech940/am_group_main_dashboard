@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { SidebarProvider } from "@/context/sidebar-context";
+import { DashboardQueryProvider } from "@/components/providers/query-provider";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -38,9 +39,11 @@ export default function RootLayout({
           speed={200}
           shadow="0 0 10px hsl(172 72% 42%),0 0 5px hsl(172 72% 42%)"
         />
-        <SidebarProvider>
-          {children}
-        </SidebarProvider>
+        <DashboardQueryProvider>
+          <SidebarProvider>
+            {children}
+          </SidebarProvider>
+        </DashboardQueryProvider>
       </body>
     </html>
   );
