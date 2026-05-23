@@ -125,11 +125,17 @@ function getStatusColor(status: string) {
     ea_on_hold: 'bg-amber-500',
     md_on_hold: 'bg-amber-500',
     awaiting_grn: 'bg-teal-500',
-    awaiting_accounts: 'bg-emerald-500',
+    awaiting_accounts: 'bg-amber-500',
     completed: 'bg-green-600',
   }
 
   return colors[status] || 'bg-slate-500'
+}
+
+function formatStatusLabel(status: string) {
+  if (status === 'awaiting_accounts') return 'GRN COMPLETED'
+  if (status === 'completed') return 'FULLY COMPLETED'
+  return status.replace(/_/g, ' ').toUpperCase()
 }
 
 export function MDTableView({
@@ -441,7 +447,7 @@ export function MDTableView({
                           {col.key === 'status' ? (
                             <div className="flex justify-center">
                               <Badge className={cn('min-w-36 justify-center text-center text-white', getStatusColor(String(value || '')))}>
-                                {String(value || '').replace(/_/g, ' ').toUpperCase()}
+                                {formatStatusLabel(String(value || ''))}
                               </Badge>
                             </div>
                           ) : col.key === 'createdAt' ? (

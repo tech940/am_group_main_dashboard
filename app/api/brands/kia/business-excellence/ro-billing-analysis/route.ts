@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getCachedData } from '@/lib/redis/cache-utils'
+import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -441,8 +443,9 @@ function buildRevenueSummary(rows: DataRow[], startDate: Date, endDate: Date) {
 
 async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: Date }) {
   const hasDateRange = Boolean(startDate && endDate)
-  const result = hasDateRange
-    ? await db.execute(sql`
+  const [result, freshness] = await Promise.all([
+    hasDateRange
+      ? db.execute(sql`
         SELECT
           bill_no,
           ro_no,
@@ -463,7 +466,7 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
         FROM ro_billing_report
         WHERE bill_date BETWEEN ${toDateInputValue(startDate!)}::date AND ${toDateInputValue(endDate!)}::date
       `)
-    : await db.execute(sql`
+      : db.execute(sql`
         SELECT
           bill_no,
           ro_no,
@@ -483,9 +486,9 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
           uploaded_at
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
-      `)
-
-  const freshness = await db.execute(sql`SELECT MAX(uploaded_at) AS "uploadedAt", COUNT(*)::int AS "totalRows" FROM ro_billing_report`)
+      `),
+    db.execute(sql`SELECT MAX(uploaded_at) AS "uploadedAt", COUNT(*)::int AS "totalRows" FROM ro_billing_report`),
+  ])
 
   return {
     id: 'ro_billing_report',
@@ -495,6 +498,10 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
     totalRows: Number(freshness[0]?.totalRows || 0),
     rows: result as DataRow[],
   }
+}
+
+function createBaseRowsCacheKey(startDate?: Date, endDate?: Date) {
+  return `ro_billing:base-rows:v1:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -521,7 +528,11 @@ function normalizeGroupBy(value: string) {
 }
 
 export async function GET(request: Request) {
+  const timer = createApiTimer('ro-billing-analysis')
   try {
+    const accessError = await timer.time('auth', () => requireBrandApiAccess('kia'))
+    if (accessError) return accessError
+
     const { searchParams } = new URL(request.url)
     const brand = searchParams.get('brand') || 'kia'
     const sheet = normalizeSheetSlug(searchParams.get('sheet') || 'ro_billing_report')
@@ -561,7 +572,12 @@ export async function GET(request: Request) {
       const windowEnds = Object.values(windows).flatMap((period) => [period.cyEnd, period.lyEnd])
       const relationalStart = view === 'fy' ? undefined : new Date(Math.min(...windowStarts.map((date) => date.getTime()), startDate.getTime()))
       const relationalEnd = view === 'fy' ? undefined : new Date(Math.max(...windowEnds.map((date) => date.getTime()), endDate.getTime()))
-      const sheetData = await fetchRows({ startDate: relationalStart, endDate: relationalEnd })
+      const baseRowsCacheKey = createBaseRowsCacheKey(relationalStart, relationalEnd)
+      const sheetData = await timer.time('base-rows', () => getCachedData(
+        baseRowsCacheKey,
+        () => fetchRows({ startDate: relationalStart, endDate: relationalEnd }),
+        CACHE_TTL_SECONDS
+      ))
       const allRows = Array.isArray(sheetData.rows) ? sheetData.rows : []
       const rowsWithBillDate = allRows.filter((row) => !!parseBillDate(row))
       const filteredRows = applyFilters(rowsWithBillDate, searchParams)
@@ -626,12 +642,14 @@ export async function GET(request: Request) {
       }
     }
 
-    const result = skipCache
-      ? await analyze()
-      : await getCachedData(cacheKey, analyze, CACHE_TTL_SECONDS)
+    const result = await timer.time(skipCache ? 'analyze' : 'response-cache', () => skipCache
+      ? analyze()
+      : getCachedData(cacheKey, analyze, CACHE_TTL_SECONDS))
 
-    return NextResponse.json(result)
+    const { serverTiming } = timer.finish()
+    return withServerTiming(NextResponse.json(result), serverTiming)
   } catch (error) {
+    timer.finish()
     console.error('Error building RO Billing analysis:', error)
     return NextResponse.json({ error: 'Failed to build RO Billing analysis' }, { status: 500 })
   }

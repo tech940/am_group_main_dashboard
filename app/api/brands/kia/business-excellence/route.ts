@@ -3,11 +3,40 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getCachedData, invalidateCachePattern } from '@/lib/redis/cache-utils'
 import { CACHE_KEYS } from '@/lib/redis/client'
+import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 
 const CACHE_TTL_SECONDS = 60 * 60
+const RO_BILLING_PROJECTED_COLUMNS = [
+  'id',
+  'bill_no',
+  'ro_no',
+  'bill_date',
+  'labour_amt',
+  'part_amt',
+  'total_amt',
+  'work_type',
+  'service_type',
+  'technician',
+  'service_advisor',
+  'model',
+  'bill_type',
+  'bill_status',
+  'pick_drop',
+  'avg_rating',
+  'vehicle_reg_no',
+  'dealer_code',
+  'main_dealer_code',
+  'dis_amt',
+  'total_disc',
+  'labour_disc',
+  'part_disc',
+  'vin',
+  'uploaded_at',
+]
 
 const BUSINESS_EXCELLENCE_TABLES = [
   { slug: 'open_ro_yearly', table: 'open_ro_yearly', sheetName: 'Open RO Yearly' },
@@ -44,6 +73,46 @@ function resolveTable(sheet?: string | null, sheetId?: string | null): BusinessE
 
 function tableSql(table: BusinessExcellenceTable) {
   return sql.raw(`"${table.table}"`)
+}
+
+function roBillingProjectedRowsSql(table: BusinessExcellenceTable, selectedLimit: number, selectedOffset: number, startDate?: string | null, endDate?: string | null) {
+  const dateFilter = startDate && endDate
+    ? sql`WHERE bill_date BETWEEN ${startDate}::date AND ${endDate}::date`
+    : sql``
+
+  return sql`
+    SELECT
+      id,
+      bill_no,
+      ro_no,
+      bill_date,
+      labour_amt,
+      part_amt,
+      total_amt,
+      work_type,
+      service_type,
+      technician,
+      service_advisor,
+      model,
+      bill_type,
+      bill_status,
+      pick_drop,
+      avg_rating,
+      vehicle_reg_no,
+      dealer_code,
+      main_dealer_code,
+      dis_amt,
+      total_disc,
+      labour_disc,
+      part_disc,
+      vin,
+      uploaded_at
+    FROM ${tableSql(table)}
+    ${dateFilter}
+    ORDER BY bill_date, id
+    LIMIT ${selectedLimit}
+    OFFSET ${selectedOffset}
+  `
 }
 
 async function getColumns(table: BusinessExcellenceTable) {
@@ -159,9 +228,29 @@ async function fetchTableRows({
   const selectedLimit = fetchAll ? 50000 : limit
   const selectedOffset = fetchAll ? 0 : offset
   const useBillDateWindow = table.slug === 'ro_billing_report' && startDate && endDate
+
+  if (table.slug === 'ro_billing_report' && fetchAll) {
+    const rowsResult = await db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate))
+
+    return {
+      id: table.slug,
+      brand: 'kia',
+      sheetName: table.sheetName,
+      tableName: table.table,
+      columns: RO_BILLING_PROJECTED_COLUMNS,
+      uploadedAt: null,
+      totalRows: rowsResult.length,
+      page,
+      limit: selectedLimit,
+      rows: rowsResult,
+    }
+  }
+
   const [metadata, rowsResult] = await Promise.all([
     getTableMetadata(table),
-    useBillDateWindow
+    table.slug === 'ro_billing_report'
+      ? db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate))
+      : useBillDateWindow
       ? db.execute(sql`
           SELECT to_jsonb(t) AS row
           FROM (
@@ -189,12 +278,16 @@ async function fetchTableRows({
     ...metadata,
     page,
     limit: selectedLimit,
-    rows: rowsResult.map((row) => row.row),
+    rows: table.slug === 'ro_billing_report' ? rowsResult : rowsResult.map((row) => row.row),
   }
 }
 
 export async function GET(request: Request) {
+  const timer = createApiTimer('kia-business-excellence')
   try {
+    const accessError = await timer.time('auth', () => requireBrandApiAccess('kia'))
+    if (accessError) return accessError
+
     const { searchParams } = new URL(request.url)
     const brand = searchParams.get('brand') || 'kia'
     const sheet = searchParams.get('sheet')
@@ -214,27 +307,33 @@ export async function GET(request: Request) {
       const fetchAll = searchParams.get('fetchAll') === 'true'
       const startDate = searchParams.get('startDate')
       const endDate = searchParams.get('endDate')
-      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v2:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}`
-      const data = skipCache
-        ? await fetchTableRows({ table, page, limit, fetchAll, startDate, endDate })
-        : await getCachedData(cacheKey, () => fetchTableRows({ table, page, limit, fetchAll, startDate, endDate }), CACHE_TTL_SECONDS)
+      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v4:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}`
+      const data = await timer.time(skipCache ? 'db' : 'cache-db', () => skipCache
+        ? fetchTableRows({ table, page, limit, fetchAll, startDate, endDate })
+        : getCachedData(cacheKey, () => fetchTableRows({ table, page, limit, fetchAll, startDate, endDate }), CACHE_TTL_SECONDS))
 
-      return NextResponse.json(data)
+      const { serverTiming } = timer.finish()
+      return withServerTiming(NextResponse.json(data), serverTiming)
     }
 
     const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:metadata:kia`
-    const data = skipCache
-      ? await fetchMetadata()
-      : await getCachedData(cacheKey, fetchMetadata, CACHE_TTL_SECONDS)
+    const data = await timer.time(skipCache ? 'metadata-db' : 'metadata-cache-db', () => skipCache
+      ? fetchMetadata()
+      : getCachedData(cacheKey, fetchMetadata, CACHE_TTL_SECONDS))
 
-    return NextResponse.json(data)
+    const { serverTiming } = timer.finish()
+    return withServerTiming(NextResponse.json(data), serverTiming)
   } catch (error) {
+    timer.finish()
     console.error('Error fetching relational business excellence data:', error)
     return NextResponse.json({ error: 'Failed to fetch Business Excellence data' }, { status: 500 })
   }
 }
 
 export async function POST() {
+  const accessError = await requireBrandApiAccess('kia')
+  if (accessError) return accessError
+
   await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:*`)
   await invalidateCachePattern('ro_billing:*')
   return NextResponse.json(
