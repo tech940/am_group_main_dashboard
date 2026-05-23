@@ -140,6 +140,7 @@ type WorkflowStageFilter =
   | 'ea_pending'
   | 'md_pending'
   | 'grn_pending'
+  | 'grn_completed'
   | 'accounts_pending'
   | 'completed'
   | 'rejected'
@@ -159,6 +160,7 @@ const WORKFLOW_STAGE_FILTER_OPTIONS: Array<{ value: WorkflowStageFilter; label: 
   { value: 'ea_pending', label: 'EA Approval Pending' },
   { value: 'md_pending', label: 'MD Approval Pending' },
   { value: 'grn_pending', label: 'GRN Pending' },
+  { value: 'grn_completed', label: 'GRN Completed' },
   { value: 'accounts_pending', label: 'Accounts Pending' },
   { value: 'completed', label: 'Completed' },
   { value: 'rejected', label: 'Rejected' },
@@ -229,13 +231,6 @@ function normalizeOrderAmount(order: PurchaseOrder) {
   return Number.isFinite(numericAmount) ? numericAmount : 0
 }
 
-function getCompletedDate(order: PurchaseOrder) {
-  const rawDate = order.completed_at || order.completedAt || order.created_at || order.createdAt
-  const parsedDate = rawDate ? new Date(rawDate) : null
-
-  return parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : null
-}
-
 function getOrderReceivedDate(order: PurchaseOrder) {
   return order.received_date_time || order.receivedDateTime || ''
 }
@@ -267,12 +262,28 @@ function getTimeInputValue(value: string | undefined) {
   })
 }
 
-function isCompletedInDateRange(order: PurchaseOrder, startDate: string, endDate: string) {
-  if (order.status !== 'completed') {
+function getSpendRecognitionDate(order: PurchaseOrder) {
+  const rawDate = order.received_date_time
+    || order.receivedDateTime
+    || order.completed_at
+    || order.completedAt
+    || order.created_at
+    || order.createdAt
+  const parsedDate = rawDate ? new Date(rawDate) : null
+
+  return parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : null
+}
+
+function isSpendRecognizedOrder(order: PurchaseOrder) {
+  return order.status === 'awaiting_accounts' || order.status === 'completed'
+}
+
+function isSpendRecognizedInDateRange(order: PurchaseOrder, startDate: string, endDate: string) {
+  if (!isSpendRecognizedOrder(order)) {
     return false
   }
 
-  const completedDate = getCompletedDate(order)
+  const completedDate = getSpendRecognitionDate(order)
   if (!completedDate) {
     return false
   }
@@ -292,6 +303,10 @@ function isCompletedInDateRange(order: PurchaseOrder, startDate: string, endDate
   }
 
   return true
+}
+
+function isCompletedInDateRange(order: PurchaseOrder, startDate: string, endDate: string) {
+  return order.status === 'completed' && isSpendRecognizedInDateRange(order, startDate, endDate)
 }
 
 function getOptimizedImageName(fileName: string) {
@@ -413,6 +428,8 @@ function matchesWorkflowStageFilter(order: PurchaseOrder, filter: WorkflowStageF
       return order.status === 'awaiting_md_approval'
     case 'grn_pending':
       return order.status === 'awaiting_grn'
+    case 'grn_completed':
+      return order.status === 'awaiting_accounts'
     case 'accounts_pending':
       return order.status === 'awaiting_accounts'
     case 'completed':
@@ -538,9 +555,11 @@ function PurchaseOrdersPageContent() {
     }
   }, [userRole])
 
+  const isCompletionTrackingView = showCompleted
+
   const listedOrders = useMemo(() => {
-    const completedMatchesRange = (order: PurchaseOrder) =>
-      isCompletedInDateRange(order, completedDateStart, completedDateEnd)
+    const spendMatchesRange = (order: PurchaseOrder) =>
+      isSpendRecognizedInDateRange(order, completedDateStart, completedDateEnd)
     const applyWorkflowStageFilter = (candidateOrders: PurchaseOrder[]) =>
       workflowStageFilter === 'all'
         ? candidateOrders
@@ -559,18 +578,18 @@ function PurchaseOrdersPageContent() {
         case 'hold':
           return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.hold || order.status === statusSet.extraHold))
         case 'completed':
-          return applyWorkflowStageFilter(orders.filter(completedMatchesRange))
+          return applyWorkflowStageFilter(orders.filter((order) => isCompletedInDateRange(order, completedDateStart, completedDateEnd)))
         default:
           return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.pending))
       }
     }
 
-    if (workflowStageFilter !== 'all') {
-      return applyWorkflowStageFilter(orders)
+    if (isCompletionTrackingView) {
+      return applyWorkflowStageFilter(orders.filter(spendMatchesRange))
     }
 
-    if (showCompleted) {
-      return orders.filter(completedMatchesRange)
+    if (workflowStageFilter !== 'all') {
+      return applyWorkflowStageFilter(orders)
     }
 
     switch (userRole) {
@@ -581,16 +600,26 @@ function PurchaseOrdersPageContent() {
       default:
         return orders.filter((order) => order.status !== 'completed')
     }
-  }, [approvalFilter, completedDateEnd, completedDateStart, orders, showCompleted, userRole, workflowStageFilter])
+  }, [approvalFilter, completedDateEnd, completedDateStart, isCompletionTrackingView, orders, userRole, workflowStageFilter])
 
   const listedCompletedOrders = useMemo(
     () => listedOrders.filter((order) => order.status === 'completed'),
     [listedOrders]
   )
 
+  const listedGrnCompletedOrders = useMemo(
+    () => listedOrders.filter((order) => order.status === 'awaiting_accounts'),
+    [listedOrders]
+  )
+
+  const listedSpendOrders = useMemo(
+    () => listedOrders.filter(isSpendRecognizedOrder),
+    [listedOrders]
+  )
+
   const listedCompletedSpend = useMemo(
-    () => listedCompletedOrders.reduce((total, order) => total + normalizeOrderAmount(order), 0),
-    [listedCompletedOrders]
+    () => listedSpendOrders.reduce((total, order) => total + normalizeOrderAmount(order), 0),
+    [listedSpendOrders]
   )
 
   const poTableOrders = useMemo(() => listedOrders, [listedOrders])
@@ -631,7 +660,7 @@ function PurchaseOrdersPageContent() {
         params.set('mode', purchaseOrderListMode)
         params.set('page', String(purchaseOrderPage))
         params.set('pageSize', String(PURCHASE_ORDER_PAGE_SIZE))
-        params.set('scope', showCompleted ? 'completed' : 'active')
+        params.set('scope', isCompletionTrackingView ? 'spending' : 'active')
 
         if (userRole === 'purchase_manager') {
           params.set('view', 'table')
@@ -643,6 +672,11 @@ function PurchaseOrdersPageContent() {
 
         if (workflowStageFilter !== 'all') {
           params.set('workflowFilter', workflowStageFilter)
+        }
+
+        if (isCompletionTrackingView) {
+          if (completedDateStart) params.set('spendStartDate', completedDateStart)
+          if (completedDateEnd) params.set('spendEndDate', completedDateEnd)
         }
       }
 
@@ -679,7 +713,7 @@ function PurchaseOrdersPageContent() {
         setIsListRefreshing(false)
       }
     }
-  }, [approvalFilter, purchaseOrderListMode, purchaseOrderPage, showCompleted, userRole, usesPurchaseOrderPagination, workflowStageFilter])
+  }, [approvalFilter, completedDateEnd, completedDateStart, isCompletionTrackingView, purchaseOrderListMode, purchaseOrderPage, userRole, usesPurchaseOrderPagination, workflowStageFilter])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1146,9 +1180,10 @@ function PurchaseOrdersPageContent() {
     setPurchaseOrderPage(1)
     setWorkflowStageFilter(filter)
 
-    if (filter === 'completed') {
+    if (filter === 'completed' || filter === 'grn_completed') {
       setShowCompleted(true)
       setShowPOTableView(false)
+      setPurchaseOrderListMode('all')
     } else if (filter !== 'all') {
       setShowCompleted(false)
     }
@@ -1188,6 +1223,47 @@ function PurchaseOrdersPageContent() {
     </div>
   )
 
+  const renderCompletionStateFilters = () => {
+    const options: Array<{ value: WorkflowStageFilter; label: string; helper: string }> = [
+      { value: 'all', label: 'All Spending', helper: 'GRN completed + fully completed' },
+      { value: 'grn_completed', label: 'GRN Completed', helper: 'Spend counted, Accounts pending' },
+      { value: 'completed', label: 'Completed', helper: 'Accounts closed' },
+    ]
+
+    return (
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-amber-100 bg-white p-3 shadow-sm">
+        {options.map((option) => {
+          const isActive = workflowStageFilter === option.value
+          const count = option.value === 'all'
+            ? orders.filter((order) => isSpendRecognizedInDateRange(order, completedDateStart, completedDateEnd)).length
+            : orders.filter((order) => matchesWorkflowStageFilter(order, option.value) && isSpendRecognizedInDateRange(order, completedDateStart, completedDateEnd)).length
+
+          return (
+            <Button
+              key={option.value}
+              type="button"
+              variant={isActive ? 'default' : 'outline'}
+              onClick={() => setWorkflowStageFilterPreference(option.value)}
+              className={`h-auto rounded-xl px-4 py-3 text-left ${isActive ? 'bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+            >
+              <span className="grid gap-0.5">
+                <span className="flex items-center gap-2 font-bold">
+                  {option.label}
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    {count}
+                  </span>
+                </span>
+                <span className={`text-[10px] font-medium ${isActive ? 'text-white/70' : 'text-slate-500'}`}>
+                  {option.helper}
+                </span>
+              </span>
+            </Button>
+          )
+        })}
+      </div>
+    )
+  }
+
   const setPurchaseOrderMode = (mode: PurchaseOrderListMode) => {
     setPurchaseOrderListMode(mode)
     setPurchaseOrderPage(1)
@@ -1210,7 +1286,7 @@ function PurchaseOrdersPageContent() {
     return (
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          {(['today', 'all'] as const).map((mode) => {
+          {!isCompletionTrackingView && (['today', 'all'] as const).map((mode) => {
               const isActive = purchaseOrderListMode === mode
 
               return (
@@ -1284,13 +1360,21 @@ function PurchaseOrdersPageContent() {
   const renderCompletedAnalyticsControls = () => (
     <div className="flex flex-col gap-4 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
       <div>
-        <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Completed Spend</p>
+        <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Recognized Spend</p>
         <p className="text-2xl font-black text-slate-900">
           Rs. {listedCompletedSpend.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
         </p>
-        <p className="text-xs text-slate-500">
-          {listedCompletedOrders.length} completed order{listedCompletedOrders.length !== 1 ? 's' : ''} in view
-        </p>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">
+            {listedGrnCompletedOrders.length} GRN completed
+          </span>
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
+            {listedCompletedOrders.length} fully completed
+          </span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+            {listedSpendOrders.length} spending order{listedSpendOrders.length !== 1 ? 's' : ''} in view
+          </span>
+        </div>
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1695,7 +1779,7 @@ function PurchaseOrdersPageContent() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              {canViewPurchaseOrderTable && (
+              {canViewPurchaseOrderTable && !isCompletionTrackingView && (
                 <Button
                   onClick={() => {
                     setShowPOTableView((value) => {
@@ -1730,9 +1814,11 @@ function PurchaseOrdersPageContent() {
                     const nextValue = !value
                     if (nextValue) {
                       setShowPOTableView(false)
-                      setWorkflowStageFilter('completed')
+                      setWorkflowStageFilter('all')
+                      setPurchaseOrderListMode('all')
                     } else {
                       setWorkflowStageFilter('all')
+                      setPurchaseOrderListMode('today')
                     }
                     return nextValue
                   })
@@ -1750,7 +1836,7 @@ function PurchaseOrdersPageContent() {
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh
               </Button>
-              {canCreateOrders && (
+              {canCreateOrders && !isCompletionTrackingView && (
                 <Button
                   onClick={openFreshNewOrderForm}
                   className="rounded-2xl border border-teal-300 bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-100 hover:from-teal-700 hover:to-emerald-700"
@@ -1763,11 +1849,13 @@ function PurchaseOrdersPageContent() {
           </div>
         )}
 
-        {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && !selectedOrder && renderWorkflowStageFilters()}
+        {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && !selectedOrder && (
+          isCompletionTrackingView ? renderCompletionStateFilters() : renderWorkflowStageFilters()
+        )}
 
         {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && !selectedOrder && renderPurchaseOrderPaginationControls()}
 
-        {userRole !== 'md' && userRole !== 'ea' && showCompleted && renderCompletedAnalyticsControls()}
+        {userRole !== 'md' && userRole !== 'ea' && isCompletionTrackingView && renderCompletedAnalyticsControls()}
 
         {showNewOrderForm && canCreateOrders && (
           <Stage1InitialSubmission
@@ -2040,7 +2128,7 @@ function PurchaseOrdersPageContent() {
 
                 {renderPurchaseOrderPaginationControls()}
 
-                {(approvalFilter === 'completed' || workflowStageFilter === 'completed') && renderCompletedAnalyticsControls()}
+                {(approvalFilter === 'completed' || workflowStageFilter === 'completed' || workflowStageFilter === 'grn_completed') && renderCompletedAnalyticsControls()}
 
                 <div className="animate-in fade-in duration-200">
                 {activeViewMode === 'table' ? (
@@ -2109,11 +2197,11 @@ function PurchaseOrdersPageContent() {
               <Card className="rounded-[28px] border-none shadow-sm">
                 <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <CardTitle className="text-2xl font-black text-slate-900">
-                    {showCompleted ? 'Completed Orders' : queueTitle}
+                    {isCompletionTrackingView ? 'Spending & Completion Tracking' : queueTitle}
                   </CardTitle>
                   <p className="text-sm text-slate-500">
-                    {showCompleted
-                      ? 'Historical purchase orders that have completed the workflow.'
+                    {isCompletionTrackingView
+                      ? 'GRN completed orders count toward spend while Accounts can still finish closure.'
                       : 'Only purchase orders relevant to your role are shown here.'}
                   </p>
                 </CardHeader>
@@ -2126,7 +2214,7 @@ function PurchaseOrdersPageContent() {
                     </div>
                   ) : listedOrders.length === 0 ? (
                     <p className="py-8 text-center text-gray-500">
-                      {showCompleted ? 'No completed orders found' : 'No purchase orders found in your queue'}
+                      {isCompletionTrackingView ? 'No spending records found' : 'No purchase orders found in your queue'}
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">

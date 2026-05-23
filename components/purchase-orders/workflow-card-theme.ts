@@ -15,8 +15,8 @@ const statusPresentation: Record<string, WorkflowStatusPresentation> = {
   ea_on_hold: { label: 'On Hold by EA', tone: 'amber' },
   md_on_hold: { label: 'On Hold by MD', tone: 'amber' },
   awaiting_grn: { label: 'GRN Pending', tone: 'teal' },
-  awaiting_accounts: { label: 'Accounts Pending', tone: 'emerald' },
-  completed: { label: 'Completed', tone: 'emerald' },
+  awaiting_accounts: { label: 'GRN Completed', tone: 'amber' },
+  completed: { label: 'Fully Completed', tone: 'emerald' },
   cancelled: { label: 'Cancelled', tone: 'slate' },
 }
 

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { and, count, desc, eq, gte, isNull, lt, ne, or } from 'drizzle-orm'
+import { and, count, desc, eq, gte, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { serializeUtcTimestampFields, getIndiaDatePart } from '@/lib/date-time'
 import { purchaseOrders } from '@/lib/db/schema'
+import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import {
   canCreatePurchaseOrders,
   canReadPurchaseOrder,
@@ -54,6 +55,8 @@ function getWorkflowFilterExpression(filter: string | null) {
       return eq(purchaseOrders.status, 'awaiting_md_approval')
     case 'grn_pending':
       return eq(purchaseOrders.status, 'awaiting_grn')
+    case 'grn_completed':
+      return eq(purchaseOrders.status, 'awaiting_accounts')
     case 'accounts_pending':
       return eq(purchaseOrders.status, 'awaiting_accounts')
     case 'completed':
@@ -64,6 +67,39 @@ function getWorkflowFilterExpression(filter: string | null) {
       return or(eq(purchaseOrders.status, 'on_hold'), eq(purchaseOrders.status, 'ea_on_hold'), eq(purchaseOrders.status, 'md_on_hold'))
     default:
       return null
+  }
+}
+
+function getSpendingScopeExpression() {
+  return sql`${purchaseOrders.status} IN ('awaiting_accounts', 'completed')`
+}
+
+function getSpendDateExpression() {
+  return sql<Date>`COALESCE(${purchaseOrders.receivedDateTime}, ${purchaseOrders.completedAt}, ${purchaseOrders.createdAt})`
+}
+
+function addDateModeFilters(filters: unknown[], mode: 'today' | 'all', useSpendDate: boolean) {
+  if (mode !== 'today') return
+
+  const { start, end } = getCurrentIndiaDayBounds()
+  if (useSpendDate) {
+    const spendDate = getSpendDateExpression()
+    filters.push(sql`${spendDate} >= ${start}`, sql`${spendDate} < ${end}`)
+    return
+  }
+
+  filters.push(gte(purchaseOrders.createdAt, start), lt(purchaseOrders.createdAt, end))
+}
+
+function addSpendDateRangeFilters(filters: unknown[], startDate: string | null, endDate: string | null) {
+  const spendDate = getSpendDateExpression()
+
+  if (startDate) {
+    filters.push(sql`${spendDate} >= ${new Date(`${startDate}T00:00:00+05:30`)}`)
+  }
+
+  if (endDate) {
+    filters.push(sql`${spendDate} < ${new Date(new Date(`${endDate}T00:00:00+05:30`).getTime() + 24 * 60 * 60 * 1000)}`)
   }
 }
 
@@ -112,8 +148,9 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
 }
 
 export async function GET(request: NextRequest) {
+  const timer = createApiTimer('purchase-orders')
   try {
-    const appUser = await getAuthenticatedAppUser()
+    const appUser = await timer.time('auth', () => getAuthenticatedAppUser())
 
     if (!appUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -129,23 +166,26 @@ export async function GET(request: NextRequest) {
     const workflowFilter = searchParams.get('workflowFilter')
     const approvalFilter = searchParams.get('approvalFilter')
     const scope = searchParams.get('scope')
+    const spendStartDate = searchParams.get('spendStartDate')
+    const spendEndDate = searchParams.get('spendEndDate')
     const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
     const requestedPageSize = Number.parseInt(searchParams.get('pageSize') || '9', 10) || 9
     const pageSize = Math.min(9, Math.max(1, requestedPageSize))
 
     // If ID is provided, fetch single purchase order
     if (id) {
-      const [order] = await db
+      const [order] = await timer.time('single', () => db
         .select()
         .from(purchaseOrders)
         .where(and(eq(purchaseOrders.id, id), getPurchaseOrderListVisibilityFilter(appUser)))
-        .limit(1)
+        .limit(1))
 
       if (!order) {
         return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
       }
 
-      return NextResponse.json(serializePurchaseOrderRow(order))
+      const { serverTiming } = timer.finish()
+      return withServerTiming(NextResponse.json(serializePurchaseOrderRow(order)), serverTiming)
     }
 
     const filters = [getPurchaseOrderListVisibilityFilter(appUser)]
@@ -173,36 +213,42 @@ export async function GET(request: NextRequest) {
       const workflowExpression = getWorkflowFilterExpression(workflowFilter)
       if (workflowExpression) {
         filters.push(workflowExpression)
+      } else if (scope === 'spending') {
+        filters.push(getSpendingScopeExpression())
       } else if (scope === 'completed') {
         filters.push(eq(purchaseOrders.status, 'completed'))
       } else {
         filters.push(ne(purchaseOrders.status, 'completed'))
       }
 
-      if (mode === 'today') {
-        const { start, end } = getCurrentIndiaDayBounds()
-        filters.push(gte(purchaseOrders.createdAt, start), lt(purchaseOrders.createdAt, end))
+      if (scope === 'spending') {
+        addSpendDateRangeFilters(filters, spendStartDate, spendEndDate)
       }
 
+      addDateModeFilters(filters, mode, scope === 'spending')
+
       const whereExpression = and(...filters)
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(purchaseOrders)
-        .where(whereExpression)
+      const offset = (page - 1) * pageSize
+      const [[{ total }], rows] = await timer.time('table-query', () => Promise.all([
+        db
+          .select({ total: count() })
+          .from(purchaseOrders)
+          .where(whereExpression),
+        db
+          .select()
+          .from(purchaseOrders)
+          .where(whereExpression)
+          .orderBy(desc(purchaseOrders.createdAt))
+          .limit(pageSize)
+          .offset(offset),
+      ]))
 
       const totalOrders = Number(total) || 0
       const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize))
       const safePage = Math.min(page, totalPages)
+      const { serverTiming } = timer.finish()
 
-      const rows = await db
-        .select()
-        .from(purchaseOrders)
-        .where(whereExpression)
-        .orderBy(desc(purchaseOrders.createdAt))
-        .limit(pageSize)
-        .offset((safePage - 1) * pageSize)
-
-      return NextResponse.json({
+      return withServerTiming(NextResponse.json({
         orders: rows.map(serializePurchaseOrderRow),
         pagination: {
           page: safePage,
@@ -211,7 +257,7 @@ export async function GET(request: NextRequest) {
           totalPages,
           mode,
         },
-      })
+      }), serverTiming)
     }
 
     if (paginate) {
@@ -221,36 +267,42 @@ export async function GET(request: NextRequest) {
         filters.push(workflowExpression)
       } else if (approvalExpression) {
         filters.push(approvalExpression)
+      } else if (scope === 'spending') {
+        filters.push(getSpendingScopeExpression())
       } else if (scope === 'completed') {
         filters.push(eq(purchaseOrders.status, 'completed'))
       } else {
         filters.push(ne(purchaseOrders.status, 'completed'))
       }
 
-      if (mode === 'today') {
-        const { start, end } = getCurrentIndiaDayBounds()
-        filters.push(gte(purchaseOrders.createdAt, start), lt(purchaseOrders.createdAt, end))
+      if (scope === 'spending') {
+        addSpendDateRangeFilters(filters, spendStartDate, spendEndDate)
       }
 
+      addDateModeFilters(filters, mode, scope === 'spending')
+
       const whereExpression = and(...filters)
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(purchaseOrders)
-        .where(whereExpression)
+      const offset = (page - 1) * pageSize
+      const [[{ total }], rows] = await timer.time('paged-query', () => Promise.all([
+        db
+          .select({ total: count() })
+          .from(purchaseOrders)
+          .where(whereExpression),
+        db
+          .select()
+          .from(purchaseOrders)
+          .where(whereExpression)
+          .orderBy(desc(purchaseOrders.createdAt))
+          .limit(pageSize)
+          .offset(offset),
+      ]))
 
       const totalOrders = Number(total) || 0
       const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize))
       const safePage = Math.min(page, totalPages)
+      const { serverTiming } = timer.finish()
 
-      const rows = await db
-        .select()
-        .from(purchaseOrders)
-        .where(whereExpression)
-        .orderBy(desc(purchaseOrders.createdAt))
-        .limit(pageSize)
-        .offset((safePage - 1) * pageSize)
-
-      return NextResponse.json({
+      return withServerTiming(NextResponse.json({
         orders: rows.map(serializePurchaseOrderRow),
         pagination: {
           page: safePage,
@@ -259,17 +311,19 @@ export async function GET(request: NextRequest) {
           totalPages,
           mode,
         },
-      })
+      }), serverTiming)
     }
 
-    const rows = await db
+    const rows = await timer.time('legacy-list', () => db
       .select()
       .from(purchaseOrders)
       .where(and(...filters))
-      .orderBy(desc(purchaseOrders.createdAt))
+      .orderBy(desc(purchaseOrders.createdAt)))
 
-    return NextResponse.json({ orders: rows.map(serializePurchaseOrderRow) })
+    const { serverTiming } = timer.finish()
+    return withServerTiming(NextResponse.json({ orders: rows.map(serializePurchaseOrderRow) }), serverTiming)
   } catch (error) {
+    timer.finish()
     console.error('Error in GET /api/purchase-orders:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

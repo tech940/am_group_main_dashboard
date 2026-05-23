@@ -50,7 +50,6 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
   const [partsRevenue, setPartsRevenue] = useState<RevenueMetrics | null>(null)
   const [growthContribution, setGrowthContribution] = useState<GrowthStats | null>(null)
   const [activeView, setActiveView] = useState<RevenueView>('labour')
-  const [dateContext, setDateContext] = useState<{ currentYear: number, currentMonth: number, currentDay: number, daysInMonth: number } | null>(null)
 
   // 1. Logic Helpers (Declared first to avoid hoisting issues)
   const processRevenueData = useCallback((rows: DataRow[]) => {
@@ -270,13 +269,6 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
       cyYtdStart, cyYtdEnd, lyYtdStart, lyYtdEnd,
       currentYear, currentMonth, currentDay, daysInMonth
     } = bounds
-
-    setDateContext({
-      currentYear,
-      currentMonth,
-      currentDay,
-      daysInMonth
-    })
 
     // Detect if we actually have previous year data in this dataset
     let hasLyData = false
@@ -579,114 +571,6 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
     )
   }
 
-  // Calculate KPI metrics
-  const calculateKPIs = () => {
-    const currentData = activeView === 'labour' ? labourRevenue : partsRevenue
-
-    console.log('?? Current Data for KPIs:', {
-      activeView,
-      labourRevenue,
-      partsRevenue,
-      currentData
-    })
-
-    const mtdCY = currentData.mtd.cy
-    const lyTotal = typeof currentData.mtd.ly === 'number' ? currentData.mtd.ly : 0
-
-    // Use the date context from processRevenueData
-    if (!dateContext) {
-      console.warn('?? No date context available for KPI calculations')
-      return {
-        monthTarget: 0,
-        mtdAchieved: 0,
-        mtdTarget: 0,
-        achTillDate: 0,
-        shortfallTD: 0,
-        monthlyShortfall: 0,
-        projectedClosing: 0,
-        askingRate: 0
-      }
-    }
-
-    const { currentYear, currentMonth, currentDay, daysInMonth } = dateContext
-
-    console.log('?? Using Date Context for KPIs:', {
-      currentYear,
-      currentMonth: currentMonth + 1,
-      currentDay,
-      daysInMonth
-    })
-
-    const monthTarget = lyTotal * 1.1
-    const mtdAchieved = mtdCY
-    const mtdTarget = monthTarget * (currentDay / daysInMonth)
-
-    // Ach Till Date: Current MTD CY
-    const achTillDate = mtdAchieved
-
-    // Shortfall T.D: Difference between MTD target and achieved
-    const shortfallTD = mtdTarget - mtdAchieved
-
-    // Projected Closing: Based on current pace
-    const projectedClosing = achTillDate * (daysInMonth / currentDay)
-
-    // Monthly Shortfall: Difference between month target and projected closing
-    const monthlyShortfall = monthTarget - projectedClosing
-
-    // Asking Rate: Required daily rate to meet target
-    const remainingDays = daysInMonth - currentDay
-    const askingRate = remainingDays > 0 ? monthlyShortfall / remainingDays : 0
-
-    console.log('?? KPI Calculations:', {
-      activeView,
-      mtdCY,
-      lyTotal,
-      monthTarget,
-      mtdAchieved,
-      mtdTarget,
-      achTillDate,
-      projectedClosing,
-      currentDay,
-      daysInMonth
-    })
-
-    return {
-      monthTarget,
-      mtdAchieved,
-      mtdTarget,
-      achTillDate,
-      shortfallTD,
-      monthlyShortfall,
-      projectedClosing,
-      askingRate
-    }
-  }
-
-  console.log('?? Before calculateKPIs:', {
-    hasLabourRevenue: !!labourRevenue,
-    hasPartsRevenue: !!partsRevenue,
-    hasSharedData: !!(sharedData && sharedData.length > 0),
-    hasRoBillingData: !!roBillingData,
-    labourRevenue,
-    partsRevenue
-  })
-
-  const kpis = labourRevenue && partsRevenue ? calculateKPIs() : null
-
-  console.log('?? After calculateKPIs:', { kpis })
-
-  if (!kpis) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <Loader2 className="h-10 w-10 animate-spin text-teal-600" />
-        <div className="text-center">
-          <p className="text-sm font-black text-slate-700 uppercase tracking-widest">Calculating KPIs</p>
-          <p className="text-xs text-slate-400 mt-1">Processing revenue data...</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6">
       {/* Section Header */}
@@ -718,78 +602,6 @@ export default function ROBillingReportSection({ activeSheet, sharedData, dateFi
             {view.charAt(0).toUpperCase() + view.slice(1)} Revenue
           </Button>
         ))}
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-        <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
-          <CardContent className="p-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Month Target</p>
-            <p className={cn("text-xl font-black", moneyTextClass(kpis.monthTarget))}>
-              {renderMoney(kpis.monthTarget)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
-          <CardContent className="p-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">MTD Target</p>
-            <p className={cn("text-xl font-black", moneyTextClass(kpis.mtdTarget))}>
-              {renderMoney(kpis.mtdTarget)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
-          <CardContent className="p-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">MTD Achieved</p>
-            <p className={cn("text-xl font-black", moneyTextClass(kpis.mtdAchieved))}>
-              {renderMoney(kpis.mtdAchieved)}
-            </p>
-          </CardContent>
-        </Card>
-
-
-
-        <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
-          <CardContent className="p-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Shortfall T.D</p>
-            <p className={cn(
-              "text-xl font-black",
-              kpis.shortfallTD > 0 ? "text-rose-600" : "text-emerald-600"
-            )}>
-              {renderMoney(Math.abs(kpis.shortfallTD))}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
-          <CardContent className="p-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Monthly Shortfall</p>
-            <p className={cn(
-              "text-xl font-black",
-              kpis.monthlyShortfall > 0 ? "text-rose-600" : "text-emerald-600"
-            )}>
-              {renderMoney(Math.abs(kpis.monthlyShortfall))}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
-          <CardContent className="p-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Projected Closing</p>
-            <p className={cn("text-xl font-black", moneyTextClass(kpis.projectedClosing))}>
-              {renderMoney(kpis.projectedClosing)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border border-slate-200 shadow-sm bg-white">
-          <CardContent className="p-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Asking Rate</p>
-            <p className={cn("text-xl font-black", moneyTextClass(kpis.askingRate))}>
-              {renderMoney(kpis.askingRate)}
-            </p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Data Tables */}

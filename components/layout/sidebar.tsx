@@ -5,14 +5,9 @@ import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
-  Wrench,
   ChevronDown,
   LogOut,
-  Car,
   Activity,
-  Bike,
-  ShieldCheck,
-  Disc,
   Menu,
   X,
   Settings,
@@ -23,126 +18,33 @@ import {
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
+import { useSidebar } from '@/context/sidebar-context'
+import { useUserRole } from '@/lib/hooks/use-user-role'
 
-const brands = [
+const brandNavigation = [
   {
     name: 'AM Kia',
+    key: 'kia',
     href: '/brands/kia',
     logo: 'https://www.citypng.com/public/uploads/preview/kia-white-logo-hd-png-7017516947105094q5qjti6gq.png',
     color: 'text-slate-900',
-    bgColor: 'bg-black',
     icon: Activity,
     submenus: [
       { name: 'Business Excellence', href: '/brands/kia/business-excellence' },
-      { name: 'Inventory', href: '/brands/kia/inventory' },
-      { name: 'Workshops', href: '/brands/kia/workshops' },
-      { name: 'Sales', href: '/brands/kia/sales' },
-      { name: 'Reports', href: '/brands/kia/reports' },
-    ],
-  },
-  {
-    name: 'AM Tata',
-    href: '/brands/tata',
-    logo: 'https://amgroupind.com/wp-content/uploads/2024/10/tata-2.png',
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-500',
-    icon: Car,
-    submenus: [
-      { name: 'Inventory', href: '/brands/tata/inventory' },
-      { name: 'Workshops', href: '/brands/tata/workshops' },
-      { name: 'Sales', href: '/brands/tata/sales' },
-      { name: 'Reports', href: '/brands/tata/reports' },
-    ],
-  },
-  {
-    name: 'AM Hyundai',
-    href: '/brands/hyundai',
-    logo: 'https://amgroupind.com/wp-content/uploads/2024/10/hyundai.png',
-    color: 'text-sky-500',
-    bgColor: 'bg-sky-500',
-    icon: ShieldCheck,
-    submenus: [
-      { name: 'Inventory', href: '/brands/hyundai/inventory' },
-      { name: 'Workshops', href: '/brands/hyundai/workshops' },
-      { name: 'Sales', href: '/brands/hyundai/sales' },
-      { name: 'Reports', href: '/brands/hyundai/reports' },
-    ],
-  },
-  {
-    name: 'AM Diamond Honda',
-    href: '/brands/honda',
-    logo: 'https://amgroupind.com/wp-content/uploads/2024/10/diamond.png',
-    color: 'text-red-600',
-    bgColor: 'bg-red-600',
-    icon: Disc,
-    submenus: [
-      { name: 'Inventory', href: '/brands/honda/inventory' },
-      { name: 'Workshops', href: '/brands/honda/workshops' },
-      { name: 'Sales', href: '/brands/honda/sales' },
-      { name: 'Reports', href: '/brands/honda/reports' },
-    ],
-  },
-  {
-    name: 'AM KTM',
-    href: '/brands/ktm',
-    logo: 'https://amgroupind.com/wp-content/uploads/2024/10/ktm1.png',
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500',
-    icon: Bike,
-    submenus: [
-      { name: 'Inventory', href: '/brands/ktm/inventory' },
-      { name: 'Workshops', href: '/brands/ktm/workshops' },
-      { name: 'Sales', href: '/brands/ktm/sales' },
-      { name: 'Reports', href: '/brands/ktm/reports' },
-    ],
-  },
-  {
-    name: 'AM Triumph',
-    href: '/brands/triumph',
-    logo: 'https://amgroupind.com/wp-content/uploads/2024/10/triumph.png',
-    color: 'text-slate-800',
-    bgColor: 'bg-slate-800',
-    icon: ShieldCheck,
-    submenus: [
-      { name: 'Inventory', href: '/brands/triumph/inventory' },
-      { name: 'Workshops', href: '/brands/triumph/workshops' },
-      { name: 'Sales', href: '/brands/triumph/sales' },
-      { name: 'Reports', href: '/brands/triumph/reports' },
-    ],
-  },
-  {
-    name: 'AM Bajaj',
-    href: '/brands/bajaj',
-    logo: 'https://amgroupind.com/wp-content/uploads/2024/10/bajaj.png',
-    color: 'text-blue-700',
-    bgColor: 'bg-blue-700',
-    icon: Bike,
-    submenus: [
-      { name: 'Inventory', href: '/brands/bajaj/inventory' },
-      { name: 'Workshops', href: '/brands/bajaj/workshops' },
-      { name: 'Sales', href: '/brands/bajaj/sales' },
-      { name: 'Reports', href: '/brands/bajaj/reports' },
-    ],
-  },
-  {
-    name: 'AM MG',
-    href: '/brands/mg',
-    logo: 'https://amgroupind.com/wp-content/uploads/2024/10/mg-am-1.png',
-    color: 'text-rose-600',
-    bgColor: 'bg-rose-600',
-    icon: Wrench,
-    submenus: [
-      { name: 'Inventory', href: '/brands/mg/inventory' },
-      { name: 'Workshops', href: '/brands/mg/workshops' },
-      { name: 'Sales', href: '/brands/mg/sales' },
-      { name: 'Reports', href: '/brands/mg/reports' },
     ],
   },
 ]
 
-import { useSidebar } from '@/context/sidebar-context'
-import { hasAllBranchAccess } from '@/lib/branches'
-import { useUserRole } from '@/lib/hooks/use-user-role'
+const availableBrands = brandNavigation.filter((brand) => brand.submenus.length > 0)
+
+function getBrandKey(brandName: string) {
+  return availableBrands.find((brand) => brand.name === brandName)?.key || ''
+}
+
+function getBrandName(brandKey: string) {
+  return availableBrands.find((brand) => brand.key === brandKey)?.name || ''
+}
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -151,45 +53,27 @@ export function Sidebar() {
   const { collapsed, setCollapsed } = useSidebar()
   const [openBrand, setOpenBrand] = useState<string | null>(null)
   const [openAdmin, setOpenAdmin] = useState(false)
-  const { isAdmin, canAccessAdmin, userBrand, loading } = useUserRole()
+  const { userRole, isAdmin, canAccessAdmin, userBrand, loading } = useUserRole()
 
-  // Helper function to check if user can access a brand
   const canAccessBrand = (brandKey: string) => {
-    if (isAdmin) return true // Admins can access all brands
-    if (!userBrand) return false // No brand assigned
+    if (userRole === 'admin') return true
+    if (!userBrand) return false
     if (hasAllBranchAccess(userBrand)) return true
-    return brandKey === userBrand // Can only access assigned brand
+    return brandKey === userBrand
   }
 
-  // Map brand names to keys
-  const getBrandKey = (brandName: string): string => {
-    const brandMap: Record<string, string> = {
-      'AM Kia': 'kia',
-      'AM Tata': 'tata',
-      'AM Hyundai': 'hyundai',
-      'AM Diamond Honda': 'honda',
-      'AM KTM': 'ktm',
-      'AM Triumph': 'triumph',
-      'AM Bajaj': 'bajaj',
-      'AM MG': 'mg'
-    }
-    return brandMap[brandName] || ''
-  }
+  const visibleBrands = availableBrands
+    .filter((brand) => canAccessBrand(brand.key))
+    .sort((a, b) => {
+      if (userBrand) {
+        if (a.key === userBrand) return -1
+        if (b.key === userBrand) return 1
+      }
 
-  // Get brand name from key
-  const getBrandName = (brandKey: string): string => {
-    const brandMap: Record<string, string> = {
-      'kia': 'AM Kia',
-      'tata': 'AM Tata',
-      'hyundai': 'AM Hyundai',
-      'honda': 'AM Diamond Honda',
-      'ktm': 'AM KTM',
-      'triumph': 'AM Triumph',
-      'bajaj': 'AM Bajaj',
-      'mg': 'AM MG'
-    }
-    return brandMap[brandKey] || ''
-  }
+      const aOrder = BRANCH_OPTIONS.findIndex((branch) => branch.value === a.key)
+      const bOrder = BRANCH_OPTIONS.findIndex((branch) => branch.value === b.key)
+      return aOrder - bOrder
+    })
 
   // Auto-open user's assigned brand on load
   useEffect(() => {
@@ -431,8 +315,7 @@ export function Sidebar() {
               </nav>
             </div>
 
-            {/* Brands Section - Only for Admin */}
-            {isAdmin && (
+            {visibleBrands.length > 0 && (
               <div>
                 {!collapsed && (
                   <p className="mb-6 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
@@ -440,23 +323,10 @@ export function Sidebar() {
                   </p>
                 )}
               <nav className="space-y-4">
-                {/* Only show brands to admin users */}
-                {isAdmin && [...brands].sort((a, b) => {
-                  const aKey = getBrandKey(a.name)
-                  const bKey = getBrandKey(b.name)
-                  
-                  // If user has a brand assigned (not admin)
-                  if (userBrand) {
-                    if (aKey === userBrand) return -1 // User's brand comes first
-                    if (bKey === userBrand) return 1
-                  }
-                  
-                  return 0 // Keep original order for others
-                }).map((brand) => {
+                {visibleBrands.map((brand) => {
                   const isOpen = openBrand === brand.name
                   const isActive = pathname?.startsWith(brand.href)
-                  const brandKey = getBrandKey(brand.name)
-                  const hasAccess = isAdmin && canAccessBrand(brandKey)
+                  const hasAccess = canAccessBrand(brand.key)
 
                   return (
                     <div key={brand.name} className="space-y-1.5">
