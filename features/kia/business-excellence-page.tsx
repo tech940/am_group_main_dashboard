@@ -1956,7 +1956,7 @@ function ServiceTypePerformance({
       const ytdLY = sumMetric('ytd', 'ly')
       const calcGrowthString = (current: number, previous: number | 'N/A') => {
         if (previous === 'N/A' || previous <= 0) return 'N/A'
-        return `${(((current - previous) / previous) * 100).toFixed(1)}%`
+        return (((current - previous) / previous) * 100).toFixed(1)
       }
 
       return {
