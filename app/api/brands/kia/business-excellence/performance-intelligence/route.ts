@@ -58,6 +58,13 @@ const SCORING_RULES = [
 
 type DataRow = Record<string, unknown>
 type ScoringRule = typeof SCORING_RULES[number]
+type PerformanceFilterContext = {
+  searchReg: string
+  branch: string
+  serviceType: string
+  advisor: string
+  model: string
+}
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
@@ -137,31 +144,26 @@ function serviceKey(row: DataRow) {
 }
 
 function buildReworkSet(rows: DataRow[]) {
-  const byVehicle = new Map<string, DataRow[]>()
+  const byVehicle = new Map<string, Array<{ row: DataRow; time: number }>>()
 
   for (const row of rows) {
     const key = vehicleKey(row)
     if (!key) continue
+    const time = parseDate(row.bill_date)?.getTime()
+    if (!time) continue
     const bucket = byVehicle.get(key) || []
-    bucket.push(row)
+    bucket.push({ row, time })
     byVehicle.set(key, bucket)
   }
 
   const reworked = new Set<DataRow>()
   for (const bucket of byVehicle.values()) {
-    bucket.sort((a, b) => {
-      const left = parseDate(a.bill_date)?.getTime() || 0
-      const right = parseDate(b.bill_date)?.getTime() || 0
-      return left - right
-    })
+    bucket.sort((a, b) => a.time - b.time)
 
     for (let index = 1; index < bucket.length; index += 1) {
-      const currentDate = parseDate(bucket[index].bill_date)
-      const previousDate = parseDate(bucket[index - 1].bill_date)
-      if (!currentDate || !previousDate) continue
-      const diffDays = (currentDate.getTime() - previousDate.getTime()) / (24 * 60 * 60 * 1000)
+      const diffDays = (bucket[index].time - bucket[index - 1].time) / (24 * 60 * 60 * 1000)
       if (diffDays >= 0 && diffDays <= 30) {
-        reworked.add(bucket[index])
+        reworked.add(bucket[index].row)
       }
     }
   }
@@ -214,7 +216,6 @@ function scoreRows(rows: DataRow[]) {
       labourAmt: labour,
       partAmt: parts,
       discount,
-      vas: textValue(row, ['vas_wa_wb', 'vas', 'wa_wb'], '-'),
       alerts: alerts.map((alert) => alert.alertName),
       score,
     }
@@ -230,14 +231,46 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:performance-intelligence:v2:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `ro_billing:performance-intelligence:v4:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
-function createBaseReportCacheKey(startDate: Date, endDate: Date) {
-  return `ro_billing:performance-intelligence:base:v1:${toDateInputValue(startDate)}:${toDateInputValue(endDate)}`
+function createBaseReportCacheKey(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
+  const filterHash = createHash('sha1')
+    .update(JSON.stringify(filters))
+    .digest('hex')
+  return `ro_billing:performance-intelligence:base:v2:${toDateInputValue(startDate)}:${toDateInputValue(endDate)}:${filterHash}`
 }
 
-async function fetchPerformanceRows(startDate: Date, endDate: Date) {
+function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
+  const clauses = [
+    sql`bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date`,
+  ]
+
+  if (filters.searchReg) {
+    clauses.push(sql`vehicle_reg_no ILIKE ${`%${filters.searchReg}%`}`)
+  }
+
+  if (filters.branch !== 'all') {
+    clauses.push(sql`COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'Unspecified') = ${filters.branch}`)
+  }
+
+  if (filters.serviceType !== 'all') {
+    clauses.push(sql`COALESCE(NULLIF(service_type, ''), NULLIF(work_type, ''), 'Unspecified') = ${filters.serviceType}`)
+  }
+
+  if (filters.advisor !== 'all') {
+    clauses.push(sql`COALESCE(NULLIF(service_advisor, ''), 'Unspecified') = ${filters.advisor}`)
+  }
+
+  if (filters.model !== 'all') {
+    clauses.push(sql`COALESCE(NULLIF(model, ''), 'Unspecified') = ${filters.model}`)
+  }
+
+  return sql.join(clauses, sql` AND `)
+}
+
+async function fetchPerformanceRows(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
+  const whereClause = buildPerformanceWhere(startDate, endDate, filters)
   const result = await db.execute(sql`
     SELECT
       id,
@@ -266,7 +299,7 @@ async function fetchPerformanceRows(startDate: Date, endDate: Date) {
       vin,
       uploaded_at
     FROM ro_billing_report
-    WHERE bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date
+    WHERE ${whereClause}
     ORDER BY bill_date DESC, id DESC
     LIMIT 50000
   `)
@@ -302,6 +335,7 @@ export async function GET(request: Request) {
     const endDate = parseDateInput(searchParams.get('endDate')) || today
     const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
     const limit = Math.min(100, Math.max(10, Number.parseInt(searchParams.get('limit') || '50', 10) || 50))
+    const exportAll = searchParams.get('export') === 'all'
     const skipCache = searchParams.get('skipCache') === 'true'
     const cacheParams = new URLSearchParams(searchParams)
     cacheParams.set('startDate', toDateInputValue(startDate))
@@ -309,25 +343,21 @@ export async function GET(request: Request) {
     const cacheKey = createCacheKey(cacheParams)
 
     const buildReport = async () => {
-      const baseReport = await timer.time('base-report', () => getCachedData(
-        createBaseReportCacheKey(startDate, endDate),
-        () => fetchPerformanceRows(startDate, endDate),
-        CACHE_TTL_SECONDS
-      ))
-      const { rawRows, scoredRows, alertCounts, filterOptions } = baseReport
       const searchReg = (searchParams.get('searchReg') || '').trim().toLowerCase()
       const branch = searchParams.get('branch') || 'all'
       const serviceType = searchParams.get('serviceType') || 'all'
       const advisor = searchParams.get('advisor') || 'all'
       const alertFilter = searchParams.get('alert') || 'all'
       const model = searchParams.get('model') || 'all'
+      const sqlFilters = { searchReg, branch, serviceType, advisor, model }
+      const baseReport = await timer.time('base-report', () => getCachedData(
+        createBaseReportCacheKey(startDate, endDate, sqlFilters),
+        () => fetchPerformanceRows(startDate, endDate, sqlFilters),
+        CACHE_TTL_SECONDS
+      ))
+      const { rawRows, scoredRows, filterOptions } = baseReport
 
       const filtered = scoredRows.filter((row) => {
-        if (searchReg && !String(row.regNumber || '').toLowerCase().includes(searchReg)) return false
-        if (branch !== 'all' && row.branch !== branch) return false
-        if (serviceType !== 'all' && row.type !== serviceType) return false
-        if (advisor !== 'all' && row.advisor !== advisor) return false
-        if (model !== 'all' && row.model !== model) return false
         if (alertFilter !== 'all' && !row.alerts.some((alert) => alert === alertFilter)) return false
         return true
       })
@@ -336,6 +366,34 @@ export async function GET(request: Request) {
       const totalPages = Math.max(1, Math.ceil(total / limit))
       const safePage = Math.min(page, totalPages)
       const offset = (safePage - 1) * limit
+      const responseRows = exportAll ? filtered : filtered.slice(offset, offset + limit)
+      const filteredAlertCounts = Object.fromEntries(SCORING_RULES.map((rule) => [rule.alertName, 0]))
+      const advisorBuckets = new Map<string, { scoreTotal: number; transactions: number; alerts: number }>()
+      let alertsFound = 0
+      let scoreTotal = 0
+
+      for (const row of filtered) {
+        if (row.alerts.length > 0) alertsFound += 1
+        scoreTotal += row.score
+        for (const alertName of row.alerts) {
+          filteredAlertCounts[alertName] = (filteredAlertCounts[alertName] || 0) + 1
+        }
+        const advisorName = row.advisor || 'Unspecified'
+        const current = advisorBuckets.get(advisorName) || { scoreTotal: 0, transactions: 0, alerts: 0 }
+        current.scoreTotal += row.score
+        current.transactions += 1
+        current.alerts += row.alerts.length
+        advisorBuckets.set(advisorName, current)
+      }
+
+      const advisorScores = Array.from(advisorBuckets.entries())
+        .map(([advisorName, bucket]) => ({
+          advisor: advisorName,
+          score: bucket.transactions > 0 ? Math.round(bucket.scoreTotal / bucket.transactions) : 0,
+          transactions: bucket.transactions,
+          alerts: bucket.alerts,
+        }))
+        .sort((a, b) => b.score - a.score || b.transactions - a.transactions || a.advisor.localeCompare(b.advisor))
 
       return {
         dateRange: {
@@ -345,13 +403,14 @@ export async function GET(request: Request) {
         metrics: {
           totalRecords: rawRows.length,
           filteredTransactions: filtered.length,
-          alertsFound: filtered.filter((row) => row.alerts.length > 0).length,
-          avgAdvisorScore: Math.round(average(filtered.map((row) => row.score))),
-          alertCounts,
+          alertsFound,
+          avgAdvisorScore: filtered.length > 0 ? Math.round(scoreTotal / filtered.length) : 0,
+          alertCounts: filteredAlertCounts,
         },
         rules: SCORING_RULES,
         filterOptions,
-        rows: filtered.slice(offset, offset + limit),
+        advisorScores,
+        rows: responseRows,
         pagination: {
           page: safePage,
           limit,

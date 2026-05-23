@@ -28,6 +28,8 @@ import { WorkflowStatusCard, WorkflowStatusCardSkeleton } from '@/components/pur
 import { formatIndiaDateTime } from '@/lib/date-time'
 import { getBranchLabel } from '@/lib/branches'
 import { createClient } from '@/lib/supabase/client'
+import { useQueryClient } from '@tanstack/react-query'
+import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 
 interface PurchaseOrder {
   id: string
@@ -485,6 +487,7 @@ function getAssignedStageLabel(order: PurchaseOrder, people?: Personnel | null) 
 }
 
 function PurchaseOrdersPageContent() {
+  const queryClient = useQueryClient()
   const router = useRouter()
   const searchParams = useSearchParams()
   const topLoader = useTopLoader()
@@ -626,21 +629,58 @@ function PurchaseOrdersPageContent() {
 
   const fetchUserRole = useCallback(async () => {
     try {
-      const response = await fetch('/api/auth/user')
-      if (!response.ok) {
+      const data = await queryClient.fetchQuery({
+        queryKey: ['auth', 'user'],
+        queryFn: async () => {
+          const response = await fetch('/api/auth/user')
+          if (!response.ok) return null
+          return await response.json()
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
+      })
+      if (!data) {
         setIsLoading(false)
         return
       }
-
-      const data = await response.json()
       setUserRole(data.role || '')
     } catch (error) {
       console.error('Error fetching user role:', error)
       setIsLoading(false)
     }
-  }, [])
+  }, [queryClient])
 
-  const fetchOrders = useCallback(async (showSpinner = true) => {
+  const buildOrdersQuery = useCallback(() => {
+    const params = new URLSearchParams()
+
+    if (usesPurchaseOrderPagination) {
+      params.set('paginate', 'true')
+      params.set('mode', purchaseOrderListMode)
+      params.set('page', String(purchaseOrderPage))
+      params.set('pageSize', String(PURCHASE_ORDER_PAGE_SIZE))
+      params.set('scope', isCompletionTrackingView ? 'spending' : 'active')
+
+      if (userRole === 'purchase_manager') {
+        params.set('view', 'table')
+      }
+
+      if (isApprovalRole(userRole)) {
+        params.set('approvalFilter', approvalFilter)
+      }
+
+      if (workflowStageFilter !== 'all') {
+        params.set('workflowFilter', workflowStageFilter)
+      }
+
+      if (isCompletionTrackingView) {
+        if (completedDateStart) params.set('spendStartDate', completedDateStart)
+        if (completedDateEnd) params.set('spendEndDate', completedDateEnd)
+      }
+    }
+
+    return params.toString()
+  }, [approvalFilter, completedDateEnd, completedDateStart, isCompletionTrackingView, purchaseOrderListMode, purchaseOrderPage, userRole, usesPurchaseOrderPagination, workflowStageFilter])
+
+  const fetchOrders = useCallback(async (showSpinner = true, force = false) => {
     if (!userRole) {
       return
     }
@@ -653,40 +693,20 @@ function PurchaseOrdersPageContent() {
           setIsLoading(true)
         }
       }
-      const params = new URLSearchParams()
-
-      if (usesPurchaseOrderPagination) {
-        params.set('paginate', 'true')
-        params.set('mode', purchaseOrderListMode)
-        params.set('page', String(purchaseOrderPage))
-        params.set('pageSize', String(PURCHASE_ORDER_PAGE_SIZE))
-        params.set('scope', isCompletionTrackingView ? 'spending' : 'active')
-
-        if (userRole === 'purchase_manager') {
-          params.set('view', 'table')
-        }
-
-        if (isApprovalRole(userRole)) {
-          params.set('approvalFilter', approvalFilter)
-        }
-
-        if (workflowStageFilter !== 'all') {
-          params.set('workflowFilter', workflowStageFilter)
-        }
-
-        if (isCompletionTrackingView) {
-          if (completedDateStart) params.set('spendStartDate', completedDateStart)
-          if (completedDateEnd) params.set('spendEndDate', completedDateEnd)
-        }
+      const query = buildOrdersQuery()
+      const queryKey = ['purchase-orders', query || 'default']
+      if (force) {
+        await queryClient.invalidateQueries({ queryKey })
       }
-
-      const query = params.toString()
-      const response = await fetch(`/api/purchase-orders${query ? `?${query}` : ''}`)
-      if (!response.ok) {
-        return
-      }
-
-      const data = await response.json()
+      const data = await queryClient.fetchQuery({
+        queryKey,
+        queryFn: async () => {
+          const response = await fetch(`/api/purchase-orders${query ? `?${query}` : ''}`)
+          if (!response.ok) throw new Error('Failed to fetch purchase orders')
+          return await response.json()
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
+      })
       setOrders(data.orders || [])
       if (data.pagination) {
         setPurchaseOrderPagination({
@@ -713,7 +733,7 @@ function PurchaseOrdersPageContent() {
         setIsListRefreshing(false)
       }
     }
-  }, [approvalFilter, completedDateEnd, completedDateStart, isCompletionTrackingView, purchaseOrderListMode, purchaseOrderPage, userRole, usesPurchaseOrderPagination, workflowStageFilter])
+  }, [buildOrdersQuery, purchaseOrderListMode, queryClient, userRole])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -764,18 +784,24 @@ function PurchaseOrdersPageContent() {
       topLoaderRef.current.start()
       setIsLoadingDetails(true)
       setLoadingOrderId(orderId)
-      const response = await fetch(`/api/purchase-orders/workflow?orderId=${orderId}`, {
-        signal: controller.signal,
+      const data = await queryClient.fetchQuery({
+        queryKey: ['purchase-orders', 'workflow', orderId],
+        queryFn: async () => {
+          const response = await fetch(`/api/purchase-orders/workflow?orderId=${orderId}`, {
+            signal: controller.signal,
+          })
+
+          if (!response.ok) {
+            if (response.status === 404) {
+              router.push('/purchase-orders')
+            }
+            throw new Error('Failed to fetch order details')
+          }
+
+          return await response.json()
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
       })
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          router.push('/purchase-orders')
-        }
-        return
-      }
-
-      const data = await response.json()
       setSelectedOrder(data.order)
       setWorkflowHistory(data.history || [])
       setPersonnel(data.personnel || null)
@@ -797,7 +823,7 @@ function PurchaseOrdersPageContent() {
       setLoadingOrderId((current) => (current === orderId ? null : current))
       topLoaderRef.current.done()
     }
-  }, [router])
+  }, [queryClient, router])
 
   useEffect(() => {
     if (selectedOrderId) {
@@ -837,7 +863,9 @@ function PurchaseOrdersPageContent() {
           table: 'purchase_orders',
         },
         () => {
-          void fetchOrders(false)
+          void queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+          void queryClient.invalidateQueries({ queryKey: ['purchase-orders', 'workflow'] })
+          void fetchOrders(false, true)
           if (selectedOrderId) {
             void fetchOrderDetails(selectedOrderId)
           }
@@ -848,7 +876,7 @@ function PurchaseOrdersPageContent() {
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [fetchOrderDetails, fetchOrders, selectedOrderId])
+  }, [fetchOrderDetails, fetchOrders, queryClient, selectedOrderId])
 
   useEffect(() => {
     return () => {
@@ -1053,7 +1081,9 @@ function PurchaseOrdersPageContent() {
         return
       }
 
-      await fetchOrders()
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders', 'workflow'] })
+      await fetchOrders(true, true)
       if (isEditingInitialSubmission && orderId) {
         setIsEditingOrder(false)
         setIsEditOrderDirty(false)
@@ -1136,7 +1166,9 @@ function PurchaseOrdersPageContent() {
       }
 
       const result = await response.json()
-      await fetchOrders()
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders', 'workflow'] })
+      await fetchOrders(true, true)
       const doneLabel = action === 'approve' ? 'approved' : action === 'deny' ? 'denied' : 'held'
       alert(`Successfully ${doneLabel} ${result.count} order${result.count !== 1 ? 's' : ''}!`)
     } catch (error) {
@@ -1829,7 +1861,7 @@ function PurchaseOrdersPageContent() {
                 {showCompleted ? 'Show Active' : 'Show Completed'}
               </Button>
               <Button
-                onClick={() => void fetchOrders()}
+                onClick={() => void fetchOrders(true, true)}
                 variant="outline"
                 className="rounded-2xl border-slate-300 hover:bg-slate-50"
               >
@@ -2072,7 +2104,7 @@ function PurchaseOrdersPageContent() {
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <Button
-                      onClick={() => void fetchOrders()}
+                      onClick={() => void fetchOrders(true, true)}
                       variant="outline"
                       className="rounded-2xl border-white/50 bg-white/10 text-white hover:bg-white/20"
                     >

@@ -28,6 +28,9 @@ import {
   FileText,
   ShieldAlert,
   X,
+  Maximize2,
+  CalendarDays,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { AccessControlOverlay } from '@/components/shared/access-control-overlay'
 import { useUserRole } from '@/lib/hooks/use-user-role'
@@ -60,6 +63,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useQueryClient } from '@tanstack/react-query'
+import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 
 interface StatRow {
   name: string
@@ -135,6 +140,20 @@ type BusinessDateFilter = {
 } | null
 
 const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'Open RO Yearly'
+const BUSINESS_MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
 
 function normalizeSheetKey(value: string) {
   return value
@@ -305,7 +324,6 @@ type PerformanceIntelligenceRow = {
   labourAmt: number
   partAmt: number
   discount: number
-  vas: string
   alerts: string[]
   score: number
 }
@@ -327,6 +345,12 @@ type PerformanceIntelligenceResponse = {
     models: string[]
     alerts: string[]
   }
+  advisorScores: Array<{
+    advisor: string
+    score: number
+    transactions: number
+    alerts: number
+  }>
   rows: PerformanceIntelligenceRow[]
   pagination: { page: number; limit: number; total: number; totalPages: number }
 }
@@ -342,6 +366,7 @@ function formatPIDate(value: string) {
 }
 
 function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDateFilter }) {
+  const queryClient = useQueryClient()
   const [data, setData] = useState<PerformanceIntelligenceResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [showRules, setShowRules] = useState(false)
@@ -370,23 +395,29 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
         if (value && value !== 'all') params.set(key, value)
       })
 
-      const response = await fetch(`/api/brands/kia/business-excellence/performance-intelligence?${params.toString()}`, {
-        cache: 'no-store',
+      const queryString = params.toString()
+      const report = await queryClient.fetchQuery({
+        queryKey: ['business-excellence', 'performance-intelligence', queryString],
+        queryFn: async () => {
+          const response = await fetch(`/api/brands/kia/business-excellence/performance-intelligence?${queryString}`)
+          if (!response.ok) throw new Error('Failed to load Performance Intelligence Report')
+          return await response.json() as PerformanceIntelligenceResponse
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
       })
-      if (!response.ok) throw new Error('Failed to load Performance Intelligence Report')
-      setData(await response.json())
+      setData(report)
     } catch (error) {
       console.error('Failed to load Performance Intelligence Report:', error)
       setData(null)
     } finally {
       setLoading(false)
     }
-  }, [filters, page, range.endDate, range.startDate])
+  }, [filters, page, queryClient, range.endDate, range.startDate])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void fetchReport()
-    }, 0)
+    }, 220)
 
     return () => window.clearTimeout(timer)
   }, [fetchReport])
@@ -408,10 +439,35 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
     setPage(1)
   }
 
-  const downloadCsv = () => {
-    if (!data) return
-    const headers = ['Sr', 'Branch', 'Type', 'Date', 'Bill No', 'Model', 'Reg Number', 'Advisor', 'Labour Amt', 'Part Amt', 'Discount', 'VAS/WA/WB', 'Alerts', 'Score']
-    const rows = data.rows.map((row) => [
+  const fetchExportRows = async () => {
+    const params = new URLSearchParams({
+      startDate: range.startDate,
+      endDate: range.endDate,
+      page: '1',
+      limit: '100',
+      export: 'all',
+    })
+
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value && value !== 'all') params.set(key, value)
+    })
+
+    const queryString = params.toString()
+    const exportData = await queryClient.fetchQuery({
+      queryKey: ['business-excellence', 'performance-intelligence-export', queryString],
+      queryFn: async () => {
+        const response = await fetch(`/api/brands/kia/business-excellence/performance-intelligence?${queryString}`)
+        if (!response.ok) throw new Error('Failed to export Performance Intelligence Report')
+        return await response.json() as PerformanceIntelligenceResponse
+      },
+      staleTime: DASHBOARD_STALE_TIME_MS,
+    })
+    return exportData.rows || []
+  }
+
+  const getExportTable = (rowsToExport: PerformanceIntelligenceRow[]) => {
+    const headers = ['Sr', 'Branch', 'Type', 'Date', 'Bill No', 'Model', 'Reg Number', 'Advisor', 'Labour Amt', 'Part Amt', 'Discount', 'Alerts', 'Score']
+    const rows = rowsToExport.map((row) => [
       row.sr,
       row.branch,
       row.type,
@@ -423,10 +479,15 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
       row.labourAmt,
       row.partAmt,
       row.discount,
-      row.vas,
       row.alerts.join('; '),
       row.score,
     ])
+    return { headers, rows }
+  }
+
+  const downloadCsv = async () => {
+    try {
+      const { headers, rows } = getExportTable(await fetchExportRows())
     const csv = [headers, ...rows]
       .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
       .join('\n')
@@ -437,13 +498,59 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
     anchor.download = `performance-intelligence-${range.startDate}-${range.endDate}.csv`
     anchor.click()
     URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Failed to export Performance Intelligence CSV:', error)
+    }
+  }
+
+  const downloadPdf = async () => {
+    try {
+      const { headers, rows } = getExportTable(await fetchExportRows())
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) return
+
+      const tableRows = rows.map((row) => `
+        <tr>${row.map((cell) => `<td>${String(cell).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>`).join('')}</tr>
+      `).join('')
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Performance Intelligence Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; }
+              h1 { font-size: 20px; margin: 0 0 4px; }
+              p { margin: 0 0 14px; color: #475569; font-size: 11px; }
+              table { width: 100%; border-collapse: collapse; font-size: 8px; }
+              th { background: #0f172a; color: white; padding: 6px; text-align: left; }
+              td { border-bottom: 1px solid #e2e8f0; padding: 5px; vertical-align: top; }
+              tr:nth-child(even) { background: #f8fafc; }
+              @page { size: landscape; margin: 10mm; }
+            </style>
+          </head>
+          <body>
+            <h1>Performance Intelligence Report</h1>
+            <p>${range.startDate} to ${range.endDate} - ${rows.length.toLocaleString('en-IN')} filtered records</p>
+            <table>
+              <thead><tr>${headers.map((header) => `<th>${header}</th>`).join('')}</tr></thead>
+              <tbody>${tableRows}</tbody>
+            </table>
+          </body>
+        </html>
+      `)
+      printWindow.document.close()
+      printWindow.focus()
+      printWindow.print()
+    } catch (error) {
+      console.error('Failed to export Performance Intelligence PDF:', error)
+    }
   }
 
   const alertSummaryCards = data?.rules || []
 
   return (
-    <section className="space-y-8 bg-slate-50 p-6 lg:p-8">
-      <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
+    <section className="flex flex-col gap-8 bg-slate-50 p-6 lg:p-8">
+      <div className="order-0 rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Forensic Audit Intelligence</p>
@@ -455,9 +562,9 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_1.25fr]">
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60">
-          <div className="grid grid-cols-2 gap-3">
+      <div className="order-1 grid grid-cols-1 gap-5">
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/60">
+          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-[repeat(4,minmax(135px,1fr))_repeat(3,minmax(110px,0.78fr))]">
             {[
               { label: 'Total Records', value: data?.metrics.totalRecords ?? 0, tone: 'slate' },
               { label: 'Filtered', value: data?.metrics.filteredTransactions ?? 0, tone: 'blue' },
@@ -465,7 +572,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
               { label: 'Advisor Score', value: data?.metrics.avgAdvisorScore ?? 0, tone: 'teal' },
             ].map((metric) => (
               <div key={metric.label} className={cn(
-                'rounded-[1.25rem] border p-4',
+                'rounded-[1.25rem] border px-4 py-3',
                 metric.tone === 'rose' ? 'border-rose-100 bg-rose-50/70' :
                   metric.tone === 'teal' ? 'border-teal-100 bg-teal-50/70' :
                     metric.tone === 'blue' ? 'border-blue-100 bg-blue-50/70' :
@@ -481,8 +588,6 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
                 </p>
               </div>
             ))}
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-3">
             <button type="button" onClick={() => setShowRules(true)} className="rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 text-xs font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5">
               <ShieldAlert className="mx-auto mb-1.5 h-4 w-4" />
               Rules
@@ -491,7 +596,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
               <FileSpreadsheet className="mx-auto mb-1.5 h-4 w-4" />
               Excel
             </button>
-            <button type="button" onClick={() => window.print()} className="rounded-2xl border border-rose-100 bg-rose-600 px-4 py-3 text-xs font-black text-white shadow-lg shadow-rose-100 transition hover:-translate-y-0.5">
+            <button type="button" onClick={downloadPdf} className="rounded-2xl border border-rose-100 bg-rose-600 px-4 py-3 text-xs font-black text-white shadow-lg shadow-rose-100 transition hover:-translate-y-0.5">
               <FileText className="mx-auto mb-1.5 h-4 w-4" />
               PDF
             </button>
@@ -515,7 +620,17 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
               const width = total > 0 ? Math.min((value / total) * 100, 100) : 0
 
               return (
-                <div key={rule.key} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+                <button
+                  key={rule.key}
+                  type="button"
+                  onClick={() => updateFilter('alert', filters.alert === rule.alertName ? 'all' : rule.alertName)}
+                  className={cn(
+                    "rounded-2xl border p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:shadow-lg",
+                    filters.alert === rule.alertName
+                      ? "border-rose-200 bg-rose-50 shadow-lg shadow-rose-100/60"
+                      : "border-slate-100 bg-slate-50/80 hover:border-slate-200"
+                  )}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">{rule.alertName}</p>
                     <span className="text-lg font-black text-rose-600">
@@ -525,14 +640,76 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
                   <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white">
                     <div className="h-full rounded-full bg-gradient-to-r from-rose-500 to-amber-500" style={{ width: `${width}%` }} />
                   </div>
-                </div>
+                </button>
               )
             })}
           </div>
         </div>
+
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60">
+          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Advisor Scoreboard</p>
+              <h3 className="text-xl font-black tracking-tight text-slate-950">Advisor-wise overall score</h3>
+              <p className="mt-1 text-xs font-semibold text-slate-500">Updates with the active branch, model, alert, date, and advisor filters.</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              {loading ? '...' : `${data?.advisorScores?.length || 0} advisors`}
+            </span>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {loading ? (
+              Array.from({ length: 6 }).map((_, index) => (
+                <div key={`advisor-score-skeleton-${index}`} className="h-24 animate-pulse rounded-2xl bg-slate-100" />
+              ))
+            ) : data?.advisorScores?.length ? (
+              data.advisorScores.slice(0, 12).map((advisor, index) => {
+                const scoreTone = advisor.score >= 90
+                  ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+                  : advisor.score >= 70
+                    ? 'text-amber-700 bg-amber-50 border-amber-100'
+                    : 'text-rose-700 bg-rose-50 border-rose-100'
+                return (
+                  <div key={advisor.advisor} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-[10px] font-black text-white">
+                            {index + 1}
+                          </span>
+                          <p className="truncate text-sm font-black text-slate-950" title={advisor.advisor}>{advisor.advisor}</p>
+                        </div>
+                        <p className="mt-2 text-[11px] font-bold text-slate-500">
+                          {advisor.transactions.toLocaleString('en-IN')} transactions · {advisor.alerts.toLocaleString('en-IN')} alerts
+                        </p>
+                      </div>
+                      <span className={cn('rounded-full border px-3 py-1 text-sm font-black', scoreTone)}>
+                        {advisor.score}
+                      </span>
+                    </div>
+                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-white">
+                      <div
+                        className={cn(
+                          'h-full rounded-full',
+                          advisor.score >= 90 ? 'bg-emerald-600' : advisor.score >= 70 ? 'bg-amber-500' : 'bg-rose-500'
+                        )}
+                        style={{ width: `${Math.min(Math.max(advisor.score, 0), 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm font-bold text-slate-500 md:col-span-2 xl:col-span-3">
+                No advisor score data for the selected filters.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="order-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
           <label className="space-y-2 xl:col-span-1">
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Search Reg</span>
@@ -576,13 +753,20 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
-        <div className="max-h-[520px] overflow-auto">
-          <table className="w-full min-w-[1680px] text-xs">
+      <div className="order-3 overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
+        <div className="max-h-[560px] overflow-auto">
+          <table className="w-full min-w-[1120px] table-fixed text-[10px] leading-tight">
             <thead className="sticky top-0 z-10 bg-slate-950 text-white">
               <tr>
-                {['Sr', 'Branch', 'Type', 'Date', 'Bill No', 'Model', 'Reg Number', 'Advisor', 'Labour Amt', 'Part Amt', 'Discount', 'VAS/WA/WB', 'Alerts', 'Score'].map((header) => (
-                  <th key={header} className={cn('px-4 py-4 text-center font-black uppercase tracking-widest', header === 'Alerts' && 'min-w-[360px] text-left')}>{header}</th>
+                {['Sr', 'Branch', 'Type', 'Date', 'Bill No', 'Model', 'Reg Number', 'Advisor', 'Labour Amt', 'Part Amt', 'Discount', 'Alerts', 'Score'].map((header) => (
+                  <th key={header} className={cn(
+                    'px-2 py-3 text-center font-black uppercase tracking-widest',
+                    header === 'Alerts' && 'w-[210px] text-left',
+                    header === 'Model' && 'w-[140px]',
+                    header === 'Type' && 'w-[110px]',
+                    header === 'Sr' && 'w-[42px]',
+                    header === 'Score' && 'w-[54px]'
+                  )}>{header}</th>
                 ))}
               </tr>
             </thead>
@@ -590,9 +774,9 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
               {loading ? (
                 Array.from({ length: 8 }).map((_, index) => (
                   <tr key={`pi-skeleton-${index}`} className="border-b border-slate-100">
-                    {Array.from({ length: 14 }).map((__, cellIndex) => (
-                      <td key={cellIndex} className="px-4 py-4">
-                        <div className="mx-auto h-4 w-20 animate-pulse rounded-full bg-slate-200" />
+                    {Array.from({ length: 13 }).map((__, cellIndex) => (
+                      <td key={cellIndex} className="px-2 py-3">
+                        <div className="mx-auto h-3 w-14 animate-pulse rounded-full bg-slate-200" />
                       </td>
                     ))}
                   </tr>
@@ -600,33 +784,32 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
               ) : data?.rows.length ? (
                 data.rows.map((row) => (
                   <tr key={row.id} className={cn('border-b border-slate-100 text-center', row.alerts.length > 0 ? 'bg-rose-50/40' : 'hover:bg-slate-50')}>
-                    <td className="px-4 py-3">{row.sr}</td>
-                    <td className="px-4 py-3 font-bold">{row.branch}</td>
-                    <td className="px-4 py-3">{row.type}</td>
-                    <td className="px-4 py-3">{formatPIDate(row.date)}</td>
-                    <td className="px-4 py-3">{row.billNo || '-'}</td>
-                    <td className="px-4 py-3">{row.model}</td>
-                    <td className="px-4 py-3">{row.regNumber || '-'}</td>
-                    <td className="px-4 py-3">{row.advisor}</td>
-                    <td className="px-4 py-3 font-bold">{formatPIAmount(row.labourAmt)}</td>
-                    <td className="px-4 py-3 font-bold">{formatPIAmount(row.partAmt)}</td>
-                    <td className="px-4 py-3 font-bold">{formatPIAmount(row.discount)}</td>
-                    <td className="px-4 py-3">{row.vas || '-'}</td>
-                    <td className="min-w-[360px] px-4 py-4 text-left">
+                    <td className="px-2 py-2">{row.sr}</td>
+                    <td className="truncate px-2 py-2 font-bold" title={row.branch}>{row.branch}</td>
+                    <td className="px-2 py-2">{row.type}</td>
+                    <td className="px-2 py-2">{formatPIDate(row.date)}</td>
+                    <td className="truncate px-2 py-2" title={row.billNo || '-'}>{row.billNo || '-'}</td>
+                    <td className="truncate px-2 py-2" title={row.model}>{row.model}</td>
+                    <td className="truncate px-2 py-2" title={row.regNumber || '-'}>{row.regNumber || '-'}</td>
+                    <td className="truncate px-2 py-2" title={row.advisor}>{row.advisor}</td>
+                    <td className="px-2 py-2 font-bold">{formatPIAmount(row.labourAmt)}</td>
+                    <td className="px-2 py-2 font-bold">{formatPIAmount(row.partAmt)}</td>
+                    <td className="px-2 py-2 font-bold">{formatPIAmount(row.discount)}</td>
+                    <td className="px-2 py-3 text-left">
                       {row.alerts.length ? (
-                        <div className="whitespace-pre-line text-[10px] font-black leading-5 text-rose-600">
+                        <div className="whitespace-pre-line text-[9px] font-black leading-4 text-rose-600">
                           {row.alerts.join('\n')}
                         </div>
                       ) : (
                         <span className="text-slate-400">No alerts</span>
                       )}
                     </td>
-                    <td className={cn('px-4 py-3 text-lg font-black', row.score >= 90 ? 'text-emerald-600' : row.score >= 70 ? 'text-amber-600' : 'text-rose-600')}>{row.score}</td>
+                    <td className={cn('px-2 py-2 text-sm font-black', row.score >= 90 ? 'text-emerald-600' : row.score >= 70 ? 'text-amber-600' : 'text-rose-600')}>{row.score}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={14} className="px-4 py-12 text-center font-bold text-slate-500">No transactions found for the selected filters.</td>
+                  <td colSpan={13} className="px-4 py-12 text-center font-bold text-slate-500">No transactions found for the selected filters.</td>
                 </tr>
               )}
             </tbody>
@@ -831,6 +1014,7 @@ function SheetRowsTable({
 }
 
 export default function KiaBusinessExcellencePage() {
+  const queryClient = useQueryClient()
   const [savedSheets, setSavedSheets] = useState<SavedSheetMetadata[]>([])
   const [loadedRows, setLoadedRows] = useState<LoadedRows>({})
   const [loading, setLoading] = useState(true)
@@ -851,8 +1035,60 @@ export default function KiaBusinessExcellencePage() {
     endDate: string
   } | null>(null)
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
+  const [showDateControls, setShowDateControls] = useState(false)
   const { isAdmin } = useUserRole()
   const itemsPerPage = 10
+
+  const activeDateLabel = useMemo(() => {
+    if (!appliedDateFilter) {
+      const today = new Date()
+      return `Current month · ${BUSINESS_MONTHS[today.getMonth()]} ${today.getFullYear()}`
+    }
+
+    if (appliedDateFilter.mode === 'month') {
+      return `${BUSINESS_MONTHS[appliedDateFilter.month]} ${appliedDateFilter.year}`
+    }
+
+    return `${appliedDateFilter.startDate || 'Start'} → ${appliedDateFilter.endDate || 'End'}`
+  }, [appliedDateFilter])
+
+  const draftDateLabel = dateFilterMode === 'month'
+    ? `${BUSINESS_MONTHS[selectedMonth]} ${selectedYear}`
+    : `${startDate || 'Start date'} → ${endDate || 'End date'}`
+
+  const applyDateFilter = useCallback(() => {
+    const filter = {
+      mode: dateFilterMode,
+      month: selectedMonth,
+      year: selectedYear,
+      startDate,
+      endDate
+    }
+
+    setIsApplyingFilter(true)
+    setTimeout(() => {
+      setAppliedDateFilter(filter)
+      setShowDateControls(false)
+      setTimeout(() => {
+        setIsApplyingFilter(false)
+      }, 300)
+    }, 100)
+  }, [dateFilterMode, endDate, selectedMonth, selectedYear, startDate])
+
+  const clearDateFilter = useCallback(() => {
+    setIsApplyingFilter(true)
+    setTimeout(() => {
+      setSelectedMonth(new Date().getMonth())
+      setSelectedYear(new Date().getFullYear())
+      setStartDate('')
+      setEndDate('')
+      setAppliedDateFilter(null)
+      setShowDateControls(false)
+      setTimeout(() => {
+        setIsApplyingFilter(false)
+      }, 300)
+    }, 100)
+  }, [])
 
   const fetchSheetRows = useCallback(async (sheet: SavedSheetMetadata, page: number = 1) => {
     const sheetId = sheet.id
@@ -864,30 +1100,46 @@ export default function KiaBusinessExcellencePage() {
         page: String(page),
         limit: String(itemsPerPage),
       })
-      const response = await fetch(`/api/brands/kia/business-excellence?${params.toString()}`)
-      if (response.ok) {
-        const fullData = await response.json()
-        setLoadedRows(prev => ({
-          ...prev,
-          [sheetId]: {
-            rows: fullData.rows || [],
-            totalRows: fullData.totalRows || 0
-          }
-        }))
-      }
+      const queryString = params.toString()
+      const fullData = await queryClient.fetchQuery({
+        queryKey: ['business-excellence', 'sheet-rows', queryString],
+        queryFn: async () => {
+          const response = await fetch(`/api/brands/kia/business-excellence?${queryString}`)
+          if (!response.ok) throw new Error('Failed to fetch sheet rows')
+          return await response.json()
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
+      })
+      setLoadedRows(prev => ({
+        ...prev,
+        [sheetId]: {
+          rows: fullData.rows || [],
+          totalRows: fullData.totalRows || 0
+        }
+      }))
     } catch (error) {
       console.error('Failed to fetch sheet rows:', error)
     } finally {
       setFetchingRows(null)
     }
-  }, []) // Removed loadedRows dependency
+  }, [queryClient]) // Removed loadedRows dependency
 
-  const fetchSavedMetadata = useCallback(async () => {
+  const fetchSavedMetadata = useCallback(async (force = false) => {
     try {
       setLoading(true)
-      const response = await fetch('/api/brands/kia/business-excellence?brand=kia')
-      if (response.ok) {
-        const data = await response.json()
+      const queryKey = ['business-excellence', 'metadata', 'kia']
+      if (force) {
+        await queryClient.invalidateQueries({ queryKey })
+      }
+      const data = await queryClient.fetchQuery({
+        queryKey,
+        queryFn: async () => {
+          const response = await fetch('/api/brands/kia/business-excellence?brand=kia')
+          if (!response.ok) throw new Error('Failed to fetch Business Excellence metadata')
+          return await response.json()
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
+      })
         setSavedSheets(data)
         if (data.length > 0) {
           const selectedSheet = activeTab
@@ -898,13 +1150,12 @@ export default function KiaBusinessExcellencePage() {
           }
           setActiveTab(selectedSheet?.sheetName || null)
         }
-      }
     } catch (error) {
       console.error('Failed to fetch saved metadata:', error)
     } finally {
       setLoading(false)
     }
-  }, [activeTab])
+  }, [activeTab, queryClient])
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -1002,7 +1253,7 @@ export default function KiaBusinessExcellencePage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => fetchSavedMetadata()}
+                            onClick={() => fetchSavedMetadata(true)}
                             className="rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-sm font-bold h-9 px-4"
                           >
                             <RefreshCw className={cn("mr-2 h-3.5 w-3.5", loading && "animate-spin")} /> Refresh
@@ -1012,7 +1263,147 @@ export default function KiaBusinessExcellencePage() {
                     </CardHeader>
                     <CardContent className="p-0">
                       <>
-                        {/* Date Filter Section */}
+                        <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-slate-50 p-5">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-teal-100 bg-teal-50 text-teal-700">
+                                <CalendarDays className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase tracking-[0.24em] text-slate-400">Analysis Window</p>
+                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-black text-slate-950">{activeDateLabel}</span>
+                                  <span className="rounded-full bg-teal-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-teal-700">Bill Date</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowDateControls((value) => !value)}
+                                className="h-10 rounded-2xl border-slate-200 bg-white px-4 text-xs font-black text-slate-700 shadow-sm hover:bg-slate-50"
+                              >
+                                <SlidersHorizontal className="mr-2 h-3.5 w-3.5" />
+                                {showDateControls ? 'Hide Filters' : 'Change Date'}
+                              </Button>
+                              {appliedDateFilter && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={isApplyingFilter}
+                                  onClick={clearDateFilter}
+                                  className="h-10 rounded-2xl px-4 text-xs font-black text-slate-500 hover:bg-slate-100"
+                                >
+                                  Clear
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {showDateControls && (
+                            <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/50">
+                              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <div className="rounded-2xl bg-slate-100 p-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setDateFilterMode('month')}
+                                      className={cn(
+                                        "rounded-xl px-4 py-2 text-[11px] font-black transition",
+                                        dateFilterMode === 'month' ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                                      )}
+                                    >
+                                      Month
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDateFilterMode('range')}
+                                      className={cn(
+                                        "rounded-xl px-4 py-2 text-[11px] font-black transition",
+                                        dateFilterMode === 'range' ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                                      )}
+                                    >
+                                      Date Range
+                                    </button>
+                                  </div>
+
+                                  {dateFilterMode === 'month' ? (
+                                    <>
+                                      <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(parseInt(v))}>
+                                        <SelectTrigger className="h-10 w-[150px] rounded-2xl border-slate-200 text-xs font-black">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="z-[100] rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
+                                          {BUSINESS_MONTHS.map((month, idx) => (
+                                            <SelectItem key={idx} value={idx.toString()} className="text-xs">{month}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+
+                                      <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
+                                        <SelectTrigger className="h-10 w-[110px] rounded-2xl border-slate-200 text-xs font-black">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="z-[100] rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
+                                          {[2024, 2025, 2026, 2027].map((year) => (
+                                            <SelectItem key={year} value={year.toString()} className="text-xs">{year}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <label className="flex items-center gap-2 text-xs font-black text-slate-500">
+                                        From
+                                        <input
+                                          type="date"
+                                          value={startDate}
+                                          onChange={(e) => setStartDate(e.target.value)}
+                                          className="h-10 rounded-2xl border border-slate-200 px-3 text-xs font-black text-slate-800"
+                                        />
+                                      </label>
+                                      <label className="flex items-center gap-2 text-xs font-black text-slate-500">
+                                        To
+                                        <input
+                                          type="date"
+                                          value={endDate}
+                                          onChange={(e) => setEndDate(e.target.value)}
+                                          className="h-10 rounded-2xl border border-slate-200 px-3 text-xs font-black text-slate-800"
+                                        />
+                                      </label>
+                                    </>
+                                  )}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <span className="rounded-full bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                    Preview: {draftDateLabel}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    className="h-10 rounded-2xl bg-teal-700 px-5 text-xs font-black text-white shadow-lg shadow-teal-100 hover:bg-teal-800"
+                                    disabled={isApplyingFilter}
+                                    onClick={applyDateFilter}
+                                  >
+                                    {isApplyingFilter ? (
+                                      <>
+                                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                                        Applying
+                                      </>
+                                    ) : (
+                                      'Apply'
+                                    )}
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {false && (
                         <div className="p-6 bg-slate-50/50 border-b border-slate-100">
                           <div className="flex items-center gap-4 flex-wrap">
                             {/* Filter Mode Toggle */}
@@ -1156,6 +1547,8 @@ export default function KiaBusinessExcellencePage() {
                           </div>
                         </div>
 
+                        )}
+
                         {/* Performance Analytics Section - Only for RO Billing */}
                         {isROBillingSheet ? (
                           isApplyingFilter ? (
@@ -1199,6 +1592,7 @@ export default function KiaBusinessExcellencePage() {
 // Wrapper component that uses pre-fetched data or fetches if not available
 type ROAnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
 type ROAnalysisView = 'table' | 'trend' | 'fy' | 'analytics' | 'revenue' | 'intelligence'
+type PeriodKey = 'td' | 'mtd' | 'qtd' | 'ytd'
 
 type ROAnalysisMetric = {
   cy: number
@@ -1387,65 +1781,12 @@ function LegacyROBillingAnalytics({
     endDate: string
   } | null
 }) {
-  const [data, setData] = useState<Record<string, unknown>[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (prefetchedData && prefetchedData.length > 0) {
-      const timer = setTimeout(() => {
-        setData(prefetchedData)
-        setLoading(false)
-      }, 0)
-      return () => clearTimeout(timer)
-    }
-
-    if (isPrefetching) return
-
-    const controller = new AbortController()
-
-    async function fetchAllData() {
-      try {
-        setLoading(true)
-        const fetchRange = getROAnalyticsFetchRange(dateFilter)
-        const params = new URLSearchParams({
-          brand: 'kia',
-          sheet: normalizeSheetKey(sheetName),
-          fetchAll: 'true',
-          startDate: fetchRange.startDate,
-          endDate: fetchRange.endDate,
-        })
-        const response = await fetch(`/api/brands/kia/business-excellence?${params.toString()}`, {
-          signal: controller.signal,
-        })
-
-        if (!response.ok) throw new Error('Failed to fetch RO Billing rows')
-        const result = await response.json()
-        setData(result.rows || [])
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        console.error('Failed to fetch RO Billing rows:', error)
-      } finally {
-        if (!controller.signal.aborted) setLoading(false)
-      }
-    }
-
-    if (sheetId) fetchAllData()
-
-    return () => controller.abort()
-  }, [sheetId, sheetName, prefetchedData, isPrefetching, dateFilter])
-
-  if (loading) {
-    return (
-      <div className="mt-8">
-        <SheetContentSkeleton />
-      </div>
-    )
-  }
+  const initialData = prefetchedData && prefetchedData.length > 0 ? prefetchedData : []
 
   return (
     <div className="space-y-8 mt-8">
       <ServiceTypePerformance
-        data={data}
+        data={initialData}
         isAdmin={isAdmin}
         sheetId={sheetId}
         sheetName={sheetName}
@@ -1482,6 +1823,7 @@ function ROBillingRevenueSection({
     endDate: string
   } | null
 }) {
+  const queryClient = useQueryClient()
   const [data, setData] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -1508,13 +1850,19 @@ function ROBillingRevenueSection({
             startDate: fetchRange.startDate,
             endDate: fetchRange.endDate,
           })
-          const response = await fetch(`/api/brands/kia/business-excellence?${params.toString()}`)
-          if (response.ok) {
-            const result = await response.json()
-            const allRows = result.rows || []
-            console.log('📊 Loaded complete dataset for Revenue:', allRows.length, 'records')
-            setData(allRows)
-          }
+          const queryString = params.toString()
+          const result = await queryClient.fetchQuery({
+            queryKey: ['business-excellence', 'ro-billing-rows', queryString],
+            queryFn: async () => {
+              const response = await fetch(`/api/brands/kia/business-excellence?${queryString}`)
+              if (!response.ok) throw new Error('Failed to fetch RO Billing revenue rows')
+              return await response.json()
+            },
+            staleTime: DASHBOARD_STALE_TIME_MS,
+          })
+          const allRows = result.rows || []
+          console.log('Loaded complete dataset for Revenue:', allRows.length, 'records')
+          setData(allRows)
         } catch (error) {
           console.error('❌ Error fetching RO Billing data:', error)
         } finally {
@@ -1526,7 +1874,7 @@ function ROBillingRevenueSection({
         fetchAllData()
       }
     }
-  }, [sheetId, sheetName, prefetchedData, isPrefetching, dateFilter])
+  }, [sheetId, sheetName, prefetchedData, isPrefetching, dateFilter, queryClient])
 
   if (loading) {
     return (
@@ -1542,7 +1890,7 @@ function ROBillingRevenueSection({
 }
 
 function ServiceTypePerformance({
-  data,
+  data: initialData,
   isAdmin,
   sheetId,
   sheetName,
@@ -1566,11 +1914,230 @@ function ServiceTypePerformance({
     endDate: string
   } | null
 }) {
+  const queryClient = useQueryClient()
+  const [backgroundRows, setBackgroundRows] = useState<Record<string, unknown>[]>(initialData)
+  const [isBackgroundRowsLoading, setIsBackgroundRowsLoading] = useState(false)
+  const [serverTableRowsByMetric, setServerTableRowsByMetric] = useState<Partial<Record<ROAnalysisType, StatRow[]>>>({})
+  const [isServerTableLoading, setIsServerTableLoading] = useState(true)
   const [expandedRows, setExpandedRows] = useState<string[]>([])
   const [activeTrend, setActiveTrend] = useState("Load Trend")
   const [viewMode, setViewMode] = useState<ROAnalysisView>('table')
-  const [searchQuery, setSearchQuery] = useState('')
   const [fySearchQuery, setFySearchQuery] = useState('')
+  const [expandedChart, setExpandedChart] = useState<{ title: string; chartId: string } | null>(null)
+  const data = backgroundRows.length > 0 ? backgroundRows : initialData
+
+  const activeAnalysisType: ROAnalysisType = useMemo(() => {
+    if (activeTrend === 'Labour Trend') return 'labour'
+    if (activeTrend === 'Parts Trend') return 'parts'
+    if (activeTrend === 'Labour Per Vehicle Trend') return 'lab_per_veh'
+    if (activeTrend === 'Parts Per Vehicle Trend') return 'part_per_veh'
+    return 'load'
+  }, [activeTrend])
+  const roAnalysisTypes: ROAnalysisType[] = useMemo(() => ['load', 'labour', 'parts', 'lab_per_veh', 'part_per_veh'], [])
+
+  const convertServerTableRows = useCallback((rows: ROAnalysisRow[] = []): StatRow[] => {
+    const topRows = rows.filter((row) => row.depth === 0)
+    const toStatRow = (name: string, sourceRows: ROAnalysisRow[], isParent = false): StatRow => {
+      const sumMetric = (period: PeriodKey, key: 'cy' | 'ly'): number | 'N/A' => {
+        let total = 0
+        for (const row of sourceRows) {
+          const value = row.metrics[period]?.[key]
+          if (value === 'N/A') return 'N/A'
+          total += Number(value || 0)
+        }
+        return total
+      }
+
+      const cy = sumMetric('mtd', 'cy') as number
+      const ly = sumMetric('mtd', 'ly')
+      const qtdCY = sumMetric('qtd', 'cy') as number
+      const qtdLY = sumMetric('qtd', 'ly')
+      const ytdCY = sumMetric('ytd', 'cy') as number
+      const ytdLY = sumMetric('ytd', 'ly')
+      const calcGrowthString = (current: number, previous: number | 'N/A') => {
+        if (previous === 'N/A' || previous <= 0) return 'N/A'
+        return `${(((current - previous) / previous) * 100).toFixed(1)}%`
+      }
+
+      return {
+        name,
+        isParent,
+        td: Number(sumMetric('td', 'cy') || 0),
+        cy,
+        ly,
+        growth: calcGrowthString(cy, ly),
+        qtdCY,
+        qtdLY,
+        qtdGrowth: calcGrowthString(qtdCY, qtdLY),
+        ytdCY,
+        ytdLY,
+        ytdGrowth: calcGrowthString(ytdCY, ytdLY),
+        subRows: [],
+      }
+    }
+
+    const nameMatches = (row: ROAnalysisRow, names: string[]) => names.some((name) => row.name.toLowerCase() === name.toLowerCase())
+    const paidNames = ['Paid Service']
+    const freeNames = ['Free Service', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA-First Free Service', 'TMA-Second Free Service', 'TMA-Third Free Service', 'Sixth Free Service']
+    const runningNames = ['Running Repair', 'Running Repairs']
+    const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop']
+    const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
+    const paidRows = topRows.filter((row) => nameMatches(row, paidNames))
+    const freeRows = topRows.filter((row) => nameMatches(row, freeNames))
+    const runningRows = topRows.filter((row) => nameMatches(row, runningNames))
+    const accidentRows = topRows.filter((row) => nameMatches(row, accidentNames))
+    const otherRows = topRows.filter((row) => !nameMatches(row, classifiedNames))
+
+    const paid = toStatRow('Paid Service', paidRows, false)
+    const free = toStatRow('Free Services', freeRows, false)
+    const running = toStatRow('Running Repairs', runningRows, false)
+    const others = toStatRow('Others', otherRows, otherRows.length > 0)
+    others.subRows = otherRows.map((row) => toStatRow(row.name, [row]))
+    const accident = toStatRow('Accident', accidentRows, false)
+    const mech = toStatRow('MECH', [paid, free, running].map((row) => ({
+      name: row.name,
+      depth: 0,
+      metrics: {
+        td: { cy: row.td, ly: 'N/A', growth: 'N/A' },
+        mtd: { cy: row.cy, ly: row.ly, growth: 'N/A' },
+        qtd: { cy: row.qtdCY, ly: row.qtdLY, growth: 'N/A' },
+        ytd: { cy: row.ytdCY, ly: row.ytdLY, growth: 'N/A' },
+      },
+      children: [],
+    })))
+    const mechTotal = toStatRow('MECH TOTAL', [mech, others].map((row) => ({
+      name: row.name,
+      depth: 0,
+      metrics: {
+        td: { cy: row.td, ly: 'N/A', growth: 'N/A' },
+        mtd: { cy: row.cy, ly: row.ly, growth: 'N/A' },
+        qtd: { cy: row.qtdCY, ly: row.qtdLY, growth: 'N/A' },
+        ytd: { cy: row.ytdCY, ly: row.ytdLY, growth: 'N/A' },
+      },
+      children: [],
+    })))
+    const grandTotal = toStatRow('Grand Total', [mechTotal, accident].map((row) => ({
+      name: row.name,
+      depth: 0,
+      metrics: {
+        td: { cy: row.td, ly: 'N/A', growth: 'N/A' },
+        mtd: { cy: row.cy, ly: row.ly, growth: 'N/A' },
+        qtd: { cy: row.qtdCY, ly: row.qtdLY, growth: 'N/A' },
+        ytd: { cy: row.ytdCY, ly: row.ytdLY, growth: 'N/A' },
+      },
+      children: [],
+    })))
+
+    return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
+  }, [])
+
+  useEffect(() => {
+    let isActive = true
+    async function fetchTableSummary() {
+      try {
+        setIsServerTableLoading(true)
+        const range = getDefaultRODateRange(dateFilter)
+        const tableResults = await Promise.all(roAnalysisTypes.map(async (analysisType) => {
+          const params = new URLSearchParams({
+            brand: 'kia',
+            sheet: 'ro_billing_report',
+            analysisType,
+            view: 'table',
+            groupBy: 'work_type',
+            startDate: range.startDate,
+            endDate: range.endDate,
+          })
+          const queryString = params.toString()
+          const result = await queryClient.fetchQuery({
+            queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
+            queryFn: async () => {
+              const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+              if (!response.ok) throw new Error(`Failed to fetch RO Billing ${analysisType} table summary`)
+              return await response.json() as ROAnalysisResponse
+            },
+            staleTime: DASHBOARD_STALE_TIME_MS,
+          })
+          return [analysisType, convertServerTableRows(result.rows || [])] as const
+        }))
+        if (isActive) {
+          setServerTableRowsByMetric(Object.fromEntries(tableResults) as Partial<Record<ROAnalysisType, StatRow[]>>)
+        }
+      } catch (error) {
+        if (isActive) console.error('Failed to fetch RO Billing table summary:', error)
+      } finally {
+        if (isActive) setIsServerTableLoading(false)
+      }
+    }
+
+    fetchTableSummary()
+    return () => {
+      isActive = false
+    }
+  }, [convertServerTableRows, dateFilter, queryClient, roAnalysisTypes])
+
+  useEffect(() => {
+    const range = getDefaultRODateRange(dateFilter)
+    const backgroundViews: ROAnalysisView[] = ['trend', 'fy', 'analytics', 'revenue']
+    const timer = window.setTimeout(() => {
+      backgroundViews.forEach((view) => {
+        const params = new URLSearchParams({
+          brand: 'kia',
+          sheet: 'ro_billing_report',
+          analysisType: 'load',
+          view,
+          groupBy: 'work_type',
+          startDate: range.startDate,
+          endDate: range.endDate,
+        })
+        const queryString = params.toString()
+        void queryClient.prefetchQuery({
+          queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
+          queryFn: async () => {
+            const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+            if (!response.ok) throw new Error(`Failed to prefetch ${view}`)
+            return await response.json()
+          },
+          staleTime: DASHBOARD_STALE_TIME_MS,
+        })
+      })
+    }, 600)
+
+    return () => window.clearTimeout(timer)
+  }, [dateFilter, queryClient])
+
+  useEffect(() => {
+    if (backgroundRows.length > 0 || isBackgroundRowsLoading) return
+    const timer = window.setTimeout(async () => {
+      try {
+        setIsBackgroundRowsLoading(true)
+        const fetchRange = getROAnalyticsFetchRange(dateFilter)
+        const params = new URLSearchParams({
+          brand: 'kia',
+          sheet: normalizeSheetKey(sheetName),
+          fetchAll: 'true',
+          startDate: fetchRange.startDate,
+          endDate: fetchRange.endDate,
+        })
+        const queryString = params.toString()
+        const result = await queryClient.fetchQuery({
+          queryKey: ['business-excellence', 'ro-billing-rows', queryString],
+          queryFn: async () => {
+            const response = await fetch(`/api/brands/kia/business-excellence?${queryString}`)
+            if (!response.ok) throw new Error('Failed to fetch RO Billing background rows')
+            return await response.json()
+          },
+          staleTime: DASHBOARD_STALE_TIME_MS,
+        })
+        setBackgroundRows(result.rows || [])
+      } catch (error) {
+        console.error('Failed to fetch RO Billing rows in background:', error)
+      } finally {
+        setIsBackgroundRowsLoading(false)
+      }
+    }, 1500)
+
+    return () => window.clearTimeout(timer)
+  }, [backgroundRows.length, dateFilter, isBackgroundRowsLoading, queryClient, sheetName])
 
   const formatValue = (val: number | string | 'N/A' | undefined | null, trend: string) => {
     if (val === 'N/A' || val === undefined || val === null) return 'N/A'
@@ -1613,6 +2180,192 @@ function ServiceTypePerformance({
     setExpandedRows(prev =>
       prev.includes(name) ? prev.filter(r => r !== name) : [...prev, name]
     )
+  }
+
+  const openExpandedChart = (title: string, chartId: string) => {
+    setExpandedChart({ title, chartId })
+  }
+
+  const renderExpandButton = (title: string, elementId: string) => (
+    <button
+      type="button"
+      onClick={() => openExpandedChart(title, elementId)}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-950"
+      aria-label={`Expand ${title}`}
+      title={`Expand ${title}`}
+    >
+      <Maximize2 className="h-4 w-4" />
+    </button>
+  )
+
+  const renderExpandedChartContent = () => {
+    if (!expandedChart) return null
+
+    const tooltipStyle = { borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }
+
+    if (expandedChart.chartId === 'analysis-day-wise-trend-chart') {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={trendData} margin={{ top: 36, right: 42, bottom: 34, left: 28 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+            <XAxis dataKey="day" axisLine={false} tickLine={false} tick={<TrendAxisTick />} tickMargin={14} height={54} />
+            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 800, fill: '#64748b' }} width={64} />
+            <Tooltip contentStyle={tooltipStyle} />
+            <ReferenceLine y={dailyTarget} stroke="#f43f5e" strokeDasharray="5 5" label={{ position: 'right', value: 'Target', fill: '#f43f5e', fontSize: 12, fontWeight: 900 }} />
+            <Line type="monotone" dataKey="cy" name="This Year" stroke="#0B5D7A" strokeWidth={4} dot={{ r: 5, strokeWidth: 2, fill: '#fff' }}>
+              <LabelList dataKey="cy" content={<SmartTrendValueLabel total={trendData.length} series="cy" />} />
+            </Line>
+            <Line type="monotone" dataKey="ly" name="Last Year" stroke="#D97706" strokeWidth={4} dot={{ r: 5, strokeWidth: 2, fill: '#fff' }}>
+              <LabelList dataKey="ly" content={<SmartTrendValueLabel total={trendData.length} series="ly" />} />
+            </Line>
+          </LineChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    if (!executiveAnalytics) return null
+
+    if (expandedChart.chartId === 'analysis-daily-billing-trend-chart') {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={executiveAnalytics.dailyRevenue} margin={{ top: 34, right: 46, bottom: 28, left: 26 }}>
+            <defs>
+              <linearGradient id="expandedExecRevenue" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#1D4ED8" stopOpacity={0.32} />
+                <stop offset="100%" stopColor="#1D4ED8" stopOpacity={0.03} />
+              </linearGradient>
+              <linearGradient id="expandedExecLabour" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#0F766E" stopOpacity={0.24} />
+                <stop offset="100%" stopColor="#0F766E" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
+            <XAxis dataKey="day" tick={{ fontSize: 12, fontWeight: 800, fill: '#475569' }} />
+            <YAxis yAxisId="amount" tick={{ fontSize: 12, fill: '#64748b' }} />
+            <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 12, fill: '#BE123C' }} />
+            <Tooltip contentStyle={tooltipStyle} />
+            <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
+            <Area yAxisId="amount" type="monotone" dataKey="revenue" name="Total Revenue" stroke="#1D4ED8" strokeWidth={4} fill="url(#expandedExecRevenue)">
+              <LabelList dataKey="revenue" position="top" formatter={formatChartLabel} fill="#1D4ED8" fontSize={11} fontWeight={900} />
+            </Area>
+            <Area yAxisId="amount" type="monotone" dataKey="labour" name="Labour" stroke="#0F766E" strokeWidth={3} fill="url(#expandedExecLabour)" />
+            <Line yAxisId="amount" type="monotone" dataKey="parts" name="Parts" stroke="#D97706" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}>
+              <LabelList dataKey="parts" position="bottom" formatter={formatChartLabel} fill="#D97706" fontSize={10} fontWeight={900} />
+            </Line>
+            <Line yAxisId="load" type="monotone" dataKey="load" name="Load" stroke="#BE123C" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}>
+              <LabelList dataKey="load" position="top" formatter={formatChartLabel} fill="#BE123C" fontSize={10} fontWeight={900} />
+            </Line>
+          </AreaChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    if (expandedChart.chartId === 'analysis-cy-ly-comparison-chart') {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={executiveAnalytics.comparison} barGap={14} margin={{ top: 34, right: 46, bottom: 28, left: 26 }}>
+            <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
+            <XAxis dataKey="name" tick={{ fontSize: 13, fontWeight: 900, fill: '#475569' }} />
+            <YAxis tick={{ fontSize: 12, fill: '#64748b' }} />
+            <Tooltip contentStyle={tooltipStyle} />
+            <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
+            <Bar dataKey="cy" name="CY" fill="#1D4ED8" radius={[12, 12, 0, 0]}>
+              <LabelList dataKey="cy" position="top" formatter={formatChartLabel} fill="#0f172a" fontSize={12} fontWeight={900} />
+            </Bar>
+            <Bar dataKey="ly" name="LY" fill="#94a3b8" radius={[12, 12, 0, 0]}>
+              <LabelList dataKey="ly" position="top" formatter={formatChartLabel} fill="#64748b" fontSize={12} fontWeight={900} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    if (expandedChart.chartId === 'analysis-service-type-chart') {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={executiveAnalytics.services} margin={{ top: 34, right: 46, bottom: 28, left: 26 }}>
+            <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
+            <XAxis dataKey="name" tick={{ fontSize: 13, fontWeight: 900, fill: '#475569' }} />
+            <YAxis tick={{ fontSize: 12, fill: '#64748b' }} />
+            <Tooltip contentStyle={tooltipStyle} />
+            <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
+            <Bar dataKey="labour" name="Labour" stackId="revenue" fill="#0F766E" radius={[0, 0, 8, 8]}>
+              <LabelList dataKey="labour" position="insideTop" formatter={formatChartLabel} fill="#fff" fontSize={11} fontWeight={900} />
+            </Bar>
+            <Bar dataKey="parts" name="Parts" stackId="revenue" fill="#D97706" radius={[8, 8, 0, 0]}>
+              <LabelList dataKey="parts" position="top" formatter={formatChartLabel} fill="#334155" fontSize={11} fontWeight={900} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    if (expandedChart.chartId === 'analysis-revenue-mix-chart') {
+      return (
+        <div className="relative h-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={executiveAnalytics.revenueMix} dataKey="value" nameKey="name" innerRadius="48%" outerRadius="78%" paddingAngle={5} stroke="#fff" strokeWidth={6}>
+                {executiveAnalytics.revenueMix.map((entry) => (
+                  <Cell key={entry.name} fill={entry.color} />
+                ))}
+                <LabelList dataKey="value" position="outside" formatter={(value) => formatChartLabel(Number(value || 0))} fill="#0f172a" fontSize={13} fontWeight={900} />
+              </Pie>
+              <Tooltip formatter={(value, name) => [formatCurrency(Number(value || 0)), String(name)]} contentStyle={tooltipStyle} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="rounded-3xl bg-white/90 px-8 py-5 text-center shadow-xl shadow-slate-200/60">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</p>
+              <p className="text-3xl font-black text-slate-950">{formatCurrency(executiveAnalytics.cySummary.labour + executiveAnalytics.cySummary.parts)}</p>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (expandedChart.chartId === 'analysis-efficiency-bars-chart') {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={executiveAnalytics.operatingMix} layout="vertical" margin={{ top: 34, right: 86, bottom: 28, left: 90 }}>
+            <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" horizontal={false} />
+            <XAxis type="number" tick={{ fontSize: 12, fill: '#64748b' }} />
+            <YAxis type="category" dataKey="name" tick={{ fontSize: 13, fontWeight: 900, fill: '#334155' }} width={110} />
+            <Tooltip formatter={(value) => formatCurrency(Number(value || 0))} contentStyle={tooltipStyle} />
+            <Bar dataKey="value" radius={[0, 16, 16, 0]}>
+              {executiveAnalytics.operatingMix.map((entry) => (
+                <Cell key={entry.name} fill={entry.color} />
+              ))}
+              <LabelList dataKey="value" position="right" formatter={(value) => formatCurrency(Number(value || 0))} fill="#0f172a" fontSize={12} fontWeight={900} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    if (expandedChart.chartId === 'analysis-work-type-deep-dive-chart') {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={executiveAnalytics.services} margin={{ top: 34, right: 46, bottom: 28, left: 26 }}>
+            <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
+            <XAxis dataKey="name" tick={{ fontSize: 13, fontWeight: 900, fill: '#475569' }} />
+            <YAxis yAxisId="amount" tick={{ fontSize: 12, fill: '#64748b' }} />
+            <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 12, fill: '#BE123C' }} />
+            <Tooltip contentStyle={tooltipStyle} />
+            <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
+            <Bar yAxisId="amount" dataKey="revenue" name="Revenue" fill="#1D4ED8" radius={[12, 12, 0, 0]}>
+              <LabelList dataKey="revenue" position="top" formatter={formatChartLabel} fill="#1D4ED8" fontSize={11} fontWeight={900} />
+            </Bar>
+            <Bar yAxisId="load" dataKey="load" name="Load" fill="#BE123C" radius={[12, 12, 0, 0]}>
+              <LabelList dataKey="load" position="top" formatter={formatChartLabel} fill="#BE123C" fontSize={11} fontWeight={900} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    return null
   }
 
   const statsData = useMemo(() => {
@@ -2022,6 +2775,9 @@ function ServiceTypePerformance({
     ]
   }, [data, activeTrend, dateFilter, viewMode])
 
+  const activeServerTableRows = serverTableRowsByMetric[activeAnalysisType] || null
+  const effectiveStatsData = viewMode === 'table' && activeServerTableRows ? activeServerTableRows : statsData
+
   const trendData = useMemo(() => {
     if (viewMode !== 'trend' && viewMode !== 'analytics') return []
     if (!data || data.length === 0) return []
@@ -2145,20 +2901,6 @@ function ServiceTypePerformance({
     })
   }, [data, activeTrend, dateFilter, viewMode])
 
-  const cumulativeTrendData = useMemo(() => {
-    let cySum = 0
-    let lySum = 0
-    return trendData.map(d => {
-      cySum += d.cy
-      lySum += d.ly
-      return {
-        day: d.day,
-        cy: cySum,
-        ly: lySum
-      }
-    })
-  }, [trendData])
-
   const kpiStats = useMemo(() => {
     if (!data || data.length === 0 || trendData.length === 0) {
       return [
@@ -2259,11 +3001,9 @@ function ServiceTypePerformance({
     ]
   }, [trendData, activeTrend, dateFilter, data])
   // Calculate daily target for the trend chart reference line
-  const dailyTarget = useMemo(() => {
-    if (!trendData || trendData.length === 0) return 0
-    const lyTotal = trendData.reduce((acc, day) => acc + day.ly, 0)
-    return trendData.length > 0 ? (lyTotal * 1.1) / trendData.length : 0
-  }, [trendData])
+  const dailyTarget = trendData.length > 0
+    ? (trendData.reduce((acc, day) => acc + day.ly, 0) * 1.1) / trendData.length
+    : 0
   // Historical FY Trends Data
   const fyTrendsData = useMemo(() => {
     if (viewMode !== 'fy' && viewMode !== 'analytics') return []
@@ -2535,22 +3275,25 @@ function ServiceTypePerformance({
   return (
     <>
       <Card className="rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40 mb-10 mt-10">
-        <CardHeader className="sticky top-20 z-20 bg-slate-50 backdrop-blur-md p-6 border-b border-slate-100 shadow-lg">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-bold text-slate-800 tracking-tight flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-white flex items-center justify-center text-slate-600 border border-slate-200 shadow-sm">
+        <CardHeader className="sticky top-20 z-20 border-b border-slate-100 bg-slate-50/95 p-5 shadow-lg shadow-slate-200/40 backdrop-blur-md">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+            <CardTitle className="flex items-center gap-3 text-lg font-bold tracking-tight text-slate-800">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm">
                 <Activity className="h-4 w-4" />
               </div>
-              {viewMode === 'table' ? 'Performance Analysis' : viewMode === 'trend' ? 'Day Wise Trendwise' : viewMode === 'fy' ? 'Historical FY Trends' : viewMode === 'analytics' ? 'Visual Analytics' : viewMode === 'revenue' ? 'Revenue Performance' : 'Performance Intelligence Report'}
+              <div>
+                <span>{viewMode === 'table' ? 'Performance Analysis' : viewMode === 'trend' ? 'Day Wise Trendwise' : viewMode === 'fy' ? 'Historical FY Trends' : viewMode === 'analytics' ? 'Visual Analytics' : viewMode === 'revenue' ? 'Revenue Performance' : 'Performance Intelligence Report'}</span>
+                <p className="mt-1 text-[9px] font-black uppercase tracking-[0.24em] text-slate-400">Choose a view, then choose a metric where needed</p>
+              </div>
             </CardTitle>
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-wrap items-center gap-1 rounded-[1.25rem] border border-slate-200 bg-white p-1 shadow-sm xl:w-auto">
               <button
                 onClick={() => setViewMode('table')}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center gap-2 rounded-2xl px-3.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'table'
-                    ? "bg-teal-600 text-white shadow-xl shadow-teal-200"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    ? "bg-teal-700 text-white shadow-lg shadow-teal-100"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <TableIcon className="h-3.5 w-3.5" /> Table
@@ -2558,10 +3301,10 @@ function ServiceTypePerformance({
               <button
                 onClick={() => setViewMode('trend')}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center gap-2 rounded-2xl px-3.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'trend'
-                    ? "bg-teal-600 text-white shadow-xl shadow-teal-200"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    ? "bg-teal-700 text-white shadow-lg shadow-teal-100"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <TrendingUp className="h-3.5 w-3.5" /> Trend
@@ -2569,10 +3312,10 @@ function ServiceTypePerformance({
               <button
                 onClick={() => setViewMode('fy')}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center gap-2 rounded-2xl px-3.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'fy'
-                    ? "bg-teal-600 text-white shadow-xl shadow-teal-200"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    ? "bg-teal-700 text-white shadow-lg shadow-teal-100"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <BarChart3 className="h-3.5 w-3.5" /> FY Trends
@@ -2580,10 +3323,10 @@ function ServiceTypePerformance({
               <button
                 onClick={() => setViewMode('analytics')}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center gap-2 rounded-2xl px-3.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'analytics'
-                    ? "bg-teal-600 text-white shadow-xl shadow-teal-200"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    ? "bg-teal-700 text-white shadow-lg shadow-teal-100"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <Activity className="h-3.5 w-3.5" /> Analytics
@@ -2591,10 +3334,10 @@ function ServiceTypePerformance({
               <button
                 onClick={() => setViewMode('revenue')}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center gap-2 rounded-2xl px-3.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'revenue'
-                    ? "bg-teal-600 text-white shadow-xl shadow-teal-200"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    ? "bg-teal-700 text-white shadow-lg shadow-teal-100"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <TrendingUp className="h-3.5 w-3.5" /> Revenue
@@ -2602,19 +3345,24 @@ function ServiceTypePerformance({
               <button
                 onClick={() => setViewMode('intelligence')}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  "flex items-center gap-2 rounded-2xl px-3.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'intelligence'
-                    ? "bg-teal-600 text-white shadow-xl shadow-teal-200"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    ? "bg-teal-700 text-white shadow-lg shadow-teal-100"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
-                <ShieldAlert className="h-3.5 w-3.5" /> Performance Intelligence
+                <ShieldAlert className="h-3.5 w-3.5" /> Intelligence
               </button>
             </div>
           </div>
 
           {(viewMode === 'table' || viewMode === 'trend') && (
-            <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-[9px] font-black uppercase tracking-[0.24em] text-slate-400">Metric</p>
+                <p className="text-[10px] font-bold text-slate-500">{activeTrend.replace(' Trend', '')}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
               {[
                 { id: "Load Trend", label: "Load", icon: Activity },
                 { id: "Labour Trend", label: "Labour", icon: RefreshCw },
@@ -2626,16 +3374,17 @@ function ServiceTypePerformance({
                   key={trend.id}
                   onClick={() => setActiveTrend(trend.id)}
                   className={cn(
-                    "flex-1 min-w-[110px] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl transition-all duration-300 border font-black text-[10px] uppercase tracking-widest",
+                    "flex min-w-[112px] items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all duration-300",
                     trend.id === activeTrend
-                      ? "bg-teal-600 text-white border-teal-600 shadow-lg scale-[1.05] z-10"
-                      : "bg-white text-slate-400 border-slate-100 hover:border-slate-200 hover:text-slate-600 shadow-sm"
+                      ? "border-teal-700 bg-teal-700 text-white shadow-lg shadow-teal-100"
+                      : "border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white hover:text-slate-700"
                   )}
                 >
                   <trend.icon className={cn("h-3.5 w-3.5", trend.id === activeTrend ? "text-white" : "text-slate-300")} />
                   {trend.label}
                 </button>
               ))}
+              </div>
             </div>
           )}
         </CardHeader>
@@ -2643,31 +3392,6 @@ function ServiceTypePerformance({
           <AccessControlOverlay isLocked={!isAdmin}>
             {viewMode === 'table' ? (
               <div className="p-6 pb-0">
-                {/* Search Bar */}
-                <div className="mb-6">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Search work types..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full px-4 py-3 pl-11 text-sm font-medium text-slate-700 placeholder-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all"
-                    />
-                    <svg
-                      className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                      />
-                    </svg>
-                  </div>
-                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -2693,12 +3417,17 @@ function ServiceTypePerformance({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {statsData
-                        .filter(row =>
-                          searchQuery === '' ||
-                          row.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          row.subRows.some(sub => sub.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                        )
+                      {isServerTableLoading && !activeServerTableRows ? (
+                        Array.from({ length: 8 }).map((_, index) => (
+                          <tr key={`ro-table-skeleton-${index}`} className="border-b border-slate-100">
+                            {Array.from({ length: 11 }).map((__, cellIndex) => (
+                              <td key={cellIndex} className="px-4 py-4">
+                                <div className="mx-auto h-3 w-16 animate-pulse rounded-full bg-slate-200" />
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      ) : effectiveStatsData
                         .map((row, idx) => {
                           const isTotal = row.name.includes('TOTAL') || row.name.includes('Total') || row.name === 'MECH'
                           const isGrandTotal = row.name === 'Grand Total'
@@ -2814,22 +3543,26 @@ function ServiceTypePerformance({
               </div>
             ) : viewMode === 'trend' ? (
               <div className="p-8">
-                <div className="flex items-center justify-end gap-6 mb-8 pr-10">
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full border-2 border-[#0B5D7A] bg-white" />
-                    <span className="text-[10px] font-bold text-slate-600">This Year</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full border-2 border-amber-600 bg-white" />
-                    <span className="text-[10px] font-bold text-slate-600">Last Year</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-0.5 w-6 bg-rose-400 border-t border-dashed border-rose-600" />
-                    <span className="text-[10px] font-bold text-slate-600">Target</span>
+                <div className="mb-8 flex items-center justify-between gap-4 pr-10">
+                  <div />
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full border-2 border-[#0B5D7A] bg-white" />
+                      <span className="text-[10px] font-bold text-slate-600">This Year</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full border-2 border-amber-600 bg-white" />
+                      <span className="text-[10px] font-bold text-slate-600">Last Year</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-0.5 w-6 bg-rose-400 border-t border-dashed border-rose-600" />
+                      <span className="text-[10px] font-bold text-slate-600">Target</span>
+                    </div>
+                    {renderExpandButton('Day Wise Trend', 'analysis-day-wise-trend-chart')}
                   </div>
                 </div>
 
-                <div className="h-[350px] w-full">
+                <div id="analysis-day-wise-trend-chart" className="h-[350px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={trendData} margin={{ top: 28, right: 28, bottom: 10, left: 18 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -3030,9 +3763,13 @@ function ServiceTypePerformance({
                         <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Daily Billing Trend</p>
                         <h3 className="text-2xl font-black tracking-tight text-slate-950">Revenue, labour, parts, and load progression</h3>
                       </div>
-                      <span className="rounded-full bg-slate-100 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">CY period</span>
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-full bg-slate-100 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">CY period</span>
+                        {renderExpandButton('Daily Billing Trend', 'analysis-daily-billing-trend-chart')}
+                      </div>
                     </div>
-                    <ResponsiveContainer width="100%" height={460}>
+                    <div id="analysis-daily-billing-trend-chart" className="h-[460px]">
+                    <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={executiveAnalytics.dailyRevenue}>
                         <defs>
                           <linearGradient id="execRevenue" x1="0" y1="0" x2="0" y2="1">
@@ -3062,14 +3799,19 @@ function ServiceTypePerformance({
                         </Line>
                       </AreaChart>
                     </ResponsiveContainer>
+                    </div>
                   </div>
 
                   <div className="mb-8 rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
-                    <div className="mb-6">
+                    <div className="mb-6 flex items-start justify-between gap-4">
+                      <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">CY vs LY Comparison</p>
-                      <h3 className="text-2xl font-black tracking-tight text-slate-950">Executive comparison across load and revenue metrics</h3>
+                        <h3 className="text-2xl font-black tracking-tight text-slate-950">Executive comparison across load and revenue metrics</h3>
+                      </div>
+                      {renderExpandButton('CY vs LY Comparison', 'analysis-cy-ly-comparison-chart')}
                     </div>
-                    <ResponsiveContainer width="100%" height={430}>
+                    <div id="analysis-cy-ly-comparison-chart" className="h-[430px]">
+                    <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={executiveAnalytics.comparison} barGap={10}>
                         <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
                         <XAxis dataKey="name" tick={{ fontSize: 12, fontWeight: 800, fill: '#475569' }} />
@@ -3084,15 +3826,20 @@ function ServiceTypePerformance({
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
+                    </div>
                   </div>
 
                   <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-[1.45fr_0.55fr]">
                     <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
-                      <div className="mb-6">
+                      <div className="mb-6 flex items-start justify-between gap-4">
+                        <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-violet-700">Service Type Analytics</p>
                         <h3 className="text-2xl font-black tracking-tight text-slate-950">Revenue split by work type bucket</h3>
+                        </div>
+                        {renderExpandButton('Service Type Analytics', 'analysis-service-type-chart')}
                       </div>
-                      <ResponsiveContainer width="100%" height={430}>
+                      <div id="analysis-service-type-chart" className="h-[430px]">
+                      <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={executiveAnalytics.services}>
                           <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
                           <XAxis dataKey="name" tick={{ fontSize: 12, fontWeight: 800, fill: '#475569' }} />
@@ -3107,6 +3854,7 @@ function ServiceTypePerformance({
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
+                      </div>
                     </div>
                     <div className="space-y-4">
                       {executiveAnalytics.services.slice(0, 4).map((service, index) => (
@@ -3126,12 +3874,15 @@ function ServiceTypePerformance({
 
                   <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.9fr_1.1fr]">
                     <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
-                      <div className="mb-6">
+                      <div className="mb-6 flex items-start justify-between gap-4">
+                        <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Revenue Mix</p>
                         <h3 className="text-2xl font-black tracking-tight text-slate-950">Labour and parts contribution</h3>
+                        </div>
+                        {renderExpandButton('Revenue Mix', 'analysis-revenue-mix-chart')}
                       </div>
                       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_0.8fr]">
-                        <div className="relative h-[340px]">
+                        <div id="analysis-revenue-mix-chart" className="relative h-[340px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
@@ -3194,11 +3945,15 @@ function ServiceTypePerformance({
                     </div>
 
                     <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
-                      <div className="mb-6">
+                      <div className="mb-6 flex items-start justify-between gap-4">
+                        <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Efficiency Bars</p>
                         <h3 className="text-2xl font-black tracking-tight text-slate-950">Average billing, labour/vehicle, and parts/vehicle</h3>
+                        </div>
+                        {renderExpandButton('Efficiency Bars', 'analysis-efficiency-bars-chart')}
                       </div>
-                      <ResponsiveContainer width="100%" height={340}>
+                      <div id="analysis-efficiency-bars-chart" className="h-[340px]">
+                      <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={executiveAnalytics.operatingMix} layout="vertical" margin={{ top: 8, right: 42, bottom: 8, left: 28 }}>
                           <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} />
@@ -3212,6 +3967,7 @@ function ServiceTypePerformance({
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
+                      </div>
                     </div>
                   </div>
 
@@ -3221,9 +3977,13 @@ function ServiceTypePerformance({
                         <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Work Type Deep Dive</p>
                         <h3 className="text-2xl font-black tracking-tight text-slate-950">Load and revenue concentration by bucket</h3>
                       </div>
-                      <span className="rounded-full bg-slate-100 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Top service buckets</span>
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-full bg-slate-100 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Top service buckets</span>
+                        {renderExpandButton('Work Type Deep Dive', 'analysis-work-type-deep-dive-chart')}
+                      </div>
                     </div>
-                    <ResponsiveContainer width="100%" height={430}>
+                    <div id="analysis-work-type-deep-dive-chart" className="h-[430px]">
+                    <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={executiveAnalytics.services} margin={{ top: 18, right: 26, bottom: 8, left: 0 }}>
                         <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
                         <XAxis dataKey="name" tick={{ fontSize: 12, fontWeight: 800, fill: '#475569' }} />
@@ -3239,6 +3999,7 @@ function ServiceTypePerformance({
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -3269,6 +4030,29 @@ function ServiceTypePerformance({
           </AccessControlOverlay>
         </CardContent>
       </Card>
+      {expandedChart && (
+        <div className="fixed inset-0 z-[240] bg-slate-950/80 p-[10px] backdrop-blur-md animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Expanded Analysis</p>
+                <h3 className="text-xl font-black text-slate-950">{expandedChart.title}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpandedChart(null)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-950 text-white transition hover:bg-slate-800"
+                aria-label="Close expanded chart"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 p-4">
+              {renderExpandedChartContent()}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

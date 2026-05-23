@@ -441,6 +441,119 @@ function buildRevenueSummary(rows: DataRow[], startDate: Date, endDate: Date) {
   }
 }
 
+type WorkTypeAggregateRow = {
+  work_type: string | null
+  td_cy_load: number
+  mtd_cy_load: number
+  mtd_ly_load: number
+  qtd_cy_load: number
+  qtd_ly_load: number
+  ytd_cy_load: number
+  ytd_ly_load: number
+  td_cy_labour: number
+  mtd_cy_labour: number
+  mtd_ly_labour: number
+  qtd_cy_labour: number
+  qtd_ly_labour: number
+  ytd_cy_labour: number
+  ytd_ly_labour: number
+  td_cy_parts: number
+  mtd_cy_parts: number
+  mtd_ly_parts: number
+  qtd_cy_parts: number
+  qtd_ly_parts: number
+  ytd_cy_parts: number
+  ytd_ly_parts: number
+}
+
+function numberValue(value: unknown) {
+  const parsed = typeof value === 'number' ? value : Number(value || 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function measureWorkTypeRow(row: WorkTypeAggregateRow, period: PeriodKey, side: 'cy' | 'ly', analysisType: AnalysisType) {
+  const prefix = `${period}_${side}` as const
+  const load = numberValue(row[`${prefix}_load` as keyof WorkTypeAggregateRow])
+  const labour = numberValue(row[`${prefix}_labour` as keyof WorkTypeAggregateRow])
+  const parts = numberValue(row[`${prefix}_parts` as keyof WorkTypeAggregateRow])
+  if (analysisType === 'load') return load
+  if (analysisType === 'labour') return labour
+  if (analysisType === 'parts') return parts
+  if (analysisType === 'lab_per_veh') return load > 0 ? labour / load : 0
+  return load > 0 ? parts / load : 0
+}
+
+async function fetchWorkTypeTableRows(analysisType: AnalysisType, windows: Record<PeriodKey, PeriodWindow>) {
+  const result = await db.execute(sql`
+    WITH dedup AS (
+      SELECT
+        work_type,
+        bill_key,
+        bill_date,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+      FROM (
+        SELECT
+          COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
+          COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+          bill_date::date AS bill_date,
+          COALESCE(labour_amt, 0)::numeric AS labour_amt,
+          COALESCE(part_amt, 0)::numeric AS part_amt
+        FROM ro_billing_report
+        WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
+          AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
+      ) base
+      GROUP BY work_type, bill_key, bill_date
+    )
+    SELECT
+      work_type,
+      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date)::int AS td_cy_load,
+      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date)::int AS mtd_cy_load,
+      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date)::int AS mtd_ly_load,
+      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date)::int AS qtd_cy_load,
+      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date)::int AS qtd_ly_load,
+      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date)::int AS ytd_cy_load,
+      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date)::int AS ytd_ly_load,
+      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_labour,
+      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_parts
+    FROM dedup
+    GROUP BY work_type
+  `)
+
+  const rows = result as unknown as WorkTypeAggregateRow[]
+  const toPeriod = (row: WorkTypeAggregateRow, period: PeriodKey): PeriodMetric => {
+    const cy = measureWorkTypeRow(row, period, 'cy', analysisType)
+    const lyRaw = measureWorkTypeRow(row, period, 'ly', analysisType)
+    const lyLoad = measureWorkTypeRow(row, period, 'ly', 'load')
+    const ly = lyLoad > 0 ? lyRaw : 'N/A'
+    return { cy, ly, growth: ly === 'N/A' ? 'N/A' : growth(cy, ly) }
+  }
+
+  return rows.map((row) => ({
+    name: row.work_type || 'Unspecified',
+    depth: 0,
+    metrics: {
+      td: toPeriod(row, 'td'),
+      mtd: toPeriod(row, 'mtd'),
+      qtd: toPeriod(row, 'qtd'),
+      ytd: toPeriod(row, 'ytd'),
+    },
+    children: [],
+  }))
+}
+
 async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: Date }) {
   const hasDateRange = Boolean(startDate && endDate)
   const [result, freshness] = await Promise.all([
@@ -501,7 +614,7 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
 }
 
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date) {
-  return `ro_billing:base-rows:v1:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
+  return `ro_billing:base-rows:v2:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -509,7 +622,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:v3:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `ro_billing:v5:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -568,6 +681,33 @@ export async function GET(request: Request) {
 
     const analyze = async () => {
       const windows = buildPeriodWindows(endDate)
+      const hasFilters = Array.from(searchParams.entries()).some(([key, value]) => {
+        return key in FILTER_COLUMNS && value && value !== 'all'
+      })
+      if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
+        const rows = await timer.time('work-type-sql-summary', () => fetchWorkTypeTableRows(analysisType, windows))
+        return {
+          sheet: {
+            id: 'ro_billing_report',
+            brand: 'kia',
+            sheetName: 'RO Billing Report',
+            uploadedAt: null,
+          },
+          analysisType,
+          dateBasis: 'Bill Date',
+          dateRange: {
+            startDate: toDateInputValue(startDate),
+            endDate: toDateInputValue(endDate),
+          },
+          filterOptions: {},
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: rows.length,
+          },
+          rows,
+        }
+      }
       const windowStarts = Object.values(windows).flatMap((period) => [period.cyStart, period.lyStart])
       const windowEnds = Object.values(windows).flatMap((period) => [period.cyEnd, period.lyEnd])
       const relationalStart = view === 'fy' ? undefined : new Date(Math.min(...windowStarts.map((date) => date.getTime()), startDate.getTime()))
