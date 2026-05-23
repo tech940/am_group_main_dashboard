@@ -139,11 +139,7 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
       return eq(purchaseOrders.status, 'completed')
     case 'all':
     default:
-      return and(
-        ne(purchaseOrders.status, 'ea_denied'),
-        ne(purchaseOrders.status, 'md_denied'),
-        ne(purchaseOrders.status, 'cancelled')
-      )
+      return eq(purchaseOrders.status, 'awaiting_md_approval')
   }
 }
 

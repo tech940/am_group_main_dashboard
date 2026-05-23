@@ -103,13 +103,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   const [markingAllRead, setMarkingAllRead] = useState(false)
   const [hasFreshNotification, setHasFreshNotification] = useState(false)
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false)
-  const [permission, setPermission] = useState<BrowserNotificationPermission>(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      return 'unsupported'
-    }
-
-    return Notification.permission
-  })
+  const [permission, setPermission] = useState<BrowserNotificationPermission>('unsupported')
 
   const fetchNotificationsData = useCallback(async (attempt = 1): Promise<{ notifications?: NotificationRowShape[]; unreadCount?: number }> => {
     let currentAttempt = attempt

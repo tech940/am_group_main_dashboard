@@ -496,6 +496,7 @@ function PurchaseOrdersPageContent() {
   const viewSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tempUploadCounterRef = useRef(0)
   const hasLoadedOrdersRef = useRef(false)
+  const approvalViewInitializedRef = useRef(false)
   const selectedOrderId = searchParams.get('orderId')
 
   const [userRole, setUserRole] = useState('')
@@ -525,7 +526,7 @@ function PurchaseOrdersPageContent() {
   const [purchaseOrderPagination, setPurchaseOrderPagination] = useState<PurchaseOrderPagination>(DEFAULT_PURCHASE_ORDER_PAGINATION)
 
   // View mode preference for MD/EA users
-  const { value: viewMode, savePreference: saveViewMode, setValue: setViewModePreference } = usePurchaseOrdersViewPreference()
+  const { value: viewMode, loading: viewPreferenceLoading, savePreference: saveViewMode, setValue: setViewModePreference } = usePurchaseOrdersViewPreference()
   const activeViewMode = viewMode.viewMode || 'table'
   const approvalFilter: ApprovalFilter = viewMode.approvalFilter || 'pending'
   const completedDateStart = viewMode.completedDateStart || ''
@@ -540,6 +541,7 @@ function PurchaseOrdersPageContent() {
   const canSubmitGRN = canCreateOrders
   const canProcessAccounts = userRole === 'admin' || userRole === 'accounts'
   const canEditInitialOrder = Boolean(canCreateOrders && selectedOrder && !['completed', 'cancelled'].includes(selectedOrder.status))
+  const effectivePurchaseOrderListMode: PurchaseOrderListMode = isApprovalRole(userRole) ? 'all' : purchaseOrderListMode
 
   const queueTitle = useMemo(() => {
     switch (userRole) {
@@ -573,6 +575,9 @@ function PurchaseOrdersPageContent() {
 
       switch (approvalFilter) {
         case 'all':
+          if (userRole === 'md') {
+            return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.pending))
+          }
           return applyWorkflowStageFilter(orders.filter((order) => !isRejectedWorkflowStatus(order.status) && order.status !== 'cancelled'))
         case 'pending':
           return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.pending))
@@ -654,7 +659,7 @@ function PurchaseOrdersPageContent() {
 
     if (usesPurchaseOrderPagination) {
       params.set('paginate', 'true')
-      params.set('mode', purchaseOrderListMode)
+      params.set('mode', effectivePurchaseOrderListMode)
       params.set('page', String(purchaseOrderPage))
       params.set('pageSize', String(PURCHASE_ORDER_PAGE_SIZE))
       params.set('scope', isCompletionTrackingView ? 'spending' : 'active')
@@ -678,7 +683,7 @@ function PurchaseOrdersPageContent() {
     }
 
     return params.toString()
-  }, [approvalFilter, completedDateEnd, completedDateStart, isCompletionTrackingView, purchaseOrderListMode, purchaseOrderPage, userRole, usesPurchaseOrderPagination, workflowStageFilter])
+  }, [approvalFilter, completedDateEnd, completedDateStart, effectivePurchaseOrderListMode, isCompletionTrackingView, purchaseOrderPage, userRole, usesPurchaseOrderPagination, workflowStageFilter])
 
   const fetchOrders = useCallback(async (showSpinner = true, force = false) => {
     if (!userRole) {
@@ -719,7 +724,7 @@ function PurchaseOrdersPageContent() {
       } else {
         setPurchaseOrderPagination({
           ...DEFAULT_PURCHASE_ORDER_PAGINATION,
-          mode: purchaseOrderListMode,
+          mode: effectivePurchaseOrderListMode,
           total: Array.isArray(data.orders) ? data.orders.length : 0,
         })
       }
@@ -733,7 +738,7 @@ function PurchaseOrdersPageContent() {
         setIsListRefreshing(false)
       }
     }
-  }, [buildOrdersQuery, purchaseOrderListMode, queryClient, userRole])
+  }, [buildOrdersQuery, effectivePurchaseOrderListMode, queryClient, userRole])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -754,6 +759,25 @@ function PurchaseOrdersPageContent() {
 
     return () => window.clearTimeout(timer)
   }, [fetchOrders, userRole])
+
+  useEffect(() => {
+    if (!isApprovalRole(userRole) || viewPreferenceLoading || approvalViewInitializedRef.current) {
+      return
+    }
+
+    approvalViewInitializedRef.current = true
+
+    if (viewMode.viewMode !== 'table') {
+      const nextPreference = {
+        ...viewMode,
+        viewMode: 'table' as const,
+      }
+      setViewModePreference(nextPreference)
+      void saveViewMode(nextPreference).catch((error) => {
+        console.error('Error restoring approval table view preference:', error)
+      })
+    }
+  }, [saveViewMode, setViewModePreference, userRole, viewMode, viewPreferenceLoading])
 
   useEffect(() => {
     topLoaderRef.current = topLoader
@@ -1314,11 +1338,12 @@ function PurchaseOrdersPageContent() {
     const lastItem = Math.min(total, page * pageSize)
     const isFirstPage = page <= 1
     const isLastPage = page >= totalPages
+    const isApprovalQueue = isApprovalRole(userRole)
 
     return (
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          {!isCompletionTrackingView && (['today', 'all'] as const).map((mode) => {
+          {!isApprovalQueue && !isCompletionTrackingView && (['today', 'all'] as const).map((mode) => {
               const isActive = purchaseOrderListMode === mode
 
               return (
@@ -1334,7 +1359,11 @@ function PurchaseOrdersPageContent() {
               )
             })}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {purchaseOrderListMode === 'today' ? 'Current day orders' : 'All orders'} · {total} total
+            {isApprovalQueue
+              ? 'Approval queue'
+              : effectivePurchaseOrderListMode === 'today'
+                ? 'Current day orders'
+                : 'All orders'} · {total} total
           </span>
         </div>
 
@@ -2156,8 +2185,6 @@ function PurchaseOrdersPageContent() {
                   })}
                 </div>
 
-                {renderWorkflowStageFilters()}
-
                 {renderPurchaseOrderPaginationControls()}
 
                 {(approvalFilter === 'completed' || workflowStageFilter === 'completed' || workflowStageFilter === 'grn_completed') && renderCompletedAnalyticsControls()}
@@ -2332,3 +2359,4 @@ export default function PurchaseOrdersPage() {
     </Suspense>
   )
 }
+
