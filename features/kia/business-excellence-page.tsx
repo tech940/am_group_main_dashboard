@@ -139,7 +139,7 @@ type BusinessDateFilter = {
   endDate: string
 } | null
 
-const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'Open RO Yearly'
+const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const BUSINESS_MONTHS = [
   'January',
   'February',
