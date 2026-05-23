@@ -79,11 +79,24 @@ export async function invalidateCachePattern(pattern: string): Promise<void> {
   }
 
   try {
-    // Note: Upstash Redis doesn't support SCAN, so we'll use a workaround
-    // Store all keys in a set when caching, then delete from that set
-    console.log(`🗑️ Cache pattern invalidation requested: ${pattern}`)
-    // For now, we'll invalidate specific known keys
-    // You can extend this based on your needs
+    let cursor = '0'
+    let deletedCount = 0
+
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, {
+        match: pattern,
+        count: 100,
+      })
+
+      cursor = nextCursor
+
+      if (keys.length > 0) {
+        await redis.del(...keys)
+        deletedCount += keys.length
+      }
+    } while (cursor !== '0')
+
+    console.log(`Cache pattern invalidated: ${pattern} (${deletedCount} keys)`)
   } catch (error) {
     console.error('❌ Error invalidating cache pattern:', error)
   }

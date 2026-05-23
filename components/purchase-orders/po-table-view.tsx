@@ -30,6 +30,9 @@ interface PurchaseOrder {
 
 interface POTableViewProps {
   orders: PurchaseOrder[]
+  totalOrders?: number
+  listMode?: 'today' | 'all'
+  isLoading?: boolean
   onOrderClick: (order: PurchaseOrder) => void
 }
 
@@ -139,8 +142,11 @@ function formatStatusLabel(status: string) {
   return status.replace(/_/g, ' ').toUpperCase()
 }
 
-export function POTableView({ orders, onOrderClick }: POTableViewProps) {
+export function POTableView({ orders, totalOrders = orders.length, listMode = 'today', isLoading = false, onOrderClick }: POTableViewProps) {
   const visibleColumns = useMemo(() => (
+    isLoading && orders.length === 0
+      ? PO_COLUMNS
+      :
     PO_COLUMNS.filter((col) => {
       // Always show these essential columns
       if (['orderNumber', 'requestedBy', 'department', 'status', 'createdAt'].includes(col.key)) {
@@ -150,7 +156,9 @@ export function POTableView({ orders, onOrderClick }: POTableViewProps) {
       // Show other columns only if they have data
       return orders.some((order) => hasRenderableValue(getColumnValue(order, col.key)))
     })
-  ), [orders])
+  ), [isLoading, orders])
+
+  const skeletonRows = Array.from({ length: 9 })
 
   return (
     <div className="space-y-3">
@@ -159,17 +167,17 @@ export function POTableView({ orders, onOrderClick }: POTableViewProps) {
           <div>
             <h3 className="text-base font-bold text-slate-800">Purchase Order Overview</h3>
             <p className="text-xs text-slate-600">
-              Screenshot-friendly table view showing {orders.length} purchase order{orders.length !== 1 ? 's' : ''}
+              {listMode === 'today' ? 'Current-day' : 'All-order'} table view showing {orders.length} of {totalOrders} purchase order{totalOrders !== 1 ? 's' : ''}
             </p>
           </div>
           <div className="rounded-lg bg-white px-3 py-1.5 shadow-sm">
             <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Total Orders</p>
-            <p className="text-xl font-black text-teal-600">{orders.length}</p>
+            <p className="text-xl font-black text-teal-600">{totalOrders}</p>
           </div>
         </div>
       </div>
 
-      <div className="relative overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="relative overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm" aria-busy={isLoading}>
         <table className="w-full text-xs">
           <thead className="border-b-2 border-teal-600 bg-gradient-to-r from-teal-600 to-teal-700">
             <tr>
@@ -188,7 +196,25 @@ export function POTableView({ orders, onOrderClick }: POTableViewProps) {
           </thead>
 
           <tbody>
-            {orders.length === 0 ? (
+            {isLoading ? (
+              skeletonRows.map((_, rowIndex) => (
+                <tr
+                  key={`po-table-skeleton-${rowIndex}`}
+                  className={cn('border-b border-slate-100', rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50/70')}
+                >
+                  {visibleColumns.map((col, colIndex) => (
+                    <td key={`${col.key}-${rowIndex}`} className="px-3 py-3">
+                      <div
+                        className={cn(
+                          'h-4 animate-pulse rounded-full bg-slate-200',
+                          colIndex === 0 ? 'w-24' : col.key === 'specialInstructions' ? 'w-40' : col.key === 'status' ? 'w-28' : 'w-20'
+                        )}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : orders.length === 0 ? (
               <tr>
                 <td
                   colSpan={visibleColumns.length}

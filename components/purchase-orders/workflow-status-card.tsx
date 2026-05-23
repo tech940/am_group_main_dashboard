@@ -36,7 +36,7 @@ const toneStyles: Record<CardTone, {
   footerText: string
 }> = {
   sky: {
-    surface: 'bg-white',
+    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
     border: 'border-sky-200',
     accentDot: 'bg-sky-500',
     statusBg: 'bg-sky-50 border-sky-200 text-sky-700',
@@ -44,7 +44,7 @@ const toneStyles: Record<CardTone, {
     footerText: 'text-sky-600',
   },
   amber: {
-    surface: 'bg-white',
+    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
     border: 'border-amber-200',
     accentDot: 'bg-amber-500',
     statusBg: 'bg-amber-50 border-amber-200 text-amber-700',
@@ -52,7 +52,7 @@ const toneStyles: Record<CardTone, {
     footerText: 'text-amber-600',
   },
   violet: {
-    surface: 'bg-white',
+    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
     border: 'border-violet-200',
     accentDot: 'bg-violet-500',
     statusBg: 'bg-violet-50 border-violet-200 text-violet-700',
@@ -60,7 +60,7 @@ const toneStyles: Record<CardTone, {
     footerText: 'text-violet-600',
   },
   indigo: {
-    surface: 'bg-white',
+    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
     border: 'border-indigo-200',
     accentDot: 'bg-indigo-500',
     statusBg: 'bg-indigo-50 border-indigo-200 text-indigo-700',
@@ -68,7 +68,7 @@ const toneStyles: Record<CardTone, {
     footerText: 'text-indigo-600',
   },
   teal: {
-    surface: 'bg-white',
+    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
     border: 'border-teal-200',
     accentDot: 'bg-teal-500',
     statusBg: 'bg-teal-50 border-teal-200 text-teal-700',
@@ -76,7 +76,7 @@ const toneStyles: Record<CardTone, {
     footerText: 'text-teal-600',
   },
   emerald: {
-    surface: 'bg-white',
+    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
     border: 'border-emerald-200',
     accentDot: 'bg-emerald-500',
     statusBg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
@@ -84,7 +84,7 @@ const toneStyles: Record<CardTone, {
     footerText: 'text-emerald-600',
   },
   rose: {
-    surface: 'bg-white',
+    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
     border: 'border-rose-200',
     accentDot: 'bg-rose-500',
     statusBg: 'bg-rose-50 border-rose-200 text-rose-700',
@@ -92,7 +92,7 @@ const toneStyles: Record<CardTone, {
     footerText: 'text-rose-600',
   },
   slate: {
-    surface: 'bg-white',
+    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
     border: 'border-slate-200',
     accentDot: 'bg-slate-500',
     statusBg: 'bg-slate-50 border-slate-200 text-slate-700',
@@ -144,7 +144,7 @@ export function WorkflowStatusCard({
         }
       }}
       className={cn(
-        'group relative overflow-hidden rounded-2xl border-2 p-5 shadow-sm transition-all duration-200',
+        'group relative overflow-hidden rounded-2xl border-2 p-4 shadow-sm transition-all duration-200 sm:p-5',
         styles.surface,
         styles.border,
         onClick && 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md',
@@ -226,7 +226,7 @@ export function WorkflowStatusCard({
 
 export function WorkflowStatusCardSkeleton() {
   return (
-    <div className="relative overflow-hidden rounded-2xl border-2 border-slate-200 bg-white p-5 shadow-sm">
+    <div className="relative overflow-hidden rounded-2xl border-2 border-slate-200 bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70 p-4 shadow-sm sm:p-5">
       <div className="animate-pulse space-y-4">
         <div className="h-7 w-36 rounded-lg bg-slate-100" />
         <div className="space-y-2">

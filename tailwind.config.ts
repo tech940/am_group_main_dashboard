@@ -75,18 +75,18 @@ const config: Config = {
           light: "#6ba0a8",
           dark: "#2f5a61",
         },
-        // Accent Green - Softer Emerald
+        // Accent Green - Premium muted enterprise teal
         emerald: {
-          50: "#ecfdf5",
-          100: "#d1fae5",
-          200: "#a7f3d0",
-          300: "#6ee7b7",
-          400: "#34d399",
-          500: "#10b981",
-          600: "#059669",
-          700: "#047857",
-          800: "#065f46",
-          900: "#064e3b",
+          50: "#edf7f4",
+          100: "#d7ece7",
+          200: "#afd9ce",
+          300: "#7fc0b2",
+          400: "#4fa596",
+          500: "#2f8f83",
+          600: "#24766d",
+          700: "#1f5f59",
+          800: "#1c4c48",
+          900: "#173f3c",
         },
         // Light Teal (#B2C9C5 - Light Teal)
         "teal-light": {

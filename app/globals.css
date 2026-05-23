@@ -14,7 +14,7 @@
     --secondary-foreground: 0 0% 98%;
     --muted: 180 10% 90%; /* #E0E5E9 - City Lights */
     --muted-foreground: 192 20% 40%;
-    --accent: 158 77% 47%; /* #1BD488 - Retro Lime */
+    --accent: 173 51% 37%; /* #2F8F83 - Premium muted enterprise teal */
     --accent-foreground: 192 100% 20%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
@@ -23,7 +23,7 @@
     --ring: 192 95% 20%;
     --radius: 1.5rem;
     --chart-1: 192 95% 20%; /* Teal */
-    --chart-2: 158 77% 47%; /* Lime */
+    --chart-2: 173 51% 37%; /* Muted premium teal */
     --chart-3: 192 33% 40%; /* Teal Secondary */
     --chart-4: 180 10% 75%; /* Light Teal */
     --chart-5: 180 10% 90%; /* City Lights */

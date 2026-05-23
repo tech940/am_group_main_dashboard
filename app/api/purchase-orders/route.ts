@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, count, desc, eq, gte, isNull, lt, ne, or } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { serializeUtcTimestampFields, getIndiaDatePart } from '@/lib/date-time'
@@ -7,6 +7,7 @@ import { purchaseOrders } from '@/lib/db/schema'
 import {
   canCreatePurchaseOrders,
   canReadPurchaseOrder,
+  canViewPurchaseOrderTable,
   getPurchaseOrderListVisibilityFilter,
   isPurchaseOrderStage,
   isPurchaseOrderStatus,
@@ -26,6 +27,90 @@ function serializePurchaseOrderRow(row: Record<string, unknown>) {
   return serializeUtcTimestampFields(row, [...PURCHASE_ORDER_UTC_TIMESTAMP_FIELDS])
 }
 
+function getCurrentIndiaDayBounds(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+
+  const getPart = (type: string) => parts.find((part) => part.type === type)?.value || ''
+  const start = new Date(`${getPart('year')}-${getPart('month')}-${getPart('day')}T00:00:00+05:30`)
+
+  return {
+    start,
+    end: new Date(start.getTime() + 24 * 60 * 60 * 1000),
+  }
+}
+
+function getWorkflowFilterExpression(filter: string | null) {
+  switch (filter) {
+    case 'vendor_info_pending':
+      return or(eq(purchaseOrders.status, 'vendor_info_pending'), eq(purchaseOrders.currentStage, 'vendor_information'))
+    case 'ea_pending':
+      return eq(purchaseOrders.status, 'awaiting_ea_approval')
+    case 'md_pending':
+      return eq(purchaseOrders.status, 'awaiting_md_approval')
+    case 'grn_pending':
+      return eq(purchaseOrders.status, 'awaiting_grn')
+    case 'accounts_pending':
+      return eq(purchaseOrders.status, 'awaiting_accounts')
+    case 'completed':
+      return eq(purchaseOrders.status, 'completed')
+    case 'rejected':
+      return or(eq(purchaseOrders.status, 'ea_denied'), eq(purchaseOrders.status, 'md_denied'))
+    case 'hold':
+      return or(eq(purchaseOrders.status, 'on_hold'), eq(purchaseOrders.status, 'ea_on_hold'), eq(purchaseOrders.status, 'md_on_hold'))
+    default:
+      return null
+  }
+}
+
+function getApprovalFilterExpression(role: string, filter: string | null) {
+  if (role !== 'ea' && role !== 'md') {
+    return null
+  }
+
+  if (role === 'ea') {
+    switch (filter) {
+      case 'pending':
+        return eq(purchaseOrders.status, 'awaiting_ea_approval')
+      case 'rejected':
+        return or(eq(purchaseOrders.status, 'ea_denied'), eq(purchaseOrders.status, 'md_denied'))
+      case 'hold':
+        return or(eq(purchaseOrders.status, 'ea_on_hold'), eq(purchaseOrders.status, 'md_on_hold'))
+      case 'completed':
+        return eq(purchaseOrders.status, 'completed')
+      case 'all':
+      default:
+        return and(
+          ne(purchaseOrders.status, 'ea_denied'),
+          ne(purchaseOrders.status, 'md_denied'),
+          ne(purchaseOrders.status, 'cancelled')
+        )
+    }
+  }
+
+  switch (filter) {
+    case 'pending':
+      return eq(purchaseOrders.status, 'awaiting_md_approval')
+    case 'rejected':
+      return eq(purchaseOrders.status, 'md_denied')
+    case 'hold':
+      return eq(purchaseOrders.status, 'md_on_hold')
+    case 'completed':
+      return eq(purchaseOrders.status, 'completed')
+    case 'all':
+    default:
+      return and(
+        ne(purchaseOrders.status, 'ea_denied'),
+        ne(purchaseOrders.status, 'md_denied'),
+        ne(purchaseOrders.status, 'cancelled')
+      )
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const appUser = await getAuthenticatedAppUser()
@@ -38,6 +123,15 @@ export async function GET(request: NextRequest) {
     const id = searchParams.get('id')
     const status = searchParams.get('status')
     const stage = searchParams.get('stage')
+    const view = searchParams.get('view')
+    const paginate = searchParams.get('paginate') === 'true'
+    const mode = searchParams.get('mode') === 'all' ? 'all' : 'today'
+    const workflowFilter = searchParams.get('workflowFilter')
+    const approvalFilter = searchParams.get('approvalFilter')
+    const scope = searchParams.get('scope')
+    const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
+    const requestedPageSize = Number.parseInt(searchParams.get('pageSize') || '9', 10) || 9
+    const pageSize = Math.min(9, Math.max(1, requestedPageSize))
 
     // If ID is provided, fetch single purchase order
     if (id) {
@@ -70,6 +164,104 @@ export async function GET(request: NextRequest) {
 
       filters.push(eq(purchaseOrders.currentStage, stage))
     }
+
+    if (view === 'table') {
+      if (!canViewPurchaseOrderTable(appUser.role)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      const workflowExpression = getWorkflowFilterExpression(workflowFilter)
+      if (workflowExpression) {
+        filters.push(workflowExpression)
+      } else if (scope === 'completed') {
+        filters.push(eq(purchaseOrders.status, 'completed'))
+      } else {
+        filters.push(ne(purchaseOrders.status, 'completed'))
+      }
+
+      if (mode === 'today') {
+        const { start, end } = getCurrentIndiaDayBounds()
+        filters.push(gte(purchaseOrders.createdAt, start), lt(purchaseOrders.createdAt, end))
+      }
+
+      const whereExpression = and(...filters)
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(purchaseOrders)
+        .where(whereExpression)
+
+      const totalOrders = Number(total) || 0
+      const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize))
+      const safePage = Math.min(page, totalPages)
+
+      const rows = await db
+        .select()
+        .from(purchaseOrders)
+        .where(whereExpression)
+        .orderBy(desc(purchaseOrders.createdAt))
+        .limit(pageSize)
+        .offset((safePage - 1) * pageSize)
+
+      return NextResponse.json({
+        orders: rows.map(serializePurchaseOrderRow),
+        pagination: {
+          page: safePage,
+          pageSize,
+          total: totalOrders,
+          totalPages,
+          mode,
+        },
+      })
+    }
+
+    if (paginate) {
+      const workflowExpression = getWorkflowFilterExpression(workflowFilter)
+      const approvalExpression = getApprovalFilterExpression(appUser.role, approvalFilter)
+      if (workflowExpression) {
+        filters.push(workflowExpression)
+      } else if (approvalExpression) {
+        filters.push(approvalExpression)
+      } else if (scope === 'completed') {
+        filters.push(eq(purchaseOrders.status, 'completed'))
+      } else {
+        filters.push(ne(purchaseOrders.status, 'completed'))
+      }
+
+      if (mode === 'today') {
+        const { start, end } = getCurrentIndiaDayBounds()
+        filters.push(gte(purchaseOrders.createdAt, start), lt(purchaseOrders.createdAt, end))
+      }
+
+      const whereExpression = and(...filters)
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(purchaseOrders)
+        .where(whereExpression)
+
+      const totalOrders = Number(total) || 0
+      const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize))
+      const safePage = Math.min(page, totalPages)
+
+      const rows = await db
+        .select()
+        .from(purchaseOrders)
+        .where(whereExpression)
+        .orderBy(desc(purchaseOrders.createdAt))
+        .limit(pageSize)
+        .offset((safePage - 1) * pageSize)
+
+      return NextResponse.json({
+        orders: rows.map(serializePurchaseOrderRow),
+        pagination: {
+          page: safePage,
+          pageSize,
+          total: totalOrders,
+          totalPages,
+          mode,
+        },
+      })
+    }
+
     const rows = await db
       .select()
       .from(purchaseOrders)
