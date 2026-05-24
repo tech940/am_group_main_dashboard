@@ -466,6 +466,20 @@ type WorkTypeAggregateRow = {
   ytd_ly_parts: number
 }
 
+type DailyAggregateRow = {
+  bill_date: string | Date
+  load: number
+  labour: number
+  parts: number
+}
+
+type AnalyticsQualitySummary = {
+  avgRating: number
+  avgRatingLy: number
+  pickDropRate: number
+  pickDropRateLy: number
+}
+
 function numberValue(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value || 0)
   return Number.isFinite(parsed) ? parsed : 0
@@ -481,6 +495,136 @@ function measureWorkTypeRow(row: WorkTypeAggregateRow, period: PeriodKey, side: 
   if (analysisType === 'parts') return parts
   if (analysisType === 'lab_per_veh') return load > 0 ? labour / load : 0
   return load > 0 ? parts / load : 0
+}
+
+function measureDailyRow(row: DailyAggregateRow | undefined, analysisType: AnalysisType) {
+  if (!row) return 0
+  const load = numberValue(row.load)
+  const labour = numberValue(row.labour)
+  const parts = numberValue(row.parts)
+  if (analysisType === 'load') return load
+  if (analysisType === 'labour') return labour
+  if (analysisType === 'parts') return parts
+  if (analysisType === 'lab_per_veh') return load > 0 ? labour / load : 0
+  return load > 0 ? parts / load : 0
+}
+
+async function fetchDailyTrendRows(analysisType: AnalysisType, startDate: Date, endDate: Date) {
+  const relationalStart = sameDateLastYear(startDate)
+  const relationalEnd = endDate
+  const result = await db.execute(sql`
+    WITH dedup AS (
+      SELECT
+        bill_key,
+        bill_date,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+      FROM (
+        SELECT
+          COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+          bill_date::date AS bill_date,
+          COALESCE(labour_amt, 0)::numeric AS labour_amt,
+          COALESCE(part_amt, 0)::numeric AS part_amt
+        FROM ro_billing_report
+        WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
+          AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
+      ) base
+      GROUP BY bill_key, bill_date
+    )
+    SELECT
+      bill_date,
+      COUNT(DISTINCT bill_key)::int AS load,
+      COALESCE(SUM(labour_amt), 0)::float AS labour,
+      COALESCE(SUM(part_amt), 0)::float AS parts
+    FROM dedup
+    GROUP BY bill_date
+    ORDER BY bill_date
+  `)
+
+  const byDate = new Map<string, DailyAggregateRow>()
+  ;((result as unknown as DailyAggregateRow[]) || []).forEach((row) => {
+    byDate.set(toDateInputValue(new Date(row.bill_date)), row)
+  })
+
+  const trend = []
+  const cursor = startOfDay(startDate)
+  while (cursor <= endDate) {
+    const cyDate = toDateInputValue(cursor)
+    const lyDate = toDateInputValue(sameDateLastYear(cursor))
+    trend.push({
+      date: cyDate,
+      label: `${String(cursor.getDate()).padStart(2, '0')} ${cursor.toLocaleDateString('en-US', { weekday: 'short' })}`,
+      cy: measureDailyRow(byDate.get(cyDate), analysisType),
+      ly: measureDailyRow(byDate.get(lyDate), analysisType),
+    })
+    cursor.setDate(cursor.getDate() + 1)
+  }
+
+  return trend
+}
+
+async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date): Promise<AnalyticsQualitySummary> {
+  const lyStart = sameDateLastYear(startDate)
+  const lyEnd = sameDateLastYear(endDate)
+  const result = await db.execute(sql`
+    WITH base AS (
+      SELECT
+        bill_date::date AS bill_date,
+        NULLIF(regexp_replace(COALESCE(avg_rating::text, ''), '[^0-9.-]', '', 'g'), '')::numeric AS rating,
+        LOWER(TRIM(COALESCE(pick_drop::text, ''))) AS pick_drop_value
+      FROM ro_billing_report
+      WHERE bill_date >= ${toDateInputValue(lyStart)}::date
+        AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+    )
+    SELECT
+      COALESCE(AVG(rating) FILTER (
+        WHERE bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date
+          AND rating > 0
+      ), 0)::float AS avg_rating,
+      COALESCE(AVG(rating) FILTER (
+        WHERE bill_date BETWEEN ${toDateInputValue(lyStart)}::date AND ${toDateInputValue(lyEnd)}::date
+          AND rating > 0
+      ), 0)::float AS avg_rating_ly,
+      COALESCE(
+        (
+          COUNT(*) FILTER (
+            WHERE bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date
+              AND pick_drop_value NOT IN ('', '-', 'none', 'no', 'n/a', 'na')
+          )::float
+          / NULLIF(COUNT(*) FILTER (
+            WHERE bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date
+          ), 0)
+        ) * 100,
+        0
+      )::float AS pick_drop_rate,
+      COALESCE(
+        (
+          COUNT(*) FILTER (
+            WHERE bill_date BETWEEN ${toDateInputValue(lyStart)}::date AND ${toDateInputValue(lyEnd)}::date
+              AND pick_drop_value NOT IN ('', '-', 'none', 'no', 'n/a', 'na')
+          )::float
+          / NULLIF(COUNT(*) FILTER (
+            WHERE bill_date BETWEEN ${toDateInputValue(lyStart)}::date AND ${toDateInputValue(lyEnd)}::date
+          ), 0)
+        ) * 100,
+        0
+      )::float AS pick_drop_rate_ly
+    FROM base
+  `)
+
+  const row = ((result as unknown as Array<{
+    avg_rating: number
+    avg_rating_ly: number
+    pick_drop_rate: number
+    pick_drop_rate_ly: number
+  }>) || [])[0]
+
+  return {
+    avgRating: numberValue(row?.avg_rating),
+    avgRatingLy: numberValue(row?.avg_rating_ly),
+    pickDropRate: numberValue(row?.pick_drop_rate),
+    pickDropRateLy: numberValue(row?.pick_drop_rate_ly),
+  }
 }
 
 async function fetchWorkTypeTableRows(analysisType: AnalysisType, windows: Record<PeriodKey, PeriodWindow>) {
@@ -622,7 +766,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:v5:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `ro_billing:v6:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -706,6 +850,54 @@ export async function GET(request: Request) {
             filteredRows: rows.length,
           },
           rows,
+        }
+      }
+      if (view === 'trend' && groupBy === 'work_type' && !hasFilters) {
+        const trend = await timer.time('daily-trend-sql-summary', () => fetchDailyTrendRows(analysisType, startDate, endDate))
+        return {
+          sheet: {
+            id: 'ro_billing_report',
+            brand: 'kia',
+            sheetName: 'RO Billing Report',
+            uploadedAt: null,
+          },
+          analysisType,
+          dateBasis: 'Bill Date',
+          dateRange: {
+            startDate: toDateInputValue(startDate),
+            endDate: toDateInputValue(endDate),
+          },
+          filterOptions: {},
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: trend.length,
+          },
+          trend,
+        }
+      }
+      if (view === 'analytics' && groupBy === 'work_type' && !hasFilters) {
+        const analyticsSummary = await timer.time('analytics-quality-sql-summary', () => fetchAnalyticsQualitySummary(startDate, endDate))
+        return {
+          sheet: {
+            id: 'ro_billing_report',
+            brand: 'kia',
+            sheetName: 'RO Billing Report',
+            uploadedAt: null,
+          },
+          analysisType,
+          dateBasis: 'Bill Date',
+          dateRange: {
+            startDate: toDateInputValue(startDate),
+            endDate: toDateInputValue(endDate),
+          },
+          filterOptions: {},
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: 0,
+          },
+          analyticsSummary,
         }
       }
       const windowStarts = Object.values(windows).flatMap((period) => [period.cyStart, period.lyStart])

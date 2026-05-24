@@ -34,7 +34,6 @@ import {
 } from 'lucide-react'
 import { AccessControlOverlay } from '@/components/shared/access-control-overlay'
 import { useUserRole } from '@/lib/hooks/use-user-role'
-import ROBillingReportSection from '@/app/brands/kia/ro-billing/page'
 import {
   LineChart,
   Line,
@@ -1620,6 +1619,12 @@ type ROAnalysisResponse = {
     labPerVehicle: number
     partPerVehicle: number
   }
+  analyticsSummary?: {
+    avgRating: number
+    avgRatingLy: number
+    pickDropRate: number
+    pickDropRateLy: number
+  }
   rows: ROAnalysisRow[]
   trend: Array<{ date: string; label: string; cy: number; ly: number }>
   fyTrends: Array<{ fy: string; value: number }>
@@ -1689,6 +1694,36 @@ function getDefaultRODateRange(dateFilter: {
   return {
     startDate: getInputDate(new Date(today.getFullYear(), today.getMonth(), 1)),
     endDate: getInputDate(today),
+  }
+}
+
+function getROTrendDateRange(dateFilter: {
+  mode: 'month' | 'range'
+  month: number
+  year: number
+  startDate: string
+  endDate: string
+} | null) {
+  if (dateFilter?.mode === 'range' && dateFilter.startDate && dateFilter.endDate) {
+    const start = parseBusinessDate(dateFilter.startDate)
+    const end = parseBusinessDate(dateFilter.endDate)
+    if (start && end && start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
+      return {
+        startDate: getInputDate(new Date(end.getFullYear(), end.getMonth(), 1)),
+        endDate: getInputDate(new Date(end.getFullYear(), end.getMonth() + 1, 0)),
+      }
+    }
+
+    return { startDate: dateFilter.startDate, endDate: dateFilter.endDate }
+  }
+
+  const today = new Date()
+  const year = dateFilter?.mode === 'month' ? dateFilter.year : today.getFullYear()
+  const month = dateFilter?.mode === 'month' ? dateFilter.month : today.getMonth()
+
+  return {
+    startDate: getInputDate(new Date(year, month, 1)),
+    endDate: getInputDate(new Date(year, month + 1, 0)),
   }
 }
 
@@ -1799,96 +1834,187 @@ function LegacyROBillingAnalytics({
   )
 }
 
-// Revenue Performance Section Component
-function ROBillingRevenueSection({
-  sheetId,
-  sheetName,
-  isAdmin,
-  activeSheet,
-  prefetchedData,
-  isPrefetching,
-  dateFilter
+function ROBillingRevenueSummarySection({
+  rowsByMetric,
+  isLoading,
 }: {
-  sheetId: string
-  sheetName: string
-  isAdmin: boolean
-  activeSheet: string | null
-  prefetchedData: Record<string, unknown>[] | null
-  isPrefetching: boolean
-  dateFilter: {
-    mode: 'month' | 'range'
-    month: number
-    year: number
-    startDate: string
-    endDate: string
-  } | null
+  rowsByMetric: Partial<Record<ROAnalysisType, StatRow[]>>
+  isLoading: boolean
 }) {
-  const queryClient = useQueryClient()
-  const [data, setData] = useState<Record<string, unknown>[]>([])
-  const [loading, setLoading] = useState(true)
+  const [activeRevenueTab, setActiveRevenueTab] = useState<'labour' | 'parts' | 'growth'>('labour')
+  const labourRows = rowsByMetric.labour || []
+  const partsRows = rowsByMetric.parts || []
+  const loadRows = rowsByMetric.load || []
+  const getGrandTotal = (rows: StatRow[]) => rows.find((row) => row.name === 'Grand Total') || rows[rows.length - 1]
+  const labourTotal = getGrandTotal(labourRows)
+  const partsTotal = getGrandTotal(partsRows)
+  const loadTotal = getGrandTotal(loadRows)
+  const paidLoad = loadRows.find((row) => row.name === 'Paid Service')
+  const paidServiceContribution = loadTotal && Number(loadTotal.cy || 0) > 0
+    ? (Number(paidLoad?.cy || 0) / Number(loadTotal.cy || 0)) * 100
+    : 0
+  const renderMoney = (value: number | string | 'N/A' | undefined | null) => {
+    if (value === 'N/A' || value === undefined || value === null || Number.isNaN(Number(value))) return 'N/A'
+    return formatCurrency(Number(value))
+  }
+  const moneyTextClass = (value: number | string | 'N/A' | undefined | null, fallback = 'text-slate-900') => {
+    if (value === 'N/A' || value === undefined || value === null || Number.isNaN(Number(value))) return 'text-slate-400'
+    return Number(value) < 0 ? 'text-rose-600' : fallback
+  }
+  const formatGrowth = (value: string | number | 'N/A') => {
+    if (value === 'N/A') return 'N/A'
+    const numeric = typeof value === 'number' ? value : Number(value)
+    if (Number.isNaN(numeric)) return 'N/A'
+    return `${numeric >= 0 ? '+' : '-'}${Math.abs(numeric).toFixed(1)}%`
+  }
+  const metricData = activeRevenueTab === 'labour' ? labourTotal : partsTotal
+  const revenueGrowth = (() => {
+    const current = Number(labourTotal?.ytdCY || 0) + Number(partsTotal?.ytdCY || 0)
+    const previous = Number(labourTotal?.ytdLY === 'N/A' ? 0 : labourTotal?.ytdLY || 0) + Number(partsTotal?.ytdLY === 'N/A' ? 0 : partsTotal?.ytdLY || 0)
+    return previous > 0 ? ((current - previous) / previous) * 100 : 'N/A'
+  })()
 
-  // Use pre-fetched data if available, otherwise fetch
-  useEffect(() => {
-    if (prefetchedData && prefetchedData.length > 0) {
-      console.log('⚡ Using pre-fetched RO Billing data for Revenue section:', prefetchedData.length, 'records')
-      const timer = setTimeout(() => {
-        setData(prefetchedData)
-        setLoading(false)
-      }, 0)
-      return () => clearTimeout(timer)
-    } else if (!isPrefetching) {
-      // Fallback: fetch if pre-fetch didn't happen or failed
-      const fetchAllData = async () => {
-        try {
-          setLoading(true)
-          console.log('🔍 Fetching RO Billing data for Revenue section...')
-          const fetchRange = getROAnalyticsFetchRange(dateFilter)
-          const params = new URLSearchParams({
-            brand: 'kia',
-            sheet: normalizeSheetKey(sheetName),
-            fetchAll: 'true',
-            startDate: fetchRange.startDate,
-            endDate: fetchRange.endDate,
-          })
-          const queryString = params.toString()
-          const result = await queryClient.fetchQuery({
-            queryKey: ['business-excellence', 'ro-billing-rows', queryString],
-            queryFn: async () => {
-              const response = await fetch(`/api/brands/kia/business-excellence?${queryString}`)
-              if (!response.ok) throw new Error('Failed to fetch RO Billing revenue rows')
-              return await response.json()
-            },
-            staleTime: DASHBOARD_STALE_TIME_MS,
-          })
-          const allRows = result.rows || []
-          console.log('Loaded complete dataset for Revenue:', allRows.length, 'records')
-          setData(allRows)
-        } catch (error) {
-          console.error('❌ Error fetching RO Billing data:', error)
-        } finally {
-          setLoading(false)
-        }
-      }
-
-      if (sheetId) {
-        fetchAllData()
-      }
-    }
-  }, [sheetId, sheetName, prefetchedData, isPrefetching, dateFilter, queryClient])
-
-  if (loading) {
-    return (
-      <SheetContentSkeleton />
-    )
+  if (isLoading && labourRows.length === 0 && partsRows.length === 0) {
+    return <SheetContentSkeleton />
   }
 
   return (
     <div className="space-y-6">
-      <ROBillingReportSection activeSheet={activeSheet} sharedData={data} dateFilter={dateFilter} />
+      <div className="flex items-center gap-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm">
+          <TrendingUp className="h-5 w-5 text-slate-700" />
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-800">Revenue Performance</h2>
+          <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+            Real-time analysis from: RO Billing Report
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        {[
+          { id: 'labour' as const, label: 'Labour Revenue' },
+          { id: 'parts' as const, label: 'Parts Revenue' },
+          { id: 'growth' as const, label: 'Growth Revenue' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveRevenueTab(tab.id)}
+            className={cn(
+              'rounded-xl px-6 py-3 text-sm font-black transition',
+              activeRevenueTab === tab.id
+                ? 'bg-slate-950 text-white shadow-lg shadow-slate-300'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {(activeRevenueTab === 'labour' || activeRevenueTab === 'parts') && (
+        <Card className="overflow-hidden rounded-2xl border-none shadow-xl shadow-slate-200/50">
+          <CardHeader className={cn('p-5 text-white', activeRevenueTab === 'labour' ? 'bg-blue-600' : 'bg-purple-600')}>
+            <CardTitle className="flex items-center gap-2 text-lg font-black">
+              <DollarSign className="h-5 w-5" />
+              {activeRevenueTab === 'labour' ? 'Labour' : 'Part'} Revenue Performance
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  <th className="px-6 py-4 text-left text-[10px] font-black uppercase text-slate-400">Category</th>
+                  <th colSpan={3} className="border-x border-slate-100 px-4 py-4 text-center text-[10px] font-black uppercase text-slate-400">MTD</th>
+                  <th colSpan={3} className="border-r border-slate-100 px-4 py-4 text-center text-[10px] font-black uppercase text-slate-400">QTD</th>
+                  <th colSpan={3} className="px-4 py-4 text-center text-[10px] font-black uppercase text-slate-400">YTD</th>
+                </tr>
+                <tr className="border-b border-slate-100 bg-white">
+                  <th className="px-6 py-2"></th>
+                  {(['MTD', 'QTD', 'YTD'] as const).map((period) => (
+                    <React.Fragment key={period}>
+                      <th className="px-2 py-2 text-[9px] font-bold text-slate-400">CY</th>
+                      <th className="px-2 py-2 text-[9px] font-bold text-slate-400">LY</th>
+                      <th className="border-r border-slate-50 px-2 py-2 text-[9px] font-bold text-slate-400 last:border-r-0">%</th>
+                    </React.Fragment>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {metricData ? (
+                  <tr className="hover:bg-slate-50/50">
+                    <td className="px-6 py-6 text-sm font-black text-slate-700">Total {activeRevenueTab.charAt(0).toUpperCase() + activeRevenueTab.slice(1)}</td>
+                    {([
+                      { key: 'mtd', cy: metricData.cy, ly: metricData.ly, growth: metricData.growth },
+                      { key: 'qtd', cy: metricData.qtdCY, ly: metricData.qtdLY, growth: metricData.qtdGrowth },
+                      { key: 'ytd', cy: metricData.ytdCY, ly: metricData.ytdLY, growth: metricData.ytdGrowth },
+                    ] as const).map((period) => (
+                      <React.Fragment key={period.key}>
+                        <td className={cn('px-4 py-6 text-center text-sm font-bold', moneyTextClass(period.cy))}>{renderMoney(period.cy)}</td>
+                        <td className={cn('px-4 py-6 text-center text-sm font-medium', moneyTextClass(period.ly, 'text-slate-400'))}>{renderMoney(period.ly)}</td>
+                        <td className={cn(
+                          'border-r border-slate-50 px-4 py-6 text-center text-sm font-black last:border-r-0',
+                          period.growth === 'N/A'
+                            ? 'text-slate-400'
+                            : Number(period.growth) >= 0
+                              ? 'text-teal-700'
+                              : 'text-rose-600'
+                        )}>
+                          {formatGrowth(period.growth)}
+                        </td>
+                      </React.Fragment>
+                    ))}
+                  </tr>
+                ) : (
+                  <tr>
+                    <td colSpan={10} className="px-6 py-10 text-center text-sm font-bold text-slate-500">
+                      Revenue summary is loading.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeRevenueTab === 'growth' && (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <Card className="rounded-3xl border-none shadow-xl shadow-slate-200/50">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-500">Total Revenue Growth</CardTitle>
+              <BarChart3 className={cn('h-4 w-4', revenueGrowth !== 'N/A' && revenueGrowth < 0 ? 'text-rose-500' : 'text-teal-600')} />
+            </CardHeader>
+            <CardContent>
+              <div className={cn(
+                'text-3xl font-black',
+                revenueGrowth === 'N/A' ? 'text-slate-800' : revenueGrowth < 0 ? 'text-rose-600' : 'text-teal-700'
+              )}>
+                {formatGrowth(revenueGrowth)}
+              </div>
+              <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">Month over Month</p>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-3xl border-none shadow-xl shadow-slate-200/50">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-500">Paid Service Contribution</CardTitle>
+              <TrendingUp className="h-4 w-4 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-black text-slate-800">{paidServiceContribution.toFixed(1)}%</div>
+              <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">Of total workshop load</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
-
 function ServiceTypePerformance({
   data: initialData,
   isAdmin,
@@ -1915,16 +2041,18 @@ function ServiceTypePerformance({
   } | null
 }) {
   const queryClient = useQueryClient()
-  const [backgroundRows, setBackgroundRows] = useState<Record<string, unknown>[]>(initialData)
-  const [isBackgroundRowsLoading, setIsBackgroundRowsLoading] = useState(false)
   const [serverTableRowsByMetric, setServerTableRowsByMetric] = useState<Partial<Record<ROAnalysisType, StatRow[]>>>({})
+  const [serverTrendByMetric, setServerTrendByMetric] = useState<Partial<Record<ROAnalysisType, ROAnalysisResponse>>>({})
+  const [serverFyByMetric, setServerFyByMetric] = useState<Partial<Record<ROAnalysisType, ROAnalysisResponse>>>({})
+  const [serverAnalyticsSummary, setServerAnalyticsSummary] = useState<ROAnalysisResponse['analyticsSummary'] | null>(null)
+  const [isServerViewLoading, setIsServerViewLoading] = useState(false)
   const [isServerTableLoading, setIsServerTableLoading] = useState(true)
   const [expandedRows, setExpandedRows] = useState<string[]>([])
   const [activeTrend, setActiveTrend] = useState("Load Trend")
   const [viewMode, setViewMode] = useState<ROAnalysisView>('table')
   const [fySearchQuery, setFySearchQuery] = useState('')
   const [expandedChart, setExpandedChart] = useState<{ title: string; chartId: string } | null>(null)
-  const data = backgroundRows.length > 0 ? backgroundRows : initialData
+  const data = initialData
 
   const activeAnalysisType: ROAnalysisType = useMemo(() => {
     if (activeTrend === 'Labour Trend') return 'labour'
@@ -2075,69 +2203,80 @@ function ServiceTypePerformance({
     }
   }, [convertServerTableRows, dateFilter, queryClient, roAnalysisTypes])
 
-  useEffect(() => {
-    const range = getDefaultRODateRange(dateFilter)
-    const backgroundViews: ROAnalysisView[] = ['trend', 'fy', 'analytics', 'revenue']
-    const timer = window.setTimeout(() => {
-      backgroundViews.forEach((view) => {
-        const params = new URLSearchParams({
-          brand: 'kia',
-          sheet: 'ro_billing_report',
-          analysisType: 'load',
-          view,
-          groupBy: 'work_type',
-          startDate: range.startDate,
-          endDate: range.endDate,
-        })
-        const queryString = params.toString()
-        void queryClient.prefetchQuery({
-          queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
-          queryFn: async () => {
-            const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
-            if (!response.ok) throw new Error(`Failed to prefetch ${view}`)
-            return await response.json()
-          },
-          staleTime: DASHBOARD_STALE_TIME_MS,
-        })
-      })
-    }, 600)
-
-    return () => window.clearTimeout(timer)
+  const fetchAnalysisSummary = useCallback(async (analysisType: ROAnalysisType, view: 'trend' | 'fy' | 'analytics') => {
+    const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
+    const params = new URLSearchParams({
+      brand: 'kia',
+      sheet: 'ro_billing_report',
+      analysisType,
+      view,
+      groupBy: 'work_type',
+      startDate: range.startDate,
+      endDate: range.endDate,
+    })
+    const queryString = params.toString()
+    return queryClient.fetchQuery({
+      queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
+      queryFn: async () => {
+        const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+        if (!response.ok) throw new Error(`Failed to fetch RO Billing ${analysisType} ${view} summary`)
+        return await response.json() as ROAnalysisResponse
+      },
+      staleTime: DASHBOARD_STALE_TIME_MS,
+    })
   }, [dateFilter, queryClient])
 
   useEffect(() => {
-    if (backgroundRows.length > 0 || isBackgroundRowsLoading) return
-    const timer = window.setTimeout(async () => {
+    let isActive = true
+    async function fetchActiveSummaryView() {
+      if (viewMode !== 'trend' && viewMode !== 'fy' && viewMode !== 'analytics') return
       try {
-        setIsBackgroundRowsLoading(true)
-        const fetchRange = getROAnalyticsFetchRange(dateFilter)
-        const params = new URLSearchParams({
-          brand: 'kia',
-          sheet: normalizeSheetKey(sheetName),
-          fetchAll: 'true',
-          startDate: fetchRange.startDate,
-          endDate: fetchRange.endDate,
-        })
-        const queryString = params.toString()
-        const result = await queryClient.fetchQuery({
-          queryKey: ['business-excellence', 'ro-billing-rows', queryString],
-          queryFn: async () => {
-            const response = await fetch(`/api/brands/kia/business-excellence?${queryString}`)
-            if (!response.ok) throw new Error('Failed to fetch RO Billing background rows')
-            return await response.json()
-          },
-          staleTime: DASHBOARD_STALE_TIME_MS,
-        })
-        setBackgroundRows(result.rows || [])
-      } catch (error) {
-        console.error('Failed to fetch RO Billing rows in background:', error)
-      } finally {
-        setIsBackgroundRowsLoading(false)
-      }
-    }, 1500)
+        setIsServerViewLoading(true)
+        if (viewMode === 'trend') {
+          const result = await fetchAnalysisSummary(activeAnalysisType, 'trend')
+          if (isActive) {
+            setServerTrendByMetric((prev) => ({ ...prev, [activeAnalysisType]: result }))
+          }
+          return
+        }
 
-    return () => window.clearTimeout(timer)
-  }, [backgroundRows.length, dateFilter, isBackgroundRowsLoading, queryClient, sheetName])
+        if (viewMode === 'analytics') {
+          const [trendResults, analyticsResult] = await Promise.all([
+            Promise.all(roAnalysisTypes.map(async (analysisType) => {
+              const result = await fetchAnalysisSummary(analysisType, 'trend')
+              return [analysisType, result] as const
+            })),
+            fetchAnalysisSummary('load', 'analytics'),
+          ])
+          if (isActive) {
+            setServerTrendByMetric((prev) => ({
+              ...prev,
+              ...(Object.fromEntries(trendResults) as Partial<Record<ROAnalysisType, ROAnalysisResponse>>),
+            }))
+            setServerAnalyticsSummary(analyticsResult.analyticsSummary || null)
+          }
+          return
+        }
+
+        const results = await Promise.all(roAnalysisTypes.map(async (analysisType) => {
+          const result = await fetchAnalysisSummary(analysisType, 'fy')
+          return [analysisType, result] as const
+        }))
+        if (isActive) {
+          setServerFyByMetric(Object.fromEntries(results) as Partial<Record<ROAnalysisType, ROAnalysisResponse>>)
+        }
+      } catch (error) {
+        if (isActive) console.error('Failed to fetch RO Billing summary view:', error)
+      } finally {
+        if (isActive) setIsServerViewLoading(false)
+      }
+    }
+
+    fetchActiveSummaryView()
+    return () => {
+      isActive = false
+    }
+  }, [activeAnalysisType, fetchAnalysisSummary, roAnalysisTypes, viewMode])
 
   const formatValue = (val: number | string | 'N/A' | undefined | null, trend: string) => {
     if (val === 'N/A' || val === undefined || val === null) return 'N/A'
@@ -2240,7 +2379,7 @@ function ServiceTypePerformance({
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
-            <XAxis dataKey="day" tick={{ fontSize: 12, fontWeight: 800, fill: '#475569' }} />
+            <XAxis dataKey="day" interval={0} tick={<TrendAxisTick />} tickMargin={12} height={58} />
             <YAxis yAxisId="amount" tick={{ fontSize: 12, fill: '#64748b' }} />
             <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 12, fill: '#BE123C' }} />
             <Tooltip contentStyle={tooltipStyle} />
@@ -2777,9 +2916,61 @@ function ServiceTypePerformance({
 
   const activeServerTableRows = serverTableRowsByMetric[activeAnalysisType] || null
   const effectiveStatsData = viewMode === 'table' && activeServerTableRows ? activeServerTableRows : statsData
+  const hasRawRows = data.length > 0
+  const isTrendSummaryPending = viewMode === 'trend' && !hasRawRows && !serverTrendByMetric[activeAnalysisType]
+  const isFySummaryPending = viewMode === 'fy' && !hasRawRows && roAnalysisTypes.some((analysisType) => !serverFyByMetric[analysisType])
+  const isAnalyticsSummaryPending = viewMode === 'analytics' && !hasRawRows && (
+    roAnalysisTypes.some((analysisType) => !serverTrendByMetric[analysisType])
+    || roAnalysisTypes.some((analysisType) => !serverTableRowsByMetric[analysisType])
+    || !serverAnalyticsSummary
+  )
+
+  const renderChartSkeleton = (heightClass = 'h-[420px]') => (
+    <div className="space-y-5 p-8">
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="h-3 w-28 animate-pulse rounded-full bg-slate-200" />
+          <div className="h-6 w-56 animate-pulse rounded-xl bg-slate-200" />
+        </div>
+        <div className="h-9 w-28 animate-pulse rounded-xl bg-slate-100" />
+      </div>
+      <div className={cn(heightClass, 'animate-pulse rounded-[2rem] border border-slate-200 bg-white shadow-lg shadow-slate-200/50')}>
+        <div className="grid h-full grid-cols-12 items-end gap-3 p-8">
+          {Array.from({ length: 12 }).map((_, index) => (
+            <div
+              key={`chart-skeleton-bar-${index}`}
+              className="rounded-t-xl bg-slate-100"
+              style={{ height: `${28 + ((index * 17) % 58)}%` }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderAnalyticsSkeleton = () => (
+    <div className="space-y-6 bg-slate-50 p-6 lg:p-8">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div key={`analytics-kpi-skeleton-${index}`} className="h-36 animate-pulse rounded-[1.5rem] bg-white shadow-lg shadow-slate-200/50" />
+        ))}
+      </div>
+      <div className="h-[460px] animate-pulse rounded-[2rem] bg-white shadow-lg shadow-slate-200/50" />
+      <div className="h-[430px] animate-pulse rounded-[2rem] bg-white shadow-lg shadow-slate-200/50" />
+    </div>
+  )
 
   const trendData = useMemo(() => {
     if (viewMode !== 'trend' && viewMode !== 'analytics') return []
+    const serverTrend = serverTrendByMetric[activeAnalysisType]?.trend
+    if (serverTrend && serverTrend.length > 0) {
+      return serverTrend.map((point) => ({
+        day: point.label,
+        cy: Number(point.cy || 0),
+        ly: Number(point.ly || 0),
+        target: Number(point.ly || 0) * 1.1,
+      }))
+    }
     if (!data || data.length === 0) return []
 
     const parseDate = (dateStr: string): Date | null => {
@@ -2899,10 +3090,10 @@ function ServiceTypePerformance({
         target: ly * 1.1
       }
     })
-  }, [data, activeTrend, dateFilter, viewMode])
+  }, [activeAnalysisType, data, activeTrend, dateFilter, serverTrendByMetric, viewMode])
 
   const kpiStats = useMemo(() => {
-    if (!data || data.length === 0 || trendData.length === 0) {
+    if (trendData.length === 0) {
       return [
         { label: 'Month Target', value: 'N/A' },
         { label: 'MTD Target', value: 'N/A' },
@@ -2911,6 +3102,49 @@ function ServiceTypePerformance({
         { label: 'Monthly Shortfall', value: 'N/A', color: 'text-rose-600' },
         { label: 'Projected Closing', value: 'N/A' },
         { label: 'Asking Rate', value: 'N/A' }
+      ]
+    }
+
+    if (!data || data.length === 0) {
+      const today = new Date()
+      const rangeEnd = dateFilter?.mode === 'range' && dateFilter.endDate
+        ? parseBusinessDate(dateFilter.endDate)
+        : null
+      const targetYear = dateFilter?.mode === 'month'
+        ? dateFilter.year
+        : rangeEnd
+          ? rangeEnd.getFullYear()
+          : today.getFullYear()
+      const targetMonth = dateFilter?.mode === 'month'
+        ? dateFilter.month
+        : rangeEnd
+          ? rangeEnd.getMonth()
+          : today.getMonth()
+      const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
+      const selectedThroughDay = rangeEnd && rangeEnd.getFullYear() === targetYear && rangeEnd.getMonth() === targetMonth
+        ? rangeEnd.getDate()
+        : targetYear === today.getFullYear() && targetMonth === today.getMonth()
+          ? today.getDate()
+          : daysInMonth
+      const elapsedDays = Math.min(Math.max(selectedThroughDay, 1), daysInMonth)
+      const monthTarget = trendData.reduce((acc, day) => acc + Number(day.ly || 0), 0) * 1.1
+      const mtdTarget = monthTarget * (elapsedDays / daysInMonth)
+      const mtdAchieved = trendData.slice(0, elapsedDays).reduce((acc, day) => acc + Number(day.cy || 0), 0)
+      const totalAch = trendData.reduce((acc, day) => acc + Number(day.cy || 0), 0)
+      const shortfall = mtdTarget - mtdAchieved
+      const monthlyShortfall = monthTarget - totalAch
+      const projectedClosing = elapsedDays > 0 ? (mtdAchieved / elapsedDays) * daysInMonth : 0
+      const remainingDays = daysInMonth - elapsedDays
+      const askingRate = remainingDays > 0 ? monthlyShortfall / remainingDays : 0
+
+      return [
+        { label: 'Month Target', value: formatValue(monthTarget, activeTrend) },
+        { label: 'MTD Target', value: formatValue(mtdTarget, activeTrend) },
+        { label: 'MTD Achieved', value: formatValue(mtdAchieved, activeTrend) },
+        { label: 'Shortfall T.D', value: formatValue(Math.abs(shortfall), activeTrend), color: shortfall < 0 ? 'text-emerald-600' : 'text-rose-600' },
+        { label: 'Monthly Shortfall', value: formatValue(Math.abs(monthlyShortfall), activeTrend), color: monthlyShortfall < 0 ? 'text-emerald-600' : 'text-rose-600' },
+        { label: 'Projected Closing', value: formatValue(projectedClosing, activeTrend), color: projectedClosing < 0 ? 'text-rose-600' : undefined },
+        { label: 'Asking Rate', value: formatValue(askingRate, activeTrend), color: askingRate < 0 ? 'text-rose-600' : askingRate > 0 ? 'text-teal-700' : undefined },
       ]
     }
 
@@ -3007,6 +3241,40 @@ function ServiceTypePerformance({
   // Historical FY Trends Data
   const fyTrendsData = useMemo(() => {
     if (viewMode !== 'fy' && viewMode !== 'analytics') return []
+    const serverFyEntries = Object.entries(serverFyByMetric) as Array<[ROAnalysisType, ROAnalysisResponse]>
+    if (serverFyEntries.some(([, response]) => (response.fyTrends || []).length > 0)) {
+      const byFy = new Map<string, {
+        fy: string
+        load: number
+        labour: number
+        parts: number
+        labPerVehicle: number
+        partPerVehicle: number
+      }>()
+
+      serverFyEntries.forEach(([analysisType, response]) => {
+        ;(response.fyTrends || []).forEach((item) => {
+          const existing = byFy.get(item.fy) || {
+            fy: item.fy,
+            load: 0,
+            labour: 0,
+            parts: 0,
+            labPerVehicle: 0,
+            partPerVehicle: 0,
+          }
+          if (analysisType === 'load') existing.load = Number(item.value || 0)
+          if (analysisType === 'labour') existing.labour = Number(item.value || 0)
+          if (analysisType === 'parts') existing.parts = Number(item.value || 0)
+          if (analysisType === 'lab_per_veh') existing.labPerVehicle = Number(item.value || 0)
+          if (analysisType === 'part_per_veh') existing.partPerVehicle = Number(item.value || 0)
+          byFy.set(item.fy, existing)
+        })
+      })
+
+      return Array.from(byFy.values())
+        .sort((a, b) => b.fy.localeCompare(a.fy))
+        .slice(0, 3)
+    }
     if (!data || data.length === 0) return []
 
     const fyData: { [fy: string]: { load: Set<string>; labour: Map<string, number>; parts: Map<string, number> } } = {}
@@ -3041,10 +3309,150 @@ function ServiceTypePerformance({
       }))
       .sort((a, b) => b.fy.localeCompare(a.fy))
       .slice(0, 3)
-  }, [data, viewMode])
+  }, [data, serverFyByMetric, viewMode])
   const executiveAnalytics = useMemo(() => {
-    if (viewMode !== 'analytics' || !data || data.length === 0) {
+    if (viewMode !== 'analytics') {
       return null
+    }
+
+    if (!data || data.length === 0) {
+      const getGrandTotal = (metric: ROAnalysisType) => {
+        const rows = serverTableRowsByMetric[metric] || []
+        return rows.find((row) => row.name === 'Grand Total') || rows[rows.length - 1]
+      }
+      const loadTotal = getGrandTotal('load')
+      const labourTotal = getGrandTotal('labour')
+      const partsTotal = getGrandTotal('parts')
+      const labVehTotal = getGrandTotal('lab_per_veh')
+      const partVehTotal = getGrandTotal('part_per_veh')
+      const value = (row: StatRow | undefined, key: 'cy' | 'ly' | 'qtdCY' | 'qtdLY' | 'ytdCY' | 'ytdLY') => {
+        if (!row) return 0
+        const raw = row[key]
+        return raw === 'N/A' ? 0 : Number(raw || 0)
+      }
+      const growth = (current: number, previous: number) => previous > 0 ? ((current - previous) / previous) * 100 : null
+      const loadTrend = serverTrendByMetric.load?.trend || []
+      const labourTrend = serverTrendByMetric.labour?.trend || []
+      const partsTrend = serverTrendByMetric.parts?.trend || []
+      const todayKey = getInputDate(new Date())
+      const dailyRevenue = loadTrend.map((point, index) => {
+        const labour = Number(labourTrend[index]?.cy || 0)
+        const parts = Number(partsTrend[index]?.cy || 0)
+        return {
+          date: point.date,
+          day: point.label,
+          load: Number(point.cy || 0),
+          labour,
+          parts,
+          revenue: labour + parts,
+        }
+      }).filter((point) => {
+        const isFutureEmptyPoint = point.date > todayKey
+          && point.load === 0
+          && point.labour === 0
+          && point.parts === 0
+          && point.revenue === 0
+        return !isFutureEmptyPoint
+      })
+      const services = (serverTableRowsByMetric.load || [])
+        .filter((row) => !['Grand Total', 'MECH TOTAL', 'MECH'].includes(row.name))
+        .map((row) => {
+          const labourRow = (serverTableRowsByMetric.labour || []).find((item) => item.name === row.name)
+          const partsRow = (serverTableRowsByMetric.parts || []).find((item) => item.name === row.name)
+          const labour = Number(labourRow?.cy || 0)
+          const parts = Number(partsRow?.cy || 0)
+          return {
+            name: row.name,
+            load: Number(row.cy || 0),
+            labour,
+            parts,
+            revenue: labour + parts,
+            labPerVehicle: Number(row.cy || 0) > 0 ? labour / Number(row.cy || 0) : 0,
+            partPerVehicle: Number(row.cy || 0) > 0 ? parts / Number(row.cy || 0) : 0,
+            averageBilling: Number(row.cy || 0) > 0 ? (labour + parts) / Number(row.cy || 0) : 0,
+            avgRating: serverAnalyticsSummary?.avgRating || 0,
+            pickDropRate: serverAnalyticsSummary?.pickDropRate || 0,
+          }
+        })
+        .sort((a, b) => b.revenue - a.revenue)
+      const cySummary = {
+        load: value(loadTotal, 'cy'),
+        labour: value(labourTotal, 'cy'),
+        parts: value(partsTotal, 'cy'),
+        revenue: value(labourTotal, 'cy') + value(partsTotal, 'cy'),
+        labPerVehicle: value(labVehTotal, 'cy'),
+        partPerVehicle: value(partVehTotal, 'cy'),
+        averageBilling: value(loadTotal, 'cy') > 0 ? (value(labourTotal, 'cy') + value(partsTotal, 'cy')) / value(loadTotal, 'cy') : 0,
+        avgRating: serverAnalyticsSummary?.avgRating || 0,
+        pickDropRate: serverAnalyticsSummary?.pickDropRate || 0,
+      }
+      const lySummary = {
+        load: value(loadTotal, 'ly'),
+        labour: value(labourTotal, 'ly'),
+        parts: value(partsTotal, 'ly'),
+        revenue: value(labourTotal, 'ly') + value(partsTotal, 'ly'),
+        labPerVehicle: value(labVehTotal, 'ly'),
+        partPerVehicle: value(partVehTotal, 'ly'),
+        averageBilling: value(loadTotal, 'ly') > 0 ? (value(labourTotal, 'ly') + value(partsTotal, 'ly')) / value(loadTotal, 'ly') : 0,
+        avgRating: serverAnalyticsSummary?.avgRatingLy || 0,
+        pickDropRate: serverAnalyticsSummary?.pickDropRateLy || 0,
+      }
+      const kpis = [
+        { label: 'Total RO Load', value: cySummary.load, ly: lySummary.load, growth: growth(cySummary.load, lySummary.load), icon: Activity, accent: 'teal', formatter: (n: number) => Math.round(n).toLocaleString('en-IN') },
+        { label: 'Labour Revenue', value: cySummary.labour, ly: lySummary.labour, growth: growth(cySummary.labour, lySummary.labour), icon: DollarSign, accent: 'blue', formatter: formatCurrency },
+        { label: 'Parts Revenue', value: cySummary.parts, ly: lySummary.parts, growth: growth(cySummary.parts, lySummary.parts), icon: BarChart3, accent: 'violet', formatter: formatCurrency },
+        { label: 'Labour / Vehicle', value: cySummary.labPerVehicle, ly: lySummary.labPerVehicle, growth: growth(cySummary.labPerVehicle, lySummary.labPerVehicle), icon: TrendingUp, accent: 'emerald', formatter: formatCurrency },
+        { label: 'Parts / Vehicle', value: cySummary.partPerVehicle, ly: lySummary.partPerVehicle, growth: growth(cySummary.partPerVehicle, lySummary.partPerVehicle), icon: TrendingUp, accent: 'amber', formatter: formatCurrency },
+        { label: 'Average Billing', value: cySummary.averageBilling, ly: lySummary.averageBilling, growth: growth(cySummary.averageBilling, lySummary.averageBilling), icon: Award, accent: 'cyan', formatter: formatCurrency },
+        { label: 'Avg Rating', value: cySummary.avgRating, ly: lySummary.avgRating, growth: growth(cySummary.avgRating, lySummary.avgRating), icon: Sparkles, accent: 'rose', formatter: (n: number) => n.toFixed(1) },
+        { label: 'Pick & Drop %', value: cySummary.pickDropRate, ly: lySummary.pickDropRate, growth: growth(cySummary.pickDropRate, lySummary.pickDropRate), icon: Users, accent: 'slate', formatter: (n: number) => `${n.toFixed(1)}%` },
+      ]
+      const topService = services[0]
+
+      return {
+        cySummary,
+        lySummary,
+        kpis,
+        dailyRevenue,
+        services,
+        insights: [
+          {
+            title: 'Revenue Momentum',
+            body: cySummary.revenue > lySummary.revenue
+              ? `Total billing is up ${Math.abs(growth(cySummary.revenue, lySummary.revenue) || 0).toFixed(1)}% versus LY.`
+              : `Total billing is ${Math.abs(growth(cySummary.revenue, lySummary.revenue) || 0).toFixed(1)}% below LY.`,
+          },
+          {
+            title: 'Service Mix',
+            body: topService
+              ? `${topService.name} contributes ${cySummary.revenue > 0 ? ((topService.revenue / cySummary.revenue) * 100).toFixed(1) : '0.0'}% of current revenue.`
+              : 'Service contribution will appear once summary data is available.',
+          },
+          {
+            title: 'Workshop Load',
+            body: `${cySummary.load.toLocaleString('en-IN')} ROs contributed to ${formatCurrency(cySummary.revenue)} current-period billing.`,
+          },
+          {
+            title: 'Billing Quality',
+            body: `Average billing per vehicle is ${formatCurrency(cySummary.averageBilling)} for the selected Bill Date window.`,
+          },
+        ],
+        revenueMix: [
+          { name: 'Labour', value: cySummary.labour, color: '#0F766E' },
+          { name: 'Parts', value: cySummary.parts, color: '#D97706' },
+        ].filter((item) => item.value > 0),
+        operatingMix: [
+          { name: 'Avg Billing', value: cySummary.averageBilling, color: '#1D4ED8' },
+          { name: 'Lab / Veh', value: cySummary.labPerVehicle, color: '#0F766E' },
+          { name: 'Part / Veh', value: cySummary.partPerVehicle, color: '#D97706' },
+        ],
+        comparison: [
+          { name: 'Load', cy: cySummary.load, ly: lySummary.load },
+          { name: 'Labour', cy: cySummary.labour, ly: lySummary.labour },
+          { name: 'Parts', cy: cySummary.parts, ly: lySummary.parts },
+          { name: 'Avg Billing', cy: cySummary.averageBilling, ly: lySummary.averageBilling },
+        ],
+      }
     }
 
     const parseDate = (dateStr: string): Date | null => {
@@ -3270,7 +3678,7 @@ function ServiceTypePerformance({
         { name: 'Avg Billing', cy: cySummary.averageBilling, ly: lySummary.averageBilling },
       ],
     }
-  }, [data, dateFilter, viewMode])
+  }, [data, dateFilter, serverAnalyticsSummary, serverTableRowsByMetric, serverTrendByMetric, viewMode])
 
   return (
     <>
@@ -3542,6 +3950,15 @@ function ServiceTypePerformance({
                 </div>
               </div>
             ) : viewMode === 'trend' ? (
+              isTrendSummaryPending || (isServerViewLoading && trendData.length === 0) ? (
+                renderChartSkeleton('h-[420px]')
+              ) : trendData.length === 0 ? (
+                <div className="p-8">
+                  <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-lg shadow-slate-200/40">
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-400">No trend data available</p>
+                  </div>
+                </div>
+              ) : (
               <div className="p-8">
                 <div className="mb-8 flex items-center justify-between gap-4 pr-10">
                   <div />
@@ -3617,7 +4034,17 @@ function ServiceTypePerformance({
                   ))}
                 </div>
               </div>
+              )
             ) : viewMode === 'fy' ? (
+              isFySummaryPending || (isServerViewLoading && fyTrendsData.length === 0) ? (
+                renderChartSkeleton('h-[320px]')
+              ) : fyTrendsData.length === 0 ? (
+                <div className="p-8">
+                  <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-lg shadow-slate-200/40">
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-400">No FY trend data available</p>
+                  </div>
+                </div>
+              ) : (
               <div className="p-8">
                 {/* Search Bar */}
                 <div className="mb-6">
@@ -3701,8 +4128,11 @@ function ServiceTypePerformance({
                   </table>
                 </div>
               </div>
+              )
             ) : viewMode === 'analytics' ? (
-              executiveAnalytics ? (
+              isAnalyticsSummaryPending || (isServerViewLoading && !executiveAnalytics) ? (
+                renderAnalyticsSkeleton()
+              ) : executiveAnalytics ? (
                 <div className="bg-slate-50 p-6 lg:p-8">
                   <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                     {executiveAnalytics.kpis.map((kpi) => {
@@ -3782,7 +4212,7 @@ function ServiceTypePerformance({
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
-                        <XAxis dataKey="day" tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} />
+                        <XAxis dataKey="day" interval={0} tick={<TrendAxisTick />} tickMargin={12} height={58} />
                         <YAxis yAxisId="amount" tick={{ fontSize: 11, fill: '#64748b' }} />
                         <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 11, fill: '#BE123C' }} />
                         <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }} />
@@ -4014,14 +4444,9 @@ function ServiceTypePerformance({
                 </div>
               )) : viewMode === 'revenue' ? (
                 <div className="p-8">
-                  <ROBillingRevenueSection
-                    sheetId={sheetId}
-                    sheetName={sheetName}
-                    isAdmin={isAdmin}
-                    activeSheet={activeSheet}
-                    prefetchedData={data}
-                    isPrefetching={false}
-                    dateFilter={dateFilter}
+                  <ROBillingRevenueSummarySection
+                    rowsByMetric={serverTableRowsByMetric}
+                    isLoading={isServerTableLoading}
                   />
                 </div>
               ) : viewMode === 'intelligence' ? (
