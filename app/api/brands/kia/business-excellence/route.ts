@@ -2,14 +2,14 @@ import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getCachedData, invalidateCachePattern } from '@/lib/redis/cache-utils'
-import { CACHE_KEYS } from '@/lib/redis/client'
+import { CACHE_KEYS, CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 
-const CACHE_TTL_SECONDS = 60 * 60
+const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const RO_BILLING_PROJECTED_COLUMNS = [
   'id',
   'bill_no',
@@ -39,14 +39,7 @@ const RO_BILLING_PROJECTED_COLUMNS = [
 ]
 
 const BUSINESS_EXCELLENCE_TABLES = [
-  { slug: 'open_ro_yearly', table: 'open_ro_yearly', sheetName: 'Open RO Yearly' },
   { slug: 'ro_billing_report', table: 'ro_billing_report', sheetName: 'RO Billing Report' },
-  { slug: 'mcp_report', table: 'mcp_report', sheetName: 'MCP Report' },
-  { slug: 'ew_report', table: 'ew_report', sheetName: 'EW Report' },
-  { slug: 'rsa_report', table: 'rsa_report', sheetName: 'RSA Report' },
-  { slug: 'psf_yearly', table: 'psf_yearly', sheetName: 'PSF Yearly' },
-  { slug: 'adv_wise_lubricants_vas', table: 'adv_wise_lubricants_vas', sheetName: 'Adv. wise lubricants & VAS' },
-  { slug: 'kia_call_center_complaints', table: 'kia_call_center_complaints', sheetName: 'Kia Call Center Complaints' },
 ] as const
 
 type BusinessExcellenceTable = typeof BUSINESS_EXCELLENCE_TABLES[number]
@@ -149,64 +142,31 @@ async function getTableMetadata(table: BusinessExcellenceTable) {
 }
 
 async function fetchMetadata() {
-  const tableNameParams = BUSINESS_EXCELLENCE_TABLES.map((table) => sql`${table.table}`)
-  const existingTables = await db.execute(sql`
-    SELECT table_name
-    FROM information_schema.tables
-    WHERE table_schema = 'public'
-      AND table_name IN (${sql.join(tableNameParams, sql`, `)})
-  `)
-  const existingTableNames = new Set(existingTables.map((row) => String(row.table_name)))
-  const tables = BUSINESS_EXCELLENCE_TABLES.filter((table) => existingTableNames.has(table.table))
-
-  if (tables.length === 0) return []
-
-  const existingTableParams = tables.map((table) => sql`${table.table}`)
+  const table = BUSINESS_EXCELLENCE_TABLES[0]
   const [columnRows, statsRows] = await Promise.all([
     db.execute(sql`
-      SELECT table_name, column_name
+      SELECT column_name
       FROM information_schema.columns
       WHERE table_schema = 'public'
-        AND table_name IN (${sql.join(existingTableParams, sql`, `)})
-      ORDER BY table_name, ordinal_position
+        AND table_name = ${table.table}
+      ORDER BY ordinal_position
     `),
-    db.execute(sql.join(
-      tables.map((table) => sql`
-        SELECT ${table.table} AS table_name, COUNT(*)::int AS "totalRows", MAX(uploaded_at) AS "uploadedAt"
-        FROM ${tableSql(table)}
-      `),
-      sql` UNION ALL `
-    )),
+    db.execute(sql`
+      SELECT COUNT(*)::int AS "totalRows", MAX(uploaded_at) AS "uploadedAt"
+      FROM ${tableSql(table)}
+    `),
   ])
 
-  const columnsByTable = new Map<string, string[]>()
-  for (const row of columnRows) {
-    const tableName = String(row.table_name)
-    const columns = columnsByTable.get(tableName) || []
-    columns.push(String(row.column_name))
-    columnsByTable.set(tableName, columns)
-  }
-
-  const statsByTable = new Map<string, { totalRows: number; uploadedAt: unknown }>()
-  for (const row of statsRows) {
-    statsByTable.set(String(row.table_name), {
-      totalRows: Number(row.totalRows || 0),
-      uploadedAt: row.uploadedAt || null,
-    })
-  }
-
-  return tables.map((table) => {
-    const stats = statsByTable.get(table.table)
-    return {
-      id: table.slug,
-      brand: 'kia',
-      sheetName: table.sheetName,
-      tableName: table.table,
-      columns: columnsByTable.get(table.table) || [],
-      uploadedAt: stats?.uploadedAt || null,
-      totalRows: stats?.totalRows || 0,
-    }
-  })
+  const stats = statsRows[0]
+  return [{
+    id: table.slug,
+    brand: 'kia',
+    sheetName: table.sheetName,
+    tableName: table.table,
+    columns: columnRows.map((row) => String(row.column_name)),
+    uploadedAt: stats?.uploadedAt || null,
+    totalRows: Number(stats?.totalRows || 0),
+  }]
 }
 
 async function fetchTableRows({
@@ -316,7 +276,7 @@ export async function GET(request: Request) {
       return withServerTiming(NextResponse.json(data), serverTiming)
     }
 
-    const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:metadata:kia`
+    const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:metadata:kia:ro_billing_only:v1`
     const data = await timer.time(skipCache ? 'metadata-db' : 'metadata-cache-db', () => skipCache
       ? fetchMetadata()
       : getCachedData(cacheKey, fetchMetadata, CACHE_TTL_SECONDS))

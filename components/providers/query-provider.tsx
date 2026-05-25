@@ -1,10 +1,110 @@
 'use client'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-export const DASHBOARD_STALE_TIME_MS = 1000 * 60 * 60
-export const DASHBOARD_GC_TIME_MS = 1000 * 60 * 60 * 2
+export const DASHBOARD_STALE_TIME_MS = Number.POSITIVE_INFINITY
+export const DASHBOARD_GC_TIME_MS = Number.POSITIVE_INFINITY
+
+const SESSION_API_CACHE = new Map<string, Response>()
+const SESSION_API_PENDING = new Map<string, Promise<Response>>()
+const ORIGINAL_FETCH_SYMBOL = Symbol.for('dashboard.originalFetch')
+
+type FetchWithOriginal = typeof window.fetch & {
+  [ORIGINAL_FETCH_SYMBOL]?: typeof window.fetch
+}
+
+function getRequestMethod(input: RequestInfo | URL, init?: RequestInit) {
+  if (init?.method) return init.method.toUpperCase()
+  if (input instanceof Request) return input.method.toUpperCase()
+  return 'GET'
+}
+
+function shouldUseSessionApiCache(input: RequestInfo | URL, init?: RequestInit) {
+  if (init?.cache === 'no-store' || init?.cache === 'reload') return false
+  const method = getRequestMethod(input, init)
+  if (method !== 'GET') return false
+
+  const url = new URL(
+    input instanceof Request ? input.url : String(input),
+    window.location.origin
+  )
+
+  if (url.origin !== window.location.origin) return false
+  if (!url.pathname.startsWith('/api/')) return false
+
+  // Notifications intentionally stay live because Supabase realtime and unread
+  // state should not be frozen by dashboard report caching.
+  if (url.pathname.startsWith('/api/notifications')) return false
+
+  return true
+}
+
+function createFetchCacheKey(input: RequestInfo | URL, init?: RequestInit) {
+  const url = new URL(
+    input instanceof Request ? input.url : String(input),
+    window.location.origin
+  )
+  url.searchParams.sort()
+  const credentials = init?.credentials || (input instanceof Request ? input.credentials : 'same-origin')
+  return `${getRequestMethod(input, init)}:${url.toString()}:credentials=${credentials}`
+}
+
+function clearSessionApiCacheForMutation(input: RequestInfo | URL) {
+  const url = new URL(
+    input instanceof Request ? input.url : String(input),
+    window.location.origin
+  )
+  if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
+    SESSION_API_CACHE.clear()
+    SESSION_API_PENDING.clear()
+  }
+}
+
+function installSessionApiCache() {
+  const currentFetch = window.fetch as FetchWithOriginal
+  if (currentFetch[ORIGINAL_FETCH_SYMBOL]) return
+
+  const originalFetch = window.fetch.bind(window)
+  const cachedFetch: FetchWithOriginal = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = getRequestMethod(input, init)
+
+    if (!shouldUseSessionApiCache(input, init)) {
+      const response = await originalFetch(input, init)
+      if (method !== 'GET' && response.ok) {
+        clearSessionApiCacheForMutation(input)
+      }
+      return response
+    }
+
+    const cacheKey = createFetchCacheKey(input, init)
+    const cached = SESSION_API_CACHE.get(cacheKey)
+    if (cached) return cached.clone()
+
+    const pending = SESSION_API_PENDING.get(cacheKey)
+    if (pending) {
+      const response = await pending
+      return response.clone()
+    }
+
+    const request = originalFetch(input, init).then((response) => {
+      if (response.ok) {
+        SESSION_API_CACHE.set(cacheKey, response.clone())
+      }
+      SESSION_API_PENDING.delete(cacheKey)
+      return response
+    }).catch((error) => {
+      SESSION_API_PENDING.delete(cacheKey)
+      throw error
+    })
+
+    SESSION_API_PENDING.set(cacheKey, request)
+    return request
+  }) as FetchWithOriginal
+
+  cachedFetch[ORIGINAL_FETCH_SYMBOL] = originalFetch
+  window.fetch = cachedFetch
+}
 
 export function DashboardQueryProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -15,10 +115,18 @@ export function DashboardQueryProvider({ children }: { children: React.ReactNode
         refetchOnWindowFocus: false,
         refetchOnMount: false,
         refetchOnReconnect: false,
-        retry: 1,
+        retry: false,
       },
     },
   }))
+
+  if (typeof window !== 'undefined') {
+    installSessionApiCache()
+  }
+
+  useEffect(() => {
+    installSessionApiCache()
+  }, [])
 
   return (
     <QueryClientProvider client={queryClient}>

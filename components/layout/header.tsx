@@ -1,10 +1,12 @@
 'use client'
 
-import { Search, ChevronDown, Menu, LogOut, User, Mail } from 'lucide-react'
+import { ChevronDown, Menu, LogOut, User, Mail } from 'lucide-react'
 import { useSidebar } from '@/context/sidebar-context'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,38 +33,31 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   const { collapsed, setCollapsed } = useSidebar()
   const router = useRouter()
   const supabase = createClient()
-  const [user, setUser] = useState<UserData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const response = await fetch('/api/auth/user', { cache: 'no-store' })
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch current user')
-        }
-
-        const userData = await response.json()
-        setUser({
-          id: userData.id,
-          email: userData.email,
-          fullName: userData.fullName,
-          role: userData.role
-        })
-      } catch (error) {
-        console.error('Error fetching user:', error)
-      } finally {
-        setLoading(false)
-      }
+  const { data: userData, isLoading: loading } = useQuery({
+    queryKey: ['auth', 'user'],
+    queryFn: async () => {
+      const response = await fetch('/api/auth/user', { credentials: 'same-origin' })
+      if (!response.ok) return null
+      return await response.json()
+    },
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+  const user = useMemo<UserData | null>(() => {
+    if (!userData) return null
+    return {
+      id: userData.id,
+      email: userData.email,
+      fullName: userData.fullName,
+      role: userData.role,
     }
-
-    fetchUser()
-  }, [])
+  }, [userData])
 
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
+      queryClient.clear()
       await supabase.auth.signOut()
       router.push('/auth/login')
       router.refresh()
@@ -85,53 +80,43 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-20 items-center justify-between px-6 bg-white/80 backdrop-blur-md border-b border-slate-100">
+    <header className="sticky top-0 z-30 mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-white/65 bg-white/55 px-6 shadow-[0_18px_55px_rgba(15,118,110,0.14)] backdrop-blur-2xl">
       <div className="flex items-center gap-6">
         {/* Hamburger */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="h-10 w-10 rounded-xl hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-all"
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/55 text-slate-700 shadow-sm transition-all hover:bg-white/80 hover:text-teal-700"
         >
           <Menu className="h-6 w-6" />
         </button>
 
         {/* Section Title */}
         <div className="hidden lg:block">
-          <h1 className="text-xl font-semibold text-slate-800 leading-none">{title}</h1>
-          <p className="text-[10px] text-slate-400 mt-1 font-bold uppercase tracking-widest">{subtitle}</p>
+          <h1 className="text-xl font-semibold leading-none text-slate-900">{title}</h1>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-teal-700/70">{subtitle}</p>
         </div>
       </div>
 
       <div className="flex items-center gap-8">
-        {/* Search */}
-        <div className="relative w-[300px] hidden xl:block">
-          <Search className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search dashboard..."
-            className="w-full h-10 pl-10 pr-4 rounded-xl bg-slate-50 border border-slate-200/50 shadow-sm text-xs font-medium placeholder:text-slate-400 focus:ring-2 focus:ring-teal-100 outline-none transition-all"
-          />
-        </div>
-
         {/* Right Actions */}
         <div className="flex items-center gap-4">
           <NotificationBell userId={user?.id || null} />
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <div className="flex items-center gap-3 pl-6 border-l border-slate-200 cursor-pointer hover:opacity-80 transition-opacity">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 overflow-hidden border-2 border-white ring-1 ring-slate-200 shadow-sm flex items-center justify-center text-white font-bold text-sm">
+              <div className="flex cursor-pointer items-center gap-3 border-l border-slate-200/70 pl-6 transition-opacity hover:opacity-85">
+                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border-2 border-white/80 bg-gradient-to-br from-teal-400 to-cyan-600 text-sm font-bold text-white shadow-sm ring-1 ring-teal-100/20">
                   {loading ? '...' : user?.fullName.charAt(0).toUpperCase()}
                 </div>
                 <div className="hidden md:flex flex-col">
-                  <p className="text-xs font-semibold text-slate-800 leading-none">
+                  <p className="text-xs font-semibold leading-none text-slate-900">
                     {loading ? 'Loading...' : user?.fullName}
                   </p>
-                  <p className="text-[9px] font-bold text-slate-500 mt-1 uppercase tracking-widest">
+                  <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-teal-700/70">
                     {loading ? '...' : user?.role}
                   </p>
                 </div>
-                <ChevronDown className="h-4 w-4 text-slate-400" />
+                <ChevronDown className="h-4 w-4 text-slate-500" />
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72 rounded-2xl border-slate-200 shadow-2xl bg-white p-2">

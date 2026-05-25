@@ -109,10 +109,17 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     let currentAttempt = attempt
 
     while (currentAttempt <= 3) {
-      const response = await fetch('/api/notifications?limit=20', { cache: 'no-store' })
+      const response = await fetch('/api/notifications?limit=20', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      })
 
       if (response.ok) {
         return response.json()
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        return { notifications: [], unreadCount: 0 }
       }
 
       const errorPayload = await response.json().catch(() => null)
@@ -139,7 +146,6 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       setUnreadCount(data.unreadCount || 0)
       setLoadError(null)
     } catch (error) {
-      console.error('Error loading notifications:', error)
       setLoadError(error instanceof Error ? error.message : 'Failed to load notifications')
     } finally {
       setLoading(false)
@@ -673,15 +679,15 @@ export function NotificationBell({ userId }: NotificationBellProps) {
             variant="ghost"
             size="icon"
             className={cn(
-              'relative h-10 w-10 rounded-xl border border-slate-100 bg-white shadow-sm transition-all hover:bg-slate-50',
+              'relative h-10 w-10 rounded-xl border border-white/70 bg-white/60 text-slate-700 shadow-sm transition-all hover:bg-white/85',
               hasFreshNotification && 'animate-pulse ring-2 ring-teal-200',
-              hasPermissionWarning && 'border-amber-200'
+              hasPermissionWarning && 'border-amber-300'
             )}
           >
             {hasFreshNotification ? (
-              <BellRing className="h-5 w-5 text-teal-600" />
+              <BellRing className="h-5 w-5 text-teal-700" />
             ) : (
-              <Bell className={cn('h-5 w-5', hasPermissionWarning ? 'text-amber-600' : 'text-slate-500')} />
+              <Bell className={cn('h-5 w-5', hasPermissionWarning ? 'text-amber-600' : 'text-slate-600')} />
             )}
             {unreadCount > 0 && (
               <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-black text-white">

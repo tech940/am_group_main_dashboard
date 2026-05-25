@@ -3,13 +3,14 @@ import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const CACHE_TTL_SECONDS = 60 * 60
+const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 
 const SCORING_RULES = [
   {
@@ -56,14 +57,49 @@ const SCORING_RULES = [
   },
 ] as const
 
-type DataRow = Record<string, unknown>
-type ScoringRule = typeof SCORING_RULES[number]
 type PerformanceFilterContext = {
   searchReg: string
   branch: string
   serviceType: string
   advisor: string
   model: string
+}
+type ScoredPerformanceRow = {
+  id: string
+  sr: number
+  branch: string
+  type: string
+  date: string | Date | null
+  billNo: string
+  model: string
+  regNumber: string
+  advisor: string
+  labourAmt: number
+  partAmt: number
+  discount: number
+  alerts: string[]
+  score: number
+}
+type PerformanceReportPayload = {
+  rawRowCount: number
+  total: number
+  alertsFound: number
+  scoreTotal: number
+  alertCounts: Record<string, number>
+  filterOptions: {
+    branches: string[]
+    serviceTypes: string[]
+    advisors: string[]
+    models: string[]
+    alerts: string[]
+  }
+  advisorScores: Array<{
+    advisor: string
+    score: number
+    transactions: number
+    alerts: number
+  }>
+  rows: ScoredPerformanceRow[]
 }
 
 function toDateInputValue(date: Date) {
@@ -83,147 +119,13 @@ function parseDateInput(value: string | null) {
   return null
 }
 
-function parseDate(value: unknown) {
-  if (!value) return null
-  const date = parseDateInput(String(value))
-  return date && !Number.isNaN(date.getTime()) ? date : null
+function numberValue(value: unknown) {
+  const parsed = typeof value === 'number' ? value : Number(value || 0)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
-function textValue(row: DataRow, keys: string[], fallback = '') {
-  for (const key of keys) {
-    const value = row[key]
-    if (value !== null && value !== undefined && String(value).trim() !== '') {
-      return String(value).trim()
-    }
-  }
-  return fallback
-}
-
-function numericValue(row: DataRow, keys: string[]) {
-  for (const key of keys) {
-    const value = row[key]
-    if (value === null || value === undefined || String(value).trim() === '') continue
-    const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return 0
-}
-
-function average(values: number[]) {
-  const filtered = values.filter((value) => Number.isFinite(value))
-  if (filtered.length === 0) return 0
-  return filtered.reduce((total, value) => total + value, 0) / filtered.length
-}
-
-function groupAverage(rows: DataRow[], keyFactory: (row: DataRow) => string, valueFactory: (row: DataRow) => number) {
-  const buckets = new Map<string, number[]>()
-  for (const row of rows) {
-    const key = keyFactory(row)
-    const values = buckets.get(key) || []
-    values.push(valueFactory(row))
-    buckets.set(key, values)
-  }
-
-  const result = new Map<string, number>()
-  for (const [key, values] of buckets.entries()) {
-    result.set(key, average(values))
-  }
-  return result
-}
-
-function vehicleKey(row: DataRow) {
-  return textValue(row, ['chassis_no', 'vin', 'vehicle_reg_no', 'reg_number'])
-}
-
-function modelServiceKey(row: DataRow) {
-  return `${textValue(row, ['model'], 'Unspecified')}||${textValue(row, ['service_type', 'work_type'], 'Unspecified')}`
-}
-
-function serviceKey(row: DataRow) {
-  return textValue(row, ['service_type', 'work_type'], 'Unspecified')
-}
-
-function buildReworkSet(rows: DataRow[]) {
-  const byVehicle = new Map<string, Array<{ row: DataRow; time: number }>>()
-
-  for (const row of rows) {
-    const key = vehicleKey(row)
-    if (!key) continue
-    const time = parseDate(row.bill_date)?.getTime()
-    if (!time) continue
-    const bucket = byVehicle.get(key) || []
-    bucket.push({ row, time })
-    byVehicle.set(key, bucket)
-  }
-
-  const reworked = new Set<DataRow>()
-  for (const bucket of byVehicle.values()) {
-    bucket.sort((a, b) => a.time - b.time)
-
-    for (let index = 1; index < bucket.length; index += 1) {
-      const diffDays = (bucket[index].time - bucket[index - 1].time) / (24 * 60 * 60 * 1000)
-      if (diffDays >= 0 && diffDays <= 30) {
-        reworked.add(bucket[index].row)
-      }
-    }
-  }
-
-  return reworked
-}
-
-function getAlertMeta(key: ScoringRule['key']) {
-  return SCORING_RULES.find((rule) => rule.key === key)!
-}
-
-function scoreRows(rows: DataRow[]) {
-  const reworkedRows = buildReworkSet(rows)
-  const labourByModelService = groupAverage(rows, modelServiceKey, (row) => numericValue(row, ['labour_amt']))
-  const partsByModelService = groupAverage(rows, modelServiceKey, (row) => numericValue(row, ['part_amt']))
-  const labourByService = groupAverage(rows, serviceKey, (row) => numericValue(row, ['labour_amt']))
-  const partsByService = groupAverage(rows, serviceKey, (row) => numericValue(row, ['part_amt']))
-
-  return rows.map((row, index) => {
-    const labour = numericValue(row, ['labour_amt'])
-    const parts = numericValue(row, ['part_amt'])
-    const discount = numericValue(row, ['job_discount', 'discount', 'dis_amt', 'total_disc', 'labour_disc', 'part_disc'])
-    const alerts: ScoringRule[] = []
-    const modelKey = modelServiceKey(row)
-    const workshopKey = serviceKey(row)
-    const modelLabourAvg = labourByModelService.get(modelKey) || 0
-    const modelPartsAvg = partsByModelService.get(modelKey) || 0
-    const workshopLabourAvg = labourByService.get(workshopKey) || 0
-    const workshopPartsAvg = partsByService.get(workshopKey) || 0
-
-    if (reworkedRows.has(row)) alerts.push(getAlertMeta('rework_30_day'))
-    if (discount > 20) alerts.push(getAlertMeta('manual_discount'))
-    if (parts > 1000 && labour === 0) alerts.push(getAlertMeta('labour_leakage'))
-    if (modelLabourAvg > 0 && labour < modelLabourAvg * 0.5) alerts.push(getAlertMeta('low_labour_model'))
-    if (modelPartsAvg > 0 && parts < modelPartsAvg * 0.5) alerts.push(getAlertMeta('low_parts_model'))
-    if (workshopLabourAvg > 0 && labour < workshopLabourAvg * 0.5) alerts.push(getAlertMeta('low_labour_workshop'))
-    if (workshopPartsAvg > 0 && parts < workshopPartsAvg * 0.5) alerts.push(getAlertMeta('low_parts_workshop'))
-
-    const score = Math.max(0, 100 + alerts.reduce((total, alert) => total + alert.impact, 0))
-    return {
-      id: row.id || `${textValue(row, ['bill_no', 'ro_no'], 'row')}-${index}`,
-      sr: index + 1,
-      branch: textValue(row, ['branch', 'location', 'dealer_code', 'main_dealer_code'], 'Unspecified'),
-      type: textValue(row, ['service_type', 'work_type'], 'Unspecified'),
-      date: row.bill_date,
-      billNo: textValue(row, ['bill_no']),
-      model: textValue(row, ['model'], 'Unspecified'),
-      regNumber: textValue(row, ['vehicle_reg_no', 'reg_number']),
-      advisor: textValue(row, ['service_advisor', 'advisor'], 'Unspecified'),
-      labourAmt: labour,
-      partAmt: parts,
-      discount,
-      alerts: alerts.map((alert) => alert.alertName),
-      score,
-    }
-  })
-}
-
-function uniqueOptions(rows: Array<Record<string, unknown>>, key: string) {
-  return Array.from(new Set(rows.map((row) => String(row[key] || '').trim()).filter(Boolean))).sort()
+function numericText(column: ReturnType<typeof sql.raw>) {
+  return sql`COALESCE(NULLIF(regexp_replace(${column}, '[^0-9.-]', '', 'g'), '')::numeric, 0)`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -231,14 +133,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:performance-intelligence:v4:${createHash('sha1').update(stableParams).digest('hex')}`
-}
-
-function createBaseReportCacheKey(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
-  const filterHash = createHash('sha1')
-    .update(JSON.stringify(filters))
-    .digest('hex')
-  return `ro_billing:performance-intelligence:base:v2:${toDateInputValue(startDate)}:${toDateInputValue(endDate)}:${filterHash}`
+  return `ro_billing:performance-intelligence:v5:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
@@ -269,57 +164,218 @@ function buildPerformanceWhere(startDate: Date, endDate: Date, filters: Performa
   return sql.join(clauses, sql` AND `)
 }
 
-async function fetchPerformanceRows(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
+function buildScoredPerformanceSql(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
   const whereClause = buildPerformanceWhere(startDate, endDate, filters)
-  const result = await db.execute(sql`
+
+  return sql`
+    WITH base AS (
+      SELECT
+        id::text AS id,
+        COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+        bill_date::date AS bill_date,
+        COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'Unspecified') AS branch,
+        COALESCE(NULLIF(service_type, ''), NULLIF(work_type, ''), 'Unspecified') AS type,
+        COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
+        COALESCE(NULLIF(service_type, ''), 'Unspecified') AS service_type,
+        COALESCE(NULLIF(model, ''), 'Unspecified') AS model,
+        COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
+        COALESCE(NULLIF(vehicle_reg_no, ''), '') AS reg_number,
+        COALESCE(NULLIF(vin, ''), NULLIF(vehicle_reg_no, ''), '') AS vehicle_key,
+        COALESCE(NULLIF(bill_no, ''), '') AS bill_no,
+        COALESCE(labour_amt, 0)::numeric AS labour_amt,
+        COALESCE(part_amt, 0)::numeric AS part_amt,
+        GREATEST(
+          COALESCE(dis_amt, 0)::numeric,
+          COALESCE(total_disc, 0)::numeric,
+          ${numericText(sql.raw('labour_disc'))},
+          ${numericText(sql.raw('part_disc'))}
+        ) AS discount
+      FROM ro_billing_report
+      WHERE ${whereClause}
+    ),
+    dedup AS (
+      SELECT DISTINCT ON (bill_key)
+        *
+      FROM base
+      ORDER BY bill_key, ABS(labour_amt) DESC, ABS(part_amt) DESC, id DESC
+    ),
+    enriched AS (
+      SELECT
+        *,
+        AVG(labour_amt) OVER (PARTITION BY model, type) AS model_labour_avg,
+        AVG(part_amt) OVER (PARTITION BY model, type) AS model_parts_avg,
+        AVG(labour_amt) OVER (PARTITION BY type) AS workshop_labour_avg,
+        AVG(part_amt) OVER (PARTITION BY type) AS workshop_parts_avg,
+        LAG(bill_date) OVER (PARTITION BY vehicle_key ORDER BY bill_date, id) AS previous_bill_date
+      FROM dedup
+    ),
+    scored AS (
+      SELECT
+        *,
+        ARRAY_REMOVE(ARRAY[
+          CASE
+            WHEN vehicle_key <> ''
+              AND previous_bill_date IS NOT NULL
+              AND bill_date - previous_bill_date BETWEEN 0 AND 30
+            THEN '30-Day Rework'
+          END,
+          CASE WHEN discount > 20 THEN 'Manual Discount' END,
+          CASE WHEN part_amt > 1000 AND labour_amt = 0 THEN 'Labour Leakage' END,
+          CASE WHEN model_labour_avg > 0 AND labour_amt < model_labour_avg * 0.5 THEN 'Low Labour (Model)' END,
+          CASE WHEN model_parts_avg > 0 AND part_amt < model_parts_avg * 0.5 THEN 'Low Parts (Model)' END,
+          CASE WHEN workshop_labour_avg > 0 AND labour_amt < workshop_labour_avg * 0.5 THEN 'Low Labour (Workshop)' END,
+          CASE WHEN workshop_parts_avg > 0 AND part_amt < workshop_parts_avg * 0.5 THEN 'Low Parts (Workshop)' END
+        ], NULL)::text[] AS alerts
+      FROM enriched
+    ),
+    scored_with_score AS (
+      SELECT
+        *,
+        GREATEST(
+          0,
+          100
+          - CASE WHEN '30-Day Rework' = ANY(alerts) THEN 25 ELSE 0 END
+          - CASE WHEN 'Manual Discount' = ANY(alerts) THEN 10 ELSE 0 END
+          - CASE WHEN 'Labour Leakage' = ANY(alerts) THEN 20 ELSE 0 END
+          - CASE WHEN 'Low Labour (Model)' = ANY(alerts) THEN 10 ELSE 0 END
+          - CASE WHEN 'Low Parts (Model)' = ANY(alerts) THEN 10 ELSE 0 END
+          - CASE WHEN 'Low Labour (Workshop)' = ANY(alerts) THEN 5 ELSE 0 END
+          - CASE WHEN 'Low Parts (Workshop)' = ANY(alerts) THEN 5 ELSE 0 END
+        )::int AS score
+      FROM scored
+    )
+  `
+}
+
+async function fetchPerformanceReportSql({
+  startDate,
+  endDate,
+  filters,
+  alertFilter,
+  page,
+  limit,
+  exportAll,
+}: {
+  startDate: Date
+  endDate: Date
+  filters: PerformanceFilterContext
+  alertFilter: string
+  page: number
+  limit: number
+  exportAll: boolean
+}): Promise<PerformanceReportPayload> {
+  const scoredCte = buildScoredPerformanceSql(startDate, endDate, filters)
+  const offset = (page - 1) * limit
+  const alertWhere = alertFilter !== 'all'
+    ? sql`WHERE ${alertFilter} = ANY(alerts)`
+    : sql``
+  const rowLimit = exportAll ? sql`` : sql`LIMIT ${limit} OFFSET ${offset}`
+
+  const [payload] = await db.execute(sql`
+    ${scoredCte},
+    filtered AS (
+      SELECT *
+      FROM scored_with_score
+      ${alertWhere}
+    ),
+    numbered AS (
+      SELECT
+        ROW_NUMBER() OVER (ORDER BY bill_date DESC, id DESC)::int AS sr,
+        *
+      FROM filtered
+    ),
+    page_rows AS (
+      SELECT *
+      FROM numbered
+      ORDER BY sr
+      ${rowLimit}
+    ),
+    alert_counts AS (
+      SELECT alert_name, COUNT(*)::int AS count
+      FROM filtered
+      CROSS JOIN LATERAL unnest(alerts) AS alert_name
+      GROUP BY alert_name
+    ),
+    advisor_scores AS (
+      SELECT
+        advisor,
+        ROUND(AVG(score))::int AS score,
+        COUNT(*)::int AS transactions,
+        COALESCE(SUM(cardinality(alerts)), 0)::int AS alerts
+      FROM filtered
+      GROUP BY advisor
+      ORDER BY score DESC, transactions DESC, advisor
+    ),
+    filter_source AS (
+      SELECT *
+      FROM scored_with_score
+    )
     SELECT
-      id,
-      bill_no,
-      ro_no,
-      bill_date,
-      labour_amt,
-      part_amt,
-      total_amt,
-      work_type,
-      service_type,
-      technician,
-      service_advisor,
-      model,
-      bill_type,
-      bill_status,
-      pick_drop,
-      avg_rating,
-      vehicle_reg_no,
-      dealer_code,
-      main_dealer_code,
-      dis_amt,
-      total_disc,
-      labour_disc,
-      part_disc,
-      vin,
-      uploaded_at
-    FROM ro_billing_report
-    WHERE ${whereClause}
-    ORDER BY bill_date DESC, id DESC
-    LIMIT 50000
+      (SELECT COUNT(*)::int FROM scored_with_score) AS "rawRowCount",
+      (SELECT COUNT(*)::int FROM filtered) AS total,
+      (SELECT COUNT(*)::int FROM filtered WHERE cardinality(alerts) > 0) AS "alertsFound",
+      (SELECT COALESCE(SUM(score), 0)::float FROM filtered) AS "scoreTotal",
+      COALESCE((
+        SELECT jsonb_object_agg(alert_name, count)
+        FROM alert_counts
+      ), '{}'::jsonb) AS "alertCounts",
+      jsonb_build_object(
+        'branches', COALESCE((SELECT jsonb_agg(branch ORDER BY branch) FROM (SELECT DISTINCT branch FROM filter_source WHERE branch <> '') options), '[]'::jsonb),
+        'serviceTypes', COALESCE((SELECT jsonb_agg(type ORDER BY type) FROM (SELECT DISTINCT type FROM filter_source WHERE type <> '') options), '[]'::jsonb),
+        'advisors', COALESCE((SELECT jsonb_agg(advisor ORDER BY advisor) FROM (SELECT DISTINCT advisor FROM filter_source WHERE advisor <> '') options), '[]'::jsonb),
+        'models', COALESCE((SELECT jsonb_agg(model ORDER BY model) FROM (SELECT DISTINCT model FROM filter_source WHERE model <> '') options), '[]'::jsonb),
+        'alerts', ${JSON.stringify(SCORING_RULES.map((rule) => rule.alertName))}::jsonb
+      ) AS "filterOptions",
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'advisor', advisor,
+          'score', score,
+          'transactions', transactions,
+          'alerts', alerts
+        ))
+        FROM advisor_scores
+      ), '[]'::jsonb) AS "advisorScores",
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'id', id,
+          'sr', sr,
+          'branch', branch,
+          'type', type,
+          'date', bill_date,
+          'billNo', bill_no,
+          'model', model,
+          'regNumber', reg_number,
+          'advisor', advisor,
+          'labourAmt', labour_amt,
+          'partAmt', part_amt,
+          'discount', discount,
+          'alerts', alerts,
+          'score', score
+        ) ORDER BY sr)
+        FROM page_rows
+      ), '[]'::jsonb) AS rows
   `)
-  const rawRows = result as DataRow[]
-  const scoredRows = scoreRows(rawRows)
+
+  const alertCounts = Object.fromEntries(SCORING_RULES.map((rule) => [rule.alertName, 0]))
+  Object.entries((payload?.alertCounts || {}) as Record<string, number>).forEach(([key, value]) => {
+    alertCounts[key] = Number(value || 0)
+  })
 
   return {
-    rawRows,
-    scoredRows,
-    alertCounts: Object.fromEntries(SCORING_RULES.map((rule) => [
-      rule.alertName,
-      scoredRows.filter((row) => row.alerts.includes(rule.alertName)).length,
-    ])),
-    filterOptions: {
-      branches: uniqueOptions(scoredRows, 'branch'),
-      serviceTypes: uniqueOptions(scoredRows, 'type'),
-      advisors: uniqueOptions(scoredRows, 'advisor'),
-      models: uniqueOptions(scoredRows, 'model'),
+    rawRowCount: Number(payload?.rawRowCount || 0),
+    total: Number(payload?.total || 0),
+    alertsFound: Number(payload?.alertsFound || 0),
+    scoreTotal: numberValue(payload?.scoreTotal),
+    alertCounts,
+    filterOptions: (payload?.filterOptions || {
+      branches: [],
+      serviceTypes: [],
+      advisors: [],
+      models: [],
       alerts: SCORING_RULES.map((rule) => rule.alertName),
-    },
+    }) as PerformanceReportPayload['filterOptions'],
+    advisorScores: (payload?.advisorScores || []) as PerformanceReportPayload['advisorScores'],
+    rows: (payload?.rows || []) as ScoredPerformanceRow[],
   }
 }
 
@@ -350,50 +406,19 @@ export async function GET(request: Request) {
       const alertFilter = searchParams.get('alert') || 'all'
       const model = searchParams.get('model') || 'all'
       const sqlFilters = { searchReg, branch, serviceType, advisor, model }
-      const baseReport = await timer.time('base-report', () => getCachedData(
-        createBaseReportCacheKey(startDate, endDate, sqlFilters),
-        () => fetchPerformanceRows(startDate, endDate, sqlFilters),
-        CACHE_TTL_SECONDS
-      ))
-      const { rawRows, scoredRows, filterOptions } = baseReport
+      const report = await timer.time('sql-scored-report', () => fetchPerformanceReportSql({
+        startDate,
+        endDate,
+        filters: sqlFilters,
+        alertFilter,
+        page,
+        limit,
+        exportAll,
+      }))
 
-      const filtered = scoredRows.filter((row) => {
-        if (alertFilter !== 'all' && !row.alerts.some((alert) => alert === alertFilter)) return false
-        return true
-      })
-
-      const total = filtered.length
+      const total = report.total
       const totalPages = Math.max(1, Math.ceil(total / limit))
       const safePage = Math.min(page, totalPages)
-      const offset = (safePage - 1) * limit
-      const responseRows = exportAll ? filtered : filtered.slice(offset, offset + limit)
-      const filteredAlertCounts = Object.fromEntries(SCORING_RULES.map((rule) => [rule.alertName, 0]))
-      const advisorBuckets = new Map<string, { scoreTotal: number; transactions: number; alerts: number }>()
-      let alertsFound = 0
-      let scoreTotal = 0
-
-      for (const row of filtered) {
-        if (row.alerts.length > 0) alertsFound += 1
-        scoreTotal += row.score
-        for (const alertName of row.alerts) {
-          filteredAlertCounts[alertName] = (filteredAlertCounts[alertName] || 0) + 1
-        }
-        const advisorName = row.advisor || 'Unspecified'
-        const current = advisorBuckets.get(advisorName) || { scoreTotal: 0, transactions: 0, alerts: 0 }
-        current.scoreTotal += row.score
-        current.transactions += 1
-        current.alerts += row.alerts.length
-        advisorBuckets.set(advisorName, current)
-      }
-
-      const advisorScores = Array.from(advisorBuckets.entries())
-        .map(([advisorName, bucket]) => ({
-          advisor: advisorName,
-          score: bucket.transactions > 0 ? Math.round(bucket.scoreTotal / bucket.transactions) : 0,
-          transactions: bucket.transactions,
-          alerts: bucket.alerts,
-        }))
-        .sort((a, b) => b.score - a.score || b.transactions - a.transactions || a.advisor.localeCompare(b.advisor))
 
       return {
         dateRange: {
@@ -401,16 +426,16 @@ export async function GET(request: Request) {
           endDate: toDateInputValue(endDate),
         },
         metrics: {
-          totalRecords: rawRows.length,
-          filteredTransactions: filtered.length,
-          alertsFound,
-          avgAdvisorScore: filtered.length > 0 ? Math.round(scoreTotal / filtered.length) : 0,
-          alertCounts: filteredAlertCounts,
+          totalRecords: report.rawRowCount,
+          filteredTransactions: total,
+          alertsFound: report.alertsFound,
+          avgAdvisorScore: total > 0 ? Math.round(report.scoreTotal / total) : 0,
+          alertCounts: report.alertCounts,
         },
         rules: SCORING_RULES,
-        filterOptions,
-        advisorScores,
-        rows: responseRows,
+        filterOptions: report.filterOptions,
+        advisorScores: report.advisorScores,
+        rows: report.rows,
         pagination: {
           page: safePage,
           limit,

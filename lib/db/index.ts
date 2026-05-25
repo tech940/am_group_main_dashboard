@@ -12,13 +12,13 @@ const client = globalForDb.postgresClient ?? postgres(env.database.url, {
   prepare: false, // Required for Supabase Transaction Mode pooler (PgBouncer)
   ssl: { rejectUnauthorized: false },
   max: 10, // Increased for concurrent requests (was 3)
-  idle_timeout: 60, // Increased to prevent premature connection drops (was 20)
-  connect_timeout: 60, // Increased for slow networks (was 30)
+  idle_timeout: 45,
+  connect_timeout: 8,
   max_lifetime: 60 * 30, // 30 minutes - recycle connections periodically
   onnotice: () => {}, // Ignore notices
-  // Add connection retry logic
   connection: {
     application_name: 'main_dashboard',
+    statement_timeout: 12_000,
   },
 })
 
