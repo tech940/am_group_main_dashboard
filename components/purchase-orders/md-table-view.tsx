@@ -64,6 +64,8 @@ const ALL_COLUMNS = [
   { key: 'status', label: 'Status', width: 'w-40' },
 ]
 
+const APPROVAL_TABLE_HIDDEN_COLUMNS = new Set(['orderNumber', 'subDepartment', 'createdAt', 'status'])
+
 function getColumnValue(order: PurchaseOrder, key: string) {
   switch (key) {
     case 'orderNumber':
@@ -114,6 +116,20 @@ function formatCurrency(value: unknown) {
   }
 
   return `Rs. ${String(value)}`
+}
+
+function getNumericAmount(value: unknown) {
+  if (!hasRenderableValue(value)) return 0
+  const parsed = Number(String(value).replace(/,/g, '').replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function getAmountTone(value: unknown) {
+  const amount = getNumericAmount(value)
+  if (amount >= 50000) return 'border-rose-200 bg-rose-50 text-rose-700'
+  if (amount >= 10000) return 'border-amber-200 bg-amber-50 text-amber-700'
+  if (amount > 0) return 'border-teal-200 bg-teal-50 text-teal-700'
+  return 'border-slate-200 bg-slate-50 text-slate-500'
 }
 
 function getStatusColor(status: string) {
@@ -168,6 +184,10 @@ export function MDTableView({
 
   const visibleColumns = useMemo(() => (
     ALL_COLUMNS.filter((col) => {
+      if (APPROVAL_TABLE_HIDDEN_COLUMNS.has(col.key)) {
+        return false
+      }
+
       if (hiddenColumns.includes(col.key)) {
         return false
       }
@@ -288,13 +308,13 @@ export function MDTableView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-2xl border border-white/70 bg-white/65 p-4 shadow-xl shadow-teal-950/5 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={restoreAllColumns}
-            className="gap-2"
+            className="gap-2 rounded-xl border-slate-200 bg-white/80 text-xs font-black text-slate-700 shadow-sm hover:bg-white"
             disabled={hiddenColumns.length === 0}
           >
             <RotateCcw className="h-4 w-4" />
@@ -304,13 +324,13 @@ export function MDTableView({
 
         {selectedOrders.size > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-slate-600">
+            <span className="rounded-full border border-teal-100 bg-teal-50 px-3 py-1 text-xs font-black text-teal-800">
               {selectedOrders.size} selected
             </span>
             <Button
               onClick={() => void handleBulkAction('approve')}
               disabled={bulkActionLoading !== null || loading}
-              className="gap-2 bg-gradient-to-r from-green-500 to-green-600 text-white"
+              className="gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-xs font-black text-white shadow-lg shadow-emerald-100"
             >
               {bulkActionLoading === 'approve' || loading ? (
                 <>
@@ -327,7 +347,7 @@ export function MDTableView({
             <Button
               onClick={() => void handleBulkAction('hold')}
               disabled={bulkActionLoading !== null || loading}
-              className="gap-2 bg-amber-500 text-white hover:bg-amber-600"
+              className="gap-2 rounded-xl bg-amber-500 text-xs font-black text-white shadow-lg shadow-amber-100 hover:bg-amber-600"
             >
               {bulkActionLoading === 'hold' ? (
                 <>
@@ -345,7 +365,7 @@ export function MDTableView({
               onClick={() => void handleBulkAction('deny')}
               disabled={bulkActionLoading !== null || loading}
               variant="destructive"
-              className="gap-2"
+              className="gap-2 rounded-xl text-xs font-black shadow-lg shadow-rose-100"
             >
               {bulkActionLoading === 'deny' ? (
                 <>
@@ -363,31 +383,31 @@ export function MDTableView({
         )}
       </div>
 
-      <div className="relative overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="border-b border-teal-800 bg-teal-700">
+      <div className="relative overflow-x-auto rounded-[1.5rem] border border-white/70 bg-white/80 shadow-2xl shadow-teal-950/10 backdrop-blur-xl">
+        <table className="w-full border-separate border-spacing-0 text-xs">
+          <thead className="sticky top-0 z-20">
             <tr>
-              <th className="sticky left-0 z-20 bg-teal-800 px-4 py-3 text-left">
+              <th className="sticky left-0 z-30 rounded-tl-[1.35rem] border-b border-white/10 bg-[#055B65] px-3 py-3 text-left shadow-[12px_0_24px_rgba(15,23,42,0.08)]">
                 <Checkbox
                   checked={allSelected || (someSelected ? 'indeterminate' : false)}
                   disabled={selectableOrders.length === 0}
                   onCheckedChange={toggleSelectAll}
                   aria-label="Select all"
-                  className="border-white/60 bg-teal-900 data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-teal-700"
+                  className="border-white/80 bg-white/20 shadow-sm data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-teal-700"
                 />
               </th>
 
               {visibleColumns.map((col) => (
                 <th
                   key={col.key}
-                  className={cn('px-4 py-3 text-left text-[12px] font-semibold text-white', col.width)}
+                  className={cn('border-b border-white/10 bg-[#055B65] px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.14em] text-white', col.width)}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span>{col.label}</span>
                     <button
                       type="button"
                       onClick={() => toggleColumnVisibility(col.key)}
-                      className="rounded-md bg-slate-200 p-1 text-slate-600 shadow-sm transition-colors hover:bg-slate-300 hover:text-slate-900"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-white/40 bg-white/85 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-rose-600"
                       title="Hide column"
                     >
                       <Trash2 className="h-3 w-3" />
@@ -396,18 +416,18 @@ export function MDTableView({
                 </th>
               ))}
 
-              <th className="sticky right-0 z-20 w-48 border-l border-teal-500 bg-teal-800 px-4 py-3 text-center text-[12px] font-semibold text-white">
+              <th className="sticky right-0 z-30 w-40 rounded-tr-[1.35rem] border-b border-l border-white/20 bg-[#055B65] px-3 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-white shadow-[-12px_0_24px_rgba(15,23,42,0.08)]">
                 Actions
               </th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="[&_tr:last-child_td:first-child]:rounded-bl-[1.35rem] [&_tr:last-child_td:last-child]:rounded-br-[1.35rem]">
             {orders.length === 0 ? (
               <tr>
                 <td
                   colSpan={visibleColumns.length + 2}
-                  className="px-4 py-12 text-center text-slate-500"
+                  className="bg-white/80 px-4 py-12 text-center text-sm font-bold text-slate-500"
                 >
                   No orders found
                 </td>
@@ -422,11 +442,14 @@ export function MDTableView({
                   <tr
                     key={order.id}
                     className={cn(
-                      'group border-b border-slate-100 transition-colors hover:bg-slate-50',
-                      isSelected && 'bg-indigo-50'
+                      'group transition-colors',
+                      isSelected ? 'bg-teal-50/90' : 'odd:bg-white/92 even:bg-slate-50/72 hover:bg-teal-50/70'
                     )}
                   >
-                    <td className="sticky left-0 z-10 bg-teal-50 px-4 py-3 group-hover:bg-teal-100">
+                    <td className={cn(
+                      "sticky left-0 z-10 border-b border-teal-100 px-3 py-2.5 shadow-[10px_0_24px_rgba(15,23,42,0.04)] transition-colors",
+                      isSelected ? "bg-teal-100" : "bg-teal-50 group-hover:bg-teal-100"
+                    )}>
                       <Checkbox
                         checked={isSelected}
                         disabled={!isActionable}
@@ -441,19 +464,21 @@ export function MDTableView({
                       return (
                         <td
                           key={col.key}
-                          className="px-4 py-3 text-slate-700"
+                          className="border-b border-slate-100 px-3 py-3 align-middle text-[12px] font-semibold leading-5 text-slate-700"
                           onClick={() => onOrderClick(order)}
                         >
                           {col.key === 'status' ? (
                             <div className="flex justify-center">
-                              <Badge className={cn('min-w-36 justify-center text-center text-white', getStatusColor(String(value || '')))}>
+                              <Badge className={cn('min-w-36 justify-center rounded-full px-3 py-1.5 text-center text-[10px] font-black text-white shadow-sm', getStatusColor(String(value || '')))}>
                                 {formatStatusLabel(String(value || ''))}
                               </Badge>
                             </div>
                           ) : col.key === 'createdAt' ? (
-                            value ? formatDate(String(value)) : '-'
+                            <span className="text-slate-600">{value ? formatDate(String(value)) : '-'}</span>
                           ) : col.key === 'estimateIfAny' || col.key === 'amount' ? (
-                            formatCurrency(value)
+                            <span className={cn('inline-flex rounded-xl border px-2.5 py-1 text-[11px] font-black', getAmountTone(value))}>
+                              {formatCurrency(value)}
+                            </span>
                           ) : (
                             <span className="line-clamp-2">{hasRenderableValue(value) ? String(value) : '-'}</span>
                           )}
@@ -461,14 +486,17 @@ export function MDTableView({
                       )
                     })}
 
-                    <td className="sticky right-0 z-10 border-l border-teal-100 bg-teal-50 px-4 py-3 group-hover:bg-teal-100">
+                    <td className={cn(
+                      "sticky right-0 z-10 border-b border-l border-teal-100 px-3 py-2.5 shadow-[-10px_0_24px_rgba(15,23,42,0.04)] transition-colors",
+                      isSelected ? "bg-teal-100" : "bg-white group-hover:bg-teal-50"
+                    )}>
                       {isActionable ? (
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center justify-center gap-1.5">
                           <Button
                             size="sm"
                             onClick={() => void handleAction('approve', order.id)}
                             disabled={isLoading || bulkActionLoading !== null || loading}
-                            className="bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700"
+                            className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 p-0 text-white shadow-lg shadow-emerald-100 hover:from-emerald-600 hover:to-teal-700"
                             title="Approve"
                           >
                             {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
@@ -478,6 +506,7 @@ export function MDTableView({
                             variant="destructive"
                             onClick={() => openRemarksDialog('deny', order.id)}
                             disabled={isLoading || bulkActionLoading !== null || loading}
+                            className="h-8 w-8 rounded-xl p-0 shadow-lg shadow-rose-100"
                             title="Deny"
                           >
                             <X className="h-3 w-3" />
@@ -487,14 +516,14 @@ export function MDTableView({
                             variant="outline"
                             onClick={() => openRemarksDialog('hold', order.id)}
                             disabled={isLoading || bulkActionLoading !== null || loading}
-                            className="border-amber-500 text-amber-600 hover:bg-amber-50"
+                            className="h-8 w-8 rounded-xl border-amber-400 bg-amber-50 p-0 text-amber-600 shadow-lg shadow-amber-100 hover:bg-amber-100"
                             title="Hold"
                           >
                             <Pause className="h-3 w-3" />
                           </Button>
                         </div>
                       ) : (
-                        <span className="block text-center text-xs font-medium text-slate-400">No actions</span>
+                        <span className="block rounded-full bg-slate-100 px-3 py-1.5 text-center text-[11px] font-black text-slate-400">No actions</span>
                       )}
                     </td>
                   </tr>

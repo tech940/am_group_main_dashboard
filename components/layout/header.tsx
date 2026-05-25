@@ -1,10 +1,10 @@
 'use client'
 
-import { ChevronDown, Menu, LogOut, User, Mail } from 'lucide-react'
+import { ChevronDown, Menu, LogOut, User, Mail, Loader2 } from 'lucide-react'
 import { useSidebar } from '@/context/sidebar-context'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import {
@@ -34,6 +34,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   const router = useRouter()
   const supabase = createClient()
   const queryClient = useQueryClient()
+  const [signingOut, setSigningOut] = useState(false)
 
   const { data: userData, isLoading: loading } = useQuery({
     queryKey: ['auth', 'user'],
@@ -55,6 +56,8 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   }, [userData])
 
   const handleLogout = async () => {
+    if (signingOut) return
+    setSigningOut(true)
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
       queryClient.clear()
@@ -63,6 +66,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
       router.refresh()
     } catch (error) {
       console.error('Error logging out:', error)
+      setSigningOut(false)
     }
   }
 
@@ -141,10 +145,15 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
               <DropdownMenuSeparator className="bg-slate-100" />
               <DropdownMenuItem
                 onClick={handleLogout}
+                disabled={signingOut}
                 className="p-3 rounded-xl cursor-pointer text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-bold transition-colors"
               >
-                <LogOut className="mr-2 h-4 w-4" />
-                Sign Out
+                {signingOut ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <LogOut className="mr-2 h-4 w-4" />
+                )}
+                {signingOut ? 'Signing out...' : 'Sign Out'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

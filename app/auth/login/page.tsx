@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Building2, IndianRupee, KeyRound, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Building2, IndianRupee, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,6 +20,7 @@ export default function LoginPage() {
     event.preventDefault()
     setLoading(true)
     setError(null)
+    let shouldResetLoading = true
 
     try {
       const response = await fetch('/api/auth/login', {
@@ -36,18 +37,30 @@ export default function LoginPage() {
         return
       }
 
+      shouldResetLoading = false
       router.replace(result?.redirectTo || '/dashboard')
       router.refresh()
     } catch (err) {
       setError('Unable to reach the login service. Please check your connection and try again.')
       console.error(err)
     } finally {
-      setLoading(false)
+      if (shouldResetLoading) {
+        setLoading(false)
+      }
     }
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 p-2 text-slate-950 sm:p-3 lg:h-screen lg:overflow-hidden">
+    <main className="relative min-h-screen bg-slate-950 p-2 text-slate-950 sm:p-3 lg:h-screen lg:overflow-hidden">
+      {loading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 backdrop-blur-sm">
+          <div className="rounded-3xl border border-white/15 bg-white px-8 py-6 text-center shadow-2xl">
+            <Loader2 className="mx-auto h-8 w-8 animate-spin text-teal-700" />
+            <p className="mt-4 text-sm font-black text-slate-950">Signing you in</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Preparing your dashboard session...</p>
+          </div>
+        </div>
+      )}
       <div className="grid min-h-[calc(100vh-1rem)] overflow-hidden rounded-[1.5rem] bg-white shadow-2xl sm:min-h-[calc(100vh-1.5rem)] lg:h-[calc(100vh-1.5rem)] lg:min-h-0 lg:grid-cols-[1fr_0.9fr]">
         <section className="relative hidden overflow-hidden bg-gradient-to-br from-teal-900 via-emerald-800 to-slate-950 p-8 text-white lg:flex lg:flex-col lg:justify-center">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(45,212,191,0.24),transparent_28%),radial-gradient(circle_at_80%_15%,rgba(16,185,129,0.2),transparent_26%),linear-gradient(135deg,rgba(15,23,42,0.1),rgba(15,23,42,0.55))]" />

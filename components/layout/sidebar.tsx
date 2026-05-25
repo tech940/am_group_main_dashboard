@@ -14,7 +14,8 @@ import {
   Users,
   Shield,
   Lock,
-  ShoppingCart
+  ShoppingCart,
+  Loader2
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -55,6 +56,7 @@ export function Sidebar() {
   const { collapsed, setCollapsed } = useSidebar()
   const [openBrand, setOpenBrand] = useState<string | null>(null)
   const [openAdmin, setOpenAdmin] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const { userRole, isAdmin, canAccessAdmin, userBrand, loading } = useUserRole()
 
   const canAccessBrand = (brandKey: string) => {
@@ -144,7 +146,7 @@ export function Sidebar() {
         )}>
           {!collapsed && (
             <div className="flex items-center gap-2 h-12 flex-1 ml-1">
-              <div className="rounded-lg border border-white/10 px-3 py-4 shadow-sm">
+              <div className="rounded-lg border border-white/10 bg-black px-3 py-4 shadow-sm">
                 <img
                   src="https://amgroupind.com/wp-content/uploads/2023/06/logo-1.png"
                   alt="AM Group"
@@ -421,6 +423,8 @@ export function Sidebar() {
         <div className="shrink-0 border-t border-white/20 bg-white/10 p-6">
           <button
             onClick={async () => {
+              if (signingOut) return
+              setSigningOut(true)
               try {
                 await fetch('/api/auth/logout', { method: 'POST' })
                 await supabase.auth.signOut()
@@ -428,15 +432,21 @@ export function Sidebar() {
                 router.refresh()
               } catch (error) {
                 console.error('Error logging out:', error)
+                setSigningOut(false)
               }
             }}
+            disabled={signingOut}
             className={cn(
-              'flex w-full cursor-pointer items-center gap-3 rounded-2xl text-sm font-bold uppercase tracking-widest text-teal-50/85 transition-all duration-200 hover:bg-white/18 hover:text-white group',
+              'flex w-full cursor-pointer items-center gap-3 rounded-2xl text-sm font-bold uppercase tracking-widest text-teal-50/85 transition-all duration-200 hover:bg-white/18 hover:text-white group disabled:cursor-wait disabled:opacity-75',
               collapsed ? 'h-12 w-12 justify-center mx-auto' : 'px-4 py-3'
             )}
           >
-            <LogOut className="h-5 w-5 flex-shrink-0 group-hover:rotate-12 transition-transform" />
-            {!collapsed && <span className="text-[10px]">Sign out</span>}
+            {signingOut ? (
+              <Loader2 className="h-5 w-5 flex-shrink-0 animate-spin" />
+            ) : (
+              <LogOut className="h-5 w-5 flex-shrink-0 transition-transform group-hover:rotate-12" />
+            )}
+            {!collapsed && <span className="text-[10px]">{signingOut ? 'Signing out...' : 'Sign out'}</span>}
           </button>
         </div>
       </div>

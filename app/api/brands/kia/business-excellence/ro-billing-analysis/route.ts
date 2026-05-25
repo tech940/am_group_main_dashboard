@@ -26,6 +26,8 @@ type AnalysisView = 'table' | 'trend' | 'fy' | 'analytics' | 'revenue' | 'leader
 type DataRow = Record<string, unknown>
 type PeriodKey = 'td' | 'mtd' | 'qtd' | 'ytd'
 
+const RO_ANALYSIS_TYPES: AnalysisType[] = ['load', 'labour', 'parts', 'lab_per_veh', 'part_per_veh']
+
 type PeriodMetric = {
   cy: number
   ly: number | 'N/A'
@@ -611,7 +613,30 @@ function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: Analys
   })
 }
 
-async function fetchDailyTrendRows(analysisType: AnalysisType, startDate: Date, endDate: Date) {
+function buildDailyTrendRows(rows: DailyAggregateRow[], analysisType: AnalysisType, startDate: Date, endDate: Date) {
+  const byDate = new Map<string, DailyAggregateRow>()
+  rows.forEach((row) => {
+    byDate.set(toDateInputValue(new Date(row.bill_date)), row)
+  })
+
+  const trend = []
+  const cursor = startOfDay(startDate)
+  while (cursor <= endDate) {
+    const cyDate = toDateInputValue(cursor)
+    const lyDate = toDateInputValue(sameDateLastYear(cursor))
+    trend.push({
+      date: cyDate,
+      label: `${String(cursor.getDate()).padStart(2, '0')} ${cursor.toLocaleDateString('en-US', { weekday: 'short' })}`,
+      cy: measureDailyRow(byDate.get(cyDate), analysisType),
+      ly: measureDailyRow(byDate.get(lyDate), analysisType),
+    })
+    cursor.setDate(cursor.getDate() + 1)
+  }
+
+  return trend
+}
+
+async function fetchDailyAggregateRows(startDate: Date, endDate: Date) {
   const relationalStart = sameDateLastYear(startDate)
   const relationalEnd = endDate
 
@@ -655,29 +680,19 @@ async function fetchDailyTrendRows(analysisType: AnalysisType, startDate: Date, 
     ORDER BY bill_date
   `)
 
-  const byDate = new Map<string, DailyAggregateRow>()
-  ;((result as unknown as DailyAggregateRow[]) || []).forEach((row) => {
-    byDate.set(toDateInputValue(new Date(row.bill_date)), row)
-  })
-
-  const trend = []
-  const cursor = startOfDay(startDate)
-  while (cursor <= endDate) {
-    const cyDate = toDateInputValue(cursor)
-    const lyDate = toDateInputValue(sameDateLastYear(cursor))
-    trend.push({
-      date: cyDate,
-      label: `${String(cursor.getDate()).padStart(2, '0')} ${cursor.toLocaleDateString('en-US', { weekday: 'short' })}`,
-      cy: measureDailyRow(byDate.get(cyDate), analysisType),
-      ly: measureDailyRow(byDate.get(lyDate), analysisType),
-    })
-    cursor.setDate(cursor.getDate() + 1)
-  }
-
-  return trend
+  return (result as unknown as DailyAggregateRow[]) || []
 }
 
-async function fetchFiscalTrendRows(analysisType: AnalysisType) {
+function buildFiscalTrendRows(rows: FiscalAggregateRow[], analysisType: AnalysisType) {
+  return rows
+    .sort((a, b) => a.fy.localeCompare(b.fy))
+    .map((row) => ({
+      fy: row.fy,
+      value: measureFiscalRow(row, analysisType),
+    }))
+}
+
+async function fetchFiscalAggregateRows() {
   const result = await db.execute(await hasDailySummaryV2() ? sql`
     WITH fiscal AS (
       SELECT
@@ -740,12 +755,7 @@ async function fetchFiscalTrendRows(analysisType: AnalysisType) {
     LIMIT 5
   `)
 
-  return ((result as unknown as FiscalAggregateRow[]) || [])
-    .sort((a, b) => a.fy.localeCompare(b.fy))
-    .map((row) => ({
-      fy: row.fy,
-      value: measureFiscalRow(row, analysisType),
-    }))
+  return (result as unknown as FiscalAggregateRow[]) || []
 }
 
 async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date): Promise<AnalyticsQualitySummary> {
@@ -928,7 +938,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Prom
   }))
 }
 
-async function fetchWorkTypeTableRows(analysisType: AnalysisType, windows: Record<PeriodKey, PeriodWindow>) {
+async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>) {
   const result = await db.execute(await hasDailySummaryV2() ? sql`
     SELECT
       work_type,
@@ -1009,8 +1019,7 @@ async function fetchWorkTypeTableRows(analysisType: AnalysisType, windows: Recor
     GROUP BY work_type, service_type
   `)
 
-  const rows = result as unknown as WorkTypeAggregateRow[]
-  return aggregateRowsToStats(rows, analysisType)
+  return (result as unknown as WorkTypeAggregateRow[]) || []
 }
 
 async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: Date }) {
@@ -1081,7 +1090,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:v10:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `ro_billing:v11:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1112,8 +1121,9 @@ export async function GET(request: Request) {
     const view = (searchParams.get('view') || 'table') as AnalysisView
     const groupBy = normalizeGroupBy(searchParams.get('groupBy') || 'work_type')
     const skipCache = searchParams.get('skipCache') === 'true'
+    const batchMetrics = searchParams.get('metrics') === 'all'
 
-    if (!['load', 'labour', 'parts', 'lab_per_veh', 'part_per_veh'].includes(analysisType)) {
+    if (!RO_ANALYSIS_TYPES.includes(analysisType)) {
       return NextResponse.json({ error: 'Invalid analysis type' }, { status: 400 })
     }
 
@@ -1136,6 +1146,7 @@ export async function GET(request: Request) {
     cacheParams.set('groupBy', groupBy)
     cacheParams.set('startDate', toDateInputValue(startDate))
     cacheParams.set('endDate', toDateInputValue(endDate))
+    if (batchMetrics) cacheParams.set('metrics', 'all')
     const cacheKey = createCacheKey(cacheParams)
 
     const analyze = async () => {
@@ -1143,22 +1154,50 @@ export async function GET(request: Request) {
       const hasFilters = Array.from(searchParams.entries()).some(([key, value]) => {
         return key in FILTER_COLUMNS && value && value !== 'all'
       })
+      const baseFastResponse = {
+        sheet: {
+          id: 'ro_billing_report',
+          brand: 'kia',
+          sheetName: 'RO Billing Report',
+          uploadedAt: null,
+        },
+        analysisType,
+        dateBasis: 'Bill Date',
+        dateRange: {
+          startDate: toDateInputValue(startDate),
+          endDate: toDateInputValue(endDate),
+        },
+        filterOptions: {},
+      }
       if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
-        const rows = await timer.time('work-type-sql-summary', () => fetchWorkTypeTableRows(analysisType, windows))
+        const aggregateRows = await timer.time('work-type-sql-summary', () => fetchWorkTypeAggregateRows(windows))
+        if (batchMetrics) {
+          const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
+            const rows = aggregateRowsToStats(aggregateRows, type)
+            return [type, {
+              ...baseFastResponse,
+              analysisType: type,
+              rowCounts: {
+                totalRows: 0,
+                rowsWithBillDate: 0,
+                filteredRows: rows.length,
+              },
+              rows,
+            }]
+          }))
+          return {
+            ...baseFastResponse,
+            rowCounts: {
+              totalRows: 0,
+              rowsWithBillDate: 0,
+              filteredRows: aggregateRows.length,
+            },
+            byMetric,
+          }
+        }
+        const rows = aggregateRowsToStats(aggregateRows, analysisType)
         return {
-          sheet: {
-            id: 'ro_billing_report',
-            brand: 'kia',
-            sheetName: 'RO Billing Report',
-            uploadedAt: null,
-          },
-          analysisType,
-          dateBasis: 'Bill Date',
-          dateRange: {
-            startDate: toDateInputValue(startDate),
-            endDate: toDateInputValue(endDate),
-          },
-          filterOptions: {},
+          ...baseFastResponse,
           rowCounts: {
             totalRows: 0,
             rowsWithBillDate: 0,
@@ -1168,21 +1207,34 @@ export async function GET(request: Request) {
         }
       }
       if (view === 'trend' && groupBy === 'work_type' && !hasFilters) {
-        const trend = await timer.time('daily-trend-sql-summary', () => fetchDailyTrendRows(analysisType, startDate, endDate))
+        const aggregateRows = await timer.time('daily-trend-sql-summary', () => fetchDailyAggregateRows(startDate, endDate))
+        if (batchMetrics) {
+          const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
+            const trend = buildDailyTrendRows(aggregateRows, type, startDate, endDate)
+            return [type, {
+              ...baseFastResponse,
+              analysisType: type,
+              rowCounts: {
+                totalRows: 0,
+                rowsWithBillDate: 0,
+                filteredRows: trend.length,
+              },
+              trend,
+            }]
+          }))
+          return {
+            ...baseFastResponse,
+            rowCounts: {
+              totalRows: 0,
+              rowsWithBillDate: 0,
+              filteredRows: aggregateRows.length,
+            },
+            byMetric,
+          }
+        }
+        const trend = buildDailyTrendRows(aggregateRows, analysisType, startDate, endDate)
         return {
-          sheet: {
-            id: 'ro_billing_report',
-            brand: 'kia',
-            sheetName: 'RO Billing Report',
-            uploadedAt: null,
-          },
-          analysisType,
-          dateBasis: 'Bill Date',
-          dateRange: {
-            startDate: toDateInputValue(startDate),
-            endDate: toDateInputValue(endDate),
-          },
-          filterOptions: {},
+          ...baseFastResponse,
           rowCounts: {
             totalRows: 0,
             rowsWithBillDate: 0,
@@ -1194,19 +1246,7 @@ export async function GET(request: Request) {
       if (view === 'analytics' && groupBy === 'work_type' && !hasFilters) {
         const analyticsSummary = await timer.time('analytics-quality-sql-summary', () => fetchAnalyticsQualitySummary(startDate, endDate))
         return {
-          sheet: {
-            id: 'ro_billing_report',
-            brand: 'kia',
-            sheetName: 'RO Billing Report',
-            uploadedAt: null,
-          },
-          analysisType,
-          dateBasis: 'Bill Date',
-          dateRange: {
-            startDate: toDateInputValue(startDate),
-            endDate: toDateInputValue(endDate),
-          },
-          filterOptions: {},
+          ...baseFastResponse,
           rowCounts: {
             totalRows: 0,
             rowsWithBillDate: 0,
@@ -1218,19 +1258,7 @@ export async function GET(request: Request) {
       if (view === 'leaderboard' && groupBy === 'work_type' && !hasFilters) {
         const advisorLeaderboard = await timer.time('advisor-leaderboard-sql-summary', () => fetchAdvisorLeaderboardRows(startDate, endDate))
         return {
-          sheet: {
-            id: 'ro_billing_report',
-            brand: 'kia',
-            sheetName: 'RO Billing Report',
-            uploadedAt: null,
-          },
-          analysisType,
-          dateBasis: 'Bill Date',
-          dateRange: {
-            startDate: toDateInputValue(startDate),
-            endDate: toDateInputValue(endDate),
-          },
-          filterOptions: {},
+          ...baseFastResponse,
           rowCounts: {
             totalRows: 0,
             rowsWithBillDate: 0,
@@ -1240,21 +1268,34 @@ export async function GET(request: Request) {
         }
       }
       if (view === 'fy' && groupBy === 'work_type' && !hasFilters) {
-        const fyTrends = await timer.time('fy-trend-sql-summary', () => fetchFiscalTrendRows(analysisType))
+        const aggregateRows = await timer.time('fy-trend-sql-summary', () => fetchFiscalAggregateRows())
+        if (batchMetrics) {
+          const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
+            const fyTrends = buildFiscalTrendRows(aggregateRows, type)
+            return [type, {
+              ...baseFastResponse,
+              analysisType: type,
+              rowCounts: {
+                totalRows: 0,
+                rowsWithBillDate: 0,
+                filteredRows: fyTrends.length,
+              },
+              fyTrends,
+            }]
+          }))
+          return {
+            ...baseFastResponse,
+            rowCounts: {
+              totalRows: 0,
+              rowsWithBillDate: 0,
+              filteredRows: aggregateRows.length,
+            },
+            byMetric,
+          }
+        }
+        const fyTrends = buildFiscalTrendRows(aggregateRows, analysisType)
         return {
-          sheet: {
-            id: 'ro_billing_report',
-            brand: 'kia',
-            sheetName: 'RO Billing Report',
-            uploadedAt: null,
-          },
-          analysisType,
-          dateBasis: 'Bill Date',
-          dateRange: {
-            startDate: toDateInputValue(startDate),
-            endDate: toDateInputValue(endDate),
-          },
-          filterOptions: {},
+          ...baseFastResponse,
           rowCounts: {
             totalRows: 0,
             rowsWithBillDate: 0,

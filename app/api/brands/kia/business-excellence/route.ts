@@ -108,6 +108,18 @@ function roBillingProjectedRowsSql(table: BusinessExcellenceTable, selectedLimit
   `
 }
 
+function roBillingStatsSql(table: BusinessExcellenceTable, startDate?: string | null, endDate?: string | null) {
+  const dateFilter = startDate && endDate
+    ? sql`WHERE bill_date BETWEEN ${startDate}::date AND ${endDate}::date`
+    : sql``
+
+  return sql`
+    SELECT COUNT(*)::int AS "totalRows", MAX(uploaded_at) AS "uploadedAt"
+    FROM ${tableSql(table)}
+    ${dateFilter}
+  `
+}
+
 async function getColumns(table: BusinessExcellenceTable) {
   const rows = await db.execute(sql`
     SELECT column_name
@@ -143,27 +155,14 @@ async function getTableMetadata(table: BusinessExcellenceTable) {
 
 async function fetchMetadata() {
   const table = BUSINESS_EXCELLENCE_TABLES[0]
-  const [columnRows, statsRows] = await Promise.all([
-    db.execute(sql`
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = ${table.table}
-      ORDER BY ordinal_position
-    `),
-    db.execute(sql`
-      SELECT COUNT(*)::int AS "totalRows", MAX(uploaded_at) AS "uploadedAt"
-      FROM ${tableSql(table)}
-    `),
-  ])
-
+  const statsRows = await db.execute(roBillingStatsSql(table))
   const stats = statsRows[0]
   return [{
     id: table.slug,
     brand: 'kia',
     sheetName: table.sheetName,
     tableName: table.table,
-    columns: columnRows.map((row) => String(row.column_name)),
+    columns: RO_BILLING_PROJECTED_COLUMNS,
     uploadedAt: stats?.uploadedAt || null,
     totalRows: Number(stats?.totalRows || 0),
   }]
@@ -200,6 +199,27 @@ async function fetchTableRows({
       columns: RO_BILLING_PROJECTED_COLUMNS,
       uploadedAt: null,
       totalRows: rowsResult.length,
+      page,
+      limit: selectedLimit,
+      rows: rowsResult,
+    }
+  }
+
+  if (table.slug === 'ro_billing_report') {
+    const [statsRows, rowsResult] = await Promise.all([
+      db.execute(roBillingStatsSql(table, startDate, endDate)),
+      db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate)),
+    ])
+    const stats = statsRows[0]
+
+    return {
+      id: table.slug,
+      brand: 'kia',
+      sheetName: table.sheetName,
+      tableName: table.table,
+      columns: RO_BILLING_PROJECTED_COLUMNS,
+      uploadedAt: stats?.uploadedAt || null,
+      totalRows: Number(stats?.totalRows || 0),
       page,
       limit: selectedLimit,
       rows: rowsResult,
