@@ -127,6 +127,24 @@
     background-color: transparent !important;
   }
 
+  .glass-dashboard-content .approval-table-checkbox {
+    background-color: #ffffff !important;
+    border-color: #0f766e !important;
+    color: #ffffff !important;
+  }
+
+  .glass-dashboard-content .approval-table-checkbox[data-state="checked"] {
+    background-color: #0f766e !important;
+    border-color: #064e3b !important;
+    color: #ffffff !important;
+  }
+
+  .glass-dashboard-content .approval-table-checkbox[data-state="checked"] svg {
+    color: #ffffff !important;
+    stroke: #ffffff !important;
+    stroke-width: 3.5 !important;
+  }
+
   .glass-dashboard-content .expanded-chart-shell {
     background: #f8fafc !important;
     border-color: rgba(226, 232, 240, 0.95) !important;

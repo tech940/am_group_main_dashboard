@@ -387,20 +387,14 @@ export function MDTableView({
         <table className="w-full border-separate border-spacing-0 text-xs">
           <thead className="sticky top-0 z-20">
             <tr>
-              <th className="sticky left-0 z-30 rounded-tl-[1.35rem] border-b border-white/10 bg-[#055B65] px-3 py-3 text-left shadow-[12px_0_24px_rgba(15,23,42,0.08)]">
-                <Checkbox
-                  checked={allSelected || (someSelected ? 'indeterminate' : false)}
-                  disabled={selectableOrders.length === 0}
-                  onCheckedChange={toggleSelectAll}
-                  aria-label="Select all"
-                  className="border-white/80 bg-white/20 shadow-sm data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-teal-700"
-                />
-              </th>
-
-              {visibleColumns.map((col) => (
+              {visibleColumns.map((col, columnIndex) => (
                 <th
                   key={col.key}
-                  className={cn('border-b border-white/10 bg-[#055B65] px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.14em] text-white', col.width)}
+                  className={cn(
+                    'border-b border-white/10 bg-[#055B65] px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.14em] text-white',
+                    columnIndex === 0 && 'rounded-tl-[1.35rem]',
+                    col.width
+                  )}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span>{col.label}</span>
@@ -416,8 +410,17 @@ export function MDTableView({
                 </th>
               ))}
 
-              <th className="sticky right-0 z-30 w-40 rounded-tr-[1.35rem] border-b border-l border-white/20 bg-[#055B65] px-3 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-white shadow-[-12px_0_24px_rgba(15,23,42,0.08)]">
-                Actions
+              <th className="sticky right-0 z-30 w-48 rounded-tr-[1.35rem] border-b border-l border-white/20 bg-[#055B65] px-3 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-white shadow-[-12px_0_24px_rgba(15,23,42,0.08)]">
+                <div className="flex items-center justify-center gap-2">
+                  <span>Actions</span>
+                  <Checkbox
+                    checked={allSelected || (someSelected ? 'indeterminate' : false)}
+                    disabled={selectableOrders.length === 0}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Select all"
+                    className="approval-table-checkbox h-5 w-5 rounded-md border-2 border-white bg-white/20 shadow-sm data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-teal-700"
+                  />
+                </div>
               </th>
             </tr>
           </thead>
@@ -426,7 +429,7 @@ export function MDTableView({
             {orders.length === 0 ? (
               <tr>
                 <td
-                  colSpan={visibleColumns.length + 2}
+                  colSpan={visibleColumns.length + 1}
                   className="bg-white/80 px-4 py-12 text-center text-sm font-bold text-slate-500"
                 >
                   No orders found
@@ -446,18 +449,6 @@ export function MDTableView({
                       isSelected ? 'bg-teal-50/90' : 'odd:bg-white/92 even:bg-slate-50/72 hover:bg-teal-50/70'
                     )}
                   >
-                    <td className={cn(
-                      "sticky left-0 z-10 border-b border-teal-100 px-3 py-2.5 shadow-[10px_0_24px_rgba(15,23,42,0.04)] transition-colors",
-                      isSelected ? "bg-teal-100" : "bg-teal-50 group-hover:bg-teal-100"
-                    )}>
-                      <Checkbox
-                        checked={isSelected}
-                        disabled={!isActionable}
-                        onCheckedChange={() => toggleSelection(order.id)}
-                        aria-label={`Select order ${getColumnValue(order, 'orderNumber') || order.id}`}
-                      />
-                    </td>
-
                     {visibleColumns.map((col) => {
                       const value = getColumnValue(order, col.key)
 
@@ -521,6 +512,13 @@ export function MDTableView({
                           >
                             <Pause className="h-3 w-3" />
                           </Button>
+                          <Checkbox
+                            checked={isSelected}
+                            disabled={!isActionable}
+                            onCheckedChange={() => toggleSelection(order.id)}
+                            aria-label={`Select order ${getColumnValue(order, 'orderNumber') || order.id}`}
+                            className="approval-table-checkbox h-6 w-6 rounded-lg border-2 border-teal-700 bg-white shadow-sm ring-2 ring-white/80 data-[state=checked]:border-teal-800 data-[state=checked]:bg-teal-700 data-[state=checked]:text-white data-[state=checked]:[&_svg]:stroke-white [&_svg]:stroke-[3.5]"
+                          />
                         </div>
                       ) : (
                         <span className="block rounded-full bg-slate-100 px-3 py-1.5 text-center text-[11px] font-black text-slate-400">No actions</span>
