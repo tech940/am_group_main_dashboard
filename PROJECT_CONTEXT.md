@@ -128,6 +128,20 @@ All RO Billing comparisons are based on `bill_date`.
   - Scores transactions with SQL CTE logic.
   - Supports pagination, filters, advisor score summaries, alert counts, and full filtered export.
 
+- `GET /api/brands/kia/business-excellence/workshop-performance`
+  - New Workshop Performance API.
+  - Aggregates Job Cards, labour, spares, VAS, WA/WB, advisor performance, and daily movement.
+  - Combines `ro_billing_report`, `operation_wise_analysis_report`, `ew_report`, `mcp_report`, and `rsa_report` where available.
+  - Uses Redis with the 75-minute dashboard TTL and returns chart/table-ready payloads.
+
+### Business Excellence Routes
+
+- `/brands/kia/business-excellence` now redirects to `/brands/kia/business-excellence/ro-billing-report`.
+- `/brands/kia/business-excellence/ro-billing-report` opens the RO Billing report directly.
+- `/brands/kia/business-excellence/workshop-performance` opens Workshop Performance directly.
+- The report selector now navigates between route-level report URLs instead of only changing local component state.
+- The Business Excellence client no longer waits for the metadata API just to choose the active report; RO Billing and Workshop Performance are known report entries, which lets the active report mount and start its own APIs earlier.
+
 ### RO Billing Metrics
 
 - Load: count of unique bill/RO records.
@@ -163,12 +177,15 @@ Primary script:
 Important expected database objects:
 
 - `ro_billing_daily_summary_v2`
+- `workshop_performance_summary_v2`
 - indexes on bill date, work type, advisor, model, vehicle identifiers, uploaded timestamp, and performance-intelligence filters.
+- Workshop Performance indexes on RO Billing, Operation-wise Analysis, EW, MCP, and RSA date/advisor/VIN fields.
 
 After cron/import updates, refresh:
 
 ```sql
 REFRESH MATERIALIZED VIEW CONCURRENTLY ro_billing_daily_summary_v2;
+REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_performance_summary_v2;
 ```
 
 ## Purchase Orders
@@ -253,6 +270,32 @@ Important distinction:
 - GRN-based spend recognition design.
 - Business Excellence relational-table migration for RO Billing focus.
 - RO Billing Table, Trends, FY Trends, Analytics, Revenue, and Performance Intelligence sections.
+- Workshop Performance is now a dedicated Business Excellence report option in the sheet dropdown, directly below RO Billing Report, with server-side multi-table aggregation. JC matches the RO Billing table logic using `COUNT(DISTINCT COALESCE(bill_no, ro_no, id))`, not raw row count.
+- Workshop Performance addon definitions:
+  - WA = Wheel Alignment.
+  - WB = Wheel Balancing.
+  - VAS = Value Added Services.
+  - Workshop grouping prefers `work_type` first and falls back to `service_type`.
+  - `operation_wise_analysis_report` is the addon source for VAS/WA/WB, classified from `op_part_code` and `op_part_desc`.
+  - The UI label `OP/Part Desc.` maps to SQL column `op_part_desc`.
+  - VAS classification includes known OP/Part Desc values such as AC Evaporator Cleaning, Throttle Body Carbon Cleaning, AC Disinfectant, Rodent Repellent, Under Body Coating, Interior/Exterior Enrichment, Alloy Wheel Care, Air Intake Cleaning, Engine Dressing, Service Lubrication, Wheel Drum Painting, and Silencer Coating.
+  - WA/WB classification uses OP/Part Desc values such as Wheel Alignment and Wheel Balancing.
+  - Operation-wise addon amounts use `total_amt` and respect the selected Workshop date filter through `operation_wise_analysis_report.report_month`; this table is month-level, so filtering is month/year based.
+  - Workshop VAS KPI now calculates both CY and LY from `operation_wise_analysis_report.report_month`; cache version was bumped after this fix so stale `LY ₹0 / N/A` VAS cards are not reused.
+  - Workshop auxiliary KPI cards such as EW Count, MCP Count, and RSA Count also calculate LY/growth when prior-year data exists.
+  - Less VAS uses only `operation_wise_analysis_report.total_amt`, is not allocated to service-type rows, and appears only on the Workshop Grand Total row because operation-wise data has no service-type split.
+  - Workshop frontend preserves the API Grand Total addon values when rebuilding display buckets, so `LAB/RO(-VAS)` uses `(Grand Total Labour Amt - Grand Total Less VAS) / Grand Total JC`.
+  - Workshop table display is normalized into the same operational buckets as RO Billing: Paid Service, Free Services, Running Repairs, MECH, Others, MECH TOTAL, Accident, and Grand Total.
+  - Workshop API returns parent `work_type` and child `service_type` detail for table rows, so Free Services can expand into First/Second/Third Free Service where data exists.
+  - Workshop API now prefers `workshop_performance_jc_summary_v1` when present. This materialized view stores pre-deduped job-card rows, allowing service table, daily movement, and advisor aggregations to avoid repeated raw `ro_billing_report` scans.
+  - `scripts/dashboard-performance-optimization.sql` creates `workshop_performance_jc_summary_v1`; refresh it after cron imports with `REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_performance_jc_summary_v1;`.
+  - Workshop API also prefers `workshop_operation_addon_summary_v1` when present, so VAS/WA/WB regex classification is precomputed monthly instead of repeated on every request. Refresh it after cron imports with `REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_operation_addon_summary_v1;`.
+  - Workshop table service buckets are expandable only when the child rows are distinct from the parent bucket, avoiding duplicate rows such as Paid Service -> Paid Service.
+  - Workshop table hides mileage-only paid-service child labels such as `30K`, `40K`, etc., and keeps Accident collapsed to match the RO Billing table behavior.
+  - Workshop table money values use compact Indian notation such as `₹2.57L` for readability.
+  - Workshop charts render as full-width stacked sections to avoid cramped visuals.
+  - Workshop matrix rows are compact with visible row/column borders for denser operational reading.
+  - The Workshop matrix is the first full-width block in the report because it is the primary operational view.
 - Executive-style analytics visuals and chart expansion behavior.
 - Sales Team Leaderboard is now a dedicated Business Excellence analysis tab, backed by server-side service-advisor aggregation instead of the old in-Analytics placeholder.
 - Sales Team Leaderboard top 3 ranks now use crown-style gold/silver/bronze badges.

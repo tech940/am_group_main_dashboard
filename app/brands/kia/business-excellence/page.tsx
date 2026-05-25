@@ -1,4 +1,3 @@
-import KiaBusinessExcellencePage from '@/features/kia/business-excellence-page'
 import { getBrandAccess } from '@/lib/auth/brand-access'
 import { forbidden, redirect } from 'next/navigation'
 
@@ -18,5 +17,5 @@ export default async function Page() {
     forbidden()
   }
 
-  return <KiaBusinessExcellencePage />
+  redirect('/brands/kia/business-excellence/ro-billing-report')
 }
