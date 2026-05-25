@@ -1598,6 +1598,7 @@ type ROAnalysisResponse = {
   fyTrends: Array<{ fy: string; value: number }>
   distribution: Array<{ name: string; value: number }>
   advisorLeaderboard?: SalesLeaderboardRow[]
+  byMetric?: Partial<Record<ROAnalysisType, ROAnalysisResponse>>
   filterOptions: Record<string, string[]>
   rowCounts: { totalRows: number; rowsWithBillDate: number; filteredRows: number }
 }
@@ -2139,28 +2140,30 @@ function ServiceTypePerformance({
       try {
         setIsServerTableLoading(true)
         const range = getDefaultRODateRange(dateFilter)
-        const tableResults = await Promise.all(roAnalysisTypes.map(async (analysisType) => {
-          const params = new URLSearchParams({
-            brand: 'kia',
-            sheet: 'ro_billing_report',
-            analysisType,
-            view: 'table',
-            groupBy: 'work_type',
-            startDate: range.startDate,
-            endDate: range.endDate,
-          })
-          const queryString = params.toString()
-          const result = await queryClient.fetchQuery({
-            queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
-            queryFn: async () => {
-              const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
-              if (!response.ok) throw new Error(`Failed to fetch RO Billing ${analysisType} table summary`)
-              return await response.json() as ROAnalysisResponse
-            },
-            staleTime: DASHBOARD_STALE_TIME_MS,
-          })
-          return [analysisType, convertServerTableRows(result.rows || [])] as const
-        }))
+        const params = new URLSearchParams({
+          brand: 'kia',
+          sheet: 'ro_billing_report',
+          analysisType: 'load',
+          view: 'table',
+          groupBy: 'work_type',
+          metrics: 'all',
+          startDate: range.startDate,
+          endDate: range.endDate,
+        })
+        const queryString = params.toString()
+        const result = await queryClient.fetchQuery({
+          queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
+          queryFn: async () => {
+            const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+            if (!response.ok) throw new Error('Failed to fetch RO Billing table summary bundle')
+            return await response.json() as ROAnalysisResponse
+          },
+          staleTime: DASHBOARD_STALE_TIME_MS,
+        })
+        const tableResults = roAnalysisTypes.map((analysisType) => {
+          const metricResult = result.byMetric?.[analysisType] || result
+          return [analysisType, convertServerTableRows(metricResult.rows || [])] as const
+        })
         if (isActive) {
           setServerTableRowsByMetric(Object.fromEntries(tableResults) as Partial<Record<ROAnalysisType, StatRow[]>>)
         }
@@ -2200,6 +2203,30 @@ function ServiceTypePerformance({
     })
   }, [dateFilter, queryClient])
 
+  const fetchAnalysisBundle = useCallback(async (view: 'trend' | 'fy') => {
+    const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
+    const params = new URLSearchParams({
+      brand: 'kia',
+      sheet: 'ro_billing_report',
+      analysisType: 'load',
+      view,
+      groupBy: 'work_type',
+      metrics: 'all',
+      startDate: range.startDate,
+      endDate: range.endDate,
+    })
+    const queryString = params.toString()
+    return queryClient.fetchQuery({
+      queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
+      queryFn: async () => {
+        const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+        if (!response.ok) throw new Error(`Failed to fetch RO Billing ${view} bundle`)
+        return await response.json() as ROAnalysisResponse
+      },
+      staleTime: DASHBOARD_STALE_TIME_MS,
+    })
+  }, [dateFilter, queryClient])
+
   useEffect(() => {
     let isActive = true
     async function fetchActiveSummaryView() {
@@ -2207,25 +2234,25 @@ function ServiceTypePerformance({
       try {
         setIsServerViewLoading(true)
         if (viewMode === 'trend') {
-          const result = await fetchAnalysisSummary(activeAnalysisType, 'trend')
+          const result = await fetchAnalysisBundle('trend')
           if (isActive) {
-            setServerTrendByMetric((prev) => ({ ...prev, [activeAnalysisType]: result }))
+            setServerTrendByMetric((prev) => ({
+              ...prev,
+              ...(result.byMetric || {}),
+            }))
           }
           return
         }
 
         if (viewMode === 'analytics') {
-          const [trendResults, analyticsResult] = await Promise.all([
-            Promise.all(roAnalysisTypes.map(async (analysisType) => {
-              const result = await fetchAnalysisSummary(analysisType, 'trend')
-              return [analysisType, result] as const
-            })),
+          const [trendBundle, analyticsResult] = await Promise.all([
+            fetchAnalysisBundle('trend'),
             fetchAnalysisSummary('load', 'analytics'),
           ])
           if (isActive) {
             setServerTrendByMetric((prev) => ({
               ...prev,
-              ...(Object.fromEntries(trendResults) as Partial<Record<ROAnalysisType, ROAnalysisResponse>>),
+              ...(trendBundle.byMetric || {}),
             }))
             setServerAnalyticsSummary(analyticsResult.analyticsSummary || null)
           }
@@ -2240,12 +2267,9 @@ function ServiceTypePerformance({
           return
         }
 
-        const results = await Promise.all(roAnalysisTypes.map(async (analysisType) => {
-          const result = await fetchAnalysisSummary(analysisType, 'fy')
-          return [analysisType, result] as const
-        }))
+        const result = await fetchAnalysisBundle('fy')
         if (isActive) {
-          setServerFyByMetric(Object.fromEntries(results) as Partial<Record<ROAnalysisType, ROAnalysisResponse>>)
+          setServerFyByMetric(result.byMetric || {})
         }
       } catch (error) {
         if (isActive) console.error('Failed to fetch RO Billing summary view:', error)
@@ -2258,7 +2282,7 @@ function ServiceTypePerformance({
     return () => {
       isActive = false
     }
-  }, [activeAnalysisType, fetchAnalysisSummary, roAnalysisTypes, viewMode])
+  }, [fetchAnalysisBundle, fetchAnalysisSummary, viewMode])
 
   const formatValue = (val: number | string | 'N/A' | undefined | null) => {
     if (val === 'N/A' || val === undefined || val === null) return 'N/A'
@@ -3757,27 +3781,27 @@ function ServiceTypePerformance({
             {viewMode === 'table' ? (
               <div className="p-6 pb-0">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
+                  <table className="ro-analysis-table w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-teal-600 text-white">
+                      <tr className="bg-teal-700 text-white">
                         <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 min-w-[220px]">Work Type</th>
                         <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center">TD</th>
-                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-white/5">MTD</th>
-                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-white/10">QTD</th>
-                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-white/5">YTD</th>
+                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-600">MTD</th>
+                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-700">QTD</th>
+                        <th colSpan={3} className="px-4 py-5 text-[10px] font-black uppercase tracking-widest border-b border-white/10 text-center bg-teal-600">YTD</th>
                       </tr>
-                      <tr className="bg-teal-600/90 text-white/80">
+                      <tr className="bg-teal-700 text-white/90">
                         <th className="px-6 py-3 border-b border-white/5"></th>
                         <th className="px-6 py-3 border-b border-white/5"></th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-white/5">CY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-white/5">LY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-white/5">Growth</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-white/10">CY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-white/10">LY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-white/10">Growth</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-white/5">CY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-white/5">LY</th>
-                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-white/5">Growth</th>
+                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">CY</th>
+                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">LY</th>
+                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">Growth</th>
+                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">CY</th>
+                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">LY</th>
+                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-700">Growth</th>
+                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">CY</th>
+                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">LY</th>
+                        <th className="px-4 py-3 text-[9px] font-bold text-center border-b border-white/5 bg-teal-600">Growth</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -3825,9 +3849,9 @@ function ServiceTypePerformance({
                                   </div>
                                 </td>
                                 <td className={cn("px-6 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.td)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-black", isGrandTotal ? "bg-white/10 text-white" : isTotal ? "bg-slate-200/50 text-slate-900" : "bg-slate-50/50 text-slate-900")}>{formatValue(row.cy)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "bg-white/10 text-white" : isTotal ? "bg-slate-200/50 text-slate-800" : "bg-slate-50/50 text-slate-400")}>{formatValue(row.ly)}</td>
-                                <td className={cn("px-4 py-4 text-center", isGrandTotal ? "bg-white/10" : isTotal ? "bg-slate-200/50" : "bg-slate-50/50")}>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-black", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-900")}>{formatValue(row.cy)}</td>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly)}</td>
+                                <td className="px-4 py-4 text-center">
                                   <span className={cn(
                                     "px-2.5 py-1 rounded-full text-[10px] font-black border shadow-sm",
                                     getGrowthBadgeClass(row.growth)
@@ -4522,8 +4546,14 @@ function ServiceTypePerformance({
       </Card>
       {expandedChart && (
         <div className="fixed inset-0 z-[240] bg-slate-950/80 p-[10px] backdrop-blur-md animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+          <div
+            className="expanded-chart-shell flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 shadow-2xl"
+            style={{ backgroundColor: '#ffffff' }}
+          >
+            <div
+              className="expanded-chart-header flex items-center justify-between border-b border-slate-200 px-5 py-3"
+              style={{ backgroundColor: '#ffffff' }}
+            >
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Expanded Analysis</p>
                 <h3 className="text-xl font-black text-slate-950">{expandedChart.title}</h3>
@@ -4537,7 +4567,7 @@ function ServiceTypePerformance({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 p-4">
+            <div className="expanded-chart-body min-h-0 flex-1 p-4" style={{ backgroundColor: '#ffffff' }}>
               {renderExpandedChartContent()}
             </div>
           </div>

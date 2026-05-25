@@ -141,8 +141,10 @@ All RO Billing comparisons are based on `bill_date`.
 
 ### Performance Optimizations Completed
 
-- Metadata API limited to RO Billing only.
+- Metadata API limited to RO Billing only and uses projected RO Billing columns instead of querying `information_schema` on every cold metadata build.
+- RO Billing paginated table rows use a projected-column fast path and skip `information_schema` metadata lookups on row requests.
 - RO Billing analysis moved toward SQL aggregation.
+- RO Billing analysis now supports batched metric loading with `metrics=all` for table, trend, and FY views. The API returns a `byMetric` payload for Load, Labour, Parts, Lab/Veh, and Part/Veh from one SQL summary query, and the frontend consumes that bundle instead of firing one request per metric.
 - FY Trends now has a dedicated SQL aggregate path and no longer fetches all RO Billing rows for the default unfiltered FY view.
 - Redis TTL is 75 minutes.
 - Frontend session cache prevents duplicate API hits after data loads.

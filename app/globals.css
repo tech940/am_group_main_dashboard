@@ -122,4 +122,27 @@
   .glass-dashboard-content table tr:hover {
     background-color: rgba(255, 255, 255, 0.38) !important;
   }
+
+  .glass-dashboard-content .ro-analysis-table tbody td {
+    background-color: transparent !important;
+  }
+
+  .glass-dashboard-content .expanded-chart-shell {
+    background: #f8fafc !important;
+    border-color: rgba(226, 232, 240, 0.95) !important;
+  }
+
+  .glass-dashboard-content .expanded-chart-header {
+    background: linear-gradient(135deg, #ffffff 0%, #f1f8f7 100%) !important;
+    border-color: rgba(203, 213, 225, 0.85) !important;
+  }
+
+  .glass-dashboard-content .expanded-chart-body {
+    background: #ffffff !important;
+  }
+
+  .glass-dashboard-content .expanded-chart-body .recharts-wrapper,
+  .glass-dashboard-content .expanded-chart-body .recharts-surface {
+    background: #ffffff !important;
+  }
 }
