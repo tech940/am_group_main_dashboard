@@ -1909,7 +1909,7 @@ function PurchaseOrdersPageContent() {
                 {showCompleted ? 'Show Active' : 'Show Completed'}
               </Button>
               <Button
-                onClick={() => void fetchOrders(true, true)}
+                onClick={() => window.location.reload()}
                 variant="outline"
                 className="rounded-2xl border-slate-300 hover:bg-slate-50"
               >
@@ -2152,7 +2152,7 @@ function PurchaseOrdersPageContent() {
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <Button
-                      onClick={() => void fetchOrders(true, true)}
+                      onClick={() => window.location.reload()}
                       variant="outline"
                       className="rounded-2xl border-white/50 bg-white/10 text-white hover:bg-white/20"
                     >

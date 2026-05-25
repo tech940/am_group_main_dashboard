@@ -89,4 +89,37 @@
   .glass-card {
     @apply bg-white/70 backdrop-blur-md border border-white/20;
   }
+
+  .glass-dashboard-content [class*="bg-white"],
+  .glass-dashboard-content [class*="bg-slate-50"],
+  .glass-dashboard-content [class*="bg-slate-100"] {
+    background-color: rgba(255, 255, 255, 0.46) !important;
+    backdrop-filter: blur(22px) saturate(1.18);
+    -webkit-backdrop-filter: blur(22px) saturate(1.18);
+  }
+
+  .glass-dashboard-content [class*="border-slate-100"],
+  .glass-dashboard-content [class*="border-slate-200"],
+  .glass-dashboard-content [class*="border-white"] {
+    border-color: rgba(255, 255, 255, 0.62) !important;
+  }
+
+  .glass-dashboard-content [class*="shadow-slate-200"],
+  .glass-dashboard-content [class*="shadow-xl"],
+  .glass-dashboard-content [class*="shadow-lg"],
+  .glass-dashboard-content [class*="shadow-sm"] {
+    box-shadow: 0 22px 70px rgba(15, 118, 110, 0.10) !important;
+  }
+
+  .glass-dashboard-content table tbody {
+    background-color: rgba(255, 255, 255, 0.24);
+  }
+
+  .glass-dashboard-content table tr {
+    background-color: rgba(255, 255, 255, 0.18);
+  }
+
+  .glass-dashboard-content table tr:hover {
+    background-color: rgba(255, 255, 255, 0.38) !important;
+  }
 }

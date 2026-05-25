@@ -3,13 +3,14 @@ import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const CACHE_TTL_SECONDS = 60 * 60
+const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const FILTER_COLUMNS = {
   workType: 'work_type',
   serviceType: 'service_type',
@@ -21,7 +22,7 @@ const FILTER_COLUMNS = {
 } as const
 
 type AnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
-type AnalysisView = 'table' | 'trend' | 'fy' | 'analytics' | 'revenue'
+type AnalysisView = 'table' | 'trend' | 'fy' | 'analytics' | 'revenue' | 'leaderboard'
 type DataRow = Record<string, unknown>
 type PeriodKey = 'td' | 'mtd' | 'qtd' | 'ytd'
 
@@ -443,6 +444,7 @@ function buildRevenueSummary(rows: DataRow[], startDate: Date, endDate: Date) {
 
 type WorkTypeAggregateRow = {
   work_type: string | null
+  service_type?: string | null
   td_cy_load: number
   mtd_cy_load: number
   mtd_ly_load: number
@@ -466,6 +468,39 @@ type WorkTypeAggregateRow = {
   ytd_ly_parts: number
 }
 
+type DailyAggregateRow = {
+  bill_date: string | Date
+  load: number
+  labour: number
+  parts: number
+}
+
+type FiscalAggregateRow = {
+  fy: string
+  load: number
+  labour: number
+  parts: number
+}
+
+type AnalyticsQualitySummary = {
+  avgRating: number
+  avgRatingLy: number
+  pickDropRate: number
+  pickDropRateLy: number
+}
+
+type AdvisorLeaderboardRow = {
+  name: string
+  load: number
+  labour: number
+  parts: number
+  revenue: number
+  averageBilling: number
+  contribution: number
+}
+
+let hasRoBillingDailySummaryV2: boolean | null = null
+
 function numberValue(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value || 0)
   return Number.isFinite(parsed) ? parsed : 0
@@ -483,11 +518,451 @@ function measureWorkTypeRow(row: WorkTypeAggregateRow, period: PeriodKey, side: 
   return load > 0 ? parts / load : 0
 }
 
-async function fetchWorkTypeTableRows(analysisType: AnalysisType, windows: Record<PeriodKey, PeriodWindow>) {
+function measureDailyRow(row: DailyAggregateRow | undefined, analysisType: AnalysisType) {
+  if (!row) return 0
+  const load = numberValue(row.load)
+  const labour = numberValue(row.labour)
+  const parts = numberValue(row.parts)
+  if (analysisType === 'load') return load
+  if (analysisType === 'labour') return labour
+  if (analysisType === 'parts') return parts
+  if (analysisType === 'lab_per_veh') return load > 0 ? labour / load : 0
+  return load > 0 ? parts / load : 0
+}
+
+function measureFiscalRow(row: FiscalAggregateRow, analysisType: AnalysisType) {
+  const load = numberValue(row.load)
+  const labour = numberValue(row.labour)
+  const parts = numberValue(row.parts)
+  if (analysisType === 'load') return load
+  if (analysisType === 'labour') return labour
+  if (analysisType === 'parts') return parts
+  if (analysisType === 'lab_per_veh') return load > 0 ? labour / load : 0
+  return load > 0 ? parts / load : 0
+}
+
+async function hasDailySummaryV2() {
+  if (hasRoBillingDailySummaryV2 !== null) return hasRoBillingDailySummaryV2
+
   const result = await db.execute(sql`
+    SELECT to_regclass('public.ro_billing_daily_summary_v2') IS NOT NULL AS exists
+  `)
+  hasRoBillingDailySummaryV2 = Boolean(result[0]?.exists)
+  return hasRoBillingDailySummaryV2
+}
+
+function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: AnalysisType) {
+  const combineRows = (sourceRows: WorkTypeAggregateRow[]): WorkTypeAggregateRow => {
+    const combined = {
+      work_type: sourceRows[0]?.work_type || 'Unspecified',
+      service_type: null,
+    } as WorkTypeAggregateRow
+    const metricKeys = [
+      'td_cy_load', 'mtd_cy_load', 'mtd_ly_load', 'qtd_cy_load', 'qtd_ly_load', 'ytd_cy_load', 'ytd_ly_load',
+      'td_cy_labour', 'mtd_cy_labour', 'mtd_ly_labour', 'qtd_cy_labour', 'qtd_ly_labour', 'ytd_cy_labour', 'ytd_ly_labour',
+      'td_cy_parts', 'mtd_cy_parts', 'mtd_ly_parts', 'qtd_cy_parts', 'qtd_ly_parts', 'ytd_cy_parts', 'ytd_ly_parts',
+    ] as Array<keyof WorkTypeAggregateRow>
+
+    metricKeys.forEach((key) => {
+      combined[key] = sourceRows.reduce((total, row) => total + numberValue(row[key]), 0) as never
+    })
+
+    return combined
+  }
+
+  const toPeriod = (row: WorkTypeAggregateRow, period: PeriodKey): PeriodMetric => {
+    const cy = measureWorkTypeRow(row, period, 'cy', analysisType)
+    const lyRaw = measureWorkTypeRow(row, period, 'ly', analysisType)
+    const lyLoad = measureWorkTypeRow(row, period, 'ly', 'load')
+    const ly = lyLoad > 0 ? lyRaw : 'N/A'
+    return { cy, ly, growth: ly === 'N/A' ? 'N/A' : growth(cy, ly) }
+  }
+
+  const toAnalysisRow = (name: string, row: WorkTypeAggregateRow, depth: number, children: AnalysisRow[] = []): AnalysisRow => ({
+    name,
+    depth,
+    metrics: {
+      td: toPeriod(row, 'td'),
+      mtd: toPeriod(row, 'mtd'),
+      qtd: toPeriod(row, 'qtd'),
+      ytd: toPeriod(row, 'ytd'),
+    },
+    children,
+  })
+
+  const grouped = new Map<string, WorkTypeAggregateRow[]>()
+  rows.forEach((row) => {
+    const key = row.work_type || 'Unspecified'
+    const existing = grouped.get(key)
+    if (existing) {
+      existing.push(row)
+    } else {
+      grouped.set(key, [row])
+    }
+  })
+
+  return Array.from(grouped.entries()).map(([workType, workRows]) => {
+    const parent = combineRows(workRows)
+    const children = workRows
+      .map((row) => toAnalysisRow(row.service_type || 'Unspecified', row, 1))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    return toAnalysisRow(workType, parent, 0, children)
+  })
+}
+
+async function fetchDailyTrendRows(analysisType: AnalysisType, startDate: Date, endDate: Date) {
+  const relationalStart = sameDateLastYear(startDate)
+  const relationalEnd = endDate
+
+  const result = await db.execute(await hasDailySummaryV2() ? sql`
+    SELECT
+      bill_date,
+      COALESCE(SUM(load_count), 0)::int AS load,
+      COALESCE(SUM(labour_amount), 0)::float AS labour,
+      COALESCE(SUM(part_amount), 0)::float AS parts
+    FROM ro_billing_daily_summary_v2
+    WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
+      AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
+    GROUP BY bill_date
+    ORDER BY bill_date
+  ` : sql`
+    WITH dedup AS (
+      SELECT
+        bill_key,
+        bill_date,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+      FROM (
+        SELECT
+          COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+          bill_date::date AS bill_date,
+          COALESCE(labour_amt, 0)::numeric AS labour_amt,
+          COALESCE(part_amt, 0)::numeric AS part_amt
+        FROM ro_billing_report
+        WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
+          AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
+      ) base
+      GROUP BY bill_key, bill_date
+    )
+    SELECT
+      bill_date,
+      COUNT(DISTINCT bill_key)::int AS load,
+      COALESCE(SUM(labour_amt), 0)::float AS labour,
+      COALESCE(SUM(part_amt), 0)::float AS parts
+    FROM dedup
+    GROUP BY bill_date
+    ORDER BY bill_date
+  `)
+
+  const byDate = new Map<string, DailyAggregateRow>()
+  ;((result as unknown as DailyAggregateRow[]) || []).forEach((row) => {
+    byDate.set(toDateInputValue(new Date(row.bill_date)), row)
+  })
+
+  const trend = []
+  const cursor = startOfDay(startDate)
+  while (cursor <= endDate) {
+    const cyDate = toDateInputValue(cursor)
+    const lyDate = toDateInputValue(sameDateLastYear(cursor))
+    trend.push({
+      date: cyDate,
+      label: `${String(cursor.getDate()).padStart(2, '0')} ${cursor.toLocaleDateString('en-US', { weekday: 'short' })}`,
+      cy: measureDailyRow(byDate.get(cyDate), analysisType),
+      ly: measureDailyRow(byDate.get(lyDate), analysisType),
+    })
+    cursor.setDate(cursor.getDate() + 1)
+  }
+
+  return trend
+}
+
+async function fetchFiscalTrendRows(analysisType: AnalysisType) {
+  const result = await db.execute(await hasDailySummaryV2() ? sql`
+    WITH fiscal AS (
+      SELECT
+        CASE
+          WHEN EXTRACT(MONTH FROM bill_date) >= 4 THEN EXTRACT(YEAR FROM bill_date)::int
+          ELSE EXTRACT(YEAR FROM bill_date)::int - 1
+        END AS fiscal_start_year,
+        COALESCE(SUM(load_count), 0)::int AS load,
+        COALESCE(SUM(labour_amount), 0)::float AS labour,
+        COALESCE(SUM(part_amount), 0)::float AS parts
+      FROM ro_billing_daily_summary_v2
+      WHERE bill_date IS NOT NULL
+      GROUP BY fiscal_start_year
+    )
+    SELECT
+      ('FY ' || fiscal_start_year::text || '-' || RIGHT((fiscal_start_year + 1)::text, 2)) AS fy,
+      load,
+      labour,
+      parts
+    FROM fiscal
+    ORDER BY fiscal_start_year DESC
+    LIMIT 5
+  ` : sql`
+    WITH dedup AS (
+      SELECT
+        bill_key,
+        bill_date,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+      FROM (
+        SELECT
+          COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+          bill_date::date AS bill_date,
+          COALESCE(labour_amt, 0)::numeric AS labour_amt,
+          COALESCE(part_amt, 0)::numeric AS part_amt
+        FROM ro_billing_report
+        WHERE bill_date IS NOT NULL
+      ) base
+      GROUP BY bill_key, bill_date
+    ),
+    fiscal AS (
+      SELECT
+        CASE
+          WHEN EXTRACT(MONTH FROM bill_date) >= 4 THEN EXTRACT(YEAR FROM bill_date)::int
+          ELSE EXTRACT(YEAR FROM bill_date)::int - 1
+        END AS fiscal_start_year,
+        COUNT(DISTINCT bill_key)::int AS load,
+        COALESCE(SUM(labour_amt), 0)::float AS labour,
+        COALESCE(SUM(part_amt), 0)::float AS parts
+      FROM dedup
+      GROUP BY fiscal_start_year
+    )
+    SELECT
+      ('FY ' || fiscal_start_year::text || '-' || RIGHT((fiscal_start_year + 1)::text, 2)) AS fy,
+      load,
+      labour,
+      parts
+    FROM fiscal
+    ORDER BY fiscal_start_year DESC
+    LIMIT 5
+  `)
+
+  return ((result as unknown as FiscalAggregateRow[]) || [])
+    .sort((a, b) => a.fy.localeCompare(b.fy))
+    .map((row) => ({
+      fy: row.fy,
+      value: measureFiscalRow(row, analysisType),
+    }))
+}
+
+async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date): Promise<AnalyticsQualitySummary> {
+  const lyStart = sameDateLastYear(startDate)
+  const lyEnd = sameDateLastYear(endDate)
+  const result = await db.execute(sql`
+    WITH base AS (
+      SELECT
+        bill_date::date AS bill_date,
+        NULLIF(regexp_replace(COALESCE(avg_rating::text, ''), '[^0-9.-]', '', 'g'), '')::numeric AS rating,
+        LOWER(TRIM(COALESCE(pick_drop::text, ''))) AS pick_drop_value
+      FROM ro_billing_report
+      WHERE bill_date >= ${toDateInputValue(lyStart)}::date
+        AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+    )
+    SELECT
+      COALESCE(AVG(rating) FILTER (
+        WHERE bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date
+          AND rating > 0
+      ), 0)::float AS avg_rating,
+      COALESCE(AVG(rating) FILTER (
+        WHERE bill_date BETWEEN ${toDateInputValue(lyStart)}::date AND ${toDateInputValue(lyEnd)}::date
+          AND rating > 0
+      ), 0)::float AS avg_rating_ly,
+      COALESCE(
+        (
+          COUNT(*) FILTER (
+            WHERE bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date
+              AND pick_drop_value NOT IN ('', '-', 'none', 'no', 'n/a', 'na')
+          )::float
+          / NULLIF(COUNT(*) FILTER (
+            WHERE bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date
+          ), 0)
+        ) * 100,
+        0
+      )::float AS pick_drop_rate,
+      COALESCE(
+        (
+          COUNT(*) FILTER (
+            WHERE bill_date BETWEEN ${toDateInputValue(lyStart)}::date AND ${toDateInputValue(lyEnd)}::date
+              AND pick_drop_value NOT IN ('', '-', 'none', 'no', 'n/a', 'na')
+          )::float
+          / NULLIF(COUNT(*) FILTER (
+            WHERE bill_date BETWEEN ${toDateInputValue(lyStart)}::date AND ${toDateInputValue(lyEnd)}::date
+          ), 0)
+        ) * 100,
+        0
+      )::float AS pick_drop_rate_ly
+    FROM base
+  `)
+
+  const row = ((result as unknown as Array<{
+    avg_rating: number
+    avg_rating_ly: number
+    pick_drop_rate: number
+    pick_drop_rate_ly: number
+  }>) || [])[0]
+
+  return {
+    avgRating: numberValue(row?.avg_rating),
+    avgRatingLy: numberValue(row?.avg_rating_ly),
+    pickDropRate: numberValue(row?.pick_drop_rate),
+    pickDropRateLy: numberValue(row?.pick_drop_rate_ly),
+  }
+}
+
+async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Promise<AdvisorLeaderboardRow[]> {
+  const result = await db.execute(await hasDailySummaryV2() ? sql`
+    WITH advisor_totals AS (
+      SELECT
+        COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS name,
+        COALESCE(SUM(load_count), 0)::int AS load,
+        COALESCE(SUM(labour_amount), 0)::float AS labour,
+        COALESCE(SUM(part_amount), 0)::float AS parts,
+        COALESCE(SUM(total_amount), 0)::float AS total_amount
+      FROM ro_billing_daily_summary_v2
+      WHERE bill_date >= ${toDateInputValue(startDate)}::date
+        AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+      GROUP BY name
+    ),
+    ranked AS (
+      SELECT
+        name,
+        load,
+        labour,
+        parts,
+        CASE WHEN total_amount > 0 THEN total_amount ELSE labour + parts END AS revenue
+      FROM advisor_totals
+      WHERE name <> 'Unspecified'
+    ),
+    totals AS (
+      SELECT COALESCE(SUM(revenue), 0)::float AS total_revenue FROM ranked
+    )
+    SELECT
+      ranked.name,
+      ranked.load,
+      ranked.labour,
+      ranked.parts,
+      ranked.revenue,
+      CASE WHEN ranked.load > 0 THEN ranked.revenue / ranked.load ELSE 0 END::float AS average_billing,
+      CASE WHEN totals.total_revenue > 0 THEN (ranked.revenue / totals.total_revenue) * 100 ELSE 0 END::float AS contribution
+    FROM ranked
+    CROSS JOIN totals
+    ORDER BY ranked.revenue DESC, ranked.load DESC, ranked.name ASC
+    LIMIT 100
+  ` : sql`
+    WITH dedup AS (
+      SELECT
+        service_advisor AS name,
+        bill_key,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
+        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+      FROM (
+        SELECT
+          COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS service_advisor,
+          COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+          COALESCE(labour_amt, 0)::numeric AS labour_amt,
+          COALESCE(part_amt, 0)::numeric AS part_amt,
+          COALESCE(total_amt, 0)::numeric AS total_amt
+        FROM ro_billing_report
+        WHERE bill_date >= ${toDateInputValue(startDate)}::date
+          AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+      ) base
+      GROUP BY service_advisor, bill_key
+    ),
+    advisor_totals AS (
+      SELECT
+        name,
+        COUNT(DISTINCT bill_key)::int AS load,
+        COALESCE(SUM(labour_amt), 0)::float AS labour,
+        COALESCE(SUM(part_amt), 0)::float AS parts,
+        COALESCE(SUM(total_amt), 0)::float AS total_amount
+      FROM dedup
+      WHERE name <> 'Unspecified'
+      GROUP BY name
+    ),
+    ranked AS (
+      SELECT
+        name,
+        load,
+        labour,
+        parts,
+        CASE WHEN total_amount > 0 THEN total_amount ELSE labour + parts END AS revenue
+      FROM advisor_totals
+    ),
+    totals AS (
+      SELECT COALESCE(SUM(revenue), 0)::float AS total_revenue FROM ranked
+    )
+    SELECT
+      ranked.name,
+      ranked.load,
+      ranked.labour,
+      ranked.parts,
+      ranked.revenue,
+      CASE WHEN ranked.load > 0 THEN ranked.revenue / ranked.load ELSE 0 END::float AS average_billing,
+      CASE WHEN totals.total_revenue > 0 THEN (ranked.revenue / totals.total_revenue) * 100 ELSE 0 END::float AS contribution
+    FROM ranked
+    CROSS JOIN totals
+    ORDER BY ranked.revenue DESC, ranked.load DESC, ranked.name ASC
+    LIMIT 100
+  `)
+
+  return ((result as unknown as Array<{
+    name: string
+    load: number
+    labour: number
+    parts: number
+    revenue: number
+    average_billing: number
+    contribution: number
+  }>) || []).map((row) => ({
+    name: row.name || 'Unspecified',
+    load: numberValue(row.load),
+    labour: numberValue(row.labour),
+    parts: numberValue(row.parts),
+    revenue: numberValue(row.revenue),
+    averageBilling: numberValue(row.average_billing),
+    contribution: numberValue(row.contribution),
+  }))
+}
+
+async function fetchWorkTypeTableRows(analysisType: AnalysisType, windows: Record<PeriodKey, PeriodWindow>) {
+  const result = await db.execute(await hasDailySummaryV2() ? sql`
+    SELECT
+      work_type,
+      service_type,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::int AS td_cy_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::int AS mtd_cy_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::int AS mtd_ly_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::int AS qtd_cy_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::int AS qtd_ly_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::int AS ytd_cy_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::int AS ytd_ly_load,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_labour,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_parts
+    FROM ro_billing_daily_summary_v2
+    WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
+      AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
+    GROUP BY work_type, service_type
+  ` : sql`
     WITH dedup AS (
       SELECT
         work_type,
+        service_type,
         bill_key,
         bill_date,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
@@ -495,6 +970,7 @@ async function fetchWorkTypeTableRows(analysisType: AnalysisType, windows: Recor
       FROM (
         SELECT
           COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
+          COALESCE(NULLIF(service_type, ''), 'Unspecified') AS service_type,
           COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
@@ -503,10 +979,11 @@ async function fetchWorkTypeTableRows(analysisType: AnalysisType, windows: Recor
         WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
           AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
       ) base
-      GROUP BY work_type, bill_key, bill_date
+      GROUP BY work_type, service_type, bill_key, bill_date
     )
     SELECT
       work_type,
+      service_type,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date)::int AS td_cy_load,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date)::int AS mtd_cy_load,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date)::int AS mtd_ly_load,
@@ -529,29 +1006,11 @@ async function fetchWorkTypeTableRows(analysisType: AnalysisType, windows: Recor
       COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_parts,
       COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_parts
     FROM dedup
-    GROUP BY work_type
+    GROUP BY work_type, service_type
   `)
 
   const rows = result as unknown as WorkTypeAggregateRow[]
-  const toPeriod = (row: WorkTypeAggregateRow, period: PeriodKey): PeriodMetric => {
-    const cy = measureWorkTypeRow(row, period, 'cy', analysisType)
-    const lyRaw = measureWorkTypeRow(row, period, 'ly', analysisType)
-    const lyLoad = measureWorkTypeRow(row, period, 'ly', 'load')
-    const ly = lyLoad > 0 ? lyRaw : 'N/A'
-    return { cy, ly, growth: ly === 'N/A' ? 'N/A' : growth(cy, ly) }
-  }
-
-  return rows.map((row) => ({
-    name: row.work_type || 'Unspecified',
-    depth: 0,
-    metrics: {
-      td: toPeriod(row, 'td'),
-      mtd: toPeriod(row, 'mtd'),
-      qtd: toPeriod(row, 'qtd'),
-      ytd: toPeriod(row, 'ytd'),
-    },
-    children: [],
-  }))
+  return aggregateRowsToStats(rows, analysisType)
 }
 
 async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: Date }) {
@@ -622,7 +1081,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:v5:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `ro_billing:v10:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -658,7 +1117,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Invalid analysis type' }, { status: 400 })
     }
 
-    if (!['table', 'trend', 'fy', 'analytics', 'revenue'].includes(view)) {
+    if (!['table', 'trend', 'fy', 'analytics', 'revenue', 'leaderboard'].includes(view)) {
       return NextResponse.json({ error: 'Invalid analysis view' }, { status: 400 })
     }
 
@@ -706,6 +1165,102 @@ export async function GET(request: Request) {
             filteredRows: rows.length,
           },
           rows,
+        }
+      }
+      if (view === 'trend' && groupBy === 'work_type' && !hasFilters) {
+        const trend = await timer.time('daily-trend-sql-summary', () => fetchDailyTrendRows(analysisType, startDate, endDate))
+        return {
+          sheet: {
+            id: 'ro_billing_report',
+            brand: 'kia',
+            sheetName: 'RO Billing Report',
+            uploadedAt: null,
+          },
+          analysisType,
+          dateBasis: 'Bill Date',
+          dateRange: {
+            startDate: toDateInputValue(startDate),
+            endDate: toDateInputValue(endDate),
+          },
+          filterOptions: {},
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: trend.length,
+          },
+          trend,
+        }
+      }
+      if (view === 'analytics' && groupBy === 'work_type' && !hasFilters) {
+        const analyticsSummary = await timer.time('analytics-quality-sql-summary', () => fetchAnalyticsQualitySummary(startDate, endDate))
+        return {
+          sheet: {
+            id: 'ro_billing_report',
+            brand: 'kia',
+            sheetName: 'RO Billing Report',
+            uploadedAt: null,
+          },
+          analysisType,
+          dateBasis: 'Bill Date',
+          dateRange: {
+            startDate: toDateInputValue(startDate),
+            endDate: toDateInputValue(endDate),
+          },
+          filterOptions: {},
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: 0,
+          },
+          analyticsSummary,
+        }
+      }
+      if (view === 'leaderboard' && groupBy === 'work_type' && !hasFilters) {
+        const advisorLeaderboard = await timer.time('advisor-leaderboard-sql-summary', () => fetchAdvisorLeaderboardRows(startDate, endDate))
+        return {
+          sheet: {
+            id: 'ro_billing_report',
+            brand: 'kia',
+            sheetName: 'RO Billing Report',
+            uploadedAt: null,
+          },
+          analysisType,
+          dateBasis: 'Bill Date',
+          dateRange: {
+            startDate: toDateInputValue(startDate),
+            endDate: toDateInputValue(endDate),
+          },
+          filterOptions: {},
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: advisorLeaderboard.length,
+          },
+          advisorLeaderboard,
+        }
+      }
+      if (view === 'fy' && groupBy === 'work_type' && !hasFilters) {
+        const fyTrends = await timer.time('fy-trend-sql-summary', () => fetchFiscalTrendRows(analysisType))
+        return {
+          sheet: {
+            id: 'ro_billing_report',
+            brand: 'kia',
+            sheetName: 'RO Billing Report',
+            uploadedAt: null,
+          },
+          analysisType,
+          dateBasis: 'Bill Date',
+          dateRange: {
+            startDate: toDateInputValue(startDate),
+            endDate: toDateInputValue(endDate),
+          },
+          filterOptions: {},
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: fyTrends.length,
+          },
+          fyTrends,
         }
       }
       const windowStarts = Object.values(windows).flatMap((period) => [period.cyStart, period.lyStart])
@@ -768,6 +1323,46 @@ export async function GET(request: Request) {
         return {
           ...baseResponse,
           revenueSummary: buildRevenueSummary(filteredRows, startDate, endDate),
+        }
+      }
+
+      if (view === 'leaderboard') {
+        const advisorBuckets = new Map<string, RawAggregate>()
+        filteredRows.forEach((row) => {
+          const date = parseBillDate(row)
+          if (!date || !inWindow(date, startDate, endDate)) return
+          const advisor = getAdvisorValue(row)
+          if (advisor === 'Unspecified') return
+          if (!advisorBuckets.has(advisor)) advisorBuckets.set(advisor, createRawAggregate())
+          addRowToAggregate(advisorBuckets.get(advisor)!, row)
+        })
+
+        const totalRevenue = Array.from(advisorBuckets.values()).reduce((total, aggregate) => {
+          const labour = sumBillAmounts(aggregate.labourByBill)
+          const parts = sumBillAmounts(aggregate.partsByBill)
+          return total + labour + parts
+        }, 0)
+
+        return {
+          ...baseResponse,
+          advisorLeaderboard: Array.from(advisorBuckets.entries())
+            .map(([name, aggregate]) => {
+              const load = aggregate.billKeys.size
+              const labour = sumBillAmounts(aggregate.labourByBill)
+              const parts = sumBillAmounts(aggregate.partsByBill)
+              const revenue = labour + parts
+              return {
+                name,
+                load,
+                labour,
+                parts,
+                revenue,
+                averageBilling: load > 0 ? revenue / load : 0,
+                contribution: totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0,
+              }
+            })
+            .sort((a, b) => b.revenue - a.revenue || b.load - a.load || a.name.localeCompare(b.name))
+            .slice(0, 100),
         }
       }
 

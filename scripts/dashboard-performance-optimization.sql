@@ -24,6 +24,15 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ro_billing_report_bill_date_model
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ro_billing_report_bill_date_status_type
   ON ro_billing_report (bill_date, bill_status, bill_type);
 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ro_billing_report_perf_branch_date
+  ON ro_billing_report (bill_date, dealer_code, main_dealer_code);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ro_billing_report_perf_advisor_date
+  ON ro_billing_report (bill_date, service_advisor, model, service_type);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ro_billing_report_perf_vehicle_date
+  ON ro_billing_report (COALESCE(NULLIF(vin, ''), NULLIF(vehicle_reg_no, '')), bill_date);
+
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ro_billing_report_bill_no
   ON ro_billing_report (bill_no);
 
@@ -107,3 +116,99 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ro_billing_daily_summary_unique
 
 CREATE INDEX IF NOT EXISTS idx_ro_billing_daily_summary_date
   ON ro_billing_daily_summary (bill_date);
+
+-- Versioned deduplicated summary used by the RO Billing analysis API.
+-- It keeps the API away from repeated COUNT(DISTINCT ...) scans on the raw report.
+-- Refresh this after every cron import:
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY ro_billing_daily_summary_v2;
+CREATE MATERIALIZED VIEW IF NOT EXISTS ro_billing_daily_summary_v2 AS
+WITH normalized AS (
+  SELECT
+    COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+    bill_date::date AS bill_date,
+    COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
+    COALESCE(NULLIF(service_type, ''), 'Unspecified') AS service_type,
+    COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS service_advisor,
+    COALESCE(NULLIF(technician, ''), 'Unspecified') AS technician,
+    COALESCE(NULLIF(model, ''), 'Unspecified') AS model,
+    COALESCE(NULLIF(bill_type, ''), 'Unspecified') AS bill_type,
+    COALESCE(NULLIF(bill_status, ''), 'Unspecified') AS bill_status,
+    COALESCE(labour_amt, 0)::numeric AS labour_amt,
+    COALESCE(part_amt, 0)::numeric AS part_amt,
+    COALESCE(total_amt, 0)::numeric AS total_amt,
+    NULLIF(avg_rating, 0)::numeric AS avg_rating,
+    uploaded_at
+  FROM ro_billing_report
+  WHERE bill_date IS NOT NULL
+),
+dedup AS (
+  SELECT
+    bill_key,
+    bill_date,
+    work_type,
+    service_type,
+    service_advisor,
+    technician,
+    model,
+    bill_type,
+    bill_status,
+    (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+    (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
+    (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt,
+    AVG(avg_rating) FILTER (WHERE avg_rating IS NOT NULL) AS avg_rating,
+    MAX(uploaded_at) AS uploaded_at
+  FROM normalized
+  GROUP BY
+    bill_key,
+    bill_date,
+    work_type,
+    service_type,
+    service_advisor,
+    technician,
+    model,
+    bill_type,
+    bill_status
+)
+SELECT
+  bill_date,
+  work_type,
+  service_type,
+  service_advisor,
+  technician,
+  model,
+  bill_type,
+  bill_status,
+  COUNT(*)::int AS load_count,
+  SUM(labour_amt)::numeric AS labour_amount,
+  SUM(part_amt)::numeric AS part_amount,
+  SUM(total_amt)::numeric AS total_amount,
+  AVG(avg_rating) FILTER (WHERE avg_rating IS NOT NULL) AS avg_rating,
+  MAX(uploaded_at) AS uploaded_at
+FROM dedup
+GROUP BY
+  bill_date,
+  work_type,
+  service_type,
+  service_advisor,
+  technician,
+  model,
+  bill_type,
+  bill_status;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ro_billing_daily_summary_v2_unique
+  ON ro_billing_daily_summary_v2 (
+    bill_date,
+    work_type,
+    service_type,
+    service_advisor,
+    technician,
+    model,
+    bill_type,
+    bill_status
+  );
+
+CREATE INDEX IF NOT EXISTS idx_ro_billing_daily_summary_v2_date
+  ON ro_billing_daily_summary_v2 (bill_date);
+
+CREATE INDEX IF NOT EXISTS idx_ro_billing_daily_summary_v2_work_type_date
+  ON ro_billing_daily_summary_v2 (work_type, bill_date);
