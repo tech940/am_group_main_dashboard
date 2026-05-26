@@ -1082,7 +1082,7 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
 }
 
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date) {
-  return `ro_billing:base-rows:v2:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
+  return `kia:business-excellence:ro-billing:base-rows:v3:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1090,7 +1090,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:v11:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v12:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1418,7 +1418,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const result = await timer.time(skipCache ? 'analyze' : 'response-cache', () => skipCache
+    const result = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
       ? analyze()
       : getCachedData(cacheKey, analyze, CACHE_TTL_SECONDS))
 

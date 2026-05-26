@@ -288,7 +288,7 @@ export async function GET(request: Request) {
       const startDate = searchParams.get('startDate')
       const endDate = searchParams.get('endDate')
       const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v5:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}`
-      const data = await timer.time(skipCache ? 'db' : 'cache-db', () => skipCache
+      const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
         ? fetchTableRows({ table, page, limit, fetchAll, startDate, endDate })
         : getCachedData(cacheKey, () => fetchTableRows({ table, page, limit, fetchAll, startDate, endDate }), CACHE_TTL_SECONDS))
 
@@ -297,7 +297,7 @@ export async function GET(request: Request) {
     }
 
     const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:metadata:kia:ro_billing_only:v1`
-    const data = await timer.time(skipCache ? 'metadata-db' : 'metadata-cache-db', () => skipCache
+    const data = await timer.time(skipCache ? 'metadata-db' : 'response-cache', () => skipCache
       ? fetchMetadata()
       : getCachedData(cacheKey, fetchMetadata, CACHE_TTL_SECONDS))
 
@@ -314,8 +314,7 @@ export async function POST() {
   const accessError = await requireBrandApiAccess('kia')
   if (accessError) return accessError
 
-  await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:*`)
-  await invalidateCachePattern('ro_billing:*')
+  await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:*`)
   return NextResponse.json(
     {
       error: 'Business Excellence now uses relational SQL tables populated by the cron/import pipeline. Spreadsheet JSON uploads are disabled for this section.',

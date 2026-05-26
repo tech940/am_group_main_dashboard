@@ -9,8 +9,7 @@ export async function POST() {
   const accessError = await requireBrandApiAccess('kia')
   if (accessError) return accessError
 
-  await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:*`)
-  await invalidateCachePattern('ro_billing:*')
+  await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:*`)
 
   return NextResponse.json(
     {

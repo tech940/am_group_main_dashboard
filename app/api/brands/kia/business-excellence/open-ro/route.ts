@@ -174,7 +174,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters) {
   const stableParams = JSON.stringify(filters)
-  return `open_ro:overview:v1:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:open-ro:v3:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -240,7 +240,7 @@ function mapDetailRow(row: NumericRow): OpenRoDetailRow {
 
 async function buildOpenRoPayload(filters: OpenRoFilters) {
   const baseSql = openRoBaseSql(filters)
-  const [kpiRows, summaryRows, bucketRows, advisorRows, workTypeRows, trendRows, detailRows, optionRows] = await Promise.all([
+  const [kpiRows, summaryRows, delayReasonRows, bucketRows, advisorRows, workTypeRows, trendRows, detailRows, optionRows] = await Promise.all([
     db.execute(sql`
       ${baseSql}
       SELECT
@@ -273,6 +273,23 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
           ELSE 5
         END,
         total_wip DESC
+    `),
+    db.execute(sql`
+      ${baseSql}
+      SELECT
+        COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified') AS delay_reason,
+        COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS acc_count,
+        COUNT(*) FILTER (WHERE service_category <> 'Accidental Repair')::int AS mech_count,
+        COUNT(*) FILTER (WHERE aging_bucket = '0-4D')::int AS bucket_0_4,
+        COUNT(*) FILTER (WHERE aging_bucket = '5-7D')::int AS bucket_5_7,
+        COUNT(*) FILTER (WHERE aging_bucket = '8-15D')::int AS bucket_8_15,
+        COUNT(*) FILTER (WHERE aging_bucket = '>15D')::int AS bucket_over_15,
+        COUNT(*)::int AS total,
+        COALESCE(AVG(aging_days), 0)::float AS avg_days
+      FROM filtered
+      GROUP BY COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified')
+      ORDER BY total DESC, avg_days DESC, delay_reason ASC
+      LIMIT 20
     `),
     db.execute(sql`
       ${baseSql}
@@ -393,6 +410,17 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
       bucket57: numberValue(row.bucket_5_7),
       bucket815: numberValue(row.bucket_8_15),
       bucketOver15: numberValue(row.bucket_over_15),
+      avgDays: numberValue(row.avg_days),
+    })),
+    delayReasonSummary: resultRows(delayReasonRows).map((row) => ({
+      delayReason: stringValue(row.delay_reason, 'No Reason Specified'),
+      mechCount: numberValue(row.mech_count),
+      accCount: numberValue(row.acc_count),
+      bucket04: numberValue(row.bucket_0_4),
+      bucket57: numberValue(row.bucket_5_7),
+      bucket815: numberValue(row.bucket_8_15),
+      bucketOver15: numberValue(row.bucket_over_15),
+      total: numberValue(row.total),
       avgDays: numberValue(row.avg_days),
     })),
     details,

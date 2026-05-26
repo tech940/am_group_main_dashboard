@@ -29,6 +29,7 @@ import {
 import { AccessControlOverlay } from '@/components/shared/access-control-overlay'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 import { OpenRoSection } from '@/features/kia/open-ro-section'
+import { KiaComplaintsSection } from '@/features/kia/kia-complaints-section'
 import {
   LineChart,
   Line,
@@ -58,7 +59,6 @@ import {
 } from "@/components/ui/select"
 import { useQueryClient } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
-import { useRouter } from 'next/navigation'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
   return <RechartsResponsiveContainer minWidth={0} minHeight={0} debounce={50} {...props} />
@@ -137,13 +137,43 @@ type BusinessDateFilter = {
   endDate: string
 } | null
 
+type BusinessAiSummary = {
+  report: string
+  summary: string
+  structuredSummary?: {
+    title: string
+    executiveRead: string
+    metricSignals: Array<{
+      label: string
+      value: string
+      context: string
+      tone?: 'good' | 'watch' | 'risk' | 'neutral'
+    }>
+    keyFindings: string[]
+    risks: string[]
+    actions: Array<{
+      owner: string
+      action: string
+      priority?: 'High' | 'Medium' | 'Low'
+    }>
+  } | null
+  model: string
+  generatedAt: string
+  dateRange: {
+    startDate: string
+    endDate: string
+  }
+}
+
 const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
+const KIA_COMPLAINTS_REPORT = 'Kia Complaints'
 const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [DEFAULT_BUSINESS_EXCELLENCE_SHEET]: 'ro-billing-report',
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
   [OPEN_RO_REPORT]: 'open-ro',
+  [KIA_COMPLAINTS_REPORT]: 'kia-complaints',
 }
 const REPORT_NAMES_BY_SLUG: Record<string, string> = Object.fromEntries(
   Object.entries(REPORT_ROUTE_SLUGS).map(([name, slug]) => [slug, name])
@@ -176,6 +206,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
   },
+  {
+    id: 'kia-complaints',
+    brand: 'kia',
+    sheetName: KIA_COMPLAINTS_REPORT,
+    tableName: 'kia_call_center_complaints',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
 ]
 const BUSINESS_MONTHS = [
   'January',
@@ -191,6 +230,23 @@ const BUSINESS_MONTHS = [
   'November',
   'December',
 ]
+
+function cleanAiText(value: string) {
+  return value.replace(/\*\*/g, '').trim()
+}
+
+function aiToneClass(tone?: string) {
+  if (tone === 'good') return 'border-emerald-100 bg-emerald-50 text-emerald-800'
+  if (tone === 'risk') return 'border-rose-100 bg-rose-50 text-rose-800'
+  if (tone === 'watch') return 'border-amber-100 bg-amber-50 text-amber-800'
+  return 'border-slate-100 bg-slate-50 text-slate-800'
+}
+
+function priorityClass(priority?: string) {
+  if (priority === 'High') return 'bg-rose-100 text-rose-700'
+  if (priority === 'Low') return 'bg-slate-100 text-slate-600'
+  return 'bg-amber-100 text-amber-700'
+}
 
 function normalizeSheetKey(value: string) {
   return value
@@ -754,7 +810,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
                           <p className="truncate text-sm font-black text-slate-950" title={advisor.advisor}>{advisor.advisor}</p>
                         </div>
                         <p className="mt-2 text-[11px] font-bold text-slate-500">
-                          {advisor.transactions.toLocaleString('en-IN')} transactions · {advisor.alerts.toLocaleString('en-IN')} alerts
+                          {advisor.transactions.toLocaleString('en-IN')} transactions - {advisor.alerts.toLocaleString('en-IN')} alerts
                         </p>
                       </div>
                       <span className={cn('rounded-full border px-3 py-1 text-sm font-black', scoreTone)}>
@@ -1087,7 +1143,6 @@ function SheetRowsTable({
 }
 
 export default function KiaBusinessExcellencePage({ initialReport }: { initialReport?: string } = {}) {
-  const router = useRouter()
   const queryClient = useQueryClient()
   const initialReportName = getBusinessExcellenceReportName(initialReport)
   const [savedSheets] = useState<SavedSheetMetadata[]>(BUSINESS_EXCELLENCE_REPORTS)
@@ -1110,6 +1165,10 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
   } | null>(null)
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
   const [showDateControls, setShowDateControls] = useState(false)
+  const [showAiSummary, setShowAiSummary] = useState(false)
+  const [aiSummary, setAiSummary] = useState<BusinessAiSummary | null>(null)
+  const [aiSummaryError, setAiSummaryError] = useState('')
+  const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false)
   const { isAdmin } = useUserRole()
   const itemsPerPage = 10
 
@@ -1164,6 +1223,37 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
     }, 100)
   }, [])
 
+  const generateAiSummary = useCallback(async (report: string) => {
+    setShowAiSummary(true)
+    setIsAiSummaryLoading(true)
+    setAiSummaryError('')
+
+    try {
+      const response = await fetch('/api/brands/kia/business-excellence/ai-summary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          report,
+          dateFilter: appliedDateFilter,
+        }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate AI summary')
+      }
+
+      setAiSummary(data as BusinessAiSummary)
+    } catch (error) {
+      console.error('Failed to generate Business Excellence AI summary:', error)
+      setAiSummaryError(error instanceof Error ? error.message : 'Failed to generate AI summary')
+    } finally {
+      setIsAiSummaryLoading(false)
+    }
+  }, [appliedDateFilter])
+
   const fetchSheetRows = useCallback(async (sheet: SavedSheetMetadata, page: number = 1) => {
     const sheetId = sheet.id
     setFetchingRows(sheetId)
@@ -1205,8 +1295,14 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
   }, [initialReportName])
 
   useEffect(() => {
+    setShowAiSummary(false)
+    setAiSummary(null)
+    setAiSummaryError('')
+  }, [activeTab, appliedDateFilter])
+
+  useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT) {
+      if (activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === KIA_COMPLAINTS_REPORT) {
         setFetchingRows(null)
         return
       }
@@ -1219,17 +1315,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleTabChange = (sheetName: string) => {
-    router.push(getBusinessExcellenceReportPath(sheetName))
-    setActiveTab(sheetName)
-    setCurrentPage(1) // Reset pagination
-    if (sheetName === WORKSHOP_PERFORMANCE_REPORT || sheetName === DEFAULT_BUSINESS_EXCELLENCE_SHEET || sheetName === OPEN_RO_REPORT) {
-      setFetchingRows(null)
-      return
-    }
-    const sheet = savedSheets.find(s => s.sheetName === sheetName)
-    if (sheet && !loadedRows[sheet.id]) {
-      setFetchingRows(sheet.id)
-    }
+    window.open(getBusinessExcellenceReportPath(sheetName), '_blank', 'noopener,noreferrer')
   }
 
   const reportOptions = useMemo(() => getBusinessExcellenceReportOptions(savedSheets), [savedSheets])
@@ -1259,7 +1345,8 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
               const isROBillingSheet = selectedSheet.sheetName.toLowerCase().includes('ro billing')
               const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
               const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
-              const usesDateControls = isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet
+              const isKiaComplaintsSheet = selectedSheet.sheetName === KIA_COMPLAINTS_REPORT
+              const usesDateControls = isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
 
               return (
                 <div className="animate-in slide-in-from-bottom-4 duration-500">
@@ -1279,7 +1366,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                                 {activeDateLabel}
                               </span>
                               <span className="rounded-full bg-teal-50 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest text-teal-700">
-                                {isWorkshopPerformanceSheet ? 'Performance Date' : isOpenRoSheet ? 'RO Date' : 'Bill Date'}
+                                {isWorkshopPerformanceSheet ? 'Performance Date' : isOpenRoSheet ? 'RO Date' : isKiaComplaintsSheet ? 'Complaint Date' : 'Bill Date'}
                               </span>
                             </div>
                           )}
@@ -1309,6 +1396,28 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                             </Select>
                           </div>
 
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={isAiSummaryLoading || isApplyingFilter}
+                            onClick={() => {
+                              if (showAiSummary && aiSummary?.report === selectedSheet.sheetName && !aiSummaryError) {
+                                setShowAiSummary(false)
+                                return
+                              }
+                              void generateAiSummary(selectedSheet.sheetName)
+                            }}
+                            className="h-9 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-black text-violet-700 shadow-sm hover:border-violet-300 hover:bg-violet-100 disabled:opacity-70"
+                          >
+                            {isAiSummaryLoading ? (
+                              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="mr-2 h-3.5 w-3.5" />
+                            )}
+                            {isAiSummaryLoading ? 'Summarising' : showAiSummary && aiSummary?.report === selectedSheet.sheetName ? 'Hide AI Summary' : 'AI Summary'}
+                          </Button>
+
                           {usesDateControls && (
                             <Button
                               type="button"
@@ -1326,6 +1435,148 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                     </CardHeader>
                     <CardContent className="p-0">
                       <>
+                          {showAiSummary && (
+                            <div className="border-b border-violet-100 bg-violet-50/50 p-3">
+                              <div className="rounded-[1.25rem] border border-violet-100 bg-white p-4 shadow-sm">
+                                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                                      <Sparkles className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-violet-700">AI Control Brief</p>
+                                      <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">
+                                        {aiSummary?.structuredSummary?.title || `${selectedSheet.sheetName} Summary`}
+                                      </h3>
+                                      <p className="text-[11px] font-semibold text-slate-500">{selectedSheet.sheetName} - {activeDateLabel}</p>
+                                    </div>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={isAiSummaryLoading}
+                                    onClick={() => void generateAiSummary(selectedSheet.sheetName)}
+                                    className="h-8 rounded-xl px-3 text-[11px] font-black text-violet-700 hover:bg-violet-50"
+                                  >
+                                    {isAiSummaryLoading ? (
+                                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="mr-2 h-3 w-3" />
+                                    )}
+                                    Regenerate
+                                  </Button>
+                                </div>
+
+                                {isAiSummaryLoading ? (
+                                  <div className="space-y-4">
+                                    <div className="h-16 animate-pulse rounded-2xl bg-violet-100/80" />
+                                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                      {[1, 2, 3].map((item) => (
+                                        <div key={item} className="h-28 animate-pulse rounded-2xl bg-slate-100" />
+                                      ))}
+                                    </div>
+                                    <div className="grid gap-3 lg:grid-cols-3">
+                                      {[1, 2, 3].map((item) => (
+                                        <div key={item} className="h-40 animate-pulse rounded-2xl bg-slate-100" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : aiSummaryError ? (
+                                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                                    {aiSummaryError}
+                                  </div>
+                                ) : aiSummary?.structuredSummary ? (
+                                  <div className="space-y-4">
+                                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Executive Read</p>
+                                      <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">
+                                        {cleanAiText(aiSummary.structuredSummary.executiveRead)}
+                                      </p>
+                                    </div>
+
+                                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                      {aiSummary.structuredSummary.metricSignals.map((signal, index) => (
+                                        <div key={`${signal.label}-${index}`} className={cn('rounded-2xl border p-4 shadow-sm', aiToneClass(signal.tone))}>
+                                          <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{signal.label}</p>
+                                          <p className="mt-2 text-2xl font-black tracking-tight">{signal.value}</p>
+                                          <p className="mt-2 text-xs font-semibold leading-5 opacity-80">{cleanAiText(signal.context)}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+
+                                    <div className="grid gap-3 xl:grid-cols-3">
+                                      <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                                        <div className="mb-3 flex items-center gap-2">
+                                          <BarChart3 className="h-4 w-4 text-teal-700" />
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Key Findings</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                          {aiSummary.structuredSummary.keyFindings.map((finding, index) => (
+                                            <div key={`${finding}-${index}`} className="flex gap-2 text-sm font-semibold leading-5 text-slate-700">
+                                              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
+                                              <span>{cleanAiText(finding)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-4 shadow-sm">
+                                        <div className="mb-3 flex items-center gap-2">
+                                          <ShieldAlert className="h-4 w-4 text-rose-700" />
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Risks / Exceptions</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                          {aiSummary.structuredSummary.risks.map((risk, index) => (
+                                            <div key={`${risk}-${index}`} className="flex gap-2 text-sm font-semibold leading-5 text-rose-900">
+                                              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" />
+                                              <span>{cleanAiText(risk)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4 shadow-sm">
+                                        <div className="mb-3 flex items-center gap-2">
+                                          <Wrench className="h-4 w-4 text-amber-700" />
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Immediate Actions</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                          {aiSummary.structuredSummary.actions.map((action, index) => (
+                                            <div key={`${action.action}-${index}`} className="rounded-xl border border-white/70 bg-white/70 p-3">
+                                              <div className="mb-1 flex items-center justify-between gap-2">
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{action.owner}</span>
+                                                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-black', priorityClass(action.priority))}>
+                                                  {action.priority || 'Medium'}
+                                                </span>
+                                              </div>
+                                              <p className="text-sm font-semibold leading-5 text-slate-800">{cleanAiText(action.action)}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                      Generated with {aiSummary.model} - {new Date(aiSummary.generatedAt).toLocaleString('en-IN')}
+                                    </p>
+                                  </div>
+                                ) : aiSummary ? (
+                                  <div className="space-y-3">
+                                    <div className="whitespace-pre-line text-sm font-semibold leading-6 text-slate-700">
+                                      {cleanAiText(aiSummary.summary)}
+                                    </div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                      Generated with {aiSummary.model} - {new Date(aiSummary.generatedAt).toLocaleString('en-IN')}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <p className="text-sm font-semibold text-slate-500">Click AI Summary to generate a manager-ready readout.</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {showDateControls && (
                             <div className="border-b border-slate-100 bg-slate-50/70 p-3">
                               <div className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm">
@@ -1601,6 +1852,12 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                           ) : (
                             <OpenRoSection dateFilter={appliedDateFilter} />
                           )
+                        ) : isKiaComplaintsSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <KiaComplaintsSection dateFilter={appliedDateFilter} />
+                          )
                         ) : isROBillingSheet ? (
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
@@ -1795,6 +2052,9 @@ type WorkshopPerformanceRow = {
   wbCount: number
   wbAmount: number
   wbPerRoPercent: number
+  ewCount: number
+  rsaCount: number
+  mcpCount: number
   subRows?: WorkshopPerformanceRow[]
 }
 
@@ -1861,6 +2121,9 @@ function zeroWorkshopRow(serviceType: string): WorkshopPerformanceRow {
     wbCount: 0,
     wbAmount: 0,
     wbPerRoPercent: 0,
+    ewCount: 0,
+    rsaCount: 0,
+    mcpCount: 0,
   }
 }
 
@@ -1875,6 +2138,9 @@ function aggregateWorkshopRows(serviceType: string, sourceRows: WorkshopPerforma
     acc.waAmount += Number(row.waAmount || 0)
     acc.wbCount += Number(row.wbCount || 0)
     acc.wbAmount += Number(row.wbAmount || 0)
+    acc.ewCount += Number(row.ewCount || 0)
+    acc.rsaCount += Number(row.rsaCount || 0)
+    acc.mcpCount += Number(row.mcpCount || 0)
     return acc
   }, zeroWorkshopRow(serviceType))
 
@@ -1946,6 +2212,9 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
     grandTotal.wbCount = Number(serverGrandTotal.wbCount || 0)
     grandTotal.wbAmount = Number(serverGrandTotal.wbAmount || 0)
     grandTotal.wbPerRoPercent = grandTotal.totalJc > 0 ? (grandTotal.wbCount / grandTotal.totalJc) * 100 : 0
+    grandTotal.ewCount = Number(serverGrandTotal.ewCount || 0)
+    grandTotal.rsaCount = Number(serverGrandTotal.rsaCount || 0)
+    grandTotal.mcpCount = Number(serverGrandTotal.mcpCount || 0)
   }
 
   return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
@@ -1966,6 +2235,7 @@ function WorkshopPerformanceSection({
   const [data, setData] = useState<WorkshopPerformanceResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [expandedWorkshopRows, setExpandedWorkshopRows] = useState<Set<string>>(() => new Set())
+  const [expandedWorkshopChart, setExpandedWorkshopChart] = useState<{ id: string; title: string } | null>(null)
 
   useEffect(() => {
     let isActive = true
@@ -1978,7 +2248,7 @@ function WorkshopPerformanceSection({
           startDate: range.startDate,
           endDate: range.endDate,
         })
-        params.set('version', 'v11')
+        params.set('version', 'v14')
         const queryString = params.toString()
         const result = await queryClient.fetchQuery({
           queryKey: ['business-excellence', 'workshop-performance', queryString],
@@ -2043,6 +2313,55 @@ function WorkshopPerformanceSection({
       return next
     })
   }
+  const renderWorkshopExpandButton = (id: string, title: string) => (
+    <button
+      type="button"
+      onClick={() => setExpandedWorkshopChart({ id, title })}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-teal-100 bg-white text-teal-700 shadow-sm transition hover:border-teal-200 hover:bg-teal-50"
+      aria-label={`Expand ${title}`}
+    >
+      <Maximize2 className="h-4 w-4" />
+    </button>
+  )
+  const renderWorkshopChart = (chartId: string) => {
+    if (chartId === 'service-mix') {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartRows} margin={{ top: 22, right: 22, bottom: 16, left: 0 }}>
+            <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
+            <XAxis dataKey="serviceType" tick={{ fontSize: 11, fontWeight: 800, fill: '#475569' }} />
+            <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={formatCompactMoney} />
+            <Tooltip formatter={(value) => formatCurrency(Number(value || 0))} contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0' }} />
+            <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 900 }} />
+            <Bar dataKey="labourAmount" name="Labour" stackId="revenue" fill="#0F766E" radius={[0, 0, 8, 8]} />
+            <Bar dataKey="spareSale" name="Spare Sale" stackId="revenue" fill="#D97706" />
+            <Bar dataKey="lessVas" name="VAS" stackId="revenue" fill="#2563EB" radius={[8, 8, 0, 0]}>
+              <LabelList dataKey="lessVas" position="top" formatter={formatChartLabel} fill="#0f172a" fontSize={10} fontWeight={900} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={trendRows} margin={{ top: 36, right: 28, bottom: 14, left: 0 }}>
+          <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
+          <XAxis dataKey="day" interval={0} minTickGap={0} tick={<TrendAxisTick />} tickMargin={12} height={58} />
+          <YAxis yAxisId="amount" tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={formatCompactMoney} />
+          <YAxis yAxisId="jc" orientation="right" tick={{ fontSize: 11, fill: '#0f766e' }} />
+          <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0' }} />
+          <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 900 }} />
+          <Line yAxisId="amount" type="monotone" dataKey="totalRevenue" name="Revenue" stroke="#2563EB" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} isAnimationActive={false}>
+            <LabelList dataKey="totalRevenue" content={<WorkshopTrendValueLabel series="revenue" />} />
+          </Line>
+          <Line yAxisId="jc" type="monotone" dataKey="totalJc" name="JC" stroke="#0F766E" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} isAnimationActive={false}>
+            <LabelList dataKey="totalJc" content={<WorkshopTrendValueLabel series="jc" />} />
+          </Line>
+        </LineChart>
+      </ResponsiveContainer>
+    )
+  }
 
   if (isLoading && !data) {
     return (
@@ -2082,7 +2401,7 @@ function WorkshopPerformanceSection({
         </p>
       </div>
       <div className="overflow-auto">
-        <table className="w-full min-w-[1280px] border-collapse text-left">
+        <table className="w-full min-w-[1480px] border-collapse text-left">
           <thead className="bg-teal-800 text-white">
             <tr>
               {[
@@ -2104,6 +2423,9 @@ function WorkshopPerformanceSection({
                 'WB Amt',
                 'WB/RO %',
                 'Less VAS',
+                'EW Count',
+                'RSA Count',
+                'MCP Count',
               ].map((heading) => (
                 <th key={heading} className="border border-teal-700/80 px-3 py-3 text-[8px] font-black uppercase tracking-widest">
                   {heading}
@@ -2169,6 +2491,15 @@ function WorkshopPerformanceSection({
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.wbAmount)}</td>
                   <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : getPercentToneClass(item.wbPerRoPercent))}>{formatPercent(item.wbPerRoPercent)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.lessVas)}</td>
+                  <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
+                    {isGrandTotal ? item.ewCount.toLocaleString('en-IN') : '-'}
+                  </td>
+                  <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
+                    {isGrandTotal ? item.rsaCount.toLocaleString('en-IN') : '-'}
+                  </td>
+                  <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
+                    {isGrandTotal ? item.mcpCount.toLocaleString('en-IN') : '-'}
+                  </td>
                 </tr>
                 )
               }
@@ -2186,6 +2517,39 @@ function WorkshopPerformanceSection({
 
   return (
     <div className="space-y-6 bg-slate-50 p-6 lg:p-8">
+      {expandedWorkshopChart && (
+        <div className="fixed inset-0 z-[120] bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div
+            className="expanded-chart-shell flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl"
+            style={{ backgroundColor: '#ffffff' }}
+          >
+            <div
+              className="expanded-chart-header flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3"
+              style={{ backgroundColor: '#ffffff' }}
+            >
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Expanded Workshop Chart</p>
+                <h3 className="text-lg font-black tracking-tight text-slate-950">{expandedWorkshopChart.title}</h3>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setExpandedWorkshopChart(null)}
+                className="h-9 w-9 rounded-xl p-0 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                aria-label="Close expanded chart"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="expanded-chart-body min-h-0 flex-1 bg-white p-5" style={{ backgroundColor: '#ffffff' }}>
+              <div className="expanded-chart-surface h-full rounded-2xl bg-white" style={{ backgroundColor: '#ffffff' }}>
+                {renderWorkshopChart(expandedWorkshopChart.id)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {renderWorkshopTable()}
 
@@ -2218,50 +2582,28 @@ function WorkshopPerformanceSection({
 
       <div className="space-y-6">
         <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
-          <div className="mb-6">
-            <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Service Mix</p>
-            <h3 className="text-2xl font-black tracking-tight text-slate-950">Labour, spares, and VAS by service type</h3>
+          <div className="mb-6 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Service Mix</p>
+              <h3 className="text-2xl font-black tracking-tight text-slate-950">Labour, spares, and VAS by service type</h3>
+            </div>
+            {renderWorkshopExpandButton('service-mix', 'Service Mix')}
           </div>
           <div className="h-[460px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartRows} margin={{ top: 22, right: 22, bottom: 16, left: 0 }}>
-                <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="serviceType" tick={{ fontSize: 11, fontWeight: 800, fill: '#475569' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={formatCompactMoney} />
-                <Tooltip formatter={(value) => formatCurrency(Number(value || 0))} contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0' }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 900 }} />
-                <Bar dataKey="labourAmount" name="Labour" stackId="revenue" fill="#0F766E" radius={[0, 0, 8, 8]} />
-                <Bar dataKey="spareSale" name="Spare Sale" stackId="revenue" fill="#D97706" />
-                <Bar dataKey="lessVas" name="VAS" stackId="revenue" fill="#2563EB" radius={[8, 8, 0, 0]}>
-                  <LabelList dataKey="lessVas" position="top" formatter={formatChartLabel} fill="#0f172a" fontSize={10} fontWeight={900} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {renderWorkshopChart('service-mix')}
           </div>
         </div>
 
         <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
-          <div className="mb-6">
-            <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Daily Trend</p>
-            <h3 className="text-2xl font-black tracking-tight text-slate-950">JC load and revenue movement</h3>
+          <div className="mb-6 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Daily Trend</p>
+              <h3 className="text-2xl font-black tracking-tight text-slate-950">JC load and revenue movement</h3>
+            </div>
+            {renderWorkshopExpandButton('daily-trend', 'Daily Trend')}
           </div>
           <div className="h-[460px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trendRows} margin={{ top: 36, right: 28, bottom: 14, left: 0 }}>
-                <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="day" interval={0} minTickGap={0} tick={<TrendAxisTick />} tickMargin={12} height={58} />
-                <YAxis yAxisId="amount" tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={formatCompactMoney} />
-                <YAxis yAxisId="jc" orientation="right" tick={{ fontSize: 11, fill: '#0f766e' }} />
-                <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0' }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 900 }} />
-                <Line yAxisId="amount" type="monotone" dataKey="totalRevenue" name="Revenue" stroke="#2563EB" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} isAnimationActive={false}>
-                  <LabelList dataKey="totalRevenue" content={<WorkshopTrendValueLabel series="revenue" />} />
-                </Line>
-                <Line yAxisId="jc" type="monotone" dataKey="totalJc" name="JC" stroke="#0F766E" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} isAnimationActive={false}>
-                  <LabelList dataKey="totalJc" content={<WorkshopTrendValueLabel series="jc" />} />
-                </Line>
-              </LineChart>
-            </ResponsiveContainer>
+            {renderWorkshopChart('daily-trend')}
           </div>
         </div>
       </div>

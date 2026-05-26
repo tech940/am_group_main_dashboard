@@ -90,7 +90,7 @@ function growth(current: number, previous: number) {
 }
 
 function cacheKey(startDate: string, endDate: string) {
-  return `kia:business-excellence:workshop-performance:v12:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:v14:${createHash('sha1')
     .update(`${startDate}:${endDate}`)
     .digest('hex')}`
 }
@@ -392,7 +392,7 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
   const [ew, mcp, rsa] = await Promise.all([
     hasEw
       ? db.execute(sql`
-          SELECT COUNT(DISTINCT COALESCE(NULLIF(vin, ''), id::text))::int AS count
+          SELECT COUNT(*)::int AS count
           FROM ew_report
           WHERE reg_date >= ${startDate}::date
             AND reg_date < (${endDate}::date + INTERVAL '1 day')
@@ -400,7 +400,7 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
       : Promise.resolve([{ count: 0 }] as NumericRow[]),
     hasMcp
       ? db.execute(sql`
-          SELECT COUNT(DISTINCT COALESCE(NULLIF(vin, ''), id::text))::int AS count
+          SELECT COUNT(*)::int AS count
           FROM mcp_report
           WHERE package_purchase_date >= ${startDate}::date
             AND package_purchase_date < (${endDate}::date + INTERVAL '1 day')
@@ -409,7 +409,7 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
     hasRsa
       ? db.execute(sql`
           SELECT
-            COUNT(DISTINCT COALESCE(NULLIF(vin_chasis_no, ''), id::text))::int AS count,
+            COUNT(*)::int AS count,
             COALESCE(SUM(total_amount), 0)::float AS amount
           FROM rsa_report
           WHERE invoice_date >= ${startDate}::date
@@ -460,6 +460,9 @@ function buildRows(serviceRows: ServiceAggregate[]) {
       wbCount,
       wbAmount,
       wbPerRoPercent: percent(wbCount, row.totalJc),
+      ewCount: 0,
+      rsaCount: 0,
+      mcpCount: 0,
     }
   })
 }
@@ -480,7 +483,7 @@ function summarizeAddons(addonRows: AddonAggregate[]) {
   })
 }
 
-function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summarizeAddons([])) {
+function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summarizeAddons([]), auxiliaryCounts = { ewCount: 0, rsaCount: 0, mcpCount: 0 }) {
   const totalJc = rows.reduce((total, row) => total + row.totalJc, 0)
   const labourAmount = rows.reduce((total, row) => total + row.labourAmount, 0)
   const lessVas = addonTotals.vasAmount
@@ -512,6 +515,9 @@ function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summari
     wbCount,
     wbAmount,
     wbPerRoPercent: percent(wbCount, totalJc),
+    ewCount: auxiliaryCounts.ewCount,
+    rsaCount: auxiliaryCounts.rsaCount,
+    mcpCount: auxiliaryCounts.mcpCount,
   }
 }
 
@@ -544,9 +550,17 @@ async function buildWorkshopPayload(startDate: string, endDate: string) {
   const addonTotals = summarizeAddons(addonRows)
   const lyAddonTotals = summarizeAddons(lyAddonRows)
   const rows = buildRows(serviceRows)
-  const totalRow = buildTotalRow(rows, addonTotals)
+  const totalRow = buildTotalRow(rows, addonTotals, {
+    ewCount: auxiliary.ewCount,
+    rsaCount: auxiliary.rsaCount,
+    mcpCount: auxiliary.mcpCount,
+  })
   const lyRows = buildRows(lyServiceRows)
-  const lyTotal = buildTotalRow(lyRows, lyAddonTotals)
+  const lyTotal = buildTotalRow(lyRows, lyAddonTotals, {
+    ewCount: lyAuxiliary.ewCount,
+    rsaCount: lyAuxiliary.rsaCount,
+    mcpCount: lyAuxiliary.mcpCount,
+  })
 
   const totalRevenue = totalRow.labourAmount + totalRow.spareSale
   const lyRevenue = lyTotal.labourAmount + lyTotal.spareSale
@@ -589,10 +603,12 @@ export async function GET(request: Request) {
   const endDate = parseDateInput(searchParams.get('endDate'))
     ? searchParams.get('endDate')!.slice(0, 10)
     : defaults.endDate
+  const skipCache = searchParams.get('skipCache') === 'true'
 
   try {
-    const data = await timer.time('response-cache', () =>
-      getCachedData(
+    const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
+      ? buildWorkshopPayload(startDate, endDate)
+      : getCachedData(
         cacheKey(startDate, endDate),
         () => buildWorkshopPayload(startDate, endDate),
         CACHE_TTL_SECONDS

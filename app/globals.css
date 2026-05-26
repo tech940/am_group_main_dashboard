@@ -188,22 +188,39 @@
   }
 
   .glass-dashboard-content .expanded-chart-shell {
-    background: #f8fafc !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
     border-color: rgba(226, 232, 240, 0.95) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   .glass-dashboard-content .expanded-chart-header {
-    background: linear-gradient(135deg, #ffffff 0%, #f1f8f7 100%) !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
     border-color: rgba(203, 213, 225, 0.85) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   .glass-dashboard-content .expanded-chart-body {
     background: #ffffff !important;
+    background-color: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content .expanded-chart-surface {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   .glass-dashboard-content .expanded-chart-body .recharts-wrapper,
   .glass-dashboard-content .expanded-chart-body .recharts-surface {
     background: #ffffff !important;
+    background-color: #ffffff !important;
   }
 
   .dark .glass-dashboard-content {
@@ -260,18 +277,28 @@
   }
 
   .dark .glass-dashboard-content .expanded-chart-shell {
-    background: #0f172a !important;
-    border-color: rgba(148, 163, 184, 0.28) !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    border-color: rgba(226, 232, 240, 0.95) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   .dark .glass-dashboard-content .expanded-chart-header {
-    background: linear-gradient(135deg, #111827 0%, #0f2f33 100%) !important;
-    border-color: rgba(148, 163, 184, 0.28) !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    border-color: rgba(203, 213, 225, 0.85) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   .dark .glass-dashboard-content .expanded-chart-body,
+  .dark .glass-dashboard-content .expanded-chart-surface,
   .dark .glass-dashboard-content .expanded-chart-body .recharts-wrapper,
   .dark .glass-dashboard-content .expanded-chart-body .recharts-surface {
-    background: #111827 !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 }
