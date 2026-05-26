@@ -17,7 +17,7 @@ import {
   ShoppingCart,
   Loader2
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
@@ -54,10 +54,11 @@ export function Sidebar() {
   const supabase = createClient()
   const topLoader = useTopLoader()
   const { collapsed, setCollapsed } = useSidebar()
-  const [openBrand, setOpenBrand] = useState<string | null>(null)
+  const [openBrands, setOpenBrands] = useState<Set<string>>(() => new Set())
   const [openAdmin, setOpenAdmin] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const { userRole, isAdmin, canAccessAdmin, userBrand, loading } = useUserRole()
+  const initializedBrandMenuRef = useRef(false)
 
   const canAccessBrand = (brandKey: string) => {
     if (userRole === 'admin') return true
@@ -66,43 +67,58 @@ export function Sidebar() {
     return brandKey === userBrand
   }
 
-  const visibleBrands = availableBrands
-    .filter((brand) => canAccessBrand(brand.key))
-    .sort((a, b) => {
-      if (userBrand) {
-        if (a.key === userBrand) return -1
-        if (b.key === userBrand) return 1
-      }
-
-      const aOrder = BRANCH_OPTIONS.findIndex((branch) => branch.value === a.key)
-      const bOrder = BRANCH_OPTIONS.findIndex((branch) => branch.value === b.key)
-      return aOrder - bOrder
-    })
-
-  // Auto-open user's assigned brand on load
-  useEffect(() => {
-    if (!loading && userBrand && !isAdmin && !hasAllBranchAccess(userBrand)) {
-      const brandName = getBrandName(userBrand)
-      if (brandName) {
-        const timer = window.setTimeout(() => {
-          setOpenBrand(brandName)
-        }, 0)
-
-        return () => {
-          window.clearTimeout(timer)
+  const visibleBrands = useMemo(() => {
+    return availableBrands
+      .filter((brand) => {
+        if (userRole === 'admin') return true
+        if (!userBrand) return false
+        if (hasAllBranchAccess(userBrand)) return true
+        return brand.key === userBrand
+      })
+      .sort((a, b) => {
+        if (userBrand) {
+          if (a.key === userBrand) return -1
+          if (b.key === userBrand) return 1
         }
-      }
+
+        const aOrder = BRANCH_OPTIONS.findIndex((branch) => branch.value === a.key)
+        const bOrder = BRANCH_OPTIONS.findIndex((branch) => branch.value === b.key)
+        return aOrder - bOrder
+      })
+  }, [userBrand, userRole])
+
+  // Initialize brand menus once from access. Manual toggles should remain under user control after this.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (loading || initializedBrandMenuRef.current) return
+    initializedBrandMenuRef.current = true
+
+    if (isAdmin || (userBrand && hasAllBranchAccess(userBrand))) {
+      setOpenBrands(new Set(visibleBrands.map((brand) => brand.name)))
+      return
     }
-  }, [userBrand, isAdmin, loading])
+
+    if (userBrand) {
+      const brandName = getBrandName(userBrand)
+      if (brandName) setOpenBrands(new Set([brandName]))
+    }
+  }, [isAdmin, loading, userBrand, visibleBrands])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const toggleBrand = (brandName: string) => {
     const brandKey = getBrandKey(brandName)
     // Only allow toggling if user can access this brand
     if (canAccessBrand(brandKey)) {
-      if (openBrand === brandName) {
-        setOpenBrand(null)
-      } else {
-        setOpenBrand(brandName)
+      setOpenBrands((current) => {
+        const next = new Set(current)
+        if (next.has(brandName)) {
+          next.delete(brandName)
+        } else {
+          next.add(brandName)
+        }
+        return next
+      })
+      if (!openBrands.has(brandName)) {
         if (collapsed) setCollapsed(false)
       }
     }
@@ -340,7 +356,7 @@ export function Sidebar() {
                 )}
               <nav className="space-y-4">
                 {visibleBrands.map((brand) => {
-                  const isOpen = openBrand === brand.name
+                  const isOpen = openBrands.has(brand.name)
                   const isActive = pathname?.startsWith(brand.href)
                   const hasAccess = canAccessBrand(brand.key)
 

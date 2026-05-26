@@ -5,6 +5,7 @@ import { forbidden, notFound, redirect } from 'next/navigation'
 const REPORT_TITLES: Record<string, string> = {
   'ro-billing-report': 'RO Billing Report',
   'workshop-performance': 'Workshop Performance',
+  'open-ro': 'Open RO (Repair Orders)',
 }
 
 export async function generateStaticParams() {

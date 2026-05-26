@@ -1,10 +1,10 @@
 'use client'
 
-import { ChevronDown, Menu, LogOut, User, Mail, Loader2 } from 'lucide-react'
+import { ChevronDown, Menu, LogOut, User, Mail, Loader2, Moon, Sun } from 'lucide-react'
 import { useSidebar } from '@/context/sidebar-context'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import {
@@ -16,6 +16,34 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { NotificationBell } from '@/components/layout/notification-bell'
+
+const THEME_CHANGE_EVENT = 'dashboard-theme-change'
+
+function subscribeToThemeChanges(callback: () => void) {
+  if (typeof window === 'undefined') {
+    return () => {}
+  }
+
+  window.addEventListener('storage', callback)
+  window.addEventListener(THEME_CHANGE_EVENT, callback)
+
+  return () => {
+    window.removeEventListener('storage', callback)
+    window.removeEventListener(THEME_CHANGE_EVENT, callback)
+  }
+}
+
+function getThemeSnapshot() {
+  if (typeof document === 'undefined') {
+    return false
+  }
+
+  return document.documentElement.classList.contains('dark')
+}
+
+function getThemeServerSnapshot() {
+  return false
+}
 
 interface UserData {
   id: string
@@ -35,6 +63,11 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   const supabase = createClient()
   const queryClient = useQueryClient()
   const [signingOut, setSigningOut] = useState(false)
+  const isDarkMode = useSyncExternalStore(
+    subscribeToThemeChanges,
+    getThemeSnapshot,
+    getThemeServerSnapshot
+  )
 
   const { data: userData, isLoading: loading } = useQuery({
     queryKey: ['auth', 'user'],
@@ -70,6 +103,14 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
     }
   }
 
+  const toggleDarkMode = () => {
+    const nextValue = !document.documentElement.classList.contains('dark')
+
+    document.documentElement.classList.toggle('dark', nextValue)
+    window.localStorage.setItem('dashboard-theme', nextValue ? 'dark' : 'light')
+    window.dispatchEvent(new Event(THEME_CHANGE_EVENT))
+  }
+
   const getRoleBadgeColor = (role: string) => {
     switch (role.toLowerCase()) {
       case 'admin':
@@ -84,54 +125,63 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   }
 
   return (
-    <header className="sticky top-0 z-30 mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-white/65 bg-white/55 px-6 shadow-[0_18px_55px_rgba(15,118,110,0.14)] backdrop-blur-2xl">
+    <header className="sticky top-0 z-30 mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-white/65 bg-white/55 px-6 shadow-[0_18px_55px_rgba(15,118,110,0.14)] backdrop-blur-2xl transition-colors dark:border-white/10 dark:bg-slate-950/72 dark:shadow-[0_18px_55px_rgba(0,0,0,0.34)]">
       <div className="flex items-center gap-6">
         {/* Hamburger */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/55 text-slate-700 shadow-sm transition-all hover:bg-white/80 hover:text-teal-700"
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/55 text-slate-700 shadow-sm transition-all hover:bg-white/80 hover:text-teal-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/16 dark:hover:text-cyan-200"
         >
           <Menu className="h-6 w-6" />
         </button>
 
         {/* Section Title */}
         <div className="hidden lg:block">
-          <h1 className="text-xl font-semibold leading-none text-slate-900">{title}</h1>
-          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-teal-700/70">{subtitle}</p>
+          <h1 className="text-xl font-semibold leading-none text-slate-900 dark:text-white">{title}</h1>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-teal-700/70 dark:text-cyan-200/70">{subtitle}</p>
         </div>
       </div>
 
       <div className="flex items-center gap-8">
         {/* Right Actions */}
         <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={toggleDarkMode}
+            aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={isDarkMode ? 'Light mode' : 'Dark mode'}
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/55 text-slate-700 shadow-sm transition-all hover:bg-white/80 hover:text-teal-700 dark:border-white/10 dark:bg-white/10 dark:text-amber-200 dark:hover:bg-white/16 dark:hover:text-amber-100"
+          >
+            {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </button>
           <NotificationBell userId={user?.id || null} />
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <div className="flex cursor-pointer items-center gap-3 border-l border-slate-200/70 pl-6 transition-opacity hover:opacity-85">
+              <div className="flex cursor-pointer items-center gap-3 border-l border-slate-200/70 pl-6 transition-opacity hover:opacity-85 dark:border-white/10">
                 <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border-2 border-white/80 bg-gradient-to-br from-teal-400 to-cyan-600 text-sm font-bold text-white shadow-sm ring-1 ring-teal-100/20">
                   {loading ? '...' : user?.fullName.charAt(0).toUpperCase()}
                 </div>
                 <div className="hidden md:flex flex-col">
-                  <p className="text-xs font-semibold leading-none text-slate-900">
+                  <p className="text-xs font-semibold leading-none text-slate-900 dark:text-white">
                     {loading ? 'Loading...' : user?.fullName}
                   </p>
-                  <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-teal-700/70">
+                  <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-teal-700/70 dark:text-cyan-200/70">
                     {loading ? '...' : user?.role}
                   </p>
                 </div>
-                <ChevronDown className="h-4 w-4 text-slate-500" />
+                <ChevronDown className="h-4 w-4 text-slate-500 dark:text-slate-300" />
               </div>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72 rounded-2xl border-slate-200 shadow-2xl bg-white p-2">
+            <DropdownMenuContent align="end" className="w-72 rounded-2xl border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-slate-950">
               <DropdownMenuLabel className="p-4 pb-3">
                 <div className="flex items-center gap-3">
                   <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
                     {user?.fullName.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-bold text-slate-800">{user?.fullName}</p>
-                    <p className="text-xs text-slate-500 font-semibold flex items-center gap-1 mt-1">
+                    <p className="text-sm font-bold text-slate-800 dark:text-white">{user?.fullName}</p>
+                    <p className="text-xs text-slate-500 font-semibold flex items-center gap-1 mt-1 dark:text-slate-300">
                       <Mail className="h-3 w-3" />
                       {user?.email}
                     </p>
@@ -142,7 +192,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
                   {user?.role}
                 </div>
               </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-slate-100" />
+              <DropdownMenuSeparator className="bg-slate-100 dark:bg-white/10" />
               <DropdownMenuItem
                 onClick={handleLogout}
                 disabled={signingOut}

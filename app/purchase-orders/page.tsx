@@ -7,6 +7,13 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Edit3, Loader2, Plus, RefreshCw, 
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ImageGallery } from '@/components/purchase-orders/image-gallery'
 import { MDGridView } from '@/components/purchase-orders/md-grid-view'
 import { MDTableView } from '@/components/purchase-orders/md-table-view'
@@ -26,7 +33,7 @@ import { WorkflowTimeline } from '@/components/purchase-orders/workflow-timeline
 import { formatWorkflowStageLabel, getWorkflowStatusPresentation } from '@/components/purchase-orders/workflow-card-theme'
 import { WorkflowStatusCard, WorkflowStatusCardSkeleton } from '@/components/purchase-orders/workflow-status-card'
 import { formatIndiaDateTime } from '@/lib/date-time'
-import { getBranchLabel } from '@/lib/branches'
+import { BRANCH_OPTIONS, getBranchLabel } from '@/lib/branches'
 import { createClient } from '@/lib/supabase/client'
 import { useQueryClient } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
@@ -79,6 +86,10 @@ interface PurchaseOrder {
   payment_status?: string
   payment_mode?: string
   account_remarks?: string
+  eaApprovalStatus?: string
+  mdApprovalStatus?: string
+  ea_approval_status?: string
+  md_approval_status?: string
 }
 
 type PurchaseOrderListMode = 'today' | 'all'
@@ -91,7 +102,7 @@ interface PurchaseOrderPagination {
   mode: PurchaseOrderListMode
 }
 
-const PURCHASE_ORDER_PAGE_SIZE = 9
+const PURCHASE_ORDER_PAGE_SIZE = 12
 
 const DEFAULT_PURCHASE_ORDER_PAGINATION: PurchaseOrderPagination = {
   page: 1,
@@ -135,7 +146,8 @@ interface PurchaseOrderStagePayload {
   accountsImages?: Array<File | string>
 }
 
-type ApprovalFilter = 'all' | 'pending' | 'rejected' | 'hold' | 'completed'
+type ApprovalFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'hold' | 'completed'
+type ApprovalFilterCounts = Record<ApprovalFilter, number>
 type WorkflowStageFilter =
   | 'all'
   | 'vendor_info_pending'
@@ -149,12 +161,22 @@ type WorkflowStageFilter =
   | 'hold'
 
 const APPROVAL_FILTER_OPTIONS: Array<{ value: ApprovalFilter; label: string }> = [
-  { value: 'all', label: 'All' },
+  { value: 'all', label: 'All Orders' },
   { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
   { value: 'hold', label: 'Hold' },
   { value: 'completed', label: 'Completed' },
 ]
+
+const EMPTY_APPROVAL_FILTER_COUNTS: ApprovalFilterCounts = {
+  all: 0,
+  pending: 0,
+  approved: 0,
+  rejected: 0,
+  hold: 0,
+  completed: 0,
+}
 
 const WORKFLOW_STAGE_FILTER_OPTIONS: Array<{ value: WorkflowStageFilter; label: string }> = [
   { value: 'all', label: 'All Stages' },
@@ -191,6 +213,12 @@ function normalizeDescription(order: PurchaseOrder) {
 
 function normalizeBranch(order: PurchaseOrder) {
   return order.brand || ''
+}
+
+function getApprovalStatusValue(order: PurchaseOrder, role: 'ea' | 'md') {
+  return role === 'ea'
+    ? order.eaApprovalStatus || order.ea_approval_status || ''
+    : order.mdApprovalStatus || order.md_approval_status || ''
 }
 
 function normalizeSpecifyOther(order: PurchaseOrder) {
@@ -521,6 +549,8 @@ function PurchaseOrdersPageContent() {
   const [isSwitchingView, setIsSwitchingView] = useState(false)
   const [showPOTableView, setShowPOTableView] = useState(false)
   const [workflowStageFilter, setWorkflowStageFilter] = useState<WorkflowStageFilter>('all')
+  const [approvalBranchFilter, setApprovalBranchFilter] = useState<string>('all')
+  const [approvalFilterCounts, setApprovalFilterCounts] = useState<ApprovalFilterCounts>(EMPTY_APPROVAL_FILTER_COUNTS)
   const [purchaseOrderListMode, setPurchaseOrderListMode] = useState<PurchaseOrderListMode>('today')
   const [purchaseOrderPage, setPurchaseOrderPage] = useState(1)
   const [purchaseOrderPagination, setPurchaseOrderPagination] = useState<PurchaseOrderPagination>(DEFAULT_PURCHASE_ORDER_PAGINATION)
@@ -575,12 +605,11 @@ function PurchaseOrdersPageContent() {
 
       switch (approvalFilter) {
         case 'all':
-          if (userRole === 'md') {
-            return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.pending))
-          }
-          return applyWorkflowStageFilter(orders.filter((order) => !isRejectedWorkflowStatus(order.status) && order.status !== 'cancelled'))
+          return applyWorkflowStageFilter(orders)
         case 'pending':
           return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.pending))
+        case 'approved':
+          return applyWorkflowStageFilter(orders.filter((order) => getApprovalStatusValue(order, userRole === 'ea' ? 'ea' : 'md') === 'approved'))
         case 'rejected':
           return applyWorkflowStageFilter(orders.filter((order) => order.status === statusSet.rejected || order.status === statusSet.extraRejected))
         case 'hold':
@@ -662,7 +691,7 @@ function PurchaseOrdersPageContent() {
       params.set('mode', effectivePurchaseOrderListMode)
       params.set('page', String(purchaseOrderPage))
       params.set('pageSize', String(PURCHASE_ORDER_PAGE_SIZE))
-      params.set('scope', isCompletionTrackingView ? 'spending' : 'active')
+      params.set('scope', isApprovalRole(userRole) && approvalFilter === 'all' ? 'all' : isCompletionTrackingView ? 'spending' : 'active')
 
       if (userRole === 'purchase_manager') {
         params.set('view', 'table')
@@ -670,6 +699,9 @@ function PurchaseOrdersPageContent() {
 
       if (isApprovalRole(userRole)) {
         params.set('approvalFilter', approvalFilter)
+        if (userRole === 'md' && approvalBranchFilter !== 'all') {
+          params.set('branchFilter', approvalBranchFilter)
+        }
       }
 
       if (workflowStageFilter !== 'all') {
@@ -683,7 +715,7 @@ function PurchaseOrdersPageContent() {
     }
 
     return params.toString()
-  }, [approvalFilter, completedDateEnd, completedDateStart, effectivePurchaseOrderListMode, isCompletionTrackingView, purchaseOrderPage, userRole, usesPurchaseOrderPagination, workflowStageFilter])
+  }, [approvalBranchFilter, approvalFilter, completedDateEnd, completedDateStart, effectivePurchaseOrderListMode, isCompletionTrackingView, purchaseOrderPage, userRole, usesPurchaseOrderPagination, workflowStageFilter])
 
   const fetchOrders = useCallback(async (showSpinner = true, force = false) => {
     if (!userRole) {
@@ -713,6 +745,14 @@ function PurchaseOrdersPageContent() {
         staleTime: DASHBOARD_STALE_TIME_MS,
       })
       setOrders(data.orders || [])
+      if (data.approvalCounts) {
+        setApprovalFilterCounts({
+          ...EMPTY_APPROVAL_FILTER_COUNTS,
+          ...data.approvalCounts,
+        })
+      } else if (!isApprovalRole(userRole)) {
+        setApprovalFilterCounts(EMPTY_APPROVAL_FILTER_COUNTS)
+      }
       if (data.pagination) {
         setPurchaseOrderPagination({
           page: data.pagination.page || 1,
@@ -1136,7 +1176,9 @@ function PurchaseOrdersPageContent() {
       setWorkflowHistory([])
       setPersonnel(null)
       router.push('/purchase-orders')
-      alert('Successfully submitted!')
+      if (stage !== 'ea_approval' && stage !== 'md_approval') {
+        alert('Successfully submitted!')
+      }
     } catch (error) {
       console.error('Error submitting:', error)
       alert(error instanceof Error ? error.message : 'Failed to submit')
@@ -1189,12 +1231,10 @@ function PurchaseOrdersPageContent() {
         return
       }
 
-      const result = await response.json()
+      await response.json()
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders', 'workflow'] })
       await fetchOrders(true, true)
-      const doneLabel = action === 'approve' ? 'approved' : action === 'deny' ? 'denied' : 'held'
-      alert(`Successfully ${doneLabel} ${result.count} order${result.count !== 1 ? 's' : ''}!`)
     } catch (error) {
       console.error(`Error in bulk ${action}:`, error)
       alert(`Failed to ${actionLabel} orders`)
@@ -1320,6 +1360,11 @@ function PurchaseOrdersPageContent() {
     )
   }
 
+  const setApprovalBranchFilterPreference = (branch: string) => {
+    setPurchaseOrderPage(1)
+    setApprovalBranchFilter(branch)
+  }
+
   const setPurchaseOrderMode = (mode: PurchaseOrderListMode) => {
     setPurchaseOrderListMode(mode)
     setPurchaseOrderPage(1)
@@ -1360,7 +1405,11 @@ function PurchaseOrdersPageContent() {
             })}
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
             {isApprovalQueue
-              ? 'Approval queue'
+              ? approvalFilter === 'all'
+                ? userRole === 'md' && approvalBranchFilter !== 'all'
+                  ? `${getBranchLabel(approvalBranchFilter)} orders`
+                  : 'All readable orders'
+                : `${APPROVAL_FILTER_OPTIONS.find((option) => option.value === approvalFilter)?.label || 'Approval'} queue`
               : effectivePurchaseOrderListMode === 'today'
                 ? 'Current day orders'
                 : 'All orders'} · {total} total
@@ -1474,21 +1523,7 @@ function PurchaseOrdersPageContent() {
       return 0
     }
 
-    const statusSet = getApprovalStatusSet(userRole)
-    switch (filter) {
-      case 'all':
-        return orders.filter((order) => !isRejectedWorkflowStatus(order.status) && order.status !== 'cancelled').length
-      case 'pending':
-        return orders.filter((order) => order.status === statusSet.pending).length
-      case 'rejected':
-        return orders.filter((order) => order.status === statusSet.rejected || order.status === statusSet.extraRejected).length
-      case 'hold':
-        return orders.filter((order) => order.status === statusSet.hold || order.status === statusSet.extraHold).length
-      case 'completed':
-        return orders.filter((order) => isCompletedInDateRange(order, completedDateStart, completedDateEnd)).length
-      default:
-        return 0
-    }
+    return approvalFilterCounts[filter] || 0
   }
 
   const renderReadOnlyPanel = (title: string, message: string) => (
@@ -1500,6 +1535,32 @@ function PurchaseOrdersPageContent() {
         <p className="text-sm text-slate-600">{message}</p>
       </CardContent>
     </Card>
+  )
+
+  const renderApprovalListSkeleton = () => (
+    <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 p-5">
+        <div className="h-4 w-36 animate-pulse rounded-full bg-teal-100" />
+        <div className="mt-3 h-7 w-72 animate-pulse rounded-xl bg-slate-200" />
+      </div>
+      <div className="space-y-3 p-4">
+        {Array.from({ length: 7 }).map((_, index) => (
+          <div
+            key={`approval-filter-skeleton-${index}`}
+            className="grid grid-cols-[1.2fr_1fr_1.6fr_0.8fr_0.8fr] items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-4"
+          >
+            <div className="space-y-2">
+              <div className="h-4 w-28 animate-pulse rounded-full bg-slate-200" />
+              <div className="h-3 w-40 animate-pulse rounded-full bg-slate-100" />
+            </div>
+            <div className="h-4 w-32 animate-pulse rounded-full bg-slate-200" />
+            <div className="h-4 w-full animate-pulse rounded-full bg-slate-200" />
+            <div className="h-7 w-24 animate-pulse rounded-full bg-slate-200" />
+            <div className="ml-auto h-9 w-28 animate-pulse rounded-xl bg-slate-200" />
+          </div>
+        ))}
+      </div>
+    </div>
   )
 
   const renderCompletedSummary = (order: PurchaseOrder) => (
@@ -2143,7 +2204,7 @@ function PurchaseOrdersPageContent() {
                     <Button
                       onClick={toggleViewMode}
                       variant="outline"
-                      className="rounded-2xl border-white/50 bg-white text-emerald-800 hover:bg-emerald-50"
+                      className="rounded-2xl border-2 border-white bg-white px-5 font-black text-emerald-900 shadow-lg shadow-emerald-950/20 ring-2 ring-white/25 hover:bg-emerald-50 hover:text-emerald-950"
                     >
                       {isSwitchingView ? (
                         <>
@@ -2166,6 +2227,24 @@ function PurchaseOrdersPageContent() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                  {userRole === 'md' && (
+                    <div className="mr-1 flex min-w-[220px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Branch</span>
+                      <Select value={approvalBranchFilter} onValueChange={setApprovalBranchFilterPreference}>
+                        <SelectTrigger className="h-9 flex-1 rounded-lg border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-none">
+                          <SelectValue placeholder="All Branches" />
+                        </SelectTrigger>
+                        <SelectContent className="z-[100] rounded-xl border-slate-100 bg-white shadow-2xl">
+                          <SelectItem value="all" className="text-xs font-bold">All Branches</SelectItem>
+                          {BRANCH_OPTIONS.map((branch) => (
+                            <SelectItem key={branch.value} value={branch.value} className="text-xs font-bold">
+                              {branch.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   {APPROVAL_FILTER_OPTIONS.map((option) => {
                     const isActive = approvalFilter === option.value
                     return (
@@ -2190,7 +2269,9 @@ function PurchaseOrdersPageContent() {
                 {(approvalFilter === 'completed' || workflowStageFilter === 'completed' || workflowStageFilter === 'grn_completed') && renderCompletedAnalyticsControls()}
 
                 <div className="animate-in fade-in duration-200">
-                {activeViewMode === 'table' ? (
+                {isListRefreshing ? (
+                  renderApprovalListSkeleton()
+                ) : activeViewMode === 'table' ? (
                   <MDTableView
                     orders={listedOrders}
                     onApprove={async (orderId, remarks) => {

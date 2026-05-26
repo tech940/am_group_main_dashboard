@@ -352,7 +352,7 @@ export function MDGridView({
                         checked={isSelected}
                         onCheckedChange={() => toggleSelection(order.id)}
                         aria-label={`Select order ${order.order_number || order.orderNumber || order.id}`}
-                        className="border-white/60 bg-white/15 data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-emerald-700"
+                        className="border-slate-300 bg-white text-white shadow-sm data-[state=checked]:border-teal-700 data-[state=checked]:bg-teal-700 data-[state=checked]:text-white"
                       />
                     )}
                     <Button
@@ -361,7 +361,7 @@ export function MDGridView({
                       size="icon"
                       onClick={() => void handleViewDetails(order)}
                       disabled={isLoadingDetails}
-                      className="h-9 w-9 rounded-2xl border border-white/15 bg-white/12 text-white hover:bg-white/20"
+                      className="h-9 w-9 rounded-2xl border border-slate-200 bg-white/80 text-slate-700 shadow-sm hover:bg-white hover:text-teal-700"
                       title="View details"
                     >
                       {isLoadingDetails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}

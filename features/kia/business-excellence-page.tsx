@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { AccessControlOverlay } from '@/components/shared/access-control-overlay'
 import { useUserRole } from '@/lib/hooks/use-user-role'
+import { OpenRoSection } from '@/features/kia/open-ro-section'
 import {
   LineChart,
   Line,
@@ -138,9 +139,11 @@ type BusinessDateFilter = {
 
 const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
+const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [DEFAULT_BUSINESS_EXCELLENCE_SHEET]: 'ro-billing-report',
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
+  [OPEN_RO_REPORT]: 'open-ro',
 }
 const REPORT_NAMES_BY_SLUG: Record<string, string> = Object.fromEntries(
   Object.entries(REPORT_ROUTE_SLUGS).map(([name, slug]) => [slug, name])
@@ -160,6 +163,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     brand: 'kia',
     sheetName: WORKSHOP_PERFORMANCE_REPORT,
     tableName: 'workshop_performance',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'open-ro',
+    brand: 'kia',
+    sheetName: OPEN_RO_REPORT,
+    tableName: 'open_ro_yearly',
     columns: [],
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
@@ -1194,7 +1206,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET) {
+      if (activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT) {
         setFetchingRows(null)
         return
       }
@@ -1210,7 +1222,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
     router.push(getBusinessExcellenceReportPath(sheetName))
     setActiveTab(sheetName)
     setCurrentPage(1) // Reset pagination
-    if (sheetName === WORKSHOP_PERFORMANCE_REPORT || sheetName === DEFAULT_BUSINESS_EXCELLENCE_SHEET) {
+    if (sheetName === WORKSHOP_PERFORMANCE_REPORT || sheetName === DEFAULT_BUSINESS_EXCELLENCE_SHEET || sheetName === OPEN_RO_REPORT) {
       setFetchingRows(null)
       return
     }
@@ -1246,7 +1258,8 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
               // Check if this is RO Billing sheet to show analytics
               const isROBillingSheet = selectedSheet.sheetName.toLowerCase().includes('ro billing')
               const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
-              const usesDateControls = isROBillingSheet || isWorkshopPerformanceSheet
+              const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
+              const usesDateControls = isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet
 
               return (
                 <div className="animate-in slide-in-from-bottom-4 duration-500">
@@ -1266,7 +1279,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                                 {activeDateLabel}
                               </span>
                               <span className="rounded-full bg-teal-50 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest text-teal-700">
-                                {isWorkshopPerformanceSheet ? 'Performance Date' : 'Bill Date'}
+                                {isWorkshopPerformanceSheet ? 'Performance Date' : isOpenRoSheet ? 'RO Date' : 'Bill Date'}
                               </span>
                             </div>
                           )}
@@ -1581,6 +1594,12 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                             <SheetContentSkeleton />
                           ) : (
                             <WorkshopPerformanceSection dateFilter={appliedDateFilter} />
+                          )
+                        ) : isOpenRoSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <OpenRoSection dateFilter={appliedDateFilter} />
                           )
                         ) : isROBillingSheet ? (
                           isApplyingFilter ? (
@@ -1899,8 +1918,8 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
   const assigned = new Set([...paidRows, ...freeRows, ...runningRows, ...accidentRows])
   const otherRows = rows.filter((row) => !assigned.has(row))
 
-  const totalJc = rows.reduce((sum, row) => sum + Number(row.totalJc || 0), 0)
-  const totalLabour = rows.reduce((sum, row) => sum + Number(row.labourAmount || 0), 0)
+  const totalJc = Number(serverGrandTotal?.totalJc || 0) || rows.reduce((sum, row) => sum + Number(row.totalJc || 0), 0)
+  const totalLabour = Number(serverGrandTotal?.labourAmount || 0) || rows.reduce((sum, row) => sum + Number(row.labourAmount || 0), 0)
   const totals = { jc: totalJc, labour: totalLabour }
   const paid = aggregateWorkshopRows('Paid Service', paidRows, totals)
   paid.subRows = distinctChildren(paid.serviceType, paidRows).filter((row) => !isMileageServiceLabel(row.serviceType))
@@ -1915,6 +1934,7 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
   const accident = aggregateWorkshopRows('Accident', accidentRows, totals)
   accident.subRows = []
   const grandTotal = aggregateWorkshopRows('Grand Total', [mechTotal, accident], totals)
+
   if (serverGrandTotal) {
     grandTotal.lessVas = Number(serverGrandTotal.lessVas || 0)
     grandTotal.labMinusVas = Math.max(grandTotal.labourAmount - grandTotal.lessVas, 0)
@@ -2097,11 +2117,15 @@ function WorkshopPerformanceSection({
               const subRows = row.subRows || []
               const hasSubRows = subRows.length > 0 && !isTotal
               const isExpanded = expandedWorkshopRows.has(row.serviceType)
-              const renderRow = (item: WorkshopPerformanceRow, options?: { child?: boolean; parentTotal?: boolean }) => (
+              const renderRow = (item: WorkshopPerformanceRow, options?: { child?: boolean; parentTotal?: boolean }) => {
+                const isGrandTotal = item.serviceType === 'Grand Total'
+                const isContributionSubtotal = Boolean(options?.parentTotal)
+
+                return (
                 <tr
                   key={`${options?.child ? `${row.serviceType}-child-` : ''}${item.serviceType}`}
                   className={cn(
-                    item.serviceType === 'Grand Total' ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white' : options?.child ? 'bg-slate-50/70 text-slate-700' : 'bg-white hover:bg-slate-50',
+                    isGrandTotal ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white' : options?.child ? 'bg-slate-50/70 text-slate-700' : 'bg-white hover:bg-slate-50',
                     options?.parentTotal && 'bg-slate-100/90'
                   )}
                 >
@@ -2125,24 +2149,29 @@ function WorkshopPerformanceSection({
                     </div>
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{item.totalJc.toLocaleString('en-IN')}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', item.serviceType === 'Grand Total' ? 'text-white' : getPercentToneClass(item.totalJcPercent))}>{formatPercent(item.totalJcPercent)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.totalJcPercent))}>
+                    {isContributionSubtotal ? '—' : formatPercent(item.totalJcPercent)}
+                  </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{formatWorkshopTableMoney(item.labourAmount)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', item.serviceType === 'Grand Total' ? 'text-white' : getPercentToneClass(item.labourPercent))}>{formatPercent(item.labourPercent)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.labourPercent))}>
+                    {isContributionSubtotal ? '—' : formatPercent(item.labourPercent)}
+                  </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.labourPerRo)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', item.serviceType === 'Grand Total' ? 'text-white' : getPercentToneClass(item.vasPercent))}>{formatPercent(item.vasPercent)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : getPercentToneClass(item.vasPercent))}>{formatPercent(item.vasPercent)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.labPerRoMinusVas)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{formatWorkshopTableMoney(item.spareSale)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.sparePerRo)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', item.serviceType === 'Grand Total' ? 'text-white' : item.discount > 0 && 'text-rose-600')}>{formatWorkshopTableMoney(item.discount)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : item.discount > 0 && 'text-rose-600')}>{formatWorkshopTableMoney(item.discount)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{item.waCount.toLocaleString('en-IN')}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.waAmount)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', item.serviceType === 'Grand Total' ? 'text-white' : getPercentToneClass(item.waPerRoPercent))}>{formatPercent(item.waPerRoPercent)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : getPercentToneClass(item.waPerRoPercent))}>{formatPercent(item.waPerRoPercent)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{item.wbCount.toLocaleString('en-IN')}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.wbAmount)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', item.serviceType === 'Grand Total' ? 'text-white' : getPercentToneClass(item.wbPerRoPercent))}>{formatPercent(item.wbPerRoPercent)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : getPercentToneClass(item.wbPerRoPercent))}>{formatPercent(item.wbPerRoPercent)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.lessVas)}</td>
                 </tr>
-              )
+                )
+              }
 
               return [
                 renderRow(row, { parentTotal: row.serviceType === 'MECH' || row.serviceType === 'MECH TOTAL' }),

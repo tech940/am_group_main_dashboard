@@ -46,6 +46,27 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS ro_billing_report_uploaded_at_idx
 CREATE INDEX CONCURRENTLY IF NOT EXISTS open_ro_yearly_uploaded_at_idx
   ON open_ro_yearly (uploaded_at);
 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_open_ro_ro_date
+  ON open_ro_yearly (ro_date);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_open_ro_status
+  ON open_ro_yearly (status);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_open_ro_work_type
+  ON open_ro_yearly (work_type);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_open_ro_service_adv
+  ON open_ro_yearly (service_adv);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_open_ro_new_status
+  ON open_ro_yearly (new_r_o_status);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_open_ro_ro_sub_status
+  ON open_ro_yearly (ro_sub_status);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_open_ro_ro_no
+  ON open_ro_yearly (r_o_no);
+
 CREATE INDEX CONCURRENTLY IF NOT EXISTS ew_report_uploaded_at_idx
   ON ew_report (uploaded_at);
 

@@ -90,7 +90,7 @@ function growth(current: number, previous: number) {
 }
 
 function cacheKey(startDate: string, endDate: string) {
-  return `kia:business-excellence:workshop-performance:v11:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:v12:${createHash('sha1')
     .update(`${startDate}:${endDate}`)
     .digest('hex')}`
 }

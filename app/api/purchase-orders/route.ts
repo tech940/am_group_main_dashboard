@@ -24,6 +24,9 @@ const PURCHASE_ORDER_UTC_TIMESTAMP_FIELDS = [
   'md_approved_at',
 ] as const
 
+const APPROVAL_FILTER_VALUES = ['all', 'pending', 'approved', 'rejected', 'hold', 'completed'] as const
+type WhereFilter = NonNullable<Parameters<typeof and>[number]>
+
 function serializePurchaseOrderRow(row: Record<string, unknown>) {
   return serializeUtcTimestampFields(row, [...PURCHASE_ORDER_UTC_TIMESTAMP_FIELDS])
 }
@@ -112,6 +115,8 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
     switch (filter) {
       case 'pending':
         return eq(purchaseOrders.status, 'awaiting_ea_approval')
+      case 'approved':
+        return eq(purchaseOrders.eaApprovalStatus, 'approved')
       case 'rejected':
         return or(eq(purchaseOrders.status, 'ea_denied'), eq(purchaseOrders.status, 'md_denied'))
       case 'hold':
@@ -120,17 +125,15 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
         return eq(purchaseOrders.status, 'completed')
       case 'all':
       default:
-        return and(
-          ne(purchaseOrders.status, 'ea_denied'),
-          ne(purchaseOrders.status, 'md_denied'),
-          ne(purchaseOrders.status, 'cancelled')
-        )
+        return null
     }
   }
 
   switch (filter) {
     case 'pending':
       return eq(purchaseOrders.status, 'awaiting_md_approval')
+    case 'approved':
+      return eq(purchaseOrders.mdApprovalStatus, 'approved')
     case 'rejected':
       return eq(purchaseOrders.status, 'md_denied')
     case 'hold':
@@ -139,8 +142,40 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
       return eq(purchaseOrders.status, 'completed')
     case 'all':
     default:
-      return eq(purchaseOrders.status, 'awaiting_md_approval')
+      return null
   }
+}
+
+async function fetchApprovalCounts(role: string, baseFilters: WhereFilter[]) {
+  if (role !== 'ea' && role !== 'md') {
+    return null
+  }
+
+  const isEa = role === 'ea'
+  const pendingStatus = isEa ? 'awaiting_ea_approval' : 'awaiting_md_approval'
+  const approvedColumn = isEa ? purchaseOrders.eaApprovalStatus : purchaseOrders.mdApprovalStatus
+  const rejectedExpression = isEa
+    ? sql`${purchaseOrders.status} IN ('ea_denied', 'md_denied')`
+    : eq(purchaseOrders.status, 'md_denied')
+  const holdExpression = isEa
+    ? sql`${purchaseOrders.status} IN ('ea_on_hold', 'md_on_hold')`
+    : eq(purchaseOrders.status, 'md_on_hold')
+
+  const [row] = await db
+    .select({
+      all: count(),
+      pending: count(sql`CASE WHEN ${purchaseOrders.status} = ${pendingStatus} THEN 1 END`),
+      approved: count(sql`CASE WHEN ${approvedColumn} = 'approved' THEN 1 END`),
+      rejected: count(sql`CASE WHEN ${rejectedExpression} THEN 1 END`),
+      hold: count(sql`CASE WHEN ${holdExpression} THEN 1 END`),
+      completed: count(sql`CASE WHEN ${purchaseOrders.status} = 'completed' THEN 1 END`),
+    })
+    .from(purchaseOrders)
+    .where(and(...baseFilters))
+
+  return Object.fromEntries(
+    APPROVAL_FILTER_VALUES.map((filter) => [filter, Number(row?.[filter] || 0)])
+  )
 }
 
 export async function GET(request: NextRequest) {
@@ -161,12 +196,13 @@ export async function GET(request: NextRequest) {
     const mode = searchParams.get('mode') === 'all' ? 'all' : 'today'
     const workflowFilter = searchParams.get('workflowFilter')
     const approvalFilter = searchParams.get('approvalFilter')
+    const branchFilter = searchParams.get('branchFilter')
     const scope = searchParams.get('scope')
     const spendStartDate = searchParams.get('spendStartDate')
     const spendEndDate = searchParams.get('spendEndDate')
     const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
     const requestedPageSize = Number.parseInt(searchParams.get('pageSize') || '9', 10) || 9
-    const pageSize = Math.min(9, Math.max(1, requestedPageSize))
+    const pageSize = Math.min(12, Math.max(1, requestedPageSize))
 
     // If ID is provided, fetch single purchase order
     if (id) {
@@ -201,6 +237,18 @@ export async function GET(request: NextRequest) {
       filters.push(eq(purchaseOrders.currentStage, stage))
     }
 
+    if (branchFilter && branchFilter !== 'all') {
+      if (!isBranchValue(branchFilter)) {
+        return NextResponse.json({ error: 'Invalid branch filter' }, { status: 400 })
+      }
+
+      if (appUser.role !== 'md' && appUser.role !== 'admin' && appUser.role !== 'purchase_manager') {
+        return NextResponse.json({ error: 'Forbidden branch filter' }, { status: 403 })
+      }
+
+      filters.push(eq(purchaseOrders.brand, branchFilter))
+    }
+
     if (view === 'table') {
       if (!canViewPurchaseOrderTable(appUser.role)) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -209,6 +257,8 @@ export async function GET(request: NextRequest) {
       const workflowExpression = getWorkflowFilterExpression(workflowFilter)
       if (workflowExpression) {
         filters.push(workflowExpression)
+      } else if (scope === 'all') {
+        // Keep only the role/branch/deleted visibility filter so EA/MD can audit all readable orders.
       } else if (scope === 'spending') {
         filters.push(getSpendingScopeExpression())
       } else if (scope === 'completed') {
@@ -259,6 +309,12 @@ export async function GET(request: NextRequest) {
     if (paginate) {
       const workflowExpression = getWorkflowFilterExpression(workflowFilter)
       const approvalExpression = getApprovalFilterExpression(appUser.role, approvalFilter)
+      const approvalCountFilters = [...filters]
+
+      if (workflowExpression) {
+        approvalCountFilters.push(workflowExpression)
+      }
+
       if (workflowExpression) {
         filters.push(workflowExpression)
       } else if (approvalExpression) {
@@ -279,7 +335,7 @@ export async function GET(request: NextRequest) {
 
       const whereExpression = and(...filters)
       const offset = (page - 1) * pageSize
-      const [[{ total }], rows] = await timer.time('paged-query', () => Promise.all([
+      const [[{ total }], rows, approvalCounts] = await timer.time('paged-query', () => Promise.all([
         db
           .select({ total: count() })
           .from(purchaseOrders)
@@ -291,6 +347,7 @@ export async function GET(request: NextRequest) {
           .orderBy(desc(purchaseOrders.createdAt))
           .limit(pageSize)
           .offset(offset),
+        fetchApprovalCounts(appUser.role, approvalCountFilters),
       ]))
 
       const totalOrders = Number(total) || 0
@@ -307,6 +364,7 @@ export async function GET(request: NextRequest) {
           totalPages,
           mode,
         },
+        approvalCounts,
       }), serverTiming)
     }
 

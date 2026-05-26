@@ -1,17 +1,17 @@
-Date : 2026-05-23 16:12:35
+Date : 2026-05-26 12:34:05
 Directory : c:\Users\HP\Downloads\Main_Dashboard
-Total : 157 files,  35658 codes, 606 comments, 3246 blanks, all 39510 lines
+Total : 163 files,  40145 codes, 611 comments, 3661 blanks, all 44417 lines
 
 Languages
 +--------------------+------------+------------+------------+------------+------------+
 | language           | files      | code       | comment    | blank      | total      |
 +--------------------+------------+------------+------------+------------+------------+
-| TypeScript JSX     |         59 |     15,937 |        180 |      1,470 |     17,587 |
+| TypeScript JSX     |         62 |     18,238 |        169 |      1,632 |     20,039 |
 | JSON               |          3 |     10,277 |          0 |          3 |     10,280 |
-| TypeScript         |         50 |      5,591 |        191 |        891 |      6,673 |
-| Markdown           |         14 |      2,225 |          2 |        583 |      2,810 |
-| MS SQL             |         20 |      1,402 |        226 |        267 |      1,895 |
-| PostCSS            |          1 |         85 |          0 |          8 |         93 |
+| TypeScript         |         52 |      7,442 |        190 |        968 |      8,600 |
+| Markdown           |         15 |      2,118 |          2 |        680 |      2,800 |
+| MS SQL             |         20 |      1,694 |        243 |        311 |      2,248 |
+| PostCSS            |          1 |        235 |          0 |         43 |        278 |
 | JavaScript         |          3 |         72 |          2 |         16 |         90 |
 | JSON with Comments |          1 |         34 |          0 |          1 |         35 |
 | PowerShell         |          1 |         30 |          5 |          7 |         42 |
@@ -22,78 +22,82 @@ Directories
 +---------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
 | path                                                                                                          | files      | code       | comment    | blank      | total      |
 +---------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
-| .                                                                                                             |        157 |     35,658 |        606 |      3,246 |     39,510 |
-| . (Files)                                                                                                     |         24 |     12,813 |         26 |        610 |     13,449 |
+| .                                                                                                             |        163 |     40,145 |        611 |      3,661 |     44,417 |
+| . (Files)                                                                                                     |         25 |     12,706 |         26 |        707 |     13,439 |
 | .commandcode                                                                                                  |          1 |          0 |          0 |          1 |          1 |
 | .commandcode\taste                                                                                            |          1 |          0 |          0 |          1 |          1 |
-| app                                                                                                           |         33 |      8,024 |         88 |        984 |      9,096 |
-| app (Files)                                                                                                   |          4 |        164 |          1 |         19 |        184 |
+| app                                                                                                           |         37 |      9,986 |         80 |      1,103 |     11,169 |
+| app (Files)                                                                                                   |          4 |        329 |          1 |         55 |        385 |
 | app\admin                                                                                                     |          4 |      1,339 |         18 |         86 |      1,443 |
 | app\admin (Files)                                                                                             |          1 |          4 |          1 |          3 |          8 |
 | app\admin\roles                                                                                               |          1 |        204 |          1 |         19 |        224 |
 | app\admin\settings                                                                                            |          1 |        359 |          9 |         26 |        394 |
 | app\admin\users                                                                                               |          1 |        772 |          7 |         38 |        817 |
-| app\api                                                                                                       |         20 |      3,385 |         33 |        533 |      3,951 |
+| app\api                                                                                                       |         22 |      5,242 |         33 |        612 |      5,887 |
 | app\api\admin                                                                                                 |          2 |        386 |         13 |         77 |        476 |
 | app\api\admin\settings                                                                                        |          1 |         81 |          0 |         14 |         95 |
 | app\api\admin\users                                                                                           |          1 |        305 |         13 |         63 |        381 |
-| app\api\auth                                                                                                  |          3 |         76 |          1 |         17 |         94 |
+| app\api\auth                                                                                                  |          3 |         93 |          1 |         20 |        114 |
 | app\api\auth\login                                                                                            |          1 |         44 |          0 |          7 |         51 |
 | app\api\auth\logout                                                                                           |          1 |         10 |          1 |          6 |         17 |
-| app\api\auth\user                                                                                             |          1 |         22 |          0 |          4 |         26 |
-| app\api\brands                                                                                                |          4 |      1,231 |          0 |        171 |      1,402 |
-| app\api\brands\kia                                                                                            |          4 |      1,231 |          0 |        171 |      1,402 |
-| app\api\brands\kia\business-excellence                                                                        |          4 |      1,231 |          0 |        171 |      1,402 |
-| app\api\brands\kia\business-excellence (Files)                                                                |          1 |        310 |          0 |         36 |        346 |
-| app\api\brands\kia\business-excellence\performance-intelligence                                               |          1 |        338 |          0 |         39 |        377 |
-| app\api\brands\kia\business-excellence\ro-billing-analysis                                                    |          1 |        566 |          0 |         91 |        657 |
+| app\api\auth\user                                                                                             |          1 |         39 |          0 |          7 |         46 |
+| app\api\brands                                                                                                |          6 |      3,075 |          0 |        247 |      3,322 |
+| app\api\brands\kia                                                                                            |          6 |      3,075 |          0 |        247 |      3,322 |
+| app\api\brands\kia\business-excellence                                                                        |          6 |      3,075 |          0 |        247 |      3,322 |
+| app\api\brands\kia\business-excellence (Files)                                                                |          1 |        291 |          0 |         35 |        326 |
+| app\api\brands\kia\business-excellence\open-ro                                                                |          1 |        444 |          0 |         27 |        471 |
+| app\api\brands\kia\business-excellence\performance-intelligence                                               |          1 |        430 |          0 |         30 |        460 |
+| app\api\brands\kia\business-excellence\ro-billing-analysis                                                    |          1 |      1,302 |          0 |        131 |      1,433 |
 | app\api\brands\kia\business-excellence\rows                                                                   |          1 |         17 |          0 |          5 |         22 |
+| app\api\brands\kia\business-excellence\workshop-performance                                                   |          1 |        591 |          0 |         19 |        610 |
 | app\api\business-excellence                                                                                   |          2 |         12 |          0 |          6 |         18 |
 | app\api\business-excellence (Files)                                                                           |          1 |          6 |          0 |          3 |          9 |
 | app\api\business-excellence\ro-billing-analysis                                                               |          1 |          6 |          0 |          3 |          9 |
 | app\api\health                                                                                                |          1 |         33 |          2 |          5 |         40 |
 | app\api\notifications                                                                                         |          1 |        102 |          0 |         17 |        119 |
-| app\api\purchase-orders                                                                                       |          6 |      1,427 |         13 |        217 |      1,657 |
-| app\api\purchase-orders (Files)                                                                               |          1 |        426 |          3 |         70 |        499 |
+| app\api\purchase-orders                                                                                       |          6 |      1,423 |         13 |        217 |      1,653 |
+| app\api\purchase-orders (Files)                                                                               |          1 |        422 |          3 |         70 |        495 |
 | app\api\purchase-orders\approve                                                                               |          1 |         74 |          7 |         17 |         98 |
 | app\api\purchase-orders\bulk-approve                                                                          |          1 |        169 |          0 |         27 |        196 |
 | app\api\purchase-orders\file                                                                                  |          1 |         89 |          1 |         24 |        114 |
 | app\api\purchase-orders\upload                                                                                |          1 |         74 |          0 |         13 |         87 |
 | app\api\purchase-orders\workflow                                                                              |          1 |        595 |          2 |         66 |        663 |
 | app\api\user-preferences                                                                                      |          1 |        118 |          4 |         23 |        145 |
-| app\auth                                                                                                      |          1 |        196 |          1 |         20 |        217 |
-| app\auth\login                                                                                                |          1 |        196 |          1 |         20 |        217 |
-| app\brands                                                                                                    |          2 |        620 |         24 |         84 |        728 |
-| app\brands\kia                                                                                                |          2 |        620 |         24 |         84 |        728 |
-| app\brands\kia\business-excellence                                                                            |          1 |         17 |          0 |          6 |         23 |
+| app\auth                                                                                                      |          1 |        209 |          1 |         20 |        230 |
+| app\auth\login                                                                                                |          1 |        209 |          1 |         20 |        230 |
+| app\brands                                                                                                    |          4 |        676 |         24 |         95 |        795 |
+| app\brands\kia                                                                                                |          4 |        676 |         24 |         95 |        795 |
+| app\brands\kia\business-excellence                                                                            |          3 |         73 |          0 |         17 |         90 |
+| app\brands\kia\business-excellence (Files)                                                                    |          1 |         16 |          0 |          6 |         22 |
+| app\brands\kia\business-excellence\[report]                                                                   |          2 |         57 |          0 |         11 |         68 |
 | app\brands\kia\ro-billing                                                                                     |          1 |        603 |         24 |         78 |        705 |
-| app\dashboard                                                                                                 |          1 |        247 |          8 |         15 |        270 |
-| app\purchase-orders                                                                                           |          1 |      2,073 |          3 |        227 |      2,303 |
-| components                                                                                                    |         45 |      7,966 |         90 |        769 |      8,825 |
+| app\dashboard                                                                                                 |          1 |         60 |          0 |          6 |         66 |
+| app\purchase-orders                                                                                           |          1 |      2,131 |          3 |        229 |      2,363 |
+| components                                                                                                    |         45 |      8,197 |         91 |        801 |      9,089 |
 | components\analytics                                                                                          |          6 |        395 |          0 |         28 |        423 |
-| components\layout                                                                                             |          4 |      1,405 |         12 |        159 |      1,576 |
-| components\providers                                                                                          |          1 |         24 |          0 |          5 |         29 |
-| components\purchase-orders                                                                                    |         17 |      4,521 |         55 |        388 |      4,964 |
+| components\layout                                                                                             |          4 |      1,471 |         11 |        165 |      1,647 |
+| components\providers                                                                                          |          1 |        110 |          2 |         25 |        137 |
+| components\purchase-orders                                                                                    |         17 |      4,600 |         55 |        394 |      5,049 |
 | components\shared                                                                                             |          4 |        643 |         20 |         59 |        722 |
 | components\ui                                                                                                 |         13 |        978 |          3 |        130 |      1,111 |
 | config                                                                                                        |          1 |         25 |         12 |          5 |         42 |
 | context                                                                                                       |          1 |         22 |          0 |          7 |         29 |
-| features                                                                                                      |          2 |      3,426 |         35 |        257 |      3,718 |
+| features                                                                                                      |          3 |      5,541 |         31 |        382 |      5,954 |
 | features\dashboard                                                                                            |          1 |        116 |          4 |          6 |        126 |
-| features\kia                                                                                                  |          1 |      3,310 |         31 |        251 |      3,592 |
-| lib                                                                                                           |         21 |      1,728 |        108 |        292 |      2,128 |
+| features\kia                                                                                                  |          2 |      5,425 |         27 |        376 |      5,828 |
+| lib                                                                                                           |         21 |      1,722 |        107 |        290 |      2,119 |
 | lib (Files)                                                                                                   |          3 |        154 |          0 |         45 |        199 |
 | lib\api                                                                                                       |          1 |         40 |          0 |          8 |         48 |
 | lib\auth                                                                                                      |          3 |         93 |          2 |         27 |        122 |
-| lib\db                                                                                                        |          2 |        450 |         33 |         49 |        532 |
-| lib\hooks                                                                                                     |          2 |        145 |          6 |         28 |        179 |
+| lib\db                                                                                                        |          2 |        451 |         32 |         49 |        532 |
+| lib\hooks                                                                                                     |          2 |        137 |          6 |         26 |        169 |
 | lib\notifications                                                                                             |          2 |        322 |          0 |         39 |        361 |
 | lib\purchase-orders                                                                                           |          1 |        232 |          0 |         28 |        260 |
-| lib\redis                                                                                                     |          2 |        108 |         31 |         33 |        172 |
+| lib\redis                                                                                                     |          2 |        109 |         31 |         33 |        173 |
 | lib\supabase                                                                                                  |          5 |        184 |         36 |         35 |        255 |
 | public                                                                                                        |          6 |         57 |          0 |         11 |         68 |
 | scratch                                                                                                       |          1 |         29 |          0 |          4 |         33 |
-| scripts                                                                                                       |         22 |      1,568 |        247 |        306 |      2,121 |
+| scripts                                                                                                       |         22 |      1,860 |        264 |        350 |      2,474 |
 +---------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
 
 Files
@@ -104,7 +108,8 @@ Files
 | c:\Users\HP\Downloads\Main_Dashboard\AGENTS.md                                                                | Markdown           |          2 |          2 |          2 |          6 |
 | c:\Users\HP\Downloads\Main_Dashboard\BRAND_ACCESS_SETUP.md                                                    | Markdown           |        116 |          0 |         34 |        150 |
 | c:\Users\HP\Downloads\Main_Dashboard\CLAUDE.md                                                                | Markdown           |          1 |          0 |          1 |          2 |
-| c:\Users\HP\Downloads\Main_Dashboard\PROJECT_CONTEXT.md                                                       | Markdown           |        780 |          0 |        167 |        947 |
+| c:\Users\HP\Downloads\Main_Dashboard\PROJECT_CONTEXT.md                                                       | Markdown           |        261 |          0 |         82 |        343 |
+| c:\Users\HP\Downloads\Main_Dashboard\PROJECT_DEEP_ANALYSIS.md                                                 | Markdown           |        412 |          0 |        182 |        594 |
 | c:\Users\HP\Downloads\Main_Dashboard\PURCHASE_ORDERS_COMPLETE.md                                              | Markdown           |        265 |          0 |         62 |        327 |
 | c:\Users\HP\Downloads\Main_Dashboard\PURCHASE_ORDERS_ENHANCEMENTS_GUIDE.md                                    | Markdown           |        258 |          0 |         71 |        329 |
 | c:\Users\HP\Downloads\Main_Dashboard\PURCHASE_ORDERS_SETUP.md                                                 | Markdown           |        146 |          0 |         51 |        197 |
@@ -122,11 +127,13 @@ Files
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\admin\users\route.ts                                             | TypeScript         |        305 |         13 |         63 |        381 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\auth\login\route.ts                                              | TypeScript         |         44 |          0 |          7 |         51 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\auth\logout\route.ts                                             | TypeScript         |         10 |          1 |          6 |         17 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\api\auth\user\route.ts                                               | TypeScript         |         22 |          0 |          4 |         26 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\business-excellence\performance-intelligence\route.ts | TypeScript         |        338 |          0 |         39 |        377 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\business-excellence\ro-billing-analysis\route.ts      | TypeScript         |        566 |          0 |         91 |        657 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\business-excellence\route.ts                          | TypeScript         |        310 |          0 |         36 |        346 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\api\auth\user\route.ts                                               | TypeScript         |         39 |          0 |          7 |         46 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\business-excellence\open-ro\route.ts                  | TypeScript         |        444 |          0 |         27 |        471 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\business-excellence\performance-intelligence\route.ts | TypeScript         |        430 |          0 |         30 |        460 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\business-excellence\ro-billing-analysis\route.ts      | TypeScript         |      1,302 |          0 |        131 |      1,433 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\business-excellence\route.ts                          | TypeScript         |        291 |          0 |         35 |        326 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\business-excellence\rows\route.ts                     | TypeScript         |         17 |          0 |          5 |         22 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\business-excellence\workshop-performance\route.ts     | TypeScript         |        591 |          0 |         19 |        610 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\business-excellence\ro-billing-analysis\route.ts                 | TypeScript         |          6 |          0 |          3 |          9 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\business-excellence\route.ts                                     | TypeScript         |          6 |          0 |          3 |          9 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\health\route.ts                                                  | TypeScript         |         33 |          2 |          5 |         40 |
@@ -134,19 +141,21 @@ Files
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\purchase-orders\approve\route.ts                                 | TypeScript         |         74 |          7 |         17 |         98 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\purchase-orders\bulk-approve\route.ts                            | TypeScript         |        169 |          0 |         27 |        196 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\purchase-orders\file\route.ts                                    | TypeScript         |         89 |          1 |         24 |        114 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\api\purchase-orders\route.ts                                         | TypeScript         |        426 |          3 |         70 |        499 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\api\purchase-orders\route.ts                                         | TypeScript         |        422 |          3 |         70 |        495 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\purchase-orders\upload\route.ts                                  | TypeScript         |         74 |          0 |         13 |         87 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\purchase-orders\workflow\route.ts                                | TypeScript         |        595 |          2 |         66 |        663 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\api\user-preferences\route.ts                                        | TypeScript         |        118 |          4 |         23 |        145 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\auth\login\page.tsx                                                  | TypeScript JSX     |        196 |          1 |         20 |        217 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\brands\kia\business-excellence\page.tsx                              | TypeScript JSX     |         17 |          0 |          6 |         23 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\auth\login\page.tsx                                                  | TypeScript JSX     |        209 |          1 |         20 |        230 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\brands\kia\business-excellence\[report]\loading.tsx                  | TypeScript JSX     |         16 |          0 |          1 |         17 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\brands\kia\business-excellence\[report]\page.tsx                     | TypeScript JSX     |         41 |          0 |         10 |         51 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\brands\kia\business-excellence\page.tsx                              | TypeScript JSX     |         16 |          0 |          6 |         22 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\brands\kia\ro-billing\page.tsx                                       | TypeScript JSX     |        603 |         24 |         78 |        705 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\dashboard\page.tsx                                                   | TypeScript JSX     |        247 |          8 |         15 |        270 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\dashboard\page.tsx                                                   | TypeScript JSX     |         60 |          0 |          6 |         66 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\forbidden.tsx                                                        | TypeScript JSX     |         20 |          0 |          2 |         22 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\globals.css                                                          | PostCSS            |         85 |          0 |          8 |         93 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\layout.tsx                                                           | TypeScript JSX     |         46 |          0 |          5 |         51 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\globals.css                                                          | PostCSS            |        235 |          0 |         43 |        278 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\layout.tsx                                                           | TypeScript JSX     |         61 |          0 |          6 |         67 |
 | c:\Users\HP\Downloads\Main_Dashboard\app\page.tsx                                                             | TypeScript JSX     |         13 |          1 |          4 |         18 |
-| c:\Users\HP\Downloads\Main_Dashboard\app\purchase-orders\page.tsx                                             | TypeScript JSX     |      2,073 |          3 |        227 |      2,303 |
+| c:\Users\HP\Downloads\Main_Dashboard\app\purchase-orders\page.tsx                                             | TypeScript JSX     |      2,131 |          3 |        229 |      2,363 |
 | c:\Users\HP\Downloads\Main_Dashboard\components.json                                                          | JSON               |         20 |          0 |          1 |         21 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\analytics\activity-card.tsx                                   | TypeScript JSX     |         50 |          0 |          5 |         55 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\analytics\integration-list.tsx                                | TypeScript JSX     |         65 |          0 |          4 |         69 |
@@ -154,15 +163,15 @@ Files
 | c:\Users\HP\Downloads\Main_Dashboard\components\analytics\sales-distribution.tsx                              | TypeScript JSX     |         66 |          0 |          4 |         70 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\analytics\sales-overview.tsx                                  | TypeScript JSX     |         95 |          0 |          4 |         99 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\analytics\subscriber-chart.tsx                                | TypeScript JSX     |         64 |          0 |          4 |         68 |
-| c:\Users\HP\Downloads\Main_Dashboard\components\layout\header.tsx                                             | TypeScript JSX     |        151 |          4 |         16 |        171 |
-| c:\Users\HP\Downloads\Main_Dashboard\components\layout\main-layout.tsx                                        | TypeScript JSX     |         24 |          0 |          3 |         27 |
+| c:\Users\HP\Downloads\Main_Dashboard\components\layout\header.tsx                                             | TypeScript JSX     |        191 |          3 |         21 |        215 |
+| c:\Users\HP\Downloads\Main_Dashboard\components\layout\main-layout.tsx                                        | TypeScript JSX     |         27 |          0 |          3 |         30 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\layout\notification-bell.tsx                                  | TypeScript JSX     |        830 |          0 |        116 |        946 |
-| c:\Users\HP\Downloads\Main_Dashboard\components\layout\sidebar.tsx                                            | TypeScript JSX     |        400 |          8 |         24 |        432 |
-| c:\Users\HP\Downloads\Main_Dashboard\components\providers\query-provider.tsx                                  | TypeScript JSX     |         24 |          0 |          5 |         29 |
+| c:\Users\HP\Downloads\Main_Dashboard\components\layout\sidebar.tsx                                            | TypeScript JSX     |        423 |          8 |         25 |        456 |
+| c:\Users\HP\Downloads\Main_Dashboard\components\providers\query-provider.tsx                                  | TypeScript JSX     |        110 |          2 |         25 |        137 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\approval-card.tsx                             | TypeScript JSX     |        151 |          1 |         15 |        167 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\image-gallery.tsx                             | TypeScript JSX     |        135 |          1 |         20 |        156 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\md-grid-view.tsx                              | TypeScript JSX     |        432 |          1 |         27 |        460 |
-| c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\md-table-view.tsx                             | TypeScript JSX     |        509 |          1 |         45 |        555 |
+| c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\md-table-view.tsx                             | TypeScript JSX     |        534 |          1 |         47 |        582 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\multi-stage-form.tsx                          | TypeScript JSX     |        599 |         13 |         38 |        650 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\multiple-image-upload.tsx                     | TypeScript JSX     |        339 |          1 |         43 |        383 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\po-table-view.tsx                             | TypeScript JSX     |        279 |          4 |         25 |        308 |
@@ -174,7 +183,7 @@ Files
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\stage4-grn.tsx                                | TypeScript JSX     |        244 |          7 |         20 |        271 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\stage5-accounts.tsx                           | TypeScript JSX     |        305 |          3 |         26 |        334 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\workflow-card-theme.ts                        | TypeScript         |         31 |          0 |          6 |         37 |
-| c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\workflow-status-card.tsx                      | TypeScript JSX     |        233 |          0 |         15 |        248 |
+| c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\workflow-status-card.tsx                      | TypeScript JSX     |        287 |          0 |         19 |        306 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\purchase-orders\workflow-timeline.tsx                         | TypeScript JSX     |        196 |          7 |         16 |        219 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\shared\access-control-overlay.tsx                             | TypeScript JSX     |         41 |          3 |          7 |         51 |
 | c:\Users\HP\Downloads\Main_Dashboard\components\shared\data-table.tsx                                         | TypeScript JSX     |        186 |          0 |          9 |        195 |
@@ -198,33 +207,34 @@ Files
 | c:\Users\HP\Downloads\Main_Dashboard\drizzle.config.ts                                                        | TypeScript         |         11 |          0 |          2 |         13 |
 | c:\Users\HP\Downloads\Main_Dashboard\eslint.config.mjs                                                        | JavaScript         |         14 |          2 |          3 |         19 |
 | c:\Users\HP\Downloads\Main_Dashboard\features\dashboard\dashboard-page.tsx                                    | TypeScript JSX     |        116 |          4 |          6 |        126 |
-| c:\Users\HP\Downloads\Main_Dashboard\features\kia\business-excellence-page.tsx                                | TypeScript JSX     |      3,310 |         31 |        251 |      3,592 |
+| c:\Users\HP\Downloads\Main_Dashboard\features\kia\business-excellence-page.tsx                                | TypeScript JSX     |      4,824 |         25 |        329 |      5,178 |
+| c:\Users\HP\Downloads\Main_Dashboard\features\kia\open-ro-section.tsx                                         | TypeScript JSX     |        601 |          2 |         47 |        650 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\api\timing.ts                                                        | TypeScript         |         40 |          0 |          8 |         48 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\auth\app-user.ts                                                     | TypeScript         |         40 |          0 |          8 |         48 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\auth\auth-helpers.ts                                                 | TypeScript         |         24 |          2 |         10 |         36 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\auth\brand-access.ts                                                 | TypeScript         |         29 |          0 |          9 |         38 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\branches.ts                                                          | TypeScript         |         35 |          0 |         10 |         45 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\date-time.ts                                                         | TypeScript         |        114 |          0 |         33 |        147 |
-| c:\Users\HP\Downloads\Main_Dashboard\lib\db\index.ts                                                          | TypeScript         |         22 |          4 |          5 |         31 |
+| c:\Users\HP\Downloads\Main_Dashboard\lib\db\index.ts                                                          | TypeScript         |         23 |          3 |          5 |         31 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\db\schema.ts                                                         | TypeScript         |        428 |         29 |         44 |        501 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\hooks\use-user-preferences.ts                                        | TypeScript         |        111 |          5 |         20 |        136 |
-| c:\Users\HP\Downloads\Main_Dashboard\lib\hooks\use-user-role.ts                                               | TypeScript         |         34 |          1 |          8 |         43 |
+| c:\Users\HP\Downloads\Main_Dashboard\lib\hooks\use-user-role.ts                                               | TypeScript         |         26 |          1 |          6 |         33 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\notifications\types.ts                                               | TypeScript         |         16 |          0 |          2 |         18 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\notifications\workflow.ts                                            | TypeScript         |        306 |          0 |         37 |        343 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\purchase-orders\access.ts                                            | TypeScript         |        232 |          0 |         28 |        260 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\redis\cache-utils.ts                                                 | TypeScript         |         82 |         24 |         24 |        130 |
-| c:\Users\HP\Downloads\Main_Dashboard\lib\redis\client.ts                                                      | TypeScript         |         26 |          7 |          9 |         42 |
+| c:\Users\HP\Downloads\Main_Dashboard\lib\redis\client.ts                                                      | TypeScript         |         27 |          7 |          9 |         43 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\supabase\admin.ts                                                    | TypeScript         |         12 |          4 |          2 |         18 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\supabase\client.ts                                                   | TypeScript         |         15 |          0 |          2 |         17 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\supabase\middleware.ts                                               | TypeScript         |         46 |          5 |          9 |         60 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\supabase\server.ts                                                   | TypeScript         |         25 |          3 |          3 |         31 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\supabase\storage.ts                                                  | TypeScript         |         86 |         24 |         19 |        129 |
 | c:\Users\HP\Downloads\Main_Dashboard\lib\utils.ts                                                             | TypeScript         |          5 |          0 |          2 |          7 |
-| c:\Users\HP\Downloads\Main_Dashboard\middleware.ts                                                            | TypeScript         |         10 |          8 |          4 |         22 |
 | c:\Users\HP\Downloads\Main_Dashboard\next.config.ts                                                           | TypeScript         |         26 |          0 |          3 |         29 |
 | c:\Users\HP\Downloads\Main_Dashboard\package-lock.json                                                        | JSON               |     10,196 |          0 |          1 |     10,197 |
 | c:\Users\HP\Downloads\Main_Dashboard\package.json                                                             | JSON               |         61 |          0 |          1 |         62 |
 | c:\Users\HP\Downloads\Main_Dashboard\postcss.config.mjs                                                       | JavaScript         |          6 |          0 |          2 |          8 |
+| c:\Users\HP\Downloads\Main_Dashboard\proxy.ts                                                                 | TypeScript         |         10 |          8 |          4 |         22 |
 | c:\Users\HP\Downloads\Main_Dashboard\public\file.svg                                                          | XML                |          1 |          0 |          0 |          1 |
 | c:\Users\HP\Downloads\Main_Dashboard\public\globe.svg                                                         | XML                |          1 |          0 |          0 |          1 |
 | c:\Users\HP\Downloads\Main_Dashboard\public\next.svg                                                          | XML                |          1 |          0 |          0 |          1 |
@@ -239,12 +249,12 @@ Files
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\add-purchase-order-notifications.sql                             | MS SQL             |        110 |          6 |         19 |        135 |
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\add-purchase-order-vendor-details.sql                            | MS SQL             |         10 |          2 |          4 |         16 |
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\backfill-purchase-order-stage-notifications.sql                  | MS SQL             |         56 |          2 |          2 |         60 |
-| c:\Users\HP\Downloads\Main_Dashboard\scripts\business-excellence-relational-indexes.sql                       | MS SQL             |         42 |          2 |         22 |         66 |
+| c:\Users\HP\Downloads\Main_Dashboard\scripts\business-excellence-relational-indexes.sql                       | MS SQL             |         56 |          2 |         29 |         87 |
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\create-admin-user.sql                                            | MS SQL             |         22 |         10 |          6 |         38 |
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\create-admin-user.ts                                             | TypeScript         |         76 |         10 |         17 |        103 |
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\create-purchase-orders-table.sql                                 | MS SQL             |        156 |         24 |         29 |        209 |
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\create-settings-table.sql                                        | MS SQL             |         24 |          4 |          3 |         31 |
-| c:\Users\HP\Downloads\Main_Dashboard\scripts\dashboard-performance-optimization.sql                           | MS SQL             |         79 |          8 |         23 |        110 |
+| c:\Users\HP\Downloads\Main_Dashboard\scripts\dashboard-performance-optimization.sql                           | MS SQL             |        357 |         25 |         60 |        442 |
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\fix-notification-timestamps.sql                                  | MS SQL             |         12 |          7 |          5 |         24 |
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\fix-purchase-order-access-policies.sql                           | MS SQL             |        195 |          1 |         12 |        208 |
 | c:\Users\HP\Downloads\Main_Dashboard\scripts\fix-purchase-order-denial-status-enum.sql                        | MS SQL             |         19 |          2 |          3 |         24 |
@@ -257,5 +267,5 @@ Files
 | c:\Users\HP\Downloads\Main_Dashboard\tailwind.config.ts                                                       | TypeScript         |        180 |          9 |          3 |        192 |
 | c:\Users\HP\Downloads\Main_Dashboard\tsconfig.json                                                            | JSON with Comments |         34 |          0 |          1 |         35 |
 | c:\Users\HP\Downloads\Main_Dashboard\validate.ps1                                                             | PowerShell         |         30 |          5 |          7 |         42 |
-| Total                                                                                                         |                    |     35,658 |        606 |      3,246 |     39,510 |
+| Total                                                                                                         |                    |     40,145 |        611 |      3,661 |     44,417 |
 +---------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+

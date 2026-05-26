@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { SidebarProvider } from "@/context/sidebar-context";
 import { DashboardQueryProvider } from "@/components/providers/query-provider";
+import Script from "next/script";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -16,6 +17,16 @@ export const metadata: Metadata = {
 
 import NextTopLoader from 'nextjs-toploader';
 
+const themeInitScript = `
+  try {
+    const storedTheme = window.localStorage.getItem('dashboard-theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if ((storedTheme && storedTheme === 'dark') || (!storedTheme && prefersDark)) {
+      document.documentElement.classList.add('dark');
+    }
+  } catch (_) {}
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,6 +39,11 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
+        <Script
+          id="dashboard-theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+        />
         <NextTopLoader 
           color="#ffffff"
           initialPosition={0.08}

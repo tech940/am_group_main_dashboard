@@ -82,6 +82,48 @@
 }
 
 @layer utilities {
+  .dashboard-shell {
+    background:
+      radial-gradient(circle at 12% 10%, rgba(20, 184, 166, 0.30), transparent 31%),
+      radial-gradient(circle at 78% 4%, rgba(45, 212, 191, 0.28), transparent 29%),
+      radial-gradient(circle at 88% 82%, rgba(14, 116, 144, 0.20), transparent 34%),
+      radial-gradient(circle at 32% 88%, rgba(186, 230, 253, 0.38), transparent 32%),
+      linear-gradient(135deg, #edfffb 0%, #f7fffd 45%, #eaf7ff 100%);
+    transition: background 220ms ease, color 220ms ease;
+  }
+
+  .dashboard-orb-left {
+    background-color: rgba(103, 232, 249, 0.34);
+  }
+
+  .dashboard-orb-right {
+    background-color: rgba(94, 234, 212, 0.40);
+  }
+
+  .dashboard-orb-bottom {
+    background-color: rgba(125, 211, 252, 0.26);
+  }
+
+  .dark .dashboard-shell {
+    background:
+      radial-gradient(circle at 16% 10%, rgba(20, 184, 166, 0.20), transparent 31%),
+      radial-gradient(circle at 78% 6%, rgba(8, 145, 178, 0.18), transparent 30%),
+      radial-gradient(circle at 88% 82%, rgba(45, 212, 191, 0.12), transparent 34%),
+      linear-gradient(135deg, #020617 0%, #071b1f 48%, #0f172a 100%);
+  }
+
+  .dark .dashboard-orb-left {
+    background-color: rgba(34, 211, 238, 0.12);
+  }
+
+  .dark .dashboard-orb-right {
+    background-color: rgba(45, 212, 191, 0.14);
+  }
+
+  .dark .dashboard-orb-bottom {
+    background-color: rgba(14, 165, 233, 0.10);
+  }
+
   .card-shadow {
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.04), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
   }
@@ -93,7 +135,7 @@
   .glass-dashboard-content [class*="bg-white"],
   .glass-dashboard-content [class*="bg-slate-50"],
   .glass-dashboard-content [class*="bg-slate-100"] {
-    background-color: rgba(255, 255, 255, 0.46) !important;
+    background-color: rgba(255, 255, 255, 0.34) !important;
     backdrop-filter: blur(22px) saturate(1.18);
     -webkit-backdrop-filter: blur(22px) saturate(1.18);
   }
@@ -162,5 +204,74 @@
   .glass-dashboard-content .expanded-chart-body .recharts-wrapper,
   .glass-dashboard-content .expanded-chart-body .recharts-surface {
     background: #ffffff !important;
+  }
+
+  .dark .glass-dashboard-content {
+    color: rgba(226, 232, 240, 0.94);
+  }
+
+  .dark .glass-dashboard-content [class*="bg-white"],
+  .dark .glass-dashboard-content [class*="bg-slate-50"],
+  .dark .glass-dashboard-content [class*="bg-slate-100"] {
+    background-color: rgba(15, 23, 42, 0.58) !important;
+    backdrop-filter: blur(24px) saturate(1.18);
+    -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  }
+
+  .dark .glass-dashboard-content [class*="text-slate-950"],
+  .dark .glass-dashboard-content [class*="text-slate-900"],
+  .dark .glass-dashboard-content [class*="text-slate-800"] {
+    color: rgba(248, 250, 252, 0.96) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="text-slate-700"],
+  .dark .glass-dashboard-content [class*="text-slate-600"] {
+    color: rgba(203, 213, 225, 0.92) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="text-slate-500"],
+  .dark .glass-dashboard-content [class*="text-slate-400"] {
+    color: rgba(148, 163, 184, 0.90) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="border-slate-100"],
+  .dark .glass-dashboard-content [class*="border-slate-200"],
+  .dark .glass-dashboard-content [class*="border-white"] {
+    border-color: rgba(148, 163, 184, 0.22) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="shadow-slate-200"],
+  .dark .glass-dashboard-content [class*="shadow-xl"],
+  .dark .glass-dashboard-content [class*="shadow-lg"],
+  .dark .glass-dashboard-content [class*="shadow-sm"] {
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.26) !important;
+  }
+
+  .dark .glass-dashboard-content table tbody {
+    background-color: rgba(15, 23, 42, 0.44);
+  }
+
+  .dark .glass-dashboard-content table tr {
+    background-color: rgba(15, 23, 42, 0.34);
+  }
+
+  .dark .glass-dashboard-content table tr:hover {
+    background-color: rgba(30, 41, 59, 0.72) !important;
+  }
+
+  .dark .glass-dashboard-content .expanded-chart-shell {
+    background: #0f172a !important;
+    border-color: rgba(148, 163, 184, 0.28) !important;
+  }
+
+  .dark .glass-dashboard-content .expanded-chart-header {
+    background: linear-gradient(135deg, #111827 0%, #0f2f33 100%) !important;
+    border-color: rgba(148, 163, 184, 0.28) !important;
+  }
+
+  .dark .glass-dashboard-content .expanded-chart-body,
+  .dark .glass-dashboard-content .expanded-chart-body .recharts-wrapper,
+  .dark .glass-dashboard-content .expanded-chart-body .recharts-surface {
+    background: #111827 !important;
   }
 }
