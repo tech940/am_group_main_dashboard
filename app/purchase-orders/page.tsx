@@ -550,6 +550,7 @@ function PurchaseOrdersPageContent() {
   const [showPOTableView, setShowPOTableView] = useState(false)
   const [workflowStageFilter, setWorkflowStageFilter] = useState<WorkflowStageFilter>('all')
   const [approvalBranchFilter, setApprovalBranchFilter] = useState<string>('all')
+  const [approvalViewReady, setApprovalViewReady] = useState(false)
   const [approvalFilterCounts, setApprovalFilterCounts] = useState<ApprovalFilterCounts>(EMPTY_APPROVAL_FILTER_COUNTS)
   const [purchaseOrderListMode, setPurchaseOrderListMode] = useState<PurchaseOrderListMode>('today')
   const [purchaseOrderPage, setPurchaseOrderPage] = useState(1)
@@ -721,7 +722,7 @@ function PurchaseOrdersPageContent() {
   }, [approvalBranchFilter, approvalFilter, completedDateEnd, completedDateStart, effectivePurchaseOrderListMode, isCompletionTrackingView, purchaseOrderPage, userRole, usesPurchaseOrderPagination, workflowStageFilter])
 
   const fetchOrders = useCallback(async (showSpinner = true, force = false) => {
-    if (!userRole) {
+    if (!userRole || (isApprovalRole(userRole) && !approvalViewReady)) {
       return
     }
 
@@ -781,7 +782,7 @@ function PurchaseOrdersPageContent() {
         setIsListRefreshing(false)
       }
     }
-  }, [buildOrdersQuery, effectivePurchaseOrderListMode, queryClient, userRole])
+  }, [approvalViewReady, buildOrdersQuery, effectivePurchaseOrderListMode, queryClient, userRole])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -792,7 +793,7 @@ function PurchaseOrdersPageContent() {
   }, [fetchUserRole])
 
   useEffect(() => {
-    if (!userRole) {
+    if (!userRole || (isApprovalRole(userRole) && !approvalViewReady)) {
       return undefined
     }
 
@@ -801,25 +802,45 @@ function PurchaseOrdersPageContent() {
     }, 0)
 
     return () => window.clearTimeout(timer)
-  }, [fetchOrders, userRole])
+  }, [approvalViewReady, fetchOrders, userRole])
 
   useEffect(() => {
-    if (!isApprovalRole(userRole) || viewPreferenceLoading || approvalViewInitializedRef.current) {
-      return
-    }
+    const timer = window.setTimeout(() => {
+      if (!userRole) {
+        setApprovalViewReady(false)
+        return
+      }
 
-    approvalViewInitializedRef.current = true
+      if (!isApprovalRole(userRole)) {
+        setApprovalViewReady(true)
+        return
+      }
 
-    if (viewMode.viewMode !== 'table') {
+      if (viewPreferenceLoading || approvalViewInitializedRef.current) {
+        return
+      }
+
+      approvalViewInitializedRef.current = true
+
+      const nextApprovalFilter: ApprovalFilter = userRole === 'md' ? 'pending' : viewMode.approvalFilter || 'pending'
       const nextPreference = {
         ...viewMode,
         viewMode: 'table' as const,
+        approvalFilter: nextApprovalFilter,
       }
-      setViewModePreference(nextPreference)
-      void saveViewMode(nextPreference).catch((error) => {
-        console.error('Error restoring approval table view preference:', error)
-      })
-    }
+      const needsPreferenceUpdate = viewMode.viewMode !== 'table' || viewMode.approvalFilter !== nextApprovalFilter
+
+      if (needsPreferenceUpdate) {
+        setViewModePreference(nextPreference)
+        void saveViewMode(nextPreference).catch((error) => {
+          console.error('Error restoring approval table view preference:', error)
+        })
+      }
+
+      setApprovalViewReady(true)
+    }, 0)
+
+    return () => window.clearTimeout(timer)
   }, [saveViewMode, setViewModePreference, userRole, viewMode, viewPreferenceLoading])
 
   useEffect(() => {
