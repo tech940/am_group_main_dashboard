@@ -677,6 +677,9 @@ function PurchaseOrdersPageContent() {
         return
       }
       setUserRole(data.role || '')
+      if (data.role === 'md') {
+        setApprovalBranchFilter(data.brand || 'all')
+      }
     } catch (error) {
       console.error('Error fetching user role:', error)
       setIsLoading(false)

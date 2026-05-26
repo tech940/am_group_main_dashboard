@@ -237,6 +237,15 @@ export async function GET(request: NextRequest) {
       filters.push(eq(purchaseOrders.currentStage, stage))
     }
 
+    if (
+      appUser.role === 'md'
+      && !branchFilter
+      && approvalFilter !== 'all'
+      && isBranchValue(appUser.brand)
+    ) {
+      filters.push(or(eq(purchaseOrders.brand, appUser.brand), isNull(purchaseOrders.brand))!)
+    }
+
     if (branchFilter && branchFilter !== 'all') {
       if (!isBranchValue(branchFilter)) {
         return NextResponse.json({ error: 'Invalid branch filter' }, { status: 400 })
