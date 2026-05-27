@@ -25,12 +25,14 @@ import {
   SlidersHorizontal,
   Crown,
   Wrench,
+  Gauge,
 } from 'lucide-react'
 import { AccessControlOverlay } from '@/components/shared/access-control-overlay'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 import { BusinessExcellenceOverview } from '@/features/kia/business-excellence-overview'
 import { OpenRoSection } from '@/features/kia/open-ro-section'
 import { KiaComplaintsSection } from '@/features/kia/kia-complaints-section'
+import { PerformanceDiagnosticsPanel } from '@/features/kia/performance-diagnostics-panel'
 import {
   LineChart,
   Line,
@@ -60,6 +62,7 @@ import {
 } from "@/components/ui/select"
 import { useQueryClient } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
+import { logApiTimings } from '@/lib/api/client-timing'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
   return <RechartsResponsiveContainer minWidth={0} minHeight={0} debounce={50} {...props} />
@@ -553,6 +556,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
         queryKey: ['business-excellence', 'performance-intelligence', queryString],
         queryFn: async () => {
           const response = await fetch(`/api/brands/kia/business-excellence/performance-intelligence?${queryString}`)
+          logApiTimings(response, 'performance-intelligence')
           if (!response.ok) throw new Error('Failed to load Performance Intelligence Report')
           return await response.json() as PerformanceIntelligenceResponse
         },
@@ -610,6 +614,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
       queryKey: ['business-excellence', 'performance-intelligence-export', queryString],
       queryFn: async () => {
         const response = await fetch(`/api/brands/kia/business-excellence/performance-intelligence?${queryString}`)
+        logApiTimings(response, 'performance-intelligence-export')
         if (!response.ok) throw new Error('Failed to export Performance Intelligence Report')
         return await response.json() as PerformanceIntelligenceResponse
       },
@@ -1181,7 +1186,9 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
   const [aiSummary, setAiSummary] = useState<BusinessAiSummary | null>(null)
   const [aiSummaryError, setAiSummaryError] = useState('')
   const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false)
-  const { isAdmin } = useUserRole()
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const { userRole, isAdmin } = useUserRole()
+  const canUseDiagnostics = userRole === 'admin'
   const itemsPerPage = 10
 
   const activeDateLabel = useMemo(() => {
@@ -1251,6 +1258,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
           dateFilter: appliedDateFilter,
         }),
       })
+      logApiTimings(response, 'business-excellence-ai-summary')
       const data = await response.json()
 
       if (!response.ok) {
@@ -1281,6 +1289,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
         queryKey: ['business-excellence', 'sheet-rows', queryString],
         queryFn: async () => {
           const response = await fetch(`/api/brands/kia/business-excellence?${queryString}`)
+          logApiTimings(response, 'business-excellence-sheet-rows')
           if (!response.ok) throw new Error('Failed to fetch sheet rows')
           return await response.json()
         },
@@ -1407,6 +1416,19 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                               </SelectContent>
                             </Select>
                           </div>
+
+                          {canUseDiagnostics && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowDiagnostics(true)}
+                              className="h-9 rounded-xl border border-slate-300 bg-slate-950 px-3 text-xs font-black text-white shadow-sm hover:border-slate-950 hover:bg-slate-800"
+                            >
+                              <Gauge className="mr-2 h-3.5 w-3.5" />
+                              Performance
+                            </Button>
+                          )}
 
                           <Button
                             type="button"
@@ -1911,6 +1933,12 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
           </div>
         )}
       </div>
+      {canUseDiagnostics && (
+        <PerformanceDiagnosticsPanel
+          open={showDiagnostics}
+          onClose={() => setShowDiagnostics(false)}
+        />
+      )}
     </MainLayout>
   )
 }
@@ -2272,6 +2300,7 @@ function WorkshopPerformanceSection({
           queryKey: ['business-excellence', 'workshop-performance', queryString],
           queryFn: async () => {
             const response = await fetch(`/api/brands/kia/business-excellence/workshop-performance?${queryString}`)
+            logApiTimings(response, 'workshop-performance')
             if (!response.ok) throw new Error('Failed to load Workshop Performance')
             return await response.json() as WorkshopPerformanceResponse
           },
@@ -3113,6 +3142,7 @@ function ServiceTypePerformance({
           queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
           queryFn: async () => {
             const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+            logApiTimings(response, 'ro-billing-table-summary')
             if (!response.ok) throw new Error('Failed to fetch RO Billing table summary bundle')
             return await response.json() as ROAnalysisResponse
           },
@@ -3154,6 +3184,7 @@ function ServiceTypePerformance({
       queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
       queryFn: async () => {
         const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+        logApiTimings(response, `ro-billing-${analysisType}-${view}`)
         if (!response.ok) throw new Error(`Failed to fetch RO Billing ${analysisType} ${view} summary`)
         return await response.json() as ROAnalysisResponse
       },
@@ -3178,6 +3209,7 @@ function ServiceTypePerformance({
       queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
       queryFn: async () => {
         const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+        logApiTimings(response, `ro-billing-${view}-bundle`)
         if (!response.ok) throw new Error(`Failed to fetch RO Billing ${view} bundle`)
         return await response.json() as ROAnalysisResponse
       },

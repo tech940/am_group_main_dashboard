@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
+import { logApiTimings } from '@/lib/api/client-timing'
 import { cn } from '@/lib/utils'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
@@ -260,6 +261,7 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
         queryFn: async () => {
           const suffix = queryString ? `?${queryString}` : ''
           const response = await fetch(`/api/brands/kia/business-excellence/open-ro${suffix}`)
+          logApiTimings(response, 'open-ro')
           if (!response.ok) throw new Error('Failed to load Open RO dashboard')
           return await response.json() as OpenRoResponse
         },

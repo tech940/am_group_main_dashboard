@@ -77,7 +77,7 @@ function growth(current: number, previous: number) {
 }
 
 function cacheKey(startDate: string, endDate: string) {
-  return `kia:business-excellence:overview:v3:${createHash('sha1').update(`${startDate}:${endDate}`).digest('hex')}`
+  return `kia:business-excellence:overview:v7:${createHash('sha1').update(`${startDate}:${endDate}`).digest('hex')}`
 }
 
 function sameDateLastYear(value: string) {
@@ -96,7 +96,7 @@ async function tableExists(tableName: string) {
 
 function roBillingBaseSql(startDate: string, endDate: string) {
   return sql`
-    WITH base AS (
+    WITH raw AS (
       SELECT
         bill_date::date AS report_date,
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
@@ -120,6 +120,27 @@ function roBillingBaseSql(startDate: string, endDate: string) {
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+    ),
+    ranked AS (
+      SELECT
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY jc_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, report_date DESC
+        ) AS row_rank
+      FROM raw
+    ),
+    base AS (
+      SELECT
+        jc_key,
+        (ARRAY_AGG(report_date ORDER BY row_rank ASC))[1] AS report_date,
+        (ARRAY_AGG(advisor ORDER BY row_rank ASC))[1] AS advisor,
+        (ARRAY_AGG(service_category ORDER BY row_rank ASC))[1] AS service_category,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
+        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+      FROM ranked
+      GROUP BY jc_key
     ),
     enriched AS (
       SELECT
@@ -276,12 +297,155 @@ async function fetchAddonKpis(startDate: string, endDate: string) {
   }
 }
 
+async function fetchWorkshopSnapshot(startDate: string, endDate: string) {
+  const hasWorkshopSummary = await tableExists('workshop_performance_jc_summary_v1')
+  const serviceRows = await db.execute(hasWorkshopSummary ? sql`
+    SELECT
+      COALESCE(NULLIF(service_type, ''), NULLIF(group_type, ''), 'Others') AS service_type,
+      MIN(report_date)::text AS min_date,
+      MAX(report_date)::text AS max_date,
+      COUNT(DISTINCT jc_key)::int AS total_jc,
+      COALESCE(SUM(labour_amount), 0)::float AS labour_amount,
+      COALESCE(SUM(part_amount), 0)::float AS part_amount
+    FROM workshop_performance_jc_summary_v1
+    WHERE report_date >= ${startDate}::date
+      AND report_date < (${endDate}::date + INTERVAL '1 day')
+    GROUP BY COALESCE(NULLIF(service_type, ''), NULLIF(group_type, ''), 'Others')
+    ORDER BY (COALESCE(SUM(labour_amount), 0) + COALESCE(SUM(part_amount), 0)) DESC
+    LIMIT 8
+  ` : sql`
+    WITH raw AS (
+      SELECT
+        COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
+        bill_date::date AS report_date,
+        CASE
+          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%accident%'
+            OR LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%bodyshop%'
+            THEN 'Accidental Repair'
+          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%running%'
+            THEN 'Running Repair'
+          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%free%'
+            THEN 'Free Service'
+          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%paid%'
+            OR COALESCE(service_type, '') ~* '^[0-9]+K$'
+            THEN 'Paid Service'
+          ELSE COALESCE(NULLIF(service_type, ''), NULLIF(work_type, ''), 'Others')
+        END AS service_type,
+        ${numericText(sql.raw('labour_amt'))} AS labour_amt,
+        ${numericText(sql.raw('part_amt'))} AS part_amt
+      FROM ro_billing_report
+      WHERE bill_date >= ${startDate}::date
+        AND bill_date < (${endDate}::date + INTERVAL '1 day')
+    ),
+    dedup AS (
+      SELECT
+        jc_key,
+        (ARRAY_AGG(report_date ORDER BY report_date DESC))[1] AS report_date,
+        (ARRAY_AGG(service_type ORDER BY ABS(labour_amt + part_amt) DESC))[1] AS service_type,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+      FROM raw
+      GROUP BY jc_key
+    )
+    SELECT
+      service_type,
+      MIN(report_date)::text AS min_date,
+      MAX(report_date)::text AS max_date,
+      COUNT(*)::int AS total_jc,
+      COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
+      COALESCE(SUM(part_amt), 0)::float AS part_amount
+    FROM dedup
+    GROUP BY service_type
+    ORDER BY (COALESCE(SUM(labour_amt), 0) + COALESCE(SUM(part_amt), 0)) DESC
+    LIMIT 8
+  `)
+
+  const rows = resultRows(serviceRows).map((row) => {
+    const labourAmount = numberValue(row.labour_amount)
+    const partsAmount = numberValue(row.part_amount)
+    return {
+      name: stringValue(row.service_type, 'Others'),
+      totalJc: numberValue(row.total_jc),
+      labourAmount,
+      partsAmount,
+      totalRevenue: labourAmount + partsAmount,
+    }
+  })
+
+  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate)
+  const totalJc = rows.reduce((sum, row) => sum + row.totalJc, 0)
+  const labourAmount = rows.reduce((sum, row) => sum + row.labourAmount, 0)
+  const partsAmount = rows.reduce((sum, row) => sum + row.partsAmount, 0)
+  const sourceRows = resultRows(serviceRows)
+
+  return {
+    totalJc,
+    labourAmount,
+    partsAmount,
+    totalRevenue: labourAmount + partsAmount,
+    vasAmount,
+    labourPerRo: perUnit(labourAmount, totalJc),
+    minDate: sourceRows.reduce<string | null>((current, row) => {
+      const value = dateValue(row.min_date)
+      if (!value) return current
+      return !current || value < current ? value : current
+    }, null),
+    maxDate: sourceRows.reduce<string | null>((current, row) => {
+      const value = dateValue(row.max_date)
+      if (!value) return current
+      return !current || value > current ? value : current
+    }, null),
+    serviceMix: rows.slice(0, 5).map((row) => ({
+      ...row,
+      vasAmount: 0,
+    })),
+  }
+}
+
+async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
+  if (await tableExists('workshop_operation_addon_summary_v1')) {
+    const result = await db.execute(sql`
+      SELECT COALESCE(SUM(vas_amount), 0)::float AS vas_amount
+      FROM workshop_operation_addon_summary_v1
+      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
+        AND report_month <= date_trunc('month', ${endDate}::date)::date
+    `)
+    return numberValue(resultRows(result)[0]?.vas_amount)
+  }
+
+  if (!(await tableExists('operation_wise_analysis_report'))) return 0
+
+  const result = await db.execute(sql`
+    WITH operation_rows AS (
+      SELECT
+        ABS(${numericText(sql.raw('total_amt'))}) AS amount,
+        LOWER(COALESCE(op_part_code, '')) AS operation_code,
+        LOWER(CONCAT_WS(' ', report_type, op_part_code, op_part_desc)) AS description
+      FROM operation_wise_analysis_report
+      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
+        AND report_month <= date_trunc('month', ${endDate}::date)::date
+    )
+    SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
+    FROM operation_rows
+    WHERE operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
+      OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+      OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
+      OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
+      OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
+  `)
+
+  return numberValue(resultRows(result)[0]?.vas_amount)
+}
+
 async function buildOverviewPayload(startDate: string, endDate: string) {
   const roSql = roBillingBaseSql(startDate, endDate)
   const openSql = openRoBaseSql(startDate, endDate)
   const complaintSql = complaintsBaseSql(startDate, endDate)
   const lyStartDate = sameDateLastYear(startDate)
   const lyEndDate = sameDateLastYear(endDate)
+  const lyRoSql = roBillingBaseSql(lyStartDate, lyEndDate)
+  const lyOpenSql = openRoBaseSql(lyStartDate, lyEndDate)
+  const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate)
 
   const [
     roKpiRows,
@@ -297,6 +461,12 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
     complaintStatusRows,
     complaintMonthRows,
     addonKpis,
+    workshopSnapshot,
+    lyRoKpiRows,
+    lyOpenKpiRows,
+    lyComplaintKpiRows,
+    lyAddonKpis,
+    lyWorkshopSnapshot,
   ] = await Promise.all([
     db.execute(sql`
       ${roSql}
@@ -453,11 +623,44 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
       ORDER BY EXTRACT(MONTH FROM complaint_date)::int ASC
     `),
     fetchAddonKpis(startDate, endDate),
+    fetchWorkshopSnapshot(startDate, endDate),
+    db.execute(sql`
+      ${lyRoSql}
+      SELECT
+        COUNT(DISTINCT jc_key)::int AS total_jc,
+        COALESCE(SUM(labour_amt), 0)::float AS labour,
+        COALESCE(SUM(part_amt), 0)::float AS parts,
+        COALESCE(SUM(revenue), 0)::float AS revenue
+      FROM enriched
+    `),
+    db.execute(sql`
+      ${lyOpenSql}
+      SELECT
+        COUNT(*)::int AS total_open_ro,
+        COUNT(*) FILTER (WHERE aging_days > 15)::int AS over_15,
+        COUNT(*) FILTER (WHERE delay_status = 'Delayed')::int AS delayed
+      FROM enriched
+    `),
+    db.execute(sql`
+      ${lyComplaintSql}
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE status_group <> 'Closed')::int AS open,
+        COUNT(*) FILTER (WHERE status_group = 'Closed')::int AS closed,
+        COUNT(*) FILTER (WHERE resolution_days > 15)::int AS over_15,
+        COALESCE(AVG(resolution_days), 0)::float AS avg_days
+      FROM enriched
+    `),
+    fetchAddonKpis(lyStartDate, lyEndDate),
+    fetchWorkshopSnapshot(lyStartDate, lyEndDate),
   ])
 
   const roKpis = resultRows(roKpiRows)[0] || {}
   const openKpis = resultRows(openKpiRows)[0] || {}
   const complaintKpis = resultRows(complaintKpiRows)[0] || {}
+  const lyRoKpis = resultRows(lyRoKpiRows)[0] || {}
+  const lyOpenKpis = resultRows(lyOpenKpiRows)[0] || {}
+  const lyComplaintKpis = resultRows(lyComplaintKpiRows)[0] || {}
 
   const totalJc = numberValue(roKpis.total_jc)
   const revenue = numberValue(roKpis.revenue)
@@ -472,6 +675,17 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
   const bucketOrder = ['0-4D', '5-7D', '8-15D', '>15D']
   const bucketMap = new Map(resultRows(agingRows).map((row) => [String(row.bucket), numberValue(row.count)]))
   const addOnTotal = addonKpis.ewCount + addonKpis.rsaCount + addonKpis.mcpCount
+  const lyTotalJc = numberValue(lyRoKpis.total_jc)
+  const lyRevenue = numberValue(lyRoKpis.revenue)
+  const lyLabour = numberValue(lyRoKpis.labour)
+  const lyParts = numberValue(lyRoKpis.parts)
+  const lyOpenRo = numberValue(lyOpenKpis.total_open_ro)
+  const lyDelayedRo = numberValue(lyOpenKpis.delayed)
+  const lyOpenOver15 = numberValue(lyOpenKpis.over_15)
+  const lyComplaintsTotal = numberValue(lyComplaintKpis.total)
+  const lyComplaintsOpen = numberValue(lyComplaintKpis.open)
+  const lyComplaintsOver15 = numberValue(lyComplaintKpis.over_15)
+  const lyAddOnTotal = lyAddonKpis.ewCount + lyAddonKpis.rsaCount + lyAddonKpis.mcpCount
 
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
@@ -500,6 +714,108 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
       agedRoPct: percent(openOver15, totalOpenRo),
       complaintOpenPct: percent(complaintsOpen, complaintsTotal),
       addOnPerJc: perUnit(addOnTotal, totalJc),
+    },
+    workshopSnapshot,
+    comparison: {
+      lyRange: {
+        startDate: lyStartDate,
+        endDate: lyEndDate,
+      },
+      revenue: {
+        cy: revenue,
+        ly: lyRevenue,
+        deltaPct: growth(revenue, lyRevenue),
+      },
+      labour: {
+        cy: labour,
+        ly: lyLabour,
+        deltaPct: growth(labour, lyLabour),
+      },
+      parts: {
+        cy: parts,
+        ly: lyParts,
+        deltaPct: growth(parts, lyParts),
+      },
+      totalJc: {
+        cy: totalJc,
+        ly: lyTotalJc,
+        deltaPct: growth(totalJc, lyTotalJc),
+      },
+      avgBilling: {
+        cy: perUnit(revenue, totalJc),
+        ly: perUnit(lyRevenue, lyTotalJc),
+        deltaPct: growth(perUnit(revenue, totalJc), perUnit(lyRevenue, lyTotalJc)),
+      },
+      openRo: {
+        cy: totalOpenRo,
+        ly: lyOpenRo,
+        deltaPct: growth(totalOpenRo, lyOpenRo),
+      },
+      delayedRo: {
+        cy: delayedRo,
+        ly: lyDelayedRo,
+        deltaPct: growth(delayedRo, lyDelayedRo),
+      },
+      openOver15: {
+        cy: openOver15,
+        ly: lyOpenOver15,
+        deltaPct: growth(openOver15, lyOpenOver15),
+      },
+      complaintsTotal: {
+        cy: complaintsTotal,
+        ly: lyComplaintsTotal,
+        deltaPct: growth(complaintsTotal, lyComplaintsTotal),
+      },
+      complaintsOpen: {
+        cy: complaintsOpen,
+        ly: lyComplaintsOpen,
+        deltaPct: growth(complaintsOpen, lyComplaintsOpen),
+      },
+      complaintsOver15: {
+        cy: complaintsOver15,
+        ly: lyComplaintsOver15,
+        deltaPct: growth(complaintsOver15, lyComplaintsOver15),
+      },
+      addOnTotal: {
+        cy: addOnTotal,
+        ly: lyAddOnTotal,
+        deltaPct: growth(addOnTotal, lyAddOnTotal),
+      },
+      ewCount: {
+        cy: addonKpis.ewCount,
+        ly: lyAddonKpis.ewCount,
+        deltaPct: growth(addonKpis.ewCount, lyAddonKpis.ewCount),
+      },
+      rsaCount: {
+        cy: addonKpis.rsaCount,
+        ly: lyAddonKpis.rsaCount,
+        deltaPct: growth(addonKpis.rsaCount, lyAddonKpis.rsaCount),
+      },
+      mcpCount: {
+        cy: addonKpis.mcpCount,
+        ly: lyAddonKpis.mcpCount,
+        deltaPct: growth(addonKpis.mcpCount, lyAddonKpis.mcpCount),
+      },
+      workshopRevenue: {
+        cy: workshopSnapshot.totalRevenue,
+        ly: lyWorkshopSnapshot.totalRevenue,
+        deltaPct: growth(workshopSnapshot.totalRevenue, lyWorkshopSnapshot.totalRevenue),
+      },
+      workshopTotalJc: {
+        cy: workshopSnapshot.totalJc,
+        ly: lyWorkshopSnapshot.totalJc,
+        deltaPct: growth(workshopSnapshot.totalJc, lyWorkshopSnapshot.totalJc),
+      },
+      workshopLabourPerRo: {
+        cy: workshopSnapshot.labourPerRo,
+        ly: lyWorkshopSnapshot.labourPerRo,
+        deltaPct: growth(workshopSnapshot.labourPerRo, lyWorkshopSnapshot.labourPerRo),
+      },
+      workshopVasAmount: {
+        cy: workshopSnapshot.vasAmount,
+        ly: lyWorkshopSnapshot.vasAmount,
+        deltaPct: growth(workshopSnapshot.vasAmount, lyWorkshopSnapshot.vasAmount),
+      },
     },
     charts: {
       revenueTrend: resultRows(roDailyRows).map((row) => ({
@@ -601,6 +917,10 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
         complaints: {
           minDate: dateValue(complaintKpis.min_complaint_date),
           maxDate: dateValue(complaintKpis.max_complaint_date),
+        },
+        workshopPerformance: {
+          minDate: workshopSnapshot.minDate,
+          maxDate: workshopSnapshot.maxDate,
         },
       },
       dateBases: {

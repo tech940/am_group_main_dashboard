@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     --background: 0 0% 98.5%; /* #FBFCFC - Emptiness */
@@ -32,12 +34,12 @@
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+    --card: 222 47% 11%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
+    --popover: 222 47% 11%;
     --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 173 76% 36%;
+    --primary-foreground: 0 0% 98%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
@@ -122,6 +124,39 @@
 
   .dark .dashboard-orb-bottom {
     background-color: rgba(14, 165, 233, 0.10);
+  }
+
+  .dark [role="dialog"][class*="bg-white"],
+  .dark [role="dialog"] [class*="bg-white"],
+  .dark [role="menu"][class*="bg-white"],
+  .dark [role="listbox"][class*="bg-white"] {
+    background-color: rgb(15, 23, 42) !important;
+    color: rgb(248, 250, 252) !important;
+  }
+
+  .dark [role="dialog"] [class*="bg-slate-50"],
+  .dark [role="dialog"] [class*="bg-slate-100"],
+  .dark [role="dialog"] [class*="bg-gray-50"],
+  .dark [role="dialog"] [class*="bg-gray-100"] {
+    background-color: rgba(30, 41, 59, 0.82) !important;
+  }
+
+  .dark [role="dialog"] [class*="text-slate-950"],
+  .dark [role="dialog"] [class*="text-slate-900"],
+  .dark [role="dialog"] [class*="text-slate-800"],
+  .dark [role="dialog"] [class*="text-gray-950"],
+  .dark [role="dialog"] [class*="text-gray-900"],
+  .dark [role="dialog"] [class*="text-gray-800"] {
+    color: rgb(248, 250, 252) !important;
+  }
+
+  .dark [role="dialog"] [class*="text-slate-700"],
+  .dark [role="dialog"] [class*="text-slate-600"],
+  .dark [role="dialog"] [class*="text-slate-500"],
+  .dark [role="dialog"] [class*="text-gray-700"],
+  .dark [role="dialog"] [class*="text-gray-600"],
+  .dark [role="dialog"] [class*="text-gray-500"] {
+    color: rgb(203, 213, 225) !important;
   }
 
   .card-shadow {
@@ -223,6 +258,49 @@
     background-color: #ffffff !important;
   }
 
+  .glass-dashboard-content .diagnostics-panel-shell {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content .diagnostics-panel-body,
+  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-slate-50"],
+  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-slate-100"] {
+    background: #f8fafc !important;
+    background-color: #f8fafc !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-white"] {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-emerald-50"] {
+    background: #ecfdf5 !important;
+    background-color: #ecfdf5 !important;
+  }
+
+  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-blue-50"] {
+    background: #eff6ff !important;
+    background-color: #eff6ff !important;
+  }
+
+  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-amber-50"] {
+    background: #fffbeb !important;
+    background-color: #fffbeb !important;
+  }
+
+  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-rose-50"] {
+    background: #fff1f2 !important;
+    background-color: #fff1f2 !important;
+  }
+
   .dark .glass-dashboard-content {
     color: rgba(226, 232, 240, 0.94);
   }
@@ -249,6 +327,77 @@
   .dark .glass-dashboard-content [class*="text-slate-500"],
   .dark .glass-dashboard-content [class*="text-slate-400"] {
     color: rgba(148, 163, 184, 0.90) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="text-gray-950"],
+  .dark .glass-dashboard-content [class*="text-gray-900"],
+  .dark .glass-dashboard-content [class*="text-gray-800"],
+  .dark .glass-dashboard-content [class*="text-gray-700"] {
+    color: rgba(248, 250, 252, 0.96) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="text-gray-600"],
+  .dark .glass-dashboard-content [class*="text-gray-500"],
+  .dark .glass-dashboard-content [class*="text-gray-400"] {
+    color: rgba(203, 213, 225, 0.88) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="text-teal-700"],
+  .dark .glass-dashboard-content [class*="text-teal-800"],
+  .dark .glass-dashboard-content [class*="text-emerald-700"],
+  .dark .glass-dashboard-content [class*="text-emerald-800"] {
+    color: rgba(94, 234, 212, 0.96) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="text-blue-700"],
+  .dark .glass-dashboard-content [class*="text-blue-800"],
+  .dark .glass-dashboard-content [class*="text-cyan-700"],
+  .dark .glass-dashboard-content [class*="text-cyan-800"] {
+    color: rgba(147, 197, 253, 0.96) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="text-amber-700"],
+  .dark .glass-dashboard-content [class*="text-amber-800"],
+  .dark .glass-dashboard-content [class*="text-orange-700"],
+  .dark .glass-dashboard-content [class*="text-orange-800"] {
+    color: rgba(252, 211, 77, 0.96) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="text-rose-700"],
+  .dark .glass-dashboard-content [class*="text-rose-800"],
+  .dark .glass-dashboard-content [class*="text-red-700"],
+  .dark .glass-dashboard-content [class*="text-red-800"] {
+    color: rgba(253, 164, 175, 0.96) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="bg-gray-50"],
+  .dark .glass-dashboard-content [class*="bg-gray-100"],
+  .dark .glass-dashboard-content [class*="bg-teal-50"],
+  .dark .glass-dashboard-content [class*="bg-cyan-50"],
+  .dark .glass-dashboard-content [class*="bg-emerald-50"],
+  .dark .glass-dashboard-content [class*="bg-blue-50"],
+  .dark .glass-dashboard-content [class*="bg-amber-50"],
+  .dark .glass-dashboard-content [class*="bg-orange-50"],
+  .dark .glass-dashboard-content [class*="bg-rose-50"],
+  .dark .glass-dashboard-content [class*="bg-red-50"] {
+    background-color: rgba(15, 23, 42, 0.62) !important;
+  }
+
+  .dark .glass-dashboard-content [class*="border-gray-100"],
+  .dark .glass-dashboard-content [class*="border-gray-200"],
+  .dark .glass-dashboard-content [class*="border-teal-100"],
+  .dark .glass-dashboard-content [class*="border-teal-200"],
+  .dark .glass-dashboard-content [class*="border-cyan-100"],
+  .dark .glass-dashboard-content [class*="border-cyan-200"],
+  .dark .glass-dashboard-content [class*="border-blue-100"],
+  .dark .glass-dashboard-content [class*="border-blue-200"],
+  .dark .glass-dashboard-content [class*="border-emerald-100"],
+  .dark .glass-dashboard-content [class*="border-emerald-200"],
+  .dark .glass-dashboard-content [class*="border-amber-100"],
+  .dark .glass-dashboard-content [class*="border-amber-200"],
+  .dark .glass-dashboard-content [class*="border-rose-100"],
+  .dark .glass-dashboard-content [class*="border-rose-200"] {
+    border-color: rgba(148, 163, 184, 0.24) !important;
   }
 
   .dark .glass-dashboard-content [class*="border-slate-100"],
@@ -298,6 +447,59 @@
   .dark .glass-dashboard-content .expanded-chart-body .recharts-surface {
     background: #ffffff !important;
     background-color: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .dark .glass-dashboard-content .expanded-chart-shell,
+  .dark .glass-dashboard-content .expanded-chart-header,
+  .dark .glass-dashboard-content .expanded-chart-body,
+  .dark .glass-dashboard-content .expanded-chart-surface {
+    color: #0f172a !important;
+  }
+
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-slate-950"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-slate-900"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-slate-800"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-gray-950"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-gray-900"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-gray-800"] {
+    color: #0f172a !important;
+  }
+
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-slate-700"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-slate-600"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-gray-700"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-gray-600"] {
+    color: #475569 !important;
+  }
+
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-slate-500"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-slate-400"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-gray-500"],
+  .dark .glass-dashboard-content .expanded-chart-shell [class*="text-gray-400"] {
+    color: #64748b !important;
+  }
+
+  .dark .glass-dashboard-content .diagnostics-panel-shell {
+    background: #020617 !important;
+    background-color: #020617 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .dark .glass-dashboard-content .diagnostics-panel-body,
+  .dark .glass-dashboard-content .diagnostics-panel-shell [class*="bg-slate-50"],
+  .dark .glass-dashboard-content .diagnostics-panel-shell [class*="bg-slate-100"] {
+    background: #0f172a !important;
+    background-color: #0f172a !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .dark .glass-dashboard-content .diagnostics-panel-shell [class*="bg-white"] {
+    background: #111827 !important;
+    background-color: #111827 !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }

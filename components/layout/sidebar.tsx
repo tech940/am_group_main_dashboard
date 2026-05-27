@@ -151,14 +151,14 @@ export function Sidebar() {
 
       <div
         className={cn(
-          'fixed inset-y-0 left-0 flex flex-col overflow-hidden border-r border-white/45 bg-[linear-gradient(180deg,rgba(15,118,110,0.82)_0%,rgba(13,148,136,0.74)_46%,rgba(30,58,95,0.82)_100%)] shadow-2xl shadow-teal-950/20 backdrop-blur-2xl transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] z-50',
+          'fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden border-r border-white/45 bg-[linear-gradient(165deg,#074e5a_0%,#0f766e_34%,#2f8f83_58%,#1f5671_100%)] shadow-2xl shadow-teal-950/20 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] dark:border-white/10 dark:bg-[linear-gradient(165deg,#020617_0%,#064e3b_38%,#0f766e_66%,#0f172a_100%)]',
           collapsed ? 'w-0 border-none' : 'w-72'
         )}
       >
         {/* Header with Hamburger */}
         <div className={cn(
-          "flex items-center transition-all duration-500 shrink-0 border-b border-white/60 shadow-sm z-10",
-          collapsed ? "h-20 justify-center bg-white/30 px-0" : "h-20 justify-between bg-white/30 px-4"
+          "z-10 flex shrink-0 items-center border-b border-white/35 bg-[linear-gradient(135deg,rgba(255,255,255,0.24)_0%,rgba(255,255,255,0.10)_100%)] transition-all duration-500",
+          collapsed ? "h-20 justify-center px-0" : "h-20 justify-between px-4"
         )}>
           {!collapsed && (
             <div className="flex items-center gap-2 h-12 flex-1 ml-1">
@@ -436,7 +436,7 @@ export function Sidebar() {
         </div>
 
         {/* User Section */}
-        <div className="shrink-0 border-t border-white/20 bg-white/10 p-6">
+        <div className="shrink-0 border-t border-white/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0.06)_100%)] p-6">
           <button
             onClick={async () => {
               if (signingOut) return

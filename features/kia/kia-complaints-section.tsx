@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
+import { logApiTimings } from '@/lib/api/client-timing'
 import { cn } from '@/lib/utils'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
@@ -297,6 +298,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
         queryFn: async () => {
           const suffix = queryString ? `?${queryString}` : ''
           const response = await fetch(`/api/brands/kia/business-excellence/complaints${suffix}`)
+          logApiTimings(response, 'kia-complaints')
           if (!response.ok) throw new Error('Failed to load KIA complaints dashboard')
           return await response.json() as ComplaintResponse
         },

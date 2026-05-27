@@ -90,7 +90,7 @@ function growth(current: number, previous: number) {
 }
 
 function cacheKey(startDate: string, endDate: string) {
-  return `kia:business-excellence:workshop-performance:v14:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:v15:${createHash('sha1')
     .update(`${startDate}:${endDate}`)
     .digest('hex')}`
 }
@@ -426,17 +426,27 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
   }
 }
 
-function buildRows(serviceRows: ServiceAggregate[]) {
+function normalizedServiceKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function buildRows(serviceRows: ServiceAggregate[], addonRows: AddonAggregate[] = []) {
   const combinedServiceRows = serviceRows
   const totalJc = combinedServiceRows.reduce((total, row) => total + row.totalJc, 0)
   const totalLabour = combinedServiceRows.reduce((total, row) => total + row.labourAmount, 0)
+  const addonByService = new Map(addonRows.map((row) => [normalizedServiceKey(row.serviceType), row]))
+  const assignedAddonKeys = new Set<string>()
 
-  return combinedServiceRows.map((row) => {
-    const vasAmount = 0
-    const waCount = 0
-    const waAmount = 0
-    const wbCount = 0
-    const wbAmount = 0
+  const rows = combinedServiceRows.map((row) => {
+    const addonKey = normalizedServiceKey(row.serviceType)
+    const addon = addonByService.get(addonKey)
+    if (addon) assignedAddonKeys.add(addonKey)
+
+    const vasAmount = addon?.vasAmount || 0
+    const waCount = addon?.waCount || 0
+    const waAmount = addon?.waAmount || 0
+    const wbCount = addon?.wbCount || 0
+    const wbAmount = addon?.wbAmount || 0
     const labMinusVas = Math.max(row.labourAmount - vasAmount, 0)
 
     return {
@@ -465,6 +475,39 @@ function buildRows(serviceRows: ServiceAggregate[]) {
       mcpCount: 0,
     }
   })
+
+  addonRows.forEach((addon) => {
+    const addonKey = normalizedServiceKey(addon.serviceType)
+    if (assignedAddonKeys.has(addonKey)) return
+
+    rows.push({
+      serviceType: addon.serviceType || 'Others',
+      groupType: addon.serviceType || 'Others',
+      totalJc: 0,
+      totalJcPercent: 0,
+      labourAmount: 0,
+      labourPercent: 0,
+      labourPerRo: 0,
+      lessVas: addon.vasAmount,
+      vasPercent: 0,
+      labPerRoMinusVas: 0,
+      labMinusVas: 0,
+      spareSale: 0,
+      sparePerRo: 0,
+      discount: 0,
+      waCount: addon.waCount,
+      waAmount: addon.waAmount,
+      waPerRoPercent: 0,
+      wbCount: addon.wbCount,
+      wbAmount: addon.wbAmount,
+      wbPerRoPercent: 0,
+      ewCount: 0,
+      rsaCount: 0,
+      mcpCount: 0,
+    })
+  })
+
+  return rows
 }
 
 function summarizeAddons(addonRows: AddonAggregate[]) {
@@ -549,13 +592,13 @@ async function buildWorkshopPayload(startDate: string, endDate: string) {
 
   const addonTotals = summarizeAddons(addonRows)
   const lyAddonTotals = summarizeAddons(lyAddonRows)
-  const rows = buildRows(serviceRows)
+  const rows = buildRows(serviceRows, addonRows)
   const totalRow = buildTotalRow(rows, addonTotals, {
     ewCount: auxiliary.ewCount,
     rsaCount: auxiliary.rsaCount,
     mcpCount: auxiliary.mcpCount,
   })
-  const lyRows = buildRows(lyServiceRows)
+  const lyRows = buildRows(lyServiceRows, lyAddonRows)
   const lyTotal = buildTotalRow(lyRows, lyAddonTotals, {
     ewCount: lyAuxiliary.ewCount,
     rsaCount: lyAuxiliary.rsaCount,

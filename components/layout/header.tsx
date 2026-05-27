@@ -125,12 +125,12 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   }
 
   return (
-    <header className="sticky top-0 z-30 mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-white/65 bg-white/55 px-6 shadow-[0_18px_55px_rgba(15,118,110,0.14)] backdrop-blur-2xl transition-colors dark:border-white/10 dark:bg-slate-950/72 dark:shadow-[0_18px_55px_rgba(0,0,0,0.34)]">
+    <header className="sticky top-0 z-30 mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-teal-100/80 bg-[linear-gradient(135deg,#ffffff_0%,#effdf9_48%,#e8f7ff_100%)] px-6 transition-colors dark:border-white/10 dark:bg-[linear-gradient(135deg,#020617_0%,#082f36_52%,#0f172a_100%)]">
       <div className="flex items-center gap-6">
         {/* Hamburger */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/55 text-slate-700 shadow-sm transition-all hover:bg-white/80 hover:text-teal-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/16 dark:hover:text-cyan-200"
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-teal-100 bg-white text-slate-700 shadow-sm transition-all hover:bg-teal-50 hover:text-teal-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/16 dark:hover:text-cyan-200"
         >
           <Menu className="h-6 w-6" />
         </button>
@@ -150,7 +150,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
             onClick={toggleDarkMode}
             aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             title={isDarkMode ? 'Light mode' : 'Dark mode'}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/55 text-slate-700 shadow-sm transition-all hover:bg-white/80 hover:text-teal-700 dark:border-white/10 dark:bg-white/10 dark:text-amber-200 dark:hover:bg-white/16 dark:hover:text-amber-100"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-teal-100 bg-white text-slate-700 shadow-sm transition-all hover:bg-teal-50 hover:text-teal-700 dark:border-white/10 dark:bg-white/10 dark:text-amber-200 dark:hover:bg-white/16 dark:hover:text-amber-100"
           >
             {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </button>

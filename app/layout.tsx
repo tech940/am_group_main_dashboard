@@ -20,10 +20,7 @@ import NextTopLoader from 'nextjs-toploader';
 const themeInitScript = `
   try {
     const storedTheme = window.localStorage.getItem('dashboard-theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if ((storedTheme && storedTheme === 'dark') || (!storedTheme && prefersDark)) {
-      document.documentElement.classList.add('dark');
-    }
+    document.documentElement.classList.toggle('dark', storedTheme === 'dark');
   } catch (_) {}
 `;
 
