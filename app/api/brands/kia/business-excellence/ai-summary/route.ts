@@ -44,6 +44,7 @@ type AiStructuredSummary = {
 
 const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const SUPPORTED_REPORTS = new Set([
+  'Business Excellence Overview',
   'RO Billing Report',
   'Workshop Performance',
   'Open RO (Repair Orders)',
@@ -192,6 +193,25 @@ function compactRoBillingPayload(parts: Record<string, Record<string, unknown>>)
   }
 }
 
+function compactOverviewPayload(data: Record<string, unknown>) {
+  const charts = (data.charts || {}) as Record<string, unknown[]>
+
+  return {
+    asOfDate: data.asOfDate,
+    dateRange: data.dateRange,
+    kpis: data.kpis,
+    insights: data.insights,
+    revenueTrend: pickRows(charts.revenueTrend, 14, ['date', 'revenue', 'totalJc'], true),
+    serviceMix: pickRows(charts.serviceMix, 6, ['name', 'totalJc', 'revenue']),
+    agingDistribution: pickRows(charts.agingDistribution, 4, ['bucket', 'count']),
+    openRoAdvisorLoad: pickRows(charts.openRoAdvisorLoad, 8, ['advisor', 'openRo', 'avgAging']),
+    complaintAreas: pickRows(charts.complaintAreas, 8, ['name', 'total', 'open', 'avgDays']),
+    complaintMonthlyComparison: pickRows(charts.complaintMonthlyComparison, 12, ['month', 'cyCount', 'lyCount', 'growthPct']),
+    addOnMix: pickRows(charts.addOnMix, 3, ['name', 'value']),
+    meta: data.meta,
+  }
+}
+
 async function fetchJson(request: NextRequest, path: string) {
   const url = new URL(path, request.nextUrl.origin)
   const response = await fetch(url, {
@@ -210,6 +230,11 @@ async function fetchJson(request: NextRequest, path: string) {
 
 async function buildReportDataset(request: NextRequest, report: string, startDate: string, endDate: string) {
   const baseParams = new URLSearchParams({ startDate, endDate })
+
+  if (report === 'Business Excellence Overview') {
+    const data = await fetchJson(request, `/api/brands/kia/business-excellence/overview?${baseParams.toString()}`)
+    return compactOverviewPayload(data)
+  }
 
   if (report === 'Open RO (Repair Orders)') {
     const data = await fetchJson(request, `/api/brands/kia/business-excellence/open-ro?${baseParams.toString()}`)

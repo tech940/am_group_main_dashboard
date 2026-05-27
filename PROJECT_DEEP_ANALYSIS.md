@@ -1,13 +1,13 @@
 # Main Dashboard Deep Analysis Report
 
-Last updated: 2026-05-26
+Last updated: 2026-05-27
 
 ## 1. Executive Summary
 
 Main Dashboard is an AM Group operations platform built on Next.js 16, Supabase PostgreSQL, Drizzle, Redis, React Query, and Recharts. The product currently has two major working domains:
 
 - Purchase Orders: approval workflow, branch/stage visibility, file upload, GRN/accounts progression, and EA/MD approval queues.
-- KIA Business Excellence: executive analytics for RO Billing, Workshop Performance, Revenue, Trends, FY Trends, Performance Intelligence, and Sales Leaderboard.
+- KIA Business Excellence: executive analytics for the default Overview command center, RO Billing, Workshop Performance, Open RO, KIA Complaints, Revenue, Trends, FY Trends, Performance Intelligence, and Sales Leaderboard.
 
 The project has moved from basic workflow screens and JSON-sheet analytics toward a relational, cached, BI-style dashboard. The main architectural direction is correct: server-side SQL aggregation, Redis caching, session-level frontend caching, route-level report pages, and materialized summary views for heavy datasets.
 
@@ -169,7 +169,8 @@ Active KIA relational tables:
 - `ew_report`
 - `mcp_report`
 - `rsa_report`
-- `open_ro_yearly` exists but the Open RO section was paused/reverted.
+- `open_ro_yearly`
+- `kia_call_center_complaints`
 
 Former JSON storage:
 
@@ -183,19 +184,47 @@ The desired direction is relational SQL and summary views, not giant JSON blobs.
 
 Current active report entries:
 
+- Business Excellence Overview
 - RO Billing Report
 - Workshop Performance
-
-Open RO was requested, then paused. The partial new Open RO API folder was removed. Do not assume Open RO exists in UI or API until it is explicitly restarted.
+- Open RO (Repair Orders)
+- KIA Complaints
 
 ### Navigation
 
 Business Excellence now uses direct URLs:
 
+- `/brands/kia/business-excellence/overview`
 - `/brands/kia/business-excellence/ro-billing-report`
 - `/brands/kia/business-excellence/workshop-performance`
+- `/brands/kia/business-excellence/open-ro`
+- `/brands/kia/business-excellence/kia-complaints`
 
 This is better than local-only sheet switching because the route tells the app which report to mount. It also lets each report start its own API earlier.
+
+The base `/brands/kia/business-excellence` route now redirects to `/brands/kia/business-excellence/overview`.
+
+The Business Excellence report selector opens report routes in a new browser window/tab instead of replacing the current section.
+
+### Business Excellence Overview
+
+Purpose:
+
+- Default no-table command center for Business Excellence.
+- Combines compact analytics across RO Billing, Workshop/Open RO, KIA Complaints, and EW/RSA/MCP.
+- Shows cards, charts, maximisable chart panels, and operational insight blocks only.
+
+Important files:
+
+- `features/kia/business-excellence-overview.tsx`
+- `app/api/brands/kia/business-excellence/overview/route.ts`
+
+API and cache behavior:
+
+- Uses `GET /api/brands/kia/business-excellence/overview`.
+- Uses route-level KIA auth, Redis dashboard TTL, compact chart-ready SQL payloads, and Server-Timing headers.
+- Does not fetch or return large detail tables.
+- Supports the shared Business Excellence date filter.
 
 ### RO Billing Report
 
@@ -476,9 +505,13 @@ Business Excellence:
 
 - `GET /api/brands/kia/business-excellence`: metadata and rows depending query.
 - `GET /api/brands/kia/business-excellence/rows`: row access.
+- `GET /api/brands/kia/business-excellence/overview`: default compact command-center analytics.
 - `GET /api/brands/kia/business-excellence/ro-billing-analysis`: RO Billing analytics.
 - `GET /api/brands/kia/business-excellence/performance-intelligence`: audit/scoring analytics.
 - `GET /api/brands/kia/business-excellence/workshop-performance`: multi-table workshop analytics.
+- `GET /api/brands/kia/business-excellence/open-ro`: workshop WIP/Open RO analytics.
+- `GET /api/brands/kia/business-excellence/complaints`: KIA complaints analytics.
+- `POST /api/brands/kia/business-excellence/ai-summary`: Groq-backed AI summary for supported Business Excellence sections.
 
 Legacy:
 
@@ -491,19 +524,17 @@ Legacy routes should be audited. If unused, keep only compatibility wrappers or 
 
 ### Immediate Stabilization
 
-1. Do not add Open RO yet.
-   - The user explicitly paused it.
-   - Keep focus on documenting and stabilizing current features.
-
-2. Verify no partial Open RO artifacts remain.
-   - The untracked `app/api/brands/kia/business-excellence/open-ro/` folder was removed.
-
-3. Run a focused build/type check when ready.
+1. Run a focused build/type check when ready.
    - There are many unrelated worktree changes, so expect existing errors may not belong to this report work.
 
-4. Confirm Workshop Performance percent logic.
+2. Confirm Workshop Performance percent logic.
    - Top-level categories should sum to 100 percent.
    - Subtotals should not be counted visually as additional additive rows.
+
+3. Smoke-test the new Business Excellence overview in the browser.
+   - Confirm the overview loads through `/brands/kia/business-excellence/overview`.
+   - Confirm chart maximise modals are solid white.
+   - Confirm date filtering shows skeletons and refreshes only the relevant cached query.
 
 ### API Speed Work
 
@@ -549,7 +580,7 @@ Legacy routes should be audited. If unused, keep only compatibility wrappers or 
 - Do not use brand filtering logic for Purchase Orders unless the workflow explicitly requires branch/brand assignment. The user specifically said purchases are not brand-specific by default.
 - Do not hide the Purchase Orders sidebar item. Only certain table buttons/features are role-restricted.
 - Do not redesign Business Excellence structure unless requested. The user often asks to fix logic while preserving the existing UI.
-- Do not add heavy all-in-one APIs for Business Excellence. Each view should fetch only what it needs, while table metrics can be batched across metric types when it reduces fanout.
+- Do not add heavy all-in-one detail APIs for Business Excellence. The overview API is allowed because it returns compact chart-ready aggregates only, not section detail rows.
 - Do not allocate VAS/WA/WB service-type amounts unless the source table actually contains service-type split.
 - Do not show dummy dashboard data as real. `/dashboard` is locked for this reason.
 - Do not rely on frontend-only permissions for branch/role visibility.
@@ -559,7 +590,7 @@ Legacy routes should be audited. If unused, keep only compatibility wrappers or 
 
 ## 13. Current Worktree Note
 
-At the time this report was written, the repository had multiple modified files from ongoing work and deleted `.VSCodeCounter` generated files. The Open RO API folder that had been partially created was removed. No git reset or broad revert was performed because many current changes likely belong to the user-requested ongoing work.
+At the time this report was refreshed, the repository had multiple modified files from ongoing work. Open RO and KIA Complaints are active Business Excellence sections, and the new overview command center has been added. No git reset or broad revert was performed because many current changes likely belong to user-requested ongoing work.
 
 ## 14. Mental Model For The Project
 

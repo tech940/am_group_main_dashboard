@@ -3,6 +3,7 @@ import { getBrandAccess } from '@/lib/auth/brand-access'
 import { forbidden, notFound, redirect } from 'next/navigation'
 
 const REPORT_TITLES: Record<string, string> = {
+  'overview': 'Business Excellence Overview',
   'ro-billing-report': 'RO Billing Report',
   'workshop-performance': 'Workshop Performance',
   'open-ro': 'Open RO (Repair Orders)',

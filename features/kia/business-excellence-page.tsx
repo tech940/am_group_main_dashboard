@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { AccessControlOverlay } from '@/components/shared/access-control-overlay'
 import { useUserRole } from '@/lib/hooks/use-user-role'
+import { BusinessExcellenceOverview } from '@/features/kia/business-excellence-overview'
 import { OpenRoSection } from '@/features/kia/open-ro-section'
 import { KiaComplaintsSection } from '@/features/kia/kia-complaints-section'
 import {
@@ -165,11 +166,13 @@ type BusinessAiSummary = {
   }
 }
 
+const BUSINESS_EXCELLENCE_OVERVIEW_REPORT = 'Business Excellence Overview'
 const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const KIA_COMPLAINTS_REPORT = 'Kia Complaints'
 const REPORT_ROUTE_SLUGS: Record<string, string> = {
+  [BUSINESS_EXCELLENCE_OVERVIEW_REPORT]: 'overview',
   [DEFAULT_BUSINESS_EXCELLENCE_SHEET]: 'ro-billing-report',
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
   [OPEN_RO_REPORT]: 'open-ro',
@@ -179,6 +182,15 @@ const REPORT_NAMES_BY_SLUG: Record<string, string> = Object.fromEntries(
   Object.entries(REPORT_ROUTE_SLUGS).map(([name, slug]) => [slug, name])
 )
 const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
+  {
+    id: 'overview',
+    brand: 'kia',
+    sheetName: BUSINESS_EXCELLENCE_OVERVIEW_REPORT,
+    tableName: 'business_excellence_overview',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
   {
     id: 'ro-billing-report',
     brand: 'kia',
@@ -329,7 +341,7 @@ function SmartTrendValueLabel({
 }
 
 function getBusinessExcellenceReportName(value?: string | null) {
-  if (!value) return DEFAULT_BUSINESS_EXCELLENCE_SHEET
+  if (!value) return BUSINESS_EXCELLENCE_OVERVIEW_REPORT
   return REPORT_NAMES_BY_SLUG[value] || value
 }
 
@@ -1302,7 +1314,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === KIA_COMPLAINTS_REPORT) {
+      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === KIA_COMPLAINTS_REPORT) {
         setFetchingRows(null)
         return
       }
@@ -1342,11 +1354,12 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
               }
 
               // Check if this is RO Billing sheet to show analytics
+              const isOverviewSheet = selectedSheet.sheetName === BUSINESS_EXCELLENCE_OVERVIEW_REPORT
               const isROBillingSheet = selectedSheet.sheetName.toLowerCase().includes('ro billing')
               const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
               const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
               const isKiaComplaintsSheet = selectedSheet.sheetName === KIA_COMPLAINTS_REPORT
-              const usesDateControls = isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
+              const usesDateControls = isOverviewSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
 
               return (
                 <div className="animate-in slide-in-from-bottom-4 duration-500">
@@ -1366,7 +1379,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                                 {activeDateLabel}
                               </span>
                               <span className="rounded-full bg-teal-50 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest text-teal-700">
-                                {isWorkshopPerformanceSheet ? 'Performance Date' : isOpenRoSheet ? 'RO Date' : isKiaComplaintsSheet ? 'Complaint Date' : 'Bill Date'}
+                                {isOverviewSheet ? 'Unified Date' : isWorkshopPerformanceSheet ? 'Performance Date' : isOpenRoSheet ? 'RO Date' : isKiaComplaintsSheet ? 'Complaint Date' : 'Bill Date'}
                               </span>
                             </div>
                           )}
@@ -1375,7 +1388,6 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                         <div className="flex flex-wrap items-center gap-2">
                           {/* Sheet Selector */}
                           <div className="flex items-center gap-2">
-                            <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest">Sheet:</p>
                             <Select
                               value={selectedSheet.sheetName}
                               onValueChange={(value) => {
@@ -1840,7 +1852,13 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                         )}
 
                         {/* Performance Analytics Section - Only for RO Billing */}
-                        {isWorkshopPerformanceSheet ? (
+                        {isOverviewSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <BusinessExcellenceOverview dateFilter={appliedDateFilter} />
+                          )
+                        ) : isWorkshopPerformanceSheet ? (
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
                           ) : (

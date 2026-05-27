@@ -33,7 +33,7 @@ const brandNavigation = [
     color: 'text-teal-100',
     icon: Activity,
     submenus: [
-      { name: 'Business Excellence', href: '/brands/kia/business-excellence/ro-billing-report' },
+      { name: 'Business Excellence', href: '/brands/kia/business-excellence/overview' },
     ],
   },
 ]

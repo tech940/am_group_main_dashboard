@@ -17,5 +17,5 @@ export default async function Page() {
     forbidden()
   }
 
-  redirect('/brands/kia/business-excellence/ro-billing-report')
+  redirect('/brands/kia/business-excellence/overview')
 }

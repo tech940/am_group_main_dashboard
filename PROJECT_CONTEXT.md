@@ -1,10 +1,10 @@
 # Project Context
 
-Last updated: 2026-05-25
+Last updated: 2026-05-27
 
 ## Project Overview
 
-Main Dashboard is a Next.js 16 App Router application for AM Group vehicle operations. It covers purchase-order workflow management and KIA Business Excellence analytics, with the current build focused mainly on RO Billing Report performance analytics and purchase-order approvals.
+Main Dashboard is a Next.js 16 App Router application for AM Group vehicle operations. It covers purchase-order workflow management and KIA Business Excellence analytics, with the current build focused on purchase-order approvals plus KIA Business Excellence sections for the unified overview, RO Billing, Workshop Performance, Open RO, and KIA Complaints.
 
 The application is designed for operational users across Admin, Purchase Manager, EA, MD, Accounts, and brand/branch-specific teams. The core goals are fast dashboards, controlled workflow visibility, branch-aware access, and executive-style analytics.
 
@@ -80,13 +80,19 @@ Implementation files:
 
 ### Active Scope
 
-Only KIA RO Billing Report is currently active. Other old brand/sheet sections were removed or de-prioritized to avoid slow metadata/API calls and dead navigation.
+KIA Business Excellence is now route-driven and section-based. The default screen is a visual "Business Excellence Overview" command center with no tables. Detailed sections remain available as separate report routes.
 
 ### Data Source
 
-Business Excellence now uses relational SQL tables rather than giant JSON sheet blobs. The important active table is:
+Business Excellence now uses relational SQL tables rather than giant JSON sheet blobs. Important active tables include:
 
 - `ro_billing_report`
+- `open_ro_yearly`
+- `kia_call_center_complaints`
+- `operation_wise_analysis_report`
+- `ew_report`
+- `mcp_report`
+- `rsa_report`
 
 Important normalized columns include:
 
@@ -106,6 +112,17 @@ Important normalized columns include:
 - `uploaded_at`
 
 All RO Billing comparisons are based on `bill_date`.
+
+Important date bases by section:
+
+- RO Billing: `ro_billing_report.bill_date`
+- Workshop Performance core JC/revenue: `ro_billing_report.bill_date`
+- Workshop VAS/WA/WB: `operation_wise_analysis_report.report_month`
+- Open RO: `open_ro_yearly.ro_date`
+- KIA Complaints: `kia_call_center_complaints.complaint_date`
+- EW: `ew_report.reg_date`
+- RSA: `rsa_report.invoice_date`
+- MCP: `mcp_report.package_purchase_date`
 
 ### APIs
 
@@ -134,13 +151,72 @@ All RO Billing comparisons are based on `bill_date`.
   - Combines `ro_billing_report`, `operation_wise_analysis_report`, `ew_report`, `mcp_report`, and `rsa_report` where available.
   - Uses Redis with the 75-minute dashboard TTL and returns chart/table-ready payloads.
 
+- `GET /api/brands/kia/business-excellence/open-ro`
+  - Open Repair Orders / Workshop WIP API.
+  - Uses only `open_ro_yearly`.
+  - Calculates dynamic aging from `CURRENT_DATE - ro_date`, aging buckets, delayed promise status, service type aging, delay reason summary, advisor load, work-type distribution, and high-priority alerts.
+  - Supports filters for advisor, work type, aging bucket, insurance company, and RO date range.
+
+- `GET /api/brands/kia/business-excellence/complaints`
+  - KIA complaints analytics API.
+  - Uses latest distinct complaint records from `kia_call_center_complaints`.
+  - Provides KPIs, month/year comparison, complaint area breakdowns, dealer/sub-area summaries, model/source charts, and detail rows.
+  - Supports date, status, dealer, area, model, and source filters.
+
+- `GET /api/brands/kia/business-excellence/overview`
+  - Default Business Excellence command-center API.
+  - Combines compact, chart-ready aggregates across RO Billing, Workshop/Open RO, KIA Complaints, and EW/RSA/MCP.
+  - Uses the same Redis 75-minute dashboard TTL pattern as the other Business Excellence APIs.
+  - Intentionally returns visual-summary data only; no large detail tables.
+
+- `POST /api/brands/kia/business-excellence/ai-summary`
+  - Groq-backed AI summary endpoint.
+  - Supports Business Excellence Overview, RO Billing Report, Workshop Performance, Open RO, and KIA Complaints.
+  - Uses compact payloads to stay within Groq token limits.
+
 ### Business Excellence Routes
 
-- `/brands/kia/business-excellence` now redirects to `/brands/kia/business-excellence/ro-billing-report`.
+- `/brands/kia/business-excellence` now redirects to `/brands/kia/business-excellence/overview`.
+- `/brands/kia/business-excellence/overview` opens the visual Business Excellence command center.
 - `/brands/kia/business-excellence/ro-billing-report` opens the RO Billing report directly.
 - `/brands/kia/business-excellence/workshop-performance` opens Workshop Performance directly.
-- The report selector now navigates between route-level report URLs instead of only changing local component state.
-- The Business Excellence client no longer waits for the metadata API just to choose the active report; RO Billing and Workshop Performance are known report entries, which lets the active report mount and start its own APIs earlier.
+- `/brands/kia/business-excellence/open-ro` opens Open RO directly.
+- `/brands/kia/business-excellence/kia-complaints` opens KIA Complaints directly.
+- The report selector opens report routes in a new browser window/tab rather than replacing the current section.
+- The Business Excellence client no longer waits for the metadata API just to choose the active report; Overview, RO Billing, Workshop Performance, Open RO, and KIA Complaints are known report entries, which lets the active report mount and start its own APIs earlier.
+
+### Business Excellence Overview
+
+Purpose:
+
+- Default section for Business Excellence.
+- No tables.
+- Shows real analytics, cards, chart panels, and insight blocks across the four main sections at once:
+  - RO Billing
+  - Workshop Performance
+  - Open RO
+  - KIA Complaints
+
+Important files:
+
+- `features/kia/business-excellence-overview.tsx`
+- `app/api/brands/kia/business-excellence/overview/route.ts`
+
+Current UI behavior:
+
+- Uses the shared Business Excellence date filter.
+- Shows skeleton loading when the date filter changes.
+- Has maximise buttons on charts.
+- Expanded chart modal must have a solid white background.
+- Sidebar Business Excellence link points to the overview route.
+
+Current overview metrics include:
+
+- Revenue, labour, parts, total JC, average billing.
+- Open RO, delayed RO, RO over 15 days, average open aging.
+- Complaint totals, open complaints, complaint aging.
+- EW/RSA/MCP counts.
+- Derived insight signals such as WIP pressure, billing velocity, customer voice, and add-on attachment.
 
 ### RO Billing Metrics
 
@@ -167,6 +243,7 @@ All RO Billing comparisons are based on `bill_date`.
 - API timing utilities are present through `createApiTimer`.
 - Business Excellence top Refresh button was removed; fresh data is intentionally obtained through a full page reload/session reset.
 - Needed controls in the glass UI have stronger visible borders.
+- All Business Excellence analytics APIs should use the same pattern where possible: route auth timing, Redis dashboard TTL, compact view-specific payloads, and Server-Timing headers.
 
 ### Database Optimization Script
 
@@ -209,10 +286,12 @@ Important distinction:
 
 - Assigned users should see and receive notifications for their current stage.
 - EA sees `awaiting_ea_approval` and relevant denied/hold/recovery states.
-- MD sees only `awaiting_md_approval` in their active approval queue.
+- MD sees only `awaiting_md_approval` in their default active approval queue.
+- MD and EA can switch to an all-orders view when they need broader visibility.
+- MD all-orders view must include branch filtering plus status filters such as pending, approved, and hold.
 - Purchase Manager table view is restricted to purchase-manager users.
 - Default order listing should focus on today's orders.
-- All Orders mode uses pagination with 9 orders per page.
+- Purchase Orders pagination uses 12 orders per page.
 
 ### Current UI Notes
 
@@ -270,6 +349,10 @@ Important distinction:
 - GRN-based spend recognition design.
 - Business Excellence relational-table migration for RO Billing focus.
 - RO Billing Table, Trends, FY Trends, Analytics, Revenue, and Performance Intelligence sections.
+- Business Excellence Overview is now the default route and visual command center.
+- Open RO is now a Business Excellence section for workshop WIP aging, delayed promise tracking, delay-reason control, advisor load, work-type distribution, and escalation alerts.
+- KIA Complaints is now a Business Excellence section using `kia_call_center_complaints`, including month/year comparison, complaint area analysis, dealer/sub-area summaries, and complaint detail expansion.
+- AI Summary exists in Business Excellence and is backed by Groq. Keep payloads compact because free/on-demand Groq tiers have strict TPM limits.
 - Workshop Performance is now a dedicated Business Excellence report option in the sheet dropdown, directly below RO Billing Report, with server-side multi-table aggregation. JC matches the RO Billing table logic using `COUNT(DISTINCT COALESCE(bill_no, ro_no, id))`, not raw row count.
 - Workshop Performance addon definitions:
   - WA = Wheel Alignment.
@@ -283,6 +366,7 @@ Important distinction:
   - Operation-wise addon amounts use `total_amt` and respect the selected Workshop date filter through `operation_wise_analysis_report.report_month`; this table is month-level, so filtering is month/year based.
   - Workshop VAS KPI now calculates both CY and LY from `operation_wise_analysis_report.report_month`; cache version was bumped after this fix so stale `LY ₹0 / N/A` VAS cards are not reused.
   - Workshop auxiliary KPI cards such as EW Count, MCP Count, and RSA Count also calculate LY/growth when prior-year data exists.
+  - Workshop table has EW Count, RSA Count, and MCP Count at the end of the table, including the Grand Total row.
   - Less VAS uses only `operation_wise_analysis_report.total_amt`, is not allocated to service-type rows, and appears only on the Workshop Grand Total row because operation-wise data has no service-type split.
   - Workshop frontend preserves the API Grand Total addon values when rebuilding display buckets, so `LAB/RO(-VAS)` uses `(Grand Total Labour Amt - Grand Total Less VAS) / Grand Total JC`.
   - Workshop table display is normalized into the same operational buckets as RO Billing: Paid Service, Free Services, Running Repairs, MECH, Others, MECH TOTAL, Accident, and Grand Total.
@@ -309,11 +393,13 @@ Important distinction:
 - Main Dashboard locked as Coming Soon to avoid exposing dummy data.
 - Header/sidebar/dashboard shell redesigned with theme-based glassmorphism.
 - Business Excellence Refresh button removed.
+- Open RO refresh button removed; its date filter follows the RO Billing style.
+- Purchase Orders approval alert popup was removed for MD/EA approvals.
 - Sidebar navigation explicitly starts the white top loading bar.
 
 ## Features In Progress
 
-- Continued API speed tuning for RO Billing and Performance Intelligence.
+- Continued API speed tuning for RO Billing, Performance Intelligence, Open RO, KIA Complaints, and the overview API.
 - Ensuring every Business Excellence chart/table uses server-ready payloads and does not trigger duplicated calls.
 - Purchase Orders spending/completion UI cleanup.
 - Branch-aware sidebar/backend access hardening.
