@@ -316,6 +316,8 @@ async function createAiSummary(report: string, startDate: string, endDate: strin
             'Write for a dealer principal, MD, service manager, or business excellence manager.',
             'Return only valid JSON, with no markdown and no code fences.',
             'Use exact numbers from the supplied dataset wherever available.',
+            'All monetary values are Indian rupees. Use the ₹ symbol only, never $ or USD.',
+            'Do not abbreviate monetary values as Cr, Crore, L, or Lakhs. Write the full rupee amount with Indian comma grouping, for example ₹2,01,00,000.',
             'Avoid generic statements like "review data"; give operational interpretation and action.',
             'JSON schema: {"title":string,"executiveRead":string,"metricSignals":[{"label":string,"value":string,"context":string,"tone":"good|watch|risk|neutral"}],"keyFindings":string[],"risks":string[],"actions":[{"owner":string,"action":string,"priority":"High|Medium|Low"}]}.',
             'Create 4 to 6 metricSignals, 5 to 7 keyFindings, 3 to 5 risks, and 3 to 5 actions.',
@@ -352,7 +354,7 @@ async function createAiSummary(report: string, startDate: string, endDate: strin
   const structuredSummary = parseStructuredSummary(text)
 
   return {
-    summary: structuredSummary ? buildSummaryText(structuredSummary) : text,
+    summary: structuredSummary ? buildSummaryText(structuredSummary) : normalizeCurrencyText(text),
     structuredSummary,
     model,
   }
@@ -362,9 +364,29 @@ function asString(value: unknown, fallback = '') {
   return typeof value === 'string' ? value.trim() : fallback
 }
 
+function formatInrAmount(value: number) {
+  return `₹${Math.round(value).toLocaleString('en-IN')}`
+}
+
+function normalizeCurrencyText(value: string) {
+  return value
+    .replace(/\b(?:USD|US\$)\b/gi, '₹')
+    .replace(/\$/g, '₹')
+    .replace(/(?:₹|Rs\.?|INR)?\s*([+-]?\d+(?:,\d{2,3})*(?:\.\d+)?)\s*(?:Cr|Crore)\b/gi, (_match, amount: string) => {
+      const numericAmount = Number(amount.replace(/,/g, ''))
+      return Number.isFinite(numericAmount) ? formatInrAmount(numericAmount * 10000000) : _match
+    })
+    .replace(/(?:₹|Rs\.?|INR)?\s*([+-]?\d+(?:,\d{2,3})*(?:\.\d+)?)\s*(?:L|Lakh|Lakhs)\b/gi, (_match, amount: string) => {
+      const numericAmount = Number(amount.replace(/,/g, ''))
+      return Number.isFinite(numericAmount) ? formatInrAmount(numericAmount * 100000) : _match
+    })
+    .replace(/\bRs\.?\s*/gi, '₹')
+    .replace(/\bINR\s*/gi, '₹')
+}
+
 function asStringList(value: unknown, limit: number) {
   return Array.isArray(value)
-    ? value.map((item) => asString(item)).filter(Boolean).slice(0, limit)
+    ? value.map((item) => normalizeCurrencyText(asString(item))).filter(Boolean).slice(0, limit)
     : []
 }
 
@@ -381,9 +403,9 @@ function parseStructuredSummary(text: string): AiStructuredSummary | null {
         const row = item && typeof item === 'object' ? item as Record<string, unknown> : {}
         const tone = asString(row.tone, 'neutral')
         return {
-          label: asString(row.label, 'Metric'),
-          value: asString(row.value, '-'),
-          context: asString(row.context),
+          label: normalizeCurrencyText(asString(row.label, 'Metric')),
+          value: normalizeCurrencyText(asString(row.value, '-')),
+          context: normalizeCurrencyText(asString(row.context)),
           tone: ['good', 'watch', 'risk', 'neutral'].includes(tone) ? tone as AiMetricSignal['tone'] : 'neutral',
         }
       }).filter((item) => item.label && item.context)
@@ -394,16 +416,16 @@ function parseStructuredSummary(text: string): AiStructuredSummary | null {
         const row = item && typeof item === 'object' ? item as Record<string, unknown> : {}
         const priority = asString(row.priority, 'Medium')
         return {
-          owner: asString(row.owner, 'Manager'),
-          action: asString(row.action),
+          owner: normalizeCurrencyText(asString(row.owner, 'Manager')),
+          action: normalizeCurrencyText(asString(row.action)),
           priority: ['High', 'Medium', 'Low'].includes(priority) ? priority as AiAction['priority'] : 'Medium',
         }
       }).filter((item) => item.action)
       : []
 
     const summary = {
-      title: asString(parsed.title, 'AI Business Summary'),
-      executiveRead: asString(parsed.executiveRead),
+      title: normalizeCurrencyText(asString(parsed.title, 'AI Business Summary')),
+      executiveRead: normalizeCurrencyText(asString(parsed.executiveRead)),
       metricSignals,
       keyFindings: asStringList(parsed.keyFindings, 7),
       risks: asStringList(parsed.risks, 5),
@@ -432,7 +454,7 @@ function buildSummaryText(summary: AiStructuredSummary) {
 }
 
 function createCacheKey(report: string, startDate: string, endDate: string, dataset: unknown) {
-  return `kia:business-excellence:ai-summary:v2:${createHash('sha1')
+  return `kia:business-excellence:ai-summary:v3:${createHash('sha1')
     .update(JSON.stringify({ report, startDate, endDate, dataset }))
     .digest('hex')}`
 }

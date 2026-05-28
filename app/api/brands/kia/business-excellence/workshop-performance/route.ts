@@ -90,7 +90,7 @@ function growth(current: number, previous: number) {
 }
 
 function cacheKey(startDate: string, endDate: string) {
-  return `kia:business-excellence:workshop-performance:v15:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:v19:${createHash('sha1')
     .update(`${startDate}:${endDate}`)
     .digest('hex')}`
 }
@@ -106,8 +106,21 @@ async function tableExists(tableName: string) {
   return exists
 }
 
+async function shouldUseWorkshopJcSummary(startDate: string, endDate: string) {
+  if (!(await tableExists('workshop_performance_jc_summary_v1'))) return false
+
+  const result = await db.execute(sql`
+    SELECT
+      MIN(report_date)::date <= ${startDate}::date
+      AND MAX(report_date)::date >= ${endDate}::date AS usable
+    FROM workshop_performance_jc_summary_v1
+  `)
+
+  return Boolean(resultRows(result)[0]?.usable)
+}
+
 async function fetchServiceSummary(startDate: string, endDate: string): Promise<ServiceAggregate[]> {
-  const result = await db.execute(await tableExists('workshop_performance_jc_summary_v1') ? sql`
+  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate) ? sql`
     SELECT
       group_type,
       service_type,
@@ -273,7 +286,7 @@ async function fetchAddonSummary(startDate: string, endDate: string): Promise<Ad
 }
 
 async function fetchDailyTrend(startDate: string, endDate: string) {
-  const result = await db.execute(await tableExists('workshop_performance_jc_summary_v1') ? sql`
+  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate) ? sql`
     SELECT
       report_date AS bill_date,
       COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -324,7 +337,7 @@ async function fetchDailyTrend(startDate: string, endDate: string) {
 }
 
 async function fetchAdvisorSummary(startDate: string, endDate: string) {
-  const result = await db.execute(await tableExists('workshop_performance_jc_summary_v1') ? sql`
+  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate) ? sql`
     SELECT
       service_advisor AS advisor,
       COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -392,10 +405,55 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
   const [ew, mcp, rsa] = await Promise.all([
     hasEw
       ? db.execute(sql`
+          WITH dedup AS (
+            SELECT DISTINCT ON (
+              COALESCE(
+                NULLIF(TRIM(certi_no), ''),
+                NULLIF(CONCAT_WS(
+                  '|',
+                  NULLIF(TRIM(vin), ''),
+                  NULLIF(TRIM(scheme_desc), ''),
+                  reg_date::text,
+                  COALESCE(kin_amt, 0)::text
+                ), ''),
+                id::text
+              )
+            )
+              COALESCE(
+                NULLIF(TRIM(certi_no), ''),
+                NULLIF(CONCAT_WS(
+                  '|',
+                  NULLIF(TRIM(vin), ''),
+                  NULLIF(TRIM(scheme_desc), ''),
+                  reg_date::text,
+                  COALESCE(kin_amt, 0)::text
+                ), ''),
+                id::text
+              ) AS ew_key,
+              reg_date,
+              uploaded_at,
+              id
+            FROM ew_report
+            WHERE reg_date >= ${startDate}::date
+              AND reg_date < (${endDate}::date + INTERVAL '1 day')
+              AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
+            ORDER BY
+              COALESCE(
+                NULLIF(TRIM(certi_no), ''),
+                NULLIF(CONCAT_WS(
+                  '|',
+                  NULLIF(TRIM(vin), ''),
+                  NULLIF(TRIM(scheme_desc), ''),
+                  reg_date::text,
+                  COALESCE(kin_amt, 0)::text
+                ), ''),
+                id::text
+              ),
+              uploaded_at DESC NULLS LAST,
+              id DESC
+          )
           SELECT COUNT(*)::int AS count
-          FROM ew_report
-          WHERE reg_date >= ${startDate}::date
-            AND reg_date < (${endDate}::date + INTERVAL '1 day')
+          FROM dedup
         `)
       : Promise.resolve([{ count: 0 }] as NumericRow[]),
     hasMcp
@@ -404,16 +462,62 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
           FROM mcp_report
           WHERE package_purchase_date >= ${startDate}::date
             AND package_purchase_date < (${endDate}::date + INTERVAL '1 day')
+            AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
         `)
       : Promise.resolve([{ count: 0 }] as NumericRow[]),
     hasRsa
       ? db.execute(sql`
+          WITH dedup AS (
+            SELECT DISTINCT ON (
+              COALESCE(
+                NULLIF(TRIM(invoice_no), ''),
+                CONCAT_WS(
+                  '|',
+                  NULLIF(TRIM(vin_chasis_no), ''),
+                  NULLIF(TRIM(policy_name), ''),
+                  invoice_date::text,
+                  COALESCE(total_amount, 0)::text
+                ),
+                id::text
+              )
+            )
+              COALESCE(
+                NULLIF(TRIM(invoice_no), ''),
+                CONCAT_WS(
+                  '|',
+                  NULLIF(TRIM(vin_chasis_no), ''),
+                  NULLIF(TRIM(policy_name), ''),
+                  invoice_date::text,
+                  COALESCE(total_amount, 0)::text
+                ),
+                id::text
+              ) AS rsa_key,
+              invoice_date,
+              COALESCE(total_amount, 0)::numeric AS total_amount,
+              uploaded_at,
+              id
+            FROM rsa_report
+            WHERE invoice_date >= ${startDate}::date
+              AND invoice_date < (${endDate}::date + INTERVAL '1 day')
+            ORDER BY
+              COALESCE(
+                NULLIF(TRIM(invoice_no), ''),
+                CONCAT_WS(
+                  '|',
+                  NULLIF(TRIM(vin_chasis_no), ''),
+                  NULLIF(TRIM(policy_name), ''),
+                  invoice_date::text,
+                  COALESCE(total_amount, 0)::text
+                ),
+                id::text
+              ),
+              uploaded_at DESC NULLS LAST,
+              id DESC
+          )
           SELECT
             COUNT(*)::int AS count,
             COALESCE(SUM(total_amount), 0)::float AS amount
-          FROM rsa_report
-          WHERE invoice_date >= ${startDate}::date
-            AND invoice_date < (${endDate}::date + INTERVAL '1 day')
+          FROM dedup
         `)
       : Promise.resolve([{ count: 0, amount: 0 }] as NumericRow[]),
   ])

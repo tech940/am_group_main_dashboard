@@ -77,12 +77,122 @@ function growth(current: number, previous: number) {
 }
 
 function cacheKey(startDate: string, endDate: string) {
-  return `kia:business-excellence:overview:v7:${createHash('sha1').update(`${startDate}:${endDate}`).digest('hex')}`
+  return `kia:business-excellence:overview:v13:${createHash('sha1').update(`${startDate}:${endDate}`).digest('hex')}`
 }
 
 function sameDateLastYear(value: string) {
   const [year, month, day] = value.split('-').map(Number)
   return toDateInputValue(new Date(year - 1, month - 1, day))
+}
+
+function ewDedupCountSql(startDate: string, endDate: string) {
+  return sql`
+    WITH dedup AS (
+      SELECT DISTINCT ON (
+        COALESCE(
+          NULLIF(TRIM(certi_no), ''),
+          NULLIF(CONCAT_WS(
+            '|',
+            NULLIF(TRIM(vin), ''),
+            NULLIF(TRIM(scheme_desc), ''),
+            reg_date::text,
+            COALESCE(kin_amt, 0)::text
+          ), ''),
+          id::text
+        )
+      )
+        COALESCE(
+          NULLIF(TRIM(certi_no), ''),
+          NULLIF(CONCAT_WS(
+            '|',
+            NULLIF(TRIM(vin), ''),
+            NULLIF(TRIM(scheme_desc), ''),
+            reg_date::text,
+            COALESCE(kin_amt, 0)::text
+          ), ''),
+          id::text
+        ) AS ew_key,
+        reg_date,
+        uploaded_at,
+        id
+      FROM ew_report
+      WHERE reg_date >= ${startDate}::date
+        AND reg_date < (${endDate}::date + INTERVAL '1 day')
+        AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
+      ORDER BY
+        COALESCE(
+          NULLIF(TRIM(certi_no), ''),
+          NULLIF(CONCAT_WS(
+            '|',
+            NULLIF(TRIM(vin), ''),
+            NULLIF(TRIM(scheme_desc), ''),
+            reg_date::text,
+            COALESCE(kin_amt, 0)::text
+          ), ''),
+          id::text
+        ),
+        uploaded_at DESC NULLS LAST,
+        id DESC
+    )
+    SELECT COUNT(*)::int AS count
+    FROM dedup
+  `
+}
+
+function rsaDedupKpiSql(startDate: string, endDate: string) {
+  return sql`
+    WITH dedup AS (
+      SELECT DISTINCT ON (
+        COALESCE(
+          NULLIF(TRIM(invoice_no), ''),
+          CONCAT_WS(
+            '|',
+            NULLIF(TRIM(vin_chasis_no), ''),
+            NULLIF(TRIM(policy_name), ''),
+            invoice_date::text,
+            COALESCE(total_amount, 0)::text
+          ),
+          id::text
+        )
+      )
+        COALESCE(
+          NULLIF(TRIM(invoice_no), ''),
+          CONCAT_WS(
+            '|',
+            NULLIF(TRIM(vin_chasis_no), ''),
+            NULLIF(TRIM(policy_name), ''),
+            invoice_date::text,
+            COALESCE(total_amount, 0)::text
+          ),
+          id::text
+        ) AS rsa_key,
+        invoice_date,
+        ${numericText(sql.raw('total_amount'))} AS total_amount,
+        uploaded_at,
+        id
+      FROM rsa_report
+      WHERE invoice_date >= ${startDate}::date
+        AND invoice_date < (${endDate}::date + INTERVAL '1 day')
+      ORDER BY
+        COALESCE(
+          NULLIF(TRIM(invoice_no), ''),
+          CONCAT_WS(
+            '|',
+            NULLIF(TRIM(vin_chasis_no), ''),
+            NULLIF(TRIM(policy_name), ''),
+            invoice_date::text,
+            COALESCE(total_amount, 0)::text
+          ),
+          id::text
+        ),
+        uploaded_at DESC NULLS LAST,
+        id DESC
+    )
+    SELECT
+      COUNT(*)::int AS count,
+      COALESCE(SUM(total_amount), 0)::float AS amount
+    FROM dedup
+  `
 }
 
 async function tableExists(tableName: string) {
@@ -92,6 +202,19 @@ async function tableExists(tableName: string) {
   const exists = Boolean(resultRows(result)[0]?.exists)
   tableExistsCache.set(tableName, exists)
   return exists
+}
+
+async function shouldUseWorkshopJcSummary(startDate: string, endDate: string) {
+  if (!(await tableExists('workshop_performance_jc_summary_v1'))) return false
+
+  const result = await db.execute(sql`
+    SELECT
+      MIN(report_date)::date <= ${startDate}::date
+      AND MAX(report_date)::date >= ${endDate}::date AS usable
+    FROM workshop_performance_jc_summary_v1
+  `)
+
+  return Boolean(resultRows(result)[0]?.usable)
 }
 
 function roBillingBaseSql(startDate: string, endDate: string) {
@@ -264,12 +387,7 @@ async function fetchAddonKpis(startDate: string, endDate: string) {
 
   const [ew, mcp, rsa] = await Promise.all([
     hasEw
-      ? db.execute(sql`
-          SELECT COUNT(*)::int AS count
-          FROM ew_report
-          WHERE reg_date >= ${startDate}::date
-            AND reg_date < (${endDate}::date + INTERVAL '1 day')
-        `)
+      ? db.execute(ewDedupCountSql(startDate, endDate))
       : Promise.resolve([{ count: 0 }] as NumericRow[]),
     hasMcp
       ? db.execute(sql`
@@ -277,15 +395,11 @@ async function fetchAddonKpis(startDate: string, endDate: string) {
           FROM mcp_report
           WHERE package_purchase_date >= ${startDate}::date
             AND package_purchase_date < (${endDate}::date + INTERVAL '1 day')
+            AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
         `)
       : Promise.resolve([{ count: 0 }] as NumericRow[]),
     hasRsa
-      ? db.execute(sql`
-          SELECT COUNT(*)::int AS count, COALESCE(SUM(${numericText(sql.raw('total_amount'))}), 0)::float AS amount
-          FROM rsa_report
-          WHERE invoice_date >= ${startDate}::date
-            AND invoice_date < (${endDate}::date + INTERVAL '1 day')
-        `)
+      ? db.execute(rsaDedupKpiSql(startDate, endDate))
       : Promise.resolve([{ count: 0, amount: 0 }] as NumericRow[]),
   ])
 
@@ -298,10 +412,10 @@ async function fetchAddonKpis(startDate: string, endDate: string) {
 }
 
 async function fetchWorkshopSnapshot(startDate: string, endDate: string) {
-  const hasWorkshopSummary = await tableExists('workshop_performance_jc_summary_v1')
+  const hasWorkshopSummary = await shouldUseWorkshopJcSummary(startDate, endDate)
   const serviceRows = await db.execute(hasWorkshopSummary ? sql`
     SELECT
-      COALESCE(NULLIF(service_type, ''), NULLIF(group_type, ''), 'Others') AS service_type,
+      COALESCE(NULLIF(group_type, ''), NULLIF(service_type, ''), 'Others') AS service_type,
       MIN(report_date)::text AS min_date,
       MAX(report_date)::text AS max_date,
       COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -310,7 +424,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string) {
     FROM workshop_performance_jc_summary_v1
     WHERE report_date >= ${startDate}::date
       AND report_date < (${endDate}::date + INTERVAL '1 day')
-    GROUP BY COALESCE(NULLIF(service_type, ''), NULLIF(group_type, ''), 'Others')
+    GROUP BY COALESCE(NULLIF(group_type, ''), NULLIF(service_type, ''), 'Others')
     ORDER BY (COALESCE(SUM(labour_amount), 0) + COALESCE(SUM(part_amount), 0)) DESC
     LIMIT 8
   ` : sql`

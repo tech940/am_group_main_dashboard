@@ -10,7 +10,7 @@ import {
   Loader2,
   Activity,
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Users,
   Award,
   Sparkles,
@@ -1343,13 +1343,14 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
 
   return (
     <MainLayout title="Business Excellence" subtitle="AM Kia Performance Analytics">
-      <div className="space-y-4 w-full animate-in fade-in duration-500">
-        {loading && savedSheets.length === 0 && <BusinessExcellencePageSkeleton />}
+      <div className="business-excellence-boundaries">
+        <div className="space-y-4 w-full animate-in fade-in duration-500">
+          {loading && savedSheets.length === 0 && <BusinessExcellencePageSkeleton />}
 
-        {/* Performance Analytics Section - Show for selected sheet */}
-        {reportOptions.length > 0 && activeTab && (
-          <div className="space-y-4">
-            {(() => {
+          {/* Performance Analytics Section - Show for selected sheet */}
+          {reportOptions.length > 0 && activeTab && (
+            <div className="space-y-4">
+              {(() => {
               const selectedSheet = reportOptions.find(s => s.sheetName === activeTab)
 
               if (!selectedSheet) {
@@ -1929,16 +1930,17 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
 
                 </div>
               )
-            })()}
-          </div>
+              })()}
+            </div>
+          )}
+        </div>
+        {canUseDiagnostics && (
+          <PerformanceDiagnosticsPanel
+            open={showDiagnostics}
+            onClose={() => setShowDiagnostics(false)}
+          />
         )}
       </div>
-      {canUseDiagnostics && (
-        <PerformanceDiagnosticsPanel
-          open={showDiagnostics}
-          onClose={() => setShowDiagnostics(false)}
-        />
-      )}
     </MainLayout>
   )
 }
@@ -1972,6 +1974,28 @@ type ROAnalysisRow = {
   children?: ROAnalysisRow[]
 }
 
+type CancelledBillingRow = {
+  billKey: string
+  billNo: string
+  roNo: string
+  billDate: string | null
+  workType: string
+  serviceType: string
+  advisor: string
+  billStatus: string
+  labour: number
+  parts: number
+  total: number
+}
+
+type CancelledBillingSummary = {
+  count: number
+  labour: number
+  parts: number
+  total: number
+  rows: CancelledBillingRow[]
+}
+
 type ROAnalysisResponse = {
   analysisType: ROAnalysisType
   dateBasis: string
@@ -1998,6 +2022,7 @@ type ROAnalysisResponse = {
   distribution: Array<{ name: string; value: number }>
   advisorLeaderboard?: SalesLeaderboardRow[]
   byMetric?: Partial<Record<ROAnalysisType, ROAnalysisResponse>>
+  cancelledSummary?: CancelledBillingSummary
   filterOptions: Record<string, string[]>
   rowCounts: { totalRows: number; rowsWithBillDate: number; filteredRows: number }
 }
@@ -2294,7 +2319,7 @@ function WorkshopPerformanceSection({
           startDate: range.startDate,
           endDate: range.endDate,
         })
-        params.set('version', 'v14')
+        params.set('version', 'v16')
         const queryString = params.toString()
         const result = await queryClient.fetchQuery({
           queryKey: ['business-excellence', 'workshop-performance', queryString],
@@ -2819,7 +2844,7 @@ function ROBillingRevenueSummarySection({
         <Card className="overflow-hidden rounded-2xl border-none shadow-xl shadow-slate-200/50">
           <CardHeader className={cn('p-5 text-white', activeRevenueTab === 'labour' ? 'bg-blue-600' : 'bg-purple-600')}>
             <CardTitle className="flex items-center gap-2 text-lg font-black">
-              <DollarSign className="h-5 w-5" />
+              <IndianRupee className="h-5 w-5" />
               {activeRevenueTab === 'labour' ? 'Labour' : 'Part'} Revenue Performance
             </CardTitle>
           </CardHeader>
@@ -2942,6 +2967,7 @@ function ServiceTypePerformance({
   const [serverFyByMetric, setServerFyByMetric] = useState<Partial<Record<ROAnalysisType, ROAnalysisResponse>>>({})
   const [serverAnalyticsSummary, setServerAnalyticsSummary] = useState<ROAnalysisResponse['analyticsSummary'] | null>(null)
   const [serverLeaderboard, setServerLeaderboard] = useState<SalesLeaderboardRow[]>([])
+  const [cancelledSummary, setCancelledSummary] = useState<CancelledBillingSummary | null>(null)
   const [isServerViewLoading, setIsServerViewLoading] = useState(false)
   const [isServerTableLoading, setIsServerTableLoading] = useState(true)
   const [expandedRows, setExpandedRows] = useState<string[]>([])
@@ -3073,17 +3099,22 @@ function ServiceTypePerformance({
     }
     const paid = toStatRow('Paid Service', paidRows, paidRows.length > 0)
     paid.subRows = buildSubRows(paidRows, paid.name)
+    paid.isParent = paid.subRows.length > 0
     const free = toStatRow('Free Services', freeRows, freeRows.length > 0)
     free.subRows = buildSubRows(freeRows, free.name)
+    free.isParent = free.subRows.length > 0
     const running = toStatRow('Running Repairs', runningRows, runningRows.length > 0)
     running.subRows = buildSubRows(runningRows, running.name)
+    running.isParent = running.subRows.length > 0
     const others = toStatRow('Others', otherRows, otherRows.length > 0)
     others.subRows = otherRows
       .filter((row) => isCleanServiceName(row.name, others.name))
       .map((row) => toStatRow(row.name, [row]))
       .sort((a, b) => a.name.localeCompare(b.name))
+    others.isParent = others.subRows.length > 0
     const accident = toStatRow('Accident', accidentRows, accidentRows.length > 0)
     accident.subRows = buildSubRows(accidentRows, accident.name)
+    accident.isParent = accident.subRows.length > 0
     const mech = toStatRow('MECH', [paid, free, running].map((row) => ({
       name: row.name,
       depth: 0,
@@ -3121,6 +3152,48 @@ function ServiceTypePerformance({
     return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
   }, [])
 
+  const derivePerVehicleRows = useCallback((amountRows: StatRow[] = [], loadRows: StatRow[] = []): StatRow[] => {
+    const amountByName = new Map(amountRows.map((row) => [row.name, row]))
+    const ratio = (amount: number | 'N/A' | undefined, load: number | 'N/A' | undefined): number | 'N/A' => {
+      if (amount === 'N/A' || load === 'N/A') return 'N/A'
+      const safeAmount = Number(amount || 0)
+      const safeLoad = Number(load || 0)
+      return safeLoad > 0 ? safeAmount / safeLoad : 0
+    }
+    const growthString = (current: number, previous: number | 'N/A') => {
+      if (previous === 'N/A' || previous <= 0) return 'N/A'
+      return (((current - previous) / previous) * 100).toFixed(1)
+    }
+    const deriveRow = (loadRow: StatRow, amountRow?: StatRow): StatRow => {
+      const childAmountByName = new Map((amountRow?.subRows || []).map((row) => [row.name, row]))
+      const subRows = (loadRow.subRows || []).map((loadSubRow) => deriveRow(loadSubRow, childAmountByName.get(loadSubRow.name)))
+      const cy = ratio(amountRow?.cy, loadRow.cy) as number
+      const ly = ratio(amountRow?.ly, loadRow.ly)
+      const qtdCY = ratio(amountRow?.qtdCY, loadRow.qtdCY) as number
+      const qtdLY = ratio(amountRow?.qtdLY, loadRow.qtdLY)
+      const ytdCY = ratio(amountRow?.ytdCY, loadRow.ytdCY) as number
+      const ytdLY = ratio(amountRow?.ytdLY, loadRow.ytdLY)
+
+      return {
+        name: loadRow.name,
+        isParent: subRows.length > 0,
+        td: ratio(amountRow?.td, loadRow.td) as number,
+        cy,
+        ly,
+        growth: growthString(cy, ly),
+        qtdCY,
+        qtdLY,
+        qtdGrowth: growthString(qtdCY, qtdLY),
+        ytdCY,
+        ytdLY,
+        ytdGrowth: growthString(ytdCY, ytdLY),
+        subRows,
+      }
+    }
+
+    return loadRows.map((loadRow) => deriveRow(loadRow, amountByName.get(loadRow.name)))
+  }, [])
+
   useEffect(() => {
     let isActive = true
     async function fetchTableSummary() {
@@ -3148,12 +3221,17 @@ function ServiceTypePerformance({
           },
           staleTime: DASHBOARD_STALE_TIME_MS,
         })
-        const tableResults = roAnalysisTypes.map((analysisType) => {
+        const convertedRowsByMetric: Partial<Record<ROAnalysisType, StatRow[]>> = {}
+        for (const analysisType of roAnalysisTypes) {
+          if (analysisType === 'lab_per_veh' || analysisType === 'part_per_veh') continue
           const metricResult = result.byMetric?.[analysisType] || result
-          return [analysisType, convertServerTableRows(metricResult.rows || [])] as const
-        })
+          convertedRowsByMetric[analysisType] = convertServerTableRows(metricResult.rows || [])
+        }
+        convertedRowsByMetric.lab_per_veh = derivePerVehicleRows(convertedRowsByMetric.labour, convertedRowsByMetric.load)
+        convertedRowsByMetric.part_per_veh = derivePerVehicleRows(convertedRowsByMetric.parts, convertedRowsByMetric.load)
         if (isActive) {
-          setServerTableRowsByMetric(Object.fromEntries(tableResults) as Partial<Record<ROAnalysisType, StatRow[]>>)
+          setServerTableRowsByMetric(convertedRowsByMetric)
+          setCancelledSummary(result.cancelledSummary || null)
         }
       } catch (error) {
         if (isActive) console.error('Failed to fetch RO Billing table summary:', error)
@@ -3166,7 +3244,7 @@ function ServiceTypePerformance({
     return () => {
       isActive = false
     }
-  }, [convertServerTableRows, dateFilter, queryClient, roAnalysisTypes])
+  }, [convertServerTableRows, dateFilter, derivePerVehicleRows, queryClient, roAnalysisTypes])
 
   const fetchAnalysisSummary = useCallback(async (analysisType: ROAnalysisType, view: 'trend' | 'fy' | 'analytics' | 'leaderboard') => {
     const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
@@ -4363,7 +4441,7 @@ function ServiceTypePerformance({
       }
       const kpis = [
         { label: 'Total RO Load', value: cySummary.load, ly: lySummary.load, growth: growth(cySummary.load, lySummary.load), icon: Activity, accent: 'teal', formatter: (n: number) => Math.round(n).toLocaleString('en-IN') },
-        { label: 'Labour Revenue', value: cySummary.labour, ly: lySummary.labour, growth: growth(cySummary.labour, lySummary.labour), icon: DollarSign, accent: 'blue', formatter: formatCurrency },
+        { label: 'Labour Revenue', value: cySummary.labour, ly: lySummary.labour, growth: growth(cySummary.labour, lySummary.labour), icon: IndianRupee, accent: 'blue', formatter: formatCurrency },
         { label: 'Parts Revenue', value: cySummary.parts, ly: lySummary.parts, growth: growth(cySummary.parts, lySummary.parts), icon: BarChart3, accent: 'violet', formatter: formatCurrency },
         { label: 'Labour / Vehicle', value: cySummary.labPerVehicle, ly: lySummary.labPerVehicle, growth: growth(cySummary.labPerVehicle, lySummary.labPerVehicle), icon: TrendingUp, accent: 'emerald', formatter: formatCurrency },
         { label: 'Parts / Vehicle', value: cySummary.partPerVehicle, ly: lySummary.partPerVehicle, growth: growth(cySummary.partPerVehicle, lySummary.partPerVehicle), icon: TrendingUp, accent: 'amber', formatter: formatCurrency },
@@ -4571,7 +4649,7 @@ function ServiceTypePerformance({
 
     const kpis = [
       { label: 'Total RO Load', value: cySummary.load, ly: lySummary.load, growth: growth(cySummary.load, lySummary.load), icon: Activity, accent: 'teal', formatter: (n: number) => Math.round(n).toLocaleString('en-IN') },
-      { label: 'Labour Revenue', value: cySummary.labour, ly: lySummary.labour, growth: growth(cySummary.labour, lySummary.labour), icon: DollarSign, accent: 'blue', formatter: formatCurrency },
+      { label: 'Labour Revenue', value: cySummary.labour, ly: lySummary.labour, growth: growth(cySummary.labour, lySummary.labour), icon: IndianRupee, accent: 'blue', formatter: formatCurrency },
       { label: 'Parts Revenue', value: cySummary.parts, ly: lySummary.parts, growth: growth(cySummary.parts, lySummary.parts), icon: BarChart3, accent: 'violet', formatter: formatCurrency },
       { label: 'Labour / Vehicle', value: cySummary.labPerVehicle, ly: lySummary.labPerVehicle, growth: growth(cySummary.labPerVehicle, lySummary.labPerVehicle), icon: TrendingUp, accent: 'emerald', formatter: formatCurrency },
       { label: 'Parts / Vehicle', value: cySummary.partPerVehicle, ly: lySummary.partPerVehicle, growth: growth(cySummary.partPerVehicle, lySummary.partPerVehicle), icon: TrendingUp, accent: 'amber', formatter: formatCurrency },
@@ -4917,6 +4995,71 @@ function ServiceTypePerformance({
                         })}
                     </tbody>
                   </table>
+                </div>
+                <div className="mt-5 overflow-hidden rounded-[1.25rem] border border-rose-200 bg-rose-50/60 shadow-sm">
+                  <div className="flex flex-col gap-3 border-b border-rose-200 bg-white/75 p-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Cancelled Billing</p>
+                      <h3 className="text-lg font-black tracking-tight text-slate-950">Cancelled bills excluded from main RO Billing metrics</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Bills</p>
+                        <p className="mt-1 font-mono text-sm font-black text-slate-950">{formatValue(cancelledSummary?.count || 0)}</p>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Labour</p>
+                        <p className="mt-1 font-mono text-sm font-black text-slate-950">{formatCurrency(cancelledSummary?.labour || 0)}</p>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Parts</p>
+                        <p className="mt-1 font-mono text-sm font-black text-slate-950">{formatCurrency(cancelledSummary?.parts || 0)}</p>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Total</p>
+                        <p className="mt-1 font-mono text-sm font-black text-slate-950">{formatCurrency(cancelledSummary?.total || 0)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {cancelledSummary?.rows?.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[980px] border-collapse text-left">
+                        <thead>
+                          <tr className="bg-rose-700 text-white">
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Bill / RO</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Bill Date</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Work Type</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Service Type</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Advisor</th>
+                            <th className="border border-rose-600 px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Total</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cancelledSummary.rows.map((row) => (
+                            <tr key={row.billKey} className="bg-white hover:bg-rose-50">
+                              <td className="border border-rose-100 px-4 py-3 text-xs font-black text-slate-900">
+                                <span className="block">{row.billNo || '-'}</span>
+                                <span className="mt-1 block font-bold text-slate-500">RO {row.roNo || '-'}</span>
+                              </td>
+                              <td className="border border-rose-100 px-4 py-3 font-mono text-xs font-bold text-slate-700">{row.billDate ? row.billDate.slice(0, 10) : '-'}</td>
+                              <td className="border border-rose-100 px-4 py-3 text-xs font-bold text-slate-700">{row.workType}</td>
+                              <td className="border border-rose-100 px-4 py-3 text-xs font-bold text-slate-700">{row.serviceType}</td>
+                              <td className="border border-rose-100 px-4 py-3 text-xs font-bold text-slate-700">{row.advisor}</td>
+                              <td className="border border-rose-100 px-4 py-3 text-right font-mono text-xs font-black text-slate-950">{formatCurrency(row.total)}</td>
+                              <td className="border border-rose-100 px-4 py-3">
+                                <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-rose-700">{row.billStatus}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="bg-white/70 p-5 text-center text-xs font-black uppercase tracking-widest text-slate-500">
+                      No cancelled bills in the selected Bill Date range.
+                    </div>
+                  )}
                 </div>
               </div>
             ) : viewMode === 'trend' ? (

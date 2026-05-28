@@ -1,6 +1,6 @@
 # Project Context
 
-Last updated: 2026-05-27
+Last updated: 2026-05-28
 
 ## Project Overview
 
@@ -21,6 +21,31 @@ The application is designed for operational users across Admin, Purchase Manager
   - Optional PostgreSQL materialized summary view for RO Billing daily aggregates.
 - Storage: Supabase Storage for purchase-order images/PDFs.
 
+## Cron / Import Sync Rule
+
+The external data-import cron runs every 75 minutes from 9 AM to 6 PM and updates the base reporting tables. Materialized views do not update automatically when those base tables change.
+
+Required post-import step:
+
+```bash
+npm run db:refresh-dashboard-views
+```
+
+Run this only after the base import succeeds. It refreshes:
+
+- `workshop_performance_jc_summary_v1`
+- `workshop_operation_addon_summary_v1`
+
+This keeps Workshop Performance and the Business Snapshot Workshop Snapshot aligned with the fresh source tables. If this step is missed, Workshop can show stale counts even when `ro_billing_report` and `operation_wise_analysis_report` are current.
+
+PM2 automation option:
+
+```bash
+npm run db:refresh-dashboard-views:scheduler
+```
+
+This long-running scheduler is intended for PM2. It runs the refresh command in Asia/Kolkata windows at 09:10, 10:25, 11:40, 12:55, 14:10, 15:25, 16:40, and 17:55, giving the base import cron about 10 minutes to finish first. If the import cron timing changes, update `RUN_MINUTES` in `scripts/refresh-dashboard-materialized-views-scheduler.js`.
+
 ## Current Visual Direction
 
 The active UI direction is a premium glassmorphism dashboard shell:
@@ -32,6 +57,7 @@ The active UI direction is a premium glassmorphism dashboard shell:
 - Sidebar keeps a visible teal/blue gradient glass background and light text/icons.
 - Content receives top padding below the floating navbar so sections do not collide with it.
 - Buttons and selects on translucent surfaces need visible borders, usually teal/slate tinted, so controls do not disappear into the glass background.
+- Business Excellence uses the `business-excellence-boundaries` wrapper in `features/kia/business-excellence-page.tsx`; `app/globals.css` applies scoped borders to its cards, buttons, controls, rounded metric surfaces, and table cells so each section is visually distinct.
 - Global top route loader is white and is manually started for sidebar navigation.
 
 Important implementation files:
@@ -150,6 +176,7 @@ Important date bases by section:
   - Aggregates Job Cards, labour, spares, VAS, WA/WB, advisor performance, and daily movement.
   - Combines `ro_billing_report`, `operation_wise_analysis_report`, `ew_report`, `mcp_report`, and `rsa_report` where available.
   - Uses Redis with the 75-minute dashboard TTL and returns chart/table-ready payloads.
+  - Prefers `workshop_performance_jc_summary_v1` only when that materialized view covers the full requested date range; otherwise it falls back to raw `ro_billing_report` so service-type JC counts stay aligned with RO Billing.
 
 - `GET /api/brands/kia/business-excellence/open-ro`
   - Open Repair Orders / Workshop WIP API.
@@ -165,7 +192,10 @@ Important date bases by section:
 
 - `GET /api/brands/kia/business-excellence/overview`
   - Default Business Excellence command-center API.
-  - Combines compact, chart-ready aggregates across RO Billing, Workshop/Open RO, KIA Complaints, and EW/RSA/MCP.
+  - Combines compact, chart-ready aggregates across RO Billing, Workshop Performance, Open RO, KIA Complaints, and EW/RSA/MCP.
+  - Returns a dedicated `workshopSnapshot` payload for closed workshop jobs, including total JC, workshop revenue, labour/RO, VAS amount, source coverage, and top service lines.
+  - The Workshop Snapshot uses the same materialized-view freshness guard as the Workshop Performance report.
+  - When the Workshop Snapshot reads `workshop_performance_jc_summary_v1`, it groups service rows by `group_type` before `service_type` so mileage slabs like `30K`/`40K` stay under `Paid Service`; keep the SELECT and GROUP BY expressions identical to avoid runtime SQL failures.
   - Uses the same Redis 75-minute dashboard TTL pattern as the other Business Excellence APIs.
   - Intentionally returns visual-summary data only; no large detail tables.
 
@@ -173,6 +203,8 @@ Important date bases by section:
   - Groq-backed AI summary endpoint.
   - Supports Business Excellence Overview, RO Billing Report, Workshop Performance, Open RO, and KIA Complaints.
   - Uses compact payloads to stay within Groq token limits.
+  - Monetary values must be Indian rupees only. The API prompt forbids dollar/USD output and Cr/Lakh abbreviations, and the parser normalizes returned currency text to full INR amounts before sending the summary to the UI.
+  - AI summary cache key is versioned; bump the key whenever prompt/output normalization changes so stale summaries are not reused.
 
 ### Business Excellence Routes
 
@@ -209,13 +241,17 @@ Current UI behavior:
 - Has maximise buttons on charts.
 - Expanded chart modal must have a solid white background.
 - Sidebar Business Excellence link points to the overview route.
+- In the overview chart grid, `Top Complaint Reasons` spans the full two-column width on xl screens for easier reading.
 
 Current overview metrics include:
 
 - Revenue, labour, parts, total JC, average billing.
+- Workshop Snapshot for closed workshop jobs: workshop JC, workshop revenue, labour/RO, VAS amount, and top grouped service rows displayed as `Service Type | Job Cards | Revenue`.
 - Open RO, delayed RO, RO over 15 days, average open aging.
 - Complaint totals, open complaints, complaint aging.
 - EW/RSA/MCP counts.
+- EW and MCP counts in Business Excellence are filtered to `department = SERVICE` and use the selected date window: `ew_report.reg_date` for EW and `mcp_report.package_purchase_date` for MCP. EW also deduplicates by `certi_no`; when certificate number is blank, the fallback key is VIN + scheme + registration date + KIN amount.
+- RSA counts and amount in Business Excellence use `rsa_report.invoice_date` for the selected month/range and deduplicate rows by `invoice_no`; when invoice number is blank, the fallback key is VIN + policy + invoice date + amount.
 - Derived insight signals such as WIP pressure, billing velocity, customer voice, and add-on attachment.
 
 ### RO Billing Metrics
@@ -235,6 +271,8 @@ Current overview metrics include:
 - RO Billing paginated table rows use a projected-column fast path and skip `information_schema` metadata lookups on row requests.
 - RO Billing analysis moved toward SQL aggregation.
 - RO Billing analysis now supports batched metric loading with `metrics=all` for table, trend, and FY views. The API returns a `byMetric` payload for Load, Labour, Parts, Lab/Veh, and Part/Veh from one SQL summary query, and the frontend consumes that bundle instead of firing one request per metric.
+- RO Billing analysis excludes `ro_billing_report.bill_status` values `Cancel`, `Cancelled`, and `Canceled` from normal metrics, trends, leaderboards, and tables. The table view returns a separate `cancelledSummary` section so cancelled bills remain auditable without affecting active billing counts.
+- RO Billing table Lab/Veh and Part/Veh rows are derived in the frontend from the converted Labour/Parts and Load tables. Parent rows such as MECH, MECH TOTAL, and Grand Total must use `total amount / total load`, not a sum of child per-vehicle values. These parent rows are weighted averages, so MECH can be lower than Paid Service if Free Service or Running Repair have lower per-vehicle values.
 - FY Trends now has a dedicated SQL aggregate path and no longer fetches all RO Billing rows for the default unfiltered FY view.
 - Redis TTL is 75 minutes.
 - Frontend session cache prevents duplicate API hits after data loads.
@@ -263,6 +301,14 @@ After cron/import updates, refresh:
 ```sql
 REFRESH MATERIALIZED VIEW CONCURRENTLY ro_billing_daily_summary_v2;
 REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_performance_summary_v2;
+REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_performance_jc_summary_v1;
+REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_operation_addon_summary_v1;
+```
+
+Or run the project helper command:
+
+```bash
+npm run db:refresh-dashboard-views
 ```
 
 ## Purchase Orders
@@ -352,7 +398,8 @@ Important distinction:
 - Business Excellence Overview is now the default route and visual command center.
 - Open RO is now a Business Excellence section for workshop WIP aging, delayed promise tracking, delay-reason control, advisor load, work-type distribution, and escalation alerts.
 - KIA Complaints is now a Business Excellence section using `kia_call_center_complaints`, including month/year comparison, complaint area analysis, dealer/sub-area summaries, and complaint detail expansion.
-- AI Summary exists in Business Excellence and is backed by Groq. Keep payloads compact because free/on-demand Groq tiers have strict TPM limits.
+- AI Summary exists in Business Excellence and is backed by Groq. Keep payloads compact because free/on-demand Groq tiers have strict TPM limits. AI Summary output must use Indian rupees only, no dollar symbols, and no Cr/Lakh abbreviations in the summary cards.
+- Business Excellence Overview Business Snapshot now includes a clear Workshop Snapshot panel distinct from Workshop WIP. Workshop Snapshot is closed-job performance; Workshop WIP is open repair-order pressure.
 - Workshop Performance is now a dedicated Business Excellence report option in the sheet dropdown, directly below RO Billing Report, with server-side multi-table aggregation. JC matches the RO Billing table logic using `COUNT(DISTINCT COALESCE(bill_no, ro_no, id))`, not raw row count.
 - Workshop Performance addon definitions:
   - WA = Wheel Alignment.
@@ -372,6 +419,8 @@ Important distinction:
   - Workshop table display is normalized into the same operational buckets as RO Billing: Paid Service, Free Services, Running Repairs, MECH, Others, MECH TOTAL, Accident, and Grand Total.
   - Workshop API returns parent `work_type` and child `service_type` detail for table rows, so Free Services can expand into First/Second/Third Free Service where data exists.
   - Workshop API now prefers `workshop_performance_jc_summary_v1` when present. This materialized view stores pre-deduped job-card rows, allowing service table, daily movement, and advisor aggregations to avoid repeated raw `ro_billing_report` scans.
+  - Workshop API now checks `workshop_performance_jc_summary_v1` date coverage before using it. If the view is stale for the selected date range, the API falls back to raw `ro_billing_report`; this prevents mismatches like Workshop Service Type showing 229 JC while RO Billing shows 276 JC for the same May 2026 range.
+  - On 2026-05-28, `workshop_performance_jc_summary_v1` was found stale at max date 2026-05-22 while raw `ro_billing_report` had max `bill_date` 2026-05-28. The view was refreshed and then matched raw May counts: Grand Total 276, Paid Service 75, Free Services 75, Running Repairs 62, Others 30, Accident 34.
   - `scripts/dashboard-performance-optimization.sql` creates `workshop_performance_jc_summary_v1`; refresh it after cron imports with `REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_performance_jc_summary_v1;`.
   - Workshop API also prefers `workshop_operation_addon_summary_v1` when present, so VAS/WA/WB regex classification is precomputed monthly instead of repeated on every request. Refresh it after cron imports with `REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_operation_addon_summary_v1;`.
   - Workshop table service buckets are expandable only when the child rows are distinct from the parent bucket, avoiding duplicate rows such as Paid Service -> Paid Service.
@@ -385,9 +434,9 @@ Important distinction:
 - Sales Team Leaderboard top 3 ranks now use crown-style gold/silver/bronze badges.
 - RO Billing Table dropdowns now avoid noisy service rows:
   - Free Services shows actual `service_type` labels such as First/Second/Third Free Service.
-  - Paid Service hides mileage/package-like child labels such as `100K`, `110K`, etc.
+  - Paid Service hides mileage/package-like child labels such as `30K`, `40K`, `100K`, `110K`, etc.; these come from `ro_billing_report.service_type` but are not treated as real service labels in the UI.
   - Others expands by remaining `work_type` labels where available, such as Refurbish, E Breakdown, AMC - TM, NVI, and similar categories.
-  - Blank/Unspecified/self-repeated child rows are filtered out.
+  - Blank/Unspecified/self-repeated child rows are filtered out, and parent rows only show expand controls when real child rows remain.
 - Session-level frontend API caching and React Query dedupe.
 - Project context documentation refresh.
 - Main Dashboard locked as Coming Soon to avoid exposing dummy data.
@@ -425,4 +474,4 @@ The current priority is performance and API call discipline. The frontend now av
 
 ## Keep This File Updated
 
-Whenever a major feature, architecture change, API change, workflow rule, or cache/state decision is implemented, update this file in the same change set. Future AI tools and developers should treat this file as the project handoff map.
+Every code change that affects behavior, UI, data contracts, APIs, caching, auth/access, workflow rules, reporting logic, currency/date formatting, or operational assumptions must update this file in the same change set. Small mechanical edits that do not change behavior can skip it. Future AI tools and developers should treat this file as the project handoff map.

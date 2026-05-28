@@ -782,9 +782,11 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
         <ChartShell eyebrow="Service Mix" title="Where Billing Is Coming From" caption="Closed RO billing split by service category for the selected period." onExpand={() => setExpandedChart({ id: 'serviceMix', title: 'Where Billing Is Coming From' })}>
           {renderChart('serviceMix')}
         </ChartShell>
-        <ChartShell eyebrow="Customer Voice" title="Top Complaint Reasons" caption="Complaint areas ranked by total cases and open cases." onExpand={() => setExpandedChart({ id: 'complaints', title: 'Top Complaint Reasons' })}>
-          {renderChart('complaints')}
-        </ChartShell>
+        <div className="xl:col-span-2">
+          <ChartShell eyebrow="Customer Voice" title="Top Complaint Reasons" caption="Complaint areas ranked by total cases and open cases." onExpand={() => setExpandedChart({ id: 'complaints', title: 'Top Complaint Reasons' })}>
+            {renderChart('complaints')}
+          </ChartShell>
+        </div>
       </div>
 
       {expandedChart && (

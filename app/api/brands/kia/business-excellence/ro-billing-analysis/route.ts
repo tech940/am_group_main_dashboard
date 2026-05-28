@@ -501,11 +501,41 @@ type AdvisorLeaderboardRow = {
   contribution: number
 }
 
+type CancelledBillingRow = {
+  billKey: string
+  billNo: string
+  roNo: string
+  billDate: string | null
+  workType: string
+  serviceType: string
+  advisor: string
+  billStatus: string
+  labour: number
+  parts: number
+  total: number
+}
+
+type CancelledBillingSummary = {
+  count: number
+  labour: number
+  parts: number
+  total: number
+  rows: CancelledBillingRow[]
+}
+
 let hasRoBillingDailySummaryV2: boolean | null = null
 
 function numberValue(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value || 0)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+function activeBillStatusSql() {
+  return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`
+}
+
+function cancelledBillStatusSql() {
+  return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) IN ('cancel', 'cancelled', 'canceled')`
 }
 
 function measureWorkTypeRow(row: WorkTypeAggregateRow, period: PeriodKey, side: 'cy' | 'ly', analysisType: AnalysisType) {
@@ -547,7 +577,13 @@ async function hasDailySummaryV2() {
   if (hasRoBillingDailySummaryV2 !== null) return hasRoBillingDailySummaryV2
 
   const result = await db.execute(sql`
-    SELECT to_regclass('public.ro_billing_daily_summary_v2') IS NOT NULL AS exists
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'ro_billing_daily_summary_v2'
+        AND column_name = 'bill_status'
+    ) AS exists
   `)
   hasRoBillingDailySummaryV2 = Boolean(result[0]?.exists)
   return hasRoBillingDailySummaryV2
@@ -649,6 +685,7 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date) {
     FROM ro_billing_daily_summary_v2
     WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
       AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
+      AND ${activeBillStatusSql()}
     GROUP BY bill_date
     ORDER BY bill_date
   ` : sql`
@@ -667,6 +704,7 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date) {
         FROM ro_billing_report
         WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
           AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
+          AND ${activeBillStatusSql()}
       ) base
       GROUP BY bill_key, bill_date
     )
@@ -705,6 +743,7 @@ async function fetchFiscalAggregateRows() {
         COALESCE(SUM(part_amount), 0)::float AS parts
       FROM ro_billing_daily_summary_v2
       WHERE bill_date IS NOT NULL
+        AND ${activeBillStatusSql()}
       GROUP BY fiscal_start_year
     )
     SELECT
@@ -730,6 +769,7 @@ async function fetchFiscalAggregateRows() {
           COALESCE(part_amt, 0)::numeric AS part_amt
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
+          AND ${activeBillStatusSql()}
       ) base
       GROUP BY bill_key, bill_date
     ),
@@ -770,6 +810,7 @@ async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date): Pro
       FROM ro_billing_report
       WHERE bill_date >= ${toDateInputValue(lyStart)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
     )
     SELECT
       COALESCE(AVG(rating) FILTER (
@@ -834,6 +875,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Prom
       FROM ro_billing_daily_summary_v2
       WHERE bill_date >= ${toDateInputValue(startDate)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
       GROUP BY name
     ),
     ranked AS (
@@ -879,6 +921,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Prom
         FROM ro_billing_report
         WHERE bill_date >= ${toDateInputValue(startDate)}::date
           AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+          AND ${activeBillStatusSql()}
       ) base
       GROUP BY service_advisor, bill_key
     ),
@@ -967,6 +1010,7 @@ async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindo
     FROM ro_billing_daily_summary_v2
     WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
       AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
+      AND ${activeBillStatusSql()}
     GROUP BY work_type, service_type
   ` : sql`
     WITH dedup AS (
@@ -988,6 +1032,7 @@ async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindo
         FROM ro_billing_report
         WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
           AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
+          AND ${activeBillStatusSql()}
       ) base
       GROUP BY work_type, service_type, bill_key, bill_date
     )
@@ -1046,6 +1091,7 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
           uploaded_at
         FROM ro_billing_report
         WHERE bill_date BETWEEN ${toDateInputValue(startDate!)}::date AND ${toDateInputValue(endDate!)}::date
+          AND ${activeBillStatusSql()}
       `)
       : db.execute(sql`
         SELECT
@@ -1067,8 +1113,9 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
           uploaded_at
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
+          AND ${activeBillStatusSql()}
       `),
-    db.execute(sql`SELECT MAX(uploaded_at) AS "uploadedAt", COUNT(*)::int AS "totalRows" FROM ro_billing_report`),
+    db.execute(sql`SELECT MAX(uploaded_at) AS "uploadedAt", COUNT(*) FILTER (WHERE ${activeBillStatusSql()})::int AS "totalRows" FROM ro_billing_report`),
   ])
 
   return {
@@ -1081,8 +1128,95 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
   }
 }
 
+async function fetchCancelledBillingSummary(startDate: Date, endDate: Date): Promise<CancelledBillingSummary> {
+  const result = await db.execute(sql`
+    WITH cancelled AS (
+      SELECT
+        COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+        NULLIF(bill_no, '') AS bill_no,
+        NULLIF(ro_no, '') AS ro_no,
+        bill_date::date AS bill_date,
+        COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
+        COALESCE(NULLIF(service_type, ''), 'Unspecified') AS service_type,
+        COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
+        COALESCE(NULLIF(bill_status, ''), 'Cancel') AS bill_status,
+        COALESCE(labour_amt, 0)::numeric AS labour_amt,
+        COALESCE(part_amt, 0)::numeric AS part_amt,
+        COALESCE(total_amt, 0)::numeric AS total_amt
+      FROM ro_billing_report
+      WHERE bill_date >= ${toDateInputValue(startDate)}::date
+        AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+        AND ${cancelledBillStatusSql()}
+    ),
+    dedup AS (
+      SELECT
+        bill_key,
+        (ARRAY_AGG(bill_no ORDER BY bill_date DESC NULLS LAST))[1] AS bill_no,
+        (ARRAY_AGG(ro_no ORDER BY bill_date DESC NULLS LAST))[1] AS ro_no,
+        MAX(bill_date)::text AS bill_date,
+        (ARRAY_AGG(work_type ORDER BY ABS(COALESCE(total_amt, labour_amt + part_amt, 0)) DESC))[1] AS work_type,
+        (ARRAY_AGG(service_type ORDER BY ABS(COALESCE(total_amt, labour_amt + part_amt, 0)) DESC))[1] AS service_type,
+        (ARRAY_AGG(advisor ORDER BY bill_date DESC NULLS LAST))[1] AS advisor,
+        (ARRAY_AGG(bill_status ORDER BY bill_date DESC NULLS LAST))[1] AS bill_status,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
+        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+      FROM cancelled
+      GROUP BY bill_key
+    )
+    SELECT
+      bill_key,
+      COALESCE(bill_no, '') AS bill_no,
+      COALESCE(ro_no, '') AS ro_no,
+      bill_date,
+      work_type,
+      service_type,
+      advisor,
+      bill_status,
+      COALESCE(labour_amt, 0)::float AS labour,
+      COALESCE(part_amt, 0)::float AS parts,
+      CASE WHEN COALESCE(total_amt, 0) <> 0 THEN total_amt ELSE COALESCE(labour_amt, 0) + COALESCE(part_amt, 0) END::float AS total
+    FROM dedup
+    ORDER BY bill_date DESC NULLS LAST, bill_key ASC
+  `)
+
+  const rows = ((result as unknown as Array<{
+    bill_key: string
+    bill_no: string
+    ro_no: string
+    bill_date: string | null
+    work_type: string
+    service_type: string
+    advisor: string
+    bill_status: string
+    labour: number
+    parts: number
+    total: number
+  }>) || []).map((row) => ({
+    billKey: row.bill_key,
+    billNo: row.bill_no,
+    roNo: row.ro_no,
+    billDate: row.bill_date,
+    workType: row.work_type,
+    serviceType: row.service_type,
+    advisor: row.advisor,
+    billStatus: row.bill_status,
+    labour: numberValue(row.labour),
+    parts: numberValue(row.parts),
+    total: numberValue(row.total),
+  }))
+
+  return {
+    count: rows.length,
+    labour: rows.reduce((sum, row) => sum + row.labour, 0),
+    parts: rows.reduce((sum, row) => sum + row.parts, 0),
+    total: rows.reduce((sum, row) => sum + row.total, 0),
+    rows,
+  }
+}
+
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date) {
-  return `kia:business-excellence:ro-billing:base-rows:v3:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
+  return `kia:business-excellence:ro-billing:base-rows:v4:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1090,7 +1224,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v12:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v13:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1170,6 +1304,7 @@ export async function GET(request: Request) {
         filterOptions: {},
       }
       if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
+        const cancelledSummary = await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate))
         const aggregateRows = await timer.time('work-type-sql-summary', () => fetchWorkTypeAggregateRows(windows))
         if (batchMetrics) {
           const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
@@ -1187,6 +1322,7 @@ export async function GET(request: Request) {
           }))
           return {
             ...baseFastResponse,
+            cancelledSummary,
             rowCounts: {
               totalRows: 0,
               rowsWithBillDate: 0,
@@ -1198,6 +1334,7 @@ export async function GET(request: Request) {
         const rows = aggregateRowsToStats(aggregateRows, analysisType)
         return {
           ...baseFastResponse,
+          cancelledSummary,
           rowCounts: {
             totalRows: 0,
             rowsWithBillDate: 0,
@@ -1412,6 +1549,7 @@ export async function GET(request: Request) {
 
       return {
         ...baseResponse,
+        ...(view === 'table' ? { cancelledSummary: await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate)) } : {}),
         totals: calculateMetrics(filteredRows, analysisType, windows),
         selectedRangeValue: aggregateForRange(filteredRows, analysisType, startDate, endDate),
         rows: flattenRows(groupedRows),
