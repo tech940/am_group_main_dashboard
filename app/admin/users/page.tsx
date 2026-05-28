@@ -282,7 +282,7 @@ export default function AdminUsersPage() {
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'admin':
-        return 'bg-emerald-500 text-white'
+        return 'bg-[#023468] text-white'
       case 'purchase_manager':
         return 'bg-purple-500 text-white'
       case 'ea':
@@ -292,7 +292,7 @@ export default function AdminUsersPage() {
       case 'accounts':
         return 'bg-amber-500 text-white'
       case 'manager':
-        return 'bg-teal-500 text-white'
+        return 'bg-[#034b82] text-white'
       case 'technician':
         return 'bg-blue-500 text-white'
       default:
@@ -312,7 +312,7 @@ export default function AdminUsersPage() {
           
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 rounded-xl font-bold">
+              <Button className="bg-gradient-to-r from-[#023468] to-[#034b82] text-white shadow-lg shadow-[#023468]/25 hover:from-[#012348] hover:to-[#023468] rounded-xl font-bold">
                 <UserPlus className="mr-2 h-4 w-4" />
                 Create New User
               </Button>
@@ -421,7 +421,7 @@ export default function AdminUsersPage() {
                   <Button
                     type="submit"
                     disabled={loading}
-                    className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-xl"
+                    className="flex-1 bg-gradient-to-r from-[#023468] to-[#034b82] text-white hover:from-[#012348] hover:to-[#023468] rounded-xl"
                   >
                     {loading ? 'Creating...' : 'Create User'}
                   </Button>
@@ -555,8 +555,8 @@ export default function AdminUsersPage() {
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Users</p>
                   <p className="text-3xl font-black text-slate-800 mt-2">{summary.totalUsers}</p>
                 </div>
-                <div className="h-12 w-12 rounded-xl bg-teal-50 flex items-center justify-center">
-                  <Users className="h-6 w-6 text-teal-600" />
+                <div className="h-12 w-12 rounded-xl bg-[#edf4fb] flex items-center justify-center">
+                  <Users className="h-6 w-6 text-[#023468]" />
                 </div>
               </div>
             </CardContent>
@@ -569,8 +569,8 @@ export default function AdminUsersPage() {
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Admins</p>
                   <p className="text-3xl font-black text-slate-800 mt-2">{summary.admins}</p>
                 </div>
-                <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                  <Shield className="h-6 w-6 text-emerald-600" />
+                <div className="h-12 w-12 rounded-xl bg-[#edf4fb] flex items-center justify-center">
+                  <Shield className="h-6 w-6 text-[#023468]" />
                 </div>
               </div>
             </CardContent>
@@ -597,8 +597,8 @@ export default function AdminUsersPage() {
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Active</p>
                   <p className="text-3xl font-black text-slate-800 mt-2">{summary.active}</p>
                 </div>
-                <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                  <Users className="h-6 w-6 text-emerald-600" />
+                <div className="h-12 w-12 rounded-xl bg-[#edf4fb] flex items-center justify-center">
+                  <Users className="h-6 w-6 text-[#023468]" />
                 </div>
               </div>
             </CardContent>
@@ -681,7 +681,7 @@ export default function AdminUsersPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-teal-600">
+                  <tr className="bg-[#023468]">
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">User</th>
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Email</th>
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Role</th>
@@ -697,7 +697,7 @@ export default function AdminUsersPage() {
                     <tr>
                       <td colSpan={8} className="px-6 py-20 text-center">
                         <div className="flex flex-col items-center gap-3">
-                          <div className="h-8 w-8 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin"></div>
+                          <div className="h-8 w-8 border-4 border-[#b9ccde] border-t-[#023468] rounded-full animate-spin"></div>
                           <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">Loading users...</p>
                         </div>
                       </td>
@@ -713,7 +713,7 @@ export default function AdminUsersPage() {
                     <tr key={user.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center text-white font-bold">
+                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#023468] to-[#034b82] flex items-center justify-center text-white font-bold">
                             {user.fullName.charAt(0)}
                           </div>
                           <span className="font-bold text-slate-800">{user.fullName}</span>
@@ -728,7 +728,7 @@ export default function AdminUsersPage() {
                       <td className="px-6 py-4 text-sm text-slate-600 font-semibold">{getUserBranchLabel(user.brand)}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 font-semibold">{user.department || '—'}</td>
                       <td className="px-6 py-4">
-                        <Badge className={user.isActive ? 'bg-emerald-100 text-emerald-700 rounded-lg font-bold' : 'bg-slate-100 text-slate-700 rounded-lg font-bold'}>
+                        <Badge className={user.isActive ? 'bg-[#edf4fb] text-[#023468] rounded-lg font-bold' : 'bg-slate-100 text-slate-700 rounded-lg font-bold'}>
                           {user.isActive ? 'Active' : 'Inactive'}
                         </Badge>
                       </td>
@@ -789,7 +789,7 @@ export default function AdminUsersPage() {
                     onClick={() => goToPage(pageNumber)}
                     disabled={fetchingUsers}
                     className={pageNumber === pagination.page
-                      ? 'rounded-xl bg-teal-600 text-white hover:bg-teal-700'
+                      ? 'rounded-xl bg-[#023468] text-white hover:bg-[#012348]'
                       : 'rounded-xl border-slate-200 bg-white'}
                   >
                     {pageNumber}

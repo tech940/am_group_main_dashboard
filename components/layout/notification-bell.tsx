@@ -680,12 +680,12 @@ export function NotificationBell({ userId }: NotificationBellProps) {
             size="icon"
             className={cn(
               'relative h-10 w-10 rounded-xl border border-white/70 bg-white/60 text-slate-700 shadow-sm transition-all hover:bg-white/85',
-              hasFreshNotification && 'animate-pulse ring-2 ring-teal-200',
+              hasFreshNotification && 'animate-pulse ring-2 ring-[#b9ccde]',
               hasPermissionWarning && 'border-amber-300'
             )}
           >
             {hasFreshNotification ? (
-              <BellRing className="h-5 w-5 text-teal-700" />
+              <BellRing className="h-5 w-5 text-[#023468]" />
             ) : (
               <Bell className={cn('h-5 w-5', hasPermissionWarning ? 'text-amber-600' : 'text-slate-600')} />
             )}
@@ -725,7 +725,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                 size="sm"
                 onClick={markAllAsRead}
                 disabled={markingAllRead || unreadCount === 0}
-                className="h-8 rounded-lg px-3 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-teal-600"
+                className="h-8 rounded-lg px-3 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-[#023468]"
               >
                 {markingAllRead ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -767,7 +767,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
           <div className="max-h-[420px] overflow-y-auto p-3">
             {isLoading ? (
               <div className="flex min-h-40 items-center justify-center">
-                <Loader2 className="h-5 w-5 animate-spin text-teal-500" />
+                <Loader2 className="h-5 w-5 animate-spin text-[#023468]" />
               </div>
             ) : loadError ? (
               <div className="flex min-h-40 flex-col items-center justify-center px-4 text-center">
@@ -800,10 +800,10 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                     type="button"
                     onClick={() => void handleNotificationClick(notification)}
                     className={cn(
-                      'w-full rounded-2xl border p-3 text-left transition-all hover:border-teal-300 hover:shadow-md',
+                      'w-full rounded-2xl border p-3 text-left transition-all hover:border-[#8ca8c0] hover:shadow-md',
                       notification.isRead
                         ? 'border-slate-200 bg-white'
-                        : 'border-teal-200 bg-teal-50/70 shadow-sm'
+                        : 'border-[#b9ccde] bg-[#edf4fb] shadow-sm'
                     )}
                   >
                     <div className="flex items-start gap-3">
@@ -811,7 +811,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                         'mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border',
                         notification.isRead
                           ? 'border-slate-200 bg-slate-50 text-slate-500'
-                          : 'border-teal-200 bg-white text-teal-600'
+                          : 'border-[#b9ccde] bg-white text-[#023468]'
                       )}>
                         {notification.isRead ? (
                           <Bell className="h-4 w-4" />
@@ -826,7 +826,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                           </p>
                           <div className="flex items-center gap-2">
                             {!notification.isRead && (
-                              <span className="mt-1 h-2.5 w-2.5 rounded-full bg-teal-500" />
+                              <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[#023468]" />
                             )}
                             <ExternalLink className="mt-0.5 h-3.5 w-3.5 text-slate-300" />
                           </div>
@@ -869,16 +869,16 @@ export function NotificationBell({ userId }: NotificationBellProps) {
             setForegroundNotification(null)
             void handleNotificationClick(notification)
           }}
-          className="fixed right-5 top-20 z-[80] w-[360px] max-w-[calc(100vw-2rem)] rounded-2xl border border-teal-200 bg-white p-4 text-left shadow-2xl transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_70px_rgba(15,118,110,0.25)]"
+          className="fixed right-5 top-20 z-[80] w-[360px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[#b9ccde] bg-white p-4 text-left shadow-2xl transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_70px_rgba(2,52,104,0.25)]"
         >
           <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-[#edf4fb] text-[#023468]">
               <BellRing className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="line-clamp-1 text-sm font-black text-slate-900">{foregroundNotification.title}</p>
               <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{foregroundNotification.message}</p>
-              <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-teal-600">
+              <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-[#023468]">
                 {formatRelativeTimeFromNow(foregroundNotification.createdAt, relativeNow)}
               </p>
             </div>
@@ -888,7 +888,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
 
       <Dialog open={permissionDialogOpen} onOpenChange={setPermissionDialogOpen}>
         <DialogContent className="rounded-[28px] border-none bg-white p-0 shadow-2xl">
-          <div className="rounded-t-[28px] bg-gradient-to-br from-teal-700 via-emerald-700 to-teal-600 px-6 py-6 text-white">
+          <div className="rounded-t-[28px] bg-gradient-to-br from-[#023468] via-[#012348] to-[#034b82] px-6 py-6 text-white">
             <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/12">
               <Volume2 className="h-6 w-6" />
             </div>
@@ -896,7 +896,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
               <DialogTitle className="text-2xl font-black tracking-tight">
                 Enable workflow notifications
               </DialogTitle>
-              <DialogDescription className="text-sm leading-6 text-emerald-50/90">
+              <DialogDescription className="text-sm leading-6 text-[#edf4fb]/90">
                 Turn on browser alerts to receive purchase order approvals, denials, and stage updates even when this tab is inactive.
               </DialogDescription>
             </DialogHeader>
@@ -932,7 +932,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
               <Button
                 type="button"
                 onClick={() => void requestBrowserPermission()}
-                className="rounded-2xl bg-teal-600 text-white hover:bg-teal-700"
+                className="rounded-2xl bg-[#023468] text-white hover:bg-[#023468]"
               >
                 Enable Notifications
               </Button>

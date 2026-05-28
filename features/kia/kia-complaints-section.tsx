@@ -12,7 +12,6 @@ import {
   Maximize2,
   MessageSquare,
   PhoneCall,
-  Search,
   ShieldAlert,
   ShieldCheck,
   X,
@@ -165,7 +164,7 @@ const EMPTY_FILTERS: ComplaintFilters = {
   source: ALL_VALUE,
 }
 
-const PIE_COLORS = ['#0f766e', '#2563eb', '#f59e0b', '#ef4444', '#7c3aed', '#64748b']
+const PIE_COLORS = ['#023468', '#2563eb', '#f59e0b', '#ef4444', '#7c3aed', '#64748b']
 const filterSelectClass = 'h-9 rounded-xl border border-teal-200 bg-white text-xs font-bold text-slate-800 shadow-sm shadow-teal-100/40 ring-1 ring-teal-50 transition hover:border-teal-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-100'
 const tooltipStyle = {
   borderRadius: 16,
@@ -285,7 +284,6 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
   const [filters, setFilters] = useState<ComplaintFilters>(EMPTY_FILTERS)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set())
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
-  const [search, setSearch] = useState('')
 
   const dateRange = useMemo(() => getComplaintsDateRange(dateFilter), [dateFilter])
   const queryString = useMemo(() => buildQueryString(filters, dateRange), [dateRange, filters])
@@ -325,22 +323,6 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
 
   const hasFilters = Object.values(filters).some((value) => value && value !== ALL_VALUE)
 
-  const filteredRows = useMemo(() => {
-    const term = search.trim().toLowerCase()
-    if (!term) return data?.rows || []
-    return (data?.rows || []).filter((row) => [
-      row.complaintNo,
-      row.srNo,
-      row.customerName,
-      row.mobileNo,
-      row.vinNo,
-      row.dealerName,
-      row.vehicleModel,
-      row.srArea,
-      row.srSubArea,
-    ].join(' ').toLowerCase().includes(term))
-  }, [data?.rows, search])
-
   const escalationRows = useMemo(() => {
     return (data?.rows || [])
       .filter((row) => row.statusGroup !== 'Closed' || row.resolutionDays > 15 || row.signalArea.includes('Delay'))
@@ -376,15 +358,15 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
           <AreaChart data={data.charts.monthlyTrend} margin={{ top: 12, right: 18, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={`complaintTrend-${chartId}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#0f766e" stopOpacity={0.28} />
-                <stop offset="95%" stopColor="#0f766e" stopOpacity={0.02} />
+                <stop offset="5%" stopColor="#023468" stopOpacity={0.28} />
+                <stop offset="95%" stopColor="#023468" stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
             <XAxis dataKey="month" tick={{ fontSize: 10, fontWeight: 800, fill: '#475569' }} />
             <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} />
             <Tooltip contentStyle={tooltipStyle} />
-            <Area type="monotone" dataKey="cyCount" name={`${data.trendYear} Complaints`} stroke="#0f766e" strokeWidth={3} fill={`url(#complaintTrend-${chartId})`} />
+            <Area type="monotone" dataKey="cyCount" name={`${data.trendYear} Complaints`} stroke="#023468" strokeWidth={3} fill={`url(#complaintTrend-${chartId})`} />
             <Area type="monotone" dataKey="lyCount" name={`${data.trendYear - 1} Complaints`} stroke="#94a3b8" strokeWidth={2} fill="transparent" />
           </AreaChart>
         </ResponsiveContainer>
@@ -428,7 +410,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
           <XAxis dataKey="dealerCode" tick={{ fontSize: 10, fontWeight: 800, fill: '#475569' }} />
           <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} />
           <Tooltip contentStyle={tooltipStyle} />
-          <Bar dataKey="total" name="Total" fill="#0f766e" radius={[10, 10, 0, 0]} />
+          <Bar dataKey="total" name="Total" fill="#023468" radius={[10, 10, 0, 0]} />
           <Bar dataKey="over15" name=">15 Days" fill="#ef4444" radius={[10, 10, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
@@ -454,7 +436,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
     { label: 'Closed', value: formatNumber(data.kpis.closed), icon: ShieldCheck, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
     { label: 'Avg Closure', value: `${formatOneDecimal(data.kpis.avgResolutionDays)}D`, icon: Clock3, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
     { label: '>15 Days', value: formatNumber(data.kpis.over15), icon: ShieldAlert, tone: 'text-orange-700 bg-orange-50 border-orange-100' },
-    { label: 'Delay Signals', value: formatNumber(data.kpis.delayRelated), icon: Activity, tone: 'text-indigo-700 bg-indigo-50 border-indigo-100' },
+    { label: 'Delay Signals', value: formatNumber(data.kpis.delayRelated), icon: Activity, tone: 'text-[#023468] bg-[#edf4fb] border-[#b9ccde]' },
   ]
 
   return (
@@ -659,8 +641,8 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
         </div>
         <div className="grid gap-3 border-b border-slate-100 p-5 md:grid-cols-2 xl:grid-cols-4">
           {[
-            { label: `${data.comparison.selectedYear} YTD Complaints`, value: formatNumber(data.comparison.currentPeriod.count), sub: `${formatNumber(data.comparison.currentPeriod.open)} open`, tone: 'text-teal-700 bg-teal-50 border-teal-100' },
-            { label: `${data.comparison.previousYear} Same Period`, value: formatNumber(data.comparison.previousPeriod.count), sub: `${formatNumber(data.comparison.previousPeriod.open)} open`, tone: 'text-slate-700 bg-slate-50 border-slate-200' },
+            { label: `${data.comparison.selectedYear} YTD Complaints`, value: formatNumber(data.comparison.currentPeriod.count), sub: `${formatNumber(data.comparison.currentPeriod.open)} open`, tone: 'text-[#023468] bg-[#edf4fb] border-[#b9ccde]' },
+            { label: `${data.comparison.previousYear} Same Period`, value: formatNumber(data.comparison.previousPeriod.count), sub: `${formatNumber(data.comparison.previousPeriod.open)} open`, tone: 'text-slate-700 bg-slate-50 border-[#b9ccde]' },
             {
               label: 'YTD Growth / Degrowth',
               value: formatGrowth(data.comparison.previousPeriod.count > 0
@@ -671,7 +653,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
             },
             { label: 'Avg Closure Movement', value: `${formatOneDecimal(data.comparison.currentPeriod.avgDays)}D`, sub: `LY ${formatOneDecimal(data.comparison.previousPeriod.avgDays)}D`, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
           ].map((card) => (
-            <div key={card.label} className={cn('rounded-2xl border p-4', card.tone)}>
+            <div key={card.label} className={cn('rounded-2xl border p-4 shadow-sm', card.tone)}>
               <p className="text-[10px] font-black uppercase tracking-widest opacity-75">{card.label}</p>
               <p className="mt-2 text-2xl font-black tracking-tight">{card.value}</p>
               <p className="mt-1 text-xs font-bold opacity-75">{card.sub}</p>
@@ -756,7 +738,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
         <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-700">Dealer Heat</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#023468]">Dealer Heat</p>
               <h3 className="text-lg font-black tracking-tight text-slate-950">Dealer complaint load</h3>
             </div>
             {renderExpandButton('dealer-performance', 'Dealer Complaint Load')}
@@ -824,44 +806,35 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
       </div>
 
       <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="border-b border-slate-100 p-5">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Complaint Register</p>
             <h3 className="text-xl font-black tracking-tight text-slate-950">Customer complaint details</h3>
           </div>
-          <label className="flex h-10 min-w-[260px] items-center gap-2 rounded-2xl border border-teal-200 bg-white px-3 text-xs font-bold text-slate-600 shadow-sm">
-            <Search className="h-4 w-4 text-teal-700" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search complaint, customer, VIN..."
-              className="h-full min-w-0 flex-1 bg-transparent outline-none"
-            />
-          </label>
         </div>
         <div className="overflow-auto">
           <table className="w-full min-w-[1180px] border-collapse text-left">
             <thead>
               <tr className="bg-slate-900 text-white">
-                <th className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Complaint</th>
-                <th className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Customer / Vehicle</th>
-                <th className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Dealer</th>
-                <th className="border border-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Area</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Days</th>
-                <th className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Status</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Complaint</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Customer / Vehicle</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Dealer</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Area</th>
+                <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Days</th>
+                <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredRows.map((row) => {
+              {(data.rows || []).map((row) => {
                 const isExpanded = expandedRows.has(row.complaintNo)
                 return (
                   <React.Fragment key={`${row.complaintNo}-${row.id}`}>
                     <tr className="bg-white hover:bg-slate-50">
-                      <td className="border border-slate-200 px-4 py-3">
+                      <td className="px-4 py-3">
                         <button
                           type="button"
                           onClick={() => toggleRow(row.complaintNo)}
-                          className="inline-flex items-start gap-2 text-left transition hover:text-teal-700"
+                          className="be-borderless-action inline-flex items-start gap-2 text-left transition hover:text-[#023468]"
                         >
                           <ChevronDown className={cn('mt-0.5 h-4 w-4 transition', !isExpanded && '-rotate-90')} />
                           <span>
@@ -870,24 +843,24 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
                           </span>
                         </button>
                       </td>
-                      <td className="border border-slate-200 px-4 py-3">
+                      <td className="px-4 py-3">
                         <p className="text-sm font-black text-slate-900">{row.customerName}</p>
                         <p className="mt-1 text-[11px] font-bold text-slate-500">{row.vehicleModel} / {row.variant}</p>
                       </td>
-                      <td className="border border-slate-200 px-4 py-3">
+                      <td className="px-4 py-3">
                         <p className="text-sm font-black text-slate-900">{truncateLabel(row.dealerName, 32)}</p>
                         <p className="mt-1 text-[11px] font-bold text-slate-500">{row.dealerCode} / {row.region}</p>
                       </td>
-                      <td className="border border-slate-200 px-4 py-3">
+                      <td className="px-4 py-3">
                         <p className="text-sm font-black text-slate-900">{row.signalArea}</p>
                         <p className="mt-1 text-[11px] font-bold text-slate-500">{row.srSubArea}</p>
                       </td>
-                      <td className="border border-slate-200 px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-center">
                         <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-black', riskClass(row.resolutionDays, row.statusGroup))}>
                           {row.resolutionDays}D
                         </span>
                       </td>
-                      <td className="border border-slate-200 px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-center">
                         <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-black', statusClass(row.statusGroup))}>
                           {row.statusGroup}
                         </span>
@@ -941,7 +914,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
                   </React.Fragment>
                 )
               })}
-              {filteredRows.length === 0 && (
+              {data.rows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-sm font-bold text-slate-500">
                     No complaints match the current filters.
@@ -955,3 +928,4 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
     </div>
   )
 }
+

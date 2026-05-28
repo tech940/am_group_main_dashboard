@@ -251,7 +251,7 @@ export function MDGridView({
       <Button
         onClick={() => void handleBulkAction('approve')}
         disabled={isLoading || bulkActionLoading !== null}
-        className="rounded-2xl bg-white text-emerald-800 hover:bg-emerald-50"
+        className="rounded-2xl bg-white text-[#012348] hover:bg-[#edf4fb]"
       >
         {bulkActionLoading === 'approve' ? (
           <>
@@ -288,7 +288,7 @@ export function MDGridView({
         type="button"
         onClick={toggleSelectAll}
         disabled={isLoading || actionableOrders.length === 0}
-        className="rounded-2xl bg-white text-emerald-800 hover:bg-emerald-50"
+        className="rounded-2xl bg-white text-[#012348] hover:bg-[#edf4fb]"
       >
         <CheckCheck className="mr-2 h-5 w-5" />
         Select All
@@ -299,10 +299,10 @@ export function MDGridView({
   return (
     <div className="space-y-6">
       {showHeader ? (
-        <div className="flex items-center justify-between rounded-[28px] bg-gradient-to-r from-teal-700 to-emerald-700 p-6 text-white shadow-xl">
+        <div className="flex items-center justify-between rounded-[28px] bg-gradient-to-r from-[#023468] to-[#034b82] p-6 text-white shadow-xl">
           <div>
             <h2 className="text-3xl font-black">{dashboardTitle}</h2>
-            <p className="mt-1 text-teal-100">
+            <p className="mt-1 text-[#edf4fb]">
               {dashboardSubtitle || `${pendingOrders.length} purchase order${pendingOrders.length !== 1 ? 's' : ''} awaiting your approval`}
             </p>
           </div>
@@ -310,7 +310,7 @@ export function MDGridView({
         </div>
       ) : bulkControls ? (
         <div className="flex justify-end rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="[&_.bg-white]:border [&_.bg-white]:border-emerald-200 [&_.bg-white]:bg-emerald-50 [&_.bg-white]:text-emerald-800">
+          <div className="[&_.bg-white]:border [&_.bg-white]:border-[#b9ccde] [&_.bg-white]:bg-[#edf4fb] [&_.bg-white]:text-[#012348]">
             {bulkControls}
           </div>
         </div>
@@ -319,7 +319,7 @@ export function MDGridView({
       {orders.length === 0 ? (
         <Card className="rounded-[28px] border-none shadow-xl">
           <CardContent className="p-12 text-center">
-            <CheckCircle className="mx-auto mb-4 h-16 w-16 text-green-500" />
+            <CheckCircle className="mx-auto mb-4 h-16 w-16 text-[#023468]" />
             <h3 className="mb-2 text-xl font-semibold text-gray-700">All Caught Up!</h3>
             <p className="text-gray-500">{emptyMessage}</p>
           </CardContent>
@@ -352,7 +352,7 @@ export function MDGridView({
                         checked={isSelected}
                         onCheckedChange={() => toggleSelection(order.id)}
                         aria-label={`Select order ${order.order_number || order.orderNumber || order.id}`}
-                        className="border-slate-300 bg-white text-white shadow-sm data-[state=checked]:border-teal-700 data-[state=checked]:bg-teal-700 data-[state=checked]:text-white"
+                        className="border-slate-300 bg-white text-white shadow-sm data-[state=checked]:border-[#023468] data-[state=checked]:bg-[#023468] data-[state=checked]:text-white"
                       />
                     )}
                     <Button
@@ -361,7 +361,7 @@ export function MDGridView({
                       size="icon"
                       onClick={() => void handleViewDetails(order)}
                       disabled={isLoadingDetails}
-                      className="h-9 w-9 rounded-2xl border border-slate-200 bg-white/80 text-slate-700 shadow-sm hover:bg-white hover:text-teal-700"
+                      className="h-9 w-9 rounded-2xl border border-slate-200 bg-white/80 text-slate-700 shadow-sm hover:bg-white hover:text-[#023468]"
                       title="View details"
                     >
                       {isLoadingDetails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
@@ -401,7 +401,7 @@ export function MDGridView({
                         <Button
                           onClick={() => void handleApprove(order.id)}
                           disabled={isProcessing}
-                          className="rounded-2xl bg-white text-emerald-800 hover:bg-emerald-50"
+                          className="rounded-2xl bg-white text-[#012348] hover:bg-[#edf4fb]"
                         >
                           {isProcessing ? (
                             <Loader2 className="h-4 w-4 animate-spin" />

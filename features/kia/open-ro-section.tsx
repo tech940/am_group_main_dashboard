@@ -157,7 +157,7 @@ const EMPTY_FILTERS: OpenRoFilters = {
   agingBucket: ALL_VALUE,
   insurance: ALL_VALUE,
 }
-const PIE_COLORS = ['#0f766e', '#2563eb', '#f59e0b', '#ef4444', '#64748b']
+const PIE_COLORS = ['#023468', '#2563eb', '#f59e0b', '#ef4444', '#64748b']
 const filterSelectClass = 'h-9 rounded-xl border border-teal-200 bg-white text-xs font-bold text-slate-800 shadow-sm shadow-teal-100/40 ring-1 ring-teal-50 transition hover:border-teal-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-100'
 const tooltipStyle = {
   borderRadius: 16,
@@ -343,7 +343,7 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
     { label: 'Avg Aging', value: `${formatOneDecimal(data.kpis.avgAging)}D`, icon: Clock3, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
     { label: '>15 Days', value: formatNumber(data.kpis.over15Days), icon: ShieldAlert, tone: 'text-rose-700 bg-rose-50 border-rose-100' },
     { label: 'Delayed RO', value: formatNumber(data.kpis.delayedRo), icon: AlertTriangle, tone: 'text-amber-700 bg-amber-50 border-amber-100' },
-    { label: 'Accident Jobs', value: formatNumber(data.kpis.accidentJobs), icon: Gauge, tone: 'text-indigo-700 bg-indigo-50 border-indigo-100' },
+    { label: 'Accident Jobs', value: formatNumber(data.kpis.accidentJobs), icon: Gauge, tone: 'text-[#023468] bg-[#edf4fb] border-[#b9ccde]' },
     { label: 'Running Repairs', value: formatNumber(data.kpis.runningRepairs), icon: Wrench, tone: 'text-cyan-700 bg-cyan-50 border-cyan-100' },
   ]
 
@@ -389,7 +389,7 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
             <XAxis dataKey="bucket" tick={{ fontSize: 11, fontWeight: 900, fill: '#475569' }} />
             <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
             <Tooltip contentStyle={tooltipStyle} />
-            <Bar dataKey="count" name="Open RO" fill="#0f766e" radius={[12, 12, 0, 0]} />
+            <Bar dataKey="count" name="Open RO" fill="#023468" radius={[12, 12, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       )
@@ -437,15 +437,15 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
         <AreaChart data={data.charts.agingTrend} margin={{ top: 12, right: 16, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id={`openRoAgingGradient-${chartId}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.28} />
-              <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.02} />
+              <stop offset="5%" stopColor="#023468" stopOpacity={0.28} />
+              <stop offset="95%" stopColor="#023468" stopOpacity={0.02} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
           <XAxis dataKey="date" tickFormatter={formatDateLabel} tick={{ fontSize: 10, fill: '#64748b' }} minTickGap={18} />
           <YAxis tick={{ fontSize: 10, fill: '#64748b' }} />
           <Tooltip contentStyle={tooltipStyle} labelFormatter={(label) => formatDateLabel(String(label || ''))} />
-          <Area type="monotone" dataKey="avgAging" name="Avg Aging" stroke="#4f46e5" strokeWidth={3} fill={`url(#openRoAgingGradient-${chartId})`} />
+          <Area type="monotone" dataKey="avgAging" name="Avg Aging" stroke="#023468" strokeWidth={3} fill={`url(#openRoAgingGradient-${chartId})`} />
         </AreaChart>
       </ResponsiveContainer>
     )
@@ -658,7 +658,7 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
         <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-700">Aging Trend</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#023468]">Aging Trend</p>
               <h3 className="text-lg font-black tracking-tight text-slate-950">Average aging by RO date</h3>
             </div>
             {renderExpandButton('aging-trend', 'Aging Trend')}
@@ -698,7 +698,7 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
                         <button
                           type="button"
                           onClick={() => toggleRow(row.serviceType)}
-                          className="inline-flex items-center gap-2 rounded-lg text-left transition hover:text-teal-700"
+                          className="be-borderless-action inline-flex items-center gap-2 rounded-lg text-left transition hover:text-teal-700"
                         >
                           <ChevronDown className={cn('h-4 w-4 transition', !isExpanded && '-rotate-90')} />
                           {row.serviceType}
@@ -806,16 +806,16 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
                 </tr>
               ))}
               {delayReasonRows.length > 0 && (
-                <tr className="bg-gradient-to-r from-teal-700 via-teal-600 to-emerald-600 text-white">
-                  <td className="border border-white/15 px-4 py-3 text-center text-sm font-black uppercase tracking-widest">Grand Total</td>
-                  <td className="border border-white/15 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.mechCount)}</td>
-                  <td className="border border-white/15 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.accCount)}</td>
-                  <td className="border border-white/15 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.bucket04)}</td>
-                  <td className="border border-white/15 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.bucket57)}</td>
-                  <td className="border border-white/15 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.bucket815)}</td>
-                  <td className="border border-white/15 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.bucketOver15)}</td>
-                  <td className="border border-white/15 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.total)}</td>
-                  <td className="border border-white/15 px-4 py-3 text-center font-mono text-sm font-black">{formatOneDecimal(delayReasonGrandAvg)}D</td>
+                <tr className="bg-slate-100 text-slate-950 shadow-[inset_4px_0_0_#023468]">
+                  <td className="border border-slate-300 px-4 py-3 text-center text-sm font-black uppercase tracking-widest">Grand Total</td>
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.mechCount)}</td>
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.accCount)}</td>
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.bucket04)}</td>
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.bucket57)}</td>
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.bucket815)}</td>
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.bucketOver15)}</td>
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono text-sm font-black">{formatNumber(delayReasonGrandTotal.total)}</td>
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono text-sm font-black">{formatOneDecimal(delayReasonGrandAvg)}D</td>
                 </tr>
               )}
               {delayReasonRows.length === 0 && (
@@ -832,3 +832,4 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
     </div>
   )
 }
+

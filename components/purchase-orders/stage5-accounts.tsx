@@ -92,7 +92,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
         <CardHeader className="bg-slate-900 p-8 text-white relative">
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-emerald-500 rounded-xl">
+              <div className="p-2 bg-[#023468] rounded-xl">
                 <Receipt className="h-6 w-6 text-white" />
               </div>
               <h2 className="text-3xl font-black tracking-tight">Accounts Processing</h2>
@@ -101,7 +101,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
               Finalize procurement lifecycle: verify invoice details, confirm payment status, and archive the transaction records.
             </p>
           </div>
-          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl -mr-20 -mt-20" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#023468]/10 rounded-full blur-3xl -mr-20 -mt-20" />
         </CardHeader>
 
         <CardContent className="p-8 lg:p-12 space-y-12">
@@ -116,13 +116,13 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
                 <span className="text-2xl font-black text-slate-900">₹{orderDetails.estimatedCost.toLocaleString('en-IN')}</span>
               </div>
             </div>
-            <div className="bg-emerald-50 rounded-[2rem] p-6 border border-emerald-100 transition-all hover:shadow-lg">
-              <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block mb-2">Actual Billed</span>
+            <div className="bg-[#edf4fb] rounded-[2rem] p-6 border border-[#d7e4ef] transition-all hover:shadow-lg">
+              <span className="text-[10px] font-black text-[#023468] uppercase tracking-widest block mb-2">Actual Billed</span>
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-white rounded-xl shadow-sm">
-                  <CreditCard className="h-5 w-5 text-emerald-500" />
+                  <CreditCard className="h-5 w-5 text-[#023468]" />
                 </div>
-                <span className="text-2xl font-black text-emerald-900">₹{parseFloat(formData.actualAmount || '0').toLocaleString('en-IN')}</span>
+                <span className="text-2xl font-black text-[#012348]">₹{parseFloat(formData.actualAmount || '0').toLocaleString('en-IN')}</span>
               </div>
             </div>
             <div className={cn(
@@ -157,7 +157,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
                     value={formData.invoiceNumber}
                     onChange={(e) => updateField('invoiceNumber', e.target.value)}
                     placeholder="INV-2024-XXXX"
-                    className={cn("rounded-2xl border-slate-200 h-14 px-5 focus:ring-emerald-500 focus:border-emerald-500", errors.invoiceNumber && "border-rose-500 bg-rose-50")}
+                    className={cn("rounded-2xl border-slate-200 h-14 px-5 focus:ring-[#023468] focus:border-[#023468]", errors.invoiceNumber && "border-rose-500 bg-rose-50")}
                   />
                 </div>
                 <div className="space-y-2">
@@ -167,7 +167,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
                     type="date"
                     value={formData.invoiceDate}
                     onChange={(e) => updateField('invoiceDate', e.target.value)}
-                    className="rounded-2xl border-slate-200 h-14 px-5 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="rounded-2xl border-slate-200 h-14 px-5 focus:ring-[#023468] focus:border-[#023468]"
                   />
                 </div>
               </div>
@@ -225,7 +225,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
             {/* Right Column: Payment Details */}
             <div className="space-y-8">
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-1.5 h-6 bg-emerald-500 rounded-full" />
+                <div className="w-1.5 h-6 bg-[#023468] rounded-full" />
                 <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Payment Confirmation</h3>
               </div>
 
@@ -240,7 +240,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
                       <SelectValue placeholder="Select Status" />
                     </SelectTrigger>
                     <SelectContent className="rounded-2xl border-slate-100 shadow-2xl p-2 bg-white">
-                      <SelectItem value="no_gap_payment_released" className="rounded-xl py-3 focus:bg-emerald-50">Payment Released</SelectItem>
+                      <SelectItem value="no_gap_payment_released" className="rounded-xl py-3 focus:bg-[#edf4fb]">Payment Released</SelectItem>
                       <SelectItem value="gap_observed_need_clarification" className="rounded-xl py-3 focus:bg-amber-50">Needs Clarification</SelectItem>
                     </SelectContent>
                   </Select>
@@ -271,7 +271,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
                   type="date"
                   value={formData.paymentDate}
                   onChange={(e) => updateField('paymentDate', e.target.value)}
-                  className="rounded-2xl border-slate-200 h-14 px-5 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="rounded-2xl border-slate-200 h-14 px-5 focus:ring-[#023468] focus:border-[#023468]"
                 />
               </div>
 
@@ -282,7 +282,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
                   value={formData.transactionReference}
                   onChange={(e) => updateField('transactionReference', e.target.value)}
                   placeholder="Enter reference number"
-                  className="rounded-2xl border-slate-200 h-14 px-5 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="rounded-2xl border-slate-200 h-14 px-5 focus:ring-[#023468] focus:border-[#023468]"
                 />
               </div>
 
@@ -293,7 +293,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
                   value={formData.accountsRemarks}
                   onChange={(e) => updateField('accountsRemarks', e.target.value)}
                   placeholder="Additional processing notes for executive review..."
-                  className="rounded-[2rem] border-slate-200 p-6 min-h-[140px] focus:ring-emerald-500 focus:border-emerald-500"
+                  className="rounded-[2rem] border-slate-200 p-6 min-h-[140px] focus:ring-[#023468] focus:border-[#023468]"
                 />
               </div>
             </div>
@@ -310,7 +310,7 @@ export function Stage5Accounts({ orderId, orderDetails, initialData, onSubmit, i
             <Button
               type="submit"
               disabled={isLoading}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-[2rem] px-12 h-20 text-xl font-black shadow-2xl shadow-emerald-200 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 min-w-[320px]"
+              className="bg-[#023468] hover:bg-[#012348] text-white rounded-[2rem] px-12 h-20 text-xl font-black shadow-2xl shadow-[#023468]/15 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 min-w-[320px]"
             >
               {isLoading ? (
                 <div className="flex items-center gap-3">

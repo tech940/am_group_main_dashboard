@@ -90,7 +90,7 @@ function growth(current: number, previous: number) {
 }
 
 function cacheKey(startDate: string, endDate: string) {
-  return `kia:business-excellence:workshop-performance:v19:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:v20:${createHash('sha1')
     .update(`${startDate}:${endDate}`)
     .digest('hex')}`
 }
@@ -634,7 +634,7 @@ function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summari
   const totalJc = rows.reduce((total, row) => total + row.totalJc, 0)
   const labourAmount = rows.reduce((total, row) => total + row.labourAmount, 0)
   const lessVas = addonTotals.vasAmount
-  const labMinusVas = Math.max(labourAmount - lessVas, 0)
+  const labMinusVas = rows.reduce((total, row) => total + row.labMinusVas, 0)
   const spareSale = rows.reduce((total, row) => total + row.spareSale, 0)
   const discount = rows.reduce((total, row) => total + row.discount, 0)
   const waCount = addonTotals.waCount

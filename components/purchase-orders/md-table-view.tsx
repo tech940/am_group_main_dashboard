@@ -128,7 +128,7 @@ function getAmountTone(value: unknown) {
   const amount = getNumericAmount(value)
   if (amount >= 50000) return 'border-rose-200 bg-rose-50 text-rose-700'
   if (amount >= 10000) return 'border-amber-200 bg-amber-50 text-amber-700'
-  if (amount > 0) return 'border-teal-200 bg-teal-50 text-teal-700'
+  if (amount > 0) return 'border-[#b9ccde] bg-[#edf4fb] text-[#023468]'
   return 'border-slate-200 bg-slate-50 text-slate-500'
 }
 
@@ -140,9 +140,9 @@ function getStatusColor(status: string) {
     md_denied: 'bg-red-500',
     ea_on_hold: 'bg-amber-500',
     md_on_hold: 'bg-amber-500',
-    awaiting_grn: 'bg-teal-500',
+    awaiting_grn: 'bg-[#023468]',
     awaiting_accounts: 'bg-amber-500',
-    completed: 'bg-green-600',
+    completed: 'bg-[#023468]',
   }
 
   return colors[status] || 'bg-slate-500'
@@ -308,7 +308,7 @@ export function MDTableView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-4 rounded-2xl border border-white/70 bg-white/65 p-4 shadow-xl shadow-teal-950/5 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-2xl border border-white/70 bg-white/65 p-4 shadow-xl shadow-[#023468]/5 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
@@ -324,13 +324,13 @@ export function MDTableView({
 
         {selectedOrders.size > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-teal-100 bg-teal-50 px-3 py-1 text-xs font-black text-teal-800">
+            <span className="rounded-full border border-[#d7e4ef] bg-[#edf4fb] px-3 py-1 text-xs font-black text-[#023468]">
               {selectedOrders.size} selected
             </span>
             <Button
               onClick={() => void handleBulkAction('approve')}
               disabled={bulkActionLoading !== null || loading}
-              className="gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-xs font-black text-white shadow-lg shadow-emerald-100"
+              className="gap-2 rounded-xl bg-gradient-to-r from-[#023468] to-[#034b82] text-xs font-black text-white shadow-lg shadow-[#023468]/10"
             >
               {bulkActionLoading === 'approve' || loading ? (
                 <>
@@ -383,7 +383,7 @@ export function MDTableView({
         )}
       </div>
 
-      <div className="relative overflow-x-auto rounded-[1.5rem] border border-white/70 bg-white/80 shadow-2xl shadow-teal-950/10 backdrop-blur-xl">
+      <div className="relative overflow-x-auto rounded-[1.5rem] border border-white/70 bg-white/80 shadow-2xl shadow-[#023468]/10 backdrop-blur-xl">
         <table className="w-full border-separate border-spacing-0 text-xs">
           <thead className="sticky top-0 z-20">
             <tr>
@@ -418,7 +418,7 @@ export function MDTableView({
                     disabled={selectableOrders.length === 0}
                     onCheckedChange={toggleSelectAll}
                     aria-label="Select all"
-                    className="approval-table-checkbox h-5 w-5 rounded-md border-2 border-white bg-white/20 shadow-sm data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-teal-700"
+                    className="approval-table-checkbox h-5 w-5 rounded-md border-2 border-white bg-white/20 shadow-sm data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-[#023468]"
                   />
                 </div>
               </th>
@@ -446,7 +446,7 @@ export function MDTableView({
                     key={order.id}
                     className={cn(
                       'group transition-colors',
-                      isSelected ? 'bg-teal-50/90' : 'odd:bg-white/92 even:bg-slate-50/72 hover:bg-teal-50/70'
+                      isSelected ? 'bg-[#edf4fb]' : 'odd:bg-white/92 even:bg-slate-50/72 hover:bg-[#edf4fb]'
                     )}
                   >
                     {visibleColumns.map((col) => {
@@ -478,8 +478,8 @@ export function MDTableView({
                     })}
 
                     <td className={cn(
-                      "sticky right-0 z-10 border-b border-l border-teal-100 px-3 py-2.5 shadow-[-10px_0_24px_rgba(15,23,42,0.04)] transition-colors",
-                      isSelected ? "bg-teal-100" : "bg-white group-hover:bg-teal-50"
+                      "sticky right-0 z-10 border-b border-l border-[#d7e4ef] px-3 py-2.5 shadow-[-10px_0_24px_rgba(15,23,42,0.04)] transition-colors",
+                      isSelected ? "bg-[#dbeafe]" : "bg-white group-hover:bg-[#edf4fb]"
                     )}>
                       {isActionable ? (
                         <div className="flex items-center justify-center gap-1.5">
@@ -487,7 +487,7 @@ export function MDTableView({
                             size="sm"
                             onClick={() => void handleAction('approve', order.id)}
                             disabled={isLoading || bulkActionLoading !== null || loading}
-                            className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 p-0 text-white shadow-lg shadow-emerald-100 hover:from-emerald-600 hover:to-teal-700"
+                            className="h-8 w-8 rounded-xl bg-gradient-to-br from-[#023468] to-[#034b82] p-0 text-white shadow-lg shadow-[#023468]/10 hover:from-[#023468] hover:to-[#034b82]"
                             title="Approve"
                           >
                             {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
@@ -517,7 +517,7 @@ export function MDTableView({
                             disabled={!isActionable}
                             onCheckedChange={() => toggleSelection(order.id)}
                             aria-label={`Select order ${getColumnValue(order, 'orderNumber') || order.id}`}
-                            className="approval-table-checkbox h-6 w-6 rounded-lg border-2 border-teal-700 bg-white shadow-sm ring-2 ring-white/80 data-[state=checked]:border-teal-800 data-[state=checked]:bg-teal-700 data-[state=checked]:text-white data-[state=checked]:[&_svg]:stroke-white [&_svg]:stroke-[3.5]"
+                            className="approval-table-checkbox h-6 w-6 rounded-lg border-2 border-[#023468] bg-white shadow-sm ring-2 ring-white/80 data-[state=checked]:border-[#012348] data-[state=checked]:bg-[#023468] data-[state=checked]:text-white data-[state=checked]:[&_svg]:stroke-white [&_svg]:stroke-[3.5]"
                           />
                         </div>
                       ) : (

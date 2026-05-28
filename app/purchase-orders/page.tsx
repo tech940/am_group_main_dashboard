@@ -111,6 +111,7 @@ const DEFAULT_PURCHASE_ORDER_PAGINATION: PurchaseOrderPagination = {
   totalPages: 1,
   mode: 'today',
 }
+const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 interface WorkflowHistoryItem {
   id: string
@@ -713,8 +714,8 @@ function PurchaseOrdersPageContent() {
       }
 
       if (isCompletionTrackingView) {
-        if (completedDateStart) params.set('spendStartDate', completedDateStart)
-        if (completedDateEnd) params.set('spendEndDate', completedDateEnd)
+        if (DATE_INPUT_PATTERN.test(completedDateStart)) params.set('spendStartDate', completedDateStart)
+        if (DATE_INPUT_PATTERN.test(completedDateEnd)) params.set('spendEndDate', completedDateEnd)
       }
     }
 
@@ -743,7 +744,11 @@ function PurchaseOrdersPageContent() {
         queryKey,
         queryFn: async () => {
           const response = await fetch(`/api/purchase-orders${query ? `?${query}` : ''}`)
-          if (!response.ok) throw new Error('Failed to fetch purchase orders')
+          if (!response.ok) {
+            const errorPayload = await response.json().catch(() => null)
+            const errorMessage = errorPayload?.error || `Failed to fetch purchase orders (${response.status})`
+            throw new Error(errorMessage)
+          }
           return await response.json()
         },
         staleTime: DASHBOARD_STALE_TIME_MS,
@@ -1331,7 +1336,7 @@ function PurchaseOrdersPageContent() {
             type="button"
             variant={isActive ? 'default' : 'outline'}
             onClick={() => setWorkflowStageFilterPreference(option.value)}
-            className={`rounded-xl ${isActive ? 'bg-teal-700 text-white hover:bg-teal-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+            className={`rounded-xl ${isActive ? 'bg-[#023468] text-white hover:bg-[#012348]' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
           >
             {option.label}
             <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
@@ -1492,9 +1497,9 @@ function PurchaseOrdersPageContent() {
   }
 
   const renderCompletedAnalyticsControls = () => (
-    <div className="flex flex-col gap-4 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
+    <div className="flex flex-col gap-4 rounded-2xl border border-[#d7e4ef] bg-white p-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
       <div>
-        <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Recognized Spend</p>
+        <p className="text-sm font-semibold uppercase tracking-wide text-[#023468]">Recognized Spend</p>
         <p className="text-2xl font-black text-slate-900">
           Rs. {listedCompletedSpend.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
         </p>
@@ -1502,7 +1507,7 @@ function PurchaseOrdersPageContent() {
           <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">
             {listedGrnCompletedOrders.length} GRN completed
           </span>
-          <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
+          <span className="rounded-full bg-[#edf4fb] px-3 py-1 text-[#023468]">
             {listedCompletedOrders.length} fully completed
           </span>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
@@ -1517,7 +1522,7 @@ function PurchaseOrdersPageContent() {
             type="date"
             value={completedDateStart}
             onChange={(event) => setCompletedDatePreference('completedDateStart', event.target.value)}
-            className="h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500"
+            className="h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-800 outline-none focus:border-[#023468]"
           />
         </label>
         <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1526,7 +1531,7 @@ function PurchaseOrdersPageContent() {
             type="date"
             value={completedDateEnd}
             onChange={(event) => setCompletedDatePreference('completedDateEnd', event.target.value)}
-            className="h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500"
+            className="h-10 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-800 outline-none focus:border-[#023468]"
           />
         </label>
         <Button
@@ -1564,7 +1569,7 @@ function PurchaseOrdersPageContent() {
   const renderApprovalListSkeleton = () => (
     <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 p-5">
-        <div className="h-4 w-36 animate-pulse rounded-full bg-teal-100" />
+        <div className="h-4 w-36 animate-pulse rounded-full bg-[#dbeafe]" />
         <div className="mt-3 h-7 w-72 animate-pulse rounded-xl bg-slate-200" />
       </div>
       <div className="space-y-3 p-4">
@@ -1589,7 +1594,7 @@ function PurchaseOrdersPageContent() {
 
   const renderCompletedSummary = (order: PurchaseOrder) => (
     <Card className="rounded-[28px] border-none shadow-xl">
-      <CardHeader className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+      <CardHeader className="bg-gradient-to-r from-[#023468] to-[#034b82] text-white">
         <CardTitle className="text-2xl font-black">Order Completed</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4 p-6 md:grid-cols-2">
@@ -1686,7 +1691,7 @@ function PurchaseOrdersPageContent() {
             <Button
               type="button"
               onClick={() => setIsEditingGrn(true)}
-              className="rounded-2xl bg-teal-600 text-white hover:bg-teal-700"
+              className="rounded-2xl bg-[#023468] text-white hover:bg-[#023468]"
             >
               <Edit3 className="mr-2 h-4 w-4" />
               Edit GRN
@@ -1938,7 +1943,7 @@ function PurchaseOrdersPageContent() {
                     })
                   }}
                   variant="outline"
-                  className="rounded-2xl border-teal-200 text-teal-700 hover:bg-teal-50"
+                  className="rounded-2xl border-[#b9ccde] text-[#023468] hover:bg-[#edf4fb]"
                 >
                   {showPOTableView ? (
                     <>
@@ -1970,7 +1975,7 @@ function PurchaseOrdersPageContent() {
                   })
                 }}
                 variant="outline"
-                className="rounded-2xl border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                className="rounded-2xl border-[#b9ccde] text-[#023468] hover:bg-[#edf4fb]"
               >
                 {showCompleted ? 'Show Active' : 'Show Completed'}
               </Button>
@@ -1985,7 +1990,7 @@ function PurchaseOrdersPageContent() {
               {canCreateOrders && !isCompletionTrackingView && (
                 <Button
                   onClick={openFreshNewOrderForm}
-                  className="rounded-2xl border border-teal-300 bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-100 hover:from-teal-700 hover:to-emerald-700"
+                  className="rounded-2xl border border-[#8ca8c0] bg-gradient-to-r from-[#023468] to-[#034b82] text-white shadow-lg shadow-[#023468]/10 hover:from-[#023468] hover:to-[#034b82]"
                 >
                   <Plus className="mr-2 h-4 w-4" />
                   New Order
@@ -2027,7 +2032,7 @@ function PurchaseOrdersPageContent() {
               <Card className="rounded-[28px]">
                 <CardContent className="p-12">
                   <div className="flex flex-col items-center justify-center space-y-4">
-                    <Loader2 className="h-12 w-12 animate-spin text-teal-500" />
+                    <Loader2 className="h-12 w-12 animate-spin text-[#023468]" />
                     <p className="font-medium text-gray-600">Loading purchase order details...</p>
                   </div>
                 </CardContent>
@@ -2056,7 +2061,7 @@ function PurchaseOrdersPageContent() {
                 )}
 
                 <Card className="rounded-[28px] border-none shadow-xl">
-                  <CardHeader className="bg-gradient-to-r from-slate-900 to-teal-800 text-white">
+                  <CardHeader className="bg-gradient-to-r from-slate-900 to-[#012348] text-white">
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                       <CardTitle className="text-2xl font-black">
                         Purchase Order Details - {normalizeOrderNumber(selectedOrder)}
@@ -2207,12 +2212,12 @@ function PurchaseOrdersPageContent() {
           <>
             {(userRole === 'ea' || userRole === 'md') ? (
               <div className="space-y-4">
-                <div className="flex flex-col gap-4 rounded-[28px] bg-gradient-to-r from-teal-700 to-emerald-700 p-6 text-white shadow-xl lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col gap-4 rounded-[28px] bg-gradient-to-r from-[#023468] to-[#034b82] p-6 text-white shadow-xl lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h1 className="text-3xl font-black">
                       {userRole === 'ea' ? 'EA Approval Dashboard' : 'MD Approval Dashboard'}
                     </h1>
-                    <p className="mt-1 text-teal-50">
+                    <p className="mt-1 text-[#edf4fb]">
                       {listedOrders.length} purchase order{listedOrders.length !== 1 ? 's' : ''} in {approvalFilter} view
                     </p>
                   </div>
@@ -2228,7 +2233,7 @@ function PurchaseOrdersPageContent() {
                     <Button
                       onClick={toggleViewMode}
                       variant="outline"
-                      className="rounded-2xl border-2 border-white bg-white px-5 font-black text-emerald-900 shadow-lg shadow-emerald-950/20 ring-2 ring-white/25 hover:bg-emerald-50 hover:text-emerald-950"
+                      className="rounded-2xl border-2 border-white bg-white px-5 font-black text-[#012348] shadow-lg shadow-[#023468]/20 ring-2 ring-white/25 hover:bg-[#edf4fb] hover:text-[#012348]"
                     >
                       {isSwitchingView ? (
                         <>

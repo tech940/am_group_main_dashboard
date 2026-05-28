@@ -46,17 +46,35 @@ npm run db:refresh-dashboard-views:scheduler
 
 This long-running scheduler is intended for PM2. It runs the refresh command in Asia/Kolkata windows at 09:10, 10:25, 11:40, 12:55, 14:10, 15:25, 16:40, and 17:55, giving the base import cron about 10 minutes to finish first. If the import cron timing changes, update `RUN_MINUTES` in `scripts/refresh-dashboard-materialized-views-scheduler.js`.
 
+## Database Backups
+
+`npm run db:backup` creates a timestamped PostgreSQL custom-format dump using `pg_dump`.
+
+`npm run db:backup:scheduler` is intended for PM2 and runs the backup once daily at 18:00 Asia/Kolkata by default.
+
+- Backups use `DATABASE_BACKUP_URL` when present, otherwise `DATABASE_URL`.
+- Backups save to `DATABASE_BACKUP_DIR` when set; otherwise they prefer `OneDrive/Main_Dashboard_Database_Backups`, falling back to `backups/database` inside the project.
+- Backup files are named `main_dashboard_YYYYMMDD_HHMMSS.dump`, and local `.dump`/`backups` paths are gitignored.
+- Retention defaults to 30 days and can be changed with `DATABASE_BACKUP_RETENTION_DAYS`.
+- `pg_dump` is installed through Scoop and `.env` sets `PG_DUMP_PATH=C:/Users/HP/scoop/apps/postgresql/current/bin/pg_dump.exe` so backups do not depend on the shell PATH.
+- The backup script removes the Prisma-only `pgbouncer` URL query parameter before calling `pg_dump`; use `DATABASE_BACKUP_URL` only if a separate direct backup connection string is required later.
+
 ## Current Visual Direction
 
 The active UI direction is a premium glassmorphism dashboard shell:
 
-- Main page background uses teal/cyan/sky gradients only, aligned with the AM/KIA dashboard theme.
+- Main page background is white/slate with a very light `#023468` wash; avoid green/teal/cyan shell backgrounds.
 - Pink/purple decorative gradients were removed at the user's request.
 - Main content surfaces are intentionally translucent so the background remains visible.
 - Header is a floating frosted-glass navbar with no search box.
-- Sidebar keeps a visible teal/blue gradient glass background and light text/icons.
+- Sidebar uses a `#023468` navy/blue brand background and gradients, with light text/icons.
 - Content receives top padding below the floating navbar so sections do not collide with it.
-- Buttons and selects on translucent surfaces need visible borders, usually teal/slate tinted, so controls do not disappear into the glass background.
+- Buttons and selects on translucent surfaces need visible borders, usually `#023468`/slate tinted, so controls do not disappear into the glass background.
+- Admin/User Management brand accents, stat icons, primary actions, active badges, table headers, pagination, avatars, and the header profile role pill should use `#023468`/navy tones instead of green/teal/emerald.
+- Grand Total rows in tables should use the same light slate/grey surface as MECH and MECH TOTAL, with a `#023468` accent, not a blue/green filled row, so green positive growth badges remain readable.
+- Notification popups and Purchase Order brand accents should use `#023468`/navy tones instead of green/teal/emerald brand styling.
+- Purchase Order completed/spending view uses `scope=spending` and optional `spendStartDate`/`spendEndDate`; date strings must be valid `YYYY-MM-DD` before the client sends them or the API applies them. The API compares the raw `COALESCE(received_date_time, completed_at, created_at)` spend-date expression against ISO strings cast to `timestamptz`, not JS `Date` params, to avoid postgres-js Date parameter crashes.
+- KIA complaint comparison cards need visible borders. Customer Complaint Details should not have a search bar, and complaint row expand buttons should be borderless/plain with only the chevron affordance.
 - Business Excellence uses the `business-excellence-boundaries` wrapper in `features/kia/business-excellence-page.tsx`; `app/globals.css` applies scoped borders to its cards, buttons, controls, rounded metric surfaces, and table cells so each section is visually distinct.
 - Global top route loader is white and is manually started for sidebar navigation.
 
@@ -264,6 +282,7 @@ Current overview metrics include:
 - Revenue: Labour + Parts or field-specific revenue depending on view.
 - LY/CY comparisons use matching `bill_date` windows.
 - Trend target logic applies +10 percent to LY totals and prorates target to the selected timeline.
+- Business Excellence currency displays show full rupee figures below one lakh and two-decimal L/Cr notation at one lakh and above. Thousands must not render as K in tables.
 
 ### Performance Optimizations Completed
 
@@ -273,6 +292,8 @@ Current overview metrics include:
 - RO Billing analysis now supports batched metric loading with `metrics=all` for table, trend, and FY views. The API returns a `byMetric` payload for Load, Labour, Parts, Lab/Veh, and Part/Veh from one SQL summary query, and the frontend consumes that bundle instead of firing one request per metric.
 - RO Billing analysis excludes `ro_billing_report.bill_status` values `Cancel`, `Cancelled`, and `Canceled` from normal metrics, trends, leaderboards, and tables. The table view returns a separate `cancelledSummary` section so cancelled bills remain auditable without affecting active billing counts.
 - RO Billing table Lab/Veh and Part/Veh rows are derived in the frontend from the converted Labour/Parts and Load tables. Parent rows such as MECH, MECH TOTAL, and Grand Total must use `total amount / total load`, not a sum of child per-vehicle values. These parent rows are weighted averages, so MECH can be lower than Paid Service if Free Service or Running Repair have lower per-vehicle values.
+- `docs/BUSINESS_EXCELLENCE_SQL_QUERIES.md` documents the current Business Excellence dashboard SQL templates, date bases, dedupe keys, materialized-view usage, and refresh/index SQL. Keep this doc updated when dashboard query logic changes.
+- Business Excellence visual boundary CSS is broad by design; use the `be-borderless-action` class for inline table expand controls that should not render as bordered buttons.
 - FY Trends now has a dedicated SQL aggregate path and no longer fetches all RO Billing rows for the default unfiltered FY view.
 - Redis TTL is 75 minutes.
 - Frontend session cache prevents duplicate API hits after data loads.
@@ -415,7 +436,7 @@ Important distinction:
   - Workshop auxiliary KPI cards such as EW Count, MCP Count, and RSA Count also calculate LY/growth when prior-year data exists.
   - Workshop table has EW Count, RSA Count, and MCP Count at the end of the table, including the Grand Total row.
   - Less VAS uses only `operation_wise_analysis_report.total_amt`, is not allocated to service-type rows, and appears only on the Workshop Grand Total row because operation-wise data has no service-type split.
-  - Workshop frontend preserves the API Grand Total addon values when rebuilding display buckets, so `LAB/RO(-VAS)` uses `(Grand Total Labour Amt - Grand Total Less VAS) / Grand Total JC`.
+  - Workshop `LAB/RO(-VAS)` rolls up each displayed row's already-clamped `Labour Amt - Less VAS` amount, then divides by JC. Parent and Grand Total rows must not recompute `max(total labour - total VAS, 0)` because excess VAS in one bucket can incorrectly wipe out other buckets.
   - Workshop table display is normalized into the same operational buckets as RO Billing: Paid Service, Free Services, Running Repairs, MECH, Others, MECH TOTAL, Accident, and Grand Total.
   - Workshop API returns parent `work_type` and child `service_type` detail for table rows, so Free Services can expand into First/Second/Third Free Service where data exists.
   - Workshop API now prefers `workshop_performance_jc_summary_v1` when present. This materialized view stores pre-deduped job-card rows, allowing service table, daily movement, and advisor aggregations to avoid repeated raw `ro_billing_report` scans.
@@ -425,7 +446,7 @@ Important distinction:
   - Workshop API also prefers `workshop_operation_addon_summary_v1` when present, so VAS/WA/WB regex classification is precomputed monthly instead of repeated on every request. Refresh it after cron imports with `REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_operation_addon_summary_v1;`.
   - Workshop table service buckets are expandable only when the child rows are distinct from the parent bucket, avoiding duplicate rows such as Paid Service -> Paid Service.
   - Workshop table hides mileage-only paid-service child labels such as `30K`, `40K`, etc., and keeps Accident collapsed to match the RO Billing table behavior.
-  - Workshop table money values use compact Indian notation such as `₹2.57L` for readability.
+  - Workshop table money values show full rupee figures below one lakh, so thousands render as `₹5,700` rather than `₹5.7K`; lakh/crore values stay compact but always use two decimals, such as `₹2.57L`.
   - Workshop charts render as full-width stacked sections to avoid cramped visuals.
   - Workshop matrix rows are compact with visible row/column borders for denser operational reading.
   - The Workshop matrix is the first full-width block in the report because it is the primary operational view.

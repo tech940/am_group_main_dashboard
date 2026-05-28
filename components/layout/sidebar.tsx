@@ -30,7 +30,7 @@ const brandNavigation = [
     key: 'kia',
     href: '/brands/kia',
     logo: 'https://www.citypng.com/public/uploads/preview/kia-white-logo-hd-png-7017516947105094q5qjti6gq.png',
-    color: 'text-teal-100',
+    color: 'text-blue-100',
     icon: Activity,
     submenus: [
       { name: 'Business Excellence', href: '/brands/kia/business-excellence/overview' },
@@ -151,7 +151,7 @@ export function Sidebar() {
 
       <div
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden border-r border-white/45 bg-[linear-gradient(165deg,#074e5a_0%,#0f766e_34%,#2f8f83_58%,#1f5671_100%)] shadow-2xl shadow-teal-950/20 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] dark:border-white/10 dark:bg-[linear-gradient(165deg,#020617_0%,#064e3b_38%,#0f766e_66%,#0f172a_100%)]',
+          'app-sidebar-brand fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden border-r border-white/20 bg-[#023468] shadow-2xl shadow-slate-950/20 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] dark:border-white/10 dark:bg-[#012348]',
           collapsed ? 'w-0 border-none' : 'w-72'
         )}
       >
@@ -169,8 +169,8 @@ export function Sidebar() {
                   className="h-9 object-contain"
                 />
               </div>
-              <div className="h-3 w-[1px] bg-teal-700/20" />
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-teal-50/80">
+              <div className="h-3 w-[1px] bg-indigo-700/20" />
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-50/80">
                 Management
               </span>
             </div>
@@ -195,7 +195,7 @@ export function Sidebar() {
             {/* Dashboard Link */}
             <div className="mt-[-20px]">
               {!collapsed && (
-                <p className="mb-6 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-teal-50/65">
+                <p className="mb-6 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-indigo-50/65">
                   Main Menu
                 </p>
               )}
@@ -207,8 +207,8 @@ export function Sidebar() {
                     className={cn(
                       'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
                       pathname === '/dashboard'
-                        ? 'bg-white/22 border-l-4 border-teal-100 text-white font-semibold shadow-sm shadow-teal-950/10 pl-3'
-                        : 'bg-white/10 border-l-4 border-transparent text-teal-50/85 hover:bg-white/18 hover:text-white hover:border-teal-100/80 pl-3',
+                        ? 'bg-white/22 border-l-4 border-indigo-100 text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
+                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-indigo-100/80 pl-3',
                       collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
                     )}
                   >
@@ -218,13 +218,13 @@ export function Sidebar() {
                     )}>
                       <LayoutDashboard className={cn(
                         "h-4.5 w-4.5 transition-colors",
-                        pathname === '/dashboard' ? "text-white" : "text-teal-50/85 group-hover:text-white"
+                        pathname === '/dashboard' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
                       )} />
                     </div>
                     {!collapsed && (
                       <>
                         <span className="flex-1 text-left text-sm">Dashboard</span>
-                        <span className="rounded-full border border-white/20 bg-white/12 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-teal-50">
+                        <span className="rounded-full border border-white/20 bg-white/12 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-indigo-50">
                           Soon
                         </span>
                       </>
@@ -234,7 +234,7 @@ export function Sidebar() {
                   <div
                     className={cn(
                       'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none opacity-60 cursor-not-allowed',
-                      'bg-white/10 border-l-4 border-transparent text-teal-50/45 pl-3',
+                      'bg-white/10 border-l-4 border-transparent text-indigo-50/45 pl-3',
                       collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
                     )}
                   >
@@ -256,8 +256,8 @@ export function Sidebar() {
                   className={cn(
                     'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
                     pathname === '/purchase-orders'
-                      ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-teal-950/10 pl-3'
-                      : 'bg-white/10 border-l-4 border-transparent text-teal-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
+                      ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
+                      : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
                     collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
                   )}
                 >
@@ -267,7 +267,7 @@ export function Sidebar() {
                   )}>
                     <ShoppingCart className={cn(
                       "h-4.5 w-4.5 transition-colors",
-                      pathname === '/purchase-orders' ? "text-white" : "text-teal-50/85 group-hover:text-white"
+                      pathname === '/purchase-orders' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
                     )} />
                   </div>
                   {!collapsed && (
@@ -284,8 +284,8 @@ export function Sidebar() {
                       (openAdmin || pathname?.startsWith('/admin'))
                         ? 'bg-white/22 border-l-4 border-emerald-100 text-white font-semibold shadow-sm shadow-emerald-950/10 pl-3'
                         : canAccessAdmin
-                          ? 'bg-white/10 border-l-4 border-transparent text-teal-50/85 hover:bg-white/18 hover:text-white hover:border-emerald-100/80 cursor-pointer group pl-3'
-                          : 'bg-white/10 border-l-4 border-transparent text-teal-50/45 opacity-60 cursor-not-allowed pl-3',
+                          ? 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-indigo-100/80 cursor-pointer group pl-3'
+                          : 'bg-white/10 border-l-4 border-transparent text-indigo-50/45 opacity-60 cursor-not-allowed pl-3',
                       collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'py-3 pr-3'
                     )}
                   >
@@ -295,7 +295,7 @@ export function Sidebar() {
                     )}>
                       <Shield className={cn(
                         "h-4.5 w-4.5 transition-colors",
-                        (openAdmin || pathname?.startsWith('/admin')) ? "text-white" : "text-teal-50/85 group-hover:text-white"
+                        (openAdmin || pathname?.startsWith('/admin')) ? "text-white" : "text-indigo-50/85 group-hover:text-white"
                       )} />
                     </div>
                     {!collapsed && (
@@ -306,7 +306,7 @@ export function Sidebar() {
                         ) : (
                           <ChevronDown className={cn(
                             "h-4 w-4 transition-transform duration-300",
-                            openAdmin ? "rotate-180 text-white" : "text-teal-50/70"
+                            openAdmin ? "rotate-180 text-white" : "text-indigo-50/70"
                           )} />
                         )}
                       </>
@@ -322,7 +322,7 @@ export function Sidebar() {
                           'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
                           pathname === '/admin/users'
                             ? 'border-l-2 border-emerald-100 text-white font-semibold'
-                            : 'border-l-2 border-transparent text-teal-50/85 hover:border-emerald-100/80 hover:bg-white/18 hover:text-white'
+                            : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
                         )}
                       >
                         <Users className="h-3.5 w-3.5" />
@@ -335,7 +335,7 @@ export function Sidebar() {
                           'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
                           pathname === '/admin/settings'
                             ? 'border-l-2 border-emerald-100 text-white font-semibold'
-                            : 'border-l-2 border-transparent text-teal-50/85 hover:border-emerald-100/80 hover:bg-white/18 hover:text-white'
+                            : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
                         )}
                       >
                         <Settings className="h-3.5 w-3.5" />
@@ -350,7 +350,7 @@ export function Sidebar() {
             {visibleBrands.length > 0 && (
               <div>
                 {!collapsed && (
-                  <p className="mb-6 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-teal-50/65">
+                  <p className="mb-6 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-indigo-50/65">
                     Managed Brands
                   </p>
                 )}
@@ -368,10 +368,10 @@ export function Sidebar() {
                         className={cn(
                           'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none relative w-full',
                           (isOpen || isActive)
-                            ? 'bg-white/22 border-l-4 border-teal-100 text-white font-semibold shadow-sm shadow-teal-950/10 pl-3'
+                            ? 'bg-white/22 border-l-4 border-indigo-100 text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
                             : hasAccess
-                              ? 'bg-white/10 border-l-4 border-transparent text-teal-50/85 hover:bg-white/18 hover:text-white hover:border-teal-100/80 cursor-pointer group pl-3'
-                              : 'bg-white/10 border-l-4 border-transparent text-teal-50/45 opacity-60 cursor-not-allowed pl-3',
+                              ? 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-indigo-100/80 cursor-pointer group pl-3'
+                              : 'bg-white/10 border-l-4 border-transparent text-indigo-50/45 opacity-60 cursor-not-allowed pl-3',
                           collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'py-3 pr-3'
                         )}
                       >
@@ -393,14 +393,14 @@ export function Sidebar() {
                           <>
                             <span className={cn(
                               "flex-1 text-left text-sm transition-colors",
-                              (isOpen || isActive) ? "text-white" : "text-teal-50/85 group-hover:text-white"
+                              (isOpen || isActive) ? "text-white" : "text-indigo-50/85 group-hover:text-white"
                             )}>{brand.name}</span>
                             {!hasAccess ? (
                               <Lock className="h-4 w-4 text-slate-500" />
                             ) : (
                               <ChevronDown className={cn(
                                 "h-4 w-4 transition-transform duration-300",
-                                isOpen ? "rotate-180 text-white" : "text-teal-50/70"
+                                isOpen ? "rotate-180 text-white" : "text-indigo-50/70"
                               )} />
                             )}
                           </>
@@ -417,8 +417,8 @@ export function Sidebar() {
                               className={cn(
                                 'block rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
                                 pathname === sub.href
-                                  ? 'border-l-2 border-teal-100 text-white font-semibold'
-                                  : 'border-l-2 border-transparent text-teal-50/85 hover:border-teal-100/80 hover:bg-white/18 hover:text-white'
+                                  ? 'border-l-2 border-indigo-100 text-white font-semibold'
+                                  : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
                               )}
                             >
                               {sub.name}
@@ -453,7 +453,7 @@ export function Sidebar() {
             }}
             disabled={signingOut}
             className={cn(
-              'flex w-full cursor-pointer items-center gap-3 rounded-2xl text-sm font-bold uppercase tracking-widest text-teal-50/85 transition-all duration-200 hover:bg-white/18 hover:text-white group disabled:cursor-wait disabled:opacity-75',
+              'flex w-full cursor-pointer items-center gap-3 rounded-2xl text-sm font-bold uppercase tracking-widest text-indigo-50/85 transition-all duration-200 hover:bg-white/18 hover:text-white group disabled:cursor-wait disabled:opacity-75',
               collapsed ? 'h-12 w-12 justify-center mx-auto' : 'px-4 py-3'
             )}
           >

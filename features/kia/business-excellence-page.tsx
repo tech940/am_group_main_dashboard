@@ -292,7 +292,7 @@ function getGrowthBadgeClass(value: number | string | 'N/A') {
   const num = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(num)) return 'text-slate-400 bg-slate-50 border-slate-200'
   return num >= 0
-    ? 'text-teal-700 bg-teal-50 border-teal-100'
+    ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
     : 'text-rose-700 bg-rose-50 border-rose-100'
 }
 
@@ -304,7 +304,14 @@ function formatSignedGrowth(value: number | string | 'N/A') {
 }
 
 function formatCurrency(value: number) {
-  return `₹${Math.round(value).toLocaleString('en-IN')}`
+  const safeValue = Number.isFinite(value) ? value : 0
+  const rounded = Math.round(Math.abs(safeValue))
+  const sign = safeValue < 0 ? '-' : ''
+  const currencyPrefix = '\u20b9'
+
+  if (rounded >= 10000000) return `${sign}${currencyPrefix}${(rounded / 10000000).toFixed(2)}Cr`
+  if (rounded >= 100000) return `${sign}${currencyPrefix}${(rounded / 100000).toFixed(2)}L`
+  return `${sign}${currencyPrefix}${rounded.toLocaleString('en-IN')}`
 }
 
 function SmartTrendValueLabel({
@@ -380,7 +387,7 @@ function WorkshopTrendValueLabel({
       x={xPos}
       y={yPos}
       textAnchor="middle"
-      fill={series === 'revenue' ? '#2563EB' : '#0F766E'}
+      fill={series === 'revenue' ? '#2563EB' : '#023468'}
       fontSize={8}
       fontWeight={900}
       paintOrder="stroke"
@@ -2155,20 +2162,17 @@ function formatWorkshopTableMoney(value: number) {
   const safeValue = Number(value || 0)
   const absValue = Math.abs(safeValue)
   const sign = safeValue < 0 ? '-' : ''
+  const currencyPrefix = '\u20b9'
 
   if (absValue >= 10000000) {
-    return `${sign}₹${(absValue / 10000000).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}Cr`
+    return `${sign}${currencyPrefix}${(absValue / 10000000).toFixed(2)}Cr`
   }
 
   if (absValue >= 100000) {
-    return `${sign}₹${(absValue / 100000).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}L`
+    return `${sign}${currencyPrefix}${(absValue / 100000).toFixed(2)}L`
   }
 
-  if (absValue >= 1000) {
-    return `${sign}₹${(absValue / 1000).toFixed(1).replace(/\.0$/, '')}K`
-  }
-
-  return `${sign}₹${Math.round(absValue).toLocaleString('en-IN')}`
+  return `${sign}${currencyPrefix}${Math.round(absValue).toLocaleString('en-IN')}`
 }
 
 function zeroWorkshopRow(serviceType: string): WorkshopPerformanceRow {
@@ -2203,6 +2207,7 @@ function aggregateWorkshopRows(serviceType: string, sourceRows: WorkshopPerforma
     acc.totalJc += Number(row.totalJc || 0)
     acc.labourAmount += Number(row.labourAmount || 0)
     acc.lessVas += Number(row.lessVas || 0)
+    acc.labMinusVas += Number(row.labMinusVas || 0)
     acc.spareSale += Number(row.spareSale || 0)
     acc.discount += Number(row.discount || 0)
     acc.waCount += Number(row.waCount || 0)
@@ -2215,7 +2220,6 @@ function aggregateWorkshopRows(serviceType: string, sourceRows: WorkshopPerforma
     return acc
   }, zeroWorkshopRow(serviceType))
 
-  base.labMinusVas = Math.max(base.labourAmount - base.lessVas, 0)
   base.totalJcPercent = totals.jc > 0 ? (base.totalJc / totals.jc) * 100 : 0
   base.labourPercent = totals.labour > 0 ? (base.labourAmount / totals.labour) * 100 : 0
   base.labourPerRo = base.totalJc > 0 ? base.labourAmount / base.totalJc : 0
@@ -2274,7 +2278,6 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
 
   if (serverGrandTotal) {
     grandTotal.lessVas = Number(serverGrandTotal.lessVas || 0)
-    grandTotal.labMinusVas = Math.max(grandTotal.labourAmount - grandTotal.lessVas, 0)
     grandTotal.vasPercent = grandTotal.labourAmount > 0 ? (grandTotal.lessVas / grandTotal.labourAmount) * 100 : 0
     grandTotal.labPerRoMinusVas = grandTotal.totalJc > 0 ? grandTotal.labMinusVas / grandTotal.totalJc : 0
     grandTotal.waCount = Number(serverGrandTotal.waCount || 0)
@@ -2405,7 +2408,7 @@ function WorkshopPerformanceSection({
             <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={formatCompactMoney} />
             <Tooltip formatter={(value) => formatCurrency(Number(value || 0))} contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0' }} />
             <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 900 }} />
-            <Bar dataKey="labourAmount" name="Labour" stackId="revenue" fill="#0F766E" radius={[0, 0, 8, 8]} />
+            <Bar dataKey="labourAmount" name="Labour" stackId="revenue" fill="#023468" radius={[0, 0, 8, 8]} />
             <Bar dataKey="spareSale" name="Spare Sale" stackId="revenue" fill="#D97706" />
             <Bar dataKey="lessVas" name="VAS" stackId="revenue" fill="#2563EB" radius={[8, 8, 0, 0]}>
               <LabelList dataKey="lessVas" position="top" formatter={formatChartLabel} fill="#0f172a" fontSize={10} fontWeight={900} />
@@ -2421,13 +2424,13 @@ function WorkshopPerformanceSection({
           <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
           <XAxis dataKey="day" interval={0} minTickGap={0} tick={<TrendAxisTick />} tickMargin={12} height={58} />
           <YAxis yAxisId="amount" tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={formatCompactMoney} />
-          <YAxis yAxisId="jc" orientation="right" tick={{ fontSize: 11, fill: '#0f766e' }} />
+          <YAxis yAxisId="jc" orientation="right" tick={{ fontSize: 11, fill: '#023468' }} />
           <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0' }} />
           <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 900 }} />
           <Line yAxisId="amount" type="monotone" dataKey="totalRevenue" name="Revenue" stroke="#2563EB" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} isAnimationActive={false}>
             <LabelList dataKey="totalRevenue" content={<WorkshopTrendValueLabel series="revenue" />} />
           </Line>
-          <Line yAxisId="jc" type="monotone" dataKey="totalJc" name="JC" stroke="#0F766E" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} isAnimationActive={false}>
+          <Line yAxisId="jc" type="monotone" dataKey="totalJc" name="JC" stroke="#023468" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} isAnimationActive={false}>
             <LabelList dataKey="totalJc" content={<WorkshopTrendValueLabel series="jc" />} />
           </Line>
         </LineChart>
@@ -2519,7 +2522,7 @@ function WorkshopPerformanceSection({
                 <tr
                   key={`${options?.child ? `${row.serviceType}-child-` : ''}${item.serviceType}`}
                   className={cn(
-                    isGrandTotal ? 'bg-gradient-to-r from-teal-700 to-teal-600 text-white' : options?.child ? 'bg-slate-50/70 text-slate-700' : 'bg-white hover:bg-slate-50',
+                    isGrandTotal ? 'bg-slate-100/90 text-slate-950 shadow-[inset_4px_0_0_#023468]' : options?.child ? 'bg-slate-50/70 text-slate-700' : 'bg-white hover:bg-slate-50',
                     options?.parentTotal && 'bg-slate-100/90'
                   )}
                 >
@@ -2543,25 +2546,25 @@ function WorkshopPerformanceSection({
                     </div>
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{item.totalJc.toLocaleString('en-IN')}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.totalJcPercent))}>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.totalJcPercent))}>
                     {isContributionSubtotal ? '—' : formatPercent(item.totalJcPercent)}
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{formatWorkshopTableMoney(item.labourAmount)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.labourPercent))}>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.labourPercent))}>
                     {isContributionSubtotal ? '—' : formatPercent(item.labourPercent)}
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.labourPerRo)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : getPercentToneClass(item.vasPercent))}>{formatPercent(item.vasPercent)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', getPercentToneClass(item.vasPercent))}>{formatPercent(item.vasPercent)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.labPerRoMinusVas)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{formatWorkshopTableMoney(item.spareSale)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.sparePerRo)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : item.discount > 0 && 'text-rose-600')}>{formatWorkshopTableMoney(item.discount)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', item.discount > 0 && 'text-rose-600')}>{formatWorkshopTableMoney(item.discount)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{item.waCount.toLocaleString('en-IN')}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.waAmount)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : getPercentToneClass(item.waPerRoPercent))}>{formatPercent(item.waPerRoPercent)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', getPercentToneClass(item.waPerRoPercent))}>{formatPercent(item.waPerRoPercent)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{item.wbCount.toLocaleString('en-IN')}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.wbAmount)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isGrandTotal ? 'text-white' : getPercentToneClass(item.wbPerRoPercent))}>{formatPercent(item.wbPerRoPercent)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', getPercentToneClass(item.wbPerRoPercent))}>{formatPercent(item.wbPerRoPercent)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.lessVas)}</td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
                     {isGrandTotal ? item.ewCount.toLocaleString('en-IN') : '-'}
@@ -2989,7 +2992,7 @@ function ServiceTypePerformance({
   const dailyProgressMetrics: Array<{ id: DailyProgressMetric; label: string; color: string }> = useMemo(() => [
     { id: 'all', label: 'All', color: '#64748B' },
     { id: 'revenue', label: 'Total Revenue', color: '#1D4ED8' },
-    { id: 'labour', label: 'Labour', color: '#0F766E' },
+    { id: 'labour', label: 'Labour', color: '#023468' },
     { id: 'parts', label: 'Parts', color: '#D97706' },
     { id: 'load', label: 'Load', color: '#BE123C' },
   ], [])
@@ -3448,8 +3451,8 @@ function ServiceTypePerformance({
             <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 12, fill: '#BE123C' }} />
             <Tooltip contentStyle={tooltipStyle} />
             <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
-            <Line yAxisId="amount" type="monotone" dataKey="labour" name="Labour" stroke="#0F766E" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#0F766E' }}>
-              {(activeDailyMetric === 'all' || activeDailyMetric === 'labour') && <LabelList dataKey="labour" position="bottom" formatter={formatChartLabel} fill="#0F766E" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />}
+            <Line yAxisId="amount" type="monotone" dataKey="labour" name="Labour" stroke="#023468" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#023468' }}>
+              {(activeDailyMetric === 'all' || activeDailyMetric === 'labour') && <LabelList dataKey="labour" position="bottom" formatter={formatChartLabel} fill="#023468" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />}
             </Line>
             <Line yAxisId="amount" type="monotone" dataKey="parts" name="Parts" stroke="#D97706" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#D97706' }}>
               {(activeDailyMetric === 'all' || activeDailyMetric === 'parts') && <LabelList dataKey="parts" position="bottom" offset={18} formatter={formatChartLabel} fill="#D97706" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />}
@@ -3474,7 +3477,7 @@ function ServiceTypePerformance({
             <YAxis tick={{ fontSize: 12, fill: '#64748b' }} />
             <Tooltip contentStyle={tooltipStyle} />
             <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
-            <Bar dataKey="labour" name="Labour" stackId="revenue" fill="#0F766E" radius={[0, 0, 8, 8]}>
+            <Bar dataKey="labour" name="Labour" stackId="revenue" fill="#023468" radius={[0, 0, 8, 8]}>
               <LabelList dataKey="labour" position="insideTop" formatter={formatChartLabel} fill="#fff" fontSize={11} fontWeight={900} />
             </Bar>
             <Bar dataKey="parts" name="Parts" stackId="revenue" fill="#D97706" radius={[8, 8, 0, 0]}>
@@ -4480,12 +4483,12 @@ function ServiceTypePerformance({
           },
         ],
         revenueMix: [
-          { name: 'Labour', value: cySummary.labour, color: '#0F766E' },
+          { name: 'Labour', value: cySummary.labour, color: '#023468' },
           { name: 'Parts', value: cySummary.parts, color: '#D97706' },
         ].filter((item) => item.value > 0),
         operatingMix: [
           { name: 'Avg Billing', value: cySummary.averageBilling, color: '#1D4ED8' },
-          { name: 'Lab / Veh', value: cySummary.labPerVehicle, color: '#0F766E' },
+          { name: 'Lab / Veh', value: cySummary.labPerVehicle, color: '#023468' },
           { name: 'Part / Veh', value: cySummary.partPerVehicle, color: '#D97706' },
         ],
         advisorLeaderboard: [],
@@ -4716,12 +4719,12 @@ function ServiceTypePerformance({
       services,
       insights,
       revenueMix: [
-        { name: 'Labour', value: cySummary.labour, color: '#0F766E' },
+        { name: 'Labour', value: cySummary.labour, color: '#023468' },
         { name: 'Parts', value: cySummary.parts, color: '#D97706' },
       ].filter((item) => item.value > 0),
       operatingMix: [
         { name: 'Avg Billing', value: cySummary.averageBilling, color: '#1D4ED8' },
-        { name: 'Lab / Veh', value: cySummary.labPerVehicle, color: '#0F766E' },
+        { name: 'Lab / Veh', value: cySummary.labPerVehicle, color: '#023468' },
         { name: 'Part / Veh', value: cySummary.partPerVehicle, color: '#D97706' },
       ],
       advisorLeaderboard,
@@ -4894,9 +4897,9 @@ function ServiceTypePerformance({
                               <tr className={cn(
                                 "group transition-all duration-300",
                                 isGrandTotal
-                                  ? "bg-gradient-to-r from-teal-700 via-teal-600 to-emerald-600 text-white shadow-[inset_4px_0_0_#0f766e]"
+                                  ? "bg-slate-100 text-slate-950 shadow-[inset_4px_0_0_#023468]"
                                   : isTotal
-                                    ? "bg-slate-100 text-slate-950 shadow-[inset_4px_0_0_#2f8f83]"
+                                    ? "bg-slate-100 text-slate-950 shadow-[inset_4px_0_0_#034b82]"
                                     : "hover:bg-slate-50/80 bg-white"
                               )}>
                                 <td className="px-6 py-4 text-[13px] font-bold">
@@ -4916,9 +4919,9 @@ function ServiceTypePerformance({
                                     {row.name}
                                   </div>
                                 </td>
-                                <td className={cn("px-6 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.td)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-black", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-900")}>{formatValue(row.cy)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly)}</td>
+                                <td className={cn("px-6 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.td)}</td>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-black", isTotal ? "text-slate-900" : "text-slate-900")}>{formatValue(row.cy)}</td>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly)}</td>
                                 <td className="px-4 py-4 text-center">
                                   <span className={cn(
                                     "px-2.5 py-1 rounded-full text-[10px] font-black border shadow-sm",
@@ -4927,8 +4930,8 @@ function ServiceTypePerformance({
                                     {formatSignedGrowth(row.growth)}
                                   </span>
                                 </td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.qtdCY)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.qtdLY)}</td>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.qtdCY)}</td>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.qtdLY)}</td>
                                 <td className="px-4 py-4 text-center">
                                   <span className={cn(
                                     "text-[10px] font-black px-2 py-0.5 rounded-full border",
@@ -4937,8 +4940,8 @@ function ServiceTypePerformance({
                                     {formatSignedGrowth(row.qtdGrowth)}
                                   </span>
                                 </td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.ytdCY)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ytdLY)}</td>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.ytdCY)}</td>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ytdLY)}</td>
                                 <td className="px-4 py-4 text-center">
                                   <span className={cn(
                                     "text-[10px] font-black px-2 py-0.5 rounded-full border",
@@ -5406,7 +5409,7 @@ function ServiceTypePerformance({
                           </div>
                           <ResponsiveContainer width="100%" height={34}>
                             <AreaChart data={trendData.slice(0, 12)}>
-                              <Area type="monotone" dataKey="cy" stroke="#0f766e" fill="#ccfbf1" strokeWidth={2} dot={false} />
+                              <Area type="monotone" dataKey="cy" stroke="#023468" fill="#edf4fb" strokeWidth={2} dot={false} />
                             </AreaChart>
                           </ResponsiveContainer>
                         </div>
@@ -5464,8 +5467,8 @@ function ServiceTypePerformance({
                         <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 11, fill: '#BE123C' }} />
                         <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }} />
                         <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
-                        <Line yAxisId="amount" type="monotone" dataKey="labour" name="Labour" stroke="#0F766E" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#0F766E' }}>
-                          {(activeDailyMetric === 'all' || activeDailyMetric === 'labour') && <LabelList dataKey="labour" position="bottom" formatter={formatChartLabel} fill="#0F766E" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />}
+                        <Line yAxisId="amount" type="monotone" dataKey="labour" name="Labour" stroke="#023468" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#023468' }}>
+                          {(activeDailyMetric === 'all' || activeDailyMetric === 'labour') && <LabelList dataKey="labour" position="bottom" formatter={formatChartLabel} fill="#023468" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />}
                         </Line>
                         <Line yAxisId="amount" type="monotone" dataKey="parts" name="Parts" stroke="#D97706" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#D97706' }}>
                           {(activeDailyMetric === 'all' || activeDailyMetric === 'parts') && <LabelList dataKey="parts" position="bottom" offset={18} formatter={formatChartLabel} fill="#D97706" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />}
@@ -5498,7 +5501,7 @@ function ServiceTypePerformance({
                           <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
                           <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }} />
                           <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
-                          <Bar dataKey="labour" name="Labour" stackId="revenue" fill="#0F766E" radius={[0, 0, 8, 8]}>
+                          <Bar dataKey="labour" name="Labour" stackId="revenue" fill="#023468" radius={[0, 0, 8, 8]}>
                             <LabelList dataKey="labour" position="insideTop" formatter={formatChartLabel} fill="#fff" fontSize={10} fontWeight={900} />
                           </Bar>
                           <Bar dataKey="parts" name="Parts" stackId="revenue" fill="#D97706" radius={[8, 8, 0, 0]}>
@@ -5709,4 +5712,5 @@ function ServiceTypePerformance({
     </>
   )
 }
+
 

@@ -93,7 +93,7 @@ export function Stage3EAApproval({ orderDetails, onSubmit, isLoading }: Stage3EA
               handleSubmit('approve')
             }}
             disabled={isLoading}
-            className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-6 text-lg font-semibold"
+            className="flex-1 bg-gradient-to-r from-[#023468] to-[#034b82] text-white hover:from-[#012348] hover:to-[#023468] py-6 text-lg font-semibold"
           >
             {isLoading && formData.action === 'approve' ? (
               <>

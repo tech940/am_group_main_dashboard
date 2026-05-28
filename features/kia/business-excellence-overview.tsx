@@ -150,7 +150,7 @@ type ComparisonMetric = {
   deltaPct: number
 }
 
-const CHART_COLORS = ['#0f766e', '#2563eb', '#f97316', '#e11d48', '#7c3aed', '#0891b2']
+const CHART_COLORS = ['#023468', '#2563eb', '#f97316', '#e11d48', '#7c3aed', '#0891b2']
 const tooltipStyle = {
   borderRadius: 16,
   border: '1px solid #e2e8f0',
@@ -197,8 +197,8 @@ function getDateRange(dateFilter: BusinessDateFilter) {
 
 function formatCurrency(value: number) {
   const rounded = Math.round(Number.isFinite(value) ? value : 0)
-  if (Math.abs(rounded) >= 10000000) return `Rs ${(rounded / 10000000).toFixed(1)}Cr`
-  if (Math.abs(rounded) >= 100000) return `Rs ${(rounded / 100000).toFixed(1)}L`
+  if (Math.abs(rounded) >= 10000000) return `Rs ${(rounded / 10000000).toFixed(2)}Cr`
+  if (Math.abs(rounded) >= 100000) return `Rs ${(rounded / 100000).toFixed(2)}L`
   return `Rs ${rounded.toLocaleString('en-IN')}`
 }
 
@@ -231,7 +231,7 @@ function toneClass(tone: string) {
   if (tone === 'good') return 'border-emerald-100 bg-emerald-50 text-emerald-800'
   if (tone === 'risk') return 'border-rose-100 bg-rose-50 text-rose-800'
   if (tone === 'watch') return 'border-amber-100 bg-amber-50 text-amber-800'
-  return 'border-slate-100 bg-slate-50 text-slate-700'
+  return 'border-slate-300 bg-white text-slate-700'
 }
 
 function deltaClass(deltaPct: number, positiveIsGood = true) {
@@ -429,7 +429,7 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="label" interval={0} tick={{ fontSize: 10, fontWeight: 800, fill: '#64748b' }} />
             <YAxis yAxisId="left" tickFormatter={formatCompact} tick={{ fontSize: 10, fontWeight: 800, fill: '#64748b' }} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fontWeight: 800, fill: '#0f766e' }} />
+            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fontWeight: 800, fill: '#023468' }} />
             <Tooltip
               formatter={(value, name) => [
                 name === 'Revenue'
@@ -443,8 +443,8 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
             <Bar yAxisId="left" dataKey="revenue" name="Revenue" fill="#2563eb" radius={[10, 10, 0, 0]} maxBarSize={62} isAnimationActive={false}>
               <LabelList dataKey="revenue" position="top" formatter={(value) => formatCompact(Number(value || 0))} fill="#2563eb" fontSize={10} fontWeight={900} />
             </Bar>
-            <Line yAxisId="right" type="monotone" dataKey="totalJc" name="Closed RO" stroke="#0f766e" strokeWidth={3} dot={{ r: 4, fill: '#ffffff', strokeWidth: 2 }} isAnimationActive={false}>
-              <LabelList dataKey="totalJc" position="top" offset={10} formatter={(value) => formatNumber(Number(value || 0))} fill="#0f766e" fontSize={10} fontWeight={900} />
+            <Line yAxisId="right" type="monotone" dataKey="totalJc" name="Closed RO" stroke="#023468" strokeWidth={3} dot={{ r: 4, fill: '#ffffff', strokeWidth: 2 }} isAnimationActive={false}>
+              <LabelList dataKey="totalJc" position="top" offset={10} formatter={(value) => formatNumber(Number(value || 0))} fill="#023468" fontSize={10} fontWeight={900} />
             </Line>
           </ComposedChart>
         </ResponsiveContainer>
@@ -460,7 +460,7 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
             <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 10, fontWeight: 900, fill: '#0f172a' }} />
             <Tooltip formatter={(value, name) => [name === 'revenue' ? formatCurrency(Number(value || 0)) : formatNumber(Number(value || 0)), String(name)]} contentStyle={tooltipStyle} />
             <Legend />
-            <Bar dataKey="totalJc" name="JC" fill="#0f766e" radius={[0, 8, 8, 0]} />
+            <Bar dataKey="totalJc" name="JC" fill="#023468" radius={[0, 8, 8, 0]} />
             <Bar dataKey="revenue" name="Revenue" fill="#2563eb" radius={[0, 8, 8, 0]} />
           </BarChart>
         </ResponsiveContainer>
@@ -476,7 +476,7 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
             <YAxis tick={{ fontSize: 10, fontWeight: 800, fill: '#64748b' }} />
             <Tooltip contentStyle={tooltipStyle} />
             <Bar dataKey="count" name="Open RO" radius={[10, 10, 0, 0]}>
-              {data.charts.agingDistribution.map((_, index) => <Cell key={index} fill={['#10b981', '#f59e0b', '#f97316', '#e11d48'][index] || '#0f766e'} />)}
+              {data.charts.agingDistribution.map((_, index) => <Cell key={index} fill={['#10b981', '#f59e0b', '#f97316', '#e11d48'][index] || '#023468'} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -556,7 +556,7 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
 
   return (
     <div className="space-y-4 p-4">
-      <section className="rounded-[1.5rem] border border-teal-100 bg-[#f8fffe] p-4 shadow-sm">
+      <section className="rounded-[1.5rem] border border-[#b9ccde] bg-white/85 p-4 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -707,7 +707,7 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
               <div className="h-[170px]">{renderChart('addons')}</div>
             </div>
 
-            <div className="rounded-xl bg-gradient-to-br from-violet-600 to-indigo-700 p-4 text-white shadow-sm">
+            <div className="rounded-xl bg-[linear-gradient(135deg,#023468,#034b82)] p-4 text-white shadow-sm">
               <p className="text-[10px] font-black uppercase tracking-widest text-violet-100">Priority Queue</p>
               <p className="mt-3 text-4xl font-black leading-none">{formatNumber(priorityTotal)}</p>
               <p className="mt-2 text-xs font-bold text-violet-100">Items need management attention</p>
@@ -812,3 +812,4 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
     </div>
   )
 }
+

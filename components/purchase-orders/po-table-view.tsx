@@ -129,9 +129,9 @@ function getStatusColor(status: string) {
     md_denied: 'bg-red-500',
     ea_on_hold: 'bg-amber-500',
     md_on_hold: 'bg-amber-500',
-    awaiting_grn: 'bg-teal-500',
+    awaiting_grn: 'bg-[#023468]',
     awaiting_accounts: 'bg-amber-500',
-    completed: 'bg-green-600',
+    completed: 'bg-[#023468]',
     cancelled: 'bg-slate-500',
   }
 
@@ -164,7 +164,7 @@ export function POTableView({ orders, totalOrders = orders.length, listMode = 't
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-slate-200 bg-gradient-to-r from-teal-50 to-emerald-50 p-3">
+      <div className="rounded-lg border border-slate-200 bg-gradient-to-r from-[#edf4fb] to-[#f8fafc] p-3">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-slate-800">Purchase Order Overview</h3>
@@ -174,14 +174,14 @@ export function POTableView({ orders, totalOrders = orders.length, listMode = 't
           </div>
           <div className="rounded-lg bg-white px-3 py-1.5 shadow-sm">
             <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Total Orders</p>
-            <p className="text-xl font-black text-teal-600">{totalOrders}</p>
+            <p className="text-xl font-black text-[#023468]">{totalOrders}</p>
           </div>
         </div>
       </div>
 
       <div className="relative overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm" aria-busy={isLoading}>
         <table className="w-full text-xs">
-          <thead className="border-b-2 border-teal-600 bg-gradient-to-r from-teal-600 to-teal-700">
+          <thead className="border-b-2 border-[#023468] bg-gradient-to-r from-[#023468] to-[#034b82]">
             <tr>
               {visibleColumns.map((col) => (
                 <th
@@ -233,7 +233,7 @@ export function POTableView({ orders, totalOrders = orders.length, listMode = 't
                   <tr
                     key={order.id}
                     className={cn(
-                      'border-b border-slate-100 transition-colors hover:bg-teal-50 cursor-pointer',
+                      'border-b border-slate-100 transition-colors hover:bg-[#edf4fb] cursor-pointer',
                       isEven ? 'bg-white' : 'bg-slate-50/50'
                     )}
                     onClick={() => onOrderClick(order)}
@@ -260,7 +260,7 @@ export function POTableView({ orders, totalOrders = orders.length, listMode = 't
                               {value ? formatDate(String(value)) : '-'}
                             </span>
                           ) : col.key === 'estimateIfAny' ? (
-                            <span className="text-[11px] font-semibold text-teal-700">
+                            <span className="text-[11px] font-semibold text-[#023468]">
                               {formatCurrency(value)}
                             </span>
                           ) : col.key === 'brand' ? (

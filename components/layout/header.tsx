@@ -114,7 +114,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   const getRoleBadgeColor = (role: string) => {
     switch (role.toLowerCase()) {
       case 'admin':
-        return 'text-emerald-600 bg-emerald-50 border-emerald-200'
+        return 'text-[#023468] bg-[#edf4fb] border-[#b9ccde]'
       case 'manager':
         return 'text-blue-600 bg-blue-50 border-blue-200'
       case 'technician':
@@ -125,12 +125,12 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   }
 
   return (
-    <header className="sticky top-0 z-30 mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-teal-100/80 bg-[linear-gradient(135deg,#ffffff_0%,#effdf9_48%,#e8f7ff_100%)] px-6 transition-colors dark:border-white/10 dark:bg-[linear-gradient(135deg,#020617_0%,#082f36_52%,#0f172a_100%)]">
+    <header className="sticky top-0 z-30 mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-[#b9ccde]/80 bg-[linear-gradient(135deg,#ffffff_0%,#edf4fb_48%,#eff6ff_100%)] px-6 transition-colors dark:border-white/10 dark:bg-[linear-gradient(135deg,#020617_0%,#012348_52%,#0f172a_100%)]">
       <div className="flex items-center gap-6">
         {/* Hamburger */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-teal-100 bg-white text-slate-700 shadow-sm transition-all hover:bg-teal-50 hover:text-teal-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/16 dark:hover:text-cyan-200"
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#b9ccde] bg-white text-slate-700 shadow-sm transition-all hover:bg-[#edf4fb] hover:text-[#023468] dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/16 dark:hover:text-blue-200"
         >
           <Menu className="h-6 w-6" />
         </button>
@@ -138,7 +138,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
         {/* Section Title */}
         <div className="hidden lg:block">
           <h1 className="text-xl font-semibold leading-none text-slate-900 dark:text-white">{title}</h1>
-          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-teal-700/70 dark:text-cyan-200/70">{subtitle}</p>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-[#023468]/70 dark:text-blue-200/70">{subtitle}</p>
         </div>
       </div>
 
@@ -150,7 +150,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
             onClick={toggleDarkMode}
             aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             title={isDarkMode ? 'Light mode' : 'Dark mode'}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-teal-100 bg-white text-slate-700 shadow-sm transition-all hover:bg-teal-50 hover:text-teal-700 dark:border-white/10 dark:bg-white/10 dark:text-amber-200 dark:hover:bg-white/16 dark:hover:text-amber-100"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#b9ccde] bg-white text-slate-700 shadow-sm transition-all hover:bg-[#edf4fb] hover:text-[#023468] dark:border-white/10 dark:bg-white/10 dark:text-amber-200 dark:hover:bg-white/16 dark:hover:text-amber-100"
           >
             {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </button>
@@ -159,14 +159,14 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div className="flex cursor-pointer items-center gap-3 border-l border-slate-200/70 pl-6 transition-opacity hover:opacity-85 dark:border-white/10">
-                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border-2 border-white/80 bg-gradient-to-br from-teal-400 to-cyan-600 text-sm font-bold text-white shadow-sm ring-1 ring-teal-100/20">
+                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border-2 border-white/80 bg-[linear-gradient(135deg,#023468,#03518a)] text-sm font-bold text-white shadow-sm ring-1 ring-[#023468]/20">
                   {loading ? '...' : user?.fullName.charAt(0).toUpperCase()}
                 </div>
                 <div className="hidden md:flex flex-col">
                   <p className="text-xs font-semibold leading-none text-slate-900 dark:text-white">
                     {loading ? 'Loading...' : user?.fullName}
                   </p>
-                  <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-teal-700/70 dark:text-cyan-200/70">
+                  <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-[#023468]/70 dark:text-blue-200/70">
                     {loading ? '...' : user?.role}
                   </p>
                 </div>
@@ -176,7 +176,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
             <DropdownMenuContent align="end" className="w-72 rounded-2xl border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-slate-950">
               <DropdownMenuLabel className="p-4 pb-3">
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                  <div className="h-12 w-12 rounded-xl bg-[linear-gradient(135deg,#023468,#03518a)] flex items-center justify-center text-white font-bold text-lg shadow-lg">
                     {user?.fullName.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1">

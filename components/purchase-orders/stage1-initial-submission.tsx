@@ -160,13 +160,13 @@ export function Stage1InitialSubmission({
   return (
     <form onSubmit={handleSubmit} autoComplete="off">
       <Card className="border-none shadow-xl">
-        <CardHeader className="bg-gradient-to-r from-teal-500 to-teal-600 text-white">
+        <CardHeader className="bg-gradient-to-r from-[#023468] to-[#034b82] text-white">
           <div className="flex items-center justify-between gap-4">
             <div>
           <CardTitle className="text-2xl font-black">
             {mode === 'edit' ? 'Edit Purchase Request' : 'Initial Purchase Request'}
           </CardTitle>
-          <p className="text-sm text-teal-50 mt-1">
+          <p className="text-sm text-[#edf4fb] mt-1">
                 {mode === 'edit'
                   ? 'Update the purchase request details and save the correction'
                   : 'Fill in the details below to submit your purchase request for EA approval'}
@@ -358,7 +358,7 @@ export function Stage1InitialSubmission({
             <Button
               type="submit"
               disabled={isLoading}
-              className="rounded-2xl bg-gradient-to-r from-teal-500 to-teal-600 px-8 py-6 text-lg font-semibold text-white hover:from-teal-600 hover:to-teal-700"
+              className="rounded-2xl bg-gradient-to-r from-[#023468] to-[#034b82] px-8 py-6 text-lg font-semibold text-white hover:from-[#023468] hover:to-[#034b82]"
             >
               {isLoading ? (
                 <>

@@ -129,13 +129,13 @@ export function ApprovalCard({ order, userRole, onApprove, onReject }: ApprovalC
                 value={remarks}
                 onChange={(event) => setRemarks(event.target.value)}
                 placeholder="Enter remarks. Optional for approval, required for rejection."
-                className="min-h-24 rounded-2xl border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus-visible:ring-teal-500/30"
+                className="min-h-24 rounded-2xl border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus-visible:ring-[#023468]/30"
               />
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   onClick={() => void handleApprove()}
                   disabled={isLoading}
-                  className="rounded-2xl bg-white text-emerald-800 hover:bg-emerald-50"
+                  className="rounded-2xl bg-white text-[#012348] hover:bg-[#edf4fb]"
                 >
                   {isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

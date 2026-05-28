@@ -81,28 +81,50 @@ function getSpendDateExpression() {
   return sql<Date>`COALESCE(${purchaseOrders.receivedDateTime}, ${purchaseOrders.completedAt}, ${purchaseOrders.createdAt})`
 }
 
+function addSpendDateBounds(filters: unknown[], start: Date, end: Date) {
+  const spendDate = getSpendDateExpression()
+  filters.push(
+    sql`${spendDate} >= ${start.toISOString()}::timestamptz`,
+    sql`${spendDate} < ${end.toISOString()}::timestamptz`
+  )
+}
+
 function addDateModeFilters(filters: unknown[], mode: 'today' | 'all', useSpendDate: boolean) {
   if (mode !== 'today') return
 
   const { start, end } = getCurrentIndiaDayBounds()
   if (useSpendDate) {
-    const spendDate = getSpendDateExpression()
-    filters.push(sql`${spendDate} >= ${start}`, sql`${spendDate} < ${end}`)
+    addSpendDateBounds(filters, start, end)
     return
   }
 
   filters.push(gte(purchaseOrders.createdAt, start), lt(purchaseOrders.createdAt, end))
 }
 
-function addSpendDateRangeFilters(filters: unknown[], startDate: string | null, endDate: string | null) {
-  const spendDate = getSpendDateExpression()
-
-  if (startDate) {
-    filters.push(sql`${spendDate} >= ${new Date(`${startDate}T00:00:00+05:30`)}`)
+function parseIndiaDateBound(value: string | null, endOfDay = false) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null
   }
 
-  if (endDate) {
-    filters.push(sql`${spendDate} < ${new Date(new Date(`${endDate}T00:00:00+05:30`).getTime() + 24 * 60 * 60 * 1000)}`)
+  const date = new Date(`${value}T00:00:00+05:30`)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  return endOfDay ? new Date(date.getTime() + 24 * 60 * 60 * 1000) : date
+}
+
+function addSpendDateRangeFilters(filters: unknown[], startDate: string | null, endDate: string | null) {
+  const spendDate = getSpendDateExpression()
+  const start = parseIndiaDateBound(startDate)
+  const end = parseIndiaDateBound(endDate, true)
+
+  if (start) {
+    filters.push(sql`${spendDate} >= ${start.toISOString()}::timestamptz`)
+  }
+
+  if (end) {
+    filters.push(sql`${spendDate} < ${end.toISOString()}::timestamptz`)
   }
 }
 

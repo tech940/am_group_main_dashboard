@@ -222,7 +222,7 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
             ))}
           </div>
 
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+          <div className="rounded-2xl border border-[#b9ccde] bg-[#edf4fb] p-4">
             <div className="mb-4">
               <p className="text-base font-black text-slate-900">Bill Images</p>
               <p className="text-xs font-medium text-slate-500">
@@ -254,7 +254,7 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
               variant="outline"
               disabled={isLoading}
               onClick={() => void submitVendorInformation('push_to_grn_images')}
-              className="mr-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-8 py-6 text-lg font-semibold text-emerald-700 hover:bg-emerald-100"
+              className="mr-3 rounded-2xl border border-[#b9ccde] bg-[#edf4fb] px-8 py-6 text-lg font-semibold text-[#023468] hover:bg-[#dbeafe]"
             >
               {isLoading ? (
                 <>

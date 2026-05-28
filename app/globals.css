@@ -5,29 +5,29 @@
 @layer base {
   :root {
     --background: 0 0% 98.5%; /* #FBFCFC - Emptiness */
-    --foreground: 192 100% 20%; /* Dark teal for text */
+    --foreground: 211 96% 16%; /* Deep #023468 family text */
     --card: 0 0% 100%;
-    --card-foreground: 192 100% 20%;
+    --card-foreground: 211 96% 16%;
     --popover: 0 0% 100%;
-    --popover-foreground: 192 100% 20%;
-    --primary: 192 95% 20%; /* #055B65 - Enamelled Jewel */
+    --popover-foreground: 211 96% 16%;
+    --primary: 211 96% 21%; /* #023468 */
     --primary-foreground: 0 0% 98%;
-    --secondary: 192 33% 40%; /* #45828B - Wish Upon a Star */
+    --secondary: 211 82% 28%; /* #03518a family */
     --secondary-foreground: 0 0% 98%;
     --muted: 180 10% 90%; /* #E0E5E9 - City Lights */
     --muted-foreground: 192 20% 40%;
-    --accent: 173 51% 37%; /* #2F8F83 - Premium muted enterprise teal */
-    --accent-foreground: 192 100% 20%;
+    --accent: 211 96% 21%; /* #023468 */
+    --accent-foreground: 211 96% 16%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: 180 10% 88%;
     --input: 180 10% 88%;
-    --ring: 192 95% 20%;
+    --ring: 211 96% 21%;
     --radius: 1.5rem;
-    --chart-1: 192 95% 20%; /* Teal */
-    --chart-2: 173 51% 37%; /* Muted premium teal */
-    --chart-3: 192 33% 40%; /* Teal Secondary */
-    --chart-4: 180 10% 75%; /* Light Teal */
+    --chart-1: 211 96% 21%; /* #023468 */
+    --chart-2: 221 83% 53%; /* Blue */
+    --chart-3: 213 94% 35%; /* Deep blue */
+    --chart-4: 211 48% 78%; /* Light #023468 tint */
     --chart-5: 180 10% 90%; /* City Lights */
   }
 
@@ -38,7 +38,7 @@
     --card-foreground: 210 40% 98%;
     --popover: 222 47% 11%;
     --popover-foreground: 210 40% 98%;
-    --primary: 173 76% 36%;
+    --primary: 211 96% 21%;
     --primary-foreground: 0 0% 98%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -72,7 +72,7 @@
   }
 
   thead tr {
-    background-color: #055B65 !important;
+    background-color: #023468 !important;
   }
 
   th {
@@ -86,44 +86,43 @@
 @layer utilities {
   .dashboard-shell {
     background:
-      radial-gradient(circle at 12% 10%, rgba(20, 184, 166, 0.30), transparent 31%),
-      radial-gradient(circle at 78% 4%, rgba(45, 212, 191, 0.28), transparent 29%),
-      radial-gradient(circle at 88% 82%, rgba(14, 116, 144, 0.20), transparent 34%),
-      radial-gradient(circle at 32% 88%, rgba(186, 230, 253, 0.38), transparent 32%),
-      linear-gradient(135deg, #edfffb 0%, #f7fffd 45%, #eaf7ff 100%);
+      radial-gradient(circle at 12% 8%, rgba(2, 52, 104, 0.10), transparent 30%),
+      radial-gradient(circle at 82% 4%, rgba(3, 75, 130, 0.10), transparent 28%),
+      radial-gradient(circle at 88% 82%, rgba(191, 219, 254, 0.14), transparent 34%),
+      linear-gradient(135deg, #ffffff 0%, #f8fafc 46%, #edf4fb 100%);
     transition: background 220ms ease, color 220ms ease;
   }
 
   .dashboard-orb-left {
-    background-color: rgba(103, 232, 249, 0.34);
+    background-color: rgba(2, 52, 104, 0.10);
   }
 
   .dashboard-orb-right {
-    background-color: rgba(94, 234, 212, 0.40);
+    background-color: rgba(3, 75, 130, 0.12);
   }
 
   .dashboard-orb-bottom {
-    background-color: rgba(125, 211, 252, 0.26);
+    background-color: rgba(219, 234, 254, 0.22);
   }
 
   .dark .dashboard-shell {
     background:
-      radial-gradient(circle at 16% 10%, rgba(20, 184, 166, 0.20), transparent 31%),
-      radial-gradient(circle at 78% 6%, rgba(8, 145, 178, 0.18), transparent 30%),
-      radial-gradient(circle at 88% 82%, rgba(45, 212, 191, 0.12), transparent 34%),
-      linear-gradient(135deg, #020617 0%, #071b1f 48%, #0f172a 100%);
+      radial-gradient(circle at 16% 10%, rgba(2, 52, 104, 0.32), transparent 31%),
+      radial-gradient(circle at 78% 6%, rgba(3, 75, 130, 0.24), transparent 30%),
+      radial-gradient(circle at 88% 82%, rgba(30, 64, 175, 0.14), transparent 34%),
+      linear-gradient(135deg, #020617 0%, #111827 48%, #0f172a 100%);
   }
 
   .dark .dashboard-orb-left {
-    background-color: rgba(34, 211, 238, 0.12);
+    background-color: rgba(2, 52, 104, 0.22);
   }
 
   .dark .dashboard-orb-right {
-    background-color: rgba(45, 212, 191, 0.14);
+    background-color: rgba(3, 75, 130, 0.20);
   }
 
   .dark .dashboard-orb-bottom {
-    background-color: rgba(14, 165, 233, 0.10);
+    background-color: rgba(37, 99, 235, 0.10);
   }
 
   .dark [role="dialog"][class*="bg-white"],
@@ -185,7 +184,61 @@
   .glass-dashboard-content [class*="shadow-xl"],
   .glass-dashboard-content [class*="shadow-lg"],
   .glass-dashboard-content [class*="shadow-sm"] {
-    box-shadow: 0 22px 70px rgba(15, 118, 110, 0.10) !important;
+    box-shadow: 0 22px 70px rgba(2, 52, 104, 0.10) !important;
+  }
+
+  .app-sidebar-brand {
+    background: linear-gradient(165deg, #012348 0%, #023468 46%, #034b82 100%) !important;
+    background-color: #023468 !important;
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    color: rgba(255, 255, 255, 0.92) !important;
+  }
+
+  .app-sidebar-brand :where([class*="bg-white/22"]) {
+    background-color: rgba(255, 255, 255, 0.18) !important;
+    border-color: rgba(255, 255, 255, 0.70) !important;
+    color: #ffffff !important;
+    box-shadow: 0 12px 28px rgba(1, 22, 46, 0.18) !important;
+  }
+
+  .app-sidebar-brand :where([class*="bg-white/10"], [class*="bg-white/12"], [class*="bg-white/16"]) {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+  }
+
+  .app-sidebar-brand :where([class*="text-indigo-50"], [class*="text-teal-50"], [class*="text-white"]) {
+    color: rgba(255, 255, 255, 0.86) !important;
+  }
+
+  .app-sidebar-brand :where([class*="border-white"], [class*="border-emerald"], [class*="border-indigo"]) {
+    border-color: rgba(255, 255, 255, 0.28) !important;
+  }
+
+  .app-sidebar-brand :where(a:hover, button:hover) {
+    background-color: rgba(255, 255, 255, 0.16) !important;
+    color: #ffffff !important;
+  }
+
+  .app-sidebar-brand :where(a:hover *, button:hover *) {
+    color: #ffffff !important;
+  }
+
+  .app-sidebar-brand :where([class*="bg-white/22"], [class*="bg-white/22"] *) {
+    color: #ffffff !important;
+  }
+
+  .app-sidebar-brand img {
+    filter: none;
+  }
+
+  .app-sidebar-brand [class*="bg-black"] {
+    background-color: #0f172a !important;
+  }
+
+  .dark .app-sidebar-brand {
+    background: linear-gradient(165deg, #020617 0%, #012348 48%, #023468 100%) !important;
+    background-color: #020617 !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+    color: rgba(226, 232, 240, 0.92) !important;
   }
 
   .glass-dashboard-content table tbody {
@@ -206,13 +259,13 @@
 
   .glass-dashboard-content .approval-table-checkbox {
     background-color: #ffffff !important;
-    border-color: #0f766e !important;
+    border-color: #023468 !important;
     color: #ffffff !important;
   }
 
   .glass-dashboard-content .approval-table-checkbox[data-state="checked"] {
-    background-color: #0f766e !important;
-    border-color: #064e3b !important;
+    background-color: #023468 !important;
+    border-color: #012348 !important;
     color: #ffffff !important;
   }
 
@@ -505,9 +558,9 @@
   }
 
   .business-excellence-boundaries {
-    --be-border-strong: rgba(15, 118, 110, 0.42);
+    --be-border-strong: rgba(2, 52, 104, 0.44);
     --be-border-soft: rgba(51, 65, 85, 0.24);
-    --be-border-table: rgba(15, 118, 110, 0.22);
+    --be-border-table: rgba(2, 52, 104, 0.24);
   }
 
   .business-excellence-boundaries :where(
@@ -533,6 +586,27 @@
       0 8px 22px rgba(15, 23, 42, 0.06) !important;
   }
 
+  .business-excellence-boundaries :where([class~="text-teal-700"], [class~="text-teal-800"], [class~="text-cyan-700"], [class~="text-cyan-800"], [class~="text-indigo-700"], [class~="text-indigo-800"]) {
+    color: #023468 !important;
+  }
+
+  .business-excellence-boundaries :where([class~="bg-teal-50"], [class~="bg-cyan-50"], [class~="bg-indigo-50"]) {
+    background-color: #edf4fb !important;
+  }
+
+  .business-excellence-boundaries :where([class~="bg-teal-600"], [class~="bg-teal-700"], [class~="bg-teal-800"], [class~="bg-cyan-600"], [class~="bg-cyan-700"], [class~="bg-indigo-600"], [class~="bg-indigo-700"]) {
+    background-color: #023468 !important;
+  }
+
+  .business-excellence-boundaries :where([class~="border-teal-100"], [class~="border-teal-200"], [class~="border-cyan-100"], [class~="border-cyan-200"], [class~="border-indigo-100"], [class~="border-indigo-200"]) {
+    border-color: #b9ccde !important;
+  }
+
+  .business-excellence-boundaries :where(.be-borderless-action) {
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+
   .business-excellence-boundaries :where(table, th, td) {
     border-width: 1px !important;
     border-style: solid !important;
@@ -544,8 +618,8 @@
   }
 
   .dark .business-excellence-boundaries {
-    --be-border-strong: rgba(45, 212, 191, 0.38);
+    --be-border-strong: rgba(125, 174, 217, 0.42);
     --be-border-soft: rgba(148, 163, 184, 0.28);
-    --be-border-table: rgba(45, 212, 191, 0.24);
+    --be-border-table: rgba(125, 174, 217, 0.28);
   }
 }
