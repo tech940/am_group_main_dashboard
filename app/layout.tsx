@@ -20,9 +20,9 @@ import NextTopLoader from 'nextjs-toploader';
 const themeInitScript = `
   try {
     const storedTheme = window.localStorage.getItem('dashboard-theme');
-    const storedAccent = window.localStorage.getItem('dashboard-accent') || 'skydash';
+    const storedAccent = window.localStorage.getItem('dashboard-accent') || 'corona';
     const legacyAccents = ['navy', 'indigo', 'blue', 'violet', 'ruby'];
-    const accent = legacyAccents.includes(storedAccent) ? 'skydash' : storedAccent;
+    const accent = legacyAccents.includes(storedAccent) ? 'corona' : storedAccent;
     const migrationKey = 'dashboard-midnight-theme-decoupled';
     const shouldResetOldMidnightDark = accent === 'midnight' && storedTheme === 'dark' && window.localStorage.getItem(migrationKey) !== '1';
     const theme = shouldResetOldMidnightDark ? 'light' : storedTheme;
@@ -53,7 +53,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: themeInitScript }}
         />
         <NextTopLoader 
-          color="#ffffff"
+          color="var(--dashboard-primary)"
           initialPosition={0.08}
           crawlSpeed={200}
           height={3}
@@ -61,7 +61,7 @@ export default function RootLayout({
           showSpinner={false}
           easing="ease"
           speed={200}
-          shadow="0 0 12px rgba(255,255,255,0.85),0 0 6px rgba(255,255,255,0.6)"
+          shadow="0 0 12px color-mix(in srgb, var(--dashboard-primary) 62%, transparent),0 0 6px color-mix(in srgb, var(--dashboard-primary) 42%, transparent)"
         />
         <DashboardQueryProvider>
           <SidebarProvider>

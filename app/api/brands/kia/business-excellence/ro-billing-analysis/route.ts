@@ -73,6 +73,19 @@ function endOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
 }
 
+function endOfMonth(date: Date) {
+  return endOfDay(new Date(date.getFullYear(), date.getMonth() + 1, 0))
+}
+
+function endOfQuarter(date: Date) {
+  const quarterStartMonth = Math.floor(date.getMonth() / 3) * 3
+  return endOfDay(new Date(date.getFullYear(), quarterStartMonth + 3, 0))
+}
+
+function endOfCalendarYear(date: Date) {
+  return endOfDay(new Date(date.getFullYear(), 11, 31))
+}
+
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -141,9 +154,8 @@ function sameDateLastYear(date: Date) {
   return new Date(date.getFullYear() - 1, date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds())
 }
 
-function getFiscalYearStart(date: Date) {
-  const fiscalYear = date.getMonth() < 3 ? date.getFullYear() - 1 : date.getFullYear()
-  return new Date(fiscalYear, 3, 1, 0, 0, 0, 0)
+function getCalendarYearStart(date: Date) {
+  return new Date(date.getFullYear(), 0, 1, 0, 0, 0, 0)
 }
 
 function buildPeriodWindows(endDate: Date): Record<PeriodKey, PeriodWindow> {
@@ -152,7 +164,7 @@ function buildPeriodWindows(endDate: Date): Record<PeriodKey, PeriodWindow> {
   const cyMtdStart = new Date(endDate.getFullYear(), endDate.getMonth(), 1)
   const quarterStartMonth = Math.floor(endDate.getMonth() / 3) * 3
   const cyQtdStart = new Date(endDate.getFullYear(), quarterStartMonth, 1)
-  const cyYtdStart = getFiscalYearStart(endDate)
+  const cyYtdStart = getCalendarYearStart(endDate)
 
   return {
     td: {
@@ -165,19 +177,19 @@ function buildPeriodWindows(endDate: Date): Record<PeriodKey, PeriodWindow> {
       cyStart: startOfDay(cyMtdStart),
       cyEnd,
       lyStart: sameDateLastYear(startOfDay(cyMtdStart)),
-      lyEnd: sameDateLastYear(cyEnd),
+      lyEnd: endOfMonth(sameDateLastYear(cyEnd)),
     },
     qtd: {
       cyStart: startOfDay(cyQtdStart),
       cyEnd,
       lyStart: sameDateLastYear(startOfDay(cyQtdStart)),
-      lyEnd: sameDateLastYear(cyEnd),
+      lyEnd: endOfQuarter(sameDateLastYear(cyEnd)),
     },
     ytd: {
       cyStart: startOfDay(cyYtdStart),
       cyEnd,
       lyStart: sameDateLastYear(startOfDay(cyYtdStart)),
-      lyEnd: sameDateLastYear(cyEnd),
+      lyEnd: endOfCalendarYear(sameDateLastYear(cyEnd)),
     },
   }
 }
@@ -1224,7 +1236,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v13:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v15:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {

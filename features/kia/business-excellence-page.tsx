@@ -3658,32 +3658,40 @@ function ServiceTypePerformance({
       cyMtdEnd = new Date(cyYear, cyMonth, cyDay, 23, 59, 59, 999)
 
       lyMtdStart = new Date(cyYear - 1, cyMonth, 1, 0, 0, 0, 0)
-      lyMtdEnd = new Date(cyYear - 1, cyMonth, cyDay, 23, 59, 59, 999)
+      lyMtdEnd = new Date(cyYear - 1, cyMonth + 1, 0, 23, 59, 59, 999)
     }
 
+    const lyEquivalentDayEnd = isRangeMode
+      ? (() => {
+          const shiftedEnd = new Date(rangeEnd)
+          shiftedEnd.setFullYear(shiftedEnd.getFullYear() - 1)
+          shiftedEnd.setHours(23, 59, 59, 999)
+          return shiftedEnd
+        })()
+      : new Date(cyYear - 1, cyMonth, cyDay, 23, 59, 59, 999)
     const quarterStartMonth = Math.floor(cyMonth / 3) * 3
     const cyQtdStart = new Date(cyYear, quarterStartMonth, 1, 0, 0, 0, 0)
     const cyQtdEnd = new Date(cyMtdEnd)
 
     const lyQtdStart = new Date(cyYear - 1, quarterStartMonth, 1, 0, 0, 0, 0)
-    const lyQtdEnd = new Date(lyMtdEnd)
+    const lyQtdEnd = isRangeMode
+      ? new Date(lyMtdEnd)
+      : new Date(cyYear - 1, quarterStartMonth + 3, 0, 23, 59, 59, 999)
 
-    let fiscalYearStartCY = cyYear
-    if (cyMonth < 3) {
-      fiscalYearStartCY = cyYear - 1
-    }
-    const cyYtdStart = new Date(fiscalYearStartCY, 3, 1, 0, 0, 0, 0)
+    const cyYtdStart = new Date(cyYear, 0, 1, 0, 0, 0, 0)
     const cyYtdEnd = new Date(cyMtdEnd)
 
-    const lyYtdStart = new Date(fiscalYearStartCY - 1, 3, 1, 0, 0, 0, 0)
-    const lyYtdEnd = new Date(lyMtdEnd)
+    const lyYtdStart = new Date(cyYear - 1, 0, 1, 0, 0, 0, 0)
+    const lyYtdEnd = isRangeMode
+      ? new Date(lyMtdEnd)
+      : new Date(cyYear - 1, 11, 31, 23, 59, 59, 999)
     const cyTdStart = new Date(cyMtdEnd)
     cyTdStart.setHours(0, 0, 0, 0)
     const cyTdEnd = new Date(cyMtdEnd)
     cyTdEnd.setHours(23, 59, 59, 999)
-    const lyTdStart = new Date(lyMtdEnd)
+    const lyTdStart = new Date(lyEquivalentDayEnd)
     lyTdStart.setHours(0, 0, 0, 0)
-    const lyTdEnd = new Date(lyMtdEnd)
+    const lyTdEnd = new Date(lyEquivalentDayEnd)
     lyTdEnd.setHours(23, 59, 59, 999)
 
     console.log('📅 statsData Boundaries Derived:', {

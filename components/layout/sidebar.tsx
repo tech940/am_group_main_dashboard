@@ -15,6 +15,7 @@ import {
   Shield,
   Lock,
   ShoppingCart,
+  Landmark,
   Loader2
 } from 'lucide-react'
 import { useState, useEffect, useMemo, useRef } from 'react'
@@ -59,6 +60,7 @@ export function Sidebar() {
   const [signingOut, setSigningOut] = useState(false)
   const { userRole, isAdmin, canAccessAdmin, userBrand, loading } = useUserRole()
   const initializedBrandMenuRef = useRef(false)
+  const canAccessFinanceOrders = ['admin', 'ceo', 'md', 'ea', 'accounts', 'finance_head'].includes(userRole || '')
 
   const canAccessBrand = (brandKey: string) => {
     if (userRole === 'admin') return true
@@ -274,6 +276,33 @@ export function Sidebar() {
                     <span className="flex-1 text-left text-sm">Purchase Orders</span>
                   )}
                 </Link>
+
+                {canAccessFinanceOrders && (
+                  <Link
+                    href="/finance-orders"
+                    onClick={() => handleNavigation('/finance-orders')}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
+                      pathname === '/finance-orders'
+                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
+                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
+                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                    )}
+                  >
+                    <div className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      pathname === '/finance-orders' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
+                    )}>
+                      <Landmark className={cn(
+                        "h-4.5 w-4.5 transition-colors",
+                        pathname === '/finance-orders' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
+                      )} />
+                    </div>
+                    {!collapsed && (
+                      <span className="flex-1 text-left text-sm">Finance Orders</span>
+                    )}
+                  </Link>
+                )}
 
                 <div className="space-y-2">
                   <button

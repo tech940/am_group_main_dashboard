@@ -23,13 +23,13 @@ import {
 } from '@/components/ui/dialog'
 import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { USER_BRANCH_OPTIONS, getUserBranchLabel, type UserBranchValue } from '@/lib/branches'
+import { USER_BRANCH_OPTIONS, USER_ROLE_OPTIONS, getUserBranchLabel, type UserBranchValue } from '@/lib/dashboard-config'
 
 interface User {
   id: string
   email: string
   fullName: string
-  role: 'admin' | 'purchase_manager' | 'ea' | 'md' | 'accounts' | 'manager' | 'technician' | 'viewer'
+  role: 'admin' | 'ceo' | 'purchase_manager' | 'finance_head' | 'ea' | 'md' | 'accounts' | 'manager' | 'technician' | 'viewer'
   brand?: string
   department?: string
   isActive: boolean
@@ -62,7 +62,9 @@ const DEFAULT_PAGINATION: UsersPagination = {
 const ROLE_FILTER_OPTIONS = [
   { value: 'all', label: 'All Roles & Departments' },
   { value: 'role:admin', label: 'Admin' },
+  { value: 'role:ceo', label: 'CEO' },
   { value: 'role:purchase_manager', label: 'Purchase Managers' },
+  { value: 'role:finance_head', label: 'Finance Heads' },
   { value: 'role:ea', label: 'EA' },
   { value: 'role:md', label: 'MD' },
   { value: 'role:accounts', label: 'Accounts Team' },
@@ -285,6 +287,10 @@ export default function AdminUsersPage() {
         return 'bg-[#023468] text-white'
       case 'purchase_manager':
         return 'bg-purple-500 text-white'
+      case 'finance_head':
+        return 'bg-violet-600 text-white'
+      case 'ceo':
+        return 'bg-slate-950 text-white'
       case 'ea':
         return 'bg-indigo-500 text-white'
       case 'md':
@@ -370,14 +376,11 @@ export default function AdminUsersPage() {
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
-                        <SelectItem value="admin" className="bg-white hover:bg-slate-50">Admin</SelectItem>
-                        <SelectItem value="purchase_manager" className="bg-white hover:bg-slate-50">Purchase Manager</SelectItem>
-                        <SelectItem value="ea" className="bg-white hover:bg-slate-50">EA (Executive Assistant)</SelectItem>
-                        <SelectItem value="md" className="bg-white hover:bg-slate-50">MD (Managing Director)</SelectItem>
-                        <SelectItem value="accounts" className="bg-white hover:bg-slate-50">Accounts</SelectItem>
-                        <SelectItem value="manager" className="bg-white hover:bg-slate-50">Manager</SelectItem>
-                        <SelectItem value="technician" className="bg-white hover:bg-slate-50">Technician</SelectItem>
-                        <SelectItem value="viewer" className="bg-white hover:bg-slate-50">Viewer</SelectItem>
+                        {USER_ROLE_OPTIONS.map((role) => (
+                          <SelectItem key={role.value} value={role.value} className="bg-white hover:bg-slate-50">
+                            {role.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -473,14 +476,11 @@ export default function AdminUsersPage() {
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
-                        <SelectItem value="admin" className="bg-white hover:bg-slate-50">Admin</SelectItem>
-                        <SelectItem value="purchase_manager" className="bg-white hover:bg-slate-50">Purchase Manager</SelectItem>
-                        <SelectItem value="ea" className="bg-white hover:bg-slate-50">EA (Executive Assistant)</SelectItem>
-                        <SelectItem value="md" className="bg-white hover:bg-slate-50">MD (Managing Director)</SelectItem>
-                        <SelectItem value="accounts" className="bg-white hover:bg-slate-50">Accounts</SelectItem>
-                        <SelectItem value="manager" className="bg-white hover:bg-slate-50">Manager</SelectItem>
-                        <SelectItem value="technician" className="bg-white hover:bg-slate-50">Technician</SelectItem>
-                        <SelectItem value="viewer" className="bg-white hover:bg-slate-50">Viewer</SelectItem>
+                        {USER_ROLE_OPTIONS.map((role) => (
+                          <SelectItem key={role.value} value={role.value} className="bg-white hover:bg-slate-50">
+                            {role.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -713,8 +713,8 @@ export default function AdminUsersPage() {
                     <tr key={user.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#023468] to-[#034b82] flex items-center justify-center text-white font-bold">
-                            {user.fullName.charAt(0)}
+                          <div className="admin-user-avatar">
+                            {(user.fullName || user.email || '?').charAt(0).toUpperCase()}
                           </div>
                           <span className="font-bold text-slate-800">{user.fullName}</span>
                         </div>

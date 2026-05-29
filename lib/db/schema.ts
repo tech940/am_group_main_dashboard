@@ -2,13 +2,15 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'purchase_manager', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
+export const roleEnum = pgEnum('role', ['admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
 export const inventoryStatusEnum = pgEnum('inventory_status', ['in_stock', 'out_of_stock', 'low_stock', 'discontinued'])
 export const purchaseOrderStageEnum = pgEnum('purchase_order_stage', ['initial_submission', 'vendor_information', 'ea_approval', 'md_approval', 'grn', 'accounts'])
 export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['submitted', 'vendor_info_pending', 'awaiting_ea_approval', 'ea_approved', 'ea_denied', 'awaiting_md_approval', 'md_approved', 'md_denied', 'awaiting_grn', 'awaiting_accounts', 'completed', 'cancelled', 'on_hold', 'ea_on_hold', 'md_on_hold'])
+export const financeOrderStageEnum = pgEnum('finance_order_stage', ['finance_head_submission', 'accounts_verification', 'ea_approval', 'md_approval', 'completed'])
+export const financeOrderStatusEnum = pgEnum('finance_order_status', ['draft', 'awaiting_accounts_verification', 'accounts_verified', 'accounts_denied', 'accounts_on_hold', 'awaiting_ea_approval', 'ea_approved', 'ea_denied', 'ea_on_hold', 'awaiting_md_approval', 'md_approved', 'md_denied', 'md_on_hold', 'completed', 'cancelled'])
 export const paymentModeEnum = pgEnum('payment_mode', ['cash', 'cheque', 'bank_transfer', 'upi', 'credit_card', 'other'])
 
 // Users table (extends Supabase auth.users)
@@ -328,6 +330,81 @@ export const purchaseOrders = pgTable('purchase_orders', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
+// Finance Orders table
+export const financeOrders = pgTable('finance_orders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderNumber: text('order_number').unique().notNull(),
+  currentStage: financeOrderStageEnum('current_stage').default('finance_head_submission').notNull(),
+  status: financeOrderStatusEnum('status').default('draft').notNull(),
+  totalPayoutReceived: decimal('total_payout_received', { precision: 14, scale: 2 }).notNull(),
+  invoiceNumber: text('invoice_number').notNull(),
+  paymentReceivedDate: timestamp('payment_received_date', { withTimezone: true }).notNull(),
+  dsePayout: decimal('dse_payout', { precision: 14, scale: 2 }).notNull(),
+  hypBankName: text('hyp_bank_name').notNull(),
+  dseName: text('dse_name').notNull(),
+  dealer: text('dealer').notNull(),
+  accountsVerificationStatus: text('accounts_verification_status'),
+  accountsVerifiedBy: uuid('accounts_verified_by').references(() => users.id),
+  accountsVerifiedAt: timestamp('accounts_verified_at', { withTimezone: true }),
+  accountsVerificationRemarks: text('accounts_verification_remarks'),
+  accountsHeldAt: timestamp('accounts_held_at', { withTimezone: true }),
+  accountsHeldBy: uuid('accounts_held_by').references(() => users.id),
+  eaApprovalStatus: text('ea_approval_status'),
+  eaApprovedBy: uuid('ea_approved_by').references(() => users.id),
+  eaApprovedAt: timestamp('ea_approved_at', { withTimezone: true }),
+  eaApprovalRemarks: text('ea_approval_remarks'),
+  eaHeldAt: timestamp('ea_held_at', { withTimezone: true }),
+  eaHeldBy: uuid('ea_held_by').references(() => users.id),
+  mdApprovalStatus: text('md_approval_status'),
+  mdApprovedBy: uuid('md_approved_by').references(() => users.id),
+  mdApprovedAt: timestamp('md_approved_at', { withTimezone: true }),
+  mdApprovalRemarks: text('md_approval_remarks'),
+  mdHeldAt: timestamp('md_held_at', { withTimezone: true }),
+  mdHeldBy: uuid('md_held_by').references(() => users.id),
+  holdRemarks: text('hold_remarks'),
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  financeOrdersStatusIdx: index('finance_orders_status_idx').on(table.status),
+  financeOrdersCreatedByIdx: index('finance_orders_created_by_idx').on(table.createdBy),
+  financeOrdersInvoiceIdx: index('finance_orders_invoice_idx').on(table.invoiceNumber),
+  financeOrdersCreatedAtIdx: index('finance_orders_created_at_idx').on(table.createdAt),
+}))
+
+export const financeOrderWorkflow = pgTable('finance_order_workflow', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  financeOrderId: uuid('finance_order_id').references(() => financeOrders.id, { onDelete: 'cascade' }).notNull(),
+  action: text('action').notNull(),
+  stage: text('stage').notNull(),
+  performedBy: uuid('performed_by').references(() => users.id).notNull(),
+  userRole: text('user_role').notNull(),
+  remarks: text('remarks'),
+  previousStatus: text('previous_status'),
+  newStatus: text('new_status'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  financeOrderWorkflowOrderIdx: index('finance_order_workflow_order_idx').on(table.financeOrderId),
+  financeOrderWorkflowCreatedIdx: index('finance_order_workflow_created_idx').on(table.createdAt),
+}))
+
+export const financeOrderComments = pgTable('finance_order_comments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  financeOrderId: uuid('finance_order_id').references(() => financeOrders.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  comment: text('comment').notNull(),
+  visibility: text('visibility').default('internal').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  financeOrderCommentsOrderIdx: index('finance_order_comments_order_idx').on(table.financeOrderId),
+}))
+
 // User Preferences table
 export const userPreferences = pgTable('user_preferences', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -488,6 +565,61 @@ export const purchaseOrdersRelations = relations(purchaseOrders, ({ one }) => ({
   }),
   mdHolder: one(users, {
     fields: [purchaseOrders.mdHeldBy],
+    references: [users.id],
+  }),
+}))
+
+export const financeOrdersRelations = relations(financeOrders, ({ one, many }) => ({
+  creator: one(users, {
+    fields: [financeOrders.createdBy],
+    references: [users.id],
+  }),
+  accountsVerifier: one(users, {
+    fields: [financeOrders.accountsVerifiedBy],
+    references: [users.id],
+  }),
+  eaApprover: one(users, {
+    fields: [financeOrders.eaApprovedBy],
+    references: [users.id],
+  }),
+  mdApprover: one(users, {
+    fields: [financeOrders.mdApprovedBy],
+    references: [users.id],
+  }),
+  eaHolder: one(users, {
+    fields: [financeOrders.eaHeldBy],
+    references: [users.id],
+  }),
+  mdHolder: one(users, {
+    fields: [financeOrders.mdHeldBy],
+    references: [users.id],
+  }),
+  accountsHolder: one(users, {
+    fields: [financeOrders.accountsHeldBy],
+    references: [users.id],
+  }),
+  workflow: many(financeOrderWorkflow),
+  comments: many(financeOrderComments),
+}))
+
+export const financeOrderWorkflowRelations = relations(financeOrderWorkflow, ({ one }) => ({
+  financeOrder: one(financeOrders, {
+    fields: [financeOrderWorkflow.financeOrderId],
+    references: [financeOrders.id],
+  }),
+  actor: one(users, {
+    fields: [financeOrderWorkflow.performedBy],
+    references: [users.id],
+  }),
+}))
+
+export const financeOrderCommentsRelations = relations(financeOrderComments, ({ one }) => ({
+  financeOrder: one(financeOrders, {
+    fields: [financeOrderComments.financeOrderId],
+    references: [financeOrders.id],
+  }),
+  user: one(users, {
+    fields: [financeOrderComments.userId],
     references: [users.id],
   }),
 }))

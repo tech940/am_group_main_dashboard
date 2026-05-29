@@ -748,7 +748,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                     {permission === 'denied' ? 'Browser alerts are blocked' : 'Browser alerts are not enabled'}
                   </p>
                   <p className="text-[11px] leading-5 text-amber-700">
-                    Enable notifications to receive instant workflow approvals and purchase order updates when this tab is inactive.
+                    Enable notifications to receive instant workflow approvals and order updates when this tab is inactive.
                   </p>
                   <Button
                     type="button"
@@ -897,7 +897,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                 Enable workflow notifications
               </DialogTitle>
               <DialogDescription className="text-sm leading-6 text-white/88">
-                Turn on browser alerts to receive purchase order approvals, denials, and stage updates even when this tab is inactive.
+                Turn on browser alerts to receive workflow approvals, denials, and stage updates even when this tab is inactive.
               </DialogDescription>
             </DialogHeader>
           </div>
@@ -908,8 +908,8 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                 Why this matters
               </p>
               <ul className="space-y-2 text-sm text-slate-600">
-                <li>Receive EA, MD, GRN, and Accounts workflow updates instantly.</li>
-                <li>See purchase order alerts when you are on another tab or the window is minimized.</li>
+                <li>Receive EA, MD, GRN, Finance, and Accounts workflow updates instantly.</li>
+                <li>See order alerts when you are on another tab or the window is minimized.</li>
                 <li>Keep the navbar bell and browser alerts synced with the same workflow history.</li>
               </ul>
             </div>

@@ -4,9 +4,9 @@ Last updated: 2026-05-29
 
 ## Project Overview
 
-Main Dashboard is a Next.js 16 App Router application for AM Group vehicle operations. It covers purchase-order workflow management and KIA Business Excellence analytics, with the current build focused on purchase-order approvals plus KIA Business Excellence sections for the unified overview, RO Billing, Workshop Performance, Open RO, and KIA Complaints.
+Main Dashboard is a Next.js 16 App Router application for AM Group vehicle operations. It covers purchase-order workflow management, Finance Orders, and KIA Business Excellence analytics, with the current build focused on approval workflows plus KIA Business Excellence sections for the unified overview, RO Billing, Workshop Performance, Open RO, and KIA Complaints.
 
-The application is designed for operational users across Admin, Purchase Manager, EA, MD, Accounts, and brand/branch-specific teams. The core goals are fast dashboards, controlled workflow visibility, branch-aware access, and executive-style analytics.
+The application is designed for operational users across Admin, CEO, Purchase Manager, Finance Head, EA, MD, Accounts, and brand/branch-specific teams. The core goals are fast dashboards, controlled workflow visibility, branch-aware access, and executive-style analytics.
 
 ## Current Architecture
 
@@ -78,8 +78,8 @@ The active UI direction is a premium glassmorphism dashboard shell:
 - KIA complaint comparison cards need visible borders. Customer Complaint Details should not have a search bar, and complaint row expand buttons should be borderless/plain with only the chevron affordance.
 - Open RO Service Type Aging expanded rows should stay compact: only vehicle number, workshop days, and aging category are shown inline. Clicking a vehicle opens a popup with the full RO/customer/advisor/status/financial/alert/remarks details.
 - Business Excellence uses the `business-excellence-boundaries` wrapper in `features/kia/business-excellence-page.tsx`; `app/globals.css` applies scoped borders to its cards, buttons, controls, rounded metric surfaces, and table cells so each section is visually distinct.
-- Global top route loader is white and is manually started for sidebar navigation.
-- The navbar has a full palette picker in `components/layout/header.tsx`. It stores the selected option in `localStorage` as `dashboard-accent`, applies it to `<html data-dashboard-accent="...">`, and offers Skydash, StarAdmin, Breeze, Corona, Purple, and Midnight palettes based on the supplied dashboard reference images. `app/layout.tsx` applies the stored accent before interactive paint and maps older saved accent names back to Skydash.
+- Global top route loader follows the selected theme's `--dashboard-primary` color and is manually started for sidebar navigation.
+- The navbar has a full palette picker in `components/layout/header.tsx`. It stores the selected option in `localStorage` as `dashboard-accent`, applies it to `<html data-dashboard-accent="...">`, and offers Skydash, StarAdmin, Breeze, Corona, Purple, and Midnight palettes based on the supplied dashboard reference images. Corona is the default palette for new/unsaved sessions. `app/layout.tsx` applies the stored accent before interactive paint and maps older saved accent names back to Corona.
 - `Midnight` is a dark-color accent palette only; selecting it must not automatically enable `.dark` mode. `app/layout.tsx` includes a one-time migration that resets the old forced `dashboard-theme=dark` state for users who had selected Midnight before this behavior was decoupled. The separate moon/sun button remains the only control that changes light/dark mode.
 - Shared theme colors live in `app/globals.css` as `--dashboard-primary`, `--dashboard-primary-dark`, `--dashboard-primary-light`, `--dashboard-primary-soft`, `--dashboard-primary-border`, RGB/HSL variants, and `--dashboard-support-1..5`. Existing hard-coded `#023468`/navy Tailwind arbitrary classes and matching SVG chart strokes/fills are globally mapped to these variables so major headers, buttons, table headers, sidebar gradients, charts, and Business Excellence boundaries follow the selected palette.
 - Primary CTA buttons must use the high-contrast action tokens `--dashboard-action-bg`, `--dashboard-action-hover`, and `--dashboard-action-fg`, or the `app-primary-action` class. Do not use palette `primary-light` as a CTA gradient end because light palettes such as Skydash make white button text hard to read. Outline toolbar/filter/pagination buttons should use `app-outline-action`, including disabled pagination controls so labels remain readable.
@@ -88,6 +88,8 @@ The active UI direction is a premium glassmorphism dashboard shell:
 - Before making changes live, run `npm run pre-live`. It executes `scripts/pre-live-check.js`, which validates required env vars, checks Postgres connectivity, runs ESLint, runs `tsc --noEmit`, and performs a production build.
 - ESLint intentionally ignores `scripts/**` and `public/**`; the dashboard has CommonJS maintenance scripts and service-worker assets that are not part of the Next app source lint surface.
 - Login password input includes a show/hide password icon button so users can reveal the password while typing when needed.
+- Finance Head is a first-class role in User Management and can be assigned from the admin user form.
+- Admin User Management table avatars use the `.admin-user-avatar` class with theme action tokens so initials remain visible on glass table rows.
 
 Important implementation files:
 
@@ -96,6 +98,13 @@ Important implementation files:
 - `components/layout/sidebar.tsx`
 - `components/layout/notification-bell.tsx`
 - `app/globals.css`
+- `lib/branches.ts`
+- `lib/dashboard-config.ts`
+- `features/finance-orders/finance-orders-page.tsx`
+- `app/api/finance-orders/route.ts`
+- `app/api/finance-orders/workflow/route.ts`
+
+Shared repeated dropdown/config data should live in `lib/dashboard-config.ts` or a focused config file that it re-exports. Branch definitions stay in `lib/branches.ts`; `lib/dashboard-config.ts` re-exports branch helpers and owns shared user-role options plus Finance Order bank options. Do not reintroduce one-off hardcoded branch, role, or bank lists inside pages/forms.
 
 ## Main Dashboard Page
 
@@ -375,7 +384,7 @@ Important distinction:
 
 - Purchase Orders still uses the shared glass dashboard shell.
 - Table/card surfaces should remain readable on translucent backgrounds.
-- The white route loader should show when navigating from the sidebar into Purchase Orders.
+- The theme-colored route loader should show when navigating from the sidebar into Purchase Orders.
 
 ### APIs
 
@@ -392,11 +401,101 @@ Important distinction:
 - `POST /api/purchase-orders/upload`
   - Purchase-order file uploads.
 
+## Finance Orders
+
+Finance Orders is a separate module from Purchase Orders. It has its own route, APIs, tables, workflow, and permissions.
+
+### Data Model
+
+Dedicated tables:
+
+- `finance_orders`
+- `finance_order_workflow`
+- `finance_order_comments`
+
+Database setup script:
+
+```bash
+npm run db:setup-finance-orders
+```
+
+The npm script loads `.env`, applies `scripts/create-finance-orders.sql`, and verifies that the three Finance Order tables exist. Use this instead of running `psql "$DATABASE_URL" ...` directly from PowerShell, because running outside the project folder can leave `DATABASE_URL` empty and make `psql` try local `localhost:5432`. The SQL adds the `finance_head` and `ceo` role enum values when missing, creates Finance Order stage/status enums, and creates the three Finance Order tables plus indexes. This script must run in the target database before the module is used.
+
+### Form Fields
+
+The Finance Order form captures:
+
+- Total Payout Received
+- Invoice Number
+- Payment Received Date
+- DSE Payout
+- Hyp / Bank Name
+- DSE Name
+- Dealer
+
+All fields are validated on the client and again in `/api/finance-orders` before insert/update.
+
+### Workflow
+
+Current workflow:
+
+1. Finance Head/Admin creates a draft or submits a Finance Order.
+2. Submitted orders move to Accounts payment verification.
+3. Accounts/Admin checks whether payment has been received.
+4. If payment is received, Accounts marks `Payment Received` and the order moves to EA approval.
+5. EA can Approve, Hold, or Deny.
+6. EA approval moves the order to MD approval.
+7. MD can Approve, Hold, or Deny.
+8. MD approval completes the Finance Order.
+
+Hold and deny actions require remarks. Accounts hold/deny sends the order back to Finance Head visibility with remarks. Every save/submit/payment verification/approval/hold/deny action writes an audit row to `finance_order_workflow`; action remarks are also stored in `finance_order_comments`.
+
+### Access Rules
+
+- Only Admin, CEO, MD, EA, Accounts, and Finance Head can access `/finance-orders` and `/api/finance-orders`.
+- Sidebar visibility follows the same allowed-role set.
+- Backend APIs enforce the role checks and do not rely on sidebar visibility.
+- Only Admin and Finance Head can create Finance Orders.
+- Finance Head can see and manage only their own Finance Orders.
+- Admin, CEO, EA, MD, and Accounts can read all Finance Orders.
+- Accounts can read all Finance Orders and act only on Accounts payment-verification queue orders.
+- Accounts/Admin can mark payment received, hold, or deny in the Accounts queue.
+- EA/Admin can act on EA approval queue orders.
+- MD/Admin can act on MD approval queue orders.
+- Finance Head users redirect to `/finance-orders` after login and from the root route.
+- Accounts, EA, and MD land on `My Queue` by default, which is server-filtered to only the pending Finance Orders for their current stage. They can switch to `All Orders` explicitly when they need wider visibility.
+- Accounts, EA, and MD visibility is also branch-aware. If their assigned branch access is not `All Branches`, Finance Orders are filtered by the order's Dealer branch. Older Finance Orders that stored dealer labels such as `AM Kia` are still matched against the branch key.
+
+### Notifications
+
+Finance Orders uses the existing notification table and bell pattern with `metadata.module = finance_orders` and `actionUrl = /finance-orders?orderId=...`.
+
+Notification routing:
+
+- Submitted Finance Order -> Accounts
+- Accounts payment received -> EA
+- Accounts Hold/Deny -> Admin, relevant Finance Head, and creator
+- EA Approved -> MD
+- EA Hold/Deny -> Admin, relevant Finance Head, and creator
+- MD Hold/Deny -> Admin, branch EA users, relevant Finance Head, and creator
+- MD Approved/Fully Approved -> relevant Finance Head, Admin, and creator
+- Stage notifications to Accounts, EA, and MD are branch-scoped using the Finance Order Dealer branch, with `All Branches` users still included.
+- The relevant Finance Head is resolved like Purchase Orders resolves the responsible Purchase Manager: use the order creator when they are Finance Head, otherwise the first Finance Head workflow actor. Do not notify unrelated branch Finance Heads for Admin-created orders because Finance Head visibility is limited to orders they own/touched.
+
+### UI Notes
+
+The Finance Orders UI intentionally does not copy the older Purchase Orders form. It uses a modern SaaS-style layout with a clean header, compact queue/status summary cards, a payout spending section, and a compact searchable register with both Table and Cards view modes. Table view is the default. Register filters include a modern status-group dropdown for `Pending`, `All`, `Completed`, and `On Hold`, plus branch, exact status, search, and the role-aware `My Queue`/`All Orders` toggle. The register toolbar is right-aligned with compact fixed-width controls so it uses the empty space on the right instead of crowding the section title. Avoid rendering the status-group choices as separate buttons because they overlap in the register toolbar on narrow screens. The spending section owns payout totals to avoid duplicated payout cards in the top summary; it has start date, end date, and branch filters and reads aggregate payout/DSE/completed/pending values from the Finance Orders API instead of deriving totals from the visible page only. Row/card-level `Open` actions use the active theme action color and open a popup-based order detail/approval/audit review. Finance card view uses a light theme-tinted gradient. EA/MD/Admin table users can select multiple actionable rows and run bulk Approve, Hold, or Deny actions; each actionable table row also exposes Approve, Hold, Deny, and Open actions. Finance Order popups use theme-colored headers, visibly separated detail fields, and close automatically after successful workflow actions. The popup status badge sits inside the title content, not in the top-right close-button area. The form uses a responsive grid, datalist-backed bank field, branch-backed Dealer select, validation messages, and skeleton loading states.
+When the Finance Orders register is in the completed view, show a PDF export action. It calls `/api/finance-orders?export=completed` with current branch/search visibility filters and returns every completed Finance Order the user can access, not only the current paginated page. The PDF export uses the app's existing print-window pattern for print/save-as-PDF output.
+Finance Orders approval CTAs must stay high contrast on the glass sidebar panel: Approve/Open use the `finance-primary-action` class, Hold uses `finance-warning-action`, Deny uses `finance-danger-action`, and approval checkboxes use `finance-order-checkbox` so checked/indeterminate states stay visible across themes.
+Dealer on the Finance Order form uses the same branch option source as Admin User Management's Assigned Branch Access (`USER_BRANCH_OPTIONS` from `lib/branches.ts`) and stores the branch value while displaying the readable branch label.
+Finance Order bank options come from `FINANCE_BANK_OPTIONS` in `lib/dashboard-config.ts`; keep new bank names there so the form and future finance features stay in sync.
+
 ## Notifications
 
 - Notification Bell uses `/api/notifications`.
 - Notification API is intentionally excluded from generic session GET caching to preserve realtime/unread behavior.
 - Browser/realtime notification behavior should continue to rely on Supabase realtime listeners and explicit notification state changes.
+- Notification permission prompts and browser notification fallback labels must stay module-neutral (`workflow`/`order`) because the same bell now serves Purchase Orders and Finance Orders.
 
 ## State Management Approach
 
@@ -429,7 +528,7 @@ Important distinction:
 - RO Billing Table, Trends, FY Trends, Analytics, Revenue, and Performance Intelligence sections.
 - Business Excellence Overview is now the default route and visual command center.
 - Open RO is now a Business Excellence section for workshop WIP aging, delayed promise tracking, delay-reason control, advisor load, work-type distribution, and escalation alerts.
-- Open RO Job Card Delay Reason Summary mirrors the Service Type Aging vehicle drilldown: status rows aggregate counts by `new_r_o_status`, clicking a status directly expands compact vehicle rows, and clicking a vehicle opens the full-detail popup. Reason rows are intentionally not shown inline; delay reason remains available in the vehicle detail popup. The Open RO cache key was bumped after the status/reason payload change.
+- Open RO Job Card Delay Reason Summary mirrors the Service Type Aging vehicle drilldown: status rows aggregate counts by `new_r_o_status`, clicking a status directly expands compact vehicle rows, and clicking a vehicle opens the full-detail popup. Reason rows are intentionally not shown inline; each compact vehicle row shows Vehicle No, Delay Reason, Workshop Days, Aging Category, and RO Number. The Open RO cache key was bumped after the status/reason payload change.
 - Open RO Service Type Aging expanded rows stay compact with Vehicle No, Workshop Days, and Aging Category only; clicking a vehicle opens a full-detail popup.
 - KIA Complaints is now a Business Excellence section using `kia_call_center_complaints`, including month/year comparison, complaint area analysis, dealer/sub-area summaries, and complaint detail expansion.
 - AI Summary exists in Business Excellence and is backed by Groq. Keep payloads compact because free/on-demand Groq tiers have strict TPM limits. AI Summary output must use Indian rupees only, no dollar symbols, and no Cr/Lakh abbreviations in the summary cards.
@@ -477,6 +576,7 @@ Important distinction:
   - Paid Service hides mileage/package-like child labels such as `30K`, `40K`, `100K`, `110K`, etc.; these come from `ro_billing_report.service_type` but are not treated as real service labels in the UI.
   - Others expands by remaining `work_type` labels where available, such as Refurbish, E Breakdown, AMC - TM, NVI, and similar categories.
   - Blank/Unspecified/self-repeated child rows are filtered out, and parent rows only show expand controls when real child rows remain.
+- RO Billing Analysis period windows use Bill Date and calendar periods. CY remains to-date for the selected period: MTD starts on selected month day 1, QTD starts on selected calendar quarter day 1, and YTD starts on January 1. LY comparison uses completed historical periods: full same month last year for MTD, full same quarter last year for QTD, and full previous calendar year for YTD. TD remains the same day last year. Do not use the Indian fiscal-year April 1 start for RO Billing YTD, because in April-June it makes QTD and YTD identical.
 - Session-level frontend API caching and React Query dedupe.
 - Project context documentation refresh.
 - Main Dashboard locked as Coming Soon to avoid exposing dummy data.
@@ -484,7 +584,7 @@ Important distinction:
 - Business Excellence Refresh button removed.
 - Open RO refresh button removed; its date filter follows the RO Billing style.
 - Purchase Orders approval alert popup was removed for MD/EA approvals.
-- Sidebar navigation explicitly starts the white top loading bar.
+- Sidebar navigation explicitly starts the theme-colored top loading bar.
 
 ## Features In Progress
 

@@ -321,6 +321,100 @@
     opacity: 1 !important;
   }
 
+  .finance-primary-action {
+    background: linear-gradient(135deg, var(--dashboard-action-bg), var(--dashboard-action-hover)) !important;
+    background-color: var(--dashboard-action-bg) !important;
+    border-color: color-mix(in srgb, var(--dashboard-action-bg) 62%, white) !important;
+    color: var(--dashboard-action-fg) !important;
+    text-shadow: 0 1px 1px rgba(15, 23, 42, 0.28);
+  }
+
+  .finance-primary-action:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg)) !important;
+    background-color: var(--dashboard-action-hover) !important;
+    color: var(--dashboard-action-fg) !important;
+  }
+
+  .finance-primary-action:disabled {
+    background: #e2e8f0 !important;
+    border-color: #94a3b8 !important;
+    color: #0f172a !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
+  }
+
+  .finance-primary-action :where(span, svg) {
+    color: inherit !important;
+  }
+
+  .finance-warning-action {
+    background-color: #fffbeb !important;
+    border-color: #f59e0b !important;
+    color: #92400e !important;
+  }
+
+  .finance-warning-action:hover:not(:disabled) {
+    background-color: #fef3c7 !important;
+    color: #78350f !important;
+  }
+
+  .finance-danger-action {
+    background-color: #fff1f2 !important;
+    border-color: #fb7185 !important;
+    color: #be123c !important;
+  }
+
+  .finance-danger-action:hover:not(:disabled) {
+    background-color: #ffe4e6 !important;
+    color: #9f1239 !important;
+  }
+
+  .finance-warning-action:disabled,
+  .finance-danger-action:disabled {
+    background-color: #eef2f7 !important;
+    border-color: #94a3b8 !important;
+    color: #334155 !important;
+    opacity: 1 !important;
+  }
+
+  .finance-order-checkbox {
+    background-color: #ffffff !important;
+    border-color: var(--dashboard-action-bg) !important;
+    color: #ffffff !important;
+  }
+
+  .finance-order-checkbox[data-state="checked"],
+  .finance-order-checkbox[data-state="indeterminate"] {
+    background-color: var(--dashboard-action-bg) !important;
+    border-color: var(--dashboard-action-hover) !important;
+    color: var(--dashboard-action-fg) !important;
+  }
+
+  .finance-order-checkbox[data-state="checked"] svg,
+  .finance-order-checkbox[data-state="indeterminate"] svg {
+    color: var(--dashboard-action-fg) !important;
+    stroke: var(--dashboard-action-fg) !important;
+    stroke-width: 3.5 !important;
+  }
+
+  .admin-user-avatar {
+    align-items: center;
+    background: linear-gradient(135deg, var(--dashboard-action-bg), var(--dashboard-action-hover)) !important;
+    border: 1px solid color-mix(in srgb, var(--dashboard-action-bg) 58%, white);
+    border-radius: 9999px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+    color: var(--dashboard-action-fg) !important;
+    display: flex;
+    flex: 0 0 2.5rem;
+    font-size: 0.875rem;
+    font-weight: 900;
+    height: 2.5rem;
+    justify-content: center;
+    line-height: 1;
+    text-shadow: 0 1px 1px rgba(15, 23, 42, 0.28);
+    width: 2.5rem;
+  }
+
   svg :where([fill="#023468"]) {
     fill: var(--dashboard-primary) !important;
   }

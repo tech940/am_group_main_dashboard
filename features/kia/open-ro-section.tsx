@@ -946,11 +946,17 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
                           <button
                             type="button"
                             onClick={() => setSelectedVehicle(vehicle)}
-                            className="grid w-full grid-cols-[minmax(180px,1fr)_140px_180px_180px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-[#b9ccde] hover:bg-[#edf4fb]"
+                            className="grid w-full grid-cols-[minmax(150px,0.8fr)_minmax(220px,1.2fr)_140px_180px_180px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-[#b9ccde] hover:bg-[#edf4fb]"
                           >
                             <span>
                               <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Vehicle No</span>
                               <span className="mt-1 block font-mono text-sm font-black text-blue-700">{vehicle.regNo}</span>
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Delay Reason</span>
+                              <span className="mt-1 block truncate text-sm font-black text-slate-800">
+                                {vehicle.delayReason || 'No Reason Specified'}
+                              </span>
                             </span>
                             <span>
                               <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Workshop Days</span>

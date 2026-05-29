@@ -74,15 +74,15 @@ function getThemeServerSnapshot() {
 
 function getAccentSnapshot(): AccentId {
   if (typeof document === 'undefined') {
-    return 'skydash'
+    return 'corona'
   }
 
   const accent = document.documentElement.getAttribute('data-dashboard-accent')
-  return ACCENT_OPTIONS.some((option) => option.id === accent) ? accent as AccentId : 'skydash'
+  return ACCENT_OPTIONS.some((option) => option.id === accent) ? accent as AccentId : 'corona'
 }
 
 function getAccentServerSnapshot(): AccentId {
-  return 'skydash'
+  return 'corona'
 }
 
 interface UserData {

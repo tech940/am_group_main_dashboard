@@ -1,5 +1,5 @@
 async function showWorkflowNotification(payload) {
-  const title = payload?.title || 'Purchase order notification'
+  const title = payload?.title || 'Workflow notification'
   const options = {
     body: payload?.body || 'A workflow update is available.',
     icon: payload?.icon || '/favicon.ico',
@@ -28,7 +28,7 @@ self.addEventListener('push', (event) => {
     payload = event.data ? event.data.json() : {}
   } catch (error) {
     payload = {
-      title: 'Purchase order notification',
+      title: 'Workflow notification',
       body: event.data ? event.data.text() : 'A workflow update is available.',
       actionUrl: '/purchase-orders',
     }
