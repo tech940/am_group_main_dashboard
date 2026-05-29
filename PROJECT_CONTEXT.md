@@ -87,6 +87,7 @@ The active UI direction is a premium glassmorphism dashboard shell:
 - Authenticated app-user lookup should tolerate transient Supabase/Postgres pooler connection hiccups: `lib/auth/app-user.ts` retries once for `CONNECT_TIMEOUT`/connection-terminated errors, and `lib/db/index.ts` uses a 15-second Postgres connect timeout.
 - Before making changes live, run `npm run pre-live`. It executes `scripts/pre-live-check.js`, which validates required env vars, checks Postgres connectivity, runs ESLint, runs `tsc --noEmit`, and performs a production build.
 - ESLint intentionally ignores `scripts/**` and `public/**`; the dashboard has CommonJS maintenance scripts and service-worker assets that are not part of the Next app source lint surface.
+- Login password input includes a show/hide password icon button so users can reveal the password while typing when needed.
 
 Important implementation files:
 

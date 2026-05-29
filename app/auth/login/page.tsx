@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Building2, IndianRupee, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Building2, Eye, EyeOff, IndianRupee, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,6 +12,7 @@ const AM_GROUP_LOGO_URL = 'https://amgroupind.com/wp-content/uploads/2023/06/log
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -175,15 +176,25 @@ export default function LoginPage() {
                   <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     autoComplete="off"
                     placeholder="Enter your password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     required
                     disabled={loading}
-                    className="h-12 rounded-2xl border-slate-200 bg-slate-50 pl-11 text-base shadow-none focus:border-emerald-600 focus:bg-white focus:ring-emerald-600"
+                    className="h-12 rounded-2xl border-slate-200 bg-slate-50 pl-11 pr-12 text-base shadow-none focus:border-emerald-600 focus:bg-white focus:ring-emerald-600"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    disabled={loading}
+                    className="absolute right-3 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 
