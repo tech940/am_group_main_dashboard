@@ -85,7 +85,7 @@ export default function LoginPage() {
 
             <div className="space-y-4">
               <p className="inline-flex rounded-full border border-emerald-200/20 bg-emerald-300/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-emerald-100">
-                Motors management hub
+                AM Tech Hub.
               </p>
               <h1 className="max-w-2xl text-5xl font-black leading-[0.95] tracking-tight xl:text-6xl">
                 Run every vehicle workflow from one dashboard.
@@ -155,7 +155,7 @@ export default function LoginPage() {
                     autoComplete="off"
                     autoCapitalize="none"
                     autoCorrect="off"
-                    placeholder="your.email@amgroup.com"
+                    placeholder="your.email@amgroupind.com"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     required
