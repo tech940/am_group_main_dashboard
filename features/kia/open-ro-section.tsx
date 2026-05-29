@@ -146,6 +146,7 @@ type OpenRoResponse = {
     rowCount: number
     detailLimit: number
     cacheTtlSeconds: number
+    chunk?: string
     dateRange: { startDate: string | null; endDate: string | null }
     agingDefinition: string
     statusDefinition: string
@@ -269,10 +270,17 @@ function buildQueryString(filters: OpenRoFilters, dateRange: { startDate: string
   return params.toString()
 }
 
+function withChunk(queryString: string, chunk: string) {
+  const params = new URLSearchParams(queryString)
+  params.set('chunk', chunk)
+  return params.toString()
+}
+
 export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) {
   const queryClient = useQueryClient()
   const [data, setData] = useState<OpenRoResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [filters, setFilters] = useState<OpenRoFilters>(EMPTY_FILTERS)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set())
   const [expandedDelayStatuses, setExpandedDelayStatuses] = useState<Set<string>>(() => new Set())
@@ -285,10 +293,12 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
   const fetchOpenRo = useCallback(async () => {
     try {
       setIsLoading(true)
+      setIsDetailLoading(false)
+      const summaryQueryString = withChunk(queryString, 'summary')
       const result = await queryClient.fetchQuery({
-        queryKey: ['business-excellence', 'open-ro', queryString],
+        queryKey: ['business-excellence', 'open-ro', summaryQueryString],
         queryFn: async () => {
-          const suffix = queryString ? `?${queryString}` : ''
+          const suffix = summaryQueryString ? `?${summaryQueryString}` : ''
           const response = await fetch(`/api/brands/kia/business-excellence/open-ro${suffix}`)
           logApiTimings(response, 'open-ro')
           if (!response.ok) throw new Error('Failed to load Open RO dashboard')
@@ -297,10 +307,39 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
         staleTime: DASHBOARD_STALE_TIME_MS,
       })
       setData(result)
+      setIsLoading(false)
+
+      setIsDetailLoading(true)
+      const detailsQueryString = withChunk(queryString, 'details')
+      const detailsResult = await queryClient.fetchQuery({
+        queryKey: ['business-excellence', 'open-ro', detailsQueryString],
+        queryFn: async () => {
+          const suffix = detailsQueryString ? `?${detailsQueryString}` : ''
+          const response = await fetch(`/api/brands/kia/business-excellence/open-ro${suffix}`)
+          logApiTimings(response, 'open-ro-details')
+          if (!response.ok) throw new Error('Failed to load Open RO details')
+          return await response.json() as OpenRoResponse
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
+      })
+      setData((current) => current ? {
+        ...current,
+        details: detailsResult.details || [],
+        alerts: {
+          ...current.alerts,
+          summary: detailsResult.alerts?.summary || current.alerts.summary,
+          highPriority: detailsResult.alerts?.highPriority || current.alerts.highPriority,
+        },
+        meta: {
+          ...current.meta,
+          rowCount: detailsResult.details?.length ?? current.meta.rowCount,
+        },
+      } : current)
     } catch (error) {
       console.error('Failed to load Open RO dashboard:', error)
     } finally {
       setIsLoading(false)
+      setIsDetailLoading(false)
     }
   }, [queryClient, queryString])
 
@@ -825,6 +864,13 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
                         </td>
                       </tr>
                     ))}
+                    {isExpanded && details.length === 0 && isDetailLoading && (
+                      <tr className="bg-slate-50/80">
+                        <td colSpan={7} className="border border-slate-200 px-4 py-4 text-center text-xs font-black uppercase tracking-widest text-slate-500">
+                          Loading vehicle rows...
+                        </td>
+                      </tr>
+                    )}
                   </React.Fragment>
                 )
               })}
@@ -929,6 +975,13 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
                         </td>
                       </tr>
                     ))}
+                    {isExpanded && (detailsByDelayStatus.get(statusRow.newStatus) || []).length === 0 && isDetailLoading && (
+                      <tr className="bg-slate-50">
+                        <td colSpan={10} className="border border-slate-200 px-4 py-4 text-center text-xs font-black uppercase tracking-widest text-slate-500">
+                          Loading vehicle rows...
+                        </td>
+                      </tr>
+                    )}
                   </React.Fragment>
                 )
               })}

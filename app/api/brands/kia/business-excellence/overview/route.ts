@@ -14,6 +14,7 @@ const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const tableExistsCache = new Map<string, boolean>()
 
 type NumericRow = Record<string, unknown>
+type OverviewChunk = 'summary' | 'secondary' | 'full'
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
@@ -76,8 +77,8 @@ function growth(current: number, previous: number) {
   return ((current - previous) / previous) * 100
 }
 
-function cacheKey(startDate: string, endDate: string) {
-  return `kia:business-excellence:overview:v13:${createHash('sha1').update(`${startDate}:${endDate}`).digest('hex')}`
+function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk) {
+  return `kia:business-excellence:overview:v14:${chunk}:${createHash('sha1').update(`${startDate}:${endDate}`).digest('hex')}`
 }
 
 function sameDateLastYear(value: string) {
@@ -516,6 +517,40 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string) {
   }
 }
 
+function emptyRows() {
+  return Promise.resolve([] as NumericRow[])
+}
+
+function emptyAddonKpis() {
+  return Promise.resolve({
+    ewCount: 0,
+    rsaCount: 0,
+    mcpCount: 0,
+    rsaAmount: 0,
+  })
+}
+
+function emptyWorkshopSnapshot() {
+  return Promise.resolve({
+    totalJc: 0,
+    labourAmount: 0,
+    partsAmount: 0,
+    totalRevenue: 0,
+    vasAmount: 0,
+    labourPerRo: 0,
+    minDate: null as string | null,
+    maxDate: null as string | null,
+    serviceMix: [] as Array<{
+      name: string
+      totalJc: number
+      labourAmount: number
+      partsAmount: number
+      totalRevenue: number
+      vasAmount: number
+    }>,
+  })
+}
+
 async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
   if (await tableExists('workshop_operation_addon_summary_v1')) {
     const result = await db.execute(sql`
@@ -551,7 +586,8 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
   return numberValue(resultRows(result)[0]?.vas_amount)
 }
 
-async function buildOverviewPayload(startDate: string, endDate: string) {
+async function buildOverviewPayload(startDate: string, endDate: string, chunk: OverviewChunk = 'summary') {
+  const includeSecondary = chunk === 'secondary' || chunk === 'full'
   const roSql = roBillingBaseSql(startDate, endDate)
   const openSql = openRoBaseSql(startDate, endDate)
   const complaintSql = complaintsBaseSql(startDate, endDate)
@@ -594,7 +630,7 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
         COALESCE(AVG(revenue), 0)::float AS avg_line_value
       FROM enriched
     `),
-    db.execute(sql`
+    includeSecondary ? db.execute(sql`
       ${roSql}
       SELECT
         report_date::text AS date,
@@ -604,8 +640,8 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
       GROUP BY report_date
       ORDER BY report_date ASC
       LIMIT 45
-    `),
-    db.execute(sql`
+    `) : emptyRows(),
+    includeSecondary ? db.execute(sql`
       ${roSql}
       SELECT
         service_category,
@@ -615,8 +651,8 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
       GROUP BY service_category
       ORDER BY total_jc DESC, revenue DESC
       LIMIT 6
-    `),
-    db.execute(sql`
+    `) : emptyRows(),
+    includeSecondary ? db.execute(sql`
       ${roSql}
       SELECT
         advisor,
@@ -626,7 +662,7 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
       GROUP BY advisor
       ORDER BY revenue DESC, total_jc DESC
       LIMIT 8
-    `),
+    `) : emptyRows(),
     db.execute(sql`
       ${openSql}
       SELECT
@@ -639,13 +675,13 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
         COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS accident_jobs
       FROM enriched
     `),
-    db.execute(sql`
+    includeSecondary ? db.execute(sql`
       ${openSql}
       SELECT aging_bucket AS bucket, COUNT(*)::int AS count
       FROM enriched
       GROUP BY aging_bucket
-    `),
-    db.execute(sql`
+    `) : emptyRows(),
+    includeSecondary ? db.execute(sql`
       ${openSql}
       SELECT
         COALESCE(NULLIF(service_adv, ''), 'Unspecified') AS advisor,
@@ -655,14 +691,14 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
       GROUP BY 1
       ORDER BY open_ro DESC, avg_aging DESC
       LIMIT 8
-    `),
-    db.execute(sql`
+    `) : emptyRows(),
+    includeSecondary ? db.execute(sql`
       ${openSql}
       SELECT service_category, COUNT(*)::int AS count
       FROM enriched
       GROUP BY service_category
       ORDER BY count DESC
-    `),
+    `) : emptyRows(),
     db.execute(sql`
       ${complaintSql}
       SELECT
@@ -675,7 +711,7 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
       FROM enriched
     `),
-    db.execute(sql`
+    includeSecondary ? db.execute(sql`
       ${complaintSql}
       SELECT
         signal_area AS name,
@@ -686,15 +722,15 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
       GROUP BY signal_area
       ORDER BY total DESC, open DESC
       LIMIT 8
-    `),
-    db.execute(sql`
+    `) : emptyRows(),
+    includeSecondary ? db.execute(sql`
       ${complaintSql}
       SELECT status_group AS status, COUNT(*)::int AS count
       FROM enriched
       GROUP BY status_group
       ORDER BY count DESC
-    `),
-    db.execute(sql`
+    `) : emptyRows(),
+    includeSecondary ? db.execute(sql`
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
           complaint_no,
@@ -735,10 +771,10 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
             AND complaint_date < (${lyEndDate}::date + INTERVAL '1 day')
         ) > 0
       ORDER BY EXTRACT(MONTH FROM complaint_date)::int ASC
-    `),
+    `) : emptyRows(),
     fetchAddonKpis(startDate, endDate),
     fetchWorkshopSnapshot(startDate, endDate),
-    db.execute(sql`
+    includeSecondary ? db.execute(sql`
       ${lyRoSql}
       SELECT
         COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -746,16 +782,16 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
         COALESCE(SUM(part_amt), 0)::float AS parts,
         COALESCE(SUM(revenue), 0)::float AS revenue
       FROM enriched
-    `),
-    db.execute(sql`
+    `) : emptyRows(),
+    includeSecondary ? db.execute(sql`
       ${lyOpenSql}
       SELECT
         COUNT(*)::int AS total_open_ro,
         COUNT(*) FILTER (WHERE aging_days > 15)::int AS over_15,
         COUNT(*) FILTER (WHERE delay_status = 'Delayed')::int AS delayed
       FROM enriched
-    `),
-    db.execute(sql`
+    `) : emptyRows(),
+    includeSecondary ? db.execute(sql`
       ${lyComplaintSql}
       SELECT
         COUNT(*)::int AS total,
@@ -764,9 +800,9 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
         COUNT(*) FILTER (WHERE resolution_days > 15)::int AS over_15,
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
       FROM enriched
-    `),
-    fetchAddonKpis(lyStartDate, lyEndDate),
-    fetchWorkshopSnapshot(lyStartDate, lyEndDate),
+    `) : emptyRows(),
+    includeSecondary ? fetchAddonKpis(lyStartDate, lyEndDate) : emptyAddonKpis(),
+    includeSecondary ? fetchWorkshopSnapshot(lyStartDate, lyEndDate) : emptyWorkshopSnapshot(),
   ])
 
   const roKpis = resultRows(roKpiRows)[0] || {}
@@ -830,7 +866,7 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
       addOnPerJc: perUnit(addOnTotal, totalJc),
     },
     workshopSnapshot,
-    comparison: {
+    comparison: includeSecondary ? {
       lyRange: {
         startDate: lyStartDate,
         endDate: lyEndDate,
@@ -930,7 +966,7 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
         ly: lyWorkshopSnapshot.vasAmount,
         deltaPct: growth(workshopSnapshot.vasAmount, lyWorkshopSnapshot.vasAmount),
       },
-    },
+    } : undefined,
     charts: {
       revenueTrend: resultRows(roDailyRows).map((row) => ({
         date: dateValue(row.date),
@@ -1012,6 +1048,7 @@ async function buildOverviewPayload(startDate: string, endDate: string) {
       },
     ],
     meta: {
+      chunk,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       periodScope: {
         startDate,
@@ -1058,12 +1095,14 @@ export async function GET(request: Request) {
   const defaults = defaultRange()
   const startDate = parseDateInput(searchParams.get('startDate')) || defaults.startDate
   const endDate = parseDateInput(searchParams.get('endDate')) || defaults.endDate
+  const chunkParam = searchParams.get('chunk')
+  const chunk: OverviewChunk = chunkParam === 'secondary' || chunkParam === 'full' ? chunkParam : 'summary'
   const skipCache = searchParams.get('skipCache') === 'true'
 
   try {
     const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildOverviewPayload(startDate, endDate)
-      : getCachedData(cacheKey(startDate, endDate), () => buildOverviewPayload(startDate, endDate), CACHE_TTL_SECONDS))
+      ? buildOverviewPayload(startDate, endDate, chunk)
+      : getCachedData(cacheKey(startDate, endDate, chunk), () => buildOverviewPayload(startDate, endDate, chunk), CACHE_TTL_SECONDS))
 
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data), timing.serverTiming)

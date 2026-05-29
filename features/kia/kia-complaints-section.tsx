@@ -145,6 +145,9 @@ type ComplaintResponse = {
     models: string[]
     sources: string[]
   }
+  meta?: {
+    chunk?: string
+  }
 }
 
 type ComplaintFilters = {
@@ -240,6 +243,12 @@ function buildQueryString(filters: ComplaintFilters, dateRange: { startDate: str
   return params.toString()
 }
 
+function withChunk(queryString: string, chunk: string) {
+  const params = new URLSearchParams(queryString)
+  params.set('chunk', chunk)
+  return params.toString()
+}
+
 function statusClass(statusGroup: string) {
   if (statusGroup === 'Closed') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
   if (statusGroup === 'Hold') return 'border-amber-200 bg-amber-50 text-amber-700'
@@ -281,6 +290,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
   const queryClient = useQueryClient()
   const [data, setData] = useState<ComplaintResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [filters, setFilters] = useState<ComplaintFilters>(EMPTY_FILTERS)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set())
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
@@ -291,10 +301,12 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
   const fetchComplaints = useCallback(async () => {
     try {
       setIsLoading(true)
+      setIsDetailLoading(false)
+      const summaryQueryString = withChunk(queryString, 'summary')
       const result = await queryClient.fetchQuery({
-        queryKey: ['business-excellence', 'kia-complaints', queryString],
+        queryKey: ['business-excellence', 'kia-complaints', summaryQueryString],
         queryFn: async () => {
-          const suffix = queryString ? `?${queryString}` : ''
+          const suffix = summaryQueryString ? `?${summaryQueryString}` : ''
           const response = await fetch(`/api/brands/kia/business-excellence/complaints${suffix}`)
           logApiTimings(response, 'kia-complaints')
           if (!response.ok) throw new Error('Failed to load KIA complaints dashboard')
@@ -303,10 +315,51 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
         staleTime: DASHBOARD_STALE_TIME_MS,
       })
       setData(result)
+      setIsLoading(false)
+
+      setIsDetailLoading(true)
+      const secondaryQueryString = withChunk(queryString, 'secondary')
+      const detailsQueryString = withChunk(queryString, 'details')
+      const [secondaryResult, detailsResult] = await Promise.all([
+        queryClient.fetchQuery({
+          queryKey: ['business-excellence', 'kia-complaints', secondaryQueryString],
+          queryFn: async () => {
+            const suffix = secondaryQueryString ? `?${secondaryQueryString}` : ''
+            const response = await fetch(`/api/brands/kia/business-excellence/complaints${suffix}`)
+            logApiTimings(response, 'kia-complaints-secondary')
+            if (!response.ok) throw new Error('Failed to load KIA complaints secondary data')
+            return await response.json() as ComplaintResponse
+          },
+          staleTime: DASHBOARD_STALE_TIME_MS,
+        }),
+        queryClient.fetchQuery({
+          queryKey: ['business-excellence', 'kia-complaints', detailsQueryString],
+          queryFn: async () => {
+            const suffix = detailsQueryString ? `?${detailsQueryString}` : ''
+            const response = await fetch(`/api/brands/kia/business-excellence/complaints${suffix}`)
+            logApiTimings(response, 'kia-complaints-details')
+            if (!response.ok) throw new Error('Failed to load KIA complaints detail rows')
+            return await response.json() as ComplaintResponse
+          },
+          staleTime: DASHBOARD_STALE_TIME_MS,
+        }),
+      ])
+
+      setData((current) => current ? {
+        ...current,
+        comparison: secondaryResult.comparison || current.comparison,
+        charts: {
+          ...current.charts,
+          monthlyTrend: secondaryResult.charts?.monthlyTrend?.length ? secondaryResult.charts.monthlyTrend : current.charts.monthlyTrend,
+          subAreaBreakdown: secondaryResult.charts?.subAreaBreakdown?.length ? secondaryResult.charts.subAreaBreakdown : current.charts.subAreaBreakdown,
+        },
+        rows: detailsResult.rows || current.rows,
+      } : current)
     } catch (error) {
       console.error('Failed to load KIA complaints dashboard:', error)
     } finally {
       setIsLoading(false)
+      setIsDetailLoading(false)
     }
   }, [queryClient, queryString])
 
@@ -807,9 +860,16 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
 
       <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 p-5">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Complaint Register</p>
-            <h3 className="text-xl font-black tracking-tight text-slate-950">Customer complaint details</h3>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Complaint Register</p>
+              <h3 className="text-xl font-black tracking-tight text-slate-950">Customer complaint details</h3>
+            </div>
+            {isDetailLoading && (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                Loading rows
+              </span>
+            )}
           </div>
         </div>
         <div className="overflow-auto">
@@ -917,7 +977,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
               {data.rows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-sm font-bold text-slate-500">
-                    No complaints match the current filters.
+                    {isDetailLoading ? 'Loading complaint rows...' : 'No complaints match the current filters.'}
                   </td>
                 </tr>
               )}

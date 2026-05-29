@@ -22,6 +22,8 @@ type ComplaintFilters = {
   source: string | null
 }
 
+type ComplaintChunk = 'summary' | 'secondary' | 'details' | 'full'
+
 type NumericRow = Record<string, unknown>
 
 function parseDateInput(value: string | null) {
@@ -151,8 +153,8 @@ function complaintBaseSql(filters: ComplaintFilters) {
   `
 }
 
-function cacheKey(filters: ComplaintFilters) {
-  return `kia:business-excellence:complaints:v3:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
+  return `kia:business-excellence:complaints:v4:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {
@@ -170,8 +172,11 @@ function inputDate(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-async function buildComplaintsPayload(filters: ComplaintFilters) {
+async function buildComplaintsPayload(filters: ComplaintFilters, chunk: ComplaintChunk = 'summary') {
   const baseSql = complaintBaseSql(filters)
+  const includeSummary = chunk === 'summary' || chunk === 'full'
+  const includeSecondary = chunk === 'secondary' || chunk === 'full'
+  const includeDetails = chunk === 'details' || chunk === 'full'
   const trendYear = currentYearFromFilters(filters)
   const today = new Date()
   const comparisonEndDate = trendYear === today.getFullYear()
@@ -193,7 +198,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
     optionRows,
     metadataRows,
   ] = await Promise.all([
-    db.execute(sql`
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
         COUNT(*)::int AS total,
@@ -204,8 +209,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
         COALESCE(AVG(resolution_days), 0)::float AS avg_resolution_days,
         COALESCE(MAX(resolution_days), 0)::int AS max_resolution_days
       FROM filtered
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSecondary ? db.execute(sql`
       WITH months AS (
         SELECT generate_series(1, 12) AS month_no
       ),
@@ -264,8 +269,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
       LEFT JOIN monthly cy ON cy.year_no = ${trendYear} AND cy.month_no = months.month_no
       LEFT JOIN monthly ly ON ly.year_no = ${trendYear - 1} AND ly.month_no = months.month_no
       ORDER BY months.month_no
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSecondary ? db.execute(sql`
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM kia_call_center_complaints
@@ -300,8 +305,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
         COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date >= ${`${trendYear}-01-01`}::date AND complaint_date <= ${comparisonEndDate}::date), 0)::float AS cy_avg_days,
         COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date >= ${`${trendYear - 1}-01-01`}::date AND complaint_date <= ${previousComparisonEndDate}::date), 0)::float AS ly_avg_days
       FROM enriched
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSecondary ? db.execute(sql`
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM kia_call_center_complaints
@@ -339,8 +344,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
       GROUP BY 1
       ORDER BY year DESC
       LIMIT 5
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
         COALESCE(NULLIF(sr_area, ''), 'Unspecified') AS name,
@@ -351,8 +356,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
       GROUP BY 1
       ORDER BY total DESC, avg_days DESC
       LIMIT 8
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSecondary ? db.execute(sql`
       ${baseSql}
       SELECT
         COALESCE(NULLIF(sr_sub_area, ''), 'Unspecified') AS name,
@@ -363,8 +368,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
       GROUP BY 1
       ORDER BY total DESC, avg_days DESC
       LIMIT 10
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
         COALESCE(NULLIF(dealer_name, ''), 'Unspecified') AS dealer,
@@ -377,8 +382,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
       GROUP BY 1, 2
       ORDER BY total DESC, open DESC, avg_days DESC
       LIMIT 8
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
         COALESCE(NULLIF(vehicle_model, ''), 'Unspecified') AS model,
@@ -388,8 +393,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
       GROUP BY 1
       ORDER BY total DESC, avg_days DESC
       LIMIT 8
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
         COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') AS source,
@@ -398,8 +403,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
       GROUP BY 1
       ORDER BY total DESC
       LIMIT 8
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeDetails ? db.execute(sql`
       ${baseSql}
       SELECT
         id,
@@ -442,8 +447,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
         resolution_days DESC,
         complaint_date DESC
       LIMIT 150
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM kia_call_center_complaints
@@ -472,15 +477,15 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
           SELECT DISTINCT COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') AS source FROM latest
         ) options), '[]'::jsonb)
       ) AS options
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       SELECT
         COUNT(*)::int AS total_rows,
         MIN(complaint_date) AS min_date,
         MAX(complaint_date) AS max_date,
         MAX(uploaded_at) AS uploaded_at
       FROM kia_call_center_complaints
-    `),
+    `) : Promise.resolve([]),
   ])
 
   const kpis = resultRows(kpiRows)[0] || {}
@@ -625,6 +630,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters) {
     meta: {
       rowCount: numberValue(kpis.total),
       detailLimit: 150,
+      chunk,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       dateBasis: 'Complaint Date',
     },
@@ -648,10 +654,14 @@ export async function GET(request: Request) {
       source: getFilterValue(searchParams.get('source')),
     }
     const skipCache = searchParams.get('skipCache') === 'true'
+    const requestedChunk = searchParams.get('chunk')
+    const chunk: ComplaintChunk = requestedChunk === 'secondary' || requestedChunk === 'details' || requestedChunk === 'full'
+      ? requestedChunk
+      : 'summary'
 
     const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildComplaintsPayload(filters)
-      : getCachedData(cacheKey(filters), () => buildComplaintsPayload(filters), CACHE_TTL_SECONDS))
+      ? buildComplaintsPayload(filters, chunk)
+      : getCachedData(cacheKey(filters, chunk), () => buildComplaintsPayload(filters, chunk), CACHE_TTL_SECONDS))
 
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data), timing.serverTiming)

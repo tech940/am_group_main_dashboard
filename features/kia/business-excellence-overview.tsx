@@ -134,6 +134,7 @@ type OverviewData = {
     tone: 'good' | 'watch' | 'risk' | 'neutral'
   }>
   meta: {
+    chunk?: string
     cacheTtlSeconds: number
     sourceCoverage?: {
       roBilling?: { minDate: string | null; maxDate: string | null }
@@ -142,6 +143,12 @@ type OverviewData = {
       workshopPerformance?: { minDate: string | null; maxDate: string | null }
     }
   }
+}
+
+function withChunk(queryString: string, chunk: 'summary' | 'secondary') {
+  const params = new URLSearchParams(queryString)
+  params.set('chunk', chunk)
+  return params.toString()
 }
 
 type ComparisonMetric = {
@@ -404,11 +411,13 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
   const range = useMemo(() => getDateRange(dateFilter), [dateFilter])
   const queryString = useMemo(() => new URLSearchParams(range).toString(), [range])
+  const summaryQueryString = useMemo(() => withChunk(queryString, 'summary'), [queryString])
+  const secondaryQueryString = useMemo(() => withChunk(queryString, 'secondary'), [queryString])
 
-  const { data, isLoading, error } = useQuery<OverviewData, Error>({
-    queryKey: ['business-excellence', 'overview', queryString],
+  const { data: summaryData, isLoading, error } = useQuery<OverviewData, Error>({
+    queryKey: ['business-excellence', 'overview', summaryQueryString],
     queryFn: async () => {
-      const response = await fetch(`/api/brands/kia/business-excellence/overview?${queryString}`)
+      const response = await fetch(`/api/brands/kia/business-excellence/overview?${summaryQueryString}`)
       logApiTimings(response, 'business-excellence-overview')
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Failed to load Business Excellence overview')
@@ -416,6 +425,49 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
     },
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
+
+  const { data: secondaryData } = useQuery<OverviewData, Error>({
+    queryKey: ['business-excellence', 'overview', secondaryQueryString],
+    queryFn: async () => {
+      const response = await fetch(`/api/brands/kia/business-excellence/overview?${secondaryQueryString}`)
+      logApiTimings(response, 'business-excellence-overview-secondary')
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Failed to load Business Excellence overview details')
+      return payload as OverviewData
+    },
+    enabled: Boolean(summaryData),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const data = useMemo<OverviewData | undefined>(() => {
+    if (!summaryData) return undefined
+    if (!secondaryData) return summaryData
+
+    return {
+      ...summaryData,
+      comparison: secondaryData.comparison || summaryData.comparison,
+      charts: {
+        ...summaryData.charts,
+        revenueTrend: secondaryData.charts.revenueTrend,
+        serviceMix: secondaryData.charts.serviceMix,
+        advisorRevenue: secondaryData.charts.advisorRevenue,
+        agingDistribution: secondaryData.charts.agingDistribution,
+        openRoAdvisorLoad: secondaryData.charts.openRoAdvisorLoad,
+        openRoWorkType: secondaryData.charts.openRoWorkType,
+        complaintAreas: secondaryData.charts.complaintAreas,
+        complaintStatus: secondaryData.charts.complaintStatus,
+        complaintMonthlyComparison: secondaryData.charts.complaintMonthlyComparison,
+      },
+      meta: {
+        ...summaryData.meta,
+        ...secondaryData.meta,
+        sourceCoverage: {
+          ...summaryData.meta.sourceCoverage,
+          ...secondaryData.meta.sourceCoverage,
+        },
+      },
+    }
+  }, [summaryData, secondaryData])
 
   const renderChart = (chartId: string) => {
     if (!data) return null

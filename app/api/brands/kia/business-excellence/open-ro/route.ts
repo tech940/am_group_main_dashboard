@@ -23,6 +23,8 @@ type OpenRoFilters = {
   endDate: string | null
 }
 
+type OpenRoChunk = 'summary' | 'details' | 'full'
+
 function openRoBaseSql(filters: OpenRoFilters) {
   return sql`
     WITH active AS (
@@ -172,9 +174,9 @@ function parseDateInput(value: string | null) {
   return null
 }
 
-function cacheKey(filters: OpenRoFilters) {
+function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `kia:business-excellence:open-ro:v4:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:open-ro:v5:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -238,10 +240,12 @@ function mapDetailRow(row: NumericRow): OpenRoDetailRow {
   return detail
 }
 
-async function buildOpenRoPayload(filters: OpenRoFilters) {
+async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = 'summary') {
   const baseSql = openRoBaseSql(filters)
+  const includeSummary = chunk !== 'details'
+  const includeDetails = chunk !== 'summary'
   const [kpiRows, summaryRows, delayReasonRows, bucketRows, advisorRows, workTypeRows, trendRows, detailRows, optionRows] = await Promise.all([
-    db.execute(sql`
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
         COUNT(*)::int AS total_open_ro,
@@ -251,8 +255,8 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
         COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS accident_jobs,
         COUNT(*) FILTER (WHERE service_category = 'Running Repair')::int AS running_repairs
       FROM filtered
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
         service_category,
@@ -273,8 +277,8 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
           ELSE 5
         END,
         total_wip DESC
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
         COALESCE(NULLIF(TRIM(new_r_o_status), ''), '-') AS new_status,
@@ -293,29 +297,29 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
         COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified')
       ORDER BY total DESC, avg_days DESC, new_status ASC, delay_reason ASC
       LIMIT 20
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT aging_bucket AS bucket, COUNT(*)::int AS count
       FROM filtered
       GROUP BY aging_bucket
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT service_adv AS advisor, COUNT(*)::int AS open_ro, COALESCE(AVG(aging_days), 0)::float AS avg_aging
       FROM filtered
       GROUP BY service_adv
       ORDER BY open_ro DESC, avg_aging DESC
       LIMIT 12
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT service_category, COUNT(*)::int AS count
       FROM filtered
       GROUP BY service_category
       ORDER BY count DESC
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT ro_date::text AS date, COUNT(*)::int AS open_ro, COALESCE(AVG(aging_days), 0)::float AS avg_aging
       FROM filtered
@@ -323,15 +327,15 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
       GROUP BY ro_date
       ORDER BY ro_date ASC
       LIMIT 60
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeDetails ? db.execute(sql`
       ${baseSql}
       SELECT *
       FROM filtered
       ORDER BY aging_days DESC, promise_date ASC NULLS LAST, service_category ASC
       LIMIT 1000
-    `),
-    db.execute(sql`
+    `) : Promise.resolve([]),
+    includeSummary ? db.execute(sql`
       WITH active AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
           service_adv,
@@ -376,7 +380,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
         COALESCE(jsonb_agg(DISTINCT service_category) FILTER (WHERE NULLIF(service_category, '') IS NOT NULL), '[]'::jsonb) AS work_types,
         COALESCE(jsonb_agg(DISTINCT insurance_company_name) FILTER (WHERE NULLIF(insurance_company_name, '') IS NOT NULL), '[]'::jsonb) AS insurance_companies
       FROM enriched
-    `),
+    `) : Promise.resolve([]),
   ])
 
   const kpis = resultRows(kpiRows)[0] || {}
@@ -462,6 +466,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
     meta: {
       rowCount: details.length,
       detailLimit: 1000,
+      chunk,
       dateRange: { startDate: filters.startDate, endDate: filters.endDate },
       statusDefinition: "LOWER(status) = 'open'",
       agingDefinition: 'CURRENT_DATE - ro_date',
@@ -478,6 +483,8 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const skipCache = searchParams.get('skipCache') === 'true'
+  const requestedChunk = searchParams.get('chunk')
+  const chunk: OpenRoChunk = requestedChunk === 'details' || requestedChunk === 'full' ? requestedChunk : 'summary'
   const filters: OpenRoFilters = {
     advisor: getFilterValue(searchParams.get('advisor')),
     workType: getFilterValue(searchParams.get('workType')),
@@ -489,8 +496,8 @@ export async function GET(request: Request) {
 
   try {
     const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildOpenRoPayload(filters)
-      : getCachedData(cacheKey(filters), () => buildOpenRoPayload(filters), CACHE_TTL_SECONDS))
+      ? buildOpenRoPayload(filters, chunk)
+      : getCachedData(cacheKey(filters, chunk), () => buildOpenRoPayload(filters, chunk), CACHE_TTL_SECONDS))
 
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data), timing.serverTiming)

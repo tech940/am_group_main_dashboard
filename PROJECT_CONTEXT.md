@@ -434,6 +434,12 @@ Important distinction:
 - KIA Complaints is now a Business Excellence section using `kia_call_center_complaints`, including month/year comparison, complaint area analysis, dealer/sub-area summaries, and complaint detail expansion.
 - AI Summary exists in Business Excellence and is backed by Groq. Keep payloads compact because free/on-demand Groq tiers have strict TPM limits. AI Summary output must use Indian rupees only, no dollar symbols, and no Cr/Lakh abbreviations in the summary cards.
 - Business Excellence Overview Business Snapshot now includes a clear Workshop Snapshot panel distinct from Workshop WIP. Workshop Snapshot is closed-job performance; Workshop WIP is open repair-order pressure.
+- Business Excellence high-latency endpoints now load in chunks for faster first paint:
+  - Overview `/api/brands/kia/business-excellence/overview` defaults to `chunk=summary` and returns KPI/snapshot cards first; the frontend then fetches `chunk=secondary` for charts and LY comparisons.
+  - Open RO `/api/brands/kia/business-excellence/open-ro` defaults to `chunk=summary`; the frontend then fetches `chunk=details` for vehicle rows and drilldowns.
+  - KIA Complaints `/api/brands/kia/business-excellence/complaints` defaults to `chunk=summary`; the frontend then fetches `chunk=secondary` for charts/comparison and `chunk=details` for register rows.
+  - Legacy/direct requests without `chunk` intentionally return the summary payload only, so large default responses do not hit Vercel timeouts.
+- API requests are excluded from the Supabase session middleware matcher because API routes already enforce their own auth. This avoids paying the Supabase auth network check twice for every dashboard API call. `getAuthenticatedAppUser()` now prefers verified Supabase claims and caches the active app-user lookup in memory for 60 seconds with in-flight dedupe, so parallel dashboard chunks do not repeat the same `users` query.
 - Workshop Performance is now a dedicated Business Excellence report option in the sheet dropdown, directly below RO Billing Report, with server-side multi-table aggregation. JC matches the RO Billing table logic using `COUNT(DISTINCT COALESCE(bill_no, ro_no, id))`, not raw row count.
 - Workshop Performance addon definitions:
   - WA = Wheel Alignment.
