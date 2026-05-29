@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,6 @@ import {
   Database,
   Bell,
   Shield,
-  Palette,
   Globe,
   Save,
   RefreshCw,
@@ -36,12 +35,7 @@ export default function AdminSettingsPage() {
     maxLoginAttempts: 5,
   })
 
-  // Fetch settings on mount
-  useEffect(() => {
-    fetchSettings()
-  }, [])
-
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch('/api/admin/settings')
@@ -55,7 +49,13 @@ export default function AdminSettingsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    void fetchSettings()
+  }, [fetchSettings])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSave = async () => {
     setSaving(true)

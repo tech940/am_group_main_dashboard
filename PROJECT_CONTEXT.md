@@ -1,6 +1,6 @@
 # Project Context
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 ## Project Overview
 
@@ -73,10 +73,20 @@ The active UI direction is a premium glassmorphism dashboard shell:
 - Admin/User Management brand accents, stat icons, primary actions, active badges, table headers, pagination, avatars, and the header profile role pill should use `#023468`/navy tones instead of green/teal/emerald.
 - Grand Total rows in tables should use the same light slate/grey surface as MECH and MECH TOTAL, with a `#023468` accent, not a blue/green filled row, so green positive growth badges remain readable.
 - Notification popups and Purchase Order brand accents should use `#023468`/navy tones instead of green/teal/emerald brand styling.
+- Notification permission modal styling must follow the active theme palette using dashboard variables and `app-primary-action`/`app-outline-action`; avoid fixed navy/magenta modal backgrounds.
 - Purchase Order completed/spending view uses `scope=spending` and optional `spendStartDate`/`spendEndDate`; date strings must be valid `YYYY-MM-DD` before the client sends them or the API applies them. The API compares the raw `COALESCE(received_date_time, completed_at, created_at)` spend-date expression against ISO strings cast to `timestamptz`, not JS `Date` params, to avoid postgres-js Date parameter crashes.
 - KIA complaint comparison cards need visible borders. Customer Complaint Details should not have a search bar, and complaint row expand buttons should be borderless/plain with only the chevron affordance.
+- Open RO Service Type Aging expanded rows should stay compact: only vehicle number, workshop days, and aging category are shown inline. Clicking a vehicle opens a popup with the full RO/customer/advisor/status/financial/alert/remarks details.
 - Business Excellence uses the `business-excellence-boundaries` wrapper in `features/kia/business-excellence-page.tsx`; `app/globals.css` applies scoped borders to its cards, buttons, controls, rounded metric surfaces, and table cells so each section is visually distinct.
 - Global top route loader is white and is manually started for sidebar navigation.
+- The navbar has a full palette picker in `components/layout/header.tsx`. It stores the selected option in `localStorage` as `dashboard-accent`, applies it to `<html data-dashboard-accent="...">`, and offers Skydash, StarAdmin, Breeze, Corona, Purple, and Midnight palettes based on the supplied dashboard reference images. `app/layout.tsx` applies the stored accent before interactive paint and maps older saved accent names back to Skydash.
+- `Midnight` is a dark-color accent palette only; selecting it must not automatically enable `.dark` mode. `app/layout.tsx` includes a one-time migration that resets the old forced `dashboard-theme=dark` state for users who had selected Midnight before this behavior was decoupled. The separate moon/sun button remains the only control that changes light/dark mode.
+- Shared theme colors live in `app/globals.css` as `--dashboard-primary`, `--dashboard-primary-dark`, `--dashboard-primary-light`, `--dashboard-primary-soft`, `--dashboard-primary-border`, RGB/HSL variants, and `--dashboard-support-1..5`. Existing hard-coded `#023468`/navy Tailwind arbitrary classes and matching SVG chart strokes/fills are globally mapped to these variables so major headers, buttons, table headers, sidebar gradients, charts, and Business Excellence boundaries follow the selected palette.
+- Primary CTA buttons must use the high-contrast action tokens `--dashboard-action-bg`, `--dashboard-action-hover`, and `--dashboard-action-fg`, or the `app-primary-action` class. Do not use palette `primary-light` as a CTA gradient end because light palettes such as Skydash make white button text hard to read. Outline toolbar/filter/pagination buttons should use `app-outline-action`, including disabled pagination controls so labels remain readable.
+- Purchase Order workflow and completion/spending filter buttons must use `app-primary-action` for active states and `app-outline-action` for inactive states; avoid local `bg-slate-*` plus forced muted helper text because palette overrides can make active labels unreadable.
+- Authenticated app-user lookup should tolerate transient Supabase/Postgres pooler connection hiccups: `lib/auth/app-user.ts` retries once for `CONNECT_TIMEOUT`/connection-terminated errors, and `lib/db/index.ts` uses a 15-second Postgres connect timeout.
+- Before making changes live, run `npm run pre-live`. It executes `scripts/pre-live-check.js`, which validates required env vars, checks Postgres connectivity, runs ESLint, runs `tsc --noEmit`, and performs a production build.
+- ESLint intentionally ignores `scripts/**` and `public/**`; the dashboard has CommonJS maintenance scripts and service-worker assets that are not part of the Next app source lint surface.
 
 Important implementation files:
 
@@ -193,7 +203,7 @@ Important date bases by section:
   - New Workshop Performance API.
   - Aggregates Job Cards, labour, spares, VAS, WA/WB, advisor performance, and daily movement.
   - Combines `ro_billing_report`, `operation_wise_analysis_report`, `ew_report`, `mcp_report`, and `rsa_report` where available.
-  - Uses Redis with the 75-minute dashboard TTL and returns chart/table-ready payloads.
+  - Uses Redis with the 40-minute dashboard TTL and returns chart/table-ready payloads.
   - Prefers `workshop_performance_jc_summary_v1` only when that materialized view covers the full requested date range; otherwise it falls back to raw `ro_billing_report` so service-type JC counts stay aligned with RO Billing.
 
 - `GET /api/brands/kia/business-excellence/open-ro`
@@ -214,7 +224,7 @@ Important date bases by section:
   - Returns a dedicated `workshopSnapshot` payload for closed workshop jobs, including total JC, workshop revenue, labour/RO, VAS amount, source coverage, and top service lines.
   - The Workshop Snapshot uses the same materialized-view freshness guard as the Workshop Performance report.
   - When the Workshop Snapshot reads `workshop_performance_jc_summary_v1`, it groups service rows by `group_type` before `service_type` so mileage slabs like `30K`/`40K` stay under `Paid Service`; keep the SELECT and GROUP BY expressions identical to avoid runtime SQL failures.
-  - Uses the same Redis 75-minute dashboard TTL pattern as the other Business Excellence APIs.
+  - Uses the same Redis 40-minute dashboard TTL pattern as the other Business Excellence APIs.
   - Intentionally returns visual-summary data only; no large detail tables.
 
 - `POST /api/brands/kia/business-excellence/ai-summary`
@@ -295,7 +305,7 @@ Current overview metrics include:
 - `docs/BUSINESS_EXCELLENCE_SQL_QUERIES.md` documents the current Business Excellence dashboard SQL templates, date bases, dedupe keys, materialized-view usage, and refresh/index SQL. Keep this doc updated when dashboard query logic changes.
 - Business Excellence visual boundary CSS is broad by design; use the `be-borderless-action` class for inline table expand controls that should not render as bordered buttons.
 - FY Trends now has a dedicated SQL aggregate path and no longer fetches all RO Billing rows for the default unfiltered FY view.
-- Redis TTL is 75 minutes.
+- Redis dashboard TTL is 40 minutes.
 - Frontend session cache prevents duplicate API hits after data loads.
 - Performance Intelligence SQL now safely parses text discount fields such as `labour_disc` and `part_disc`.
 - Trend X-axis now forces all days to render instead of auto-skipping labels.
@@ -418,6 +428,8 @@ Important distinction:
 - RO Billing Table, Trends, FY Trends, Analytics, Revenue, and Performance Intelligence sections.
 - Business Excellence Overview is now the default route and visual command center.
 - Open RO is now a Business Excellence section for workshop WIP aging, delayed promise tracking, delay-reason control, advisor load, work-type distribution, and escalation alerts.
+- Open RO Job Card Delay Reason Summary mirrors the Service Type Aging vehicle drilldown: status rows aggregate counts by `new_r_o_status`, clicking a status directly expands compact vehicle rows, and clicking a vehicle opens the full-detail popup. Reason rows are intentionally not shown inline; delay reason remains available in the vehicle detail popup. The Open RO cache key was bumped after the status/reason payload change.
+- Open RO Service Type Aging expanded rows stay compact with Vehicle No, Workshop Days, and Aging Category only; clicking a vehicle opens a full-detail popup.
 - KIA Complaints is now a Business Excellence section using `kia_call_center_complaints`, including month/year comparison, complaint area analysis, dealer/sub-area summaries, and complaint detail expansion.
 - AI Summary exists in Business Excellence and is backed by Groq. Keep payloads compact because free/on-demand Groq tiers have strict TPM limits. AI Summary output must use Indian rupees only, no dollar symbols, and no Cr/Lakh abbreviations in the summary cards.
 - Business Excellence Overview Business Snapshot now includes a clear Workshop Snapshot panel distinct from Workshop WIP. Workshop Snapshot is closed-job performance; Workshop WIP is open repair-order pressure.

@@ -1336,7 +1336,7 @@ function PurchaseOrdersPageContent() {
             type="button"
             variant={isActive ? 'default' : 'outline'}
             onClick={() => setWorkflowStageFilterPreference(option.value)}
-            className={`rounded-xl ${isActive ? 'bg-[#023468] text-white hover:bg-[#012348]' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+            className={`rounded-xl font-bold ${isActive ? 'app-primary-action' : 'app-outline-action'}`}
           >
             {option.label}
             <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
@@ -1369,16 +1369,16 @@ function PurchaseOrdersPageContent() {
               type="button"
               variant={isActive ? 'default' : 'outline'}
               onClick={() => setWorkflowStageFilterPreference(option.value)}
-              className={`h-auto rounded-xl px-4 py-3 text-left ${isActive ? 'bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+              className={`h-auto rounded-xl px-4 py-3 text-left ${isActive ? 'app-primary-action' : 'app-outline-action'}`}
             >
               <span className="grid gap-0.5">
                 <span className="flex items-center gap-2 font-bold">
                   {option.label}
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${isActive ? 'bg-white/20' : 'bg-slate-100 text-slate-600'}`}>
                     {count}
                   </span>
                 </span>
-                <span className={`text-[10px] font-medium ${isActive ? 'text-white/70' : 'text-slate-500'}`}>
+                <span className={`text-[10px] font-medium ${isActive ? 'text-white/80' : 'text-slate-600'}`}>
                   {option.helper}
                 </span>
               </span>
@@ -1426,7 +1426,7 @@ function PurchaseOrdersPageContent() {
                   type="button"
                   variant={isActive ? 'default' : 'outline'}
                   onClick={() => setPurchaseOrderMode(mode)}
-                  className={`rounded-xl ${isActive ? 'bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                  className={`rounded-xl font-bold ${isActive ? 'app-primary-action' : 'app-outline-action'}`}
                 >
                   {mode === 'today' ? 'Today' : 'All Orders'}
                 </Button>
@@ -1456,7 +1456,7 @@ function PurchaseOrdersPageContent() {
               size="sm"
               disabled={isFirstPage || isLoading || isListRefreshing}
               onClick={() => setPurchaseOrderPage((current) => Math.max(1, current - 1))}
-              className="rounded-xl border-slate-200"
+              className="app-outline-action rounded-xl"
             >
               <ChevronLeft className="mr-1 h-4 w-4" />
               Prev
@@ -1470,7 +1470,7 @@ function PurchaseOrdersPageContent() {
               size="sm"
               disabled={isLastPage || isLoading || isListRefreshing}
               onClick={() => setPurchaseOrderPage((current) => Math.min(totalPages, current + 1))}
-              className="rounded-xl border-slate-200"
+              className="app-outline-action rounded-xl"
             >
               Next
               <ChevronRight className="ml-1 h-4 w-4" />
@@ -1975,14 +1975,14 @@ function PurchaseOrdersPageContent() {
                   })
                 }}
                 variant="outline"
-                className="rounded-2xl border-[#b9ccde] text-[#023468] hover:bg-[#edf4fb]"
+                className="app-outline-action rounded-2xl"
               >
                 {showCompleted ? 'Show Active' : 'Show Completed'}
               </Button>
               <Button
                 onClick={() => window.location.reload()}
                 variant="outline"
-                className="rounded-2xl border-slate-300 hover:bg-slate-50"
+                className="app-outline-action rounded-2xl"
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh
@@ -1990,7 +1990,7 @@ function PurchaseOrdersPageContent() {
               {canCreateOrders && !isCompletionTrackingView && (
                 <Button
                   onClick={openFreshNewOrderForm}
-                  className="rounded-2xl border border-[#8ca8c0] bg-gradient-to-r from-[#023468] to-[#034b82] text-white shadow-lg shadow-[#023468]/10 hover:from-[#023468] hover:to-[#034b82]"
+                  className="app-primary-action rounded-2xl shadow-lg"
                 >
                   <Plus className="mr-2 h-4 w-4" />
                   New Order

@@ -312,7 +312,7 @@ export default function AdminUsersPage() {
           
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-[#023468] to-[#034b82] text-white shadow-lg shadow-[#023468]/25 hover:from-[#012348] hover:to-[#023468] rounded-xl font-bold">
+              <Button className="app-primary-action rounded-xl font-bold shadow-lg">
                 <UserPlus className="mr-2 h-4 w-4" />
                 Create New User
               </Button>

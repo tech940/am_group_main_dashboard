@@ -174,7 +174,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters) {
   const stableParams = JSON.stringify(filters)
-  return `kia:business-excellence:open-ro:v3:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:open-ro:v4:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -277,6 +277,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
     db.execute(sql`
       ${baseSql}
       SELECT
+        COALESCE(NULLIF(TRIM(new_r_o_status), ''), '-') AS new_status,
         COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified') AS delay_reason,
         COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS acc_count,
         COUNT(*) FILTER (WHERE service_category <> 'Accidental Repair')::int AS mech_count,
@@ -287,8 +288,10 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
         COUNT(*)::int AS total,
         COALESCE(AVG(aging_days), 0)::float AS avg_days
       FROM filtered
-      GROUP BY COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified')
-      ORDER BY total DESC, avg_days DESC, delay_reason ASC
+      GROUP BY
+        COALESCE(NULLIF(TRIM(new_r_o_status), ''), '-'),
+        COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified')
+      ORDER BY total DESC, avg_days DESC, new_status ASC, delay_reason ASC
       LIMIT 20
     `),
     db.execute(sql`
@@ -413,6 +416,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters) {
       avgDays: numberValue(row.avg_days),
     })),
     delayReasonSummary: resultRows(delayReasonRows).map((row) => ({
+      newStatus: stringValue(row.new_status, '-'),
       delayReason: stringValue(row.delay_reason, 'No Reason Specified'),
       mechCount: numberValue(row.mech_count),
       accCount: numberValue(row.acc_count),

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "validate": "npm run lint && npx tsc --noEmit && npm run build",
+    "pre-live": "node scripts/pre-live-check.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",

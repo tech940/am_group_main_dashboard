@@ -20,7 +20,18 @@ import NextTopLoader from 'nextjs-toploader';
 const themeInitScript = `
   try {
     const storedTheme = window.localStorage.getItem('dashboard-theme');
-    document.documentElement.classList.toggle('dark', storedTheme === 'dark');
+    const storedAccent = window.localStorage.getItem('dashboard-accent') || 'skydash';
+    const legacyAccents = ['navy', 'indigo', 'blue', 'violet', 'ruby'];
+    const accent = legacyAccents.includes(storedAccent) ? 'skydash' : storedAccent;
+    const migrationKey = 'dashboard-midnight-theme-decoupled';
+    const shouldResetOldMidnightDark = accent === 'midnight' && storedTheme === 'dark' && window.localStorage.getItem(migrationKey) !== '1';
+    const theme = shouldResetOldMidnightDark ? 'light' : storedTheme;
+    if (shouldResetOldMidnightDark) {
+      window.localStorage.setItem('dashboard-theme', 'light');
+      window.localStorage.setItem(migrationKey, '1');
+    }
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.setAttribute('data-dashboard-accent', accent);
   } catch (_) {}
 `;
 

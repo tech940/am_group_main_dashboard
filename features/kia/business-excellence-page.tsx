@@ -864,18 +864,6 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
 
       <div className="order-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
-          <label className="space-y-2 xl:col-span-1">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Search Reg</span>
-            <div className="flex h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3">
-              <Search className="mr-2 h-4 w-4 text-slate-400" />
-              <input
-                value={filters.searchReg}
-                onChange={(event) => updateFilter('searchReg', event.target.value)}
-                placeholder="Search Registration..."
-                className="w-full bg-transparent text-sm font-semibold outline-none"
-              />
-            </div>
-          </label>
           {[
             { key: 'branch', label: 'Branch', options: data?.filterOptions.branches || [], all: 'All Locations' },
             { key: 'serviceType', label: 'Service Type', options: data?.filterOptions.serviceTypes || [], all: 'All Types' },
@@ -1431,7 +1419,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                               variant="outline"
                               size="sm"
                               onClick={() => setShowDiagnostics(true)}
-                              className="h-9 rounded-xl border border-slate-300 bg-slate-950 px-3 text-xs font-black text-white shadow-sm hover:border-slate-950 hover:bg-slate-800"
+                              className="h-9 rounded-xl border border-slate-300 bg-slate-950 px-3 text-xs font-black shadow-sm hover:border-slate-950 hover:bg-slate-800"
                             >
                               <Gauge className="mr-2 h-3.5 w-3.5" />
                               Performance

@@ -34,7 +34,7 @@ export const CACHE_KEYS = {
 export const CACHE_TTL = {
   SHORT: 5 * 60,        // 5 minutes
   MEDIUM: 30 * 60,      // 30 minutes
-  DASHBOARD: 75 * 60,   // 1 hour 15 minutes
+  DASHBOARD: 40 * 60,   // 40 minutes
   LONG: 2 * 60 * 60,    // 2 hours
   DAY: 24 * 60 * 60,    // 24 hours
 } as const

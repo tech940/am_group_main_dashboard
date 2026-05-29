@@ -888,23 +888,23 @@ export function NotificationBell({ userId }: NotificationBellProps) {
 
       <Dialog open={permissionDialogOpen} onOpenChange={setPermissionDialogOpen}>
         <DialogContent className="rounded-[28px] border-none bg-white p-0 shadow-2xl">
-          <div className="rounded-t-[28px] bg-gradient-to-br from-[#023468] via-[#012348] to-[#034b82] px-6 py-6 text-white">
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/12">
+          <div className="rounded-t-[28px] bg-[linear-gradient(135deg,var(--dashboard-action-bg)_0%,var(--dashboard-action-hover)_58%,var(--dashboard-primary-light)_100%)] px-6 py-6 text-white">
+            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-white/14 text-white shadow-sm">
               <Volume2 className="h-6 w-6" />
             </div>
             <DialogHeader className="space-y-2 text-left">
               <DialogTitle className="text-2xl font-black tracking-tight">
                 Enable workflow notifications
               </DialogTitle>
-              <DialogDescription className="text-sm leading-6 text-[#edf4fb]/90">
+              <DialogDescription className="text-sm leading-6 text-white/88">
                 Turn on browser alerts to receive purchase order approvals, denials, and stage updates even when this tab is inactive.
               </DialogDescription>
             </DialogHeader>
           </div>
 
           <div className="space-y-5 px-6 py-6">
-            <div className="space-y-3 rounded-3xl bg-slate-50 p-4">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+            <div className="space-y-3 rounded-3xl border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] p-4">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--dashboard-action-bg)]">
                 Why this matters
               </p>
               <ul className="space-y-2 text-sm text-slate-600">
@@ -925,14 +925,14 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                 type="button"
                 variant="outline"
                 onClick={dismissPermissionPrompt}
-                className="rounded-2xl"
+                className="app-outline-action rounded-2xl"
               >
                 Later
               </Button>
               <Button
                 type="button"
                 onClick={() => void requestBrowserPermission()}
-                className="rounded-2xl bg-[#023468] text-white hover:bg-[#023468]"
+                className="app-primary-action rounded-2xl"
               >
                 Enable Notifications
               </Button>

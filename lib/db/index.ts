@@ -14,7 +14,7 @@ const client = globalForDb.postgresClient ?? postgres(env.database.url, {
   ssl: { rejectUnauthorized: false },
   max: 10, // Increased for concurrent requests (was 3)
   idle_timeout: 45,
-  connect_timeout: 8,
+  connect_timeout: 15,
   max_lifetime: 60 * 30, // 30 minutes - recycle connections periodically
   onnotice: () => {}, // Ignore notices
   connection: {
