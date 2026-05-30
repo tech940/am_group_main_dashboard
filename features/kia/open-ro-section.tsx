@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/select'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import { logApiTimings } from '@/lib/api/client-timing'
+import { BusinessDateFilterValue, appendBusinessComparisonParams } from '@/lib/business-excellence/comparison'
 import { cn } from '@/lib/utils'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
@@ -221,11 +222,13 @@ function DetailField({ label, value, className }: { label: string; value: React.
 }
 
 type OpenRoDateFilter = {
-  mode: 'month' | 'range'
+  mode: 'month' | 'range' | 'preset' | 'custom'
+  preset?: BusinessDateFilterValue['preset']
   month: number
   year: number
   startDate: string
   endDate: string
+  comparison?: BusinessDateFilterValue['comparison']
 } | null
 
 function getInputDate(date: Date) {
@@ -238,7 +241,7 @@ function getInputDate(date: Date) {
 function getOpenRoDateRange(dateFilter: OpenRoDateFilter) {
   const today = new Date()
 
-  if (dateFilter?.mode === 'range' && dateFilter.startDate && dateFilter.endDate) {
+  if (dateFilter?.startDate && dateFilter.endDate) {
     return { startDate: dateFilter.startDate, endDate: dateFilter.endDate }
   }
 
@@ -260,13 +263,14 @@ function getOpenRoDateRange(dateFilter: OpenRoDateFilter) {
   }
 }
 
-function buildQueryString(filters: OpenRoFilters, dateRange: { startDate: string; endDate: string }) {
+function buildQueryString(filters: OpenRoFilters, dateRange: { startDate: string; endDate: string }, dateFilter?: OpenRoDateFilter) {
   const params = new URLSearchParams()
   Object.entries(filters).forEach(([key, value]) => {
     if (value && value !== ALL_VALUE) params.set(key, value)
   })
   if (dateRange.startDate) params.set('startDate', dateRange.startDate)
   if (dateRange.endDate) params.set('endDate', dateRange.endDate)
+  appendBusinessComparisonParams(params, dateFilter)
   return params.toString()
 }
 
@@ -288,7 +292,7 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
   const [selectedVehicle, setSelectedVehicle] = useState<OpenRoDetailRow | null>(null)
 
   const dateRange = useMemo(() => getOpenRoDateRange(dateFilter), [dateFilter])
-  const queryString = useMemo(() => buildQueryString(filters, dateRange), [dateRange, filters])
+  const queryString = useMemo(() => buildQueryString(filters, dateRange, dateFilter), [dateFilter, dateRange, filters])
 
   const fetchOpenRo = useCallback(async () => {
     try {

@@ -31,6 +31,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import { logApiTimings } from '@/lib/api/client-timing'
+import { BusinessDateFilterValue, appendBusinessComparisonParams } from '@/lib/business-excellence/comparison'
 import { cn } from '@/lib/utils'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
@@ -38,11 +39,13 @@ function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsi
 }
 
 type BusinessDateFilter = {
-  mode: 'month' | 'range'
+  mode: 'month' | 'range' | 'preset' | 'custom'
+  preset?: BusinessDateFilterValue['preset']
   month: number
   year: number
   startDate: string
   endDate: string
+  comparison?: BusinessDateFilterValue['comparison']
 } | null
 
 type WorkshopSnapshot = {
@@ -178,7 +181,7 @@ function isInputDate(value: string) {
 
 function getDateRange(dateFilter: BusinessDateFilter) {
   const today = new Date()
-  if (dateFilter?.mode === 'range' && isInputDate(dateFilter.startDate) && isInputDate(dateFilter.endDate)) {
+  if (dateFilter?.startDate && dateFilter.endDate && isInputDate(dateFilter.startDate) && isInputDate(dateFilter.endDate)) {
     return { startDate: dateFilter.startDate, endDate: dateFilter.endDate }
   }
 
@@ -361,7 +364,12 @@ function SnapshotTile({
       {comparison && (
         <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider shadow-sm">
           <span className="truncate opacity-75">{comparison.lyText}</span>
-          <span className={cn('shrink-0 rounded-full px-2 py-0.5', comparison.deltaText === 'No LY data' ? 'bg-slate-100 text-slate-500' : deltaClass(comparison.deltaPct, positiveIsGood))}>
+          <span className={cn(
+            'shrink-0 rounded-full px-2 py-0.5',
+            comparison.deltaText === 'No LY data' || comparison.deltaText === 'Insufficient history'
+              ? 'bg-slate-100 text-slate-500'
+              : deltaClass(comparison.deltaPct, positiveIsGood)
+          )}>
             {comparison.deltaText}
           </span>
         </div>
@@ -410,7 +418,11 @@ function ChartShell({
 export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: BusinessDateFilter }) {
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
   const range = useMemo(() => getDateRange(dateFilter), [dateFilter])
-  const queryString = useMemo(() => new URLSearchParams(range).toString(), [range])
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams(range)
+    appendBusinessComparisonParams(params, dateFilter)
+    return params.toString()
+  }, [dateFilter, range])
   const summaryQueryString = useMemo(() => withChunk(queryString, 'summary'), [queryString])
   const secondaryQueryString = useMemo(() => withChunk(queryString, 'secondary'), [queryString])
 
@@ -657,9 +669,9 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
               value={formatNumber(data.kpis.openRo)}
               meta={`${formatNumber(data.kpis.delayedRo)} delayed / ${formatNumber(data.kpis.openOver15)} over 15D`}
               comparison={{
-                lyText: comparisonText(data.comparison?.openRo),
-                deltaText: deltaText(data.comparison?.openRo),
-                deltaPct: data.comparison?.openRo.deltaPct || 0,
+                lyText: 'Historical comparison disabled',
+                deltaText: 'Insufficient history',
+                deltaPct: 0,
               }}
               positiveIsGood={false}
               tone={hasWorkshopRisk ? 'risk' : 'good'}
@@ -786,7 +798,7 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
             <div className="mb-2 flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Complaints</p>
-                <h3 className="mt-1 text-base font-black tracking-tight text-slate-950">CY vs LY Complaint Movement</h3>
+                <h3 className="mt-1 text-base font-black tracking-tight text-slate-950">Complaint Movement</h3>
               </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Monthly</span>
             </div>

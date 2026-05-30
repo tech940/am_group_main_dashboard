@@ -7,6 +7,10 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS ro_billing_report_bill_date_idx
 CREATE INDEX CONCURRENTLY IF NOT EXISTS ro_billing_report_bill_date_work_type_idx
   ON ro_billing_report (bill_date, work_type);
 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS ro_billing_report_demo_job_cards_ro_date_idx
+  ON ro_billing_report (work_type, ro_date, service_advisor, bill_status)
+  WHERE work_type = 'Test Drive/CC Maintenance';
+
 CREATE INDEX CONCURRENTLY IF NOT EXISTS ro_billing_report_bill_date_service_type_idx
   ON ro_billing_report (bill_date, service_type);
 
@@ -76,11 +80,38 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS mcp_report_uploaded_at_idx
 CREATE INDEX CONCURRENTLY IF NOT EXISTS rsa_report_uploaded_at_idx
   ON rsa_report (uploaded_at);
 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS rsa_report_invoice_date_idx
+  ON rsa_report (invoice_date);
+
 CREATE INDEX CONCURRENTLY IF NOT EXISTS psf_yearly_uploaded_at_idx
   ON psf_yearly (uploaded_at);
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS adv_wise_lubricants_vas_uploaded_at_idx
   ON adv_wise_lubricants_vas (uploaded_at);
 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS adv_wise_lubricants_vas_gst_invoice_date_idx
+  ON adv_wise_lubricants_vas (gst_invoice_date);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS adv_wise_lubricants_vas_ro_close_date_idx
+  ON adv_wise_lubricants_vas (ro_close_date);
+
 CREATE INDEX CONCURRENTLY IF NOT EXISTS kia_call_center_complaints_uploaded_at_idx
   ON kia_call_center_complaints (uploaded_at);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS kia_call_center_complaints_complaint_date_idx
+  ON kia_call_center_complaints (complaint_date);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS kia_call_center_complaints_dealer_date_idx
+  ON kia_call_center_complaints (dealer_code, complaint_date);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS kia_call_center_complaints_status_date_idx
+  ON kia_call_center_complaints (status, complaint_date);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS operation_wise_analysis_report_month_idx
+  ON operation_wise_analysis_report (report_month);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS operation_wise_analysis_report_code_month_idx
+  ON operation_wise_analysis_report (op_part_code, report_month);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS operation_wise_analysis_advisor_report_month_idx
+  ON operation_wise_analysis_advisor_report (report_month);

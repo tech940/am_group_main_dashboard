@@ -6,6 +6,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -14,6 +15,12 @@ const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const tableExistsCache = new Map<string, boolean>()
 
 type NumericRow = Record<string, unknown>
+type ComparisonParams = {
+  preset: string | null
+  comparisonMode: string | null
+  comparisonStartDate: string | null
+  comparisonEndDate: string | null
+}
 
 type ServiceAggregate = {
   serviceType: string
@@ -89,10 +96,27 @@ function growth(current: number, previous: number) {
   return ((current - previous) / previous) * 100
 }
 
-function cacheKey(startDate: string, endDate: string) {
-  return `kia:business-excellence:workshop-performance:v20:${createHash('sha1')
-    .update(`${startDate}:${endDate}`)
+function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
+  return {
+    preset: searchParams.get('periodPreset') || null,
+    comparisonMode: searchParams.get('comparisonMode') || 'none',
+    comparisonStartDate: searchParams.get('comparisonStartDate')?.slice(0, 10) || null,
+    comparisonEndDate: searchParams.get('comparisonEndDate')?.slice(0, 10) || null,
+  }
+}
+
+function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams) {
+  return `kia:business-excellence:workshop-performance:v25:${createHash('sha1')
+    .update(JSON.stringify({ startDate, endDate, comparison }))
     .digest('hex')}`
+}
+
+function accidentAdvisorSqlList() {
+  return sql.join(ACCIDENT_ADVISORS.map((advisor) => sql`${advisor.toLowerCase()}`), sql`, `)
+}
+
+function workshopCategoryExpression(columnName = 'service_advisor') {
+  return sql`CASE WHEN LOWER(TRIM(COALESCE(${sql.raw(columnName)}, ''))) IN (${accidentAdvisorSqlList()}) THEN 'Accident' ELSE 'MECH' END`
 }
 
 async function tableExists(tableName: string) {
@@ -120,6 +144,84 @@ async function shouldUseWorkshopJcSummary(startDate: string, endDate: string) {
 }
 
 async function fetchServiceSummary(startDate: string, endDate: string): Promise<ServiceAggregate[]> {
+  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate) ? sql`
+    WITH classified AS (
+      SELECT
+        ${workshopCategoryExpression('service_advisor')} AS workshop_category,
+        jc_key,
+        labour_amount,
+        part_amount,
+        total_amount,
+        discount_amount
+      FROM workshop_performance_jc_summary_v1
+      WHERE report_date >= ${startDate}::date
+        AND report_date < (${endDate}::date + INTERVAL '1 day')
+    )
+    SELECT
+      workshop_category AS group_type,
+      workshop_category AS service_type,
+      COUNT(DISTINCT jc_key)::int AS total_jc,
+      COALESCE(SUM(labour_amount), 0)::float AS labour_amount,
+      COALESCE(SUM(part_amount), 0)::float AS part_amount,
+      COALESCE(SUM(total_amount), 0)::float AS total_amount,
+      COALESCE(SUM(discount_amount), 0)::float AS discount_amount
+    FROM classified
+    GROUP BY workshop_category
+    ORDER BY CASE WHEN workshop_category = 'MECH' THEN 1 ELSE 2 END
+  ` : sql`
+    WITH base AS (
+      SELECT
+        ${workshopCategoryExpression('service_advisor')} AS workshop_category,
+        COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
+        COALESCE(labour_amt, 0)::numeric AS labour_amt,
+        COALESCE(part_amt, 0)::numeric AS part_amt,
+        COALESCE(total_amt, 0)::numeric AS total_amt,
+        GREATEST(
+          COALESCE(dis_amt, 0)::numeric,
+          COALESCE(total_disc, 0)::numeric,
+          ${numericText(sql.raw('labour_disc'))},
+          ${numericText(sql.raw('part_disc'))}
+        ) AS discount_amount
+      FROM ro_billing_report
+      WHERE bill_date >= ${startDate}::date
+        AND bill_date < (${endDate}::date + INTERVAL '1 day')
+    ),
+    dedup AS (
+      SELECT
+        workshop_category,
+        jc_key,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
+        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt,
+        MAX(discount_amount) AS discount_amount
+      FROM base
+      GROUP BY workshop_category, jc_key
+    )
+    SELECT
+      workshop_category AS group_type,
+      workshop_category AS service_type,
+      COUNT(*)::int AS total_jc,
+      COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
+      COALESCE(SUM(part_amt), 0)::float AS part_amount,
+      COALESCE(SUM(total_amt), 0)::float AS total_amount,
+      COALESCE(SUM(discount_amount), 0)::float AS discount_amount
+    FROM dedup
+    GROUP BY workshop_category
+    ORDER BY CASE WHEN workshop_category = 'MECH' THEN 1 ELSE 2 END
+  `)
+
+  return resultRows(result).map((row) => ({
+    serviceType: String(row.service_type || 'Unspecified'),
+    groupType: String(row.group_type || row.service_type || 'Unspecified'),
+    totalJc: numberValue(row.total_jc),
+    labourAmount: numberValue(row.labour_amount),
+    partAmount: numberValue(row.part_amount),
+    totalAmount: numberValue(row.total_amount),
+    discountAmount: numberValue(row.discount_amount),
+  }))
+}
+
+async function fetchCoreServiceSummary(startDate: string, endDate: string): Promise<ServiceAggregate[]> {
   const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate) ? sql`
     SELECT
       group_type,
@@ -190,37 +292,20 @@ async function fetchServiceSummary(startDate: string, endDate: string): Promise<
 }
 
 async function fetchAddonSummary(startDate: string, endDate: string): Promise<AddonAggregate[]> {
-  if (await tableExists('workshop_operation_addon_summary_v1')) {
-    const result = await db.execute(sql`
-      SELECT
-        'Others' AS service_type,
-        COALESCE(SUM(vas_amount), 0)::float AS vas_amount,
-        COALESCE(SUM(wa_count), 0)::int AS wa_count,
-        COALESCE(SUM(wa_amount), 0)::float AS wa_amount,
-        COALESCE(SUM(wb_count), 0)::int AS wb_count,
-        COALESCE(SUM(wb_amount), 0)::float AS wb_amount
-      FROM workshop_operation_addon_summary_v1
-      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
-        AND report_month <= date_trunc('month', ${endDate}::date)::date
-    `)
-
-    return resultRows(result).map((row) => ({
-      serviceType: String(row.service_type || 'Unspecified'),
-      vasAmount: numberValue(row.vas_amount),
-      waCount: numberValue(row.wa_count),
-      waAmount: numberValue(row.wa_amount),
-      wbCount: numberValue(row.wb_count),
-      wbAmount: numberValue(row.wb_amount),
-    }))
-  }
-
-  if (!(await tableExists('operation_wise_analysis_report'))) return []
+  if (!(await tableExists('operation_wise_analysis_advisor_report'))) return []
 
   const result = await db.execute(sql`
     WITH operation_rows AS (
-      SELECT
-        COALESCE(NULLIF(op_part_code, ''), id::text) AS addon_key,
-        ABS(${numericText(sql.raw('total_amt'))}) AS amount,
+      SELECT DISTINCT
+        COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
+        ${workshopCategoryExpression('service_advisor')} AS workshop_category,
+        report_type,
+        op_part_code,
+        op_part_desc,
+        service_advisor,
+        dealer_code,
+        dealer_name,
+        ${numericText(sql.raw('total_amt'))} AS amount,
         GREATEST(
           ABS(${numericText(sql.raw('total_count'))}),
           ABS(${numericText(sql.raw('sp2ib_seltos_1_5_petrol_count'))}),
@@ -241,7 +326,7 @@ async function fetchAddonSummary(startDate: string, endDate: string): Promise<Ad
           op_part_code,
           op_part_desc
         )) AS description
-      FROM operation_wise_analysis_report
+      FROM operation_wise_analysis_advisor_report
       WHERE report_month >= date_trunc('month', ${startDate}::date)::date
         AND report_month <= date_trunc('month', ${endDate}::date)::date
     ),
@@ -257,22 +342,27 @@ async function fetchAddonSummary(startDate: string, endDate: string): Promise<Ad
             OR description ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
         ) AS is_wb,
         (
-          operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
-            OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
-            OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
-            OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
-            OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
+          LOWER(COALESCE(report_type, '')) = 'operation'
+            AND (
+              operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
+                OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+                OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
+                OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
+                OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
+            )
         ) AS is_vas
       FROM operation_rows
     )
     SELECT
-      'Others' AS service_type,
+      workshop_category AS service_type,
       COALESCE(SUM(amount) FILTER (WHERE is_vas), 0)::float AS vas_amount,
       COALESCE(SUM(operation_count) FILTER (WHERE is_wa), 0)::int AS wa_count,
       COALESCE(SUM(amount) FILTER (WHERE is_wa), 0)::float AS wa_amount,
       COALESCE(SUM(operation_count) FILTER (WHERE is_wb), 0)::int AS wb_count,
       COALESCE(SUM(amount) FILTER (WHERE is_wb), 0)::float AS wb_amount
     FROM classified
+    GROUP BY workshop_category
+    ORDER BY CASE WHEN workshop_category = 'MECH' THEN 1 ELSE 2 END
   `)
 
   return resultRows(result).map((row) => ({
@@ -283,6 +373,51 @@ async function fetchAddonSummary(startDate: string, endDate: string): Promise<Ad
     wbCount: numberValue(row.wb_count),
     wbAmount: numberValue(row.wb_amount),
   }))
+}
+
+async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
+  if (!(await tableExists('operation_wise_analysis_report'))) return 0
+
+  const result = await db.execute(sql`
+    WITH operation_rows AS (
+      SELECT DISTINCT
+        date_trunc('month', report_month::date)::date AS report_month,
+        report_type,
+        op_part_code,
+        op_part_desc,
+        dealer_code,
+        dealer_name,
+        ${numericText(sql.raw('total_amt'))} AS amount,
+        LOWER(COALESCE(op_part_code, '')) AS operation_code,
+        LOWER(CONCAT_WS(' ', report_type, op_part_code, op_part_desc)) AS description
+      FROM operation_wise_analysis_report
+      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
+        AND report_month <= date_trunc('month', ${endDate}::date)::date
+        AND LOWER(COALESCE(report_type, '')) = 'operation'
+    )
+    SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
+    FROM operation_rows
+    WHERE operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
+      OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+      OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
+      OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
+      OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
+  `)
+
+  return numberValue(resultRows(result)[0]?.vas_amount)
+}
+
+async function fetchCoreAddonSummary(startDate: string, endDate: string): Promise<AddonAggregate[]> {
+  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate)
+
+  return [{
+    serviceType: 'Others',
+    vasAmount,
+    waCount: 0,
+    waAmount: 0,
+    wbCount: 0,
+    wbAmount: 0,
+  }]
 }
 
 async function fetchDailyTrend(startDate: string, endDate: string) {
@@ -614,6 +749,25 @@ function buildRows(serviceRows: ServiceAggregate[], addonRows: AddonAggregate[] 
   return rows
 }
 
+function buildManagementRows(serviceRows: ServiceAggregate[], addonRows: AddonAggregate[] = []) {
+  const categoryRows = ['MECH', 'Accident'].map((category) => {
+    const existing = serviceRows.find((row) => row.serviceType === category)
+    return existing || {
+      serviceType: category,
+      groupType: category,
+      totalJc: 0,
+      labourAmount: 0,
+      partAmount: 0,
+      totalAmount: 0,
+      discountAmount: 0,
+    }
+  })
+
+  return buildRows(categoryRows, addonRows)
+    .filter((row) => row.serviceType === 'MECH' || row.serviceType === 'Accident')
+    .sort((a, b) => (a.serviceType === 'MECH' ? 0 : 1) - (b.serviceType === 'MECH' ? 0 : 1))
+}
+
 function summarizeAddons(addonRows: AddonAggregate[]) {
   return addonRows.reduce((total, row) => ({
     vasAmount: total.vasAmount + row.vasAmount,
@@ -668,11 +822,20 @@ function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summari
   }
 }
 
-async function buildWorkshopPayload(startDate: string, endDate: string) {
+async function buildWorkshopPayload(
+  startDate: string,
+  endDate: string,
+  comparison: ComparisonParams = {
+    preset: null,
+    comparisonMode: 'none',
+    comparisonStartDate: null,
+    comparisonEndDate: null,
+  }
+) {
   const parsedStart = parseDateInput(startDate)
   const parsedEnd = parseDateInput(endDate)
-  const lyStart = parsedStart ? toDateInputValue(sameDateLastYear(parsedStart)) : startDate
-  const lyEnd = parsedEnd ? toDateInputValue(sameDateLastYear(parsedEnd)) : endDate
+  const lyStart = comparison.comparisonStartDate || (parsedStart ? toDateInputValue(sameDateLastYear(parsedStart)) : startDate)
+  const lyEnd = comparison.comparisonEndDate || (parsedEnd ? toDateInputValue(sameDateLastYear(parsedEnd)) : endDate)
 
   const [
     serviceRows,
@@ -683,6 +846,8 @@ async function buildWorkshopPayload(startDate: string, endDate: string) {
     lyAuxiliary,
     lyServiceRows,
     lyAddonRows,
+    coreServiceRows,
+    coreAddonRows,
   ] = await Promise.all([
     fetchServiceSummary(startDate, endDate),
     fetchAddonSummary(startDate, endDate),
@@ -692,21 +857,30 @@ async function buildWorkshopPayload(startDate: string, endDate: string) {
     fetchAuxiliaryKpis(lyStart, lyEnd),
     fetchServiceSummary(lyStart, lyEnd),
     fetchAddonSummary(lyStart, lyEnd),
+    fetchCoreServiceSummary(startDate, endDate),
+    fetchCoreAddonSummary(startDate, endDate),
   ])
 
   const addonTotals = summarizeAddons(addonRows)
   const lyAddonTotals = summarizeAddons(lyAddonRows)
-  const rows = buildRows(serviceRows, addonRows)
+  const rows = buildManagementRows(serviceRows, addonRows)
   const totalRow = buildTotalRow(rows, addonTotals, {
     ewCount: auxiliary.ewCount,
     rsaCount: auxiliary.rsaCount,
     mcpCount: auxiliary.mcpCount,
   })
-  const lyRows = buildRows(lyServiceRows, lyAddonRows)
+  const lyRows = buildManagementRows(lyServiceRows, lyAddonRows)
   const lyTotal = buildTotalRow(lyRows, lyAddonTotals, {
     ewCount: lyAuxiliary.ewCount,
     rsaCount: lyAuxiliary.rsaCount,
     mcpCount: lyAuxiliary.mcpCount,
+  })
+  const coreAddonTotals = summarizeAddons(coreAddonRows)
+  const coreRows = buildRows(coreServiceRows, coreAddonRows)
+  const coreTotalRow = buildTotalRow(coreRows, coreAddonTotals, {
+    ewCount: auxiliary.ewCount,
+    rsaCount: auxiliary.rsaCount,
+    mcpCount: auxiliary.mcpCount,
   })
 
   const totalRevenue = totalRow.labourAmount + totalRow.spareSale
@@ -722,17 +896,23 @@ async function buildWorkshopPayload(startDate: string, endDate: string) {
       vasAmount: { value: totalRow.lessVas, ly: lyTotal.lessVas, growth: growth(totalRow.lessVas, lyTotal.lessVas) },
       labourPerRo: { value: totalRow.labourPerRo, ly: lyTotal.labourPerRo, growth: growth(totalRow.labourPerRo, lyTotal.labourPerRo) },
       sparePerRo: { value: totalRow.sparePerRo, ly: lyTotal.sparePerRo, growth: growth(totalRow.sparePerRo, lyTotal.sparePerRo) },
-      ewCount: { value: auxiliary.ewCount, ly: lyAuxiliary.ewCount, growth: growth(auxiliary.ewCount, lyAuxiliary.ewCount) },
-      mcpCount: { value: auxiliary.mcpCount, ly: lyAuxiliary.mcpCount, growth: growth(auxiliary.mcpCount, lyAuxiliary.mcpCount) },
+      ewCount: { value: auxiliary.ewCount, growth: null },
+      mcpCount: { value: auxiliary.mcpCount, growth: null },
       rsaCount: { value: auxiliary.rsaCount, ly: lyAuxiliary.rsaCount, growth: growth(auxiliary.rsaCount, lyAuxiliary.rsaCount), amount: auxiliary.rsaAmount },
     },
     rows: [...rows, totalRow],
+    coreRows: [...coreRows, coreTotalRow],
     dailyTrend,
     advisors,
     meta: {
       rowCount: rows.length,
       jcDefinition: 'COUNT(DISTINCT COALESCE(bill_no, ro_no, id))',
       cacheTtlSeconds: CACHE_TTL_SECONDS,
+      comparison,
+      unsupportedComparisonSources: {
+        ew_report: 'EW has only May 2026 data.',
+        mcp_report: 'MCP is close to one year but not enough for full LY comparisons yet.',
+      },
     },
   }
 }
@@ -751,13 +931,14 @@ export async function GET(request: Request) {
     ? searchParams.get('endDate')!.slice(0, 10)
     : defaults.endDate
   const skipCache = searchParams.get('skipCache') === 'true'
+  const comparison = getComparisonParams(searchParams)
 
   try {
     const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildWorkshopPayload(startDate, endDate)
+      ? buildWorkshopPayload(startDate, endDate, comparison)
       : getCachedData(
-        cacheKey(startDate, endDate),
-        () => buildWorkshopPayload(startDate, endDate),
+        cacheKey(startDate, endDate, comparison),
+        () => buildWorkshopPayload(startDate, endDate, comparison),
         CACHE_TTL_SECONDS
       )
     )

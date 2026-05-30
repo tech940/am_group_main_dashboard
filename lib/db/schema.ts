@@ -30,23 +30,81 @@ export const users = pgTable('users', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
+// Permission groups table
+export const permissionGroups = pgTable('permission_groups', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  key: text('key').unique().notNull(),
+  name: text('name').notNull(),
+  parentKey: text('parent_key'),
+  description: text('description'),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  permissionGroupsKeyIdx: uniqueIndex('permission_groups_key_idx').on(table.key),
+  permissionGroupsParentIdx: index('permission_groups_parent_idx').on(table.parentKey),
+}))
+
 // Permissions table
 export const permissions = pgTable('permissions', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').unique().notNull(),
+  groupKey: text('group_key').references(() => permissionGroups.key, { onDelete: 'cascade' }),
+  label: text('label'),
   description: text('description'),
   resource: text('resource').notNull(),
   action: text('action').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+  sortOrder: integer('sort_order').default(0).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  permissionsNameIdx: uniqueIndex('permissions_name_idx').on(table.name),
+  permissionsGroupActionIdx: uniqueIndex('permissions_group_action_idx').on(table.groupKey, table.action),
+  permissionsResourceIdx: index('permissions_resource_idx').on(table.resource),
+}))
 
 // Role permissions junction table
 export const rolePermissions = pgTable('role_permissions', {
   id: uuid('id').primaryKey().defaultRandom(),
   role: roleEnum('role').notNull(),
   permissionId: uuid('permission_id').references(() => permissions.id, { onDelete: 'cascade' }).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+  allowed: boolean('allowed').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  rolePermissionsRolePermissionIdx: uniqueIndex('role_permissions_role_permission_idx').on(table.role, table.permissionId),
+  rolePermissionsRoleIdx: index('role_permissions_role_idx').on(table.role),
+}))
+
+// User-level overrides. Null/no row means inherit from role template.
+export const userPermissions = pgTable('user_permissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  permissionId: uuid('permission_id').references(() => permissions.id, { onDelete: 'cascade' }).notNull(),
+  allowed: boolean('allowed').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  userPermissionsUserPermissionIdx: uniqueIndex('user_permissions_user_permission_idx').on(table.userId, table.permissionId),
+  userPermissionsUserIdx: index('user_permissions_user_idx').on(table.userId),
+}))
+
+export const permissionAuditLogs = pgTable('permission_audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  targetUserId: uuid('target_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  permissionId: uuid('permission_id').references(() => permissions.id, { onDelete: 'cascade' }).notNull(),
+  changedBy: uuid('changed_by').references(() => users.id),
+  oldValue: boolean('old_value'),
+  newValue: boolean('new_value'),
+  source: text('source').default('manual').notNull(),
+  reason: text('reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  permissionAuditTargetIdx: index('permission_audit_target_idx').on(table.targetUserId, table.createdAt),
+  permissionAuditPermissionIdx: index('permission_audit_permission_idx').on(table.permissionId),
+}))
 
 // Vehicles table
 export const vehicles = pgTable('vehicles', {
@@ -403,6 +461,20 @@ export const financeOrderComments = pgTable('finance_order_comments', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 }, (table) => ({
   financeOrderCommentsOrderIdx: index('finance_order_comments_order_idx').on(table.financeOrderId),
+}))
+
+export const demoVehicleRemarks = pgTable('demo_vehicle_remarks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  vin: text('vin').notNull(),
+  remark: text('remark').notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  demoVehicleRemarksVinCreatedIdx: index('demo_vehicle_remarks_vin_created_idx').on(table.vin, table.createdAt),
+  demoVehicleRemarksCreatedByIdx: index('demo_vehicle_remarks_created_by_idx').on(table.createdBy),
 }))
 
 // User Preferences table

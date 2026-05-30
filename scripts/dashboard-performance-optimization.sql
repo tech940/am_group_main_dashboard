@@ -385,9 +385,14 @@ CREATE INDEX IF NOT EXISTS idx_workshop_performance_jc_summary_v1_advisor_date
 -- REFRESH MATERIALIZED VIEW CONCURRENTLY workshop_operation_addon_summary_v1;
 CREATE MATERIALIZED VIEW IF NOT EXISTS workshop_operation_addon_summary_v1 AS
 WITH operation_rows AS (
-  SELECT
+  SELECT DISTINCT
     date_trunc('month', report_month::date)::date AS report_month,
-    ABS(COALESCE(NULLIF(regexp_replace(total_amt::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)) AS amount,
+    report_type,
+    op_part_code,
+    op_part_desc,
+    dealer_code,
+    dealer_name,
+    COALESCE(NULLIF(regexp_replace(total_amt::text, '[^0-9.-]', '', 'g'), '')::numeric, 0) AS amount,
     GREATEST(
       ABS(COALESCE(NULLIF(regexp_replace(total_count::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)),
       ABS(COALESCE(NULLIF(regexp_replace(sp2ib_seltos_1_5_petrol_count::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)),
@@ -418,11 +423,14 @@ classified AS (
         OR description ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
     ) AS is_wb,
     (
-      operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
-        OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
-        OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
-        OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
-        OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
+      LOWER(COALESCE(report_type, '')) = 'operation'
+        AND (
+          operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
+            OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+            OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
+            OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
+            OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
+        )
     ) AS is_vas
   FROM operation_rows
 )

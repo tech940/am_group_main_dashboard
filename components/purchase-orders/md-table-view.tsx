@@ -6,12 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { RemarksDialog } from './remarks-dialog'
+import {
+  PurchaseOrderImagePreviewButton,
+  getPurchaseOrderTransactionLabel,
+  type PurchaseOrderDocumentSource,
+} from './order-image-preview-button'
 import { usePurchaseOrdersViewPreference } from '@/lib/hooks/use-user-preferences'
 import { formatIndiaDateTime } from '@/lib/date-time'
 import { cn } from '@/lib/utils'
 
-interface PurchaseOrder {
-  id: string
+interface PurchaseOrder extends PurchaseOrderDocumentSource {
   orderNumber?: string
   order_number?: string
   department?: string
@@ -308,13 +312,13 @@ export function MDTableView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-4 rounded-2xl border border-white/70 bg-white/65 p-4 shadow-xl shadow-[#023468]/5 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-2xl border border-[var(--dashboard-primary-border)] bg-white/75 p-4 shadow-xl shadow-[color-mix(in_srgb,var(--dashboard-primary)_10%,transparent)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={restoreAllColumns}
-            className="gap-2 rounded-xl border-slate-200 bg-white/80 text-xs font-black text-slate-700 shadow-sm hover:bg-white"
+            className="app-outline-action gap-2 rounded-xl text-xs font-black shadow-sm"
             disabled={hiddenColumns.length === 0}
           >
             <RotateCcw className="h-4 w-4" />
@@ -324,13 +328,13 @@ export function MDTableView({
 
         {selectedOrders.size > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-[#d7e4ef] bg-[#edf4fb] px-3 py-1 text-xs font-black text-[#023468]">
+            <span className="rounded-full border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] px-3 py-1 text-xs font-black text-[var(--dashboard-action-bg)]">
               {selectedOrders.size} selected
             </span>
             <Button
               onClick={() => void handleBulkAction('approve')}
               disabled={bulkActionLoading !== null || loading}
-              className="gap-2 rounded-xl bg-gradient-to-r from-[#023468] to-[#034b82] text-xs font-black text-white shadow-lg shadow-[#023468]/10"
+              className="app-primary-action gap-2 rounded-xl text-xs font-black shadow-lg"
             >
               {bulkActionLoading === 'approve' || loading ? (
                 <>
@@ -391,7 +395,7 @@ export function MDTableView({
                 <th
                   key={col.key}
                   className={cn(
-                    'border-b border-white/10 bg-[#055B65] px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.14em] text-white',
+                    'border-b border-white/10 bg-[var(--dashboard-action-bg)] px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.14em] text-[var(--dashboard-action-fg)]',
                     columnIndex === 0 && 'rounded-tl-[1.35rem]',
                     col.width
                   )}
@@ -410,7 +414,7 @@ export function MDTableView({
                 </th>
               ))}
 
-              <th className="sticky right-0 z-30 w-48 rounded-tr-[1.35rem] border-b border-l border-white/20 bg-[#055B65] px-3 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-white shadow-[-12px_0_24px_rgba(15,23,42,0.08)]">
+              <th className="sticky right-0 z-30 w-56 rounded-tr-[1.35rem] border-b border-l border-white/20 bg-[var(--dashboard-action-bg)] px-3 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-[var(--dashboard-action-fg)] shadow-[-12px_0_24px_rgba(15,23,42,0.08)]">
                 <div className="flex items-center justify-center gap-2">
                   <span>Actions</span>
                   <Checkbox
@@ -418,7 +422,7 @@ export function MDTableView({
                     disabled={selectableOrders.length === 0}
                     onCheckedChange={toggleSelectAll}
                     aria-label="Select all"
-                    className="approval-table-checkbox h-5 w-5 rounded-md border-2 border-white bg-white/20 shadow-sm data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-[#023468]"
+                    className="approval-table-checkbox h-5 w-5 rounded-md border-2 border-white bg-white/20 shadow-sm data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-[var(--dashboard-action-bg)]"
                   />
                 </div>
               </th>
@@ -440,13 +444,15 @@ export function MDTableView({
                 const isSelected = selectedOrders.has(order.id)
                 const isActionable = canActOnOrder(order)
                 const isLoading = actionLoading === order.id
+                const transactionLabel = getPurchaseOrderTransactionLabel(order)
 
                 return (
                   <tr
                     key={order.id}
+                    title={transactionLabel}
                     className={cn(
                       'group transition-colors',
-                      isSelected ? 'bg-[#edf4fb]' : 'odd:bg-white/92 even:bg-slate-50/72 hover:bg-[#edf4fb]'
+                      isSelected ? 'bg-[var(--dashboard-primary-soft)]' : 'odd:bg-white/92 even:bg-slate-50/72 hover:bg-[var(--dashboard-primary-soft)]'
                     )}
                   >
                     {visibleColumns.map((col) => {
@@ -478,51 +484,55 @@ export function MDTableView({
                     })}
 
                     <td className={cn(
-                      "sticky right-0 z-10 border-b border-l border-[#d7e4ef] px-3 py-2.5 shadow-[-10px_0_24px_rgba(15,23,42,0.04)] transition-colors",
-                      isSelected ? "bg-[#dbeafe]" : "bg-white group-hover:bg-[#edf4fb]"
+                      "sticky right-0 z-10 border-b border-l border-[var(--dashboard-primary-border)] px-3 py-2.5 shadow-[-10px_0_24px_rgba(15,23,42,0.04)] transition-colors",
+                      isSelected ? "bg-[var(--dashboard-primary-soft)]" : "bg-white group-hover:bg-[var(--dashboard-primary-soft)]"
                     )}>
-                      {isActionable ? (
-                        <div className="flex items-center justify-center gap-1.5">
-                          <Button
-                            size="sm"
-                            onClick={() => void handleAction('approve', order.id)}
-                            disabled={isLoading || bulkActionLoading !== null || loading}
-                            className="h-8 w-8 rounded-xl bg-gradient-to-br from-[#023468] to-[#034b82] p-0 text-white shadow-lg shadow-[#023468]/10 hover:from-[#023468] hover:to-[#034b82]"
-                            title="Approve"
-                          >
-                            {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => openRemarksDialog('deny', order.id)}
-                            disabled={isLoading || bulkActionLoading !== null || loading}
-                            className="h-8 w-8 rounded-xl p-0 shadow-lg shadow-rose-100"
-                            title="Deny"
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openRemarksDialog('hold', order.id)}
-                            disabled={isLoading || bulkActionLoading !== null || loading}
-                            className="h-8 w-8 rounded-xl border-amber-400 bg-amber-50 p-0 text-amber-600 shadow-lg shadow-amber-100 hover:bg-amber-100"
-                            title="Hold"
-                          >
-                            <Pause className="h-3 w-3" />
-                          </Button>
-                          <Checkbox
-                            checked={isSelected}
-                            disabled={!isActionable}
-                            onCheckedChange={() => toggleSelection(order.id)}
-                            aria-label={`Select order ${getColumnValue(order, 'orderNumber') || order.id}`}
-                            className="approval-table-checkbox h-6 w-6 rounded-lg border-2 border-[#023468] bg-white shadow-sm ring-2 ring-white/80 data-[state=checked]:border-[#012348] data-[state=checked]:bg-[#023468] data-[state=checked]:text-white data-[state=checked]:[&_svg]:stroke-white [&_svg]:stroke-[3.5]"
-                          />
-                        </div>
-                      ) : (
-                        <span className="block rounded-full bg-slate-100 px-3 py-1.5 text-center text-[11px] font-black text-slate-400">No actions</span>
-                      )}
+                      <div className="flex items-center justify-center gap-1.5">
+                        <PurchaseOrderImagePreviewButton order={order} />
+                        {isActionable ? (
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() => void handleAction('approve', order.id)}
+                              disabled={isLoading || bulkActionLoading !== null || loading}
+                              className="app-primary-action h-8 w-8 rounded-xl p-0 shadow-lg"
+                              title={`Approve ${transactionLabel}`}
+                            >
+                              {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => openRemarksDialog('deny', order.id)}
+                              disabled={isLoading || bulkActionLoading !== null || loading}
+                              className="h-8 w-8 rounded-xl p-0 shadow-lg shadow-rose-100"
+                              title={`Deny ${transactionLabel}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openRemarksDialog('hold', order.id)}
+                              disabled={isLoading || bulkActionLoading !== null || loading}
+                              className="h-8 w-8 rounded-xl border-amber-400 bg-amber-50 p-0 text-amber-600 shadow-lg shadow-amber-100 hover:bg-amber-100"
+                              title={`Hold ${transactionLabel}`}
+                            >
+                              <Pause className="h-3 w-3" />
+                            </Button>
+                            <Checkbox
+                              checked={isSelected}
+                              disabled={!isActionable}
+                              onCheckedChange={() => toggleSelection(order.id)}
+                              aria-label={`Select ${transactionLabel}`}
+                              title={`Select ${transactionLabel}`}
+                              className="approval-table-checkbox h-6 w-6 rounded-lg border-2 border-[var(--dashboard-action-bg)] bg-white shadow-sm ring-2 ring-white/80 data-[state=checked]:border-[var(--dashboard-action-hover)] data-[state=checked]:bg-[var(--dashboard-action-bg)] data-[state=checked]:text-[var(--dashboard-action-fg)] data-[state=checked]:[&_svg]:stroke-[var(--dashboard-action-fg)] [&_svg]:stroke-[3.5]"
+                            />
+                          </>
+                        ) : (
+                          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-center text-[11px] font-black text-slate-400">No actions</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )

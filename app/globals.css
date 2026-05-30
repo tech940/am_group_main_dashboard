@@ -656,6 +656,19 @@
     background-color: transparent !important;
   }
 
+  .glass-dashboard-content .ro-analysis-table {
+    border-collapse: collapse !important;
+  }
+
+  .glass-dashboard-content .ro-analysis-table th,
+  .glass-dashboard-content .ro-analysis-table td {
+    border: 1px solid rgba(148, 163, 184, 0.62) !important;
+  }
+
+  .glass-dashboard-content .ro-analysis-table thead th {
+    border-color: rgba(226, 232, 240, 0.55) !important;
+  }
+
   .glass-dashboard-content .approval-table-checkbox {
     background-color: #ffffff !important;
     border-color: var(--dashboard-primary) !important;

@@ -15,6 +15,12 @@ const tableExistsCache = new Map<string, boolean>()
 
 type NumericRow = Record<string, unknown>
 type OverviewChunk = 'summary' | 'secondary' | 'full'
+type ComparisonParams = {
+  preset: string | null
+  comparisonMode: string | null
+  comparisonStartDate: string | null
+  comparisonEndDate: string | null
+}
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
@@ -77,8 +83,19 @@ function growth(current: number, previous: number) {
   return ((current - previous) / previous) * 100
 }
 
-function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk) {
-  return `kia:business-excellence:overview:v14:${chunk}:${createHash('sha1').update(`${startDate}:${endDate}`).digest('hex')}`
+function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
+  return {
+    preset: searchParams.get('periodPreset') || null,
+    comparisonMode: searchParams.get('comparisonMode') || 'none',
+    comparisonStartDate: parseDateInput(searchParams.get('comparisonStartDate')),
+    comparisonEndDate: parseDateInput(searchParams.get('comparisonEndDate')),
+  }
+}
+
+function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams) {
+  return `kia:business-excellence:overview:v17:${chunk}:${createHash('sha1')
+    .update(JSON.stringify({ startDate, endDate, comparison }))
+    .digest('hex')}`
 }
 
 function sameDateLastYear(value: string) {
@@ -552,27 +569,24 @@ function emptyWorkshopSnapshot() {
 }
 
 async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
-  if (await tableExists('workshop_operation_addon_summary_v1')) {
-    const result = await db.execute(sql`
-      SELECT COALESCE(SUM(vas_amount), 0)::float AS vas_amount
-      FROM workshop_operation_addon_summary_v1
-      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
-        AND report_month <= date_trunc('month', ${endDate}::date)::date
-    `)
-    return numberValue(resultRows(result)[0]?.vas_amount)
-  }
-
   if (!(await tableExists('operation_wise_analysis_report'))) return 0
 
   const result = await db.execute(sql`
     WITH operation_rows AS (
-      SELECT
-        ABS(${numericText(sql.raw('total_amt'))}) AS amount,
+      SELECT DISTINCT
+        date_trunc('month', report_month::date)::date AS report_month,
+        report_type,
+        op_part_code,
+        op_part_desc,
+        dealer_code,
+        dealer_name,
+        ${numericText(sql.raw('total_amt'))} AS amount,
         LOWER(COALESCE(op_part_code, '')) AS operation_code,
         LOWER(CONCAT_WS(' ', report_type, op_part_code, op_part_desc)) AS description
       FROM operation_wise_analysis_report
       WHERE report_month >= date_trunc('month', ${startDate}::date)::date
         AND report_month <= date_trunc('month', ${endDate}::date)::date
+        AND LOWER(COALESCE(report_type, '')) = 'operation'
     )
     SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
     FROM operation_rows
@@ -586,13 +600,23 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
   return numberValue(resultRows(result)[0]?.vas_amount)
 }
 
-async function buildOverviewPayload(startDate: string, endDate: string, chunk: OverviewChunk = 'summary') {
+async function buildOverviewPayload(
+  startDate: string,
+  endDate: string,
+  chunk: OverviewChunk = 'summary',
+  comparison: ComparisonParams = {
+    preset: null,
+    comparisonMode: 'none',
+    comparisonStartDate: null,
+    comparisonEndDate: null,
+  }
+) {
   const includeSecondary = chunk === 'secondary' || chunk === 'full'
   const roSql = roBillingBaseSql(startDate, endDate)
   const openSql = openRoBaseSql(startDate, endDate)
   const complaintSql = complaintsBaseSql(startDate, endDate)
-  const lyStartDate = sameDateLastYear(startDate)
-  const lyEndDate = sameDateLastYear(endDate)
+  const lyStartDate = comparison.comparisonStartDate || sameDateLastYear(startDate)
+  const lyEndDate = comparison.comparisonEndDate || sameDateLastYear(endDate)
   const lyRoSql = roBillingBaseSql(lyStartDate, lyEndDate)
   const lyOpenSql = openRoBaseSql(lyStartDate, lyEndDate)
   const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate)
@@ -1056,6 +1080,7 @@ async function buildOverviewPayload(startDate: string, endDate: string, chunk: O
         lyStartDate,
         lyEndDate,
       },
+      comparison,
       sourceCoverage: {
         roBilling: {
           minDate: dateValue(roKpis.min_bill_date),
@@ -1098,11 +1123,16 @@ export async function GET(request: Request) {
   const chunkParam = searchParams.get('chunk')
   const chunk: OverviewChunk = chunkParam === 'secondary' || chunkParam === 'full' ? chunkParam : 'summary'
   const skipCache = searchParams.get('skipCache') === 'true'
+  const comparison = getComparisonParams(searchParams)
 
   try {
     const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildOverviewPayload(startDate, endDate, chunk)
-      : getCachedData(cacheKey(startDate, endDate, chunk), () => buildOverviewPayload(startDate, endDate, chunk), CACHE_TTL_SECONDS))
+      ? buildOverviewPayload(startDate, endDate, chunk, comparison)
+      : getCachedData(
+        cacheKey(startDate, endDate, chunk, comparison),
+        () => buildOverviewPayload(startDate, endDate, chunk, comparison),
+        CACHE_TTL_SECONDS
+      ))
 
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data), timing.serverTiming)

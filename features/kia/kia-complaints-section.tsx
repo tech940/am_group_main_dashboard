@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/select'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import { logApiTimings } from '@/lib/api/client-timing'
+import { BusinessDateFilterValue, appendBusinessComparisonParams } from '@/lib/business-excellence/comparison'
 import { cn } from '@/lib/utils'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
@@ -48,11 +49,13 @@ function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsi
 }
 
 type ComplaintsDateFilter = {
-  mode: 'month' | 'range'
+  mode: 'month' | 'range' | 'preset' | 'custom'
+  preset?: BusinessDateFilterValue['preset']
   month: number
   year: number
   startDate: string
   endDate: string
+  comparison?: BusinessDateFilterValue['comparison']
 } | null
 
 type ComplaintKpis = {
@@ -84,6 +87,7 @@ type ComplaintDetailRow = {
   resolvedByDealer: string
   closedBy: string
   source: string
+  customerRemark: string
   remarks: string
   observation: string
   complaintType: string
@@ -211,7 +215,7 @@ function getInputDate(date: Date) {
 function getComplaintsDateRange(dateFilter: ComplaintsDateFilter) {
   const today = new Date()
 
-  if (dateFilter?.mode === 'range' && dateFilter.startDate && dateFilter.endDate) {
+  if (dateFilter?.startDate && dateFilter.endDate) {
     return { startDate: dateFilter.startDate, endDate: dateFilter.endDate }
   }
 
@@ -233,13 +237,14 @@ function getComplaintsDateRange(dateFilter: ComplaintsDateFilter) {
   }
 }
 
-function buildQueryString(filters: ComplaintFilters, dateRange: { startDate: string; endDate: string }) {
+function buildQueryString(filters: ComplaintFilters, dateRange: { startDate: string; endDate: string }, dateFilter?: ComplaintsDateFilter) {
   const params = new URLSearchParams()
   Object.entries(filters).forEach(([key, value]) => {
     if (value && value !== ALL_VALUE) params.set(key, value)
   })
   if (dateRange.startDate) params.set('startDate', dateRange.startDate)
   if (dateRange.endDate) params.set('endDate', dateRange.endDate)
+  appendBusinessComparisonParams(params, dateFilter)
   return params.toString()
 }
 
@@ -296,7 +301,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
 
   const dateRange = useMemo(() => getComplaintsDateRange(dateFilter), [dateFilter])
-  const queryString = useMemo(() => buildQueryString(filters, dateRange), [dateRange, filters])
+  const queryString = useMemo(() => buildQueryString(filters, dateRange, dateFilter), [dateFilter, dateRange, filters])
 
   const fetchComplaints = useCallback(async () => {
     try {
@@ -671,7 +676,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
                     </span>
                   </div>
                   <p className="mt-2 line-clamp-2 text-[11px] font-semibold leading-5 text-slate-600">
-                    {row.remarks || row.observation || row.srSubArea}
+                    {row.customerRemark || row.remarks || row.observation || row.srSubArea}
                   </p>
                 </div>
               ))
@@ -887,6 +892,7 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
             <tbody className="divide-y divide-slate-100">
               {(data.rows || []).map((row) => {
                 const isExpanded = expandedRows.has(row.complaintNo)
+                const customerRemark = row.customerRemark || row.remarks
                 return (
                   <React.Fragment key={`${row.complaintNo}-${row.id}`}>
                     <tr className="bg-white hover:bg-slate-50">
@@ -939,9 +945,9 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
                               </div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Complaint Narrative</p>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Customer Remark</p>
                               <p className="mt-3 whitespace-pre-line text-sm font-semibold leading-6 text-slate-700">
-                                {row.remarks || 'No customer narrative captured.'}
+                                {customerRemark || 'No customer remark captured.'}
                               </p>
                               {row.observation && (
                                 <p className="mt-3 rounded-xl border border-teal-100 bg-teal-50 p-3 text-xs font-bold leading-5 text-teal-800">

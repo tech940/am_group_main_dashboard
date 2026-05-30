@@ -16,6 +16,7 @@
     "db:backup": "node scripts/backup-database.js",
     "db:backup:scheduler": "node scripts/backup-database-scheduler.js",
     "db:setup-finance-orders": "node scripts/setup-finance-orders.js",
+    "db:setup-permissions-manager": "node scripts/setup-permissions-manager.js",
     "db:refresh-dashboard-views": "node scripts/refresh-dashboard-materialized-views.js",
     "db:refresh-dashboard-views:scheduler": "node scripts/refresh-dashboard-materialized-views-scheduler.js"
   },

@@ -21,9 +21,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter } from 'lucide-react'
+import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter, KeyRound } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { USER_BRANCH_OPTIONS, USER_ROLE_OPTIONS, getUserBranchLabel, type UserBranchValue } from '@/lib/dashboard-config'
+import { useUserRole } from '@/lib/hooks/use-user-role'
 
 interface User {
   id: string
@@ -107,6 +108,7 @@ export default function AdminUsersPage() {
     active: 0,
   })
   const [departmentOptions, setDepartmentOptions] = useState<string[]>([])
+  const { userRole } = useUserRole()
 
   const fetchUsers = useCallback(async (page = 1) => {
     try {
@@ -741,6 +743,17 @@ export default function AdminUsersPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-center gap-2">
+                          {userRole === 'admin' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => window.open(`/admin/permissions?user=${user.id}`, '_blank', 'noopener,noreferrer')}
+                              className="h-8 w-8 p-0 hover:bg-[#edf4fb] hover:text-[#023468] rounded-lg"
+                              title="Manage permissions"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"

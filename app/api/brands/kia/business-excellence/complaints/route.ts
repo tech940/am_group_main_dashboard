@@ -20,6 +20,10 @@ type ComplaintFilters = {
   area: string | null
   model: string | null
   source: string | null
+  periodPreset: string | null
+  comparisonMode: string | null
+  comparisonStartDate: string | null
+  comparisonEndDate: string | null
 }
 
 type ComplaintChunk = 'summary' | 'secondary' | 'details' | 'full'
@@ -154,7 +158,7 @@ function complaintBaseSql(filters: ComplaintFilters) {
 }
 
 function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
-  return `kia:business-excellence:complaints:v4:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `kia:business-excellence:complaints:v5:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {
@@ -183,6 +187,19 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     ? inputDate(today)
     : `${trendYear}-12-31`
   const previousComparisonEndDate = `${trendYear - 1}-${comparisonEndDate.slice(5)}`
+  const customComparisonActive = Boolean(filters.comparisonStartDate && filters.comparisonEndDate)
+  const currentComparisonStartDate = customComparisonActive
+    ? (filters.startDate || `${trendYear}-01-01`)
+    : `${trendYear}-01-01`
+  const currentComparisonEndDate = customComparisonActive
+    ? (filters.endDate || comparisonEndDate)
+    : comparisonEndDate
+  const previousComparisonStartDate = customComparisonActive
+    ? filters.comparisonStartDate!
+    : `${trendYear - 1}-01-01`
+  const previousComparisonRangeEndDate = customComparisonActive
+    ? filters.comparisonEndDate!
+    : previousComparisonEndDate
 
   const [
     kpiRows,
@@ -298,12 +315,12 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         FROM latest
       )
       SELECT
-        COUNT(*) FILTER (WHERE complaint_date >= ${`${trendYear}-01-01`}::date AND complaint_date <= ${comparisonEndDate}::date)::int AS cy_count,
-        COUNT(*) FILTER (WHERE complaint_date >= ${`${trendYear - 1}-01-01`}::date AND complaint_date <= ${previousComparisonEndDate}::date)::int AS ly_count,
-        COUNT(*) FILTER (WHERE complaint_date >= ${`${trendYear}-01-01`}::date AND complaint_date <= ${comparisonEndDate}::date AND status_group <> 'Closed')::int AS cy_open,
-        COUNT(*) FILTER (WHERE complaint_date >= ${`${trendYear - 1}-01-01`}::date AND complaint_date <= ${previousComparisonEndDate}::date AND status_group <> 'Closed')::int AS ly_open,
-        COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date >= ${`${trendYear}-01-01`}::date AND complaint_date <= ${comparisonEndDate}::date), 0)::float AS cy_avg_days,
-        COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date >= ${`${trendYear - 1}-01-01`}::date AND complaint_date <= ${previousComparisonEndDate}::date), 0)::float AS ly_avg_days
+        COUNT(*) FILTER (WHERE complaint_date >= ${currentComparisonStartDate}::date AND complaint_date <= ${currentComparisonEndDate}::date)::int AS cy_count,
+        COUNT(*) FILTER (WHERE complaint_date >= ${previousComparisonStartDate}::date AND complaint_date <= ${previousComparisonRangeEndDate}::date)::int AS ly_count,
+        COUNT(*) FILTER (WHERE complaint_date >= ${currentComparisonStartDate}::date AND complaint_date <= ${currentComparisonEndDate}::date AND status_group <> 'Closed')::int AS cy_open,
+        COUNT(*) FILTER (WHERE complaint_date >= ${previousComparisonStartDate}::date AND complaint_date <= ${previousComparisonRangeEndDate}::date AND status_group <> 'Closed')::int AS ly_open,
+        COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date >= ${currentComparisonStartDate}::date AND complaint_date <= ${currentComparisonEndDate}::date), 0)::float AS cy_avg_days,
+        COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date >= ${previousComparisonStartDate}::date AND complaint_date <= ${previousComparisonRangeEndDate}::date), 0)::float AS ly_avg_days
       FROM enriched
     `) : Promise.resolve([]),
     includeSecondary ? db.execute(sql`
@@ -516,15 +533,15 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       selectedYear: trendYear,
       previousYear: trendYear - 1,
       currentPeriod: {
-        startDate: `${trendYear}-01-01`,
-        endDate: comparisonEndDate,
+        startDate: currentComparisonStartDate,
+        endDate: currentComparisonEndDate,
         count: numberValue(ytd.cy_count),
         open: numberValue(ytd.cy_open),
         avgDays: numberValue(ytd.cy_avg_days),
       },
       previousPeriod: {
-        startDate: `${trendYear - 1}-01-01`,
-        endDate: previousComparisonEndDate,
+        startDate: previousComparisonStartDate,
+        endDate: previousComparisonRangeEndDate,
         count: numberValue(ytd.ly_count),
         open: numberValue(ytd.ly_open),
         avgDays: numberValue(ytd.ly_avg_days),
@@ -604,6 +621,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       resolvedByDealer: stringValue(row.resolved_by_dealer, '-'),
       closedBy: stringValue(row.closed_by, '-'),
       source: stringValue(row.complaint_sub_source, '-'),
+      customerRemark: stringValue(row.complaint_remarks, ''),
       remarks: stringValue(row.complaint_remarks, ''),
       observation: stringValue(row.service_engineer_advisor_observation, ''),
       complaintType: stringValue(row.complaint_type, '-'),
@@ -633,6 +651,12 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       chunk,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       dateBasis: 'Complaint Date',
+      comparison: {
+        preset: filters.periodPreset,
+        comparisonMode: filters.comparisonMode || 'none',
+        comparisonStartDate: filters.comparisonStartDate,
+        comparisonEndDate: filters.comparisonEndDate,
+      },
     },
   }
 }
@@ -652,6 +676,10 @@ export async function GET(request: Request) {
       area: getFilterValue(searchParams.get('area')),
       model: getFilterValue(searchParams.get('model')),
       source: getFilterValue(searchParams.get('source')),
+      periodPreset: searchParams.get('periodPreset') || null,
+      comparisonMode: searchParams.get('comparisonMode') || 'none',
+      comparisonStartDate: parseDateInput(searchParams.get('comparisonStartDate')),
+      comparisonEndDate: parseDateInput(searchParams.get('comparisonEndDate')),
     }
     const skipCache = searchParams.get('skipCache') === 'true'
     const requestedChunk = searchParams.get('chunk')

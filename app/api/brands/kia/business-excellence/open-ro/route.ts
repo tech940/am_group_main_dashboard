@@ -21,6 +21,10 @@ type OpenRoFilters = {
   insurance: string | null
   startDate: string | null
   endDate: string | null
+  periodPreset: string | null
+  comparisonMode: string | null
+  comparisonStartDate: string | null
+  comparisonEndDate: string | null
 }
 
 type OpenRoChunk = 'summary' | 'details' | 'full'
@@ -472,6 +476,14 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       agingDefinition: 'CURRENT_DATE - ro_date',
       promiseDateDefinition: 'COALESCE(revised_promise_date_time, promise_date_time)',
       cacheTtlSeconds: CACHE_TTL_SECONDS,
+      comparison: {
+        supported: false,
+        reason: 'open_ro_yearly currently has only Apr 2026 onward coverage, so historical comparisons are disabled.',
+        preset: filters.periodPreset,
+        comparisonMode: filters.comparisonMode || 'none',
+        comparisonStartDate: filters.comparisonStartDate,
+        comparisonEndDate: filters.comparisonEndDate,
+      },
     },
   }
 }
@@ -492,6 +504,10 @@ export async function GET(request: Request) {
     insurance: getFilterValue(searchParams.get('insurance')),
     startDate: parseDateInput(searchParams.get('startDate')),
     endDate: parseDateInput(searchParams.get('endDate')),
+    periodPreset: searchParams.get('periodPreset') || null,
+    comparisonMode: searchParams.get('comparisonMode') || 'none',
+    comparisonStartDate: parseDateInput(searchParams.get('comparisonStartDate')),
+    comparisonEndDate: parseDateInput(searchParams.get('comparisonEndDate')),
   }
 
   try {

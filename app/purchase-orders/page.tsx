@@ -2212,12 +2212,12 @@ function PurchaseOrdersPageContent() {
           <>
             {(userRole === 'ea' || userRole === 'md') ? (
               <div className="space-y-4">
-                <div className="flex flex-col gap-4 rounded-[28px] bg-gradient-to-r from-[#023468] to-[#034b82] p-6 text-white shadow-xl lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col gap-4 rounded-[28px] border border-[var(--dashboard-primary-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--dashboard-primary)_10%,white),color-mix(in_srgb,var(--dashboard-primary-light)_18%,white))] p-6 shadow-xl shadow-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)] lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h1 className="text-3xl font-black">
+                    <h1 className="text-3xl font-black text-[var(--dashboard-action-bg)]">
                       {userRole === 'ea' ? 'EA Approval Dashboard' : 'MD Approval Dashboard'}
                     </h1>
-                    <p className="mt-1 text-[#edf4fb]">
+                    <p className="mt-1 font-semibold text-slate-600">
                       {listedOrders.length} purchase order{listedOrders.length !== 1 ? 's' : ''} in {approvalFilter} view
                     </p>
                   </div>
@@ -2225,7 +2225,7 @@ function PurchaseOrdersPageContent() {
                     <Button
                       onClick={() => window.location.reload()}
                       variant="outline"
-                      className="rounded-2xl border-white/50 bg-white/10 text-white hover:bg-white/20"
+                      className="app-outline-action rounded-2xl"
                     >
                       <RefreshCw className="mr-2 h-4 w-4" />
                       Refresh
@@ -2233,7 +2233,7 @@ function PurchaseOrdersPageContent() {
                     <Button
                       onClick={toggleViewMode}
                       variant="outline"
-                      className="rounded-2xl border-2 border-white bg-white px-5 font-black text-[#012348] shadow-lg shadow-[#023468]/20 ring-2 ring-white/25 hover:bg-[#edf4fb] hover:text-[#012348]"
+                      className="app-primary-action rounded-2xl px-5 font-black shadow-lg"
                     >
                       {isSwitchingView ? (
                         <>
@@ -2255,7 +2255,7 @@ function PurchaseOrdersPageContent() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="flex flex-wrap gap-2 rounded-2xl border border-[var(--dashboard-primary-border)] bg-white/80 p-3 shadow-sm backdrop-blur-xl">
                   {userRole === 'md' && (
                     <div className="mr-1 flex min-w-[220px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Branch</span>
@@ -2282,10 +2282,10 @@ function PurchaseOrdersPageContent() {
                         type="button"
                         variant={isActive ? 'default' : 'outline'}
                         onClick={() => setApprovalFilterPreference(option.value)}
-                        className={`rounded-xl ${isActive ? 'bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                        className={`rounded-xl font-bold ${isActive ? 'app-primary-action' : 'app-outline-action'}`}
                       >
                         {option.label}
-                        <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${isActive ? 'bg-white/20 text-[var(--dashboard-action-fg)]' : 'bg-[var(--dashboard-primary-soft)] text-[var(--dashboard-action-bg)]'}`}>
                           {getApprovalFilterCount(option.value)}
                         </span>
                       </Button>

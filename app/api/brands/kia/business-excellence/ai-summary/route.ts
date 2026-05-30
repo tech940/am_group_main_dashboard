@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 type BusinessDateFilter = {
-  mode: 'month' | 'range'
+  mode: 'month' | 'range' | 'preset' | 'custom'
   month: number
   year: number
   startDate: string
@@ -65,7 +65,7 @@ function isValidInputDate(value: unknown): value is string {
 function getDateRange(dateFilter: BusinessDateFilter) {
   const today = new Date()
 
-  if (dateFilter?.mode === 'range' && isValidInputDate(dateFilter.startDate) && isValidInputDate(dateFilter.endDate)) {
+  if (dateFilter && isValidInputDate(dateFilter.startDate) && isValidInputDate(dateFilter.endDate)) {
     return { startDate: dateFilter.startDate, endDate: dateFilter.endDate }
   }
 
@@ -313,15 +313,22 @@ async function createAiSummary(report: string, startDate: string, endDate: strin
           content: [
             'You are an automotive dealership business-excellence analyst.',
             'Summarize only the supplied data. Do not invent values.',
-            'Write for a dealer principal, MD, service manager, or business excellence manager.',
+            'Write for a CEO or dealer principal who wants a clean business readout, not a long analyst memo.',
             'Return only valid JSON, with no markdown and no code fences.',
             'Use exact numbers from the supplied dataset wherever available.',
             'All monetary values are Indian rupees. Use the ₹ symbol only, never $ or USD.',
             'Do not abbreviate monetary values as Cr, Crore, L, or Lakhs. Write the full rupee amount with Indian comma grouping, for example ₹2,01,00,000.',
-            'Avoid generic statements like "review data"; give operational interpretation and action.',
+            'Keep wording simple, direct, and boardroom-ready.',
+            'Avoid dense paragraphs, jargon, and generic statements like "review data"; give operational interpretation and action.',
+            'Each sentence should be short. Each list item should explain one idea only.',
             'JSON schema: {"title":string,"executiveRead":string,"metricSignals":[{"label":string,"value":string,"context":string,"tone":"good|watch|risk|neutral"}],"keyFindings":string[],"risks":string[],"actions":[{"owner":string,"action":string,"priority":"High|Medium|Low"}]}.',
-            'Create 4 to 6 metricSignals, 5 to 7 keyFindings, 3 to 5 risks, and 3 to 5 actions.',
-            'Keep the total JSON content detailed but concise.',
+            'Treat keyFindings as Good News only. Include only positive wins, improvements, or strong performance signals.',
+            'Treat risks as Bad News only. Include only declines, weak spots, or operational concerns.',
+            'Treat actions as Immediate Actions only. Each action must be specific, owner-led, and useful today.',
+            'Create exactly 4 metricSignals, exactly 3 keyFindings, exactly 3 risks, and exactly 3 actions.',
+            'Metric signal labels should be 2 to 4 words. Metric signal contexts should be under 18 words.',
+            'Executive read must be 2 short sentences maximum.',
+            'Keep the full response concise and easy to scan.',
           ].join(' '),
         },
         {
@@ -454,7 +461,7 @@ function buildSummaryText(summary: AiStructuredSummary) {
 }
 
 function createCacheKey(report: string, startDate: string, endDate: string, dataset: unknown) {
-  return `kia:business-excellence:ai-summary:v3:${createHash('sha1')
+  return `kia:business-excellence:ai-summary:v5:${createHash('sha1')
     .update(JSON.stringify({ report, startDate, endDate, dataset }))
     .digest('hex')}`
 }

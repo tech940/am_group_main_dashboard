@@ -49,6 +49,11 @@ type PeriodWindow = {
   lyEnd: Date
 }
 
+type ComparisonRange = {
+  startDate: Date
+  endDate: Date
+} | null
+
 type AnalysisRow = {
   name: string
   depth: number
@@ -154,26 +159,41 @@ function sameDateLastYear(date: Date) {
   return new Date(date.getFullYear() - 1, date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds())
 }
 
+function addDays(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
 function getCalendarYearStart(date: Date) {
   return new Date(date.getFullYear(), 0, 1, 0, 0, 0, 0)
 }
 
-function buildPeriodWindows(endDate: Date): Record<PeriodKey, PeriodWindow> {
+function buildPeriodWindows(startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null): Record<PeriodKey, PeriodWindow> {
   const cyEnd = endOfDay(endDate)
   const cyTdStart = startOfDay(endDate)
+  const currentStart = startOfDay(startDate)
   const cyMtdStart = new Date(endDate.getFullYear(), endDate.getMonth(), 1)
   const quarterStartMonth = Math.floor(endDate.getMonth() / 3) * 3
   const cyQtdStart = new Date(endDate.getFullYear(), quarterStartMonth, 1)
   const cyYtdStart = getCalendarYearStart(endDate)
+  const customPeriodWindow = comparisonRange
+    ? {
+        cyStart: currentStart,
+        cyEnd,
+        lyStart: startOfDay(comparisonRange.startDate),
+        lyEnd: endOfDay(comparisonRange.endDate),
+      }
+    : null
 
   return {
     td: {
       cyStart: cyTdStart,
       cyEnd,
-      lyStart: sameDateLastYear(cyTdStart),
-      lyEnd: sameDateLastYear(cyEnd),
+      lyStart: comparisonRange ? startOfDay(comparisonRange.endDate) : sameDateLastYear(cyTdStart),
+      lyEnd: comparisonRange ? endOfDay(comparisonRange.endDate) : sameDateLastYear(cyEnd),
     },
-    mtd: {
+    mtd: customPeriodWindow || {
       cyStart: startOfDay(cyMtdStart),
       cyEnd,
       lyStart: sameDateLastYear(startOfDay(cyMtdStart)),
@@ -661,7 +681,7 @@ function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: Analys
   })
 }
 
-function buildDailyTrendRows(rows: DailyAggregateRow[], analysisType: AnalysisType, startDate: Date, endDate: Date) {
+function buildDailyTrendRows(rows: DailyAggregateRow[], analysisType: AnalysisType, startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null) {
   const byDate = new Map<string, DailyAggregateRow>()
   rows.forEach((row) => {
     byDate.set(toDateInputValue(new Date(row.bill_date)), row)
@@ -669,24 +689,29 @@ function buildDailyTrendRows(rows: DailyAggregateRow[], analysisType: AnalysisTy
 
   const trend = []
   const cursor = startOfDay(startDate)
+  let offsetDays = 0
   while (cursor <= endDate) {
     const cyDate = toDateInputValue(cursor)
-    const lyDate = toDateInputValue(sameDateLastYear(cursor))
+    const comparisonDate = comparisonRange ? addDays(comparisonRange.startDate, offsetDays) : sameDateLastYear(cursor)
+    const lyDate = comparisonRange && comparisonDate > comparisonRange.endDate
+      ? null
+      : toDateInputValue(comparisonDate)
     trend.push({
       date: cyDate,
       label: `${String(cursor.getDate()).padStart(2, '0')} ${cursor.toLocaleDateString('en-US', { weekday: 'short' })}`,
       cy: measureDailyRow(byDate.get(cyDate), analysisType),
-      ly: measureDailyRow(byDate.get(lyDate), analysisType),
+      ly: lyDate ? measureDailyRow(byDate.get(lyDate), analysisType) : 0,
     })
     cursor.setDate(cursor.getDate() + 1)
+    offsetDays += 1
   }
 
   return trend
 }
 
-async function fetchDailyAggregateRows(startDate: Date, endDate: Date) {
-  const relationalStart = sameDateLastYear(startDate)
-  const relationalEnd = endDate
+async function fetchDailyAggregateRows(startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null) {
+  const relationalStart = comparisonRange && comparisonRange.startDate < startDate ? comparisonRange.startDate : (comparisonRange ? startDate : sameDateLastYear(startDate))
+  const relationalEnd = comparisonRange && comparisonRange.endDate > endDate ? comparisonRange.endDate : endDate
 
   const result = await db.execute(await hasDailySummaryV2() ? sql`
     SELECT
@@ -1236,7 +1261,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v15:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v16:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1285,6 +1310,14 @@ export async function GET(request: Request) {
     const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1)
     const startDate = startOfDay(parseDateInput(searchParams.get('startDate')) || defaultStart)
     const endDate = endOfDay(parseDateInput(searchParams.get('endDate')) || today)
+    const parsedComparisonStartDate = parseDateInput(searchParams.get('comparisonStartDate'))
+    const parsedComparisonEndDate = parseDateInput(searchParams.get('comparisonEndDate'))
+    const comparisonRange: ComparisonRange = parsedComparisonStartDate && parsedComparisonEndDate
+      ? {
+          startDate: startOfDay(parsedComparisonStartDate),
+          endDate: endOfDay(parsedComparisonEndDate),
+        }
+      : null
     const cacheParams = new URLSearchParams(searchParams)
     cacheParams.set('brand', brand)
     cacheParams.set('analysisType', analysisType)
@@ -1292,11 +1325,20 @@ export async function GET(request: Request) {
     cacheParams.set('groupBy', groupBy)
     cacheParams.set('startDate', toDateInputValue(startDate))
     cacheParams.set('endDate', toDateInputValue(endDate))
+    if (comparisonRange) {
+      cacheParams.set('comparisonMode', 'custom')
+      cacheParams.set('comparisonStartDate', toDateInputValue(comparisonRange.startDate))
+      cacheParams.set('comparisonEndDate', toDateInputValue(comparisonRange.endDate))
+    } else {
+      cacheParams.delete('comparisonMode')
+      cacheParams.delete('comparisonStartDate')
+      cacheParams.delete('comparisonEndDate')
+    }
     if (batchMetrics) cacheParams.set('metrics', 'all')
     const cacheKey = createCacheKey(cacheParams)
 
     const analyze = async () => {
-      const windows = buildPeriodWindows(endDate)
+      const windows = buildPeriodWindows(startDate, endDate, comparisonRange)
       const hasFilters = Array.from(searchParams.entries()).some(([key, value]) => {
         return key in FILTER_COLUMNS && value && value !== 'all'
       })
@@ -1312,6 +1354,8 @@ export async function GET(request: Request) {
         dateRange: {
           startDate: toDateInputValue(startDate),
           endDate: toDateInputValue(endDate),
+          comparisonStartDate: comparisonRange ? toDateInputValue(comparisonRange.startDate) : null,
+          comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
         },
         filterOptions: {},
       }
@@ -1356,10 +1400,10 @@ export async function GET(request: Request) {
         }
       }
       if (view === 'trend' && groupBy === 'work_type' && !hasFilters) {
-        const aggregateRows = await timer.time('daily-trend-sql-summary', () => fetchDailyAggregateRows(startDate, endDate))
+        const aggregateRows = await timer.time('daily-trend-sql-summary', () => fetchDailyAggregateRows(startDate, endDate, comparisonRange))
         if (batchMetrics) {
           const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
-            const trend = buildDailyTrendRows(aggregateRows, type, startDate, endDate)
+            const trend = buildDailyTrendRows(aggregateRows, type, startDate, endDate, comparisonRange)
             return [type, {
               ...baseFastResponse,
               analysisType: type,
@@ -1381,7 +1425,7 @@ export async function GET(request: Request) {
             byMetric,
           }
         }
-        const trend = buildDailyTrendRows(aggregateRows, analysisType, startDate, endDate)
+        const trend = buildDailyTrendRows(aggregateRows, analysisType, startDate, endDate, comparisonRange)
         return {
           ...baseFastResponse,
           rowCounts: {
