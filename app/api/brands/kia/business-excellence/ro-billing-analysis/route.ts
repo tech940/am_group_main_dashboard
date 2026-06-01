@@ -87,10 +87,6 @@ function endOfQuarter(date: Date) {
   return endOfDay(new Date(date.getFullYear(), quarterStartMonth + 3, 0))
 }
 
-function endOfCalendarYear(date: Date) {
-  return endOfDay(new Date(date.getFullYear(), 11, 31))
-}
-
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -203,13 +199,13 @@ function buildPeriodWindows(startDate: Date, endDate: Date, comparisonRange: Com
       cyStart: startOfDay(cyQtdStart),
       cyEnd,
       lyStart: sameDateLastYear(startOfDay(cyQtdStart)),
-      lyEnd: endOfQuarter(sameDateLastYear(cyEnd)),
+      lyEnd: sameDateLastYear(cyEnd),
     },
     ytd: {
       cyStart: startOfDay(cyYtdStart),
       cyEnd,
       lyStart: sameDateLastYear(startOfDay(cyYtdStart)),
-      lyEnd: endOfCalendarYear(sameDateLastYear(cyEnd)),
+      lyEnd: sameDateLastYear(cyEnd),
     },
   }
 }
@@ -1261,7 +1257,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v17:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v18:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {

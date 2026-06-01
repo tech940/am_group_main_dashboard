@@ -93,7 +93,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams) {
-  return `kia:business-excellence:overview:v19:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v20:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison }))
     .digest('hex')}`
 }
@@ -116,20 +116,20 @@ function fullSameMonthLastYear(value: string) {
   }
 }
 
-function fullSameQuarterLastYear(value: string) {
-  const { year, month } = parseDateParts(value)
+function sameQuarterToDateLastYear(endDate: string) {
+  const { year, month } = parseDateParts(endDate)
   const quarterStartMonth = Math.floor((month - 1) / 3) * 3
   return {
     startDate: toDateInputValue(new Date(year - 1, quarterStartMonth, 1)),
-    endDate: toDateInputValue(new Date(year - 1, quarterStartMonth + 3, 0)),
+    endDate: sameDateLastYear(endDate),
   }
 }
 
-function fullPreviousCalendarYear(value: string) {
-  const { year } = parseDateParts(value)
+function yearToDateLastYear(startDate: string, endDate: string) {
+  const { year } = parseDateParts(startDate)
   return {
     startDate: `${year - 1}-01-01`,
-    endDate: `${year - 1}-12-31`,
+    endDate: sameDateLastYear(endDate),
   }
 }
 
@@ -158,11 +158,11 @@ function resolveOverviewComparisonRange(startDate: string, endDate: string, comp
   }
 
   if (comparison.preset === 'qtd' || comparison.preset === 'current_quarter') {
-    return { ...fullSameQuarterLastYear(startDate), source: 'same-quarter-ly' }
+    return { ...sameQuarterToDateLastYear(endDate), source: 'same-quarter-to-date-ly' }
   }
 
   if (comparison.preset === 'ytd') {
-    return { ...fullPreviousCalendarYear(startDate), source: 'full-calendar-year-ly' }
+    return { ...yearToDateLastYear(startDate, endDate), source: 'year-to-date-ly' }
   }
 
   if (comparison.preset === 'current_fy') {
