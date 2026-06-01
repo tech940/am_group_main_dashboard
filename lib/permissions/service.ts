@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { permissionAuditLogs, permissionGroups, permissions, rolePermissions, userPermissions, users } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
+import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { getCachedData, invalidateCache } from '@/lib/redis/cache-utils'
 import {
   PERMISSION_GROUPS,
@@ -43,9 +44,33 @@ export function isMissingPermissionTableError(error: unknown) {
     || message.includes("relation 'permission_")
 }
 
-function buildRoleTemplateSnapshot(role: PermissionRole): PermissionSnapshot {
+const BRANCH_PERMISSION_PREFIXES = BRANCH_OPTIONS.map((branch) => branch.value)
+
+function getBranchPermissionPrefixes(branchAccess: string | null | undefined) {
+  if (hasAllBranchAccess(branchAccess)) return BRANCH_PERMISSION_PREFIXES
+  return BRANCH_PERMISSION_PREFIXES.includes(branchAccess as typeof BRANCH_PERMISSION_PREFIXES[number])
+    ? [branchAccess as typeof BRANCH_PERMISSION_PREFIXES[number]]
+    : []
+}
+
+function applyBranchViewDefaults(roleDefaults: Record<string, boolean>, branchAccess: string | null | undefined) {
+  const prefixes = getBranchPermissionPrefixes(branchAccess)
+  if (prefixes.length === 0) return
+
+  for (const permission of PERMISSIONS) {
+    if (
+      permission.action === 'view'
+      && prefixes.some((prefix) => permission.groupKey === prefix || permission.groupKey.startsWith(`${prefix}.`))
+    ) {
+      roleDefaults[permission.key] = true
+    }
+  }
+}
+
+function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string | null): PermissionSnapshot {
   const roleKeys = new Set(role === 'admin' ? PERMISSIONS.map((permission) => permission.key) : (ROLE_PERMISSION_TEMPLATES[role] || []))
   const roleDefaults = Object.fromEntries(PERMISSIONS.map((permission) => [permission.key, roleKeys.has(permission.key)]))
+  applyBranchViewDefaults(roleDefaults, branchAccess)
   return {
     effective: { ...roleDefaults },
     roleDefaults,
@@ -210,7 +235,7 @@ export async function getPermissionCatalog() {
 }
 
 async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSnapshot> {
-  const [targetUser] = await db.select({ id: users.id, role: users.role })
+  const [targetUser] = await db.select({ id: users.id, role: users.role, brand: users.brand })
     .from(users)
     .where(and(eq(users.id, userId), isNull(users.deletedAt)))
     .limit(1)
@@ -223,7 +248,7 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
     await ensurePermissionRegistrySynced()
   } catch (error) {
     if (isMissingPermissionTableError(error)) {
-      return buildRoleTemplateSnapshot(targetUser.role)
+      return buildRoleTemplateSnapshot(targetUser.role, targetUser.brand)
     }
     throw error
   }
@@ -253,6 +278,8 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
     const key = keyById.get(row.permissionId)
     if (key) roleDefaults[key] = row.allowed
   }
+
+  applyBranchViewDefaults(roleDefaults, targetUser.brand)
 
   const overrides: Record<string, boolean> = {}
   for (const row of overrideRows) {

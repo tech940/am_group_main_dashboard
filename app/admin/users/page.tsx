@@ -84,6 +84,13 @@ const ROLE_FILTER_OPTIONS = [
   { value: 'combo:sales_managers', label: 'Sales Managers' },
 ] as const
 
+const USER_MODAL_SELECT_CONTENT_PROPS = {
+  side: 'bottom',
+  align: 'start',
+  avoidCollisions: false,
+  className: 'z-[200] max-h-[16rem] rounded-xl border border-slate-200 bg-white shadow-xl',
+} as const
+
 function getRoleAndDepartmentFromFilter(filter: string) {
   switch (filter) {
     case 'combo:hr_managers':
@@ -391,7 +398,7 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {USER_ROLE_OPTIONS.map((role) => (
                           <SelectItem key={role.value} value={role.value} className="bg-white hover:bg-slate-50">
                             {role.label}
@@ -415,7 +422,7 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select branch access" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {USER_BRANCH_OPTIONS.map((branch) => (
                           <SelectItem key={branch.value} value={branch.value} className="bg-white hover:bg-slate-50">
                             {branch.label}
@@ -445,7 +452,7 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-[#b9ccde] bg-white">
                         <SelectValue placeholder="Select branch section role" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {BRANCH_MODULE_ACCESS_ROLE_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value} className="bg-white hover:bg-slate-50">
                             <div className="flex flex-col">
@@ -524,7 +531,7 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {USER_ROLE_OPTIONS.map((role) => (
                           <SelectItem key={role.value} value={role.value} className="bg-white hover:bg-slate-50">
                             {role.label}
@@ -548,7 +555,7 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select branch access" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {USER_BRANCH_OPTIONS.map((branch) => (
                           <SelectItem key={branch.value} value={branch.value} className="bg-white hover:bg-slate-50">
                             {branch.label}
@@ -568,7 +575,7 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-[#b9ccde] bg-white">
                         <SelectValue placeholder="Select branch section role" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {BRANCH_MODULE_ACCESS_ROLE_EDIT_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value} className="bg-white hover:bg-slate-50">
                             <div className="flex flex-col">
@@ -601,7 +608,7 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select status" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         <SelectItem value="active" className="bg-white hover:bg-slate-50">Active</SelectItem>
                         <SelectItem value="inactive" className="bg-white hover:bg-slate-50">Inactive</SelectItem>
                       </SelectContent>
