@@ -35,8 +35,6 @@ import {
   Crown,
   Wrench,
 } from 'lucide-react'
-import { AccessControlOverlay } from '@/components/shared/access-control-overlay'
-import { useUserRole } from '@/lib/hooks/use-user-role'
 import { BusinessExcellenceOverview } from '@/features/kia/business-excellence-overview'
 import { OpenRoSection } from '@/features/kia/open-ro-section'
 import { KiaComplaintsSection } from '@/features/kia/kia-complaints-section'
@@ -1313,7 +1311,6 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
   const [aiSummary, setAiSummary] = useState<BusinessAiSummary | null>(null)
   const [aiSummaryError, setAiSummaryError] = useState('')
   const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false)
-  const { isAdmin } = useUserRole()
   const itemsPerPage = 10
 
   const activeDateLabel = useMemo(() => {
@@ -1940,7 +1937,6 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                               <ROBillingAnalytics
                                 sheetId={selectedSheet.id}
                                 sheetName={selectedSheet.sheetName}
-                                isAdmin={isAdmin}
                                 activeSheet={selectedSheet.sheetName}
                                 prefetchedData={null}
                                 isPrefetching={false}
@@ -3652,7 +3648,6 @@ function WorkshopPerformanceSection({
 function ROBillingAnalytics({
   sheetId,
   sheetName,
-  isAdmin,
   activeSheet,
   prefetchedData,
   isPrefetching,
@@ -3660,7 +3655,6 @@ function ROBillingAnalytics({
 }: {
   sheetId: string
   sheetName: string
-  isAdmin: boolean
   activeSheet: string | null
   prefetchedData: Record<string, unknown>[] | null
   isPrefetching: boolean
@@ -3670,7 +3664,6 @@ function ROBillingAnalytics({
     <LegacyROBillingAnalytics
       sheetId={sheetId}
       sheetName={sheetName}
-      isAdmin={isAdmin}
       activeSheet={activeSheet}
       prefetchedData={prefetchedData}
       isPrefetching={isPrefetching}
@@ -3682,7 +3675,6 @@ function ROBillingAnalytics({
 function LegacyROBillingAnalytics({
   sheetId,
   sheetName,
-  isAdmin,
   activeSheet,
   prefetchedData,
   isPrefetching,
@@ -3690,7 +3682,6 @@ function LegacyROBillingAnalytics({
 }: {
   sheetId: string
   sheetName: string
-  isAdmin: boolean
   activeSheet: string | null
   prefetchedData: Record<string, unknown>[] | null
   isPrefetching: boolean
@@ -3702,7 +3693,6 @@ function LegacyROBillingAnalytics({
     <div className="space-y-8 mt-8">
       <ServiceTypePerformance
         data={initialData}
-        isAdmin={isAdmin}
         sheetId={sheetId}
         sheetName={sheetName}
         activeSheet={activeSheet}
@@ -3897,11 +3887,9 @@ function ROBillingRevenueSummarySection({
 }
 function ServiceTypePerformance({
   data: initialData,
-  isAdmin,
   dateFilter
 }: {
   data: Record<string, unknown>[]
-  isAdmin: boolean
   sheetId: string
   sheetName: string
   activeSheet: string | null
@@ -5805,7 +5793,7 @@ function ServiceTypePerformance({
           )}
         </CardHeader>
         <CardContent className="p-0">
-          <AccessControlOverlay isLocked={!isAdmin}>
+          <>
             {viewMode === 'table' ? (
               <div className="p-6 pb-0">
                 <div className="overflow-x-auto">
@@ -6658,7 +6646,7 @@ function ServiceTypePerformance({
               ) : viewMode === 'intelligence' ? (
                 <PerformanceIntelligenceReport dateFilter={dateFilter} />
               ) : null}
-          </AccessControlOverlay>
+          </>
         </CardContent>
       </Card>
       {expandedChart && (

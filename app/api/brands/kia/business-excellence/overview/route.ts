@@ -93,7 +93,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams) {
-  return `kia:business-excellence:overview:v18:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v19:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison }))
     .digest('hex')}`
 }
@@ -101,6 +101,83 @@ function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comp
 function sameDateLastYear(value: string) {
   const [year, month, day] = value.split('-').map(Number)
   return toDateInputValue(new Date(year - 1, month - 1, day))
+}
+
+function parseDateParts(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  return { year, month, day }
+}
+
+function fullSameMonthLastYear(value: string) {
+  const { year, month } = parseDateParts(value)
+  return {
+    startDate: toDateInputValue(new Date(year - 1, month - 1, 1)),
+    endDate: toDateInputValue(new Date(year - 1, month, 0)),
+  }
+}
+
+function fullSameQuarterLastYear(value: string) {
+  const { year, month } = parseDateParts(value)
+  const quarterStartMonth = Math.floor((month - 1) / 3) * 3
+  return {
+    startDate: toDateInputValue(new Date(year - 1, quarterStartMonth, 1)),
+    endDate: toDateInputValue(new Date(year - 1, quarterStartMonth + 3, 0)),
+  }
+}
+
+function fullPreviousCalendarYear(value: string) {
+  const { year } = parseDateParts(value)
+  return {
+    startDate: `${year - 1}-01-01`,
+    endDate: `${year - 1}-12-31`,
+  }
+}
+
+function fullPreviousFinancialYear(value: string) {
+  const { year, month } = parseDateParts(value)
+  const currentFinancialYearStart = month >= 4 ? year : year - 1
+  return {
+    startDate: `${currentFinancialYearStart - 1}-04-01`,
+    endDate: `${currentFinancialYearStart}-03-31`,
+  }
+}
+
+function isMonthAnchoredRange(startDate: string, endDate: string) {
+  const start = parseDateParts(startDate)
+  const end = parseDateParts(endDate)
+  return start.day === 1 && start.year === end.year && start.month === end.month
+}
+
+function resolveOverviewComparisonRange(startDate: string, endDate: string, comparison: ComparisonParams) {
+  if (comparison.comparisonStartDate && comparison.comparisonEndDate) {
+    return {
+      startDate: comparison.comparisonStartDate,
+      endDate: comparison.comparisonEndDate,
+      source: 'custom',
+    }
+  }
+
+  if (comparison.preset === 'qtd' || comparison.preset === 'current_quarter') {
+    return { ...fullSameQuarterLastYear(startDate), source: 'same-quarter-ly' }
+  }
+
+  if (comparison.preset === 'ytd') {
+    return { ...fullPreviousCalendarYear(startDate), source: 'full-calendar-year-ly' }
+  }
+
+  if (comparison.preset === 'current_fy') {
+    return { ...fullPreviousFinancialYear(startDate), source: 'full-financial-year-ly' }
+  }
+
+  if (comparison.preset === 'mtd' || comparison.preset === 'current_month' || isMonthAnchoredRange(startDate, endDate)) {
+    return { ...fullSameMonthLastYear(startDate), source: 'same-month-ly' }
+  }
+
+  return {
+    startDate: sameDateLastYear(startDate),
+    endDate: sameDateLastYear(endDate),
+    source: 'same-dates-ly',
+  }
 }
 
 function ewDedupCountSql(startDate: string, endDate: string) {
@@ -616,8 +693,9 @@ async function buildOverviewPayload(
   const roSql = roBillingBaseSql(startDate, endDate)
   const openSql = openRoBaseSql(startDate, endDate)
   const complaintSql = complaintsBaseSql(startDate, endDate)
-  const lyStartDate = comparison.comparisonStartDate || sameDateLastYear(startDate)
-  const lyEndDate = comparison.comparisonEndDate || sameDateLastYear(endDate)
+  const comparisonRange = resolveOverviewComparisonRange(startDate, endDate, comparison)
+  const lyStartDate = comparisonRange.startDate
+  const lyEndDate = comparisonRange.endDate
   const lyRoSql = roBillingBaseSql(lyStartDate, lyEndDate)
   const lyOpenSql = openRoBaseSql(lyStartDate, lyEndDate)
   const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate)
@@ -1080,6 +1158,7 @@ async function buildOverviewPayload(
         endDate,
         lyStartDate,
         lyEndDate,
+        lySource: comparisonRange.source,
       },
       comparison,
       sourceCoverage: {
