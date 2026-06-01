@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   ChevronDown,
+  ChevronRight,
   LogOut,
   Activity,
   Menu,
@@ -32,15 +33,31 @@ const brandNavigation = [
     logo: 'https://www.citypng.com/public/uploads/preview/kia-white-logo-hd-png-7017516947105094q5qjti6gq.png',
     color: 'text-blue-100',
     icon: Activity,
-    submenus: [
-      { name: 'Business Excellence', href: '/brands/kia/business-excellence/overview' },
-      { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
-      { name: 'Kia Proforma', href: '/brands/kia/proforma' },
+    sections: [
+      {
+        name: 'Service',
+        key: 'service',
+        submenus: [
+          { name: 'Business Excellence', href: '/brands/kia/business-excellence/overview' },
+          { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
+          { name: 'Kia Proforma', href: '/brands/kia/proforma' },
+        ],
+      },
+      {
+        name: 'Sales',
+        key: 'sales',
+        submenus: [],
+      },
+      {
+        name: 'H Promise',
+        key: 'h-promise',
+        submenus: [],
+      },
     ],
   },
 ]
 
-const availableBrands = brandNavigation.filter((brand) => brand.submenus.length > 0)
+const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
 
 const sidebarPermissionByHref: Record<string, string> = {
   '/purchase-orders': 'purchase_orders.view',
@@ -66,6 +83,7 @@ export function Sidebar() {
   const supabase = createClient()
   const { collapsed, setCollapsed } = useSidebar()
   const [openBrands, setOpenBrands] = useState<Set<string>>(() => new Set())
+  const [openBrandSections, setOpenBrandSections] = useState<Set<string>>(() => new Set(['kia:service']))
   const [openAdmin, setOpenAdmin] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
@@ -163,6 +181,18 @@ export function Sidebar() {
         if (collapsed) setCollapsed(false)
       }
     }
+  }
+
+  const toggleBrandSection = (sectionKey: string) => {
+    setOpenBrandSections((current) => {
+      const next = new Set(current)
+      if (next.has(sectionKey)) {
+        next.delete(sectionKey)
+      } else {
+        next.add(sectionKey)
+      }
+      return next
+    })
   }
 
   const toggleAdmin = () => {
@@ -487,41 +517,78 @@ export function Sidebar() {
                       </button>
 
                       {!collapsed && isOpen && (
-                        <div className="ml-4 space-y-1.5 border-l-2 border-white/20 pl-4 animate-in slide-in-from-top-2 duration-200">
-                          {brand.submenus.map((sub) => {
-                            const permissionKey = sidebarPermissionByHref[sub.href]
-                            const locked = permissionKey ? !hasPermission(permissionKey) : false
-                            const active = sub.href === '/brands/kia/proforma'
+                        <div className="ml-4 space-y-2 border-l-2 border-white/20 pl-4 animate-in slide-in-from-top-2 duration-200">
+                          {brand.sections.map((section) => {
+                            const sectionKey = `${brand.key}:${section.key}`
+                            const sectionOpen = openBrandSections.has(sectionKey)
+                            const sectionActive = section.submenus.some((sub) => sub.href === '/brands/kia/proforma'
                               ? pathname?.startsWith('/brands/kia/proforma')
-                              : pathname === sub.href
+                              : pathname === sub.href)
+                            const hasChildren = section.submenus.length > 0
 
-                            return locked ? (
-                              <button
-                                key={sub.name}
-                                type="button"
-                                onClick={showLockedSectionMessage}
-                                className="flex w-full items-center justify-between rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2.5 text-left text-xs font-medium text-indigo-50/65 shadow-sm transition-all hover:bg-white/14"
-                              >
-                                {sub.name}
-                                <Lock className="h-3.5 w-3.5" />
-                              </button>
-                            ) : (
-                              <Link
-                                key={sub.name}
-                                href={sub.href}
-                                target="_blank"
-                                rel="noreferrer"
-                                prefetch={false}
-                                onClick={handleSidebarLinkClick}
-                                className={cn(
-                                  'block rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
-                                  active
-                                    ? 'border-l-2 border-indigo-100 text-white font-semibold'
-                                    : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
+                            return (
+                              <div key={section.key} className="space-y-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => hasChildren ? toggleBrandSection(sectionKey) : undefined}
+                                  className={cn(
+                                    'flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-left text-[11px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
+                                    sectionActive || sectionOpen
+                                      ? 'bg-white/18 text-white'
+                                      : 'bg-white/8 text-indigo-50/75 hover:bg-white/14 hover:text-white',
+                                    !hasChildren && 'cursor-default opacity-70'
+                                  )}
+                                >
+                                  {hasChildren ? (
+                                    sectionOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <span className="h-3.5 w-3.5" />
+                                  )}
+                                  <span className="flex-1">{section.name}</span>
+                                  {!hasChildren && <span className="text-[8px] tracking-widest text-indigo-50/45">Soon</span>}
+                                </button>
+
+                                {hasChildren && sectionOpen && (
+                                  <div className="ml-4 space-y-1.5 border-l border-white/15 pl-3">
+                                    {section.submenus.map((sub) => {
+                                      const permissionKey = sidebarPermissionByHref[sub.href]
+                                      const locked = permissionKey ? !hasPermission(permissionKey) : false
+                                      const active = sub.href === '/brands/kia/proforma'
+                                        ? pathname?.startsWith('/brands/kia/proforma')
+                                        : pathname === sub.href
+
+                                      return locked ? (
+                                        <button
+                                          key={sub.name}
+                                          type="button"
+                                          onClick={showLockedSectionMessage}
+                                          className="flex w-full items-center justify-between rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2.5 text-left text-xs font-medium text-indigo-50/65 shadow-sm transition-all hover:bg-white/14"
+                                        >
+                                          {sub.name}
+                                          <Lock className="h-3.5 w-3.5" />
+                                        </button>
+                                      ) : (
+                                        <Link
+                                          key={sub.name}
+                                          href={sub.href}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          prefetch={false}
+                                          onClick={handleSidebarLinkClick}
+                                          className={cn(
+                                            'block rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
+                                            active
+                                              ? 'border-l-2 border-indigo-100 text-white font-semibold'
+                                              : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
+                                          )}
+                                        >
+                                          {sub.name}
+                                        </Link>
+                                      )
+                                    })}
+                                  </div>
                                 )}
-                              >
-                                {sub.name}
-                              </Link>
+                              </div>
                             )
                           })}
                         </div>

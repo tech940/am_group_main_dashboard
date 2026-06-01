@@ -1261,7 +1261,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v16:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v17:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {

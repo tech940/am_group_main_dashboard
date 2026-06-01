@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter, KeyRound } from 'lucide-react'
+import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter, KeyRound, Eye, EyeOff } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import {
   BRANCH_MODULE_ACCESS_ROLE_EDIT_OPTIONS,
@@ -116,6 +116,7 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [fetchingUsers, setFetchingUsers] = useState(true)
   const [pagination, setPagination] = useState<UsersPagination>(DEFAULT_PAGINATION)
+  const [showCreatePassword, setShowCreatePassword] = useState(false)
   const [summary, setSummary] = useState<UsersSummary>({
     totalUsers: 0,
     admins: 0,
@@ -224,6 +225,7 @@ export default function AdminUsersPage() {
           department: '',
           branchModuleRole: 'inherit',
         })
+        setShowCreatePassword(false)
         alert(payload?.permissionWarning || 'User created successfully!')
         // Refresh the user list
         void fetchUsers()
@@ -339,7 +341,13 @@ export default function AdminUsersPage() {
             <p className="text-slate-500 mt-2 font-semibold">Create and manage user accounts</p>
           </div>
           
-          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <Dialog
+            open={isCreateDialogOpen}
+            onOpenChange={(open) => {
+              setIsCreateDialogOpen(open)
+              if (!open) setShowCreatePassword(false)
+            }}
+          >
             <DialogTrigger asChild>
               <Button className="app-primary-action rounded-xl font-bold shadow-lg">
                 <UserPlus className="mr-2 h-4 w-4" />
@@ -380,17 +388,26 @@ export default function AdminUsersPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                  <div className="space-y-2 relative">
                     <Label htmlFor="password" className="text-sm font-bold text-slate-700">Password</Label>
                     <Input
                       id="password"
-                      type="password"
+                      type={showCreatePassword ? 'text' : 'password'}
                       placeholder="••••••••"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                       required
-                      className="rounded-xl border-slate-200"
+                      className="rounded-xl border-slate-200 pr-11"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatePassword((current) => !current)}
+                      className="absolute right-3 top-[2.35rem] rounded-lg p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                      aria-label={showCreatePassword ? 'Hide password' : 'Show password'}
+                      title={showCreatePassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showCreatePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="role" className="text-sm font-bold text-slate-700">Role</Label>

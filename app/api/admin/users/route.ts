@@ -271,7 +271,7 @@ export async function POST(request: Request) {
       createdAt: users.createdAt,
     })
 
-    const permissionWarning = canUseBranchModuleAccessRole(normalizedBrand)
+    const permissionWarning = normalizedBranchModuleRole !== 'inherit' && canUseBranchModuleAccessRole(normalizedBrand)
       ? await applyBranchModuleRolePreset({
         targetUserId: newUser.id,
         changedByUserId: appUser.id,

@@ -75,11 +75,12 @@ function groupKeysForBranch(prefix: string, role: BranchModuleAccessRoleValue) {
 
   if (role === 'branch_executive_view') return allBranchGroupKeys
   if (role === 'branch_business_analytics') {
-    return allBranchGroupKeys.filter((key) => key === prefix || key.startsWith(`${prefix}.business_excellence`))
+    return allBranchGroupKeys.filter((key) => key === prefix || key === `${prefix}.service` || key.startsWith(`${prefix}.business_excellence`))
   }
   if (role === 'branch_operations') {
     return [
       prefix,
+      `${prefix}.service`,
       `${prefix}.business_excellence`,
       `${prefix}.business_excellence.workshop_performance`,
       `${prefix}.business_excellence.open_ro`,
@@ -89,13 +90,14 @@ function groupKeysForBranch(prefix: string, role: BranchModuleAccessRoleValue) {
   if (role === 'branch_customer_ops') {
     return [
       prefix,
+      `${prefix}.service`,
       `${prefix}.business_excellence`,
       `${prefix}.business_excellence.complaints`,
       `${prefix}.demo_job_cards`,
     ]
   }
   if (role === 'branch_proforma_user' || role === 'branch_proforma_approver') {
-    return [prefix, `${prefix}.proforma`]
+    return [prefix, `${prefix}.service`, `${prefix}.proforma`]
   }
 
   return []

@@ -1812,7 +1812,10 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                       <>
                           {showDateControls && (
                             <div className="border-b border-slate-100 bg-slate-50/70 p-3">
-                              <div className="max-w-[860px] rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-3 shadow-sm">
+                              <div className={cn(
+                                'rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-3 shadow-sm',
+                                datePanelMode === 'current' ? 'max-w-[640px]' : 'max-w-[860px]'
+                              )}>
                                 <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
                                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                     <div className="grid flex-1 gap-3 sm:grid-cols-2">

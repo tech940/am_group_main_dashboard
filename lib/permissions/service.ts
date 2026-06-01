@@ -327,18 +327,25 @@ export async function updateUserPermissionOverrides(params: {
   changes: Record<string, boolean | null>
   reason?: string
 }) {
+  const changeEntries = Object.entries(params.changes)
+  if (changeEntries.length === 0) {
+    return buildUserPermissionSnapshot(params.targetUserId)
+  }
+
   await ensurePermissionRegistrySynced()
 
   const permissionRows = await db.select({ id: permissions.id, key: permissions.name })
     .from(permissions)
-    .where(inArray(permissions.name, Object.keys(params.changes)))
+    .where(inArray(permissions.name, changeEntries.map(([permissionKey]) => permissionKey)))
 
   const permissionByKey = new Map(permissionRows.map((permission) => [permission.key, permission]))
   const before = await buildUserPermissionSnapshot(params.targetUserId)
   const now = new Date()
   const auditRows: Array<typeof permissionAuditLogs.$inferInsert> = []
+  const deletePermissionIds: string[] = []
+  const upsertRows: Array<typeof userPermissions.$inferInsert> = []
 
-  for (const [permissionKey, value] of Object.entries(params.changes)) {
+  for (const [permissionKey, value] of changeEntries) {
     const permission = permissionByKey.get(permissionKey)
     if (!permission) continue
 
@@ -347,26 +354,14 @@ export async function updateUserPermissionOverrides(params: {
       : value
 
     if (value === null) {
-      await db.delete(userPermissions)
-        .where(and(
-          eq(userPermissions.userId, params.targetUserId),
-          eq(userPermissions.permissionId, permission.id)
-        ))
+      deletePermissionIds.push(permission.id)
     } else {
-      await db.insert(userPermissions)
-        .values({
-          userId: params.targetUserId,
-          permissionId: permission.id,
-          allowed: value,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [userPermissions.userId, userPermissions.permissionId],
-          set: {
-            allowed: value,
-            updatedAt: now,
-          },
-        })
+      upsertRows.push({
+        userId: params.targetUserId,
+        permissionId: permission.id,
+        allowed: value,
+        updatedAt: now,
+      })
     }
 
     if (before.effective[permissionKey] !== newEffectiveValue) {
@@ -382,9 +377,29 @@ export async function updateUserPermissionOverrides(params: {
     }
   }
 
-  if (auditRows.length > 0) {
-    await db.insert(permissionAuditLogs).values(auditRows)
-  }
+  await Promise.all([
+    deletePermissionIds.length > 0
+      ? db.delete(userPermissions)
+        .where(and(
+          eq(userPermissions.userId, params.targetUserId),
+          inArray(userPermissions.permissionId, deletePermissionIds)
+        ))
+      : Promise.resolve(),
+    upsertRows.length > 0
+      ? db.insert(userPermissions)
+        .values(upsertRows)
+        .onConflictDoUpdate({
+          target: [userPermissions.userId, userPermissions.permissionId],
+          set: {
+            allowed: sql`excluded.allowed`,
+            updatedAt: now,
+          },
+        })
+      : Promise.resolve(),
+    auditRows.length > 0
+      ? db.insert(permissionAuditLogs).values(auditRows)
+      : Promise.resolve(),
+  ])
 
   await clearUserPermissionCache(params.targetUserId)
   return buildUserPermissionSnapshot(params.targetUserId)
