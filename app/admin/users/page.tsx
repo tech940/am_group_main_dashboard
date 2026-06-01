@@ -23,6 +23,14 @@ import {
 } from '@/components/ui/dialog'
 import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter, KeyRound } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import {
+  BRANCH_MODULE_ACCESS_ROLE_EDIT_OPTIONS,
+  BRANCH_MODULE_ACCESS_ROLE_KEEP,
+  BRANCH_MODULE_ACCESS_ROLE_OPTIONS,
+  canUseBranchModuleAccessRole,
+  type BranchModuleAccessRoleEditValue,
+  type BranchModuleAccessRoleValue,
+} from '@/lib/branch-module-access'
 import { USER_BRANCH_OPTIONS, USER_ROLE_OPTIONS, getUserBranchLabel, type UserBranchValue } from '@/lib/dashboard-config'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 
@@ -164,7 +172,8 @@ export default function AdminUsersPage() {
     password: '',
     role: 'viewer' as UserRole,
     brand: '',
-    department: ''
+    department: '',
+    branchModuleRole: 'inherit' as BranchModuleAccessRoleValue,
   })
 
   const [editFormData, setEditFormData] = useState({
@@ -174,6 +183,7 @@ export default function AdminUsersPage() {
     role: 'viewer' as UserRole,
     brand: '',
     department: '',
+    branchModuleRole: BRANCH_MODULE_ACCESS_ROLE_KEEP as BranchModuleAccessRoleEditValue,
     isActive: true
   })
 
@@ -197,15 +207,17 @@ export default function AdminUsersPage() {
 
       if (response.ok) {
         setIsCreateDialogOpen(false)
+        const payload = await response.json().catch(() => null)
         setFormData({
           email: '',
           fullName: '',
           password: '',
           role: 'viewer',
           brand: '',
-          department: ''
+          department: '',
+          branchModuleRole: 'inherit',
         })
-        alert('User created successfully!')
+        alert(payload?.permissionWarning || 'User created successfully!')
         // Refresh the user list
         void fetchUsers()
       } else {
@@ -228,6 +240,7 @@ export default function AdminUsersPage() {
       role: user.role,
       brand: user.brand || '',
       department: user.department || '',
+      branchModuleRole: BRANCH_MODULE_ACCESS_ROLE_KEEP,
       isActive: user.isActive
     })
     setIsEditDialogOpen(true)
@@ -245,8 +258,9 @@ export default function AdminUsersPage() {
       })
 
       if (response.ok) {
+        const payload = await response.json().catch(() => null)
         setIsEditDialogOpen(false)
-        alert('User updated successfully!')
+        alert(payload?.permissionWarning || 'User updated successfully!')
         void fetchUsers()
       } else {
         const error = await response.json()
@@ -325,7 +339,7 @@ export default function AdminUsersPage() {
                 Create New User
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white">
+            <DialogContent className="sm:max-w-[560px] rounded-2xl bg-white">
               <DialogHeader>
                 <DialogTitle className="text-2xl font-black text-slate-800">Create New User</DialogTitle>
                 <DialogDescription className="text-slate-500 font-semibold">
@@ -390,7 +404,14 @@ export default function AdminUsersPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="brand" className="text-sm font-bold text-slate-700">Assigned Branch Access</Label>
-                    <Select value={formData.brand} onValueChange={(value: UserBranchValue) => setFormData({ ...formData, brand: value })}>
+                    <Select
+                      value={formData.brand}
+                      onValueChange={(value: UserBranchValue) => setFormData({
+                        ...formData,
+                        brand: value,
+                        branchModuleRole: canUseBranchModuleAccessRole(value) ? formData.branchModuleRole : 'inherit',
+                      })}
+                    >
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select branch access" />
                       </SelectTrigger>
@@ -414,6 +435,32 @@ export default function AdminUsersPage() {
                     />
                   </div>
                 </div>
+                {canUseBranchModuleAccessRole(formData.brand) && (
+                  <div className="space-y-2 rounded-2xl border border-[#b9ccde] bg-[#edf4fb]/60 p-3">
+                    <Label htmlFor="branchModuleRole" className="text-sm font-bold text-slate-700">Branch Section Role</Label>
+                    <Select
+                      value={formData.branchModuleRole}
+                      onValueChange={(value: BranchModuleAccessRoleValue) => setFormData({ ...formData, branchModuleRole: value })}
+                    >
+                      <SelectTrigger className="rounded-xl border-[#b9ccde] bg-white">
+                        <SelectValue placeholder="Select branch section role" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                        {BRANCH_MODULE_ACCESS_ROLE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value} className="bg-white hover:bg-slate-50">
+                            <div className="flex flex-col">
+                              <span>{option.label}</span>
+                              <span className="text-[10px] font-semibold text-slate-400">{option.description}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs font-semibold text-slate-500">
+                      Applies section permissions for the selected branch. Use Access Control later for exact overrides.
+                    </p>
+                  </div>
+                )}
                 <div className="flex gap-3 pt-4">
                   <Button
                     type="button"
@@ -437,7 +484,7 @@ export default function AdminUsersPage() {
 
           {/* Edit User Dialog */}
           <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-            <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white">
+            <DialogContent className="sm:max-w-[560px] rounded-2xl bg-white">
               <DialogHeader>
                 <DialogTitle className="text-2xl font-black text-slate-800">Edit User</DialogTitle>
                 <DialogDescription className="text-slate-500 font-semibold">
@@ -488,7 +535,16 @@ export default function AdminUsersPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-brand" className="text-sm font-bold text-slate-700">Assigned Branch Access</Label>
-                    <Select value={editFormData.brand} onValueChange={(value: UserBranchValue) => setEditFormData({ ...editFormData, brand: value })}>
+                    <Select
+                      value={editFormData.brand}
+                      onValueChange={(value: UserBranchValue) => setEditFormData({
+                        ...editFormData,
+                        brand: value,
+                        branchModuleRole: canUseBranchModuleAccessRole(value)
+                          ? editFormData.branchModuleRole
+                          : BRANCH_MODULE_ACCESS_ROLE_KEEP,
+                      })}
+                    >
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select branch access" />
                       </SelectTrigger>
@@ -502,6 +558,32 @@ export default function AdminUsersPage() {
                     </Select>
                   </div>
                 </div>
+                {canUseBranchModuleAccessRole(editFormData.brand) && (
+                  <div className="space-y-2 rounded-2xl border border-[#b9ccde] bg-[#edf4fb]/60 p-3">
+                    <Label htmlFor="edit-branchModuleRole" className="text-sm font-bold text-slate-700">Branch Section Role</Label>
+                    <Select
+                      value={editFormData.branchModuleRole}
+                      onValueChange={(value: BranchModuleAccessRoleEditValue) => setEditFormData({ ...editFormData, branchModuleRole: value })}
+                    >
+                      <SelectTrigger className="rounded-xl border-[#b9ccde] bg-white">
+                        <SelectValue placeholder="Select branch section role" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                        {BRANCH_MODULE_ACCESS_ROLE_EDIT_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value} className="bg-white hover:bg-slate-50">
+                            <div className="flex flex-col">
+                              <span>{option.label}</span>
+                              <span className="text-[10px] font-semibold text-slate-400">{option.description}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs font-semibold text-slate-500">
+                      Choose a preset to rewrite branch section permissions, or keep current overrides unchanged.
+                    </p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-department" className="text-sm font-bold text-slate-700">Department (Optional)</Label>

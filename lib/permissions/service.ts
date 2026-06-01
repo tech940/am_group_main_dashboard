@@ -32,7 +32,7 @@ export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedRe
 const PERMISSION_CACHE_VERSION = 'v1'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
-function isMissingPermissionTableError(error: unknown) {
+export function isMissingPermissionTableError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   return message.includes('permission_groups')
     || message.includes('permissions')

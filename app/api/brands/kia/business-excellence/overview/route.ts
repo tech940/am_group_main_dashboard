@@ -93,7 +93,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams) {
-  return `kia:business-excellence:overview:v17:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v18:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison }))
     .digest('hex')}`
 }
@@ -612,6 +612,7 @@ async function buildOverviewPayload(
   }
 ) {
   const includeSecondary = chunk === 'secondary' || chunk === 'full'
+  const includeComparison = true
   const roSql = roBillingBaseSql(startDate, endDate)
   const openSql = openRoBaseSql(startDate, endDate)
   const complaintSql = complaintsBaseSql(startDate, endDate)
@@ -798,7 +799,7 @@ async function buildOverviewPayload(
     `) : emptyRows(),
     fetchAddonKpis(startDate, endDate),
     fetchWorkshopSnapshot(startDate, endDate),
-    includeSecondary ? db.execute(sql`
+    includeComparison ? db.execute(sql`
       ${lyRoSql}
       SELECT
         COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -807,7 +808,7 @@ async function buildOverviewPayload(
         COALESCE(SUM(revenue), 0)::float AS revenue
       FROM enriched
     `) : emptyRows(),
-    includeSecondary ? db.execute(sql`
+    includeComparison ? db.execute(sql`
       ${lyOpenSql}
       SELECT
         COUNT(*)::int AS total_open_ro,
@@ -815,7 +816,7 @@ async function buildOverviewPayload(
         COUNT(*) FILTER (WHERE delay_status = 'Delayed')::int AS delayed
       FROM enriched
     `) : emptyRows(),
-    includeSecondary ? db.execute(sql`
+    includeComparison ? db.execute(sql`
       ${lyComplaintSql}
       SELECT
         COUNT(*)::int AS total,
@@ -825,8 +826,8 @@ async function buildOverviewPayload(
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
       FROM enriched
     `) : emptyRows(),
-    includeSecondary ? fetchAddonKpis(lyStartDate, lyEndDate) : emptyAddonKpis(),
-    includeSecondary ? fetchWorkshopSnapshot(lyStartDate, lyEndDate) : emptyWorkshopSnapshot(),
+    includeComparison ? fetchAddonKpis(lyStartDate, lyEndDate) : emptyAddonKpis(),
+    includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate) : emptyWorkshopSnapshot(),
   ])
 
   const roKpis = resultRows(roKpiRows)[0] || {}
@@ -890,7 +891,7 @@ async function buildOverviewPayload(
       addOnPerJc: perUnit(addOnTotal, totalJc),
     },
     workshopSnapshot,
-    comparison: includeSecondary ? {
+    comparison: includeComparison ? {
       lyRange: {
         startDate: lyStartDate,
         endDate: lyEndDate,

@@ -197,7 +197,7 @@ function AnalyticsDateRangePicker({
   }
 
   return (
-    <div className="rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-3 shadow-sm transition dark:bg-slate-950">
+    <div className="rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-2.5 shadow-sm transition dark:bg-slate-950">
       <div className="mb-3 flex items-center justify-between gap-3">
         <button
           type="button"
@@ -220,8 +220,8 @@ function AnalyticsDateRangePicker({
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <div key={`${day}-${index}`} className="py-1">{day}</div>)}
+      <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-black uppercase tracking-widest text-slate-400">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <div key={`${day}-${index}`} className="py-0.5">{day}</div>)}
       </div>
       <div className="mt-1 grid grid-cols-7 gap-1">
         {dayCells.map((date) => {
@@ -236,7 +236,7 @@ function AnalyticsDateRangePicker({
               type="button"
               onClick={() => selectDate(date)}
               className={cn(
-                'h-9 rounded-xl text-xs font-black transition',
+                'h-8 rounded-lg text-[11px] font-black transition',
                 inCurrentMonth ? 'text-slate-700 dark:text-slate-100' : 'text-slate-300 dark:text-slate-600',
                 inRange && 'bg-[var(--dashboard-primary-soft)] text-[var(--dashboard-action-bg)]',
                 (isStart || isEnd) && 'app-primary-action shadow-sm'
@@ -247,7 +247,7 @@ function AnalyticsDateRangePicker({
           )
         })}
       </div>
-      <div className="mt-3 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+      <div className="mt-2 flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-[11px] font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
         <div className="flex items-center justify-between gap-3">
           <span>Start</span>
           <span className="font-black text-slate-950 dark:text-white">{startDate || 'Select date'}</span>
@@ -419,6 +419,15 @@ function getGrowthBadgeClass(value: number | string | 'N/A') {
   return num >= 0
     ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
     : 'text-rose-700 bg-rose-50 border-rose-100'
+}
+
+function isManagementTotalRowName(name: unknown) {
+  const normalized = String(name || '').trim().toLowerCase()
+  return normalized === 'mech' || normalized === 'mech total' || normalized === 'grand total'
+}
+
+function getManagementTotalRowClass(name: unknown) {
+  return isManagementTotalRowName(name) ? 'be-management-total-row' : ''
 }
 
 function formatSignedGrowth(value: number | string | 'N/A') {
@@ -1299,6 +1308,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
   const [appliedDateFilter, setAppliedDateFilter] = useState<BusinessDateFilter>(null)
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
   const [showDateControls, setShowDateControls] = useState(false)
+  const [showHealthPanel, setShowHealthPanel] = useState(false)
   const [showAiSummary, setShowAiSummary] = useState(false)
   const [aiSummary, setAiSummary] = useState<BusinessAiSummary | null>(null)
   const [aiSummaryError, setAiSummaryError] = useState('')
@@ -1480,6 +1490,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
   useEffect(() => {
     setActiveTab(initialReportName)
     setCurrentPage(1)
+    setShowHealthPanel(false)
   }, [initialReportName])
 
   useEffect(() => {
@@ -1612,6 +1623,23 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                             )}
                             {isAiSummaryLoading ? 'Summarising' : 'AI Summary'}
                           </Button>
+
+                          {usesDateControls && !isOverviewSheet && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={isApplyingFilter}
+                              onClick={() => setShowHealthPanel((visible) => !visible)}
+                              className={cn(
+                                'h-9 rounded-xl px-3 text-xs font-black shadow-sm',
+                                showHealthPanel ? 'app-primary-action' : 'app-outline-action'
+                              )}
+                            >
+                              <Activity className="mr-2 h-3.5 w-3.5" />
+                              {showHealthPanel ? 'Hide Health' : 'Show Health'}
+                            </Button>
+                          )}
 
                           {usesDateControls && (
                             <Button
@@ -1787,59 +1815,24 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                       <>
                           {showDateControls && (
                             <div className="border-b border-slate-100 bg-slate-50/70 p-3">
-                              <div className="rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-4 shadow-sm">
-                                <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
-                                  <div className="space-y-4">
-                                    {datePanelMode === 'current' ? (
-                                      <AnalyticsDateRangePicker
-                                        title="Current Date Range"
-                                        clearLabel="Clear current range"
-                                        startDate={startDate}
-                                        endDate={endDate}
-                                        onChange={(nextStart, nextEnd) => {
-                                          setStartDate(nextStart)
-                                          setEndDate(nextEnd)
-                                        }}
-                                      />
-                                    ) : (
-                                      <div className="grid gap-4 xl:grid-cols-2">
-                                        <AnalyticsDateRangePicker
-                                          title="CY Date Range"
-                                          clearLabel="Clear CY range"
-                                          startDate={startDate}
-                                          endDate={endDate}
-                                          onChange={(nextStart, nextEnd) => {
-                                            setStartDate(nextStart)
-                                            setEndDate(nextEnd)
-                                          }}
-                                        />
-                                        <AnalyticsDateRangePicker
-                                          title="LY Date Range"
-                                          clearLabel="Clear LY range"
-                                          startDate={comparisonStartDate}
-                                          endDate={comparisonEndDate}
-                                          onChange={(nextStart, nextEnd) => {
-                                            setComparisonStartDate(nextStart)
-                                            setComparisonEndDate(nextEnd)
-                                          }}
-                                        />
+                              <div className="max-w-[860px] rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-3 shadow-sm">
+                                <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                    <div className="grid flex-1 gap-3 sm:grid-cols-2">
+                                      <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                          {datePanelMode === 'compare' ? 'CY Range' : 'Selected Range'}
+                                        </p>
+                                        <p className="mt-1 text-sm font-black text-slate-950">{draftDateLabel}</p>
                                       </div>
-                                    )}
-                                  </div>
-
-                                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Preview</p>
-                                    <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                      {datePanelMode === 'compare' ? 'CY Range' : 'Selected Range'}
-                                    </p>
-                                    <p className="mt-1 text-sm font-black text-slate-950">{draftDateLabel}</p>
-                                    {datePanelMode === 'compare' && (
-                                      <>
-                                        <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-400">LY Range</p>
-                                        <p className="mt-1 text-sm font-black text-slate-950">{draftComparisonLabel}</p>
-                                      </>
-                                    )}
-                                    <div className="mt-4 flex flex-wrap gap-2">
+                                      {datePanelMode === 'compare' && (
+                                        <div>
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">LY Range</p>
+                                          <p className="mt-1 text-sm font-black text-slate-950">{draftComparisonLabel}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 lg:justify-end">
                                       <Button
                                         size="sm"
                                         className="app-primary-action h-10 rounded-2xl px-5 text-xs font-black"
@@ -1870,11 +1863,46 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                                     </div>
                                   </div>
                                 </div>
+                                {datePanelMode === 'current' ? (
+                                  <AnalyticsDateRangePicker
+                                    title="Current Date Range"
+                                    clearLabel="Clear current range"
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    onChange={(nextStart, nextEnd) => {
+                                      setStartDate(nextStart)
+                                      setEndDate(nextEnd)
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="grid gap-3 md:grid-cols-2">
+                                    <AnalyticsDateRangePicker
+                                      title="CY Date Range"
+                                      clearLabel="Clear CY range"
+                                      startDate={startDate}
+                                      endDate={endDate}
+                                      onChange={(nextStart, nextEnd) => {
+                                        setStartDate(nextStart)
+                                        setEndDate(nextEnd)
+                                      }}
+                                    />
+                                    <AnalyticsDateRangePicker
+                                      title="LY Date Range"
+                                      clearLabel="Clear LY range"
+                                      startDate={comparisonStartDate}
+                                      endDate={comparisonEndDate}
+                                      onChange={(nextStart, nextEnd) => {
+                                        setComparisonStartDate(nextStart)
+                                        setComparisonEndDate(nextEnd)
+                                      }}
+                                    />
+                                  </div>
+                                )}
                               </div>
                             </div>
                           )}
-                        {/* Performance Analytics Section - Only for RO Billing */}
-                        {usesDateControls && !isApplyingFilter && (
+                        {/* Executive health panel is opt-in from the report header. */}
+                        {showHealthPanel && usesDateControls && !isOverviewSheet && !isApplyingFilter && (
                           <BusinessExecutiveDecisionLayer
                             dateFilter={appliedDateFilter}
                             reportName={selectedSheet.sheetName}
@@ -3276,9 +3304,9 @@ function WorkshopPerformanceSection({
   const formatPercent = (value: number) => `${value.toFixed(1)}%`
   const formatCompactMoney = (value: number) => formatChartLabel(value)
   const getPercentToneClass = (value: number) => {
-    if (value > 0) return 'text-emerald-700'
-    if (value < 0) return 'text-rose-600'
-    return 'text-slate-500'
+    if (value > 0) return 'be-tone-positive text-emerald-700'
+    if (value < 0) return 'be-tone-negative text-rose-600'
+    return 'be-tone-neutral text-slate-500'
   }
 
   const toggleWorkshopRow = (serviceType: string) => {
@@ -3449,7 +3477,8 @@ function WorkshopPerformanceSection({
                   key={`${options?.child ? `${row.serviceType}-child-` : ''}${item.serviceType}`}
                   className={cn(
                     isGrandTotal ? 'bg-slate-100/90 text-slate-950 shadow-[inset_4px_0_0_#023468]' : options?.child ? 'bg-slate-50/70 text-slate-700' : 'bg-white hover:bg-slate-50',
-                    options?.parentTotal && 'bg-slate-100/90'
+                    options?.parentTotal && 'bg-slate-100/90',
+                    getManagementTotalRowClass(item.serviceType)
                   )}
                 >
                   <td className={cn('border border-slate-200 px-3 py-2 text-[11px] font-black leading-tight', options?.child && 'pl-9 font-bold')}>
@@ -5663,7 +5692,7 @@ function ServiceTypePerformance({
     <>
       <Card className="mb-6 mt-3 overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm">
         <CardHeader className="border-b border-slate-100 bg-white p-2">
-          <div className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4">
+          <div className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4 xl:grid-cols-7">
               <button
                 onClick={() => setViewMode('table')}
                 className={cn(
@@ -5673,7 +5702,29 @@ function ServiceTypePerformance({
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
-                <TableIcon className="h-3.5 w-3.5" /> Overview
+                <TableIcon className="h-3.5 w-3.5" /> Table
+              </button>
+              <button
+                onClick={() => setViewMode('trend')}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  viewMode === 'trend'
+                    ? "app-primary-action"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <TrendingUp className="h-3.5 w-3.5" /> Trend
+              </button>
+              <button
+                onClick={() => setViewMode('fy')}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  viewMode === 'fy'
+                    ? "app-primary-action"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <BarChart3 className="h-3.5 w-3.5" /> FY Trends
               </button>
               <button
                 onClick={() => setViewMode('analytics')}
@@ -5684,7 +5735,7 @@ function ServiceTypePerformance({
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
-                <Activity className="h-3.5 w-3.5" /> Insights
+                <Activity className="h-3.5 w-3.5" /> Analytics
               </button>
               <button
                 onClick={() => setViewMode('revenue')}
@@ -5706,11 +5757,22 @@ function ServiceTypePerformance({
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
-                <Users className="h-3.5 w-3.5" /> People
+                <Users className="h-3.5 w-3.5" /> Leaderboard
+              </button>
+              <button
+                onClick={() => setViewMode('intelligence')}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  viewMode === 'intelligence'
+                    ? "app-primary-action"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Intelligence
               </button>
           </div>
 
-          {viewMode === 'table' && (
+          {(viewMode === 'table' || viewMode === 'trend') && (
             <div className="mt-2 flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center justify-between gap-3 lg:w-auto">
                 <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Metric</p>
@@ -5806,7 +5868,8 @@ function ServiceTypePerformance({
                                   ? "bg-slate-100 text-slate-950 shadow-[inset_4px_0_0_#023468]"
                                   : isTotal
                                     ? "bg-slate-100 text-slate-950 shadow-[inset_4px_0_0_#034b82]"
-                                    : "hover:bg-slate-50/80 bg-white"
+                                    : "hover:bg-slate-50/80 bg-white",
+                                getManagementTotalRowClass(row.name)
                               )}>
                                 <td className="px-6 py-4 text-[13px] font-bold">
                                   <div className="flex items-center gap-3">

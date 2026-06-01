@@ -35,6 +35,7 @@ const brandNavigation = [
     submenus: [
       { name: 'Business Excellence', href: '/brands/kia/business-excellence/overview' },
       { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
+      { name: 'Kia Proforma', href: '/brands/kia/proforma' },
     ],
   },
 ]
@@ -46,6 +47,7 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/finance-orders': 'finance_orders.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
+  '/brands/kia/proforma': 'kia.proforma.view',
   '/admin/users': 'user_management.view',
   '/admin/settings': 'dashboard_settings.view',
 }
@@ -489,6 +491,9 @@ export function Sidebar() {
                           {brand.submenus.map((sub) => {
                             const permissionKey = sidebarPermissionByHref[sub.href]
                             const locked = permissionKey ? !hasPermission(permissionKey) : false
+                            const active = sub.href === '/brands/kia/proforma'
+                              ? pathname?.startsWith('/brands/kia/proforma')
+                              : pathname === sub.href
 
                             return locked ? (
                               <button
@@ -510,7 +515,7 @@ export function Sidebar() {
                                 onClick={handleSidebarLinkClick}
                                 className={cn(
                                   'block rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
-                                  pathname === sub.href
+                                  active
                                     ? 'border-l-2 border-indigo-100 text-white font-semibold'
                                     : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
                                 )}

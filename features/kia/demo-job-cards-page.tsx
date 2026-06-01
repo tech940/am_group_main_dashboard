@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Activity,
   AlertTriangle,
   CalendarClock,
   Car,
@@ -28,6 +29,7 @@ type DemoVehicleRow = {
   registrationNumber: string
   vin: string
   model: string
+  mileage: number | string | null
   customerName: string
   lastRoNumber: string
   lastBillDate: string
@@ -136,8 +138,9 @@ function exportRowsToCsv(rows: DemoVehicleRow[]) {
     'Registration Number',
     'VIN',
     'Model',
+    'Mileage',
     'Customer Name',
-    'Last Bill Date',
+    'Last RO Date',
     'Next Demo Due Date',
     'Days Remaining',
     'Remarks',
@@ -148,6 +151,7 @@ function exportRowsToCsv(rows: DemoVehicleRow[]) {
     row.registrationNumber,
     row.vin,
     row.model,
+    row.mileage ?? '',
     row.customerName,
     row.lastBillDate,
     row.nextDemoDueDate,
@@ -348,42 +352,51 @@ function RemarksModal({
       await queryClient.invalidateQueries({ queryKey: ['demo-job-cards'] })
       await queryClient.invalidateQueries({ queryKey: ['demo-job-card-remarks', row.vehicleKey] })
       onSaved()
+      onClose()
     },
   })
 
   const history = historyQuery.data?.remarks || []
 
   return (
-    <div className="fixed inset-0 z-[150] bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div className="mx-auto flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[150] bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="demo-remarks-modal demo-remarks-surface isolate mx-auto flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 text-slate-950 shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-[var(--dashboard-action-bg)] px-5 py-4 text-white">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/70">Remarks Management</p>
             <h2 className="mt-1 text-2xl font-black">{row.registrationNumber}</h2>
             <p className="mt-1 text-xs font-bold text-white/70">{row.vin}</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-xl bg-white/10 p-2 text-white transition hover:bg-white/20" aria-label="Close">
+          <button type="button" onClick={onClose} className="demo-remarks-close rounded-xl bg-white p-2 text-slate-950 shadow-sm transition hover:bg-slate-100" aria-label="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto p-5">
+        <div className="demo-remarks-body min-h-0 flex-1 overflow-auto p-5">
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <div className="demo-remarks-panel rounded-2xl border border-slate-200 p-3 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Model</p>
+              <p className="mt-1 truncate font-black text-slate-950" title={row.model}>{row.model}</p>
+            </div>
+            <div className="demo-remarks-panel rounded-2xl border border-slate-200 p-3 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mileage</p>
+              <p className="mt-1 font-black text-slate-950">{numberFormat(row.mileage)}</p>
+            </div>
+            <div className="demo-remarks-panel rounded-2xl border border-slate-200 p-3 shadow-sm">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Next Due</p>
               <p className="mt-1 font-black text-slate-950">{formatDate(row.nextDemoDueDate)}</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <div className="demo-remarks-panel rounded-2xl border border-slate-200 p-3 shadow-sm">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Days Remaining</p>
               <p className="mt-1 font-black text-slate-950">{daysRemainingLabel(row.daysRemaining)}</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Last Bill</p>
+            <div className="demo-remarks-panel rounded-2xl border border-slate-200 p-3 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Last RO</p>
               <p className="mt-1 font-black text-slate-950">{formatDate(row.lastBillDate)}</p>
             </div>
           </div>
 
-          <div className="mt-5 rounded-3xl border border-slate-200 p-4">
+          <div className="demo-remarks-panel mt-5 rounded-3xl border border-slate-200 p-4 shadow-sm">
             <label className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
               {editingRemarkId ? 'Edit latest remark' : 'Add remark'}
             </label>
@@ -392,7 +405,7 @@ function RemarksModal({
               onChange={(event) => setRemark(event.target.value)}
               rows={4}
               placeholder="Customer contacted, vehicle unavailable, demo postponed..."
-              className="mt-3 w-full resize-none rounded-2xl border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-[var(--dashboard-primary-border)] focus:ring-4 focus:ring-[var(--dashboard-primary-soft)]"
+              className="demo-remarks-input mt-3 w-full resize-none rounded-2xl border border-slate-200 p-4 text-sm font-semibold text-slate-900 shadow-inner outline-none transition placeholder:text-slate-500 focus:border-[var(--dashboard-primary-border)] focus:ring-4 focus:ring-[var(--dashboard-primary-soft)]"
             />
             {saveMutation.error && (
               <p className="mt-2 text-xs font-bold text-rose-600">{saveMutation.error.message}</p>
@@ -435,13 +448,13 @@ function RemarksModal({
                 {historyQuery.error.message}
               </div>
             ) : history.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-400">
+              <div className="demo-remarks-panel rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-400">
                 No remarks added yet.
               </div>
             ) : (
               <div className="space-y-3">
                 {history.map((item) => (
-                  <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <article key={item.id} className="demo-remarks-panel rounded-2xl border border-slate-200 p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-black text-slate-950">{item.remark}</p>
@@ -472,12 +485,91 @@ function RemarksModal({
   )
 }
 
+function RemarkViewModal({
+  row,
+  onClose,
+}: {
+  row: DemoVehicleRow
+  onClose: () => void
+}) {
+  const historyQuery = useQuery<{ remarks: DemoRemark[] }>({
+    queryKey: ['demo-job-card-remarks', row.vehicleKey],
+    queryFn: async () => {
+      const response = await fetch(`/api/brands/kia/demo-job-cards?remarksVin=${encodeURIComponent(row.vehicleKey)}`)
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.error || 'Failed to load remark history')
+      return payload
+    },
+    staleTime: 30_000,
+  })
+  const history = historyQuery.data?.remarks || []
+
+  return (
+    <div className="fixed inset-0 z-[150] bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="demo-remarks-modal demo-remarks-surface isolate mx-auto flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 text-slate-950 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-[var(--dashboard-action-bg)] px-5 py-4 text-white">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/70">Remark Details</p>
+            <h2 className="mt-1 text-2xl font-black">{row.registrationNumber}</h2>
+            <p className="mt-1 text-xs font-bold text-white/70">{row.model} / {numberFormat(row.mileage)} km</p>
+          </div>
+          <button type="button" onClick={onClose} className="demo-remarks-close rounded-xl bg-white p-2 text-slate-950 shadow-sm transition hover:bg-slate-100" aria-label="Close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="demo-remarks-body min-h-0 flex-1 overflow-auto p-5">
+          <div className="demo-remarks-panel rounded-3xl border border-slate-200 p-4 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Latest Remark</p>
+            <p className="mt-3 text-sm font-black leading-6 text-slate-950">{row.latestRemark || 'No remark added yet.'}</p>
+            {row.latestRemark && (
+              <p className="mt-3 text-xs font-bold text-slate-500">
+                {row.latestRemarkBy || 'Unknown'} / {formatDateTime(row.latestRemarkAt)}
+              </p>
+            )}
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-3 flex items-center gap-2">
+              <History className="h-4 w-4 text-[var(--dashboard-action-bg)]" />
+              <h3 className="text-sm font-black uppercase tracking-[0.18em] text-slate-500">Remark History</h3>
+            </div>
+            {historyQuery.isLoading ? (
+              <div className="demo-remarks-panel h-20 animate-pulse rounded-2xl" />
+            ) : historyQuery.error ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+                {historyQuery.error.message}
+              </div>
+            ) : history.length === 0 ? (
+              <div className="demo-remarks-panel rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-400">
+                No remark history available.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {history.map((item) => (
+                  <article key={item.id} className="demo-remarks-panel rounded-2xl border border-slate-200 p-4 shadow-sm">
+                    <p className="text-sm font-black text-slate-950">{item.remark}</p>
+                    <p className="mt-2 text-xs font-bold text-slate-500">
+                      Added by {item.createdByName || 'Unknown'} on {formatDateTime(item.createdAt)}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function DemoJobCardsPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [dueStatus, setDueStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [selectedVehicle, setSelectedVehicle] = useState<DemoVehicleRow | null>(null)
+  const [viewingRemarkVehicle, setViewingRemarkVehicle] = useState<DemoVehicleRow | null>(null)
+  const [healthVisible, setHealthVisible] = useState(false)
 
   const queryString = useMemo(() => buildQueryString({
     search,
@@ -526,6 +618,12 @@ export function DemoJobCardsPage() {
             }}
           />
         )}
+        {viewingRemarkVehicle && (
+          <RemarkViewModal
+            row={viewingRemarkVehicle}
+            onClose={() => setViewingRemarkVehicle(null)}
+          />
+        )}
 
         <section className="relative overflow-hidden rounded-[2rem] border border-[var(--dashboard-primary-border)] bg-white/80 p-6 shadow-2xl shadow-slate-900/5 backdrop-blur-xl">
           <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,var(--dashboard-primary-soft),transparent_58%)]" />
@@ -537,10 +635,18 @@ export function DemoJobCardsPage() {
               </div>
               <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-950">Demo Job Cards</h1>
               <p className="mt-3 max-w-3xl text-sm font-semibold leading-7 text-slate-600">
-                One vehicle, one row. Uses RO Billing records where work type is Test Drive/CC Maintenance and calculates next due date as last bill date plus 15 days.
+                One vehicle, one row. Uses Demo Job Cards records where work type is Test Drive/CC Maintenance and calculates next due date as latest RO date plus 15 days.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                onClick={() => setHealthVisible((visible) => !visible)}
+                className="app-outline-action rounded-2xl px-4 py-2"
+              >
+                <Activity className="mr-2 h-4 w-4" />
+                {healthVisible ? 'Hide Health' : 'Show Health'}
+              </Button>
               <Button type="button" onClick={() => void refetch()} className="app-outline-action rounded-2xl px-4 py-2" disabled={isFetching}>
                 <RefreshCw className={cn('mr-2 h-4 w-4', isFetching && 'animate-spin')} />
                 Refresh
@@ -571,7 +677,7 @@ export function DemoJobCardsPage() {
               </section>
             )}
 
-            {data && <DemoVehicleHealth data={data} />}
+            {data && healthVisible && <DemoVehicleHealth data={data} />}
 
             <section className="rounded-[2rem] border border-amber-200 bg-white/82 p-5 shadow-xl shadow-slate-900/5 backdrop-blur-xl">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -607,6 +713,14 @@ export function DemoJobCardsPage() {
                         <AlertTriangle className="h-6 w-6" />
                       </div>
                       <div className="mt-4 grid gap-2 text-sm font-bold">
+                        <div className="flex justify-between gap-3">
+                          <span className="opacity-60">Model</span>
+                          <span className="text-right">{item.model}</span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span className="opacity-60">Mileage</span>
+                          <span>{numberFormat(item.mileage)}</span>
+                        </div>
                         <div className="flex justify-between gap-3">
                           <span className="opacity-60">Next Demo Due</span>
                           <span>{formatDate(item.nextDemoDueDate)}</span>
@@ -654,21 +768,20 @@ export function DemoJobCardsPage() {
               </div>
 
               <div className="overflow-auto">
-                <table className="min-w-[1120px] w-full border-collapse text-left">
+                <table className="min-w-[1040px] w-full border-collapse text-center">
                   <thead className="bg-slate-950 text-white">
                     <tr>
                       {[
                         'Registration Number',
                         'VIN',
                         'Model',
-                        'Customer Name',
-                        'Last Bill Date',
+                        'Mileage',
+                        'Last RO Date',
                         'Next Demo Due Date',
                         'Days Remaining',
-                        'Remarks',
                         'Action',
                       ].map((heading) => (
-                        <th key={heading} className="border border-slate-700 px-4 py-4 text-[10px] font-black uppercase tracking-[0.2em]">
+                        <th key={heading} className="border border-slate-700 px-4 py-4 text-center text-[10px] font-black uppercase tracking-[0.2em]">
                           {heading}
                         </th>
                       ))}
@@ -677,44 +790,43 @@ export function DemoJobCardsPage() {
                   <tbody>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-16 text-center text-sm font-black text-slate-500">
+                        <td colSpan={8} className="px-4 py-16 text-center text-sm font-black text-slate-500">
                           No demo vehicles match the current filters.
                         </td>
                       </tr>
                     ) : rows.map((row) => (
                       <tr key={row.vehicleKey} className="border-b border-slate-200/80 transition hover:bg-[var(--dashboard-primary-soft)]/60">
-                        <td className="border border-slate-200 px-4 py-4 text-sm font-black text-[var(--dashboard-action-bg)]">{row.registrationNumber}</td>
-                        <td className="border border-slate-200 px-4 py-4 text-xs font-bold text-slate-600">{row.vin}</td>
-                        <td className="border border-slate-200 px-4 py-4 text-sm font-bold text-slate-800">{row.model}</td>
-                        <td className="border border-slate-200 px-4 py-4 text-sm font-bold text-slate-800">{row.customerName}</td>
-                        <td className="border border-slate-200 px-4 py-4 text-sm font-bold text-slate-700">{formatDate(row.lastBillDate)}</td>
-                        <td className="border border-slate-200 px-4 py-4 text-sm font-black text-slate-950">{formatDate(row.nextDemoDueDate)}</td>
-                        <td className="border border-slate-200 px-4 py-4">
-                          <span className={cn('inline-flex rounded-full border px-3 py-1 text-xs font-black', getDueBadgeClass(row.dueStatus))}>
+                        <td className="border border-slate-200 px-4 py-4 text-center text-[13px] font-black text-[var(--dashboard-action-bg)]">{row.registrationNumber}</td>
+                        <td className="border border-slate-200 px-4 py-4 text-center text-[11px] font-bold text-slate-600">{row.vin}</td>
+                        <td className="border border-slate-200 px-4 py-4 text-center text-[13px] font-bold text-slate-800">{row.model}</td>
+                        <td className="border border-slate-200 px-4 py-4 text-center text-[13px] font-bold text-slate-700">{numberFormat(row.mileage)}</td>
+                        <td className="border border-slate-200 px-4 py-4 text-center text-[13px] font-bold text-slate-700">{formatDate(row.lastBillDate)}</td>
+                        <td className="border border-slate-200 px-4 py-4 text-center text-[13px] font-black text-slate-950">{formatDate(row.nextDemoDueDate)}</td>
+                        <td className="border border-slate-200 px-4 py-4 text-center">
+                          <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-black', getDueBadgeClass(row.dueStatus))}>
                             {daysRemainingLabel(row.daysRemaining)}
                           </span>
                         </td>
-                        <td className="max-w-[320px] border border-slate-200 px-4 py-4">
-                          {row.latestRemark ? (
-                            <div>
-                              <p className="text-sm font-bold leading-5 text-slate-800">{row.latestRemark}</p>
-                              <p className="mt-1 text-[11px] font-bold text-slate-400">
-                                {row.latestRemarkBy || 'Unknown'} / {formatDateTime(row.latestRemarkAt)}
-                              </p>
-                            </div>
-                          ) : (
-                            <span className="text-xs font-bold text-slate-400">No remark</span>
-                          )}
-                        </td>
-                        <td className="border border-slate-200 px-4 py-4">
-                          <Button
-                            type="button"
-                            className="app-primary-action rounded-2xl px-4"
-                            onClick={() => setSelectedVehicle(row)}
-                          >
-                            {row.latestRemark ? <Edit3 className="mr-2 h-4 w-4" /> : <MessageSquarePlus className="mr-2 h-4 w-4" />}
-                            Remarks
-                          </Button>
+                        <td className="border border-slate-200 px-4 py-4 text-center">
+                          <div className="flex min-w-[210px] flex-nowrap items-center justify-center gap-2">
+                            {row.latestRemark && (
+                              <Button
+                                type="button"
+                                className="app-outline-action h-10 shrink-0 rounded-2xl px-4"
+                                onClick={() => setViewingRemarkVehicle(row)}
+                              >
+                                View
+                              </Button>
+                            )}
+                            <Button
+                              type="button"
+                              className="app-primary-action h-10 shrink-0 rounded-2xl px-4"
+                              onClick={() => setSelectedVehicle(row)}
+                            >
+                              {row.latestRemark ? <Edit3 className="mr-2 h-4 w-4" /> : <MessageSquarePlus className="mr-2 h-4 w-4" />}
+                              Remarks
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}

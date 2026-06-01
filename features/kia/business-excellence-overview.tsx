@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
+  Activity,
   Maximize2,
   MessageSquareWarning,
   ShieldCheck,
@@ -21,14 +22,23 @@ import {
   Legend,
   LabelList,
   Line,
+  LineChart,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer as RechartsResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import { logApiTimings } from '@/lib/api/client-timing'
 import { BusinessDateFilterValue, appendBusinessComparisonParams } from '@/lib/business-excellence/comparison'
@@ -160,7 +170,46 @@ type ComparisonMetric = {
   deltaPct: number
 }
 
+type ROAnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
+type PeriodKey = 'td' | 'mtd' | 'qtd' | 'ytd'
+type ROAnalysisPeriodMetric = {
+  cy: number
+  ly: number | 'N/A'
+  growth: number | 'N/A'
+}
+type ROAnalysisRow = {
+  name: string
+  depth: number
+  metrics: Record<PeriodKey, ROAnalysisPeriodMetric>
+  children?: ROAnalysisRow[]
+}
+type ROAnalysisTrendPoint = {
+  date: string
+  label: string
+  cy: number
+  ly: number
+}
+type ServiceTypeDisplayRow = {
+  name: string
+  values: Record<PeriodKey, ROAnalysisPeriodMetric>
+  isTotal?: boolean
+  isGrand?: boolean
+}
+type ROAnalysisResponse = {
+  byMetric?: Partial<Record<ROAnalysisType, { rows?: ROAnalysisRow[]; trend?: ROAnalysisTrendPoint[] }>>
+  rows?: ROAnalysisRow[]
+  trend?: ROAnalysisTrendPoint[]
+}
+
 const CHART_COLORS = ['#023468', '#2563eb', '#f97316', '#e11d48', '#7c3aed', '#0891b2']
+const RO_ANALYSIS_TYPES: ROAnalysisType[] = ['load', 'labour', 'parts', 'lab_per_veh', 'part_per_veh']
+const RO_ANALYSIS_LABELS: Record<ROAnalysisType, string> = {
+  load: 'Load',
+  labour: 'Labour',
+  parts: 'Parts',
+  lab_per_veh: 'Lab / Veh',
+  part_per_veh: 'Part / Veh',
+}
 const tooltipStyle = {
   borderRadius: 16,
   border: '1px solid #e2e8f0',
@@ -238,15 +287,24 @@ function formatDisplayDate(value?: string | null) {
 }
 
 function toneClass(tone: string) {
-  if (tone === 'good') return 'border-emerald-100 bg-emerald-50 text-emerald-800'
-  if (tone === 'risk') return 'border-rose-100 bg-rose-50 text-rose-800'
-  if (tone === 'watch') return 'border-amber-100 bg-amber-50 text-amber-800'
+  if (tone === 'good') return 'border-emerald-200 bg-white text-emerald-800'
+  if (tone === 'risk') return 'border-rose-200 bg-white text-rose-800'
+  if (tone === 'watch') return 'border-amber-200 bg-white text-amber-800'
   return 'border-slate-300 bg-white text-slate-700'
 }
 
 function deltaClass(deltaPct: number, positiveIsGood = true) {
   const good = positiveIsGood ? deltaPct >= 0 : deltaPct <= 0
   return good ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+}
+
+function isManagementTotalRowName(name: unknown) {
+  const normalized = String(name || '').trim().toLowerCase()
+  return normalized === 'mech' || normalized === 'mech total' || normalized === 'grand total'
+}
+
+function getManagementTotalRowClass(name: unknown) {
+  return isManagementTotalRowName(name) ? 'be-management-total-row' : ''
 }
 
 function comparisonText(metric?: ComparisonMetric, formatter: (value: number) => string = formatNumber) {
@@ -259,6 +317,72 @@ function deltaText(metric?: ComparisonMetric) {
   if (metric.ly <= 0 && metric.cy > 0) return 'New vs LY'
   if (metric.ly <= 0 && metric.cy <= 0) return 'No LY data'
   return `${formatDelta(metric.deltaPct)} vs LY`
+}
+
+function growthFromValues(cy: number, ly: number) {
+  if (!Number.isFinite(ly) || ly <= 0) return null
+  return ((cy - ly) / ly) * 100
+}
+
+function safeDivide(numerator: number, denominator: number) {
+  return denominator > 0 ? numerator / denominator : 0
+}
+
+function clampScore(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function scoreFromGrowth(growth: number | null, fallback = 62) {
+  if (growth === null || !Number.isFinite(growth)) return fallback
+  return clampScore(62 + growth * 1.15)
+}
+
+function scoreFromRiskPct(value: number, multiplier: number) {
+  return clampScore(100 - Math.max(0, value) * multiplier)
+}
+
+function healthStatus(score: number) {
+  if (score >= 90) return 'EXCELLENT'
+  if (score >= 75) return 'GOOD'
+  if (score >= 60) return 'WATCH'
+  return 'CRITICAL'
+}
+
+function buildBusinessSnapshotHealth(data: OverviewData) {
+  const revenueGrowth = data.comparison?.revenue.deltaPct ?? null
+  const labourGrowth = data.comparison?.labour.deltaPct ?? null
+  const partsGrowth = data.comparison?.parts.deltaPct ?? null
+  const loadGrowth = data.comparison?.totalJc.deltaPct ?? null
+  const avgBillingGrowth = data.comparison?.avgBilling.deltaPct ?? null
+  const vasGrowth = data.comparison?.workshopVasAmount.deltaPct ?? null
+  const delayedRisk = scoreFromRiskPct(data.kpis.delayedRoPct, 2.2)
+  const agedRisk = scoreFromRiskPct(data.kpis.agedRoPct, 2.6)
+  const complaintRisk = scoreFromRiskPct(data.kpis.complaintOpenPct, 1.8)
+
+  const components = [
+    { label: 'Revenue Growth', weight: 22, score: scoreFromGrowth(revenueGrowth), detail: revenueGrowth === null ? 'No LY comparison' : formatDelta(revenueGrowth) },
+    { label: 'Labour Growth', weight: 12, score: scoreFromGrowth(labourGrowth), detail: labourGrowth === null ? 'No LY comparison' : formatDelta(labourGrowth) },
+    { label: 'Parts Growth', weight: 12, score: scoreFromGrowth(partsGrowth), detail: partsGrowth === null ? 'No LY comparison' : formatDelta(partsGrowth) },
+    { label: 'Load / JC Growth', weight: 12, score: scoreFromGrowth(loadGrowth), detail: loadGrowth === null ? 'No LY comparison' : formatDelta(loadGrowth) },
+    { label: 'Average Billing Growth', weight: 12, score: scoreFromGrowth(avgBillingGrowth), detail: avgBillingGrowth === null ? 'No LY comparison' : formatDelta(avgBillingGrowth) },
+    { label: 'VAS Revenue Growth', weight: 10, score: scoreFromGrowth(vasGrowth), detail: vasGrowth === null ? 'No LY comparison' : formatDelta(vasGrowth) },
+    { label: 'Delayed RO Control', weight: 8, score: delayedRisk, detail: `${data.kpis.delayedRoPct.toFixed(1)}% delayed` },
+    { label: '>15D RO Control', weight: 7, score: agedRisk, detail: `${data.kpis.agedRoPct.toFixed(1)}% over 15D` },
+    { label: 'Complaint Control', weight: 5, score: complaintRisk, detail: `${data.kpis.complaintOpenPct.toFixed(1)}% open` },
+  ]
+
+  const weightedScore = components.reduce((sum, item) => sum + item.score * item.weight, 0) / components.reduce((sum, item) => sum + item.weight, 0)
+  const sortedPositive = [...components].sort((a, b) => b.score - a.score).slice(0, 3)
+  const sortedNegative = [...components].sort((a, b) => a.score - b.score).slice(0, 3)
+
+  return {
+    score: clampScore(weightedScore),
+    status: healthStatus(weightedScore),
+    overallGrowth: revenueGrowth,
+    components,
+    positiveDrivers: sortedPositive,
+    negativeDrivers: sortedNegative,
+  }
 }
 
 function buildWeeklyBillingTrend(
@@ -309,6 +433,188 @@ function buildWeeklyBillingTrend(
       revenue: group.revenue,
       totalJc: group.totalJc,
     }))
+}
+
+function buildRoAnalysisQueryString(view: 'table' | 'trend', range: { startDate: string; endDate: string }, dateFilter: BusinessDateFilter) {
+  const params = new URLSearchParams({
+    brand: 'kia',
+    sheet: 'ro_billing_report',
+    analysisType: 'load',
+    view,
+    groupBy: 'work_type',
+    metrics: 'all',
+    startDate: range.startDate,
+    endDate: range.endDate,
+  })
+  appendBusinessComparisonParams(params, dateFilter)
+  return params.toString()
+}
+
+function getMetricRows(response: ROAnalysisResponse | undefined, metric: ROAnalysisType) {
+  return response?.byMetric?.[metric]?.rows || (metric === 'load' ? response?.rows : undefined) || []
+}
+
+function getMetricTrend(response: ROAnalysisResponse | undefined, metric: ROAnalysisType) {
+  return response?.byMetric?.[metric]?.trend || (metric === 'load' ? response?.trend : undefined) || []
+}
+
+function sumPeriodRows(rows: ROAnalysisRow[], period: PeriodKey, key: 'cy' | 'ly') {
+  let total = 0
+  let hasNumericValue = false
+  rows
+    .filter((row) => row.depth === 0)
+    .forEach((row) => {
+      const value = row.metrics?.[period]?.[key]
+      if (value === 'N/A') return
+      total += Number(value || 0)
+      hasNumericValue = true
+    })
+  return hasNumericValue ? total : 'N/A'
+}
+
+function growthValue(cy: number, ly: number | 'N/A') {
+  if (ly === 'N/A' || ly <= 0) return 'N/A' as const
+  return ((cy - ly) / ly) * 100
+}
+
+function divideMetricValue(numerator: number | 'N/A', denominator: number | 'N/A') {
+  if (numerator === 'N/A' || denominator === 'N/A' || denominator <= 0) return 'N/A' as const
+  return numerator / denominator
+}
+
+function totalMetricPeriods(response: ROAnalysisResponse | undefined, metric: Extract<ROAnalysisType, 'load' | 'labour' | 'parts'>) {
+  const rows = getMetricRows(response, metric)
+  const periods = {} as Record<PeriodKey, ROAnalysisPeriodMetric>
+  ;(['td', 'mtd', 'qtd', 'ytd'] as PeriodKey[]).forEach((period) => {
+    const cy = sumPeriodRows(rows, period, 'cy')
+    const ly = sumPeriodRows(rows, period, 'ly')
+    const safeCy = cy === 'N/A' ? 0 : cy
+    periods[period] = {
+      cy: safeCy,
+      ly,
+      growth: growthValue(safeCy, ly),
+    }
+  })
+  return periods
+}
+
+function perVehiclePeriods(amount: Record<PeriodKey, ROAnalysisPeriodMetric>, load: Record<PeriodKey, ROAnalysisPeriodMetric>) {
+  const periods = {} as Record<PeriodKey, ROAnalysisPeriodMetric>
+  ;(['td', 'mtd', 'qtd', 'ytd'] as PeriodKey[]).forEach((period) => {
+    const cy = divideMetricValue(amount[period].cy, load[period].cy)
+    const ly = divideMetricValue(amount[period].ly, load[period].ly)
+    const safeCy = cy === 'N/A' ? 0 : cy
+    periods[period] = {
+      cy: safeCy,
+      ly,
+      growth: growthValue(safeCy, ly),
+    }
+  })
+  return periods
+}
+
+function buildDetailedRoRows(response: ROAnalysisResponse | undefined) {
+  const load = totalMetricPeriods(response, 'load')
+  const labour = totalMetricPeriods(response, 'labour')
+  const parts = totalMetricPeriods(response, 'parts')
+  const labPerVeh = perVehiclePeriods(labour, load)
+  const partPerVeh = perVehiclePeriods(parts, load)
+  return [
+    { metric: 'Load', formatter: formatNumber, values: load },
+    { metric: 'Labour', formatter: formatCurrency, values: labour },
+    { metric: 'Parts', formatter: formatCurrency, values: parts },
+    { metric: 'Labour / Vehicle', formatter: formatCurrency, values: labPerVeh },
+    { metric: 'Parts / Vehicle', formatter: formatCurrency, values: partPerVeh },
+  ]
+}
+
+function namesMatch(row: ROAnalysisRow, names: string[]) {
+  return names.some((name) => row.name.toLowerCase() === name.toLowerCase())
+}
+
+function combineAnalysisRows(rows: ROAnalysisRow[]) {
+  const values = {} as Record<PeriodKey, ROAnalysisPeriodMetric>
+  ;(['td', 'mtd', 'qtd', 'ytd'] as PeriodKey[]).forEach((period) => {
+    let cy = 0
+    let ly = 0
+    let hasLy = false
+    rows.forEach((row) => {
+      cy += Number(row.metrics?.[period]?.cy || 0)
+      const lyValue = row.metrics?.[period]?.ly
+      if (lyValue !== 'N/A') {
+        ly += Number(lyValue || 0)
+        hasLy = true
+      }
+    })
+    const lyResult = hasLy ? ly : 'N/A'
+    values[period] = {
+      cy,
+      ly: lyResult,
+      growth: growthValue(cy, lyResult),
+    }
+  })
+  return values
+}
+
+function buildServiceTypeAmountRows(rows: ROAnalysisRow[] = []): ServiceTypeDisplayRow[] {
+  const topRows = rows.filter((row) => row.depth === 0)
+  const paidNames = ['Paid Service']
+  const freeNames = ['Free Service', 'Free Services', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA-First Free Service', 'TMA-Second Free Service', 'TMA-Third Free Service', 'Sixth Free Service']
+  const runningNames = ['Running Repair', 'Running Repairs']
+  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop']
+  const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
+
+  const paidRows = topRows.filter((row) => namesMatch(row, paidNames))
+  const freeRows = topRows.filter((row) => namesMatch(row, freeNames))
+  const runningRows = topRows.filter((row) => namesMatch(row, runningNames))
+  const accidentRows = topRows.filter((row) => namesMatch(row, accidentNames))
+  const otherRows = topRows.filter((row) => !namesMatch(row, classifiedNames))
+
+  const paid = { name: 'Paid Service', values: combineAnalysisRows(paidRows) }
+  const free = { name: 'Free Services', values: combineAnalysisRows(freeRows) }
+  const running = { name: 'Running Repairs', values: combineAnalysisRows(runningRows) }
+  const mech = { name: 'MECH', values: combineAnalysisRows([...paidRows, ...freeRows, ...runningRows]), isTotal: true }
+  const others = { name: 'Others', values: combineAnalysisRows(otherRows) }
+  const mechTotal = { name: 'MECH TOTAL', values: combineAnalysisRows([...paidRows, ...freeRows, ...runningRows, ...otherRows]), isTotal: true }
+  const accident = { name: 'Accident', values: combineAnalysisRows(accidentRows) }
+  const grandTotal = { name: 'Grand Total', values: combineAnalysisRows([...paidRows, ...freeRows, ...runningRows, ...otherRows, ...accidentRows]), isGrand: true }
+
+  return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
+}
+
+function deriveServiceTypeRatioRows(amountRows: ServiceTypeDisplayRow[], loadRows: ServiceTypeDisplayRow[]) {
+  const loadByName = new Map(loadRows.map((row) => [row.name, row]))
+  return amountRows.map((amountRow) => {
+    const loadRow = loadByName.get(amountRow.name)
+    const values = {} as Record<PeriodKey, ROAnalysisPeriodMetric>
+    ;(['td', 'mtd', 'qtd', 'ytd'] as PeriodKey[]).forEach((period) => {
+      const cy = divideMetricValue(amountRow.values[period].cy, loadRow?.values[period].cy ?? 'N/A')
+      const ly = divideMetricValue(amountRow.values[period].ly, loadRow?.values[period].ly ?? 'N/A')
+      const safeCy = cy === 'N/A' ? 0 : cy
+      values[period] = {
+        cy: safeCy,
+        ly,
+        growth: growthValue(safeCy, ly),
+      }
+    })
+    return {
+      ...amountRow,
+      values,
+    }
+  })
+}
+
+function buildServiceTypeRowsByMetric(response: ROAnalysisResponse | undefined) {
+  const load = buildServiceTypeAmountRows(getMetricRows(response, 'load'))
+  const labour = buildServiceTypeAmountRows(getMetricRows(response, 'labour'))
+  const parts = buildServiceTypeAmountRows(getMetricRows(response, 'parts'))
+  return {
+    load,
+    labour,
+    parts,
+    lab_per_veh: deriveServiceTypeRatioRows(labour, load),
+    part_per_veh: deriveServiceTypeRatioRows(parts, load),
+  } satisfies Record<ROAnalysisType, ServiceTypeDisplayRow[]>
 }
 
 function OverviewSkeleton() {
@@ -378,6 +684,406 @@ function SnapshotTile({
   )
 }
 
+function BusinessHealthCard({
+  health,
+  cyRevenue,
+  lyRevenue,
+  onClick,
+}: {
+  health: ReturnType<typeof buildBusinessSnapshotHealth>
+  cyRevenue: number
+  lyRevenue: number
+  onClick: () => void
+}) {
+  const statusTone = health.score >= 75 ? 'good' : health.score >= 60 ? 'watch' : 'risk'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'min-h-[104px] rounded-xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md',
+        toneClass(statusTone)
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest opacity-65">Business Health</p>
+          <div className="mt-2 flex items-end gap-2">
+            <span className="text-4xl font-black leading-none tracking-tight">{health.score}</span>
+            <span className="pb-1 text-sm font-black opacity-60">/100</span>
+          </div>
+        </div>
+        <span className="rounded-full bg-white/75 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest shadow-sm">
+          {health.status}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-wider">
+        <div className="rounded-lg bg-white/70 px-2.5 py-1.5 shadow-sm">
+          <span className="block opacity-60">CY</span>
+          <span>{formatCurrency(cyRevenue)}</span>
+        </div>
+        <div className="rounded-lg bg-white/70 px-2.5 py-1.5 shadow-sm">
+          <span className="block opacity-60">LY</span>
+          <span>{formatCurrency(lyRevenue)}</span>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider shadow-sm">
+        <span className="opacity-75">Overall growth</span>
+        <span className={cn(
+          'rounded-full px-2 py-0.5',
+          health.overallGrowth === null ? 'bg-slate-100 text-slate-500' : deltaClass(health.overallGrowth)
+        )}>
+          {health.overallGrowth === null ? 'N/A' : formatDelta(health.overallGrowth)}
+        </span>
+      </div>
+      <p className="mt-2 text-[10px] font-bold opacity-65">Click to view score calculation</p>
+    </button>
+  )
+}
+
+function MiniBusinessCard({
+  title,
+  cy,
+  ly,
+  growth,
+  status,
+  positiveIsGood = true,
+}: {
+  title: string
+  cy: string
+  ly: string
+  growth: number | null
+  status: string
+  positiveIsGood?: boolean
+}) {
+  const isNeutral = growth === null
+  const isGood = !isNeutral && (positiveIsGood ? growth >= 0 : growth <= 0)
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{title}</p>
+        <span className={cn(
+          'rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-widest',
+          isNeutral ? 'bg-slate-100 text-slate-500' : isGood ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+        )}>
+          {status}
+        </span>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CY</p>
+          <p className="mt-1 text-xl font-black text-slate-950">{cy}</p>
+        </div>
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">LY</p>
+          <p className="mt-1 text-xl font-black text-slate-600">{ly}</p>
+        </div>
+      </div>
+      <p className={cn(
+        'mt-4 inline-flex rounded-full px-3 py-1 text-xs font-black',
+        isNeutral ? 'bg-slate-100 text-slate-500' : isGood ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+      )}>
+        {growth === null ? 'No comparison' : formatDelta(growth)}
+      </p>
+    </div>
+  )
+}
+
+function RoBillingPerformanceTable({
+  rows,
+}: {
+  rows: Array<{
+    metric: string
+    cy: string
+    ly: string
+    growth: number | null
+    positiveIsGood?: boolean
+  }>
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 p-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">RO Billing Data</p>
+          <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">RO Billing Performance</h3>
+        </div>
+        <p className="text-xs font-bold text-slate-500">Metric | CY | LY | Growth</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] border-collapse">
+          <thead className="bg-slate-950 text-white">
+            <tr>
+              {['Metric', 'CY', 'LY', 'Growth'].map((heading) => (
+                <th key={heading} className="border border-slate-800 px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const growthValue = row.growth
+              const isNeutral = growthValue === null
+              const isGood = !isNeutral && (row.positiveIsGood === false ? growthValue <= 0 : growthValue >= 0)
+              return (
+                <tr key={row.metric} className="bg-white transition hover:bg-slate-50">
+                  <td className="border border-slate-200 px-4 py-3 text-sm font-black text-slate-900">{row.metric}</td>
+                  <td className="border border-slate-200 px-4 py-3 font-mono text-sm font-black text-slate-950">{row.cy}</td>
+                  <td className="border border-slate-200 px-4 py-3 font-mono text-sm font-bold text-slate-500">{row.ly}</td>
+                  <td className="border border-slate-200 px-4 py-3">
+                    <span className={cn(
+                      'inline-flex rounded-full px-3 py-1 text-[11px] font-black',
+                      isNeutral ? 'bg-slate-100 text-slate-500' : isGood ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                    )}>
+                      {growthValue === null ? 'N/A' : formatDelta(growthValue)}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function DetailedRoBillingMatrix({
+  rows,
+}: {
+  rows: Array<{
+    metric: string
+    formatter: (value: number) => string
+    values: Record<PeriodKey, ROAnalysisPeriodMetric>
+  }>
+}) {
+  const renderGrowth = (value: number | 'N/A') => {
+    if (value === 'N/A') return <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">N/A</span>
+    return (
+      <span className={cn(
+        'rounded-full px-2.5 py-1 text-[10px] font-black',
+        value >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+      )}>
+        {formatDelta(value)}
+      </span>
+    )
+  }
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 p-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">RO Billing Matrix</p>
+          <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">TD / MTD / QTD / YTD performance</h3>
+        </div>
+        <p className="text-xs font-bold text-slate-500">Load, Labour, Parts, Labour/Vehicle, Parts/Vehicle</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[980px] border-collapse">
+          <thead className="bg-slate-950 text-white">
+            <tr>
+              <th rowSpan={2} className="border border-slate-800 px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">Metric</th>
+              <th rowSpan={2} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">TD</th>
+              {['MTD', 'QTD', 'YTD'].map((period) => (
+                <th key={period} colSpan={3} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{period}</th>
+              ))}
+            </tr>
+            <tr>
+              {['MTD', 'QTD', 'YTD'].flatMap((period) => ['CY', 'LY', 'Growth'].map((label) => (
+                <th key={`${period}-${label}`} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{label}</th>
+              )))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.metric} className="bg-white transition hover:bg-slate-50">
+                <td className="border border-slate-200 px-4 py-3 text-sm font-black text-slate-950">{row.metric}</td>
+                <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-black text-slate-950">{row.formatter(row.values.td.cy)}</td>
+                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => (
+                  <React.Fragment key={`${row.metric}-${period}`}>
+                    <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-black text-slate-950">{row.formatter(row.values[period].cy)}</td>
+                    <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-bold text-slate-500">{row.values[period].ly === 'N/A' ? 'N/A' : row.formatter(row.values[period].ly)}</td>
+                    <td className="border border-slate-200 px-4 py-3 text-center">{renderGrowth(row.values[period].growth)}</td>
+                  </React.Fragment>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ServiceTypeRoBillingTable({
+  rows,
+  metric,
+  onMetricChange,
+}: {
+  rows: ServiceTypeDisplayRow[]
+  metric: ROAnalysisType
+  onMetricChange: (metric: ROAnalysisType) => void
+}) {
+  const formatter = metric === 'load' ? formatNumber : formatCurrency
+  const renderGrowth = (value: number | 'N/A') => {
+    if (value === 'N/A') return <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">N/A</span>
+    return (
+      <span className={cn(
+        'rounded-full px-2.5 py-1 text-[10px] font-black',
+        value >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+      )}>
+        {formatDelta(value)}
+      </span>
+    )
+  }
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Service Type</p>
+            <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">RO Billing service type table</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {RO_ANALYSIS_TYPES.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => onMetricChange(item)}
+                className={cn(
+                  'flex items-center gap-2 rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition',
+                  metric === item ? 'bg-slate-950 text-white shadow-sm' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                )}
+              >
+                {item === 'load' ? <Activity className="h-3.5 w-3.5" /> : <TrendingUp className="h-3.5 w-3.5" />}
+                {RO_ANALYSIS_LABELS[item]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Metric {RO_ANALYSIS_LABELS[metric]}</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1080px] border-collapse">
+          <thead className="bg-slate-950 text-white">
+            <tr>
+              <th rowSpan={2} className="border border-slate-800 px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">Work Type</th>
+              <th rowSpan={2} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">TD</th>
+              {['MTD', 'QTD', 'YTD'].map((period) => (
+                <th key={period} colSpan={3} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{period}</th>
+              ))}
+            </tr>
+            <tr>
+              {['MTD', 'QTD', 'YTD'].flatMap((period) => ['CY', 'LY', 'Growth'].map((label) => (
+                <th key={`${period}-${label}`} className="border border-slate-800 px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest">{label}</th>
+              )))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={row.name}
+                className={cn(
+                  'transition hover:bg-slate-50',
+                  row.isGrand ? 'bg-slate-100' : row.isTotal ? 'bg-slate-50' : 'bg-white',
+                  getManagementTotalRowClass(row.name)
+                )}
+              >
+                <td className={cn('border border-slate-200 px-4 py-3 text-sm font-black text-slate-950', row.isGrand && 'text-[var(--dashboard-action-bg)]')}>{row.name}</td>
+                <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-black text-slate-950">{formatter(row.values.td.cy)}</td>
+                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => (
+                  <React.Fragment key={`${row.name}-${period}`}>
+                    <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-black text-slate-950">{formatter(row.values[period].cy)}</td>
+                    <td className="border border-slate-200 px-4 py-3 text-center font-mono text-sm font-bold text-slate-500">{row.values[period].ly === 'N/A' ? 'N/A' : formatter(row.values[period].ly)}</td>
+                    <td className="border border-slate-200 px-4 py-3 text-center">{renderGrowth(row.values[period].growth)}</td>
+                  </React.Fragment>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function RoBillingOverviewTrend({
+  trend,
+  metric,
+  onMetricChange,
+}: {
+  trend: ROAnalysisTrendPoint[]
+  metric: ROAnalysisType
+  onMetricChange: (metric: ROAnalysisType) => void
+}) {
+  const isMoneyMetric = metric !== 'load'
+  const dailyTarget = trend.length > 0 ? (trend.reduce((sum, item) => sum + Number(item.ly || 0), 0) * 1.1) / trend.length : 0
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Trend</p>
+          <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">RO Billing Daily Trend</h3>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {RO_ANALYSIS_TYPES.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => onMetricChange(item)}
+              className={cn(
+                'flex items-center gap-2 rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition',
+                metric === item ? 'bg-slate-950 text-white shadow-sm' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+              )}
+            >
+              {item === 'load' ? <Activity className="h-3.5 w-3.5" /> : <TrendingUp className="h-3.5 w-3.5" />}
+              {RO_ANALYSIS_LABELS[item]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="p-4">
+        {trend.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-xs font-black uppercase tracking-widest text-slate-400">
+            No trend data available for the selected period.
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 flex justify-end gap-5 text-[10px] font-bold text-slate-600">
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-[#0B5D7A] bg-white" />This Year</span>
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-amber-600 bg-white" />Last Year</span>
+              <span className="inline-flex items-center gap-2"><span className="h-0.5 w-6 border-t border-dashed border-rose-600" />Target</span>
+            </div>
+            <div className="h-[360px] rounded-2xl bg-slate-50 p-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trend} margin={{ top: 28, right: 28, bottom: 10, left: 18 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="label" interval={0} minTickGap={0} tick={{ fontSize: 9, fontWeight: 900, fill: '#64748b' }} tickMargin={12} height={48} />
+                  <YAxis tickFormatter={(value) => isMoneyMetric ? formatCompact(Number(value || 0)) : formatNumber(Number(value || 0))} tick={{ fontSize: 10, fontWeight: 800, fill: '#94a3b8' }} width={60} />
+                  <Tooltip
+                    formatter={(value, name) => [isMoneyMetric ? formatCurrency(Number(value || 0)) : formatNumber(Number(value || 0)), name === 'cy' ? 'This Year' : 'Last Year']}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.date || ''}
+                    contentStyle={tooltipStyle}
+                  />
+                  {dailyTarget > 0 && (
+                    <ReferenceLine y={dailyTarget} stroke="#e11d48" strokeDasharray="5 5" label={{ position: 'right', value: 'Target', fill: '#e11d48', fontSize: 10, fontWeight: 900 }} />
+                  )}
+                  <Line type="monotone" dataKey="cy" name="This Year" stroke="#0B5D7A" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false}>
+                    <LabelList dataKey="cy" position="top" offset={10} formatter={(value) => isMoneyMetric ? formatCompact(Number(value || 0)) : formatNumber(Number(value || 0))} fill="#0B5D7A" fontSize={10} fontWeight={900} />
+                  </Line>
+                  <Line type="monotone" dataKey="ly" name="Last Year" stroke="#D97706" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false}>
+                    <LabelList dataKey="ly" position="top" offset={10} formatter={(value) => isMoneyMetric ? formatCompact(Number(value || 0)) : formatNumber(Number(value || 0))} fill="#D97706" fontSize={10} fontWeight={900} />
+                  </Line>
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ChartShell({
   eyebrow,
   title,
@@ -417,6 +1123,9 @@ function ChartShell({
 
 export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: BusinessDateFilter }) {
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
+  const [billingTrendMetric, setBillingTrendMetric] = useState<ROAnalysisType>('load')
+  const [serviceTypeMetric, setServiceTypeMetric] = useState<ROAnalysisType>('load')
+  const [healthDialogOpen, setHealthDialogOpen] = useState(false)
   const range = useMemo(() => getDateRange(dateFilter), [dateFilter])
   const queryString = useMemo(() => {
     const params = new URLSearchParams(range)
@@ -425,6 +1134,8 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
   }, [dateFilter, range])
   const summaryQueryString = useMemo(() => withChunk(queryString, 'summary'), [queryString])
   const secondaryQueryString = useMemo(() => withChunk(queryString, 'secondary'), [queryString])
+  const roAnalysisTableQueryString = useMemo(() => buildRoAnalysisQueryString('table', range, dateFilter), [dateFilter, range])
+  const roAnalysisTrendQueryString = useMemo(() => buildRoAnalysisQueryString('trend', range, dateFilter), [dateFilter, range])
 
   const { data: summaryData, isLoading, error } = useQuery<OverviewData, Error>({
     queryKey: ['business-excellence', 'overview', summaryQueryString],
@@ -446,6 +1157,32 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Failed to load Business Excellence overview details')
       return payload as OverviewData
+    },
+    enabled: Boolean(summaryData),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const { data: roAnalysisTableData, isLoading: isRoAnalysisTableLoading } = useQuery<ROAnalysisResponse, Error>({
+    queryKey: ['business-excellence', 'overview-ro-billing-analysis-table', roAnalysisTableQueryString],
+    queryFn: async () => {
+      const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${roAnalysisTableQueryString}`)
+      logApiTimings(response, 'overview-ro-billing-analysis-table')
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Failed to load RO Billing matrix')
+      return payload as ROAnalysisResponse
+    },
+    enabled: Boolean(summaryData),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const { data: roAnalysisTrendData, isLoading: isRoAnalysisTrendLoading } = useQuery<ROAnalysisResponse, Error>({
+    queryKey: ['business-excellence', 'overview-ro-billing-analysis-trend', roAnalysisTrendQueryString],
+    queryFn: async () => {
+      const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${roAnalysisTrendQueryString}`)
+      logApiTimings(response, 'overview-ro-billing-analysis-trend')
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Failed to load RO Billing trend')
+      return payload as ROAnalysisResponse
     },
     enabled: Boolean(summaryData),
     staleTime: DASHBOARD_STALE_TIME_MS,
@@ -540,7 +1277,7 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
             <YAxis tick={{ fontSize: 10, fontWeight: 800, fill: '#64748b' }} />
             <Tooltip contentStyle={tooltipStyle} />
             <Bar dataKey="count" name="Open RO" radius={[10, 10, 0, 0]}>
-              {data.charts.agingDistribution.map((_, index) => <Cell key={index} fill={['#10b981', '#f59e0b', '#f97316', '#e11d48'][index] || '#023468'} />)}
+              {data.charts.agingDistribution.map((_, index) => <Cell key={index} fill={['#00e97e', '#f59e0b', '#f97316', '#e11d48'][index] || '#023468'} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -604,19 +1341,83 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
     )
   }
 
-  const addonTotal = data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount
-  const hasWorkshopRisk = data.kpis.delayedRo > 0 || data.kpis.openOver15 > 0
-  const hasComplaintRisk = data.kpis.complaintsOpen > 0
   const latestBillingDate = formatDisplayDate(data.meta.sourceCoverage?.roBilling?.maxDate)
-  const latestOpenRoDate = formatDisplayDate(data.meta.sourceCoverage?.openRo?.maxDate)
-  const latestComplaintDate = formatDisplayDate(data.meta.sourceCoverage?.complaints?.maxDate)
-  const latestWorkshopDate = formatDisplayDate(data.meta.sourceCoverage?.workshopPerformance?.maxDate || data.workshopSnapshot.maxDate)
   const periodLabel = `${formatDisplayDate(range.startDate)} - ${formatDisplayDate(range.endDate)}`
   const lyPeriodLabel = data.comparison
     ? `${formatDisplayDate(data.comparison.lyRange.startDate)} - ${formatDisplayDate(data.comparison.lyRange.endDate)}`
     : 'Loading LY'
-  const priorityTotal = data.kpis.delayedRo + data.kpis.openOver15 + data.kpis.complaintsOpen
-  const topWorkshopServices = data.workshopSnapshot.serviceMix.slice(0, 3)
+  const labourPerVehicle = safeDivide(data.kpis.labour, data.kpis.totalJc)
+  const partsPerVehicle = safeDivide(data.kpis.parts, data.kpis.totalJc)
+  const lyJc = data.comparison?.totalJc.ly || 0
+  const lyLabourPerVehicle = safeDivide(data.comparison?.labour.ly || 0, lyJc)
+  const lyPartsPerVehicle = safeDivide(data.comparison?.parts.ly || 0, lyJc)
+  const labourShare = data.kpis.revenue > 0 ? (data.kpis.labour / data.kpis.revenue) * 100 : 0
+  const partsShare = data.kpis.revenue > 0 ? (data.kpis.parts / data.kpis.revenue) * 100 : 0
+  const lyRevenue = data.comparison?.revenue.ly || 0
+  const lyLabourShare = lyRevenue > 0 ? ((data.comparison?.labour.ly || 0) / lyRevenue) * 100 : 0
+  const lyPartsShare = lyRevenue > 0 ? ((data.comparison?.parts.ly || 0) / lyRevenue) * 100 : 0
+  const wipRiskCount = data.kpis.delayedRo + data.kpis.openOver15
+  const wipRiskRate = data.kpis.openRo > 0 ? (wipRiskCount / data.kpis.openRo) * 100 : 0
+  const lyWipRiskCount = (data.comparison?.delayedRo.ly || 0) + (data.comparison?.openOver15.ly || 0)
+  const complaintClosureRate = data.kpis.complaintsTotal > 0 ? (data.kpis.complaintsClosed / data.kpis.complaintsTotal) * 100 : 100
+  const lyComplaintClosed = Math.max(0, (data.comparison?.complaintsTotal.ly || 0) - (data.comparison?.complaintsOpen.ly || 0))
+  const lyComplaintClosureRate = (data.comparison?.complaintsTotal.ly || 0) > 0 ? (lyComplaintClosed / (data.comparison?.complaintsTotal.ly || 1)) * 100 : 0
+  const addOnTotal = data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount
+  const addOnPer100Jc = data.kpis.addOnPerJc * 100
+  const lyAddOnTotal = data.comparison ? data.comparison.ewCount.ly + data.comparison.rsaCount.ly + data.comparison.mcpCount.ly : 0
+  const lyAddOnPer100Jc = safeDivide(lyAddOnTotal, lyJc) * 100
+  const accidentOpenShare = data.kpis.openRo > 0 ? (data.kpis.accidentOpenJobs / data.kpis.openRo) * 100 : 0
+  const roBillingRows = [
+    { metric: 'Revenue', cy: formatCurrency(data.kpis.revenue), ly: data.comparison ? formatCurrency(data.comparison.revenue.ly) : 'Loading', growth: data.comparison ? data.comparison.revenue.deltaPct : null },
+    { metric: 'Load / JC', cy: formatNumber(data.kpis.totalJc), ly: data.comparison ? formatNumber(data.comparison.totalJc.ly) : 'Loading', growth: data.comparison ? data.comparison.totalJc.deltaPct : null },
+    { metric: 'Labour Revenue', cy: formatCurrency(data.kpis.labour), ly: data.comparison ? formatCurrency(data.comparison.labour.ly) : 'Loading', growth: data.comparison ? data.comparison.labour.deltaPct : null },
+    { metric: 'Parts Revenue', cy: formatCurrency(data.kpis.parts), ly: data.comparison ? formatCurrency(data.comparison.parts.ly) : 'Loading', growth: data.comparison ? data.comparison.parts.deltaPct : null },
+    { metric: 'Average Billing', cy: formatCurrency(data.kpis.avgBilling), ly: data.comparison ? formatCurrency(data.comparison.avgBilling.ly) : 'Loading', growth: data.comparison ? data.comparison.avgBilling.deltaPct : null },
+    { metric: 'Labour / Vehicle', cy: formatCurrency(labourPerVehicle), ly: data.comparison ? formatCurrency(lyLabourPerVehicle) : 'Loading', growth: data.comparison ? growthFromValues(labourPerVehicle, lyLabourPerVehicle) : null },
+    { metric: 'Parts / Vehicle', cy: formatCurrency(partsPerVehicle), ly: data.comparison ? formatCurrency(lyPartsPerVehicle) : 'Loading', growth: data.comparison ? growthFromValues(partsPerVehicle, lyPartsPerVehicle) : null },
+    { metric: 'Labour %', cy: `${labourShare.toFixed(1)}%`, ly: data.comparison ? `${lyLabourShare.toFixed(1)}%` : 'Loading', growth: data.comparison ? growthFromValues(labourShare, lyLabourShare) : null },
+    { metric: 'Parts %', cy: `${partsShare.toFixed(1)}%`, ly: data.comparison ? `${lyPartsShare.toFixed(1)}%` : 'Loading', growth: data.comparison ? growthFromValues(partsShare, lyPartsShare) : null },
+  ]
+  const detailedRoRows = buildDetailedRoRows(roAnalysisTableData)
+  const serviceRowsByMetric = buildServiceTypeRowsByMetric(roAnalysisTableData)
+  const roBillingTrendRows = getMetricTrend(roAnalysisTrendData, billingTrendMetric)
+  const snapshotHealth = buildBusinessSnapshotHealth(data)
+  const lySnapshotRevenue = data.comparison?.revenue.ly || 0
+  const executiveCards = [
+    {
+      title: 'Workshop Performance',
+      cy: formatCurrency(data.workshopSnapshot.totalRevenue),
+      ly: data.comparison ? formatCurrency(data.comparison.workshopRevenue.ly) : 'Loading',
+      growth: data.comparison ? data.comparison.workshopRevenue.deltaPct : null,
+      status: data.comparison && data.comparison.workshopRevenue.deltaPct >= 0 ? 'GOOD' : 'WATCH',
+    },
+    {
+      title: 'Open RO',
+      cy: formatNumber(data.kpis.openRo),
+      ly: data.comparison && data.comparison.openRo.ly > 0 ? formatNumber(data.comparison.openRo.ly) : 'No history',
+      growth: data.comparison && data.comparison.openRo.ly > 0 ? data.comparison.openRo.deltaPct : null,
+      status: data.kpis.openOver15 > 0 ? 'WATCH' : 'GOOD',
+      positiveIsGood: false,
+    },
+    {
+      title: 'Complaints',
+      cy: formatNumber(data.kpis.complaintsTotal),
+      ly: data.comparison ? formatNumber(data.comparison.complaintsTotal.ly) : 'Loading',
+      growth: data.comparison ? data.comparison.complaintsTotal.deltaPct : null,
+      status: data.kpis.complaintsOpen > 0 ? 'WATCH' : 'GOOD',
+      positiveIsGood: false,
+    },
+    {
+      title: 'Add-ons',
+      cy: formatNumber(data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount),
+      ly: data.comparison ? formatNumber(data.comparison.ewCount.ly + data.comparison.rsaCount.ly + data.comparison.mcpCount.ly) : 'Loading',
+      growth: data.comparison ? growthFromValues(
+        data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount,
+        data.comparison.ewCount.ly + data.comparison.rsaCount.ly + data.comparison.mcpCount.ly
+      ) : null,
+      status: 'TRACK',
+    },
+  ]
 
   return (
     <div className="space-y-4 p-4">
@@ -627,23 +1428,37 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
               <span className="rounded-full bg-teal-700 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white">MD View</span>
               <span className="rounded-full border border-teal-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-teal-700">CY {periodLabel}</span>
               <span className="rounded-full border border-blue-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-700">LY {lyPeriodLabel}</span>
+              <span className={cn(
+                'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest',
+                snapshotHealth.overallGrowth === null
+                  ? 'border-slate-200 bg-white text-slate-500'
+                  : snapshotHealth.overallGrowth >= 0
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-rose-200 bg-rose-50 text-rose-700'
+              )}>
+                Overall {snapshotHealth.overallGrowth === null ? 'N/A' : formatDelta(snapshotHealth.overallGrowth)}
+              </span>
             </div>
             <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Business Snapshot</h2>
           </div>
-          <div className="grid gap-2 text-[9px] font-black uppercase tracking-widest sm:grid-cols-4">
+          <div className="grid gap-2 text-[9px] font-black uppercase tracking-widest sm:grid-cols-2">
             <span className="rounded-xl border border-blue-100 bg-white px-3 py-2 text-blue-700">Billing {latestBillingDate}</span>
-            <span className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-cyan-700">Workshop {latestWorkshopDate}</span>
-            <span className="rounded-xl border border-teal-100 bg-white px-3 py-2 text-teal-700">Open RO {latestOpenRoDate}</span>
-            <span className="rounded-xl border border-amber-100 bg-white px-3 py-2 text-amber-700">Complaints {latestComplaintDate}</span>
+            <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-600">Executive KPI View</span>
           </div>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <BusinessHealthCard
+            health={snapshotHealth}
+            cyRevenue={data.kpis.revenue}
+            lyRevenue={lySnapshotRevenue}
+            onClick={() => setHealthDialogOpen(true)}
+          />
           <SnapshotTile
               icon={TrendingUp}
-              label="Billing"
+              label="Revenue"
               value={formatCurrency(data.kpis.revenue)}
-              meta={`${formatNumber(data.kpis.totalJc)} closed RO`}
+              meta={`Through ${latestBillingDate}`}
               comparison={{
                 lyText: comparisonText(data.comparison?.revenue, formatCurrency),
                 deltaText: deltaText(data.comparison?.revenue),
@@ -653,9 +1468,45 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
             />
           <SnapshotTile
               icon={ShieldCheck}
-              label="Avg Billing"
+              label="Labour Revenue"
+              value={formatCurrency(data.kpis.labour)}
+              meta={`${labourShare.toFixed(1)}% of revenue`}
+              comparison={{
+                lyText: comparisonText(data.comparison?.labour, formatCurrency),
+                deltaText: deltaText(data.comparison?.labour),
+                deltaPct: data.comparison?.labour.deltaPct || 0,
+              }}
+              tone="neutral"
+            />
+          <SnapshotTile
+              icon={Wrench}
+              label="Parts Revenue"
+              value={formatCurrency(data.kpis.parts)}
+              meta={`${partsShare.toFixed(1)}% of revenue`}
+              comparison={{
+                lyText: comparisonText(data.comparison?.parts, formatCurrency),
+                deltaText: deltaText(data.comparison?.parts),
+                deltaPct: data.comparison?.parts.deltaPct || 0,
+              }}
+              tone="neutral"
+            />
+          <SnapshotTile
+              icon={TrendingUp}
+              label="Load / JC"
+              value={formatNumber(data.kpis.totalJc)}
+              meta="Closed repair orders"
+              comparison={{
+                lyText: comparisonText(data.comparison?.totalJc),
+                deltaText: deltaText(data.comparison?.totalJc),
+                deltaPct: data.comparison?.totalJc.deltaPct || 0,
+              }}
+              tone="neutral"
+            />
+          <SnapshotTile
+              icon={ShieldCheck}
+              label="Average Billing"
               value={formatCurrency(data.kpis.avgBilling)}
-              meta={`${formatCurrency(data.kpis.labour)} labour`}
+              meta="Revenue per closed RO"
               comparison={{
                 lyText: comparisonText(data.comparison?.avgBilling, formatCurrency),
                 deltaText: deltaText(data.comparison?.avgBilling),
@@ -665,192 +1516,223 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
             />
           <SnapshotTile
               icon={Wrench}
-              label="Workshop WIP"
-              value={formatNumber(data.kpis.openRo)}
-              meta={`${formatNumber(data.kpis.delayedRo)} delayed / ${formatNumber(data.kpis.openOver15)} over 15D`}
+              label="Labour / Vehicle"
+              value={formatCurrency(labourPerVehicle)}
+              meta="Labour earned per RO"
               comparison={{
-                lyText: 'Historical comparison disabled',
-                deltaText: 'Insufficient history',
-                deltaPct: 0,
+                lyText: data.comparison ? `LY ${formatCurrency(lyLabourPerVehicle)}` : 'LY loading',
+                deltaText: data.comparison ? (growthFromValues(labourPerVehicle, lyLabourPerVehicle) === null ? 'No LY data' : `${formatDelta(growthFromValues(labourPerVehicle, lyLabourPerVehicle) || 0)} vs LY`) : 'vs LY',
+                deltaPct: growthFromValues(labourPerVehicle, lyLabourPerVehicle) || 0,
               }}
-              positiveIsGood={false}
-              tone={hasWorkshopRisk ? 'risk' : 'good'}
+              tone="neutral"
+            />
+          <SnapshotTile
+              icon={Wrench}
+              label="Parts / Vehicle"
+              value={formatCurrency(partsPerVehicle)}
+              meta="Parts earned per RO"
+              comparison={{
+                lyText: data.comparison ? `LY ${formatCurrency(lyPartsPerVehicle)}` : 'LY loading',
+                deltaText: data.comparison ? (growthFromValues(partsPerVehicle, lyPartsPerVehicle) === null ? 'No LY data' : `${formatDelta(growthFromValues(partsPerVehicle, lyPartsPerVehicle) || 0)} vs LY`) : 'vs LY',
+                deltaPct: growthFromValues(partsPerVehicle, lyPartsPerVehicle) || 0,
+              }}
+              tone="neutral"
+            />
+          <SnapshotTile
+              icon={Wrench}
+              label="VAS Revenue"
+              value={formatCurrency(data.workshopSnapshot.vasAmount)}
+              meta="Value added services"
+              comparison={{
+                lyText: comparisonText(data.comparison?.workshopVasAmount, formatCurrency),
+                deltaText: deltaText(data.comparison?.workshopVasAmount),
+                deltaPct: data.comparison?.workshopVasAmount.deltaPct || 0,
+              }}
+              tone="watch"
             />
           <SnapshotTile
               icon={MessageSquareWarning}
-              label="Complaints"
-              value={formatNumber(data.kpis.complaintsTotal)}
-              meta={`${formatNumber(data.kpis.complaintsOpen)} open / ${data.kpis.avgComplaintDays.toFixed(1)}D avg`}
+              label="Open RO"
+              value={formatNumber(data.kpis.openRo)}
+              meta={`${formatNumber(data.kpis.delayedRo)} delayed / ${formatNumber(data.kpis.openOver15)} over 15D`}
               comparison={{
-                lyText: comparisonText(data.comparison?.complaintsTotal),
-                deltaText: deltaText(data.comparison?.complaintsTotal),
-                deltaPct: data.comparison?.complaintsTotal.deltaPct || 0,
+                lyText: data.comparison && data.comparison.openRo.ly > 0 ? `LY ${formatNumber(data.comparison.openRo.ly)}` : 'Limited history',
+                deltaText: data.comparison && data.comparison.openRo.ly > 0 ? deltaText(data.comparison.openRo) : 'No LY data',
+                deltaPct: data.comparison?.openRo.deltaPct || 0,
               }}
               positiveIsGood={false}
-              tone={hasComplaintRisk ? 'watch' : 'good'}
+              tone={data.kpis.openOver15 > 0 ? 'watch' : 'good'}
+            />
+          <SnapshotTile
+              icon={MessageSquareWarning}
+              label="WIP Risk"
+              value={formatNumber(wipRiskCount)}
+              meta={`${wipRiskRate.toFixed(1)}% of open RO needs attention`}
+              comparison={{
+                lyText: data.comparison && lyWipRiskCount > 0 ? `LY ${formatNumber(lyWipRiskCount)}` : 'Limited history',
+                deltaText: data.comparison && lyWipRiskCount > 0 ? `${formatDelta(growthFromValues(wipRiskCount, lyWipRiskCount) || 0)} vs LY` : 'No LY data',
+                deltaPct: growthFromValues(wipRiskCount, lyWipRiskCount) || 0,
+              }}
+              positiveIsGood={false}
+              tone={wipRiskCount > 0 ? 'risk' : 'good'}
+            />
+          <SnapshotTile
+              icon={ShieldCheck}
+              label="Complaint Closure"
+              value={`${complaintClosureRate.toFixed(1)}%`}
+              meta={`${formatNumber(data.kpis.complaintsClosed)} closed / ${formatNumber(data.kpis.complaintsTotal)} total`}
+              comparison={{
+                lyText: data.comparison && (data.comparison.complaintsTotal.ly || 0) > 0 ? `LY ${lyComplaintClosureRate.toFixed(1)}%` : 'Limited history',
+                deltaText: data.comparison && (data.comparison.complaintsTotal.ly || 0) > 0 ? `${formatDelta(growthFromValues(complaintClosureRate, lyComplaintClosureRate) || 0)} vs LY` : 'No LY data',
+                deltaPct: growthFromValues(complaintClosureRate, lyComplaintClosureRate) || 0,
+              }}
+              tone={data.kpis.complaintsOpen > 0 ? 'watch' : 'good'}
+            />
+          <SnapshotTile
+              icon={Activity}
+              label="Add-on Penetration"
+              value={`${addOnPer100Jc.toFixed(1)}/100 JC`}
+              meta={`${formatNumber(addOnTotal)} add-ons sold`}
+              comparison={{
+                lyText: data.comparison && lyAddOnPer100Jc > 0 ? `LY ${lyAddOnPer100Jc.toFixed(1)}/100` : 'Limited history',
+                deltaText: data.comparison && lyAddOnPer100Jc > 0 ? `${formatDelta(growthFromValues(addOnPer100Jc, lyAddOnPer100Jc) || 0)} vs LY` : 'No LY data',
+                deltaPct: growthFromValues(addOnPer100Jc, lyAddOnPer100Jc) || 0,
+              }}
+              tone={addOnTotal > 0 ? 'good' : 'watch'}
+            />
+          <SnapshotTile
+              icon={Wrench}
+              label="Accident WIP"
+              value={formatNumber(data.kpis.accidentOpenJobs)}
+              meta={`${accidentOpenShare.toFixed(1)}% of current open RO`}
+              tone={data.kpis.accidentOpenJobs > 0 ? 'watch' : 'good'}
             />
         </div>
 
-        <div className="mt-3 rounded-xl border border-cyan-100 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-cyan-700">Workshop Snapshot</p>
-              <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">Performance from closed workshop jobs</h3>
-            </div>
-            <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-700">
-              Through {latestWorkshopDate}
-            </span>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl bg-slate-50 p-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Workshop JC</p>
-              <p className="mt-2 text-2xl font-black leading-none text-slate-950">{formatNumber(data.workshopSnapshot.totalJc)}</p>
-              <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-slate-500">{deltaText(data.comparison?.workshopTotalJc)}</p>
-            </div>
-            <div className="rounded-xl bg-blue-50 p-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Workshop Revenue</p>
-              <p className="mt-2 text-2xl font-black leading-none text-blue-800">{formatCurrency(data.workshopSnapshot.totalRevenue)}</p>
-              <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-blue-700">{comparisonText(data.comparison?.workshopRevenue, formatCurrency)}</p>
-            </div>
-            <div className="rounded-xl bg-teal-50 p-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Labour / RO</p>
-              <p className="mt-2 text-2xl font-black leading-none text-teal-800">{formatCurrency(data.workshopSnapshot.labourPerRo)}</p>
-              <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-teal-700">{deltaText(data.comparison?.workshopLabourPerRo)}</p>
-            </div>
-            <div className="rounded-xl bg-amber-50 p-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">VAS Amount</p>
-              <p className="mt-2 text-2xl font-black leading-none text-amber-800">{formatCurrency(data.workshopSnapshot.vasAmount)}</p>
-              <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-amber-700">{comparisonText(data.comparison?.workshopVasAmount, formatCurrency)}</p>
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-hidden rounded-xl border border-slate-100 bg-white">
-            <div className="grid grid-cols-[minmax(0,1.4fr)_88px_120px] bg-slate-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-              <span>Service Type</span>
-              <span className="text-right">Job Cards</span>
-              <span className="text-right">Revenue</span>
-            </div>
-            {topWorkshopServices.length ? topWorkshopServices.map((row) => (
-              <div key={row.name} className="grid grid-cols-[minmax(0,1.4fr)_88px_120px] items-center gap-3 border-t border-slate-100 px-3 py-2.5">
-                <span className="truncate text-xs font-black text-slate-800" title={row.name}>{row.name}</span>
-                <span className="text-right font-mono text-xs font-black text-slate-700">{formatNumber(row.totalJc)}</span>
-                <span className="text-right font-mono text-xs font-black text-slate-950">{formatCurrency(row.totalRevenue)}</span>
-              </div>
-            )) : (
-              <div className="border-t border-slate-100 px-3 py-3 text-xs font-black text-slate-500">
-                No workshop performance rows match the selected period.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-3 grid gap-3 xl:grid-cols-[1.35fr_0.65fr]">
-          <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Billing Trend</p>
-                <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">Weekly Billing And Closed RO</h3>
-              </div>
-              <Button type="button" variant="outline" size="icon" onClick={() => setExpandedChart({ id: 'revenue', title: 'Weekly Billing And Closed RO' })} className="h-9 w-9 rounded-xl border-teal-200 bg-white text-teal-700">
-                <Maximize2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="h-[280px]">{renderChart('revenue')}</div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-            <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-              <div className="mb-2 flex items-start justify-between">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Add-ons</p>
-                  <h3 className="mt-1 text-base font-black tracking-tight text-slate-950">EW / RSA / MCP Mix</h3>
-                </div>
-                <span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-black text-violet-700">{formatNumber(addonTotal)}</span>
-              </div>
-              <div className="h-[170px]">{renderChart('addons')}</div>
-            </div>
-
-            <div className="rounded-xl bg-[linear-gradient(135deg,#023468,#034b82)] p-4 text-white shadow-sm">
-              <p className="text-[10px] font-black uppercase tracking-widest text-violet-100">Priority Queue</p>
-              <p className="mt-3 text-4xl font-black leading-none">{formatNumber(priorityTotal)}</p>
-              <p className="mt-2 text-xs font-bold text-violet-100">Items need management attention</p>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[10px] font-black">
-                <div className="rounded-xl bg-white/14 p-2">
-                  <p className="text-lg">{formatNumber(data.kpis.delayedRo)}</p>
-                  <p className="text-violet-100">Delayed</p>
-                </div>
-                <div className="rounded-xl bg-white/14 p-2">
-                  <p className="text-lg">{formatNumber(data.kpis.openOver15)}</p>
-                  <p className="text-violet-100">15D+</p>
-                </div>
-                <div className="rounded-xl bg-white/14 p-2">
-                  <p className="text-lg">{formatNumber(data.kpis.complaintsOpen)}</p>
-                  <p className="text-violet-100">Open</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_0.72fr_0.72fr]">
-          <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Complaints</p>
-                <h3 className="mt-1 text-base font-black tracking-tight text-slate-950">Complaint Movement</h3>
-              </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Monthly</span>
-            </div>
-            <div className="h-[190px]">{renderChart('complaintTrend')}</div>
-          </div>
-
-          <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Advisor WIP</p>
-            <h3 className="mt-1 text-base font-black tracking-tight text-slate-950">Open RO Load</h3>
-            <div className="mt-3 space-y-2">
-              {data.charts.openRoAdvisorLoad.slice(0, 5).map((row) => (
-                <div key={row.advisor} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
-                  <span className="truncate text-xs font-black text-slate-700">{row.advisor}</span>
-                  <span className="font-mono text-xs font-black text-slate-950">{formatNumber(row.openRo)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Revenue Split</p>
-            <h3 className="mt-1 text-base font-black tracking-tight text-slate-950">Labour And Parts</h3>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-teal-50 p-3">
-                <p className="text-[10px] font-black uppercase text-teal-700">Labour</p>
-                <p className="mt-2 text-lg font-black text-teal-800">{formatCurrency(data.kpis.labour)}</p>
-              </div>
-              <div className="rounded-xl bg-blue-50 p-3">
-                <p className="text-[10px] font-black uppercase text-blue-700">Parts</p>
-                <p className="mt-2 text-lg font-black text-blue-800">{formatCurrency(data.kpis.parts)}</p>
-              </div>
-              <div className="col-span-2 rounded-xl bg-slate-50 p-3">
-                <p className="text-[10px] font-black uppercase text-slate-400">Add-on Count</p>
-                <p className="mt-2 text-lg font-black text-slate-950">{formatNumber(data.kpis.ewCount)} EW / {formatNumber(data.kpis.rsaCount)} RSA / {formatNumber(data.kpis.mcpCount)} MCP</p>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <ChartShell eyebrow="Workshop Pending" title="How Old Are Open Repair Orders?" caption="Vehicles pending beyond 15 days are the main escalation group." onExpand={() => setExpandedChart({ id: 'aging', title: 'How Old Are Open Repair Orders?' })}>
-          {renderChart('aging')}
+      <Dialog open={healthDialogOpen} onOpenChange={setHealthDialogOpen}>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-3xl flex-col gap-0 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-0 shadow-2xl">
+          <DialogHeader className="shrink-0 border-b border-slate-100 bg-slate-950 p-5 text-white">
+            <DialogTitle className="text-2xl font-black tracking-tight text-white">Business Snapshot Health Score</DialogTitle>
+            <DialogDescription className="text-sm font-semibold text-slate-300">
+              Score is calculated from current snapshot performance, LY comparison growth, and operating risk signals.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-5">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Score</p>
+                <p className="mt-2 text-4xl font-black text-slate-950">{snapshotHealth.score}<span className="text-sm text-slate-400"> / 100</span></p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Status</p>
+                <p className="mt-2 text-xl font-black text-slate-950">{snapshotHealth.status}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">CY Revenue</p>
+                <p className="mt-2 text-xl font-black text-slate-950">{formatCurrency(data.kpis.revenue)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">LY Revenue</p>
+                <p className="mt-2 text-xl font-black text-slate-950">{formatCurrency(lySnapshotRevenue)}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Positive Drivers</p>
+                <div className="mt-3 space-y-2">
+                  {snapshotHealth.positiveDrivers.map((item) => (
+                    <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl bg-white/75 px-3 py-2 text-xs font-black text-slate-800">
+                      <span>{item.label}</span>
+                      <span>{item.score}/100</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Negative Drivers</p>
+                <div className="mt-3 space-y-2">
+                  {snapshotHealth.negativeDrivers.map((item) => (
+                    <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl bg-white/75 px-3 py-2 text-xs font-black text-slate-800">
+                      <span>{item.label}</span>
+                      <span>{item.score}/100</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full min-w-[680px] border-collapse">
+                <thead className="bg-slate-950 text-white">
+                  <tr>
+                    {['Factor', 'Weight', 'Score', 'Current Signal'].map((heading) => (
+                      <th key={heading} className="border border-slate-800 px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">{heading}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshotHealth.components.map((item) => (
+                    <tr key={item.label} className="bg-white">
+                      <td className="border border-slate-200 px-4 py-3 text-sm font-black text-slate-950">{item.label}</td>
+                      <td className="border border-slate-200 px-4 py-3 font-mono text-sm font-black text-slate-700">{item.weight}%</td>
+                      <td className="border border-slate-200 px-4 py-3 font-mono text-sm font-black text-slate-950">{item.score}/100</td>
+                      <td className="border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600">{item.detail}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <RoBillingPerformanceTable rows={roBillingRows} />
+
+      {isRoAnalysisTableLoading ? (
+        <div className="h-64 animate-pulse rounded-2xl bg-slate-100" />
+      ) : (
+        <DetailedRoBillingMatrix rows={detailedRoRows} />
+      )}
+
+      {isRoAnalysisTableLoading ? (
+        <div className="h-80 animate-pulse rounded-2xl bg-slate-100" />
+      ) : (
+        <ServiceTypeRoBillingTable
+          rows={serviceRowsByMetric[serviceTypeMetric]}
+          metric={serviceTypeMetric}
+          onMetricChange={setServiceTypeMetric}
+        />
+      )}
+
+      {isRoAnalysisTrendLoading ? (
+        <div className="h-[460px] animate-pulse rounded-2xl bg-slate-100" />
+      ) : (
+        <RoBillingOverviewTrend
+          trend={roBillingTrendRows}
+          metric={billingTrendMetric}
+          onMetricChange={setBillingTrendMetric}
+        />
+      )}
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {executiveCards.map((card) => (
+          <MiniBusinessCard key={card.title} {...card} />
+        ))}
+      </section>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <ChartShell eyebrow="Trend" title="Revenue Trend" caption="Primary business movement across the selected period." onExpand={() => setExpandedChart({ id: 'revenue', title: 'Revenue Trend' })}>
+          {renderChart('revenue')}
         </ChartShell>
-        <ChartShell eyebrow="Service Mix" title="Where Billing Is Coming From" caption="Closed RO billing split by service category for the selected period." onExpand={() => setExpandedChart({ id: 'serviceMix', title: 'Where Billing Is Coming From' })}>
+        <ChartShell eyebrow="Growth" title="Revenue By Service Mix" caption="Major billing contributors only; no operational clutter." onExpand={() => setExpandedChart({ id: 'serviceMix', title: 'Revenue By Service Mix' })}>
           {renderChart('serviceMix')}
         </ChartShell>
-        <div className="xl:col-span-2">
-          <ChartShell eyebrow="Customer Voice" title="Top Complaint Reasons" caption="Complaint areas ranked by total cases and open cases." onExpand={() => setExpandedChart({ id: 'complaints', title: 'Top Complaint Reasons' })}>
-            {renderChart('complaints')}
-          </ChartShell>
-        </div>
+        <ChartShell eyebrow="Customer" title="Complaint Movement" caption="High-level customer voice movement for management." onExpand={() => setExpandedChart({ id: 'complaintTrend', title: 'Complaint Movement' })}>
+          {renderChart('complaintTrend')}
+        </ChartShell>
       </div>
 
       {expandedChart && (

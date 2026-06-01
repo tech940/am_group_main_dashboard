@@ -29,6 +29,12 @@ type ComplaintFilters = {
 type ComplaintChunk = 'summary' | 'secondary' | 'details' | 'full'
 
 type NumericRow = Record<string, unknown>
+type ComparisonScopeDates = {
+  currentStartDate: string
+  currentEndDate: string
+  previousStartDate: string
+  previousEndDate: string
+}
 
 function parseDateInput(value: string | null) {
   if (!value) return null
@@ -68,7 +74,17 @@ function numericText(column: ReturnType<typeof sql.raw>) {
   return sql`COALESCE(NULLIF(regexp_replace(${column}::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)`
 }
 
-function complaintBaseSql(filters: ComplaintFilters) {
+function complaintAttributeFilters(filters: ComplaintFilters) {
+  return sql`
+    AND (${filters.status}::text IS NULL OR status_group = ${filters.status})
+    AND (${filters.dealer}::text IS NULL OR dealer_name = ${filters.dealer})
+    AND (${filters.area}::text IS NULL OR COALESCE(NULLIF(sr_area, ''), 'Unspecified') = ${filters.area})
+    AND (${filters.model}::text IS NULL OR COALESCE(NULLIF(vehicle_model, ''), 'Unspecified') = ${filters.model})
+    AND (${filters.source}::text IS NULL OR COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') = ${filters.source})
+  `
+}
+
+function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: ComparisonScopeDates) {
   return sql`
     WITH latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
@@ -148,17 +164,43 @@ function complaintBaseSql(filters: ComplaintFilters) {
       FROM enriched
       WHERE (${filters.startDate}::date IS NULL OR complaint_date >= ${filters.startDate}::date)
         AND (${filters.endDate}::date IS NULL OR complaint_date < (${filters.endDate}::date + INTERVAL '1 day'))
-        AND (${filters.status}::text IS NULL OR status_group = ${filters.status})
-        AND (${filters.dealer}::text IS NULL OR dealer_name = ${filters.dealer})
-        AND (${filters.area}::text IS NULL OR COALESCE(NULLIF(sr_area, ''), 'Unspecified') = ${filters.area})
-        AND (${filters.model}::text IS NULL OR COALESCE(NULLIF(vehicle_model, ''), 'Unspecified') = ${filters.model})
-        AND (${filters.source}::text IS NULL OR COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') = ${filters.source})
+        ${complaintAttributeFilters(filters)}
     )
+    ${comparisonScope ? sql`,
+    comparison_filtered AS (
+      SELECT *
+      FROM enriched
+      WHERE (
+          (
+            complaint_date >= ${comparisonScope.currentStartDate}::date
+            AND complaint_date < (${comparisonScope.currentEndDate}::date + INTERVAL '1 day')
+          )
+          OR (
+            complaint_date >= ${comparisonScope.previousStartDate}::date
+            AND complaint_date < (${comparisonScope.previousEndDate}::date + INTERVAL '1 day')
+          )
+        )
+        ${complaintAttributeFilters(filters)}
+    ),
+    analysis_scope AS (
+      SELECT *
+      FROM filtered
+      UNION ALL
+      SELECT *
+      FROM comparison_filtered
+      WHERE NOT EXISTS (SELECT 1 FROM filtered)
+    )
+    ` : sql`,
+    analysis_scope AS (
+      SELECT *
+      FROM filtered
+    )
+    `}
   `
 }
 
 function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
-  return `kia:business-excellence:complaints:v5:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `kia:business-excellence:complaints:v6:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {
@@ -177,7 +219,6 @@ function inputDate(date: Date) {
 }
 
 async function buildComplaintsPayload(filters: ComplaintFilters, chunk: ComplaintChunk = 'summary') {
-  const baseSql = complaintBaseSql(filters)
   const includeSummary = chunk === 'summary' || chunk === 'full'
   const includeSecondary = chunk === 'secondary' || chunk === 'full'
   const includeDetails = chunk === 'details' || chunk === 'full'
@@ -200,6 +241,13 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
   const previousComparisonRangeEndDate = customComparisonActive
     ? filters.comparisonEndDate!
     : previousComparisonEndDate
+  const comparisonScope = {
+    currentStartDate: currentComparisonStartDate,
+    currentEndDate: currentComparisonEndDate,
+    previousStartDate: previousComparisonStartDate,
+    previousEndDate: previousComparisonRangeEndDate,
+  }
+  const baseSql = complaintBaseSql(filters, comparisonScope)
 
   const [
     kpiRows,
@@ -369,7 +417,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE status_group <> 'Closed')::int AS open,
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
-      FROM filtered
+      FROM analysis_scope
       GROUP BY 1
       ORDER BY total DESC, avg_days DESC
       LIMIT 8
@@ -381,7 +429,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE status_group <> 'Closed')::int AS open,
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
-      FROM filtered
+      FROM analysis_scope
       GROUP BY 1
       ORDER BY total DESC, avg_days DESC
       LIMIT 10
@@ -395,7 +443,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         COUNT(*) FILTER (WHERE status_group <> 'Closed')::int AS open,
         COALESCE(AVG(resolution_days), 0)::float AS avg_days,
         COUNT(*) FILTER (WHERE resolution_days > 15)::int AS over_15
-      FROM filtered
+      FROM analysis_scope
       GROUP BY 1, 2
       ORDER BY total DESC, open DESC, avg_days DESC
       LIMIT 8
@@ -406,7 +454,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         COALESCE(NULLIF(vehicle_model, ''), 'Unspecified') AS model,
         COUNT(*)::int AS total,
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
-      FROM filtered
+      FROM analysis_scope
       GROUP BY 1
       ORDER BY total DESC, avg_days DESC
       LIMIT 8
@@ -416,7 +464,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       SELECT
         COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') AS source,
         COUNT(*)::int AS total
-      FROM filtered
+      FROM analysis_scope
       GROUP BY 1
       ORDER BY total DESC
       LIMIT 8

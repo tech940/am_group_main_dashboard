@@ -55,7 +55,7 @@ function getFilters(searchParams: URLSearchParams): DemoFilters {
 }
 
 function createCacheKey(filters: DemoFilters, hasRemarksTable: boolean) {
-  return `kia:demo-job-cards:v3:${createHash('sha1')
+  return `kia:demo-job-cards:v4:${createHash('sha1')
     .update(JSON.stringify({ filters, hasRemarksTable }))
     .digest('hex')}`
 }
@@ -140,19 +140,20 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
     WITH raw AS (
       SELECT
         id::text AS id,
-        UPPER(TRIM(COALESCE(NULLIF(vin, ''), NULLIF(vehicle_reg_no, ''), id::text))) AS vehicle_key,
-        COALESCE(NULLIF(TRIM(vehicle_reg_no), ''), '-') AS registration_number,
+        UPPER(TRIM(COALESCE(NULLIF(vin, ''), NULLIF(reg_no, ''), id::text))) AS vehicle_key,
+        COALESCE(NULLIF(TRIM(reg_no), ''), '-') AS registration_number,
         COALESCE(NULLIF(TRIM(vin), ''), '-') AS vin,
         COALESCE(NULLIF(TRIM(model), ''), '-') AS model,
+        mileage,
         COALESCE(NULLIF(TRIM(customer_name), ''), '-') AS customer_name,
-        COALESCE(NULLIF(TRIM(ro_no), ''), NULLIF(TRIM(bill_no), ''), '-') AS last_ro_number,
-        bill_date::date AS last_bill_date,
-        COALESCE(NULLIF(TRIM(service_advisor), ''), 'Unassigned') AS service_advisor,
-        COALESCE(NULLIF(TRIM(bill_status), ''), '-') AS status
-      FROM ro_billing_report
+        COALESCE(NULLIF(TRIM(r_o_no), ''), '-') AS last_ro_number,
+        ro_date::date AS last_bill_date,
+        COALESCE(NULLIF(TRIM(service_adv), ''), 'Unassigned') AS service_advisor,
+        COALESCE(NULLIF(TRIM(status), ''), '-') AS status
+      FROM demo_job_cards
       WHERE work_type = ${DEMO_WORK_TYPE}
-        AND COALESCE(NULLIF(TRIM(vin), ''), NULLIF(TRIM(vehicle_reg_no), '')) IS NOT NULL
-        AND bill_date IS NOT NULL
+        AND COALESCE(NULLIF(TRIM(vin), ''), NULLIF(TRIM(reg_no), '')) IS NOT NULL
+        AND ro_date IS NOT NULL
     ),
     latest_vehicle AS (
       SELECT DISTINCT ON (vehicle_key)
@@ -219,6 +220,7 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
         'registrationNumber', registration_number,
         'vin', vin,
         'model', model,
+        'mileage', mileage,
         'customerName', customer_name,
         'lastRoNumber', last_ro_number,
         'lastBillDate', last_bill_date,
@@ -239,6 +241,7 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
         'registrationNumber', registration_number,
         'vin', vin,
         'model', model,
+        'mileage', mileage,
         'customerName', customer_name,
         'lastBillDate', last_bill_date,
         'nextDemoDueDate', next_demo_due_date,
@@ -269,10 +272,10 @@ async function buildPayload(filters: DemoFilters, hasRemarksTable: boolean) {
   return {
     meta: {
       workType: DEMO_WORK_TYPE,
-      source: 'ro_billing_report',
+      source: 'demo_job_cards',
       remarksSource: 'demo_vehicle_remarks',
       vehicleUniqueness: '1 vehicle = 1 row, keyed by VIN with registration fallback',
-      nextDemoDueRule: 'last bill_date + 15 days',
+      nextDemoDueRule: 'latest ro_date + 15 days',
       alertRule: 'next_demo_due_date - current_date <= 5 days',
       remarksTableReady: hasRemarksTable,
       generatedAt: new Date().toISOString(),
