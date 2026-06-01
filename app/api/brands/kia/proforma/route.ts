@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const page = Math.max(1, Number(searchParams.get('page') || 1) || 1)
-    const pageSize = Math.min(200, Math.max(10, Number(searchParams.get('pageSize') || 50) || 50))
+    const pageSize = Math.min(1000, Math.max(10, Number(searchParams.get('pageSize') || 50) || 50))
     const search = String(searchParams.get('search') || '').trim()
     const mode = String(searchParams.get('mode') || 'all')
     const financeStatus = String(searchParams.get('financeStatus') || 'all')

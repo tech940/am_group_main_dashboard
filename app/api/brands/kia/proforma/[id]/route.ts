@@ -7,6 +7,7 @@ import { kiaProformas } from '@/lib/db/schema'
 import { canApproveKiaProforma } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 import { serializeUtcTimestampFields } from '@/lib/date-time'
+import { saveKiaProformaPdf } from '@/lib/kia-proforma/invoice'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,7 +73,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         updates.approvalStatus = `NOT APPROVED | ${failures.map((item) => `${item.label} - ${item.reason || 'No reason specified'}`).join(' | ')}`
       } else {
         updates.approvalStatus = 'APPROVED'
-        updates.linkPreview = row.linkPreview || `/api/brands/kia/proforma/${id}/preview`
+        const pdfUrl = await saveKiaProformaPdf(row)
+        updates.linkPreview = pdfUrl || row.linkPreview || `/api/brands/kia/proforma/${id}/preview`
       }
       updates.approvedBy = profile.consultantName || appUser.fullName || appUser.email
       updates.addDiscApproval = checks

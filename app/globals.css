@@ -169,6 +169,29 @@
     --chart-5: 38 92% 50%;
   }
 
+  :root[data-dashboard-accent="executive-navy"] {
+    --dashboard-primary: #031430;
+    --dashboard-primary-dark: #010815;
+    --dashboard-primary-light: #0B2A55;
+    --dashboard-primary-soft: #eef4fb;
+    --dashboard-primary-border: #b8c7dc;
+    --dashboard-action-bg: #031430;
+    --dashboard-action-hover: #0B2A55;
+    --dashboard-action-fg: #ffffff;
+    --dashboard-primary-rgb: 3, 20, 48;
+    --dashboard-primary-light-rgb: 11, 42, 85;
+    --dashboard-primary-hsl: 217 88% 10%;
+    --dashboard-support-1: #D4AF37;
+    --dashboard-support-2: #E8EEF7;
+    --dashboard-support-3: #38BDF8;
+    --dashboard-support-4: #00E97E;
+    --dashboard-support-5: #8FA9C8;
+    --chart-2: 44 65% 52%;
+    --chart-3: 214 42% 94%;
+    --chart-4: 199 89% 60%;
+    --chart-5: 152 100% 46%;
+  }
+
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;

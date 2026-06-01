@@ -28,6 +28,7 @@ const ACCENT_OPTIONS = [
   { id: 'corona', label: 'Corona', colors: ['#191C24', '#AF1763', '#0D6EFD', '#198754', '#0DCAF0', '#AB2E3C', '#FFC107'] },
   { id: 'purple', label: 'Purple', colors: ['#A05AFF', '#1BCFB4', '#4BCBEB', '#FE9496', '#9E58FF'] },
   { id: 'midnight', label: 'Midnight', colors: ['#0F172A', '#38BDF8', '#A855F7', '#22C55E', '#F59E0B', '#F43F5E'] },
+  { id: 'executive-navy', label: 'Executive Navy', colors: ['#031430', '#0B2A55', '#D4AF37', '#E8EEF7', '#38BDF8', '#00E97E'] },
 ] as const
 
 type AccentId = typeof ACCENT_OPTIONS[number]['id']

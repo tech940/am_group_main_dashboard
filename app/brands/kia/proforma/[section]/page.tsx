@@ -12,7 +12,6 @@ const SECTION_MAP: Record<string, KiaProformaSection> = {
   'all-proforma-details': 'all',
   'finance-remarks': 'finance-remarks',
   'pending-approval': 'pending-approval',
-  'user-database': 'user-database',
   'hyp-ins-analytics': 'analytics',
   'business-insights': 'insights',
 }

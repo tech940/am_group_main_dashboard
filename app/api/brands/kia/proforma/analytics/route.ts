@@ -38,6 +38,10 @@ export async function GET(request: NextRequest) {
   const grouping = safeGrouping(searchParams.get('grouping'))
   const statusFilter = String(searchParams.get('status') || 'all')
   const top = searchParams.get('top') === '5' ? 5 : 1000
+  const consultantFilter = String(searchParams.get('consultants') || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
   const visibility = canApproveKiaProforma(appUser.role, profile.approver)
     ? sql`TRUE`
     : sql`login_email = ${appUser.email}`
@@ -52,13 +56,16 @@ export async function GET(request: NextRequest) {
       ? sql`to_char(proforma_date AT TIME ZONE 'Asia/Kolkata', 'YYYY')`
       : sql`to_char(proforma_date AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM')`
   const statusExpression = statusFilter === 'all' ? sql`TRUE` : sql`vehicle_status = ${statusFilter}`
+  const consultantExpression = consultantFilter.length === 0
+    ? sql`TRUE`
+    : sql`consultant IN (${sql.join(consultantFilter.map((consultant) => sql`${consultant}`), sql`, `)})`
 
-  const [pivotRows, distributionRows, chartRows] = await Promise.all([
+  const [pivotRows, distributionRows, chartRows, consultantRows, modelRows, fuelRows, addressRows] = await Promise.all([
     db.execute(sql`
       WITH base AS (
         SELECT ${categoryExpression} AS category, ${periodExpression} AS period
         FROM kia_proformas
-        WHERE deleted_at IS NULL AND ${visibility} AND ${statusExpression}
+        WHERE deleted_at IS NULL AND ${visibility} AND ${statusExpression} AND ${consultantExpression}
       ),
       totals AS (
         SELECT category, COUNT(*)::int AS grand_total
@@ -79,7 +86,7 @@ export async function GET(request: NextRequest) {
         vehicle_status,
         COUNT(*)::int AS total
       FROM kia_proformas
-      WHERE deleted_at IS NULL AND ${visibility}
+      WHERE deleted_at IS NULL AND ${visibility} AND ${consultantExpression}
       GROUP BY approval_status, vehicle_status
     `),
     db.execute(sql`
@@ -88,9 +95,39 @@ export async function GET(request: NextRequest) {
         ${periodExpression} AS period,
         COUNT(*)::int AS value
       FROM kia_proformas
-      WHERE deleted_at IS NULL AND ${visibility} AND ${statusExpression}
+      WHERE deleted_at IS NULL AND ${visibility} AND ${statusExpression} AND ${consultantExpression}
       GROUP BY category, period
       ORDER BY period, category
+    `),
+    db.execute(sql`
+      SELECT DISTINCT COALESCE(NULLIF(TRIM(consultant), ''), 'Unassigned Consultant') AS consultant
+      FROM kia_proformas
+      WHERE deleted_at IS NULL AND ${visibility}
+      ORDER BY consultant ASC
+    `),
+    db.execute(sql`
+      SELECT COALESCE(NULLIF(TRIM(model_name), ''), 'Unassigned Model') AS name, COUNT(*)::int AS value
+      FROM kia_proformas
+      WHERE deleted_at IS NULL AND ${visibility} AND ${consultantExpression}
+      GROUP BY name
+      ORDER BY value DESC, name ASC
+      LIMIT 12
+    `),
+    db.execute(sql`
+      SELECT COALESCE(NULLIF(TRIM(fuel_type), ''), 'Unknown Fuel') AS name, COUNT(*)::int AS value
+      FROM kia_proformas
+      WHERE deleted_at IS NULL AND ${visibility} AND ${consultantExpression}
+      GROUP BY name
+      ORDER BY value DESC, name ASC
+    `),
+    db.execute(sql`
+      SELECT
+        CASE WHEN NULLIF(TRIM(customer_address), '') IS NULL THEN 'Missing Address' ELSE 'Address Captured' END AS name,
+        COUNT(*)::int AS value
+      FROM kia_proformas
+      WHERE deleted_at IS NULL AND ${visibility} AND ${consultantExpression}
+      GROUP BY name
+      ORDER BY name ASC
     `),
   ])
 
@@ -98,5 +135,9 @@ export async function GET(request: NextRequest) {
     pivot: rows(pivotRows),
     distributions: rows(distributionRows),
     chart: rows(chartRows),
+    consultants: rows(consultantRows),
+    modelDistribution: rows(modelRows),
+    fuelDistribution: rows(fuelRows),
+    addressIntegrity: rows(addressRows),
   })
 }
