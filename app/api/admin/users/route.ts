@@ -2,8 +2,18 @@ import { NextResponse } from 'next/server'
 import { and, count, desc, eq, ilike, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { isUserBranchValue } from '@/lib/branches'
+import {
+  BRANCH_MODULE_ACCESS_ROLE_KEEP,
+  buildBranchModuleAccessPermissionChanges,
+  canUseBranchModuleAccessRole,
+  isBranchModuleAccessRoleEditValue,
+  isBranchModuleAccessRoleValue,
+  type BranchModuleAccessRoleEditValue,
+  type BranchModuleAccessRoleValue,
+} from '@/lib/branch-module-access'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
+import { isMissingPermissionTableError, updateUserPermissionOverrides } from '@/lib/permissions/service'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -18,6 +28,39 @@ function normalizeUserBranchAccess(value: unknown) {
   }
 
   return isUserBranchValue(value) ? value : undefined
+}
+
+function normalizeCreateBranchModuleRole(value: unknown): BranchModuleAccessRoleValue {
+  return isBranchModuleAccessRoleValue(value) ? value : 'inherit'
+}
+
+function normalizeEditBranchModuleRole(value: unknown): BranchModuleAccessRoleEditValue {
+  return isBranchModuleAccessRoleEditValue(value) ? value : BRANCH_MODULE_ACCESS_ROLE_KEEP
+}
+
+async function applyBranchModuleRolePreset(params: {
+  targetUserId: string
+  changedByUserId: string
+  branchAccess: string | null | undefined
+  role: BranchModuleAccessRoleValue
+}) {
+  const changes = buildBranchModuleAccessPermissionChanges(params.branchAccess, params.role)
+  if (Object.keys(changes).length === 0) return null
+
+  try {
+    await updateUserPermissionOverrides({
+      targetUserId: params.targetUserId,
+      changedByUserId: params.changedByUserId,
+      changes,
+      reason: `Applied branch module role preset: ${params.role}`,
+    })
+    return null
+  } catch (error) {
+    if (isMissingPermissionTableError(error)) {
+      return 'Branch module role was not applied because permission tables are not installed. Run npm run db:setup-permissions-manager.'
+    }
+    throw error
+  }
 }
 
 // GET - Fetch paginated users
@@ -139,7 +182,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { email, fullName, password, role, brand, department } = body
+    const { email, fullName, password, role, brand, department, branchModuleRole } = body
 
     // Validate required fields
     if (!email || !fullName || !password || !role) {
@@ -154,6 +197,25 @@ export async function POST(request: Request) {
     if (normalizedBrand === undefined) {
       return NextResponse.json(
         { error: 'Invalid branch access selected' },
+        { status: 400 }
+      )
+    }
+
+    if (branchModuleRole !== undefined && !isBranchModuleAccessRoleValue(branchModuleRole)) {
+      return NextResponse.json(
+        { error: 'Invalid branch module role selected' },
+        { status: 400 }
+      )
+    }
+
+    const normalizedBranchModuleRole = normalizeCreateBranchModuleRole(branchModuleRole)
+
+    if (
+      normalizedBranchModuleRole !== 'inherit'
+      && !canUseBranchModuleAccessRole(normalizedBrand)
+    ) {
+      return NextResponse.json(
+        { error: 'Select a branch before applying branch module access' },
         { status: 400 }
       )
     }
@@ -209,7 +271,16 @@ export async function POST(request: Request) {
       createdAt: users.createdAt,
     })
 
-    return NextResponse.json(newUser, { status: 201 })
+    const permissionWarning = normalizedBranchModuleRole !== 'inherit' && canUseBranchModuleAccessRole(normalizedBrand)
+      ? await applyBranchModuleRolePreset({
+        targetUserId: newUser.id,
+        changedByUserId: appUser.id,
+        branchAccess: normalizedBrand,
+        role: normalizedBranchModuleRole,
+      })
+      : null
+
+    return NextResponse.json({ ...newUser, permissionWarning }, { status: 201 })
   } catch (error) {
     console.error('Error creating user:', error)
     return NextResponse.json(
@@ -229,10 +300,17 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json()
-    const { id, ...updateData } = body
+    const { id, branchModuleRole, ...updateData } = body
 
     if (!id) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+    }
+
+    if (branchModuleRole !== undefined && !isBranchModuleAccessRoleEditValue(branchModuleRole)) {
+      return NextResponse.json(
+        { error: 'Invalid branch module role selected' },
+        { status: 400 }
+      )
     }
 
     const [existingUser] = await db.select({
@@ -317,7 +395,18 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    return NextResponse.json(updatedUser)
+    const normalizedBranchModuleRole = normalizeEditBranchModuleRole(branchModuleRole)
+    const permissionWarning = normalizedBranchModuleRole !== BRANCH_MODULE_ACCESS_ROLE_KEEP
+      && canUseBranchModuleAccessRole(updatedUser.brand)
+      ? await applyBranchModuleRolePreset({
+        targetUserId: updatedUser.id,
+        changedByUserId: appUser.id,
+        branchAccess: updatedUser.brand,
+        role: normalizedBranchModuleRole,
+      })
+      : null
+
+    return NextResponse.json({ ...updatedUser, permissionWarning })
   } catch (error) {
     console.error('Error updating user:', error)
     return NextResponse.json({ error: 'Failed to update user' }, { status: 500 })

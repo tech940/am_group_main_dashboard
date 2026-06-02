@@ -8,6 +8,9 @@ export default async function Home() {
 
   if (user) {
     const appUser = await getAuthenticatedAppUser()
+    if (appUser?.role === 'finance_head') {
+      redirect('/finance-orders')
+    }
     redirect(appUser?.role === 'md' ? '/purchase-orders' : '/dashboard')
   } else {
     redirect('/auth/login')

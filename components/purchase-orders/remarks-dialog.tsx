@@ -48,11 +48,11 @@ export function RemarksDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl sm:max-w-[520px]">
-        <div className="bg-gradient-to-r from-teal-700 to-emerald-700 px-6 py-5 text-white">
+        <div className="bg-gradient-to-r from-[#023468] to-[#034b82] px-6 py-5 text-white">
           <DialogHeader className="space-y-2 text-left">
             <DialogTitle className="text-2xl font-black tracking-tight text-white">{title}</DialogTitle>
             {description && (
-              <p className="text-sm leading-6 text-emerald-50">{description}</p>
+              <p className="text-sm leading-6 text-[#edf4fb]">{description}</p>
             )}
           </DialogHeader>
         </div>
@@ -68,7 +68,7 @@ export function RemarksDialog({
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
               rows={5}
-              className="resize-none rounded-2xl border-slate-300 bg-white text-slate-900 shadow-inner placeholder:text-slate-400 focus:border-teal-500 focus:ring-teal-500"
+              className="resize-none rounded-2xl border-slate-300 bg-white text-slate-900 shadow-inner placeholder:text-slate-400 focus:border-[#023468] focus:ring-[#023468]"
               disabled={loading}
             />
             {remarksRequired && !remarks.trim() && (

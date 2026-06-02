@@ -43,12 +43,12 @@ export function Stage3EAApproval({ orderDetails, onSubmit, isLoading }: Stage3EA
   }
 
   return (
-    <Card className="border-none shadow-xl">
-      <CardHeader className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-        <CardTitle className="text-2xl font-black">
+    <Card className="border border-[var(--dashboard-primary-border)] shadow-xl">
+      <CardHeader className="bg-[linear-gradient(135deg,color-mix(in_srgb,var(--dashboard-primary)_10%,white),color-mix(in_srgb,var(--dashboard-primary-light)_18%,white))]">
+        <CardTitle className="text-2xl font-black text-[var(--dashboard-action-bg)]">
           EA Approval Required
         </CardTitle>
-        <p className="text-sm text-purple-50 mt-1">
+        <p className="mt-1 text-sm font-semibold text-slate-600">
           Review and approve/deny this purchase request
         </p>
       </CardHeader>
@@ -93,7 +93,7 @@ export function Stage3EAApproval({ orderDetails, onSubmit, isLoading }: Stage3EA
               handleSubmit('approve')
             }}
             disabled={isLoading}
-            className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-6 text-lg font-semibold"
+            className="app-primary-action flex-1 py-6 text-lg font-semibold"
           >
             {isLoading && formData.action === 'approve' ? (
               <>
@@ -171,8 +171,8 @@ export function Stage3EAApproval({ orderDetails, onSubmit, isLoading }: Stage3EA
           </div>
         )}
 
-        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-          <p className="text-sm text-purple-800">
+        <div className="rounded-lg border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] p-4">
+          <p className="text-sm font-semibold text-[var(--dashboard-action-bg)]">
             <strong>Note:</strong> After EA approval, this request will be sent to MD for final approval. If denied, it will be sent back to the requester.
           </p>
         </div>

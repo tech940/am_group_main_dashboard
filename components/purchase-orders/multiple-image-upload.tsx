@@ -225,8 +225,8 @@ export function MultipleImageUpload({
           className={cn(
             'relative rounded-2xl border-2 border-dashed p-6 transition-all duration-200',
             dragActive
-              ? 'border-teal-500 bg-teal-50 shadow-inner'
-              : 'border-slate-300 bg-white hover:border-teal-400 hover:bg-teal-50/40'
+              ? 'border-[#023468] bg-[#edf4fb] shadow-inner'
+              : 'border-slate-300 bg-white hover:border-[#8ca8c0] hover:bg-[#edf4fb]/70'
           )}
         >
           <input
@@ -261,7 +261,7 @@ export function MultipleImageUpload({
           {previews.map((preview, index) => (
             <div
               key={preview.id}
-              className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-lg"
+              className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#b9ccde] hover:shadow-lg"
             >
               <button
                 type="button"

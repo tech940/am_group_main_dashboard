@@ -114,8 +114,8 @@ export function ApprovalCard({ order, userRole, onApprove, onReject }: ApprovalC
       actions={(
         <div className="space-y-3">
           {(order.ea_remarks || order.management_remarks) && (
-            <div className="rounded-2xl border border-white/15 bg-white/10 p-3 text-sm text-white/90">
-              <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/65">
+            <div className="rounded-2xl border border-slate-200 bg-white/75 p-3 text-sm text-slate-700 shadow-sm">
+              <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
                 <MessageSquare className="h-3.5 w-3.5" />
                 Latest remarks
               </div>
@@ -129,13 +129,13 @@ export function ApprovalCard({ order, userRole, onApprove, onReject }: ApprovalC
                 value={remarks}
                 onChange={(event) => setRemarks(event.target.value)}
                 placeholder="Enter remarks. Optional for approval, required for rejection."
-                className="min-h-24 rounded-2xl border-white/15 bg-white/10 text-white placeholder:text-white/55 focus-visible:ring-white/30"
+                className="min-h-24 rounded-2xl border-slate-200 bg-white/80 text-slate-900 placeholder:text-slate-400 focus-visible:ring-[#023468]/30"
               />
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   onClick={() => void handleApprove()}
                   disabled={isLoading}
-                  className="rounded-2xl bg-white text-emerald-800 hover:bg-emerald-50"
+                  className="rounded-2xl bg-white text-[#012348] hover:bg-[#edf4fb]"
                 >
                   {isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

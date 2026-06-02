@@ -111,7 +111,7 @@ export interface PurchaseOrdersViewPreference {
   viewMode: 'card' | 'table'
   stickyHeader: boolean
   hiddenColumns: string[]
-  approvalFilter: 'all' | 'pending' | 'rejected' | 'hold' | 'completed'
+  approvalFilter: 'all' | 'pending' | 'approved' | 'rejected' | 'hold' | 'completed'
   completedDateStart: string
   completedDateEnd: string
 }

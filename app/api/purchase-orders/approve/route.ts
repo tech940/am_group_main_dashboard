@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Prepare update data based on approval type
-    const updateData: any = {
+    const updateData: Record<string, string | null> = {
       updated_at: new Date().toISOString()
     }
 

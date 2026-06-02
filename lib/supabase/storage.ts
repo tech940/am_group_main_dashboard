@@ -45,7 +45,7 @@ export async function uploadFile(
     }
 
     // Upload to Supabase Storage
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from(BUCKET_NAME)
       .upload(filePath, fileData, {
         contentType,
@@ -66,9 +66,13 @@ export async function uploadFile(
       url: urlData.publicUrl,
       path: filePath,
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in uploadFile:', error)
-    return { url: '', path: '', error: error.message }
+    return {
+      url: '',
+      path: '',
+      error: error instanceof Error ? error.message : 'Unknown upload error',
+    }
   }
 }
 

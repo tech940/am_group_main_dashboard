@@ -133,7 +133,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:performance-intelligence:v5:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:performance-intelligence:v6:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
@@ -445,7 +445,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const data = await timer.time(skipCache ? 'report' : 'response-cache', () => skipCache
+    const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
       ? buildReport()
       : getCachedData(cacheKey, buildReport, CACHE_TTL_SECONDS))
 

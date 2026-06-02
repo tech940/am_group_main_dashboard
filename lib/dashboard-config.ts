@@ -1,0 +1,68 @@
+export {
+  ALL_BRANCH_OPTION,
+  BRANCH_OPTIONS,
+  USER_BRANCH_OPTIONS,
+  getBranchLabel,
+  getUserBranchLabel,
+  hasAllBranchAccess,
+  isBranchValue,
+  isUserBranchValue,
+} from './branches'
+
+export type { BranchValue, UserBranchValue } from './branches'
+
+export const USER_ROLE_OPTIONS = [
+  { value: 'admin', label: 'Admin', color: 'bg-red-500' },
+  { value: 'ceo', label: 'CEO', color: 'bg-slate-700' },
+  { value: 'purchase_manager', label: 'Purchase Manager', color: 'bg-blue-500' },
+  { value: 'finance_head', label: 'Finance Head', color: 'bg-violet-500' },
+  { value: 'ea', label: 'EA (Executive Assistant)', color: 'bg-purple-500' },
+  { value: 'md', label: 'MD (Managing Director)', color: 'bg-indigo-500' },
+  { value: 'accounts', label: 'Accounts', color: 'bg-emerald-500' },
+  { value: 'manager', label: 'Manager', color: 'bg-teal-500' },
+  { value: 'technician', label: 'Technician', color: 'bg-cyan-500' },
+  { value: 'viewer', label: 'Viewer', color: 'bg-gray-500' },
+] as const
+
+export type UserRoleOptionValue = typeof USER_ROLE_OPTIONS[number]['value']
+
+export const FINANCE_BANK_OPTIONS = [
+  'AU BANK',
+  'AXIS BANK',
+  'BANDHAN BANK',
+  'BANK OF BARODA',
+  'BANK OF INDIA',
+  'BOB',
+  'BOI',
+  'BOM',
+  'Bajaj Finserv',
+  'CANARA',
+  'CASH',
+  'Capital Bank',
+  'Central Bank',
+  'Cholamandalam',
+  'DEVIKA URBAN CO.BANK',
+  'Federal Bank',
+  'HDFC',
+  'ICICI',
+  'IDBI',
+  'Indian Bank',
+  'Indian Overseas',
+  'IndusInd Bank',
+  'J&K Bank',
+  'JK GRAMEEN',
+  'Kotak Mahindra',
+  'LIC',
+  'M&M',
+  'MARBLE MARKET',
+  'PNB BANK',
+  'POWER GRID',
+  'Punjab & Sind Bank',
+  'RBI',
+  'SBI',
+  'South Indian Bank',
+  'Tata Capital',
+  'UCO Bank',
+  'Union Bank',
+  'YES Bank',
+] as const

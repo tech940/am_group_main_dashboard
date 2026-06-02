@@ -49,6 +49,11 @@ type PeriodWindow = {
   lyEnd: Date
 }
 
+type ComparisonRange = {
+  startDate: Date
+  endDate: Date
+} | null
+
 type AnalysisRow = {
   name: string
   depth: number
@@ -71,6 +76,15 @@ function startOfDay(date: Date) {
 
 function endOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+}
+
+function endOfMonth(date: Date) {
+  return endOfDay(new Date(date.getFullYear(), date.getMonth() + 1, 0))
+}
+
+function endOfQuarter(date: Date) {
+  const quarterStartMonth = Math.floor(date.getMonth() / 3) * 3
+  return endOfDay(new Date(date.getFullYear(), quarterStartMonth + 3, 0))
 }
 
 function toDateInputValue(date: Date) {
@@ -141,31 +155,45 @@ function sameDateLastYear(date: Date) {
   return new Date(date.getFullYear() - 1, date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds())
 }
 
-function getFiscalYearStart(date: Date) {
-  const fiscalYear = date.getMonth() < 3 ? date.getFullYear() - 1 : date.getFullYear()
-  return new Date(fiscalYear, 3, 1, 0, 0, 0, 0)
+function addDays(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
 }
 
-function buildPeriodWindows(endDate: Date): Record<PeriodKey, PeriodWindow> {
+function getCalendarYearStart(date: Date) {
+  return new Date(date.getFullYear(), 0, 1, 0, 0, 0, 0)
+}
+
+function buildPeriodWindows(startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null): Record<PeriodKey, PeriodWindow> {
   const cyEnd = endOfDay(endDate)
   const cyTdStart = startOfDay(endDate)
+  const currentStart = startOfDay(startDate)
   const cyMtdStart = new Date(endDate.getFullYear(), endDate.getMonth(), 1)
   const quarterStartMonth = Math.floor(endDate.getMonth() / 3) * 3
   const cyQtdStart = new Date(endDate.getFullYear(), quarterStartMonth, 1)
-  const cyYtdStart = getFiscalYearStart(endDate)
+  const cyYtdStart = getCalendarYearStart(endDate)
+  const customPeriodWindow = comparisonRange
+    ? {
+        cyStart: currentStart,
+        cyEnd,
+        lyStart: startOfDay(comparisonRange.startDate),
+        lyEnd: endOfDay(comparisonRange.endDate),
+      }
+    : null
 
   return {
     td: {
       cyStart: cyTdStart,
       cyEnd,
-      lyStart: sameDateLastYear(cyTdStart),
-      lyEnd: sameDateLastYear(cyEnd),
+      lyStart: comparisonRange ? startOfDay(comparisonRange.endDate) : sameDateLastYear(cyTdStart),
+      lyEnd: comparisonRange ? endOfDay(comparisonRange.endDate) : sameDateLastYear(cyEnd),
     },
-    mtd: {
+    mtd: customPeriodWindow || {
       cyStart: startOfDay(cyMtdStart),
       cyEnd,
       lyStart: sameDateLastYear(startOfDay(cyMtdStart)),
-      lyEnd: sameDateLastYear(cyEnd),
+      lyEnd: endOfMonth(sameDateLastYear(cyEnd)),
     },
     qtd: {
       cyStart: startOfDay(cyQtdStart),
@@ -501,11 +529,41 @@ type AdvisorLeaderboardRow = {
   contribution: number
 }
 
+type CancelledBillingRow = {
+  billKey: string
+  billNo: string
+  roNo: string
+  billDate: string | null
+  workType: string
+  serviceType: string
+  advisor: string
+  billStatus: string
+  labour: number
+  parts: number
+  total: number
+}
+
+type CancelledBillingSummary = {
+  count: number
+  labour: number
+  parts: number
+  total: number
+  rows: CancelledBillingRow[]
+}
+
 let hasRoBillingDailySummaryV2: boolean | null = null
 
 function numberValue(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value || 0)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+function activeBillStatusSql() {
+  return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`
+}
+
+function cancelledBillStatusSql() {
+  return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) IN ('cancel', 'cancelled', 'canceled')`
 }
 
 function measureWorkTypeRow(row: WorkTypeAggregateRow, period: PeriodKey, side: 'cy' | 'ly', analysisType: AnalysisType) {
@@ -547,7 +605,13 @@ async function hasDailySummaryV2() {
   if (hasRoBillingDailySummaryV2 !== null) return hasRoBillingDailySummaryV2
 
   const result = await db.execute(sql`
-    SELECT to_regclass('public.ro_billing_daily_summary_v2') IS NOT NULL AS exists
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'ro_billing_daily_summary_v2'
+        AND column_name = 'bill_status'
+    ) AS exists
   `)
   hasRoBillingDailySummaryV2 = Boolean(result[0]?.exists)
   return hasRoBillingDailySummaryV2
@@ -613,7 +677,7 @@ function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: Analys
   })
 }
 
-function buildDailyTrendRows(rows: DailyAggregateRow[], analysisType: AnalysisType, startDate: Date, endDate: Date) {
+function buildDailyTrendRows(rows: DailyAggregateRow[], analysisType: AnalysisType, startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null) {
   const byDate = new Map<string, DailyAggregateRow>()
   rows.forEach((row) => {
     byDate.set(toDateInputValue(new Date(row.bill_date)), row)
@@ -621,24 +685,29 @@ function buildDailyTrendRows(rows: DailyAggregateRow[], analysisType: AnalysisTy
 
   const trend = []
   const cursor = startOfDay(startDate)
+  let offsetDays = 0
   while (cursor <= endDate) {
     const cyDate = toDateInputValue(cursor)
-    const lyDate = toDateInputValue(sameDateLastYear(cursor))
+    const comparisonDate = comparisonRange ? addDays(comparisonRange.startDate, offsetDays) : sameDateLastYear(cursor)
+    const lyDate = comparisonRange && comparisonDate > comparisonRange.endDate
+      ? null
+      : toDateInputValue(comparisonDate)
     trend.push({
       date: cyDate,
       label: `${String(cursor.getDate()).padStart(2, '0')} ${cursor.toLocaleDateString('en-US', { weekday: 'short' })}`,
       cy: measureDailyRow(byDate.get(cyDate), analysisType),
-      ly: measureDailyRow(byDate.get(lyDate), analysisType),
+      ly: lyDate ? measureDailyRow(byDate.get(lyDate), analysisType) : 0,
     })
     cursor.setDate(cursor.getDate() + 1)
+    offsetDays += 1
   }
 
   return trend
 }
 
-async function fetchDailyAggregateRows(startDate: Date, endDate: Date) {
-  const relationalStart = sameDateLastYear(startDate)
-  const relationalEnd = endDate
+async function fetchDailyAggregateRows(startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null) {
+  const relationalStart = comparisonRange && comparisonRange.startDate < startDate ? comparisonRange.startDate : (comparisonRange ? startDate : sameDateLastYear(startDate))
+  const relationalEnd = comparisonRange && comparisonRange.endDate > endDate ? comparisonRange.endDate : endDate
 
   const result = await db.execute(await hasDailySummaryV2() ? sql`
     SELECT
@@ -649,6 +718,7 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date) {
     FROM ro_billing_daily_summary_v2
     WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
       AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
+      AND ${activeBillStatusSql()}
     GROUP BY bill_date
     ORDER BY bill_date
   ` : sql`
@@ -667,6 +737,7 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date) {
         FROM ro_billing_report
         WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
           AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
+          AND ${activeBillStatusSql()}
       ) base
       GROUP BY bill_key, bill_date
     )
@@ -705,6 +776,7 @@ async function fetchFiscalAggregateRows() {
         COALESCE(SUM(part_amount), 0)::float AS parts
       FROM ro_billing_daily_summary_v2
       WHERE bill_date IS NOT NULL
+        AND ${activeBillStatusSql()}
       GROUP BY fiscal_start_year
     )
     SELECT
@@ -730,6 +802,7 @@ async function fetchFiscalAggregateRows() {
           COALESCE(part_amt, 0)::numeric AS part_amt
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
+          AND ${activeBillStatusSql()}
       ) base
       GROUP BY bill_key, bill_date
     ),
@@ -770,6 +843,7 @@ async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date): Pro
       FROM ro_billing_report
       WHERE bill_date >= ${toDateInputValue(lyStart)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
     )
     SELECT
       COALESCE(AVG(rating) FILTER (
@@ -834,6 +908,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Prom
       FROM ro_billing_daily_summary_v2
       WHERE bill_date >= ${toDateInputValue(startDate)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
       GROUP BY name
     ),
     ranked AS (
@@ -879,6 +954,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Prom
         FROM ro_billing_report
         WHERE bill_date >= ${toDateInputValue(startDate)}::date
           AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+          AND ${activeBillStatusSql()}
       ) base
       GROUP BY service_advisor, bill_key
     ),
@@ -967,6 +1043,7 @@ async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindo
     FROM ro_billing_daily_summary_v2
     WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
       AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
+      AND ${activeBillStatusSql()}
     GROUP BY work_type, service_type
   ` : sql`
     WITH dedup AS (
@@ -988,6 +1065,7 @@ async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindo
         FROM ro_billing_report
         WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
           AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
+          AND ${activeBillStatusSql()}
       ) base
       GROUP BY work_type, service_type, bill_key, bill_date
     )
@@ -1046,6 +1124,7 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
           uploaded_at
         FROM ro_billing_report
         WHERE bill_date BETWEEN ${toDateInputValue(startDate!)}::date AND ${toDateInputValue(endDate!)}::date
+          AND ${activeBillStatusSql()}
       `)
       : db.execute(sql`
         SELECT
@@ -1067,8 +1146,9 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
           uploaded_at
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
+          AND ${activeBillStatusSql()}
       `),
-    db.execute(sql`SELECT MAX(uploaded_at) AS "uploadedAt", COUNT(*)::int AS "totalRows" FROM ro_billing_report`),
+    db.execute(sql`SELECT MAX(uploaded_at) AS "uploadedAt", COUNT(*) FILTER (WHERE ${activeBillStatusSql()})::int AS "totalRows" FROM ro_billing_report`),
   ])
 
   return {
@@ -1081,8 +1161,95 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
   }
 }
 
+async function fetchCancelledBillingSummary(startDate: Date, endDate: Date): Promise<CancelledBillingSummary> {
+  const result = await db.execute(sql`
+    WITH cancelled AS (
+      SELECT
+        COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+        NULLIF(bill_no, '') AS bill_no,
+        NULLIF(ro_no, '') AS ro_no,
+        bill_date::date AS bill_date,
+        COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
+        COALESCE(NULLIF(service_type, ''), 'Unspecified') AS service_type,
+        COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
+        COALESCE(NULLIF(bill_status, ''), 'Cancel') AS bill_status,
+        COALESCE(labour_amt, 0)::numeric AS labour_amt,
+        COALESCE(part_amt, 0)::numeric AS part_amt,
+        COALESCE(total_amt, 0)::numeric AS total_amt
+      FROM ro_billing_report
+      WHERE bill_date >= ${toDateInputValue(startDate)}::date
+        AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+        AND ${cancelledBillStatusSql()}
+    ),
+    dedup AS (
+      SELECT
+        bill_key,
+        (ARRAY_AGG(bill_no ORDER BY bill_date DESC NULLS LAST))[1] AS bill_no,
+        (ARRAY_AGG(ro_no ORDER BY bill_date DESC NULLS LAST))[1] AS ro_no,
+        MAX(bill_date)::text AS bill_date,
+        (ARRAY_AGG(work_type ORDER BY ABS(COALESCE(total_amt, labour_amt + part_amt, 0)) DESC))[1] AS work_type,
+        (ARRAY_AGG(service_type ORDER BY ABS(COALESCE(total_amt, labour_amt + part_amt, 0)) DESC))[1] AS service_type,
+        (ARRAY_AGG(advisor ORDER BY bill_date DESC NULLS LAST))[1] AS advisor,
+        (ARRAY_AGG(bill_status ORDER BY bill_date DESC NULLS LAST))[1] AS bill_status,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
+        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+      FROM cancelled
+      GROUP BY bill_key
+    )
+    SELECT
+      bill_key,
+      COALESCE(bill_no, '') AS bill_no,
+      COALESCE(ro_no, '') AS ro_no,
+      bill_date,
+      work_type,
+      service_type,
+      advisor,
+      bill_status,
+      COALESCE(labour_amt, 0)::float AS labour,
+      COALESCE(part_amt, 0)::float AS parts,
+      CASE WHEN COALESCE(total_amt, 0) <> 0 THEN total_amt ELSE COALESCE(labour_amt, 0) + COALESCE(part_amt, 0) END::float AS total
+    FROM dedup
+    ORDER BY bill_date DESC NULLS LAST, bill_key ASC
+  `)
+
+  const rows = ((result as unknown as Array<{
+    bill_key: string
+    bill_no: string
+    ro_no: string
+    bill_date: string | null
+    work_type: string
+    service_type: string
+    advisor: string
+    bill_status: string
+    labour: number
+    parts: number
+    total: number
+  }>) || []).map((row) => ({
+    billKey: row.bill_key,
+    billNo: row.bill_no,
+    roNo: row.ro_no,
+    billDate: row.bill_date,
+    workType: row.work_type,
+    serviceType: row.service_type,
+    advisor: row.advisor,
+    billStatus: row.bill_status,
+    labour: numberValue(row.labour),
+    parts: numberValue(row.parts),
+    total: numberValue(row.total),
+  }))
+
+  return {
+    count: rows.length,
+    labour: rows.reduce((sum, row) => sum + row.labour, 0),
+    parts: rows.reduce((sum, row) => sum + row.parts, 0),
+    total: rows.reduce((sum, row) => sum + row.total, 0),
+    rows,
+  }
+}
+
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date) {
-  return `ro_billing:base-rows:v2:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
+  return `kia:business-excellence:ro-billing:base-rows:v4:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1090,7 +1257,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:v11:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v18:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1139,6 +1306,14 @@ export async function GET(request: Request) {
     const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1)
     const startDate = startOfDay(parseDateInput(searchParams.get('startDate')) || defaultStart)
     const endDate = endOfDay(parseDateInput(searchParams.get('endDate')) || today)
+    const parsedComparisonStartDate = parseDateInput(searchParams.get('comparisonStartDate'))
+    const parsedComparisonEndDate = parseDateInput(searchParams.get('comparisonEndDate'))
+    const comparisonRange: ComparisonRange = parsedComparisonStartDate && parsedComparisonEndDate
+      ? {
+          startDate: startOfDay(parsedComparisonStartDate),
+          endDate: endOfDay(parsedComparisonEndDate),
+        }
+      : null
     const cacheParams = new URLSearchParams(searchParams)
     cacheParams.set('brand', brand)
     cacheParams.set('analysisType', analysisType)
@@ -1146,11 +1321,20 @@ export async function GET(request: Request) {
     cacheParams.set('groupBy', groupBy)
     cacheParams.set('startDate', toDateInputValue(startDate))
     cacheParams.set('endDate', toDateInputValue(endDate))
+    if (comparisonRange) {
+      cacheParams.set('comparisonMode', 'custom')
+      cacheParams.set('comparisonStartDate', toDateInputValue(comparisonRange.startDate))
+      cacheParams.set('comparisonEndDate', toDateInputValue(comparisonRange.endDate))
+    } else {
+      cacheParams.delete('comparisonMode')
+      cacheParams.delete('comparisonStartDate')
+      cacheParams.delete('comparisonEndDate')
+    }
     if (batchMetrics) cacheParams.set('metrics', 'all')
     const cacheKey = createCacheKey(cacheParams)
 
     const analyze = async () => {
-      const windows = buildPeriodWindows(endDate)
+      const windows = buildPeriodWindows(startDate, endDate, comparisonRange)
       const hasFilters = Array.from(searchParams.entries()).some(([key, value]) => {
         return key in FILTER_COLUMNS && value && value !== 'all'
       })
@@ -1166,10 +1350,13 @@ export async function GET(request: Request) {
         dateRange: {
           startDate: toDateInputValue(startDate),
           endDate: toDateInputValue(endDate),
+          comparisonStartDate: comparisonRange ? toDateInputValue(comparisonRange.startDate) : null,
+          comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
         },
         filterOptions: {},
       }
       if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
+        const cancelledSummary = await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate))
         const aggregateRows = await timer.time('work-type-sql-summary', () => fetchWorkTypeAggregateRows(windows))
         if (batchMetrics) {
           const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
@@ -1187,6 +1374,7 @@ export async function GET(request: Request) {
           }))
           return {
             ...baseFastResponse,
+            cancelledSummary,
             rowCounts: {
               totalRows: 0,
               rowsWithBillDate: 0,
@@ -1198,6 +1386,7 @@ export async function GET(request: Request) {
         const rows = aggregateRowsToStats(aggregateRows, analysisType)
         return {
           ...baseFastResponse,
+          cancelledSummary,
           rowCounts: {
             totalRows: 0,
             rowsWithBillDate: 0,
@@ -1207,10 +1396,10 @@ export async function GET(request: Request) {
         }
       }
       if (view === 'trend' && groupBy === 'work_type' && !hasFilters) {
-        const aggregateRows = await timer.time('daily-trend-sql-summary', () => fetchDailyAggregateRows(startDate, endDate))
+        const aggregateRows = await timer.time('daily-trend-sql-summary', () => fetchDailyAggregateRows(startDate, endDate, comparisonRange))
         if (batchMetrics) {
           const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
-            const trend = buildDailyTrendRows(aggregateRows, type, startDate, endDate)
+            const trend = buildDailyTrendRows(aggregateRows, type, startDate, endDate, comparisonRange)
             return [type, {
               ...baseFastResponse,
               analysisType: type,
@@ -1232,7 +1421,7 @@ export async function GET(request: Request) {
             byMetric,
           }
         }
-        const trend = buildDailyTrendRows(aggregateRows, analysisType, startDate, endDate)
+        const trend = buildDailyTrendRows(aggregateRows, analysisType, startDate, endDate, comparisonRange)
         return {
           ...baseFastResponse,
           rowCounts: {
@@ -1412,13 +1601,14 @@ export async function GET(request: Request) {
 
       return {
         ...baseResponse,
+        ...(view === 'table' ? { cancelledSummary: await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate)) } : {}),
         totals: calculateMetrics(filteredRows, analysisType, windows),
         selectedRangeValue: aggregateForRange(filteredRows, analysisType, startDate, endDate),
         rows: flattenRows(groupedRows),
       }
     }
 
-    const result = await timer.time(skipCache ? 'analyze' : 'response-cache', () => skipCache
+    const result = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
       ? analyze()
       : getCachedData(cacheKey, analyze, CACHE_TTL_SECONDS))
 

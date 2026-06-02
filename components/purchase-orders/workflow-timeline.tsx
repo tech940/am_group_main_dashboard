@@ -25,7 +25,7 @@ interface WorkflowHistoryItem {
   previousStatus?: string | null
   newStatus?: string | null
   createdAt: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 interface WorkflowTimelineProps {
@@ -38,7 +38,7 @@ export function WorkflowTimeline({ history, currentStatus }: WorkflowTimelinePro
 
   const getActionIcon = (action: string) => {
     if (action.includes('approved') || action.includes('completed')) {
-      return <CheckCircle className="h-5 w-5 text-green-500" />
+      return <CheckCircle className="h-5 w-5 text-[#023468]" />
     }
     if (action.includes('denied') || action.includes('rejected')) {
       return <XCircle className="h-5 w-5 text-red-500" />
@@ -48,7 +48,7 @@ export function WorkflowTimeline({ history, currentStatus }: WorkflowTimelinePro
 
   const getActionColor = (action: string) => {
     if (action.includes('approved') || action.includes('completed')) {
-      return 'bg-green-100 border-green-300'
+      return 'bg-[#edf4fb] border-[#b9ccde]'
     }
     if (action.includes('denied') || action.includes('rejected')) {
       return 'bg-red-100 border-red-300'
@@ -73,11 +73,11 @@ export function WorkflowTimeline({ history, currentStatus }: WorkflowTimelinePro
       case 'purchase_manager':
         return 'bg-blue-100 text-blue-800'
       case 'ea':
-        return 'bg-green-100 text-green-800'
+        return 'bg-[#edf4fb] text-[#023468]'
       case 'md':
         return 'bg-orange-100 text-orange-800'
       case 'accounts':
-        return 'bg-teal-100 text-teal-800'
+        return 'bg-[#dbeafe] text-[#023468]'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -199,15 +199,15 @@ export function WorkflowTimeline({ history, currentStatus }: WorkflowTimelinePro
         )}
 
         {/* Current Status */}
-        <div className="mt-6 p-4 bg-gradient-to-r from-teal-50 to-blue-50 rounded-lg border-2 border-teal-200">
+        <div className="mt-6 p-4 bg-gradient-to-r from-[#edf4fb] to-blue-50 rounded-lg border-2 border-[#b9ccde]">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-slate-600 mb-1">Current Status</p>
-              <Badge className="bg-teal-500 text-white text-sm px-3 py-1">
+              <Badge className="bg-[#023468] text-white text-sm px-3 py-1">
                 {currentStatus}
               </Badge>
             </div>
-            <Clock className="h-8 w-8 text-teal-400" />
+            <Clock className="h-8 w-8 text-[#b9ccde]" />
           </div>
         </div>
       </CardContent>

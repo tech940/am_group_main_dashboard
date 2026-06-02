@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Shield } from 'lucide-react'
+import { USER_ROLE_OPTIONS } from '@/lib/dashboard-config'
 
 interface User {
   id: string
@@ -13,17 +14,6 @@ interface User {
   role: string
   full_name?: string
 }
-
-const ROLES = [
-  { value: 'admin', label: 'Admin', color: 'bg-red-500' },
-  { value: 'purchase_manager', label: 'Purchase Manager', color: 'bg-blue-500' },
-  { value: 'ea', label: 'EA (Executive Assistant)', color: 'bg-purple-500' },
-  { value: 'md', label: 'MD (Managing Director)', color: 'bg-indigo-500' },
-  { value: 'accounts', label: 'Accounts', color: 'bg-emerald-500' },
-  { value: 'manager', label: 'Manager', color: 'bg-teal-500' },
-  { value: 'technician', label: 'Technician', color: 'bg-cyan-500' },
-  { value: 'viewer', label: 'Viewer', color: 'bg-gray-500' }
-]
 
 export default function RoleManagementPage() {
   const [users, setUsers] = useState<User[]>([])
@@ -94,11 +84,11 @@ export default function RoleManagementPage() {
   }
 
   const getRoleColor = (role: string) => {
-    return ROLES.find(r => r.value === role)?.color || 'bg-gray-500'
+    return USER_ROLE_OPTIONS.find(r => r.value === role)?.color || 'bg-gray-500'
   }
 
   const getRoleLabel = (role: string) => {
-    return ROLES.find(r => r.value === role)?.label || role
+    return USER_ROLE_OPTIONS.find(r => r.value === role)?.label || role
   }
 
   if (currentUserRole !== 'admin' && currentUserRole !== 'md') {
@@ -130,7 +120,7 @@ export default function RoleManagementPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Role Management</h1>
-          <p className="text-gray-600 mt-1">Assign roles to users for purchase order workflow</p>
+          <p className="text-gray-600 mt-1">Assign roles to users for approval workflows</p>
         </div>
 
         <Card>
@@ -164,7 +154,7 @@ export default function RoleManagementPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {ROLES.map((role) => (
+                          {USER_ROLE_OPTIONS.map((role) => (
                             <SelectItem key={role.value} value={role.value}>
                               {role.label}
                             </SelectItem>
@@ -195,6 +185,14 @@ export default function RoleManagementPage() {
               <div>
                 <p className="font-semibold text-blue-900">Purchase Manager</p>
                 <p className="text-blue-700">Handles vendor info and GRN stages</p>
+              </div>
+              <div>
+                <p className="font-semibold text-blue-900">Finance Head</p>
+                <p className="text-blue-700">Creates and manages Finance Orders before EA/MD approval</p>
+              </div>
+              <div>
+                <p className="font-semibold text-blue-900">CEO</p>
+                <p className="text-blue-700">Executive read access for controlled workflow modules</p>
               </div>
               <div>
                 <p className="font-semibold text-blue-900">EA (Executive Assistant)</p>
