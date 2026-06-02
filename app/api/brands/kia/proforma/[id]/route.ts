@@ -4,10 +4,11 @@ import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { kiaProformas } from '@/lib/db/schema'
-import { canApproveKiaProforma } from '@/lib/kia-proforma/access'
+import { canApproveKiaProformaForUser } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 import { serializeUtcTimestampFields } from '@/lib/date-time'
 import { saveKiaProformaPdf } from '@/lib/kia-proforma/invoice'
+import { requirePermission } from '@/lib/permissions/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +48,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const profile = await ensureKiaUserProfile(appUser)
     if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const isApprover = canApproveKiaProforma(appUser.role, profile.approver)
+    const isApprover = await canApproveKiaProformaForUser(appUser, profile.approver)
     const { id } = await context.params
     const row = await getRow(id)
     if (!row) return NextResponse.json({ error: 'Proforma not found' }, { status: 404 })
@@ -58,12 +59,16 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const updates: Record<string, unknown> = { updatedAt: new Date() }
 
     if (action === 'finance') {
+      const permission = await requirePermission(appUser, 'kia.proforma.edit')
+      if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
       if (!isApprover && !ownsRow) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       const remarks = text(body.financeRemarks)
       updates.financeStatus = text(body.financeStatus) || 'Pending'
       updates.financeRemarks = remarks || null
       updates.financeUpdatedTime = remarks || updates.financeStatus !== row.financeStatus ? new Date() : null
     } else if (action === 'approval') {
+      const permission = await requirePermission(appUser, 'kia.proforma.approve')
+      if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
       if (!isApprover) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       const checks = (body.checks || {}) as Record<string, { status?: string; reason?: string }>
       const failures = VERIFY_FIELDS

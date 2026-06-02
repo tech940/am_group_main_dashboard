@@ -55,7 +55,7 @@ function getFilters(searchParams: URLSearchParams): DemoFilters {
 }
 
 function createCacheKey(filters: DemoFilters, hasRemarksTable: boolean) {
-  return `kia:demo-job-cards:v4:${createHash('sha1')
+  return `kia:demo-job-cards:v5:${createHash('sha1')
     .update(JSON.stringify({ filters, hasRemarksTable }))
     .digest('hex')}`
 }
@@ -213,6 +213,10 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
         COUNT(*) FILTER (WHERE days_remaining < 0)::int AS overdue,
         COUNT(*) FILTER (WHERE latest_remark IS NOT NULL)::int AS vehicles_with_remarks
       FROM enriched
+    ),
+    source_freshness AS (
+      SELECT MAX(last_bill_date)::timestamptz AS source_updated_at
+      FROM raw
     )
     SELECT
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
@@ -251,6 +255,7 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
         'latestRemarkBy', latest_remark_by
       ) ORDER BY days_remaining ASC, next_demo_due_date ASC, registration_number ASC) FROM alerts), '[]'::jsonb) AS alerts,
       (SELECT total_rows FROM row_count) AS total_rows,
+      (SELECT source_updated_at FROM source_freshness) AS source_updated_at,
       (SELECT jsonb_build_object(
         'totalVehicles', total_vehicles,
         'dueWithin5Days', due_within_5_days,
@@ -278,6 +283,7 @@ async function buildPayload(filters: DemoFilters, hasRemarksTable: boolean) {
       nextDemoDueRule: 'latest ro_date + 15 days',
       alertRule: 'next_demo_due_date - current_date <= 5 days',
       remarksTableReady: hasRemarksTable,
+      sourceUpdatedAt: row.source_updated_at || null,
       generatedAt: new Date().toISOString(),
     },
     summary: row.summary || {

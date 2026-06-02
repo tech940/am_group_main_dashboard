@@ -461,13 +461,13 @@ export default function AdminUsersPage() {
                 </div>
                 {canUseBranchModuleAccessRole(formData.brand) && (
                   <div className="space-y-2 rounded-2xl border border-[#b9ccde] bg-[#edf4fb]/60 p-3">
-                    <Label htmlFor="branchModuleRole" className="text-sm font-bold text-slate-700">Branch Section Role</Label>
+                    <Label htmlFor="branchModuleRole" className="text-sm font-bold text-slate-700">Branch Role</Label>
                     <Select
                       value={formData.branchModuleRole}
                       onValueChange={(value: BranchModuleAccessRoleValue) => setFormData({ ...formData, branchModuleRole: value })}
                     >
                       <SelectTrigger className="rounded-xl border-[#b9ccde] bg-white">
-                        <SelectValue placeholder="Select branch section role" />
+                      <SelectValue placeholder="Select role inside this branch" />
                       </SelectTrigger>
                       <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {BRANCH_MODULE_ACCESS_ROLE_OPTIONS.map((option) => (
@@ -481,7 +481,7 @@ export default function AdminUsersPage() {
                       </SelectContent>
                     </Select>
                     <p className="text-xs font-semibold text-slate-500">
-                      Applies section permissions for the selected branch. Use Access Control later for exact overrides.
+                      Applies this role only inside the selected branch. Global roles like MD, CEO, and EA still keep their global access.
                     </p>
                   </div>
                 )}
@@ -584,13 +584,13 @@ export default function AdminUsersPage() {
                 </div>
                 {canUseBranchModuleAccessRole(editFormData.brand) && (
                   <div className="space-y-2 rounded-2xl border border-[#b9ccde] bg-[#edf4fb]/60 p-3">
-                    <Label htmlFor="edit-branchModuleRole" className="text-sm font-bold text-slate-700">Branch Section Role</Label>
+                    <Label htmlFor="edit-branchModuleRole" className="text-sm font-bold text-slate-700">Branch Role</Label>
                     <Select
                       value={editFormData.branchModuleRole}
                       onValueChange={(value: BranchModuleAccessRoleEditValue) => setEditFormData({ ...editFormData, branchModuleRole: value })}
                     >
                       <SelectTrigger className="rounded-xl border-[#b9ccde] bg-white">
-                        <SelectValue placeholder="Select branch section role" />
+                      <SelectValue placeholder="Select role inside this branch" />
                       </SelectTrigger>
                       <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {BRANCH_MODULE_ACCESS_ROLE_EDIT_OPTIONS.map((option) => (
@@ -604,7 +604,7 @@ export default function AdminUsersPage() {
                       </SelectContent>
                     </Select>
                     <p className="text-xs font-semibold text-slate-500">
-                      Choose a preset to rewrite branch section permissions, or keep current overrides unchanged.
+                      Choose a branch-only role preset, or keep current overrides unchanged.
                     </p>
                   </div>
                 )}

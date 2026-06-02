@@ -4,6 +4,7 @@ import { and, eq, isNull, or } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { AppUser } from '@/lib/auth/app-user'
 import { kiaProformas } from '@/lib/db/schema'
+import { canUserAccessPermission } from '@/lib/permissions/service'
 
 type KiaProformaRole = AppUser['role']
 
@@ -17,9 +18,14 @@ export function canApproveKiaProforma(role: KiaProformaRole | null | undefined, 
   return profileApprover === true || KIA_PROFORMA_APPROVER_ROLES.includes(role as typeof KIA_PROFORMA_APPROVER_ROLES[number])
 }
 
-export function getKiaProformaVisibilityFilter(appUser: AppUser, profileApprover?: boolean | null): SQL<unknown> {
+export async function canApproveKiaProformaForUser(appUser: AppUser, profileApprover?: boolean | null) {
+  if (canApproveKiaProforma(appUser.role, profileApprover)) return true
+  return canUserAccessPermission(appUser, 'kia.proforma.approve')
+}
+
+export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = false): SQL<unknown> {
   const base = [isNull(kiaProformas.deletedAt)]
-  if (canApproveKiaProforma(appUser.role, profileApprover)) return and(...base)!
+  if (canApprove) return and(...base)!
   return and(...base, eq(kiaProformas.loginEmail, appUser.email))!
 }
 

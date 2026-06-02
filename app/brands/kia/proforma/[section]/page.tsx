@@ -1,6 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
 import { KiaProformaPage, type KiaProformaSection } from '@/features/kia/kia-proforma-page'
 import { getBrandAccess } from '@/lib/auth/brand-access'
+import { requirePermission } from '@/lib/permissions/service'
 
 export const metadata = {
   title: 'Kia Proforma | AM Kia',
@@ -24,5 +25,13 @@ export default async function Page({ params }: { params: Promise<{ section: stri
   const { section } = await params
   const resolved = SECTION_MAP[section]
   if (!resolved) redirect('/brands/kia/proforma/generate')
+  const permissionKey = resolved === 'generate'
+    ? 'kia.proforma.create'
+    : resolved === 'pending-approval'
+      ? 'kia.proforma.approve'
+      : 'kia.proforma.view'
+  const permission = await requirePermission(access.appUser, permissionKey)
+  if (!permission.allowed) forbidden()
+
   return <KiaProformaPage section={resolved} />
 }

@@ -3,8 +3,9 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { canApproveKiaProforma } from '@/lib/kia-proforma/access'
+import { canApproveKiaProformaForUser } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
+import { requirePermission } from '@/lib/permissions/service'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -30,6 +31,8 @@ export async function GET(request: NextRequest) {
   if (accessResponse) return accessResponse
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const permission = await requirePermission(appUser, 'kia.proforma.view')
+  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
   const profile = await ensureKiaUserProfile(appUser)
   if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -42,7 +45,7 @@ export async function GET(request: NextRequest) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
-  const visibility = canApproveKiaProforma(appUser.role, profile.approver)
+  const visibility = await canApproveKiaProformaForUser(appUser, profile.approver)
     ? sql`TRUE`
     : sql`login_email = ${appUser.email}`
   const categoryExpression = type === 'insurance'

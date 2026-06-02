@@ -74,7 +74,8 @@ create index if not exists permission_audit_permission_idx on public.permission_
 insert into public.permission_groups (key, name, parent_key, description, sort_order)
 values
   ('kia', 'KIA', null, 'AM KIA analytics and workshop modules.', 10),
-  ('kia.business_excellence', 'Business Excellence', 'kia', 'Executive Business Excellence dashboards and reports.', 20),
+  ('kia.service', 'Service', 'kia', 'AM KIA service department modules.', 19),
+  ('kia.business_excellence', 'Business Excellence', 'kia.service', 'Executive Business Excellence dashboards and reports.', 20),
   ('kia.business_excellence.ro_billing', 'RO Billing', 'kia.business_excellence', 'RO Billing Report tables, KPIs, and trends.', 21),
   ('kia.business_excellence.workshop_performance', 'Workshop Performance', 'kia.business_excellence', 'Workshop performance KPIs and service type tables.', 22),
   ('kia.business_excellence.open_ro', 'Open RO', 'kia.business_excellence', 'Open repair order aging and WIP controls.', 23),
@@ -82,7 +83,8 @@ values
   ('kia.business_excellence.rsa', 'RSA', 'kia.business_excellence', 'RSA add-on analytics.', 25),
   ('kia.business_excellence.ew', 'EW', 'kia.business_excellence', 'Extended warranty analytics.', 26),
   ('kia.business_excellence.mcp', 'MCP', 'kia.business_excellence', 'MCP analytics.', 27),
-  ('kia.demo_job_cards', 'Demo Job Cards', 'kia', 'Demo vehicle aging, alerts, and job card analytics.', 30),
+  ('kia.demo_job_cards', 'Demo Job Cards', 'kia.service', 'Demo vehicle aging, alerts, and job card analytics.', 30),
+  ('kia.demo_cars_list', 'Demo Cars List', 'kia.service', 'Active test-drive demo stock list and vehicle remarks tracking.', 31),
   ('purchase_orders', 'Purchase Orders', null, 'Purchase order workflow and approvals.', 40),
   ('finance_orders', 'Finance Orders', null, 'Finance order workflow and approvals.', 50),
   ('reports', 'Reports', null, 'Shared operational reports and exports.', 60),
@@ -100,6 +102,7 @@ on conflict (key) do update set
 with permission_seed(group_key, action, label, description, sort_order) as (
   values
     ('kia', 'view', 'KIA: View', 'View access for KIA.', 100),
+    ('kia.service', 'view', 'Service: View', 'View access for Service.', 190),
     ('kia.business_excellence', 'view', 'Business Excellence: View', 'View access for Business Excellence.', 200),
     ('kia.business_excellence.ro_billing', 'view', 'RO Billing: View', 'View access for RO Billing.', 210),
     ('kia.business_excellence.workshop_performance', 'view', 'Workshop Performance: View', 'View access for Workshop Performance.', 220),
@@ -109,6 +112,8 @@ with permission_seed(group_key, action, label, description, sort_order) as (
     ('kia.business_excellence.ew', 'view', 'EW: View', 'View access for EW.', 260),
     ('kia.business_excellence.mcp', 'view', 'MCP: View', 'View access for MCP.', 270),
     ('kia.demo_job_cards', 'view', 'Demo Job Cards: View', 'View access for Demo Job Cards.', 300),
+    ('kia.demo_cars_list', 'view', 'Demo Cars List: View', 'View access for Demo Cars List.', 310),
+    ('kia.demo_cars_list', 'edit', 'Demo Cars List: Edit', 'Edit access for Demo Cars List.', 311),
     ('purchase_orders', 'view', 'Purchase Orders: View', 'View access for Purchase Orders.', 400),
     ('purchase_orders', 'create', 'Purchase Orders: Create', 'Create access for Purchase Orders.', 401),
     ('purchase_orders', 'edit', 'Purchase Orders: Edit', 'Edit access for Purchase Orders.', 402),

@@ -4,10 +4,11 @@ import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { kiaProformas } from '@/lib/db/schema'
-import { canApproveKiaProforma, getKiaProformaVisibilityFilter } from '@/lib/kia-proforma/access'
+import { canApproveKiaProformaForUser, getKiaProformaVisibilityFilter } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile, touchKiaUserProfile } from '@/lib/kia-proforma/server'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { serializeUtcTimestampFields } from '@/lib/date-time'
+import { requirePermission } from '@/lib/permissions/service'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -112,9 +113,11 @@ export async function GET(request: NextRequest) {
 
     const appUser = await timer.time('auth', () => getAuthenticatedAppUser())
     if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const permission = await timer.time('permission:view', () => requirePermission(appUser, 'kia.proforma.view'))
+    if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
     const profile = await timer.time('profile', () => ensureKiaUserProfile(appUser))
     if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const isApprover = canApproveKiaProforma(appUser.role, profile.approver)
+    const isApprover = await timer.time('permissions', () => canApproveKiaProformaForUser(appUser, profile.approver))
 
     const searchParams = request.nextUrl.searchParams
     const page = Math.max(1, Number(searchParams.get('page') || 1) || 1)
@@ -125,7 +128,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
 
-    const filters = [getKiaProformaVisibilityFilter(appUser, profile.approver)]
+    const filters = [getKiaProformaVisibilityFilter(appUser, isApprover)]
     if (mode === 'pending-approval') {
       if (!isApprover) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       filters.push(sql`${kiaProformas.approvalStatus} <> 'APPROVED'`)
@@ -184,6 +187,8 @@ export async function POST(request: NextRequest) {
 
     const appUser = await getAuthenticatedAppUser()
     if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const permission = await requirePermission(appUser, 'kia.proforma.create')
+    if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
     const profile = await ensureKiaUserProfile(appUser)
     if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

@@ -1,5 +1,5 @@
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
-import { PERMISSIONS } from '@/lib/permissions/registry'
+import { PERMISSION_GROUPS, PERMISSIONS } from '@/lib/permissions/registry'
 
 export const BRANCH_MODULE_ACCESS_ROLE_KEEP = 'keep'
 
@@ -8,6 +8,11 @@ export const BRANCH_MODULE_ACCESS_ROLE_OPTIONS = [
     value: 'inherit',
     label: 'Inherit app role',
     description: 'Use the default permissions for the selected global role.',
+  },
+  {
+    value: 'branch_admin',
+    label: 'Branch admin',
+    description: 'Full module control inside the selected branch only.',
   },
   {
     value: 'branch_none',
@@ -23,6 +28,21 @@ export const BRANCH_MODULE_ACCESS_ROLE_OPTIONS = [
     value: 'branch_business_analytics',
     label: 'Business analytics',
     description: 'View Business Excellence and reporting sections for the branch.',
+  },
+  {
+    value: 'branch_service',
+    label: 'Service',
+    description: 'Access service department modules inside the selected branch.',
+  },
+  {
+    value: 'branch_sales',
+    label: 'Sales',
+    description: 'Access sales department modules inside the selected branch.',
+  },
+  {
+    value: 'branch_h_promise',
+    label: 'H Promise',
+    description: 'Access H Promise department modules inside the selected branch.',
   },
   {
     value: 'branch_operations',
@@ -66,6 +86,23 @@ function getBranchPrefixes(branchAccess: string | null | undefined) {
   return BRANCH_VALUES.includes(branchAccess as typeof BRANCH_VALUES[number]) ? [branchAccess] : []
 }
 
+function descendantGroupKeys(rootKey: string) {
+  const keys = new Set<string>([rootKey])
+  let changed = true
+
+  while (changed) {
+    changed = false
+    for (const group of PERMISSION_GROUPS) {
+      if (group.parentKey && keys.has(group.parentKey) && !keys.has(group.key)) {
+        keys.add(group.key)
+        changed = true
+      }
+    }
+  }
+
+  return keys
+}
+
 function groupKeysForBranch(prefix: string, role: BranchModuleAccessRoleValue) {
   const allBranchGroupKeys = Array.from(new Set(
     PERMISSIONS
@@ -73,9 +110,22 @@ function groupKeysForBranch(prefix: string, role: BranchModuleAccessRoleValue) {
       .map((permission) => permission.groupKey)
   ))
 
+  if (role === 'branch_admin') return allBranchGroupKeys
   if (role === 'branch_executive_view') return allBranchGroupKeys
   if (role === 'branch_business_analytics') {
     return allBranchGroupKeys.filter((key) => key === prefix || key === `${prefix}.service` || key.startsWith(`${prefix}.business_excellence`))
+  }
+  if (role === 'branch_service') {
+    const serviceKeys = descendantGroupKeys(`${prefix}.service`)
+    return allBranchGroupKeys.filter((key) => key === prefix || serviceKeys.has(key))
+  }
+  if (role === 'branch_sales') {
+    const salesKeys = descendantGroupKeys(`${prefix}.sales`)
+    return allBranchGroupKeys.filter((key) => key === prefix || salesKeys.has(key))
+  }
+  if (role === 'branch_h_promise') {
+    const hPromiseKeys = descendantGroupKeys(`${prefix}.h_promise`)
+    return allBranchGroupKeys.filter((key) => key === prefix || hPromiseKeys.has(key))
   }
   if (role === 'branch_operations') {
     return [
@@ -104,6 +154,10 @@ function groupKeysForBranch(prefix: string, role: BranchModuleAccessRoleValue) {
 }
 
 function actionsForRole(role: BranchModuleAccessRoleValue) {
+  if (role === 'branch_admin') return new Set(['view', 'create', 'edit', 'delete', 'approve'])
+  if (role === 'branch_service') return new Set(['view', 'create', 'edit'])
+  if (role === 'branch_sales') return new Set(['view', 'create', 'edit'])
+  if (role === 'branch_h_promise') return new Set(['view', 'create', 'edit'])
   if (role === 'branch_proforma_user') return new Set(['view', 'create', 'edit'])
   if (role === 'branch_proforma_approver') return new Set(['view', 'create', 'edit', 'approve'])
   return new Set(['view'])

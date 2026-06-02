@@ -4,8 +4,9 @@ import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { kiaPriceDetails } from '@/lib/db/schema'
-import { canApproveKiaProforma } from '@/lib/kia-proforma/access'
+import { canApproveKiaProformaForUser } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
+import { requirePermission } from '@/lib/permissions/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,8 @@ export async function GET() {
 
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const permission = await requirePermission(appUser, 'kia.proforma.view')
+  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
   const profile = await ensureKiaUserProfile(appUser)
   if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -41,7 +44,7 @@ export async function GET() {
       email: appUser.email,
       fullName: appUser.fullName,
       role: appUser.role,
-      isApprover: canApproveKiaProforma(appUser.role, profile.approver),
+      isApprover: await canApproveKiaProformaForUser(appUser, profile.approver),
     },
     profile,
     prices: priceRows,

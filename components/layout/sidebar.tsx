@@ -40,6 +40,7 @@ const brandNavigation = [
         submenus: [
           { name: 'Business Excellence', href: '/brands/kia/business-excellence/overview' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
+          { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
           { name: 'Kia Proforma', href: '/brands/kia/proforma' },
         ],
       },
@@ -64,6 +65,7 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/finance-orders': 'finance_orders.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
+  '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
   '/brands/kia/proforma': 'kia.proforma.view',
   '/admin/users': 'user_management.view',
   '/admin/settings': 'dashboard_settings.view',

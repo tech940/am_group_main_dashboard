@@ -170,6 +170,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'kia.demo_cars_list',
+    name: 'Demo Cars List',
+    parentKey: 'kia.service',
+    description: 'Active test-drive demo stock list and vehicle remarks tracking.',
+    sortOrder: 31,
+    actions: ['view', 'edit'],
+  },
+  {
     key: 'kia.proforma',
     name: 'Kia Proforma',
     parentKey: 'kia.service',
@@ -298,6 +306,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.business_excellence.ew',
     'kia.business_excellence.mcp',
     'kia.demo_job_cards',
+    'kia.demo_cars_list',
     'kia.proforma',
     'purchase_orders',
     'finance_orders',
@@ -312,6 +321,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.business_excellence.open_ro',
     'kia.business_excellence.complaints',
     'kia.demo_job_cards',
+    'kia.demo_cars_list',
     'kia.proforma',
     'purchase_orders',
     'finance_orders',
@@ -324,6 +334,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.business_excellence.open_ro',
     'kia.business_excellence.complaints',
     'kia.demo_job_cards',
+    'kia.demo_cars_list',
     'kia.proforma',
     'purchase_orders',
     'finance_orders',
@@ -331,9 +342,9 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   purchase_manager: keysForGroups(['purchase_orders'], ['view', 'create', 'edit']),
   finance_head: keysForGroups(['finance_orders'], ['view', 'create', 'edit']),
   accounts: keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),
-  manager: keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.proforma'], ['view', 'approve']),
-  technician: keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.proforma'], ['view', 'create', 'edit']),
-  viewer: keysForGroups(['kia.service', 'kia.proforma'], ['view', 'create', 'edit']),
+  manager: keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'approve']),
+  technician: keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
+  viewer: keysForGroups(['kia.service', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
 }
 
 export function getTemplateMap(role: PermissionRole) {
