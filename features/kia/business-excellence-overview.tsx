@@ -341,6 +341,11 @@ function scoreFromRiskPct(value: number, multiplier: number) {
   return clampScore(100 - Math.max(0, value) * multiplier)
 }
 
+function scoreFromInverseGrowth(growth: number | null, fallback = 74) {
+  if (growth === null || !Number.isFinite(growth)) return fallback
+  return clampScore(76 - growth * 0.22)
+}
+
 function healthStatus(score: number) {
   if (score >= 90) return 'EXCELLENT'
   if (score >= 75) return 'GOOD'
@@ -355,9 +360,13 @@ function buildBusinessSnapshotHealth(data: OverviewData) {
   const loadGrowth = data.comparison?.totalJc.deltaPct ?? null
   const avgBillingGrowth = data.comparison?.avgBilling.deltaPct ?? null
   const vasGrowth = data.comparison?.workshopVasAmount.deltaPct ?? null
+  const complaintGrowth = data.comparison?.complaintsTotal.deltaPct ?? null
   const delayedRisk = scoreFromRiskPct(data.kpis.delayedRoPct, 2.2)
   const agedRisk = scoreFromRiskPct(data.kpis.agedRoPct, 2.6)
-  const complaintRisk = scoreFromRiskPct(data.kpis.complaintOpenPct, 1.8)
+  const complaintRisk = Math.min(
+    scoreFromRiskPct(data.kpis.complaintOpenPct, 1.8),
+    scoreFromInverseGrowth(complaintGrowth)
+  )
 
   const components = [
     { label: 'Revenue Growth', weight: 22, score: scoreFromGrowth(revenueGrowth), detail: revenueGrowth === null ? 'No LY comparison' : formatDelta(revenueGrowth) },
@@ -368,7 +377,7 @@ function buildBusinessSnapshotHealth(data: OverviewData) {
     { label: 'VAS Revenue Growth', weight: 10, score: scoreFromGrowth(vasGrowth), detail: vasGrowth === null ? 'No LY comparison' : formatDelta(vasGrowth) },
     { label: 'Delayed RO Control', weight: 8, score: delayedRisk, detail: `${data.kpis.delayedRoPct.toFixed(1)}% delayed` },
     { label: '>15D RO Control', weight: 7, score: agedRisk, detail: `${data.kpis.agedRoPct.toFixed(1)}% over 15D` },
-    { label: 'Complaint Control', weight: 5, score: complaintRisk, detail: `${data.kpis.complaintOpenPct.toFixed(1)}% open` },
+    { label: 'Complaint Control', weight: 5, score: complaintRisk, detail: complaintGrowth === null ? `${data.kpis.complaintOpenPct.toFixed(1)}% open` : `${formatDelta(complaintGrowth)} complaints` },
   ]
 
   const weightedScore = components.reduce((sum, item) => sum + item.score * item.weight, 0) / components.reduce((sum, item) => sum + item.weight, 0)
@@ -517,10 +526,26 @@ function buildDetailedRoRows(response: ROAnalysisResponse | undefined) {
   const load = totalMetricPeriods(response, 'load')
   const labour = totalMetricPeriods(response, 'labour')
   const parts = totalMetricPeriods(response, 'parts')
+  const revenue = {} as Record<PeriodKey, ROAnalysisPeriodMetric>
+  ;(['td', 'mtd', 'qtd', 'ytd'] as PeriodKey[]).forEach((period) => {
+    const cy = Number(labour[period].cy || 0) + Number(parts[period].cy || 0)
+    const labourLy = labour[period].ly
+    const partsLy = parts[period].ly
+    const hasLy = labourLy !== 'N/A' || partsLy !== 'N/A'
+    const ly = hasLy
+      ? Number(labourLy === 'N/A' ? 0 : labourLy || 0) + Number(partsLy === 'N/A' ? 0 : partsLy || 0)
+      : 'N/A'
+    revenue[period] = {
+      cy,
+      ly,
+      growth: growthValue(cy, ly),
+    }
+  })
   const labPerVeh = perVehiclePeriods(labour, load)
   const partPerVeh = perVehiclePeriods(parts, load)
   return [
     { metric: 'Load', formatter: formatNumber, values: load },
+    { metric: 'Revenue', formatter: formatCurrency, values: revenue },
     { metric: 'Labour', formatter: formatCurrency, values: labour },
     { metric: 'Parts', formatter: formatCurrency, values: parts },
     { metric: 'Labour / Vehicle', formatter: formatCurrency, values: labPerVeh },
@@ -1050,8 +1075,8 @@ function RoBillingOverviewTrend({
         ) : (
           <>
             <div className="mb-4 flex justify-end gap-5 text-[10px] font-bold text-slate-600">
-              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-[#0B5D7A] bg-white" />This Year</span>
-              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-amber-600 bg-white" />Last Year</span>
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-[#0B5D7A] bg-white" />Current Year (CY)</span>
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-amber-600 bg-white" />Last Year (LY)</span>
               <span className="inline-flex items-center gap-2"><span className="h-0.5 w-6 border-t border-dashed border-rose-600" />Target</span>
             </div>
             <div className="h-[360px] rounded-2xl bg-slate-50 p-3">
@@ -1061,17 +1086,20 @@ function RoBillingOverviewTrend({
                   <XAxis dataKey="label" interval={0} minTickGap={0} tick={{ fontSize: 9, fontWeight: 900, fill: '#64748b' }} tickMargin={12} height={48} />
                   <YAxis tickFormatter={(value) => isMoneyMetric ? formatCompact(Number(value || 0)) : formatNumber(Number(value || 0))} tick={{ fontSize: 10, fontWeight: 800, fill: '#94a3b8' }} width={60} />
                   <Tooltip
-                    formatter={(value, name) => [isMoneyMetric ? formatCurrency(Number(value || 0)) : formatNumber(Number(value || 0)), name === 'cy' ? 'This Year' : 'Last Year']}
+                    formatter={(value, name) => [
+                      isMoneyMetric ? formatCurrency(Number(value || 0)) : formatNumber(Number(value || 0)),
+                      String(name).toLowerCase() === 'cy' || String(name).includes('Current') ? 'Current Year (CY)' : 'Last Year (LY)'
+                    ]}
                     labelFormatter={(_, payload) => payload?.[0]?.payload?.date || ''}
                     contentStyle={tooltipStyle}
                   />
                   {dailyTarget > 0 && (
                     <ReferenceLine y={dailyTarget} stroke="#e11d48" strokeDasharray="5 5" label={{ position: 'right', value: 'Target', fill: '#e11d48', fontSize: 10, fontWeight: 900 }} />
                   )}
-                  <Line type="monotone" dataKey="cy" name="This Year" stroke="#0B5D7A" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false}>
+                  <Line type="monotone" dataKey="cy" name="Current Year (CY)" stroke="#0B5D7A" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false}>
                     <LabelList dataKey="cy" position="top" offset={10} formatter={(value) => isMoneyMetric ? formatCompact(Number(value || 0)) : formatNumber(Number(value || 0))} fill="#0B5D7A" fontSize={10} fontWeight={900} />
                   </Line>
-                  <Line type="monotone" dataKey="ly" name="Last Year" stroke="#D97706" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false}>
+                  <Line type="monotone" dataKey="ly" name="Last Year (LY)" stroke="#D97706" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false}>
                     <LabelList dataKey="ly" position="top" offset={10} formatter={(value) => isMoneyMetric ? formatCompact(Number(value || 0)) : formatNumber(Number(value || 0))} fill="#D97706" fontSize={10} fontWeight={900} />
                   </Line>
                 </LineChart>
@@ -1119,6 +1147,28 @@ function ChartShell({
       <div className="h-72 min-h-0 rounded-2xl bg-slate-50 p-3">{children}</div>
     </div>
   )
+}
+
+function ChartNoData({ message = 'No Data Available' }: { message?: string }) {
+  return (
+    <div className="flex h-full min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/70 px-4 text-center">
+      <div>
+        <p className="text-sm font-black text-slate-700">{message}</p>
+        <p className="mt-1 text-xs font-semibold text-slate-400">Try a wider date range or clear comparison dates.</p>
+      </div>
+    </div>
+  )
+}
+
+function hasChartValues<T extends object>(rows: T[] | undefined, keys: string[]) {
+  return Boolean(rows?.some((row) => {
+    const record = row as Record<string, unknown>
+    return keys.some((key) => Number(record[key] || 0) !== 0)
+  }))
+}
+
+function preferChartRows<T>(secondaryRows: T[] | undefined, summaryRows: T[] | undefined) {
+  return secondaryRows && secondaryRows.length > 0 ? secondaryRows : summaryRows || []
 }
 
 export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: BusinessDateFilter }) {
@@ -1197,15 +1247,15 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
       comparison: secondaryData.comparison || summaryData.comparison,
       charts: {
         ...summaryData.charts,
-        revenueTrend: secondaryData.charts.revenueTrend,
-        serviceMix: secondaryData.charts.serviceMix,
-        advisorRevenue: secondaryData.charts.advisorRevenue,
-        agingDistribution: secondaryData.charts.agingDistribution,
-        openRoAdvisorLoad: secondaryData.charts.openRoAdvisorLoad,
-        openRoWorkType: secondaryData.charts.openRoWorkType,
-        complaintAreas: secondaryData.charts.complaintAreas,
-        complaintStatus: secondaryData.charts.complaintStatus,
-        complaintMonthlyComparison: secondaryData.charts.complaintMonthlyComparison,
+        revenueTrend: preferChartRows(secondaryData.charts.revenueTrend, summaryData.charts.revenueTrend),
+        serviceMix: preferChartRows(secondaryData.charts.serviceMix, summaryData.charts.serviceMix),
+        advisorRevenue: preferChartRows(secondaryData.charts.advisorRevenue, summaryData.charts.advisorRevenue),
+        agingDistribution: preferChartRows(secondaryData.charts.agingDistribution, summaryData.charts.agingDistribution),
+        openRoAdvisorLoad: preferChartRows(secondaryData.charts.openRoAdvisorLoad, summaryData.charts.openRoAdvisorLoad),
+        openRoWorkType: preferChartRows(secondaryData.charts.openRoWorkType, summaryData.charts.openRoWorkType),
+        complaintAreas: preferChartRows(secondaryData.charts.complaintAreas, summaryData.charts.complaintAreas),
+        complaintStatus: preferChartRows(secondaryData.charts.complaintStatus, summaryData.charts.complaintStatus),
+        complaintMonthlyComparison: preferChartRows(secondaryData.charts.complaintMonthlyComparison, summaryData.charts.complaintMonthlyComparison),
       },
       meta: {
         ...summaryData.meta,
@@ -1223,6 +1273,9 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
 
     if (chartId === 'revenue') {
       const weeklyBillingTrend = buildWeeklyBillingTrend(data.charts.revenueTrend, range.startDate)
+      if (!hasChartValues(weeklyBillingTrend, ['revenue', 'totalJc'])) {
+        return <ChartNoData />
+      }
 
       return (
         <ResponsiveContainer width="100%" height="100%">
@@ -1253,6 +1306,10 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
     }
 
     if (chartId === 'serviceMix') {
+      if (!hasChartValues(data.charts.serviceMix, ['totalJc', 'revenue'])) {
+        return <ChartNoData />
+      }
+
       return (
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data.charts.serviceMix} layout="vertical" margin={{ top: 5, right: 24, left: 20, bottom: 5 }}>
@@ -1269,6 +1326,10 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
     }
 
     if (chartId === 'aging') {
+      if (!hasChartValues(data.charts.agingDistribution, ['count'])) {
+        return <ChartNoData />
+      }
+
       return (
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data.charts.agingDistribution} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
@@ -1285,6 +1346,10 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
     }
 
     if (chartId === 'complaints') {
+      if (!hasChartValues(data.charts.complaintAreas, ['total', 'open'])) {
+        return <ChartNoData />
+      }
+
       return (
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data.charts.complaintAreas} layout="vertical" margin={{ top: 5, right: 24, left: 20, bottom: 5 }}>
@@ -1301,6 +1366,10 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
     }
 
     if (chartId === 'complaintTrend') {
+      if (!hasChartValues(data.charts.complaintMonthlyComparison, ['cyCount', 'lyCount'])) {
+        return <ChartNoData />
+      }
+
       return (
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data.charts.complaintMonthlyComparison} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
@@ -1314,6 +1383,10 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
           </AreaChart>
         </ResponsiveContainer>
       )
+    }
+
+    if (!hasChartValues(data.charts.addOnMix, ['value'])) {
+      return <ChartNoData />
     }
 
     return (
@@ -1404,7 +1477,12 @@ export function BusinessExcellenceOverview({ dateFilter }: { dateFilter: Busines
       cy: formatNumber(data.kpis.complaintsTotal),
       ly: data.comparison ? formatNumber(data.comparison.complaintsTotal.ly) : 'Loading',
       growth: data.comparison ? data.comparison.complaintsTotal.deltaPct : null,
-      status: data.kpis.complaintsOpen > 0 ? 'WATCH' : 'GOOD',
+      status: (() => {
+        const growthValue = data.comparison?.complaintsTotal.deltaPct
+        if (data.kpis.complaintsOpen > 0 || (growthValue !== undefined && growthValue >= 200)) return 'CRITICAL'
+        if (growthValue !== undefined && growthValue > 0) return 'WATCH'
+        return 'GOOD'
+      })(),
       positiveIsGood: false,
     },
     {

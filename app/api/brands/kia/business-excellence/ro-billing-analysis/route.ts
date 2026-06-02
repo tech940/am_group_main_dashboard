@@ -78,15 +78,6 @@ function endOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
 }
 
-function endOfMonth(date: Date) {
-  return endOfDay(new Date(date.getFullYear(), date.getMonth() + 1, 0))
-}
-
-function endOfQuarter(date: Date) {
-  const quarterStartMonth = Math.floor(date.getMonth() / 3) * 3
-  return endOfDay(new Date(date.getFullYear(), quarterStartMonth + 3, 0))
-}
-
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -193,7 +184,7 @@ function buildPeriodWindows(startDate: Date, endDate: Date, comparisonRange: Com
       cyStart: startOfDay(cyMtdStart),
       cyEnd,
       lyStart: sameDateLastYear(startOfDay(cyMtdStart)),
-      lyEnd: endOfMonth(sameDateLastYear(cyEnd)),
+      lyEnd: sameDateLastYear(cyEnd),
     },
     qtd: {
       cyStart: startOfDay(cyQtdStart),
@@ -1014,38 +1005,8 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Prom
   }))
 }
 
-async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>) {
-  const result = await db.execute(await hasDailySummaryV2() ? sql`
-    SELECT
-      work_type,
-      service_type,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::int AS td_cy_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::int AS mtd_cy_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::int AS mtd_ly_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::int AS qtd_cy_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::int AS qtd_ly_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::int AS ytd_cy_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::int AS ytd_ly_load,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_labour,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_parts
-    FROM ro_billing_daily_summary_v2
-    WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
-      AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
-      AND ${activeBillStatusSql()}
-    GROUP BY work_type, service_type
-  ` : sql`
+async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>) {
+  const result = await db.execute(sql`
     WITH dedup AS (
       SELECT
         work_type,
@@ -1098,6 +1059,58 @@ async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindo
   `)
 
   return (result as unknown as WorkTypeAggregateRow[]) || []
+}
+
+async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>) {
+  // Keep the management matrix internally consistent by using the same raw
+  // RO rows for MTD, QTD, and YTD. The summary view can lag behind raw imports,
+  // which makes month and year windows look impossible beside each other.
+  return fetchRawWorkTypeAggregateRows(windows)
+
+  const useDailySummary = await hasDailySummaryV2()
+  if (!useDailySummary) return fetchRawWorkTypeAggregateRows(windows)
+
+  const result = await db.execute(sql`
+    SELECT
+      work_type,
+      service_type,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::int AS td_cy_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::int AS mtd_cy_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::int AS mtd_ly_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::int AS qtd_cy_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::int AS qtd_ly_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::int AS ytd_cy_load,
+      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::int AS ytd_ly_load,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_labour,
+      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_labour,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_parts,
+      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_parts
+    FROM ro_billing_daily_summary_v2
+    WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
+      AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
+      AND ${activeBillStatusSql()}
+    GROUP BY work_type, service_type
+  `)
+
+  const rows = (result as unknown as WorkTypeAggregateRow[]) || []
+  const mtdCyLoad = rows.reduce((total, row) => total + numberValue(row.mtd_cy_load), 0)
+  const mtdLyLoad = rows.reduce((total, row) => total + numberValue(row.mtd_ly_load), 0)
+
+  if (mtdCyLoad > 0 && mtdLyLoad === 0) {
+    return fetchRawWorkTypeAggregateRows(windows)
+  }
+
+  return rows
 }
 
 async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: Date }) {
@@ -1257,7 +1270,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v18:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v20:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {

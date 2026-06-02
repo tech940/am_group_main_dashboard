@@ -1,4 +1,6 @@
 import { uploadFile } from '@/lib/supabase/storage'
+import fs from 'fs'
+import path from 'path'
 
 export type KiaProformaInvoiceRow = {
   id: string
@@ -35,6 +37,15 @@ type PdfPage = {
   commands: string[]
 }
 
+type PdfImageAsset = {
+  name: string
+  width: number
+  height: number
+  bytes: Buffer
+}
+
+type PdfObjectBody = string | Buffer
+
 const FIELD_MAP: { label: string; key: keyof KiaProformaInvoiceRow; money: boolean }[] = [
   { label: 'Vehicle Model', key: 'modelName', money: false },
   { label: 'Trim / Variant', key: 'trimDescription', money: false },
@@ -56,6 +67,42 @@ const FIELD_MAP: { label: string; key: keyof KiaProformaInvoiceRow; money: boole
   { label: 'Additional Discount', key: 'additionalDiscount', money: true },
   { label: 'Grand Total', key: 'grandTotalCost', money: true },
 ]
+
+const AM_GROUP_LOGO_PATH = '/assets/am-group-logo-pdf.jpg'
+const AM_GROUP_WATERMARK_PATH = '/assets/am-group-logo-watermark.jpg'
+
+function readJpegDimensions(bytes: Buffer) {
+  let offset = 2
+  while (offset < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1
+      continue
+    }
+    const marker = bytes[offset + 1]
+    const length = bytes.readUInt16BE(offset + 2)
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return {
+        height: bytes.readUInt16BE(offset + 5),
+        width: bytes.readUInt16BE(offset + 7),
+      }
+    }
+    offset += 2 + length
+  }
+  return { width: 169, height: 112 }
+}
+
+function readPdfLogoAsset(fileName: string, name: string): PdfImageAsset | null {
+  try {
+    const bytes = fs.readFileSync(path.join(process.cwd(), 'public', 'assets', fileName))
+    const dimensions = readJpegDimensions(bytes)
+    return { name, width: dimensions.width, height: dimensions.height, bytes }
+  } catch {
+    return null
+  }
+}
+
+const pdfHeaderLogo = readPdfLogoAsset('am-group-logo-pdf.jpg', 'Logo')
+const pdfWatermarkLogo = readPdfLogoAsset('am-group-logo-watermark.jpg', 'WatermarkLogo')
 
 function text(value: unknown) {
   return String(value ?? '').trim()
@@ -135,19 +182,62 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
   .amt { width: 45%; text-align: right; }
   .info-lbl { width: 50%; }
   .info-val { width: 50%; text-align: right; }
-  .payment { text-align: center; font-size: 11px; border-top: 1px solid #ccc; padding-top: 8px; margin-bottom: 10px; line-height: 1.6; }
-  .dealership-code { font-size: 35px; font-weight: bold; }
+  .payment { text-align: center; font-size: 11px; padding-top: 8px; margin-bottom: 10px; line-height: 1.7; }
+  .payment-account { display: block; margin-top: 4px; font-size: 10px; line-height: 1.45; }
+  .dealership-code { display: block; margin: 8px 0 6px; font-size: 28px; line-height: 1.05; font-weight: bold; }
   .tc { font-size: 11px; line-height: 1.6; margin-bottom: 10px; }
   .stamp { text-align: center; margin-bottom: 12px; }
   .stamp-box { display: inline-block; border: 2px solid #000; padding: 12px 20px; }
+  .watermark {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .watermark-logo {
+    transform: rotate(-28deg);
+    width: 68%;
+    max-width: 620px;
+    opacity: 0.08;
+  }
+  .page-border {
+    border: 1px solid #000;
+    padding: 10px 8px 8px;
+    min-height: calc(100vh - 60px);
+  }
+  .brand-line {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .brand-mark {
+    width: 90px;
+    min-height: 48px;
+    object-fit: contain;
+  }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <h2>${addressHTML.name}</h2>
-  ${addressHTML.details}
+<div class="watermark">
+  <img class="watermark-logo" src="${AM_GROUP_WATERMARK_PATH}" alt="AM Group watermark">
 </div>
+
+<div class="page-border">
+  <div class="brand-line">
+    <img class="brand-mark" src="${AM_GROUP_LOGO_PATH}" alt="AM Group">
+    <div class="header">
+      <h2>${addressHTML.name}</h2>
+      ${addressHTML.details}
+    </div>
+    <img class="brand-mark" src="${AM_GROUP_LOGO_PATH}" alt="AM Group">
+  </div>
 
 <div class="section-title">Proforma Invoice</div>
 
@@ -188,9 +278,9 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
 
 <div class="payment">
   <b>PAYMENT DETAILS:</b> All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD. Payable at Jammu<br>
-  AC. No. 43418019645 | BRANCH: SBI-SME-JAMMU | IFSC: SBIN0014501<br>
-  <div class="dealership-code">DEALERSHIP CODE: ${dealershipCode}</div>
-  <b>Sales:</b> 9484211111 | <b>Finance:</b> 9086222430<br>
+  <span class="payment-account">AC. No. 43418019645 | BRANCH: SBI-SME-JAMMU | IFSC: SBIN0014501</span>
+  <span class="dealership-code">DEALERSHIP CODE: ${dealershipCode}</span>
+  <b>Sales:</b> 9484211111 | <b>Finance:</b> 9484111111<br>
   <i>Complete payment must be made 24 hours prior to delivery.</i>
 </div>
 
@@ -223,6 +313,7 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
   </tr>
 </table>
 
+</div>
 </body>
 </html>`
 }
@@ -246,7 +337,11 @@ function wrap(value: string, maxChars: number) {
 export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   const width = 595
   const height = 842
-  const margin = 20
+  const margin = 32
+  const borderX = 28
+  const borderY = 28
+  const borderW = width - borderX * 2
+  const borderH = height - borderY * 2
   const pages: PdfPage[] = [{ commands: [] }]
   let page = pages[0]
   let y = height - margin
@@ -263,22 +358,45 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
     page.commands.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${yy} Td (${pdfEscape(value)}) Tj ET`)
   }
   const center = (yy: number, value: string, size = 10, bold = false) => {
-    const estimate = value.length * size * 0.25
+    const estimate = value.length * size * 0.24
     textAt((width / 2) - estimate, yy, value, size, bold)
   }
   const rect = (x: number, yy: number, w: number, h: number, fill = false) => {
     page.commands.push(fill ? `0.91 g ${x} ${yy} ${w} ${h} re f 0 g` : `${x} ${yy} ${w} ${h} re S`)
   }
+  const drawImage = (asset: PdfImageAsset | null, x: number, yy: number, w: number, h: number, opacityName?: string, rotate = 0) => {
+    if (!asset) return
+    const radians = (rotate * Math.PI) / 180
+    const cos = Math.cos(radians)
+    const sin = Math.sin(radians)
+    const gs = opacityName ? `/${opacityName} gs ` : ''
+    page.commands.push(`q ${gs}${(w * cos).toFixed(3)} ${(w * sin).toFixed(3)} ${(-h * sin).toFixed(3)} ${(h * cos).toFixed(3)} ${x.toFixed(3)} ${yy.toFixed(3)} cm /${asset.name} Do Q`)
+  }
+  const pageBaseCommands = () => [
+    ...(pdfWatermarkLogo
+      ? [
+          'q /GSWatermark gs',
+          '0.88 0.93 0.98 rg',
+          `355.619 -189.619 131.351 246.182 64 310 cm /${pdfWatermarkLogo.name} Do`,
+          'Q',
+        ]
+      : []),
+    '0 g',
+    `1.1 w ${borderX} ${borderY} ${borderW} ${borderH} re S`,
+    '0.5 w',
+  ]
 
   const address = addressBlock(row)
-  center(y, address.name, 15, true)
+  drawImage(pdfHeaderLogo, borderX + 28, y - 50, 76, 50)
+  drawImage(pdfHeaderLogo, width - borderX - 104, y - 50, 76, 50)
+  center(y - 6, address.name, 15, true)
   y -= 16
   address.pdfLines.forEach((line) => {
     center(y, line, 10)
     y -= 13
   })
   y -= 8
-  center(y, 'Proforma Invoice', 14, true)
+  center(y, 'PROFORMA INVOICE', 9, true)
   y -= 22
 
   const infoRows = [
@@ -300,15 +418,15 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
     })
     y -= rowH
   })
-  y -= 12
+  y -= 14
 
   ensure(24)
   rect(tableX, y - 22, tableW * 0.6, 22, true)
   rect(tableX + tableW * 0.6, y - 22, tableW * 0.4, 22, true)
   rect(tableX, y - 22, tableW * 0.6, 22)
   rect(tableX + tableW * 0.6, y - 22, tableW * 0.4, 22)
-  textAt(tableX + 8, y - 14, 'PARTICULARS', 10, true)
-  textAt(tableX + tableW * 0.6 + 8, y - 14, 'AMOUNT (INR)', 10, true)
+  textAt(tableX + tableW * 0.3 - 34, y - 14, 'PARTICULARS', 10, true)
+  textAt(tableX + tableW * 0.8 - 34, y - 14, 'AMOUNT (INR)', 10, true)
   y -= 22
   FIELD_MAP.forEach((item) => {
     const raw = row[item.key]
@@ -318,7 +436,8 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
     ensure(h)
     rect(tableX, y - h, tableW * 0.6, h)
     rect(tableX + tableW * 0.6, y - h, tableW * 0.4, h)
-    textAt(tableX + 8, y - 12, item.label, 9, bold)
+    const labelX = tableX + ((tableW * 0.6) / 2) - Math.min(140, item.label.length * 2.1)
+    textAt(labelX, y - 12, item.label, 9, bold)
     textAt(tableX + tableW * 0.6 + 8, y - 12, display, 9, bold)
     y -= h
   })
@@ -331,18 +450,17 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   y -= 58
 
   const dealershipCode = text(row.bankName).toUpperCase() === 'J&K BANK' ? 'JKB0993J003' : 'NOT APPLICABLE'
-  const paymentLines = [
-    'PAYMENT DETAILS: All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD. Payable at Jammu',
-    'AC. No. 43418019645 | BRANCH: SBI-SME-JAMMU | IFSC: SBIN0014501',
-    `DEALERSHIP CODE: ${dealershipCode}`,
-    'Sales: 9484211111 | Finance: 9086222430',
-    'Complete payment must be made 24 hours prior to delivery.',
-  ]
-  paymentLines.forEach((line, index) => {
-    ensure(16)
-    center(y, line, index === 2 ? 20 : 9, index <= 2)
-    y -= index === 2 ? 24 : 13
-  })
+  ensure(82)
+  center(y, 'PAYMENT DETAILS: All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD. Payable at Jammu', 9, true)
+  y -= 15
+  center(y, 'AC. No. 43418019645 | BRANCH: SBI-SME-JAMMU | IFSC: SBIN0014501', 8, true)
+  y -= 24
+  center(y, `DEALERSHIP CODE: ${dealershipCode}`, 20, true)
+  y -= 24
+  center(y, 'Sales: 9484211111 | Finance: 9484111111', 9)
+  y -= 13
+  center(y, 'Complete payment must be made 24 hours prior to delivery.', 9)
+  y -= 13
 
   y -= 8
   const terms = [
@@ -374,40 +492,62 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   textAt(width / 2, y - 37, '- Latest Salary Slip', 8)
   textAt(width / 2, y - 49, '- ID Card', 8)
 
-  const objects: string[] = []
-  const addObject = (body: string) => {
-    objects.push(body)
+  const objects: Buffer[] = []
+  const addObject = (body: PdfObjectBody) => {
+    objects.push(Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8'))
     return objects.length
   }
 
   const font1 = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
   const font2 = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>')
+  const imageObjectIds = new Map<string, number>()
+  const addImageObject = (asset: PdfImageAsset | null) => {
+    if (!asset) return null
+    const imageId = addObject(Buffer.concat([
+      Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${asset.width} /Height ${asset.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${asset.bytes.length} >>\nstream\n`, 'utf8'),
+      asset.bytes,
+      Buffer.from('\nendstream', 'utf8'),
+    ]))
+    imageObjectIds.set(asset.name, imageId)
+    return imageId
+  }
+  addImageObject(pdfHeaderLogo)
+  addImageObject(pdfWatermarkLogo)
+  const xObjectResources = imageObjectIds.size > 0
+    ? `/XObject << ${Array.from(imageObjectIds.entries()).map(([name, id]) => `/${name} ${id} 0 R`).join(' ')} >>`
+    : ''
+  const graphicsStateResources = '/ExtGState << /GSWatermark << /Type /ExtGState /CA 0.10 /ca 0.10 >> >>'
   const pageObjectIds: number[] = []
   pages.forEach((pdfPage) => {
-    const content = pdfPage.commands.join('\n')
+    const content = [...pageBaseCommands(), ...pdfPage.commands].join('\n')
     const streamId = addObject(`<< /Length ${Buffer.byteLength(content, 'utf8')} >>\nstream\n${content}\nendstream`)
-    const pageId = addObject(`<< /Type /Page /Parent 0 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> >> /Contents ${streamId} 0 R >>`)
+    const pageId = addObject(`<< /Type /Page /Parent 0 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> ${xObjectResources} ${graphicsStateResources} >> /Contents ${streamId} 0 R >>`)
     pageObjectIds.push(pageId)
   })
   const pagesId = addObject(`<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageObjectIds.length} >>`)
   pageObjectIds.forEach((id) => {
-    objects[id - 1] = objects[id - 1].replace('/Parent 0 0 R', `/Parent ${pagesId} 0 R`)
+    objects[id - 1] = Buffer.from(objects[id - 1].toString('utf8').replace('/Parent 0 0 R', `/Parent ${pagesId} 0 R`), 'utf8')
   })
   const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`)
 
-  let pdf = '%PDF-1.4\n'
+  const chunks: Buffer[] = [Buffer.from('%PDF-1.4\n', 'utf8')]
   const offsets: number[] = [0]
+  let byteOffset = chunks[0].length
   objects.forEach((body, index) => {
-    offsets.push(Buffer.byteLength(pdf, 'utf8'))
-    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`
+    offsets.push(byteOffset)
+    const prefix = Buffer.from(`${index + 1} 0 obj\n`, 'utf8')
+    const suffix = Buffer.from('\nendobj\n', 'utf8')
+    chunks.push(prefix, body, suffix)
+    byteOffset += prefix.length + body.length + suffix.length
   })
-  const xref = Buffer.byteLength(pdf, 'utf8')
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  const xref = byteOffset
+  let trailer = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
   offsets.slice(1).forEach((offset) => {
-    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`
+    trailer += `${String(offset).padStart(10, '0')} 00000 n \n`
   })
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`
-  return Buffer.from(pdf, 'utf8')
+  trailer += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`
+  chunks.push(Buffer.from(trailer, 'utf8'))
+  return Buffer.concat(chunks)
 }
 
 export async function saveKiaProformaPdf(row: KiaProformaInvoiceRow) {

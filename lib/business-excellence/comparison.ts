@@ -163,10 +163,14 @@ export function appendBusinessComparisonParams(params: URLSearchParams, dateFilt
   if (dateFilter.preset) params.set('periodPreset', dateFilter.preset)
   if (dateFilter.comparison?.previousStartDate && dateFilter.comparison?.previousEndDate) {
     params.set('comparisonMode', 'custom')
+    params.set('compareStartDate', dateFilter.comparison.previousStartDate)
+    params.set('compareEndDate', dateFilter.comparison.previousEndDate)
     params.set('comparisonStartDate', dateFilter.comparison.previousStartDate)
     params.set('comparisonEndDate', dateFilter.comparison.previousEndDate)
   } else {
     params.delete('comparisonMode')
+    params.delete('compareStartDate')
+    params.delete('compareEndDate')
     params.delete('comparisonStartDate')
     params.delete('comparisonEndDate')
   }

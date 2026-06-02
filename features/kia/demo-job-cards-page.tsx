@@ -679,65 +679,6 @@ export function DemoJobCardsPage() {
 
             {data && healthVisible && <DemoVehicleHealth data={data} />}
 
-            <section className="rounded-[2rem] border border-amber-200 bg-white/82 p-5 shadow-xl shadow-slate-900/5 backdrop-blur-xl">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-700">Upcoming Demo Due</p>
-                  <h2 className="mt-1 text-2xl font-black text-slate-950">Vehicles due within 5 days</h2>
-                </div>
-                <p className="text-xs font-bold text-slate-500">{data?.meta.alertRule}</p>
-              </div>
-
-              {alerts.length === 0 ? (
-                <div className="mt-5 rounded-3xl border border-emerald-200 bg-emerald-50/80 p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
-                      <CalendarClock className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-black text-emerald-950">No demo vehicles due in the next 5 days</h3>
-                      <p className="mt-1 text-sm font-semibold text-emerald-800">The follow-up tracker is clear for now.</p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-5 grid gap-4 xl:grid-cols-3">
-                  {alerts.map((item) => (
-                    <article key={`alert-${item.vehicleKey}`} className={cn('rounded-3xl border p-5 shadow-sm', getDueBadgeClass(item.dueStatus))}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70">{item.dueStatus}</p>
-                          <h3 className="mt-2 text-2xl font-black">{item.registrationNumber}</h3>
-                          <p className="mt-1 text-xs font-bold opacity-70">{item.vin}</p>
-                        </div>
-                        <AlertTriangle className="h-6 w-6" />
-                      </div>
-                      <div className="mt-4 grid gap-2 text-sm font-bold">
-                        <div className="flex justify-between gap-3">
-                          <span className="opacity-60">Model</span>
-                          <span className="text-right">{item.model}</span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <span className="opacity-60">Mileage</span>
-                          <span>{numberFormat(item.mileage)}</span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <span className="opacity-60">Next Demo Due</span>
-                          <span>{formatDate(item.nextDemoDueDate)}</span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <span className="opacity-60">Remaining</span>
-                          <span>{daysRemainingLabel(item.daysRemaining)}</span>
-                        </div>
-                        {item.latestRemark && (
-                          <p className="mt-2 rounded-2xl bg-white/70 p-3 text-xs leading-5">{item.latestRemark}</p>
-                        )}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
 
             <section className="grid gap-3 md:grid-cols-4">
               <SummaryPill label="Total Vehicles" value={data?.summary.totalVehicles || 0} />

@@ -6,6 +6,7 @@ import {
   Activity,
   AlertTriangle,
   Building2,
+  CalendarDays,
   CarFront,
   ChevronDown,
   Clock3,
@@ -299,6 +300,8 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
   const [filters, setFilters] = useState<ComplaintFilters>(EMPTY_FILTERS)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set())
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
+  const [showCalendarView, setShowCalendarView] = useState(false)
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState('')
 
   const dateRange = useMemo(() => getComplaintsDateRange(dateFilter), [dateFilter])
   const queryString = useMemo(() => buildQueryString(filters, dateRange, dateFilter), [dateFilter, dateRange, filters])
@@ -374,6 +377,18 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
   }, [fetchComplaints])
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  useEffect(() => {
+    if (!showCalendarView) return
+    const bodyOverflow = document.body.style.overflow
+    const rootOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = bodyOverflow
+      document.documentElement.style.overflow = rootOverflow
+    }
+  }, [showCalendarView])
+
   const setFilter = (key: keyof ComplaintFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }))
     setExpandedRows(new Set())
@@ -386,6 +401,44 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
       .filter((row) => row.statusGroup !== 'Closed' || row.resolutionDays > 15 || row.signalArea.includes('Delay'))
       .slice(0, 5)
   }, [data?.rows])
+
+  const calendarView = useMemo(() => {
+    const anchor = new Date(`${dateRange.endDate}T00:00:00`)
+    const anchorDate = Number.isNaN(anchor.getTime()) ? new Date() : anchor
+    const monthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1)
+    const gridStart = new Date(monthStart)
+    gridStart.setDate(monthStart.getDate() - monthStart.getDay())
+    const rowsByDate = new Map<string, ComplaintDetailRow[]>()
+
+    ;(data?.rows || []).forEach((row) => {
+      const key = row.complaintDate?.slice(0, 10)
+      if (!key) return
+      rowsByDate.set(key, [...(rowsByDate.get(key) || []), row])
+    })
+
+    const days = Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(gridStart)
+      date.setDate(gridStart.getDate() + index)
+      const key = getInputDate(date)
+      const rows = rowsByDate.get(key) || []
+      return {
+        key,
+        date,
+        inMonth: date.getMonth() === anchorDate.getMonth(),
+        rows,
+        total: rows.length,
+        open: rows.filter((row) => row.statusGroup !== 'Closed').length,
+        closed: rows.filter((row) => row.statusGroup === 'Closed').length,
+        aged: rows.filter((row) => row.resolutionDays > 15).length,
+      }
+    })
+
+    return {
+      monthLabel: anchorDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+      days,
+      rowsByDate,
+    }
+  }, [data?.rows, dateRange.endDate])
 
   const toggleRow = (complaintNo: string) => {
     setExpandedRows((current) => {
@@ -496,11 +549,15 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
     { label: '>15 Days', value: formatNumber(data.kpis.over15), icon: ShieldAlert, tone: 'text-orange-700 bg-orange-50 border-orange-100' },
     { label: 'Delay Signals', value: formatNumber(data.kpis.delayRelated), icon: Activity, tone: 'text-[#023468] bg-[#edf4fb] border-[#b9ccde]' },
   ]
+  const activeCalendarDate = selectedCalendarDate && selectedCalendarDate.slice(0, 7) === dateRange.endDate.slice(0, 7)
+    ? selectedCalendarDate
+    : dateRange.endDate
+  const selectedCalendarRows = calendarView.rowsByDate.get(activeCalendarDate) || []
 
   return (
     <div className="space-y-5 bg-slate-50 p-4 lg:p-6">
       {expandedChart && (
-        <div className="fixed inset-0 z-[120] bg-slate-950/70 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999] bg-white p-4">
           <div
             className="expanded-chart-shell flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl"
             style={{ backgroundColor: '#ffffff' }}
@@ -619,6 +676,21 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
               Clear
             </Button>
           )}
+          <Button
+            type="button"
+            variant={showCalendarView ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowCalendarView((current) => !current)}
+            className={cn(
+              'h-9 rounded-xl px-3 text-xs font-black',
+              showCalendarView
+                ? 'app-primary-action'
+                : 'border-[#b9ccde] bg-white text-[#023468] hover:bg-[#edf4fb]'
+            )}
+          >
+            <CalendarDays className="mr-2 h-3.5 w-3.5" />
+            {showCalendarView ? 'Hide Calendar' : 'Calendar View'}
+          </Button>
         </div>
       </div>
 
@@ -638,6 +710,139 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
           )
         })}
       </div>
+
+      {showCalendarView && (
+        <div
+          className="fixed inset-0 z-[9999] bg-slate-950/60 p-3 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Kia complaints calendar"
+        >
+        <div className="solid-calendar-surface flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl" style={{ backgroundColor: '#ffffff' }}>
+          <div className="solid-calendar-surface flex flex-col gap-3 border-b border-slate-100 bg-white p-5 lg:flex-row lg:items-center lg:justify-between" style={{ backgroundColor: '#ffffff' }}>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[#b9ccde] bg-[#edf4fb] text-[#023468]">
+                <CalendarDays className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#023468]">Complaint Calendar</p>
+                <h3 className="text-xl font-black tracking-tight text-slate-950">Daily complaint load by complaint date</h3>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5"><span className="h-2 w-2 rounded-full bg-slate-900" /> Total</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-3 py-1.5 text-rose-700"><span className="h-2 w-2 rounded-full bg-rose-500" /> Open</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Closed</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-amber-700"><span className="h-2 w-2 rounded-full bg-amber-500" /> &gt;15D</span>
+              <button
+                type="button"
+                onClick={() => setShowCalendarView(false)}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-slate-700 transition hover:bg-slate-50"
+              >
+                <X className="h-3.5 w-3.5" />
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto bg-white p-4">
+            <div className="overflow-hidden rounded-2xl border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm font-black text-slate-950">{calendarView.monthLabel}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  {isDetailLoading ? 'Loading complaints...' : `${formatNumber(data.rows.length)} complaints loaded`}
+                </p>
+              </div>
+              <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-900 text-white">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <div key={day} className="border-r border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest last:border-r-0">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 bg-white">
+                {calendarView.days.map((day) => {
+                  const isSelected = day.key === activeCalendarDate
+                  const hasPressure = day.open > 0 || day.aged > 0
+                  return (
+                    <button
+                      key={day.key}
+                      type="button"
+                      onClick={() => setSelectedCalendarDate(day.key)}
+                      className={cn(
+                        'min-h-[108px] border-r border-b border-slate-200 p-2 text-left transition last:border-r-0 hover:bg-[#edf4fb]',
+                        !day.inMonth && 'bg-slate-50 text-slate-300',
+                        isSelected && 'bg-[#edf4fb] ring-2 ring-inset ring-[#023468]',
+                        hasPressure && day.inMonth && !isSelected && 'bg-rose-50'
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-300')}>
+                          {day.date.getDate().toString().padStart(2, '0')}
+                        </span>
+                        {day.total > 0 && (
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-900 shadow-sm">
+                            {day.total}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-1">
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-700">{day.total} total</span>
+                        <span className="rounded-md bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-700">{day.open} open</span>
+                        <span className="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700">{day.closed} closed</span>
+                        <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">{day.aged} &gt;15D</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="hidden">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Selected Date</p>
+                  <h4 className="text-lg font-black text-slate-950">{formatDateLabel(activeCalendarDate)}</h4>
+                </div>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">
+                  {selectedCalendarRows.length} complaints
+                </span>
+              </div>
+              <div className="mt-4 max-h-[calc(100vh-260px)] space-y-2 overflow-y-auto pr-1">
+                {selectedCalendarRows.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-white p-5 text-sm font-bold text-slate-500">
+                    No complaints on this date.
+                  </div>
+                ) : selectedCalendarRows.map((row) => (
+                  <button
+                    key={`${activeCalendarDate}-${row.complaintNo}-${row.id}`}
+                    type="button"
+                    onClick={() => {
+                      toggleRow(row.complaintNo)
+                      setShowCalendarView(false)
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-[#b9ccde] hover:bg-[#edf4fb]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-sm font-black text-blue-700">{row.complaintNo}</p>
+                        <p className="mt-1 truncate text-[11px] font-bold text-slate-500">{row.customerName || '-'} / {row.vehicleModel || '-'}</p>
+                      </div>
+                      <span className={cn('shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black', statusClass(row.statusGroup))}>
+                        {row.statusGroup}
+                      </span>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-[11px] font-semibold leading-5 text-slate-600">
+                      {row.signalArea} / {row.srSubArea}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.25fr_0.75fr]">
         <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
@@ -994,4 +1199,3 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
     </div>
   )
 }
-

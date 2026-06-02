@@ -571,8 +571,6 @@ export function Sidebar() {
                                         <Link
                                           key={sub.name}
                                           href={sub.href}
-                                          target="_blank"
-                                          rel="noreferrer"
                                           prefetch={false}
                                           onClick={handleSidebarLinkClick}
                                           className={cn(

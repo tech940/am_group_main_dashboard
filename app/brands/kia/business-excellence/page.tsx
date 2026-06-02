@@ -6,7 +6,11 @@ export const metadata = {
   description: 'Business Excellence Index AM KIA (NEW)',
 }
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   const access = await getBrandAccess('kia')
 
   if (!access.appUser) {
@@ -17,5 +21,15 @@ export default async function Page() {
     forbidden()
   }
 
-  redirect('/brands/kia/business-excellence/overview')
+  const resolvedSearchParams = await searchParams
+  const dateParams = new URLSearchParams()
+  for (const key of ['startDate', 'endDate', 'compareStartDate', 'compareEndDate', 'comparisonStartDate', 'comparisonEndDate', 'periodPreset']) {
+    const value = resolvedSearchParams[key]
+    if (typeof value === 'string' && value) {
+      dateParams.set(key, value)
+    }
+  }
+
+  const query = dateParams.toString()
+  redirect(`/brands/kia/business-excellence/overview${query ? `?${query}` : ''}`)
 }

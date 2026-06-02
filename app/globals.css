@@ -492,14 +492,17 @@
   }
 
   .kia-proforma-outline-action {
-    background: color-mix(in srgb, var(--dashboard-primary-soft) 72%, white) !important;
-    border-color: color-mix(in srgb, var(--dashboard-action-bg) 34%, white) !important;
+    background: color-mix(in srgb, var(--dashboard-action-bg) 11%, #ffffff) !important;
+    background-color: color-mix(in srgb, var(--dashboard-action-bg) 11%, #ffffff) !important;
+    border-color: color-mix(in srgb, var(--dashboard-action-bg) 52%, #ffffff) !important;
     color: var(--dashboard-action-bg) !important;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04) !important;
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--dashboard-action-bg) 10%, transparent) !important;
+    backdrop-filter: none !important;
   }
 
   .kia-proforma-outline-action:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--dashboard-primary-soft) 42%, white) !important;
+    background: color-mix(in srgb, var(--dashboard-action-bg) 17%, #ffffff) !important;
+    background-color: color-mix(in srgb, var(--dashboard-action-bg) 17%, #ffffff) !important;
     border-color: var(--dashboard-action-hover) !important;
     color: var(--dashboard-action-hover) !important;
   }
@@ -515,6 +518,21 @@
     color: #334155 !important;
     box-shadow: none !important;
     opacity: 1 !important;
+  }
+
+  .kia-proforma-shell :where(button, [role="button"], [role="combobox"], input, select, textarea) {
+    backdrop-filter: none !important;
+  }
+
+  .kia-proforma-shell :where([role="combobox"], input, select, textarea) {
+    background-color: #ffffff !important;
+    border-color: color-mix(in srgb, var(--dashboard-action-bg) 28%, #cbd5e1) !important;
+    color: #0f172a !important;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04) !important;
+  }
+
+  .kia-proforma-shell :where(.bg-white\/80, .bg-white\/85, .bg-white\/88) {
+    backdrop-filter: none !important;
   }
 
   .finance-primary-action {
@@ -776,6 +794,48 @@
     background-color: #ffffff !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content .solid-calendar-surface,
+  .glass-dashboard-content .solid-calendar-surface [class*="bg-white"] {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content .solid-calendar-surface [class*="bg-slate-50"] {
+    background: #f8fafc !important;
+    background-color: #f8fafc !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content .solid-calendar-surface [class*="bg-slate-100"] {
+    background: #f1f5f9 !important;
+    background-color: #f1f5f9 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content .solid-calendar-surface .calendar-apply-action,
+  .glass-dashboard-content .solid-calendar-surface button.calendar-apply-action {
+    background: linear-gradient(135deg, var(--dashboard-action-bg), var(--dashboard-action-hover)) !important;
+    background-color: var(--dashboard-action-bg) !important;
+    border-color: color-mix(in srgb, var(--dashboard-action-bg) 62%, white) !important;
+    color: var(--dashboard-action-fg) !important;
+    opacity: 1 !important;
+    text-shadow: 0 1px 1px rgba(15, 23, 42, 0.28) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content .solid-calendar-surface .calendar-apply-action:disabled,
+  .glass-dashboard-content .solid-calendar-surface button.calendar-apply-action:disabled {
+    background: color-mix(in srgb, var(--dashboard-action-bg) 72%, white) !important;
+    background-color: color-mix(in srgb, var(--dashboard-action-bg) 72%, white) !important;
+    border-color: color-mix(in srgb, var(--dashboard-action-bg) 52%, white) !important;
+    color: var(--dashboard-action-fg) !important;
   }
 
   .glass-dashboard-content [class*="border-slate-100"],

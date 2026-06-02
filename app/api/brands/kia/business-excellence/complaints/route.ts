@@ -200,7 +200,7 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
 }
 
 function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
-  return `kia:business-excellence:complaints:v6:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `kia:business-excellence:complaints:v7:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {
@@ -716,6 +716,8 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url)
+    const comparisonStartDate = parseDateInput(searchParams.get('compareStartDate')) || parseDateInput(searchParams.get('comparisonStartDate'))
+    const comparisonEndDate = parseDateInput(searchParams.get('compareEndDate')) || parseDateInput(searchParams.get('comparisonEndDate'))
     const filters: ComplaintFilters = {
       startDate: parseDateInput(searchParams.get('startDate')),
       endDate: parseDateInput(searchParams.get('endDate')),
@@ -726,8 +728,8 @@ export async function GET(request: Request) {
       source: getFilterValue(searchParams.get('source')),
       periodPreset: searchParams.get('periodPreset') || null,
       comparisonMode: searchParams.get('comparisonMode') || 'none',
-      comparisonStartDate: parseDateInput(searchParams.get('comparisonStartDate')),
-      comparisonEndDate: parseDateInput(searchParams.get('comparisonEndDate')),
+      comparisonStartDate,
+      comparisonEndDate,
     }
     const skipCache = searchParams.get('skipCache') === 'true'
     const requestedChunk = searchParams.get('chunk')

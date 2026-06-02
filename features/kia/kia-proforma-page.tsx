@@ -346,11 +346,21 @@ function DataListInput({
   listId: string
   disabled?: boolean
 }) {
+  const uniqueOptions = useMemo(() => {
+    const seen = new Set<string>()
+    return options.filter((option) => {
+      const normalized = option.trim().toLowerCase()
+      if (!normalized || seen.has(normalized)) return false
+      seen.add(normalized)
+      return true
+    })
+  }, [options])
+
   return (
     <>
       <TextInput list={listId} value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} placeholder={placeholder} disabled={disabled} />
       <datalist id={listId}>
-        {options.map((option) => <option key={option} value={option} />)}
+        {uniqueOptions.map((option) => <option key={`${listId}-${option}`} value={option} />)}
       </datalist>
     </>
   )
@@ -773,12 +783,12 @@ function FilterBar({
           <Input type="date" value={financeDate || ''} onChange={(event) => setFinanceDate(event.target.value)} className="h-11 w-44 rounded-2xl border-slate-200 bg-white/80 font-bold" />
         )}
         <Select value={selectedColumn || 'none'} onValueChange={(value) => { setSelectedColumn(value === 'none' ? '' : value); setSelectedValues(new Set()) }}>
-          <SelectTrigger className="h-11 w-56 rounded-2xl bg-white/80"><Filter className="mr-2 h-4 w-4" /><SelectValue placeholder="Filter By Column" /></SelectTrigger>
+          <SelectTrigger className={cn('h-11 w-56 rounded-2xl', proformaOutlineButton)}><Filter className="mr-2 h-4 w-4" /><SelectValue placeholder="Filter By Column" /></SelectTrigger>
           <SelectContent>{[{ key: 'none', label: 'Filter By Column' }, ...TABLE_COLUMNS.filter((col) => col.key !== 'index')].map((col) => <SelectItem key={String(col.key)} value={String(col.key)}>{col.label}</SelectItem>)}</SelectContent>
         </Select>
         {mode === 'finance-remarks' && financeStatus === 'Current month' && setBankFilter && (
           <Select value={bankFilter || 'all'} onValueChange={(value) => setBankFilter(value === 'all' ? '' : value)}>
-            <SelectTrigger className="h-11 w-52 rounded-2xl bg-white/80"><SelectValue placeholder="Bank Name" /></SelectTrigger>
+            <SelectTrigger className={cn('h-11 w-52 rounded-2xl', proformaOutlineButton)}><SelectValue placeholder="Bank Name" /></SelectTrigger>
             <SelectContent><SelectItem value="all">All Banks</SelectItem>{banks.map((bank) => <SelectItem key={bank} value={bank}>{bank}</SelectItem>)}</SelectContent>
           </Select>
         )}
@@ -854,7 +864,7 @@ function ProformaTable({
             next.add(value)
             setHiddenColumns(next)
           }}>
-            <SelectTrigger className="h-9 w-44 rounded-xl bg-white"><Columns3 className="mr-2 h-4 w-4" /><SelectValue placeholder="Hide column" /></SelectTrigger>
+            <SelectTrigger className={cn('h-9 w-44 rounded-xl', proformaOutlineButton)}><Columns3 className="mr-2 h-4 w-4" /><SelectValue placeholder="Hide column" /></SelectTrigger>
             <SelectContent>{visibleColumns.filter((col) => col.key !== 'index').map((column) => <SelectItem key={String(column.key)} value={String(column.key)}>{column.label}</SelectItem>)}</SelectContent>
           </Select>
           <Button variant="outline" className={cn('h-9 rounded-xl', proformaOutlineButton)} onClick={() => setHiddenColumns(new Set())}><RotateCcw className="mr-2 h-4 w-4" />Restore</Button>
@@ -1020,10 +1030,10 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     return (
       <div className="grid min-w-[420px] gap-2 md:grid-cols-[180px_1fr_auto]">
         <Select value={draft.status} onValueChange={(value) => setFinanceDrafts((current) => ({ ...current, [row.id]: { ...draft, status: value } }))}>
-          <SelectTrigger className="h-10 rounded-xl bg-white"><SelectValue /></SelectTrigger>
+          <SelectTrigger className={cn('h-10 rounded-xl', proformaOutlineButton)}><SelectValue /></SelectTrigger>
           <SelectContent>{FINANCE_STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
         </Select>
-        <Input value={draft.remarks} onChange={(event) => setFinanceDrafts((current) => ({ ...current, [row.id]: { ...draft, remarks: event.target.value } }))} placeholder="Finance remarks" className="h-10 rounded-xl bg-white" />
+        <Input value={draft.remarks} onChange={(event) => setFinanceDrafts((current) => ({ ...current, [row.id]: { ...draft, remarks: event.target.value } }))} placeholder="Finance remarks" className="h-10 rounded-xl border-[var(--dashboard-primary-border)] bg-white font-semibold shadow-sm" />
         <Button onClick={() => saveFinance(row)} className={cn('h-10 rounded-xl', proformaPrimaryButton)}>Save</Button>
         <p className="md:col-span-3 text-[11px] font-bold text-slate-500">Updated: {formatDateTime(row.financeUpdatedTime)}</p>
       </div>
@@ -1311,7 +1321,7 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
 
   return (
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
-      <div className="space-y-5">
+      <div className="kia-proforma-shell space-y-5">
         <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} />
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}

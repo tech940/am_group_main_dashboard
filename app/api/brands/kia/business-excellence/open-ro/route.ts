@@ -180,7 +180,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `kia:business-excellence:open-ro:v5:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:open-ro:v6:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -497,6 +497,8 @@ export async function GET(request: Request) {
   const skipCache = searchParams.get('skipCache') === 'true'
   const requestedChunk = searchParams.get('chunk')
   const chunk: OpenRoChunk = requestedChunk === 'details' || requestedChunk === 'full' ? requestedChunk : 'summary'
+  const comparisonStartDate = parseDateInput(searchParams.get('compareStartDate')) || parseDateInput(searchParams.get('comparisonStartDate'))
+  const comparisonEndDate = parseDateInput(searchParams.get('compareEndDate')) || parseDateInput(searchParams.get('comparisonEndDate'))
   const filters: OpenRoFilters = {
     advisor: getFilterValue(searchParams.get('advisor')),
     workType: getFilterValue(searchParams.get('workType')),
@@ -506,8 +508,8 @@ export async function GET(request: Request) {
     endDate: parseDateInput(searchParams.get('endDate')),
     periodPreset: searchParams.get('periodPreset') || null,
     comparisonMode: searchParams.get('comparisonMode') || 'none',
-    comparisonStartDate: parseDateInput(searchParams.get('comparisonStartDate')),
-    comparisonEndDate: parseDateInput(searchParams.get('comparisonEndDate')),
+    comparisonStartDate,
+    comparisonEndDate,
   }
 
   try {

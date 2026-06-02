@@ -93,9 +93,13 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams) {
-  return `kia:business-excellence:overview:v20:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v22:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison }))
     .digest('hex')}`
+}
+
+function activeBillStatusSql() {
+  return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`
 }
 
 function sameDateLastYear(value: string) {
@@ -106,14 +110,6 @@ function sameDateLastYear(value: string) {
 function parseDateParts(value: string) {
   const [year, month, day] = value.split('-').map(Number)
   return { year, month, day }
-}
-
-function fullSameMonthLastYear(value: string) {
-  const { year, month } = parseDateParts(value)
-  return {
-    startDate: toDateInputValue(new Date(year - 1, month - 1, 1)),
-    endDate: toDateInputValue(new Date(year - 1, month, 0)),
-  }
 }
 
 function sameQuarterToDateLastYear(endDate: string) {
@@ -170,7 +166,11 @@ function resolveOverviewComparisonRange(startDate: string, endDate: string, comp
   }
 
   if (comparison.preset === 'mtd' || comparison.preset === 'current_month' || isMonthAnchoredRange(startDate, endDate)) {
-    return { ...fullSameMonthLastYear(startDate), source: 'same-month-ly' }
+    return {
+      startDate: sameDateLastYear(startDate),
+      endDate: sameDateLastYear(endDate),
+      source: 'same-month-to-date-ly',
+    }
   }
 
   return {
@@ -338,6 +338,7 @@ function roBillingBaseSql(startDate: string, endDate: string) {
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
     ),
     ranked AS (
       SELECT

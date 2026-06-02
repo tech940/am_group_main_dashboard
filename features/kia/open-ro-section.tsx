@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   BarChart3,
+  CalendarDays,
   CarFront,
   ChevronDown,
   Clock3,
@@ -238,6 +239,14 @@ function getInputDate(date: Date) {
   return `${year}-${month}-${day}`
 }
 
+function parseInputDate(value: string | null | undefined) {
+  if (!value) return null
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  if (!match) return null
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 function getOpenRoDateRange(dateFilter: OpenRoDateFilter) {
   const today = new Date()
 
@@ -290,6 +299,8 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
   const [expandedDelayStatuses, setExpandedDelayStatuses] = useState<Set<string>>(() => new Set())
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
   const [selectedVehicle, setSelectedVehicle] = useState<OpenRoDetailRow | null>(null)
+  const [showCalendarView, setShowCalendarView] = useState(false)
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState('')
 
   const dateRange = useMemo(() => getOpenRoDateRange(dateFilter), [dateFilter])
   const queryString = useMemo(() => buildQueryString(filters, dateRange, dateFilter), [dateFilter, dateRange, filters])
@@ -353,6 +364,18 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
   }, [fetchOpenRo])
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  useEffect(() => {
+    if (!showCalendarView) return
+    const bodyOverflow = document.body.style.overflow
+    const rootOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = bodyOverflow
+      document.documentElement.style.overflow = rootOverflow
+    }
+  }, [showCalendarView])
+
   const detailsByCategory = useMemo(() => {
     const grouped = new Map<string, OpenRoDetailRow[]>()
     data?.details.forEach((row) => {
@@ -370,6 +393,42 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
     })
     return grouped
   }, [data?.details])
+
+  const calendarView = (() => {
+    const anchorDate = parseInputDate(dateRange.endDate) || new Date()
+    const monthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1)
+    const gridStart = new Date(monthStart)
+    gridStart.setDate(monthStart.getDate() - monthStart.getDay())
+    const monthLabel = anchorDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    const rowsByDate = new Map<string, OpenRoDetailRow[]>()
+
+    const detailRows = data?.details || []
+    detailRows.forEach((row) => {
+      const key = row.roDate?.slice(0, 10)
+      if (!key) return
+      rowsByDate.set(key, [...(rowsByDate.get(key) || []), row])
+    })
+
+    const days = Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(gridStart)
+      date.setDate(gridStart.getDate() + index)
+      const key = getInputDate(date)
+      const rows = rowsByDate.get(key) || []
+      return {
+        key,
+        date,
+        inMonth: date.getMonth() === anchorDate.getMonth(),
+        rows,
+        total: rows.length,
+        delayed: rows.filter((row) => row.delayStatus === 'Delayed').length,
+        over15: rows.filter((row) => row.agingDays > 15).length,
+        accident: rows.filter((row) => /accident|body/i.test(`${row.serviceCategory} ${row.workType}`)).length,
+        running: rows.filter((row) => /running/i.test(`${row.serviceCategory} ${row.workType}`)).length,
+      }
+    })
+
+    return { monthLabel, days, rowsByDate }
+  })()
 
   const topAlerts = data?.alerts.highPriority || []
   const hasFilters = Object.values(filters).some((value) => value && value !== ALL_VALUE)
@@ -496,6 +555,13 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
     avgDays: statusRow.total > 0 ? weightedDays / statusRow.total : 0,
     reasons,
   })).sort((first, second) => second.total - first.total || first.newStatus.localeCompare(second.newStatus))
+
+  const activeCalendarDate = selectedCalendarDate && selectedCalendarDate.slice(0, 7) === dateRange.endDate.slice(0, 7)
+    ? selectedCalendarDate
+    : dateRange.endDate
+  const selectedCalendarRows = calendarView.rowsByDate.get(activeCalendarDate) || []
+  const selectedCalendarLabel = activeCalendarDate ? formatDateLabel(activeCalendarDate) : 'Select date'
+
   const renderExpandButton = (id: string, title: string) => (
     <button
       type="button"
@@ -580,7 +646,7 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
   return (
     <div className="space-y-5 bg-slate-50 p-4 lg:p-6">
       {expandedChart && (
-        <div className="fixed inset-0 z-[120] bg-slate-950/70 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999] bg-white p-4">
           <div
             className="expanded-chart-shell flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl"
             style={{ backgroundColor: '#ffffff' }}
@@ -684,6 +750,21 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
               Clear
             </Button>
           )}
+          <Button
+            type="button"
+            variant={showCalendarView ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowCalendarView((current) => !current)}
+            className={cn(
+              'h-9 rounded-xl px-3 text-xs font-black',
+              showCalendarView
+                ? 'app-primary-action'
+                : 'border-[#b9ccde] bg-white text-[#023468] hover:bg-[#edf4fb]'
+            )}
+          >
+            <CalendarDays className="mr-2 h-3.5 w-3.5" />
+            {showCalendarView ? 'Hide Calendar' : 'Calendar View'}
+          </Button>
         </div>
       </div>
 
@@ -703,6 +784,148 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
           )
         })}
       </div>
+
+      {showCalendarView && (
+        <div
+          className="fixed inset-0 z-[9999] bg-slate-950/60 p-3 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Open RO calendar"
+        >
+          <div className="solid-calendar-surface flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl" style={{ backgroundColor: '#ffffff' }}>
+          <div className="solid-calendar-surface flex flex-col gap-3 border-b border-slate-100 bg-white p-5 lg:flex-row lg:items-center lg:justify-between" style={{ backgroundColor: '#ffffff' }}>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[#b9ccde] bg-[#edf4fb] text-[#023468]">
+                <CalendarDays className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#023468]">Open RO Calendar</p>
+              <h3 className="text-xl font-black tracking-tight text-slate-950">Daily WIP pressure by RO date</h3>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5"><span className="h-2 w-2 rounded-full bg-slate-900" /> Total</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-amber-700"><span className="h-2 w-2 rounded-full bg-amber-500" /> Delayed</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-3 py-1.5 text-rose-700"><span className="h-2 w-2 rounded-full bg-rose-500" /> &gt;15D</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-white px-3 py-1.5 text-blue-700"><span className="h-2 w-2 rounded-full bg-blue-500" /> Accident</span>
+              <button
+                type="button"
+                onClick={() => setShowCalendarView(false)}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-slate-700 transition hover:bg-slate-50"
+              >
+                <X className="h-3.5 w-3.5" />
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto bg-white p-4">
+            <div className="overflow-hidden rounded-2xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-sm font-black text-slate-950">{calendarView.monthLabel}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                {isDetailLoading ? 'Loading vehicles...' : `${formatNumber(data.details.length)} vehicles loaded`}
+              </p>
+            </div>
+            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-900 text-white">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                <div key={day} className="border-r border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest last:border-r-0">
+                  {day}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 bg-white">
+              {calendarView.days.map((day) => {
+                const isSelected = day.key === activeCalendarDate
+                const hasPressure = day.over15 > 0 || day.delayed > 0
+                return (
+                  <button
+                    key={day.key}
+                    type="button"
+                    onClick={() => setSelectedCalendarDate(day.key)}
+                    className={cn(
+                      'min-h-[118px] border-r border-b border-slate-200 p-2 text-left transition last:border-r-0 hover:bg-[#edf4fb]',
+                      !day.inMonth && 'bg-slate-50 text-slate-300',
+                      isSelected && 'bg-[#edf4fb] ring-2 ring-inset ring-[#023468]',
+                      hasPressure && day.inMonth && !isSelected && 'bg-rose-50'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-300')}>
+                        {day.date.getDate().toString().padStart(2, '0')}
+                      </span>
+                      {day.total > 0 && (
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-900 shadow-sm">
+                          {day.total}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-1">
+                      <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-700">{day.total} WIP</span>
+                      <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">{day.delayed} DLY</span>
+                      <span className="rounded-md bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-700">{day.over15} &gt;15D</span>
+                      <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">{day.accident} ACC</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="hidden">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Selected Date</p>
+                <h4 className="text-lg font-black text-slate-950">{selectedCalendarLabel}</h4>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">
+                {selectedCalendarRows.length} RO
+              </span>
+            </div>
+            <div className="mt-4 max-h-[calc(100vh-260px)] space-y-2 overflow-y-auto pr-1">
+              {selectedCalendarRows.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-white p-5 text-sm font-bold text-slate-500">
+                  No open RO vehicles on this date.
+                </div>
+              ) : selectedCalendarRows
+                .slice()
+                .sort((first, second) => second.agingDays - first.agingDays)
+                .map((row) => (
+                  <button
+                    key={`${activeCalendarDate}-${row.roNo}-${row.regNo}`}
+                    type="button"
+                    onClick={() => setSelectedVehicle(row)}
+                    className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-[#b9ccde] hover:bg-[#edf4fb]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-sm font-black text-blue-700">{row.regNo || row.roNo}</p>
+                        <p className="mt-1 truncate text-[11px] font-bold text-slate-500">{row.customerName || '-'} / {row.advisor || '-'}</p>
+                      </div>
+                      <span className={cn(
+                        'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black',
+                        row.agingDays > 15 ? 'bg-rose-100 text-rose-700' : row.agingDays > 7 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                      )}>
+                        {row.agingDays}D
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[9px] font-black text-slate-600">{row.serviceCategory || row.workType || '-'}</span>
+                      <span className={cn(
+                        'rounded-full border px-2 py-1 text-[9px] font-black',
+                        row.delayStatus === 'Delayed' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      )}>
+                        {row.delayStatus}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+            </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_0.78fr]">
         <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
@@ -1105,4 +1328,3 @@ export function OpenRoSection({ dateFilter }: { dateFilter: OpenRoDateFilter }) 
     </div>
   )
 }
-
