@@ -194,6 +194,7 @@ function VehicleDetailsModal({
   const [currentReadingKms, setCurrentReadingKms] = useState(row.currentReadingKms ? String(row.currentReadingKms) : '')
   const [onRoadPrice, setOnRoadPrice] = useState(row.onRoadPrice ? String(row.onRoadPrice) : '')
   const [vehicleStatus, setVehicleStatus] = useState(row.vehicleStatus || '')
+  const [registrationNumber, setRegistrationNumber] = useState(row.registrationNumber || '')
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -208,6 +209,7 @@ function VehicleDetailsModal({
           currentReadingKms,
           onRoadPrice,
           vehicleStatus,
+          registrationNumber,
         }),
       })
       const payload = await response.json().catch(() => null)
@@ -237,6 +239,7 @@ function VehicleDetailsModal({
         <div className="min-h-0 flex-1 overflow-auto p-5" style={{background : "#fff"}}>
           <div className="grid gap-3 sm:grid-cols-3">
             {[
+              ['Registration Number', row.registrationNumber || '-'],
               ['VIN No', row.vin],
               ['Variant', row.variant],
               ['Color', row.color],
@@ -254,6 +257,16 @@ function VehicleDetailsModal({
           <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Saved Vehicle Details</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Registration Number</span>
+                <input
+                  type="text"
+                  value={registrationNumber}
+                  onChange={(event) => setRegistrationNumber(event.target.value.toUpperCase())}
+                  placeholder="Enter registration number"
+                  className="h-12 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold uppercase outline-none focus:border-[var(--dashboard-action-bg)]"
+                />
+              </label>
               <label className="space-y-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Tracker Status</span>
                 <select
@@ -297,7 +310,7 @@ function VehicleDetailsModal({
                   className="h-12 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold outline-none focus:border-[var(--dashboard-action-bg)]"
                 />
               </label>
-              <label className="space-y-2 sm:col-span-2">
+              <label className="space-y-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">On Road Price</span>
                 <input
                   type="number"
@@ -362,7 +375,10 @@ export function DemoCarsListPage() {
 
   const rows = data?.rows || []
   const pagination = data?.pagination
-  const displayColumns = data?.columns || []
+  const displayColumns = useMemo(
+    () => (data?.columns || []).filter((column) => column.key !== 'transporterName'),
+    [data?.columns],
+  )
   const showTableSkeleton = isFetching && !isLoading
 
   const handleLocationChange = (nextLocation: DemoCarsLocation) => {
@@ -443,7 +459,7 @@ export function DemoCarsListPage() {
                   <input
                     value={search}
                     onChange={(event) => handleSearchChange(event.target.value)}
-                    placeholder="Search model, variant, color, name, VIN, transporter, dealer, status..."
+                    placeholder="Search model, variant, color, name, VIN, registration, dealer, status..."
                     className="h-12 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm font-semibold outline-none transition focus:border-[var(--dashboard-primary-border)] focus:ring-4 focus:ring-[var(--dashboard-primary-soft)]"
                   />
                 </label>

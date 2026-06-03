@@ -76,6 +76,18 @@ async function getTableColumns(tableName: string) {
   return new Set(resultRows(result).map((row) => String(row.column_name || '').trim()).filter(Boolean))
 }
 
+async function ensureDemoVehicleDetailsSchema() {
+  await db.execute(sql`
+    ALTER TABLE public.demo_vehicle_details
+      ADD COLUMN IF NOT EXISTS registration_number text
+  `)
+
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS demo_vehicle_details_registration_number_idx
+      ON public.demo_vehicle_details (registration_number)
+  `)
+}
+
 function hasColumn(columns: Set<string>, columnName: string) {
   return columns.has(columnName)
 }
@@ -107,7 +119,6 @@ function buildDisplayColumns(columns: Set<string>): DisplayColumn[] {
   if (hasColumn(columns, 'color') || hasColumn(columns, 'exterior_color_name')) displayColumns.push({ key: 'color', label: 'Color' })
   if (hasColumn(columns, 'cust_name')) displayColumns.push({ key: 'name', label: 'Name' })
   if (hasColumn(columns, 'main_dealer')) displayColumns.push({ key: 'mainDealer', label: 'Main Dealer' })
-  if (hasColumn(columns, 'transporter_name')) displayColumns.push({ key: 'transporterName', label: 'Transporter' })
   if (hasColumn(columns, 'kin_invoice_date')) displayColumns.push({ key: 'invoiceDate', label: 'Invoice Date', kind: 'date' })
   if (hasColumn(columns, 'kin_invoice_amount') || hasColumn(columns, 'total_invoice_value')) displayColumns.push({ key: 'amount', label: 'Amount', kind: 'amount' })
   if (hasColumn(columns, 'vin_no')) displayColumns.push({ key: 'vin', label: 'VIN No' })
@@ -115,15 +126,13 @@ function buildDisplayColumns(columns: Set<string>): DisplayColumn[] {
     displayColumns.push({ key: 'retailDate', label: 'Retail Date', kind: 'date' })
     displayColumns.push({ key: 'age', label: 'Age', kind: 'age' })
   }
-  if (firstExistingColumn(columns, REGISTRATION_COLUMN_CANDIDATES)) {
-    displayColumns.push({ key: 'registrationNumber', label: 'Registration Number' })
-  }
+  displayColumns.push({ key: 'registrationNumber', label: 'Registration Number' })
 
   return displayColumns
 }
 
 function createCacheKey(filters: DemoCarsFilters, hasDetailsTable: boolean, columns: Set<string>) {
-  return `kia:demo-cars-list:v3:${createHash('sha1')
+  return `kia:demo-cars-list:v5:${createHash('sha1')
     .update(JSON.stringify({ filters, hasDetailsTable, columns: Array.from(columns).sort() }))
     .digest('hex')}`
 }
@@ -133,6 +142,7 @@ function vehicleDetailsCte(hasDetailsTable: boolean) {
     return sql`
       SELECT
         NULL::text AS vehicle_key,
+        NULL::text AS registration_number,
         NULL::text AS tracker_status,
         NULL::date AS service_date,
         NULL::numeric AS current_reading_kms,
@@ -147,6 +157,7 @@ function vehicleDetailsCte(hasDetailsTable: boolean) {
   return sql`
     SELECT
       vehicle_key,
+      registration_number,
       tracker_status,
       service_date,
       current_reading_kms,
@@ -180,7 +191,7 @@ function filteredWhere(filters: DemoCarsFilters, columns: Set<string>) {
       OR COALESCE(main_dealer, '') ILIKE ${search}
       OR COALESCE(transporter_name, '') ILIKE ${search}
       OR COALESCE(amount, '') ILIKE ${search}
-      OR COALESCE(registration_number, '') ILIKE ${search}
+      OR COALESCE(display_registration_number, registration_number, '') ILIKE ${search}
       OR COALESCE(billing_dealer_code, '') ILIKE ${search}
       OR COALESCE(tracker_status, '') ILIKE ${search}
       OR COALESCE(vehicle_status, '') ILIKE ${search}
@@ -240,6 +251,7 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
     enriched AS (
       SELECT
         latest_vehicle.*,
+        COALESCE(NULLIF(vehicle_details.registration_number, ''), latest_vehicle.registration_number) AS display_registration_number,
         vehicle_details.tracker_status,
         vehicle_details.service_date,
         vehicle_details.current_reading_kms,
@@ -258,7 +270,7 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
     paged AS (
       SELECT *
       FROM filtered
-      ORDER BY location ASC, model ASC, variant ASC, vin_no ASC
+      ORDER BY age DESC NULLS LAST, location ASC, model ASC, variant ASC, vin_no ASC
       LIMIT ${PAGE_SIZE}
       OFFSET ${offset}
     ),
@@ -293,7 +305,7 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
         'amount', amount,
         'retailDate', retail_date,
         'age', age,
-        'registrationNumber', registration_number,
+        'registrationNumber', display_registration_number,
         'billingDealerCode', billing_dealer_code,
         'location', location,
         'trackerStatus', tracker_status,
@@ -303,7 +315,7 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
         'vehicleStatus', vehicle_status,
         'detailsUpdatedBy', details_updated_by,
         'detailsUpdatedAt', details_updated_at
-      ) ORDER BY location ASC, model ASC, variant ASC, vin_no ASC) FROM paged), '[]'::jsonb) AS rows,
+      ) ORDER BY age DESC NULLS LAST, location ASC, model ASC, variant ASC, vin_no ASC) FROM paged), '[]'::jsonb) AS rows,
       (SELECT total_rows FROM filtered_count) AS total_rows,
       (SELECT source_updated_at FROM source_freshness) AS source_updated_at,
       (SELECT jsonb_build_object(
@@ -405,6 +417,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const filters = getFilters(searchParams)
     const hasDetailsTable = await timer.time('details-table-check', () => tableExists('demo_vehicle_details'))
+    if (hasDetailsTable) {
+      await timer.time('details-schema-sync', ensureDemoVehicleDetailsSchema)
+    }
     const columns = await timer.time('columns', () => getTableColumns('demo_car_list'))
     const payload = await timer.time('vehicle-cache', () => getCachedData(
       createCacheKey(filters, hasDetailsTable, columns),
@@ -437,6 +452,7 @@ export async function POST(request: Request) {
       { status: 424 }
     )
   }
+  await ensureDemoVehicleDetailsSchema()
 
   const body = await request.json().catch(() => ({}))
   const vehicleKey = String(body?.vehicleKey || '').trim().toUpperCase()
@@ -446,6 +462,7 @@ export async function POST(request: Request) {
   const currentReadingKms = body?.currentReadingKms === '' || body?.currentReadingKms === null || body?.currentReadingKms === undefined ? null : Number(body.currentReadingKms)
   const onRoadPrice = body?.onRoadPrice === '' || body?.onRoadPrice === null || body?.onRoadPrice === undefined ? null : Number(body.onRoadPrice)
   const vehicleStatus = String(body?.vehicleStatus || '').trim()
+  const registrationNumber = String(body?.registrationNumber || '').trim().toUpperCase() || null
 
   if (!vehicleKey) return NextResponse.json({ error: 'Vehicle key is required' }, { status: 400 })
   if (trackerStatus && !['installed', 'not_installed'].includes(trackerStatus)) {
@@ -465,6 +482,7 @@ export async function POST(request: Request) {
     INSERT INTO demo_vehicle_details (
       vehicle_key,
       vin,
+      registration_number,
       tracker_status,
       service_date,
       current_reading_kms,
@@ -477,6 +495,7 @@ export async function POST(request: Request) {
     VALUES (
       ${vehicleKey},
       ${vin || vehicleKey},
+      ${registrationNumber},
       ${trackerStatus || null},
       ${serviceDate}::date,
       ${currentReadingKms},
@@ -488,6 +507,7 @@ export async function POST(request: Request) {
     )
     ON CONFLICT (vehicle_key) DO UPDATE SET
       vin = excluded.vin,
+      registration_number = excluded.registration_number,
       tracker_status = excluded.tracker_status,
       service_date = excluded.service_date,
       current_reading_kms = excluded.current_reading_kms,
@@ -499,6 +519,7 @@ export async function POST(request: Request) {
     RETURNING
       vehicle_key AS "vehicleKey",
       vin,
+      registration_number AS "registrationNumber",
       tracker_status AS "trackerStatus",
       service_date AS "serviceDate",
       current_reading_kms AS "currentReadingKms",

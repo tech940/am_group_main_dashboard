@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.demo_vehicle_details (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   vehicle_key text NOT NULL UNIQUE,
   vin text,
+  registration_number text,
   tracker_status text CHECK (
     tracker_status IS NULL OR tracker_status IN ('installed', 'not_installed')
   ),
@@ -22,8 +23,14 @@ CREATE TABLE IF NOT EXISTS public.demo_vehicle_details (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.demo_vehicle_details
+  ADD COLUMN IF NOT EXISTS registration_number text;
+
 CREATE INDEX IF NOT EXISTS demo_vehicle_details_vehicle_key_idx
   ON public.demo_vehicle_details (vehicle_key);
+
+CREATE INDEX IF NOT EXISTS demo_vehicle_details_registration_number_idx
+  ON public.demo_vehicle_details (registration_number);
 
 CREATE INDEX IF NOT EXISTS demo_vehicle_details_status_idx
   ON public.demo_vehicle_details (vehicle_status);

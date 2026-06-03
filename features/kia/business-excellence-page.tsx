@@ -3472,9 +3472,17 @@ function combineExecutiveMetricValues(primary: ROAnalysisMetric, secondary: ROAn
 }
 
 function ExecutiveGrowthBadge({ value }: { value: number | string | 'N/A' }) {
+  const numericValue = value === 'N/A' ? Number.NaN : Number(value)
+  const toneClass = value === 'N/A' || !Number.isFinite(numericValue)
+    ? 'executive-growth-badge-neutral'
+    : numericValue >= 0
+      ? 'executive-growth-badge-positive'
+      : 'executive-growth-badge-negative'
+
   return (
     <span className={cn(
-      'inline-flex items-center justify-center rounded-full border bg-white px-2.5 py-1 text-[10px] font-black',
+      'executive-growth-badge inline-flex items-center justify-center rounded-full border bg-white px-2.5 py-1 text-[10px] font-black',
+      toneClass,
       getGrowthBadgeClass(value)
     )}>
       {formatSignedGrowth(value)}
@@ -3623,7 +3631,7 @@ function ExecutiveRevenuePerformance({
         </h4>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse text-[8px]">
+        <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight">
           <thead className="bg-slate-950 text-white">
             <tr>
               <th className="min-w-[130px] border border-slate-600 px-2 py-2 text-left">Category</th>
@@ -4030,7 +4038,7 @@ function BusinessExecutiveDashboard({
                 <p className="text-[10px] font-black uppercase tracking-widest text-white/75">Location performance</p>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-xs">
+                <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight">
                   <thead className="bg-[#1f3f91] text-white">
                     <tr>
                       <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Location</th>
@@ -4080,10 +4088,10 @@ function BusinessExecutiveDashboard({
                       type="button"
                       onClick={() => setActiveExecutiveTableMetric(metric.id)}
                       className={cn(
-                        'rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider transition',
+                        'executive-table-metric-button rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm transition',
                         activeExecutiveTableMetric === metric.id
                           ? 'border-white bg-white text-[#1f3f91]'
-                          : 'border-white/30 bg-white/10 text-white hover:bg-white/20'
+                          : 'border-white bg-white text-[#1f3f91] hover:bg-slate-50'
                       )}
                     >
                       {metric.label}
@@ -4092,7 +4100,7 @@ function BusinessExecutiveDashboard({
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[800px] border-collapse text-xs">
+                <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight">
                   <thead className="bg-[#1f3f91] text-white">
                     <tr>
                       <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Service Type</th>
@@ -4219,7 +4227,7 @@ function BusinessExecutiveDashboard({
                 <p className="text-[10px] font-black uppercase tracking-widest text-white/75">Revenue, parts, labour, load</p>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[620px] border-collapse text-xs">
+                <table className="w-full min-w-[620px] border-collapse text-[11px] leading-tight">
                   <thead className="bg-slate-950 text-white">
                     <tr>
                       <th className="border border-slate-700 px-3 py-3 text-left">Financial Year</th>

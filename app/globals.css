@@ -1357,6 +1357,42 @@
     border-color: rgba(225, 29, 72, 0.4) !important;
   }
 
+  .business-excellence-boundaries .executive-growth-badge,
+  .business-excellence-boundaries .be-management-total-row .executive-growth-badge {
+    min-width: 58px;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+  }
+
+  .business-excellence-boundaries .executive-growth-badge-positive {
+    color: var(--dashboard-success) !important;
+    border-color: var(--dashboard-success-border) !important;
+  }
+
+  .business-excellence-boundaries .executive-growth-badge-negative {
+    color: var(--dashboard-risk-text) !important;
+    border-color: lab(53 89.72 88.48 / 0.45) !important;
+  }
+
+  .business-excellence-boundaries .executive-growth-badge-neutral {
+    color: #64748b !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  .business-excellence-boundaries .executive-table-metric-button {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #1f3f91 !important;
+    border-color: rgba(255, 255, 255, 0.94) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
   .dark .business-excellence-boundaries {
     --be-border-strong: rgba(125, 174, 217, 0.42);
     --be-border-soft: rgba(148, 163, 184, 0.28);
