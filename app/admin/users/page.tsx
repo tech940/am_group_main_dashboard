@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter, KeyRound, Eye, EyeOff } from 'lucide-react'
+import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter, KeyRound, Eye, EyeOff, ClipboardList, Upload } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import {
   BRANCH_MODULE_ACCESS_ROLE_EDIT_OPTIONS,
@@ -46,6 +46,25 @@ interface User {
 }
 
 type UserRole = User['role']
+
+type BulkUserDraft = {
+  fullName: string
+  email: string
+  password: string
+  role: UserRole
+  brand: string
+  department: string
+  branchModuleRole: BranchModuleAccessRoleValue
+}
+
+type BulkCreateResult = {
+  index: number
+  email: string
+  fullName: string
+  status: 'created' | 'failed'
+  error?: string
+  permissionWarning?: string | null
+}
 
 interface UsersPagination {
   page: number
@@ -104,10 +123,124 @@ function getRoleAndDepartmentFromFilter(filter: string) {
   }
 }
 
+function parseDelimitedLine(line: string) {
+  const cells: string[] = []
+  let current = ''
+  let inQuotes = false
+  const delimiter = line.includes('\t') ? '\t' : ','
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index]
+    const nextCharacter = line[index + 1]
+
+    if (character === '"' && inQuotes && nextCharacter === '"') {
+      current += '"'
+      index += 1
+    } else if (character === '"') {
+      inQuotes = !inQuotes
+    } else if (character === delimiter && !inQuotes) {
+      cells.push(current.trim())
+      current = ''
+    } else {
+      current += character
+    }
+  }
+
+  cells.push(current.trim())
+  return cells
+}
+
+function normalizeRole(value: string): UserRole {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '_')
+  return USER_ROLE_OPTIONS.some((role) => role.value === normalized)
+    ? normalized as UserRole
+    : 'viewer'
+}
+
+function normalizeBranchModuleRole(value: string): BranchModuleAccessRoleValue {
+  const normalized = value.trim().toLowerCase()
+  return BRANCH_MODULE_ACCESS_ROLE_OPTIONS.some((role) => role.value === normalized)
+    ? normalized as BranchModuleAccessRoleValue
+    : 'inherit'
+}
+
+function normalizeBranch(value: string) {
+  const normalized = value.trim().toLowerCase()
+  const matchedBranch = USER_BRANCH_OPTIONS.find((branch) => (
+    branch.value.toLowerCase() === normalized
+    || branch.label.toLowerCase() === normalized
+  ))
+  return matchedBranch?.value || ''
+}
+
+function parseBulkUsersInput(raw: string): BulkUserDraft[] {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  if (lines.length === 0) return []
+
+  const firstLine = parseDelimitedLine(lines[0]).map((cell) => cell.toLowerCase().replace(/[\s_-]+/g, ''))
+  const hasHeader = firstLine.includes('email') || firstLine.includes('fullname') || firstLine.includes('name')
+  const dataLines = hasHeader ? lines.slice(1) : lines
+  const headerIndex = (aliases: string[], fallback: number) => {
+    if (!hasHeader) return fallback
+    const foundIndex = firstLine.findIndex((cell) => aliases.includes(cell))
+    return foundIndex >= 0 ? foundIndex : fallback
+  }
+
+  const fullNameIndex = headerIndex(['fullname', 'name', 'user'], 0)
+  const emailIndex = headerIndex(['email', 'emailid', 'mail'], 1)
+  const passwordIndex = headerIndex(['password', 'pass'], 2)
+  const roleIndex = headerIndex(['role', 'approle'], 3)
+  const branchIndex = headerIndex(['branch', 'brand', 'assignedbranchaccess'], 4)
+  const departmentIndex = headerIndex(['department', 'dept'], 5)
+  const branchRoleIndex = headerIndex(['branchmodulerole', 'branchrole', 'modulerole'], 6)
+
+  return dataLines.map((line) => {
+    const cells = parseDelimitedLine(line)
+    const brand = normalizeBranch(cells[branchIndex] || '')
+    const branchModuleRole = normalizeBranchModuleRole(cells[branchRoleIndex] || '')
+
+    return {
+      fullName: cells[fullNameIndex] || '',
+      email: (cells[emailIndex] || '').trim().toLowerCase(),
+      password: cells[passwordIndex] || '',
+      role: normalizeRole(cells[roleIndex] || ''),
+      brand,
+      department: cells[departmentIndex] || '',
+      branchModuleRole: canUseBranchModuleAccessRole(brand) ? branchModuleRole : 'inherit',
+    }
+  })
+}
+
+function worksheetRowsToDelimitedText(rows: unknown[][]) {
+  return rows
+    .map((row) => row
+      .map((cell) => {
+        const value = String(cell ?? '').trim()
+        return value.includes('\t') || value.includes('"') || value.includes(',')
+          ? `"${value.replace(/"/g, '""')}"`
+          : value
+      })
+      .join('\t'))
+    .join('\n')
+}
+
+const BULK_USER_SAMPLE = `fullName,email,password,role,branch,department,branchModuleRole
+Rupali Sharma,rupali@example.com,User@123456,manager,kia,Sales,branch_sales
+Ankit Kumar,ankit@example.com,User@123456,viewer,kia,Service,branch_service`
+
 export default function AdminUsersPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [isBulkCreateDialogOpen, setIsBulkCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkInput, setBulkInput] = useState('')
+  const [bulkImportFileName, setBulkImportFileName] = useState('')
+  const [bulkResults, setBulkResults] = useState<BulkCreateResult[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('all')
   const [departmentFilter, setDepartmentFilter] = useState<string>('all')
@@ -201,6 +334,92 @@ export default function AdminUsersPage() {
     const end = Math.min(totalPages, start + 4)
     return Array.from({ length: end - start + 1 }, (_, index) => start + index)
   }, [pagination.page, pagination.totalPages])
+
+  const bulkUsers = useMemo(() => parseBulkUsersInput(bulkInput), [bulkInput])
+
+  const validBulkUsers = useMemo(() => (
+    bulkUsers.filter((user) => user.fullName && user.email && user.password && user.role)
+  ), [bulkUsers])
+
+  const handleBulkCreateUsers = async (event: React.FormEvent) => {
+    event.preventDefault()
+
+    if (validBulkUsers.length === 0) {
+      alert('Paste at least one valid user row before creating.')
+      return
+    }
+
+    if (bulkUsers.length > 50) {
+      alert('Bulk create supports up to 50 users at a time.')
+      return
+    }
+
+    setBulkLoading(true)
+    setBulkResults([])
+
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bulkUsers: validBulkUsers }),
+      })
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok && !payload?.results) {
+        alert(`Error: ${payload?.error || 'Failed to create users in bulk'}`)
+        return
+      }
+
+      setBulkResults(payload?.results || [])
+
+      if ((payload?.created || 0) > 0) {
+        void fetchUsers()
+      }
+    } catch (error) {
+      console.error('Error bulk creating users:', error)
+      alert('Failed to create users in bulk')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  const handleBulkExcelUpload = async (file: File | null) => {
+    if (!file) return
+
+    setBulkResults([])
+    setBulkImportFileName(file.name)
+
+    try {
+      const XLSX = await import('xlsx')
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+      const firstSheetName = workbook.SheetNames[0]
+
+      if (!firstSheetName) {
+        alert('This Excel file does not contain any sheets.')
+        return
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName]
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+        header: 1,
+        defval: '',
+        blankrows: false,
+        raw: false,
+      })
+
+      const usableRows = rows.filter((row) => row.some((cell) => String(cell ?? '').trim()))
+
+      if (usableRows.length === 0) {
+        alert('No user rows found in the uploaded Excel file.')
+        return
+      }
+
+      setBulkInput(worksheetRowsToDelimitedText(usableRows))
+    } catch (error) {
+      console.error('Error reading bulk user Excel file:', error)
+      alert('Could not read this Excel file. Please upload a valid .xlsx, .xls, or .csv file.')
+    }
+  }
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -340,6 +559,179 @@ export default function AdminUsersPage() {
             <h1 className="text-4xl font-black tracking-tight text-slate-800">User Management</h1>
             <p className="text-slate-500 mt-2 font-semibold">Create and manage user accounts</p>
           </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-3">
+          <Dialog
+            open={isBulkCreateDialogOpen}
+            onOpenChange={(open) => {
+              setIsBulkCreateDialogOpen(open)
+              if (!open) setBulkResults([])
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button variant="outline" className="rounded-xl border-[#023468] bg-white font-bold text-[#023468] shadow-lg hover:bg-[#edf4fb]">
+                <ClipboardList className="mr-2 h-4 w-4" />
+                Bulk Create Users
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-auto rounded-2xl bg-white sm:max-w-[980px]">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-black text-slate-800">Bulk Create Users</DialogTitle>
+                <DialogDescription className="text-slate-500 font-semibold">
+                  Upload Excel or paste rows. Required columns: fullName, email, password, role, branch, department, branchModuleRole.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleBulkCreateUsers} className="mt-4 space-y-4">
+                <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                  <div className="space-y-2">
+                    <div className="rounded-2xl border border-[#023468]/20 bg-[#edf4fb] p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-[#023468]">Excel Upload</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-600">
+                            First sheet will be used. Header names can match the same CSV fields.
+                          </p>
+                        </div>
+                        <label className="inline-flex cursor-pointer items-center rounded-xl bg-[#023468] px-4 py-2 text-sm font-black text-white shadow-lg hover:bg-[#062b55]">
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload Excel
+                          <input
+                            type="file"
+                            accept=".xlsx,.xls,.csv"
+                            className="hidden"
+                            onChange={(event) => {
+                              void handleBulkExcelUpload(event.target.files?.[0] || null)
+                              event.target.value = ''
+                            }}
+                          />
+                        </label>
+                      </div>
+                      {bulkImportFileName && (
+                        <p className="mt-3 rounded-lg border border-white bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                          Loaded file: <span className="text-[#023468]">{bulkImportFileName}</span>
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="bulk-users" className="text-sm font-bold text-slate-700">User Rows</Label>
+                      <button
+                        type="button"
+                        onClick={() => setBulkInput(BULK_USER_SAMPLE)}
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-[#023468] hover:bg-[#edf4fb]"
+                      >
+                        Use sample
+                      </button>
+                    </div>
+                    <textarea
+                      id="bulk-users"
+                      value={bulkInput}
+                      onChange={(event) => {
+                        setBulkInput(event.target.value)
+                        setBulkResults([])
+                      }}
+                      placeholder={BULK_USER_SAMPLE}
+                      className="min-h-[260px] w-full rounded-2xl border border-slate-200 bg-white p-4 font-mono text-xs font-semibold text-slate-800 outline-none transition focus:border-[#023468] focus:ring-4 focus:ring-[#edf4fb]"
+                    />
+                    <p className="text-xs font-semibold text-slate-500">
+                      Branch role is optional. Valid examples: branch_sales, branch_service, branch_proforma_approver, branch_admin.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-500">Preview</p>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rows Parsed</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900">{bulkUsers.length}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ready</p>
+                        <p className="mt-1 text-2xl font-black text-[#023468]">{validBulkUsers.length}</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 max-h-[260px] overflow-auto rounded-xl border border-slate-200 bg-white">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-white">
+                          <tr>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Name</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Email</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Role</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Branch</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkUsers.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="px-3 py-8 text-center font-bold text-slate-400">Paste rows to preview users.</td>
+                            </tr>
+                          ) : bulkUsers.slice(0, 12).map((user, index) => (
+                            <tr key={`${user.email || index}-${index}`} className="border-b border-slate-100">
+                              <td className="px-3 py-2 font-bold text-slate-800">{user.fullName || '-'}</td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{user.email || '-'}</td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{user.role}</td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{getUserBranchLabel(user.brand)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {bulkUsers.length > 12 && (
+                      <p className="mt-2 text-xs font-bold text-slate-500">Showing first 12 rows in preview.</p>
+                    )}
+                  </div>
+                </div>
+
+                {bulkResults.length > 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-500">Bulk Create Results</p>
+                    <div className="mt-3 max-h-[220px] overflow-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-white">
+                          <tr>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">User</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Email</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Status</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Message</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkResults.map((result) => (
+                            <tr key={`${result.email}-${result.index}`} className="border-b border-slate-100">
+                              <td className="px-3 py-2 font-bold text-slate-800">{result.fullName || '-'}</td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{result.email || '-'}</td>
+                              <td className="px-3 py-2">
+                                <Badge className={result.status === 'created' ? 'bg-[#edf4fb] text-[#023468]' : 'bg-rose-50 text-rose-700'}>
+                                  {result.status}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{result.error || result.permissionWarning || 'Done'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsBulkCreateDialogOpen(false)}
+                    className="flex-1 rounded-xl border-slate-200 bg-white"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={bulkLoading || validBulkUsers.length === 0}
+                    className="app-primary-action flex-1 rounded-xl"
+                  >
+                    {bulkLoading ? 'Creating users...' : `Create ${validBulkUsers.length || ''} Users`}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
           
           <Dialog
             open={isCreateDialogOpen}
@@ -652,6 +1044,7 @@ export default function AdminUsersPage() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Stats Cards */}

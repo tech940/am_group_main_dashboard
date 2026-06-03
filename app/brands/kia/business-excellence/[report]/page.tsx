@@ -4,11 +4,14 @@ import { forbidden, notFound, redirect } from 'next/navigation'
 
 const REPORT_TITLES: Record<string, string> = {
   'overview': 'Business Excellence Overview',
+  'executive-dashboard': 'Executive Dashboard',
   'ro-billing-report': 'RO Billing Report',
   'workshop-performance': 'Workshop Performance',
   'open-ro': 'Open RO (Repair Orders)',
   'kia-complaints': 'Kia Complaints',
 }
+
+const EXECUTIVE_DASHBOARD_ALLOWED_ROLES = new Set(['admin', 'ceo', 'md'])
 
 export async function generateStaticParams() {
   return Object.keys(REPORT_TITLES).map((report) => ({ report }))
@@ -48,5 +51,9 @@ export default async function Page({
     forbidden()
   }
 
-  return <KiaBusinessExcellencePage initialReport={report} />
+  if (report === 'executive-dashboard' && !EXECUTIVE_DASHBOARD_ALLOWED_ROLES.has(String(access.appUser.role || '').toLowerCase())) {
+    forbidden()
+  }
+
+  return <KiaBusinessExcellencePage initialReport={report} currentUserRole={access.appUser.role} />
 }

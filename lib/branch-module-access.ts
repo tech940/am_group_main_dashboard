@@ -135,6 +135,7 @@ function groupKeysForBranch(prefix: string, role: BranchModuleAccessRoleValue) {
       `${prefix}.business_excellence.workshop_performance`,
       `${prefix}.business_excellence.open_ro`,
       `${prefix}.demo_job_cards`,
+      `${prefix}.service_appointment`,
     ]
   }
   if (role === 'branch_customer_ops') {
@@ -144,6 +145,7 @@ function groupKeysForBranch(prefix: string, role: BranchModuleAccessRoleValue) {
       `${prefix}.business_excellence`,
       `${prefix}.business_excellence.complaints`,
       `${prefix}.demo_job_cards`,
+      `${prefix}.service_appointment`,
     ]
   }
   if (role === 'branch_proforma_user' || role === 'branch_proforma_approver') {

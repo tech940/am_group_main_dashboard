@@ -77,6 +77,12 @@ import {
   buildBusinessDateFilter,
 } from '@/lib/business-excellence/comparison'
 import { EXECUTIVE_TARGETS } from '@/lib/business-excellence/executive-targets'
+import {
+  DEFAULT_KIA_DEALER_CODE,
+  KIA_BRANCH_DEALERS,
+  appendKiaDealerCodeParam,
+  normalizeKiaDealerCode,
+} from '@/lib/kia/dealer-branch'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
   return <RechartsResponsiveContainer minWidth={0} minHeight={0} debounce={50} {...props} />
@@ -96,6 +102,16 @@ interface StatRow {
   ytdLY: number | 'N/A'
   ytdGrowth: string
   subRows: StatRow[]
+}
+
+type BusinessFreshnessResponse = {
+  sourceUpdatedAt: string | null
+  sources?: Array<{
+    table: string
+    label: string
+    sourceUpdatedAt: string | null
+    rowCount: number
+  }>
 }
 
 function AnimatedMetric({
@@ -294,12 +310,14 @@ type BusinessAiSummary = {
 }
 
 const BUSINESS_EXCELLENCE_OVERVIEW_REPORT = 'Business Excellence Overview'
+const EXECUTIVE_DASHBOARD_REPORT = 'Executive Dashboard'
 const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const KIA_COMPLAINTS_REPORT = 'Kia Complaints'
 const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [BUSINESS_EXCELLENCE_OVERVIEW_REPORT]: 'overview',
+  [EXECUTIVE_DASHBOARD_REPORT]: 'executive-dashboard',
   [DEFAULT_BUSINESS_EXCELLENCE_SHEET]: 'ro-billing-report',
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
   [OPEN_RO_REPORT]: 'open-ro',
@@ -314,6 +332,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     brand: 'kia',
     sheetName: BUSINESS_EXCELLENCE_OVERVIEW_REPORT,
     tableName: 'business_excellence_overview',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'executive-dashboard',
+    brand: 'kia',
+    sheetName: EXECUTIVE_DASHBOARD_REPORT,
+    tableName: 'ro_billing_report',
     columns: [],
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
@@ -421,12 +448,12 @@ function formatChartNumber(value: unknown) {
 }
 
 function getGrowthBadgeClass(value: number | string | 'N/A') {
-  if (value === 'N/A') return 'text-slate-400 bg-slate-50 border-slate-200'
+  if (value === 'N/A') return 'text-slate-400 bg-white border-slate-200'
   const num = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(num)) return 'text-slate-400 bg-slate-50 border-slate-200'
+  if (!Number.isFinite(num)) return 'text-slate-400 bg-white border-slate-200'
   return num >= 0
-    ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
-    : 'text-rose-700 bg-rose-50 border-rose-100'
+    ? 'text-emerald-700 bg-white border-emerald-200'
+    : 'text-[lab(53_89.72_88.48)] bg-white border-[lab(53_89.72_88.48)]'
 }
 
 function isManagementTotalRowName(name: unknown) {
@@ -454,6 +481,21 @@ function formatCurrency(value: number) {
   if (rounded >= 10000000) return `${sign}${currencyPrefix}${(rounded / 10000000).toFixed(2)}Cr`
   if (rounded >= 100000) return `${sign}${currencyPrefix}${(rounded / 100000).toFixed(2)}L`
   return `${sign}${currencyPrefix}${rounded.toLocaleString('en-IN')}`
+}
+
+function formatBusinessFreshness(value?: string | null) {
+  if (!value) return 'Not available'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Not available'
+  return `${date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  })} IST`
 }
 
 function SmartTrendValueLabel({
@@ -527,23 +569,25 @@ function buildDateFilterFromQuery(params: URLSearchParams): BusinessDateFilter {
   )
 }
 
-function buildBusinessExcellenceDateQuery(filter: BusinessDateFilter) {
-  if (!filter) return ''
+function buildBusinessExcellenceDateQuery(filter: BusinessDateFilter, dealerCode?: string | null) {
   const params = new URLSearchParams()
-  params.set('startDate', filter.startDate)
-  params.set('endDate', filter.endDate)
-  if (filter.preset && filter.preset !== 'custom') {
-    params.set('periodPreset', filter.preset)
-  }
-  if (filter.comparison?.previousStartDate && filter.comparison.previousEndDate) {
-    params.set('compareStartDate', filter.comparison.previousStartDate)
-    params.set('compareEndDate', filter.comparison.previousEndDate)
+  appendKiaDealerCodeParam(params, dealerCode)
+  if (filter) {
+    params.set('startDate', filter.startDate)
+    params.set('endDate', filter.endDate)
+    if (filter.preset && filter.preset !== 'custom') {
+      params.set('periodPreset', filter.preset)
+    }
+    if (filter.comparison?.previousStartDate && filter.comparison.previousEndDate) {
+      params.set('compareStartDate', filter.comparison.previousStartDate)
+      params.set('compareEndDate', filter.comparison.previousEndDate)
+    }
   }
   return params.toString()
 }
 
-function appendBusinessExcellenceDateQuery(path: string, filter: BusinessDateFilter) {
-  const query = buildBusinessExcellenceDateQuery(filter)
+function appendBusinessExcellenceDateQuery(path: string, filter: BusinessDateFilter, dealerCode?: string | null) {
+  const query = buildBusinessExcellenceDateQuery(filter, dealerCode)
   return query ? `${path}?${query}` : path
 }
 
@@ -586,16 +630,24 @@ function WorkshopTrendValueLabel({
   )
 }
 
-function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[]) {
-  if (sheets.length === 0) return BUSINESS_EXCELLENCE_REPORTS
+function canAccessExecutiveDashboard(role?: string | null) {
+  return ['admin', 'ceo', 'md'].includes(String(role || '').trim().toLowerCase())
+}
+
+function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[], role?: string | null) {
+  const baseReports = canAccessExecutiveDashboard(role)
+    ? BUSINESS_EXCELLENCE_REPORTS
+    : BUSINESS_EXCELLENCE_REPORTS.filter((sheet) => sheet.sheetName !== EXECUTIVE_DASHBOARD_REPORT)
+
+  if (sheets.length === 0) return baseReports
 
   const byName = new Map<string, SavedSheetMetadata>()
-  BUSINESS_EXCELLENCE_REPORTS.forEach((sheet) => byName.set(sheet.sheetName, sheet))
+  baseReports.forEach((sheet) => byName.set(sheet.sheetName, sheet))
   sheets.forEach((sheet) => {
     if (byName.has(sheet.sheetName)) byName.set(sheet.sheetName, sheet)
   })
 
-  return BUSINESS_EXCELLENCE_REPORTS.map((sheet) => byName.get(sheet.sheetName) || sheet)
+  return baseReports.map((sheet) => byName.get(sheet.sheetName) || sheet)
 }
 
 function TrendAxisTick({
@@ -715,7 +767,7 @@ function formatPIDate(value: string) {
   return date.toLocaleDateString('en-CA')
 }
 
-function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDateFilter }) {
+function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter: BusinessDateFilter; dealerCode?: string | null }) {
   const queryClient = useQueryClient()
   const [data, setData] = useState<PerformanceIntelligenceResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -741,6 +793,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
         limit: '50',
       })
       appendBusinessComparisonParams(params, dateFilter)
+      appendKiaDealerCodeParam(params, dealerCode)
 
       Object.entries(filters).forEach(([key, value]) => {
         if (value && value !== 'all') params.set(key, value)
@@ -764,7 +817,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
     } finally {
       setLoading(false)
     }
-  }, [dateFilter, filters, page, queryClient, range.endDate, range.startDate])
+  }, [dateFilter, dealerCode, filters, page, queryClient, range.endDate, range.startDate])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -800,6 +853,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
       export: 'all',
     })
     appendBusinessComparisonParams(params, dateFilter)
+    appendKiaDealerCodeParam(params, dealerCode)
 
     Object.entries(filters).forEach(([key, value]) => {
       if (value && value !== 'all') params.set(key, value)
@@ -1343,7 +1397,7 @@ function SheetRowsTable({
   )
 }
 
-export default function KiaBusinessExcellencePage({ initialReport }: { initialReport?: string } = {}) {
+export default function KiaBusinessExcellencePage({ initialReport, currentUserRole }: { initialReport?: string; currentUserRole?: string | null } = {}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
@@ -1361,6 +1415,10 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
   const [comparisonEndDate, setComparisonEndDate] = useState<string>('')
   const [datePanelMode, setDatePanelMode] = useState<'current' | 'compare'>('current')
   const [appliedDateFilter, setAppliedDateFilter] = useState<BusinessDateFilter>(null)
+  const [selectedDealerCode, setSelectedDealerCode] = useState<string | null>(() => {
+    const normalized = normalizeKiaDealerCode(searchParams.get('dealer_code'))
+    return normalized || (initialReportName === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE)
+  })
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
   const [showDateControls, setShowDateControls] = useState(false)
   const [showHealthPanel, setShowHealthPanel] = useState(false)
@@ -1375,6 +1433,8 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
     const params = new URLSearchParams(queryDateFilterKey)
     const hasDateParams = params.has('startDate') || params.has('endDate') || params.has('compareStartDate') || params.has('compareEndDate')
     const timeout = window.setTimeout(() => {
+      const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
+      setSelectedDealerCode(normalizeKiaDealerCode(params.get('dealer_code')) || (activeReport === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE))
       if (!hasDateParams) {
         setSelectedPreset('mtd')
         setStartDate('')
@@ -1399,7 +1459,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
     }, 0)
 
     return () => window.clearTimeout(timeout)
-  }, [queryDateFilterKey])
+  }, [activeTab, initialReportName, queryDateFilterKey])
 
   const activeDateLabel = useMemo(() => {
     if (!appliedDateFilter) {
@@ -1418,6 +1478,27 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
 
     return `${appliedDateFilter.startDate || 'Start'} to ${appliedDateFilter.endDate || 'End'}`
   }, [appliedDateFilter])
+
+  const freshnessQueryString = useMemo(() => {
+    const params = new URLSearchParams({
+      report: activeTab || initialReportName,
+    })
+    appendKiaDealerCodeParam(params, selectedDealerCode)
+    return params.toString()
+  }, [activeTab, initialReportName, selectedDealerCode])
+
+  const freshnessQuery = useQuery<BusinessFreshnessResponse>({
+    queryKey: ['business-excellence', 'freshness', freshnessQueryString],
+    queryFn: async () => {
+      const response = await fetch(`/api/brands/kia/business-excellence/freshness?${freshnessQueryString}`)
+      logApiTimings(response, 'business-excellence-freshness')
+      if (!response.ok) throw new Error('Failed to fetch Business Excellence freshness')
+      return await response.json()
+    },
+    enabled: Boolean(activeTab || initialReportName),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+    retry: 1,
+  })
 
   const draftDateFilter = useMemo(
     () => buildBusinessDateFilter(
@@ -1449,13 +1530,13 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
         setComparisonEndDate('')
       }
       setAppliedDateFilter(filter)
-      router.replace(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), filter), { scroll: false })
+      router.replace(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), filter, selectedDealerCode), { scroll: false })
       setShowDateControls(false)
       setTimeout(() => {
         setIsApplyingFilter(false)
       }, 300)
     }, 100)
-  }, [activeTab, comparisonEndDate, comparisonStartDate, datePanelMode, endDate, initialReportName, router, selectedPreset, startDate])
+  }, [activeTab, comparisonEndDate, comparisonStartDate, datePanelMode, endDate, initialReportName, router, selectedDealerCode, selectedPreset, startDate])
 
   const clearDateFilter = useCallback(() => {
     setIsApplyingFilter(true)
@@ -1467,13 +1548,20 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
       setComparisonEndDate('')
       setDatePanelMode('current')
       setAppliedDateFilter(null)
-      router.replace(getBusinessExcellenceReportPath(activeTab || initialReportName), { scroll: false })
+      router.replace(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), null, selectedDealerCode), { scroll: false })
       setShowDateControls(false)
       setTimeout(() => {
         setIsApplyingFilter(false)
       }, 300)
     }, 100)
-  }, [activeTab, initialReportName, router])
+  }, [activeTab, initialReportName, router, selectedDealerCode])
+
+  const handleDealerChange = useCallback((dealerCode: string | null) => {
+    const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
+    const nextDealerCode = normalizeKiaDealerCode(dealerCode) || (activeReport === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE)
+    setSelectedDealerCode(nextDealerCode)
+    router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), appliedDateFilter, nextDealerCode), { scroll: false })
+  }, [activeTab, appliedDateFilter, initialReportName, router])
 
   const resolveCurrentRange = useCallback(() => {
     if (startDate && endDate) return { startDate, endDate }
@@ -1520,6 +1608,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
         body: JSON.stringify({
           report,
           dateFilter: appliedDateFilter,
+          dealerCode: selectedDealerCode,
         }),
       })
       logApiTimings(response, 'business-excellence-ai-summary')
@@ -1536,7 +1625,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
     } finally {
       setIsAiSummaryLoading(false)
     }
-  }, [appliedDateFilter])
+  }, [appliedDateFilter, selectedDealerCode])
 
   const fetchSheetRows = useCallback(async (sheet: SavedSheetMetadata, page: number = 1) => {
     const sheetId = sheet.id
@@ -1548,6 +1637,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
         page: String(page),
         limit: String(itemsPerPage),
       })
+      appendKiaDealerCodeParam(params, selectedDealerCode)
       const queryString = params.toString()
       const fullData = await queryClient.fetchQuery({
         queryKey: ['business-excellence', 'sheet-rows', queryString],
@@ -1571,7 +1661,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
     } finally {
       setFetchingRows(null)
     }
-  }, [queryClient]) // Removed loadedRows dependency
+  }, [queryClient, selectedDealerCode]) // Removed loadedRows dependency
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -1584,11 +1674,11 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
     setShowAiSummary(false)
     setAiSummary(null)
     setAiSummaryError('')
-  }, [activeTab, appliedDateFilter])
+  }, [activeTab, appliedDateFilter, selectedDealerCode])
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === KIA_COMPLAINTS_REPORT) {
+      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === KIA_COMPLAINTS_REPORT) {
         setFetchingRows(null)
         return
       }
@@ -1601,10 +1691,14 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleTabChange = (sheetName: string) => {
-    router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(sheetName), appliedDateFilter))
+    const nextDealerCode = sheetName === EXECUTIVE_DASHBOARD_REPORT
+      ? normalizeKiaDealerCode(searchParams.get('dealer_code'))
+      : normalizeKiaDealerCode(selectedDealerCode) || DEFAULT_KIA_DEALER_CODE
+    setSelectedDealerCode(nextDealerCode)
+    router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(sheetName), appliedDateFilter, nextDealerCode))
   }
 
-  const reportOptions = useMemo(() => getBusinessExcellenceReportOptions(savedSheets), [savedSheets])
+  const reportOptions = useMemo(() => getBusinessExcellenceReportOptions(savedSheets, currentUserRole), [currentUserRole, savedSheets])
 
   return (
     <MainLayout title="Business Excellence" subtitle="AM Kia Performance Analytics">
@@ -1634,8 +1728,12 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
               const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
               const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
               const isKiaComplaintsSheet = selectedSheet.sheetName === KIA_COMPLAINTS_REPORT
-              const usesDateControls = isOverviewSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
-              const supportsComparison = isOverviewSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
+              const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
+              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
+              const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
+              const branchOptions = isExecutiveDashboardSheet
+                ? [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
+                : KIA_BRANCH_DEALERS
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
                 : ''
@@ -1657,6 +1755,31 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-black text-slate-700">
                                 {activeDateLabel}
                               </span>
+                              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
+                                Updated: {freshnessQuery.isLoading && !freshnessQuery.data ? 'Checking...' : freshnessQuery.isError ? 'Not available' : formatBusinessFreshness(freshnessQuery.data?.sourceUpdatedAt)}
+                              </span>
+                              <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" aria-label="Business Excellence branch filter">
+                                {branchOptions.map((branch) => {
+                                  const isActive = branch.dealerCode
+                                    ? selectedDealerCode === branch.dealerCode
+                                    : !normalizeKiaDealerCode(selectedDealerCode)
+                                  return (
+                                    <button
+                                      key={branch.dealerCode || 'all-locations'}
+                                      type="button"
+                                      onClick={() => handleDealerChange(branch.dealerCode)}
+                                      className={cn(
+                                        'rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest transition',
+                                        isActive
+                                          ? 'bg-[var(--dashboard-action-bg)] text-white shadow-sm'
+                                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                                      )}
+                                    >
+                                      {branch.label}
+                                    </button>
+                                  )
+                                })}
+                              </div>
                               {activeComparisonText && (
                                 <span className="rounded-full border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] px-3 py-1.5 text-[10px] font-black text-[var(--dashboard-action-bg)]">
                                   {activeComparisonText}
@@ -2009,31 +2132,42 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                           <BusinessExecutiveDecisionLayer
                             dateFilter={appliedDateFilter}
                             reportName={selectedSheet.sheetName}
+                            dealerCode={selectedDealerCode}
                           />
                         )}
-                        {isOverviewSheet ? (
+                        {isExecutiveDashboardSheet ? (
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
                           ) : (
-                            <BusinessExcellenceOverview dateFilter={appliedDateFilter} />
+                            <BusinessExecutiveDashboard
+                              dateFilter={appliedDateFilter}
+                              dealerCode={selectedDealerCode}
+                              onDealerChange={handleDealerChange}
+                            />
+                          )
+                        ) : isOverviewSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <BusinessExcellenceOverview dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
                           )
                         ) : isWorkshopPerformanceSheet ? (
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
                           ) : (
-                            <WorkshopPerformanceSection dateFilter={appliedDateFilter} />
+                            <WorkshopPerformanceSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
                           )
                         ) : isOpenRoSheet ? (
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
                           ) : (
-                            <OpenRoSection dateFilter={appliedDateFilter} />
+                            <OpenRoSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
                           )
                         ) : isKiaComplaintsSheet ? (
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
                           ) : (
-                            <KiaComplaintsSection dateFilter={appliedDateFilter} />
+                            <KiaComplaintsSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
                           )
                         ) : isROBillingSheet ? (
                           isApplyingFilter ? (
@@ -2047,6 +2181,7 @@ export default function KiaBusinessExcellencePage({ initialReport }: { initialRe
                                 prefetchedData={null}
                                 isPrefetching={false}
                                 dateFilter={appliedDateFilter}
+                                dealerCode={selectedDealerCode}
                               />
                             </>
                           )
@@ -2412,10 +2547,11 @@ function itemCards(items: Array<ExecutiveMetricCard | null | false | undefined>,
   return filtered.length ? filtered.slice(0, limit) : [fallback]
 }
 
-function buildExecutiveRequest(reportName: string, dateFilter: BusinessDateFilter): ExecutiveRequest {
+function buildExecutiveRequest(reportName: string, dateFilter: BusinessDateFilter, dealerCode?: string | null): ExecutiveRequest {
   const range = getDefaultRODateRange(dateFilter)
   const params = new URLSearchParams(range)
   appendBusinessComparisonParams(params, dateFilter)
+  appendKiaDealerCodeParam(params, dealerCode)
 
   if (reportName.toLowerCase().includes('ro billing')) {
     params.set('brand', 'kia')
@@ -3008,11 +3144,13 @@ function executiveToneClass(tone: ExecutiveTone = 'neutral') {
 function BusinessExecutiveDecisionLayer({
   dateFilter,
   reportName,
+  dealerCode,
 }: {
   dateFilter: BusinessDateFilter
   reportName: string
+  dealerCode?: string | null
 }) {
-  const request = useMemo(() => buildExecutiveRequest(reportName, dateFilter), [dateFilter, reportName])
+  const request = useMemo(() => buildExecutiveRequest(reportName, dateFilter, dealerCode), [dateFilter, dealerCode, reportName])
   const { data, isLoading } = useQuery<unknown, Error>({
     queryKey: ['business-excellence', 'executive-decision-layer', reportName, request.endpoint],
     queryFn: async () => {
@@ -3164,6 +3302,961 @@ function getROTrendDateRange(dateFilter: BusinessDateFilter) {
   }
 }
 
+const EXECUTIVE_LOCATION_OPTIONS = [
+  { label: 'All Locations', dealerCode: null as string | null, helper: 'JK402 + JK501' },
+  { label: 'Jammu', dealerCode: 'JK402', helper: 'Dealer JK402' },
+  { label: 'Udhampur', dealerCode: 'JK501', helper: 'Dealer JK501' },
+]
+
+function executiveQueryString(view: 'table' | 'trend' | 'fy', dateFilter: BusinessDateFilter, dealerCode?: string | null) {
+  const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
+  const params = new URLSearchParams({
+    brand: 'kia',
+    sheet: 'ro_billing_report',
+    analysisType: 'load',
+    view,
+    groupBy: 'work_type',
+    metrics: 'all',
+    startDate: range.startDate,
+    endDate: range.endDate,
+  })
+  appendBusinessComparisonParams(params, dateFilter)
+  appendKiaDealerCodeParam(params, dealerCode)
+  return params.toString()
+}
+
+function getExecutiveMetricRows(response: ROAnalysisResponse | null | undefined, metric: ROAnalysisType) {
+  return response?.byMetric?.[metric]?.rows || (metric === 'load' ? response?.rows : undefined) || []
+}
+
+function buildExecutiveSyntheticRow(name: string, sourceRows: ROAnalysisRow[]): ROAnalysisRow {
+  const buildMetric = (period: PeriodKey): ROAnalysisMetric => {
+    const cy = sourceRows.reduce((total, row) => total + Number(row.metrics?.[period]?.cy || 0), 0)
+    let hasLy = false
+    const lyTotal = sourceRows.reduce((total, row) => {
+      const ly = row.metrics?.[period]?.ly
+      if (ly === 'N/A' || ly === undefined || ly === null) return total
+      hasLy = true
+      return total + Number(ly || 0)
+    }, 0)
+    const ly: number | 'N/A' = hasLy ? lyTotal : 'N/A'
+    const growth: number | 'N/A' = ly !== 'N/A' && ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A'
+    return { cy, ly, growth }
+  }
+
+  return {
+    name,
+    depth: 0,
+    metrics: {
+      td: buildMetric('td'),
+      mtd: buildMetric('mtd'),
+      qtd: buildMetric('qtd'),
+      ytd: buildMetric('ytd'),
+    },
+    children: [],
+  }
+}
+
+function getExecutiveDisplayBaseRows(response: ROAnalysisResponse | null | undefined, metric: 'load' | 'labour' | 'parts') {
+  const topRows = getExecutiveMetricRows(response, metric).filter((row) => row.depth === 0)
+  const normalizeName = (name: string) => name
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+
+  const matchesAny = (row: ROAnalysisRow, names: string[]) => {
+    const normalized = normalizeName(row.name || '')
+    return names.some((name) => normalized === normalizeName(name))
+  }
+
+  const paidNames = ['Paid Service']
+  const freeNames = ['Free Service', 'Free Services', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA First Free Service', 'TMA Second Free Service', 'TMA Third Free Service', 'Sixth Free Service']
+  const runningNames = ['Running Repair', 'Running Repairs']
+  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop']
+  const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
+
+  const paidRows = topRows.filter((row) => matchesAny(row, paidNames))
+  const freeRows = topRows.filter((row) => matchesAny(row, freeNames))
+  const runningRows = topRows.filter((row) => matchesAny(row, runningNames))
+  const accidentRows = topRows.filter((row) => matchesAny(row, accidentNames))
+  const otherRows = topRows.filter((row) => !matchesAny(row, classifiedNames))
+
+  const paid = buildExecutiveSyntheticRow('Paid Service', paidRows)
+  const free = buildExecutiveSyntheticRow('Free Services', freeRows)
+  const running = buildExecutiveSyntheticRow('Running Repairs', runningRows)
+  const mech = buildExecutiveSyntheticRow('MECH', [paid, free, running])
+  const others = buildExecutiveSyntheticRow('Others', otherRows)
+  const mechTotal = buildExecutiveSyntheticRow('MECH TOTAL', [mech, others])
+  const accident = buildExecutiveSyntheticRow('Accident', accidentRows)
+  const grandTotal = buildExecutiveSyntheticRow('Grand Total', [mechTotal, accident])
+
+  return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
+}
+
+function deriveExecutivePerVehicleRows(amountRows: ROAnalysisRow[], loadRows: ROAnalysisRow[]) {
+  const amountByName = new Map(amountRows.map((row) => [row.name, row]))
+  const deriveMetric = (amount: ROAnalysisMetric | undefined, load: ROAnalysisMetric | undefined): ROAnalysisMetric => {
+    const cyLoad = Number(load?.cy || 0)
+    const cy = cyLoad > 0 ? Number(amount?.cy || 0) / cyLoad : 0
+    const amountLy = amount?.ly
+    const loadLy = load?.ly
+    const ly = amountLy !== 'N/A' && loadLy !== 'N/A' && Number(loadLy || 0) > 0
+      ? Number(amountLy || 0) / Number(loadLy || 0)
+      : 'N/A'
+    const growth = ly !== 'N/A' && ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A'
+    return { cy, ly, growth }
+  }
+
+  return loadRows.map((loadRow) => {
+    const amountRow = amountByName.get(loadRow.name)
+    return {
+      name: loadRow.name,
+      depth: 0,
+      metrics: {
+        td: deriveMetric(amountRow?.metrics.td, loadRow.metrics.td),
+        mtd: deriveMetric(amountRow?.metrics.mtd, loadRow.metrics.mtd),
+        qtd: deriveMetric(amountRow?.metrics.qtd, loadRow.metrics.qtd),
+        ytd: deriveMetric(amountRow?.metrics.ytd, loadRow.metrics.ytd),
+      },
+      children: [],
+    } satisfies ROAnalysisRow
+  })
+}
+
+function getExecutiveDisplayMetricRows(response: ROAnalysisResponse | null | undefined, metric: ROAnalysisType) {
+  if (metric === 'lab_per_veh') {
+    return deriveExecutivePerVehicleRows(
+      getExecutiveDisplayBaseRows(response, 'labour'),
+      getExecutiveDisplayBaseRows(response, 'load')
+    )
+  }
+  if (metric === 'part_per_veh') {
+    return deriveExecutivePerVehicleRows(
+      getExecutiveDisplayBaseRows(response, 'parts'),
+      getExecutiveDisplayBaseRows(response, 'load')
+    )
+  }
+  return getExecutiveDisplayBaseRows(response, metric)
+}
+
+function findExecutiveRow(rows: ROAnalysisRow[], names: string[]) {
+  const normalizedNames = names.map((name) => name.toLowerCase())
+  const stack = [...rows]
+  while (stack.length > 0) {
+    const row = stack.shift()
+    if (!row) continue
+    if (normalizedNames.includes(String(row.name || '').trim().toLowerCase())) return row
+    if (row.children?.length) stack.push(...row.children)
+  }
+  return null
+}
+
+function getExecutiveTotalRow(response: ROAnalysisResponse | null | undefined, metric: ROAnalysisType) {
+  const rows = getExecutiveDisplayMetricRows(response, metric)
+  return findExecutiveRow(rows, ['Grand Total', 'Total']) || null
+}
+
+function executivePeriod(row: ROAnalysisRow | null | undefined, period: PeriodKey) {
+  return row?.metrics?.[period] || { cy: 0, ly: 0, growth: 'N/A' as const }
+}
+
+function combineExecutiveMetricValues(primary: ROAnalysisMetric, secondary: ROAnalysisMetric) {
+  const cy = Number(primary.cy || 0) + Number(secondary.cy || 0)
+  const primaryLy = primary.ly === 'N/A' ? 0 : Number(primary.ly || 0)
+  const secondaryLy = secondary.ly === 'N/A' ? 0 : Number(secondary.ly || 0)
+  const ly = primaryLy + secondaryLy
+  const growth = ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A'
+  return { cy, ly, growth }
+}
+
+function ExecutiveGrowthBadge({ value }: { value: number | string | 'N/A' }) {
+  return (
+    <span className={cn(
+      'inline-flex items-center justify-center rounded-full border bg-white px-2.5 py-1 text-[10px] font-black',
+      getGrowthBadgeClass(value)
+    )}>
+      {formatSignedGrowth(value)}
+    </span>
+  )
+}
+
+function ExecutiveMetricCard({
+  label,
+  value,
+  previous,
+  growth,
+  helper,
+}: {
+  label: string
+  value: string
+  previous: string
+  growth: number | string | 'N/A'
+  helper: string
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{label}</p>
+          <p className="mt-3 text-2xl font-black text-slate-950">{value}</p>
+        </div>
+        <ExecutiveGrowthBadge value={growth} />
+      </div>
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Previous</p>
+        <p className="mt-1 text-sm font-black text-slate-800">{previous}</p>
+      </div>
+      <p className="mt-3 text-xs font-bold text-slate-500">{helper}</p>
+    </div>
+  )
+}
+
+type ExecutiveRevenueRow = { key: string; label: string; row: ROAnalysisRow }
+
+const EXECUTIVE_REVENUE_CATEGORY_MAP = [
+  ['MECH', 'Mechanical'],
+  ['Accident', 'Accidental'],
+  ['Paid Service', 'Paid Service'],
+  ['Free Services', 'Free Service'],
+  ['Running Repairs', 'Running Repair'],
+  ['Others', 'Others'],
+] as const
+
+function executiveRevenueRows(response: ROAnalysisResponse | null | undefined, metric: 'labour' | 'parts', totalLabel: string) {
+  const rows = getExecutiveDisplayMetricRows(response, metric)
+  const items = EXECUTIVE_REVENUE_CATEGORY_MAP.reduce<ExecutiveRevenueRow[]>((acc, [name, label]) => {
+    const row = findExecutiveRow(rows, [name])
+    if (row) acc.push({ key: name, label, row })
+    return acc
+  }, [])
+  const total = getExecutiveTotalRow(response, metric)
+  if (total) items.push({ key: `${metric}-total`, label: totalLabel, row: total })
+  return items
+}
+
+function formatExecutiveRevenueMoney(value: number | string | 'N/A' | undefined | null) {
+  if (value === 'N/A' || value === undefined || value === null) return 'N/A'
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 'N/A'
+  return formatCurrency(numeric)
+}
+
+const EXECUTIVE_TABLE_METRICS: Array<{ id: ROAnalysisType; label: string }> = [
+  { id: 'load', label: 'Load' },
+  { id: 'labour', label: 'Labour' },
+  { id: 'parts', label: 'Parts' },
+  { id: 'lab_per_veh', label: 'Lab / Veh' },
+  { id: 'part_per_veh', label: 'Part / Veh' },
+]
+
+function formatExecutiveTableMetricValue(metric: ROAnalysisType, value: number | string | 'N/A' | undefined | null) {
+  if (value === 'N/A' || value === undefined || value === null) return 'N/A'
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 'N/A'
+  if (metric === 'load') return Math.round(numeric).toLocaleString('en-IN')
+  return formatCurrency(numeric)
+}
+
+function ExecutiveRevenuePerformance({
+  response,
+  dateFilter,
+  selectedLocationLabel,
+}: {
+  response: ROAnalysisResponse | null | undefined
+  dateFilter: BusinessDateFilter
+  selectedLocationLabel: string
+}) {
+  const labourRows = useMemo(() => executiveRevenueRows(response, 'labour', 'Total Labour'), [response])
+  const partsRows = useMemo(() => executiveRevenueRows(response, 'parts', 'Total Parts'), [response])
+  const labourTotal = getExecutiveTotalRow(response, 'labour')
+  const partsTotal = getExecutiveTotalRow(response, 'parts')
+  const loadTotal = getExecutiveTotalRow(response, 'load')
+  const paidLoad = findExecutiveRow(getExecutiveDisplayMetricRows(response, 'load'), ['Paid Service'])
+  const selectedRange = getSelectedBusinessDateRange(dateFilter)
+  const comparisonStart = dateFilter?.comparison?.previousStartDate
+    ? parseBusinessDate(dateFilter.comparison.previousStartDate)
+    : null
+  const comparisonEnd = dateFilter?.comparison?.previousEndDate
+    ? parseBusinessDate(dateFilter.comparison.previousEndDate)
+    : null
+  const fallbackLyStart = new Date(selectedRange.start)
+  fallbackLyStart.setFullYear(fallbackLyStart.getFullYear() - 1)
+  const fallbackLyEnd = new Date(selectedRange.end)
+  fallbackLyEnd.setFullYear(fallbackLyEnd.getFullYear() - 1)
+  const rangeFormatter = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  const rangeLabel = (start: Date, end: Date) => getInputDate(start) === getInputDate(end)
+    ? rangeFormatter.format(start)
+    : `${rangeFormatter.format(start)} to ${rangeFormatter.format(end)}`
+  const currentRangeLabel = rangeLabel(selectedRange.start, selectedRange.end)
+  const comparisonRangeLabel = rangeLabel(comparisonStart || fallbackLyStart, comparisonEnd || fallbackLyEnd)
+  const currentRevenue = Number(labourTotal?.metrics?.mtd?.cy || 0) + Number(partsTotal?.metrics?.mtd?.cy || 0)
+  const previousRevenue = Number(labourTotal?.metrics?.mtd?.ly === 'N/A' ? 0 : labourTotal?.metrics?.mtd?.ly || 0)
+    + Number(partsTotal?.metrics?.mtd?.ly === 'N/A' ? 0 : partsTotal?.metrics?.mtd?.ly || 0)
+  const revenueGrowth = previousRevenue > 0 ? ((currentRevenue - previousRevenue) / previousRevenue) * 100 : 'N/A'
+  const paidContribution = Number(loadTotal?.metrics?.mtd?.cy || 0) > 0
+    ? (Number(paidLoad?.metrics?.mtd?.cy || 0) / Number(loadTotal?.metrics?.mtd?.cy || 0)) * 100
+    : 0
+  const partsContribution = currentRevenue > 0 ? (Number(partsTotal?.metrics?.mtd?.cy || 0) / currentRevenue) * 100 : 0
+  const labourContribution = currentRevenue > 0 ? (Number(labourTotal?.metrics?.mtd?.cy || 0) / currentRevenue) * 100 : 0
+
+  const renderPeriodCells = (row: ROAnalysisRow, period: PeriodKey) => {
+    const metric = executivePeriod(row, period)
+    return (
+      <React.Fragment key={`${row.name}-${period}`}>
+        <td className="min-w-[78px] whitespace-nowrap border border-slate-300 px-2 py-2 text-right font-mono font-black">{formatExecutiveRevenueMoney(metric.cy)}</td>
+        <td className="min-w-[78px] whitespace-nowrap border border-slate-300 px-2 py-2 text-right font-mono font-bold text-slate-500">{formatExecutiveRevenueMoney(metric.ly)}</td>
+        <td className="min-w-[82px] whitespace-nowrap border border-slate-300 px-2 py-2 text-center">
+          <ExecutiveGrowthBadge value={metric.growth} />
+        </td>
+      </React.Fragment>
+    )
+  }
+
+  const renderRevenueTable = (title: string, rows: ExecutiveRevenueRow[], headerClass: string) => (
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-300 bg-white">
+      <div className={cn('px-3 py-2 text-white', headerClass)}>
+        <h4 className="flex items-center gap-2 text-[11px] font-black">
+          <IndianRupee className="h-3.5 w-3.5" />
+          {title}
+        </h4>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] border-collapse text-[8px]">
+          <thead className="bg-slate-950 text-white">
+            <tr>
+              <th className="min-w-[130px] border border-slate-600 px-2 py-2 text-left">Category</th>
+              {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
+                <th key={label} colSpan={3} className="border border-slate-600 px-2 py-2 text-center">{label}</th>
+              ))}
+            </tr>
+            <tr>
+              <th className="border border-slate-600 px-2 py-1.5"></th>
+              {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', '%'].map((label) => (
+                <th key={`${groupIndex}-${label}`} className="border border-slate-600 px-2 py-1.5 text-center">{label}</th>
+              )))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ key, label, row }) => (
+              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white')}>
+                <td className="whitespace-nowrap border border-slate-300 px-2 py-2 font-black leading-tight">{label}</td>
+                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => renderPeriodCells(row, period))}
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={10} className="border border-slate-300 bg-white px-3 py-6 text-center text-xs font-bold text-slate-500">
+                  Data not available.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white">
+            <TrendingUp className="h-4 w-4 text-slate-700" />
+          </div>
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-[0.24em] text-slate-400">Revenue Performance</p>
+            <h3 className="text-lg font-black text-slate-950">{selectedLocationLabel}</h3>
+          </div>
+        </div>
+        <p className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
+          CY {currentRangeLabel} vs LY {comparisonRangeLabel}
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-3">
+        {renderRevenueTable('Labour Revenue', labourRows, 'bg-blue-600')}
+        {renderRevenueTable('Part Revenue', partsRows, 'bg-purple-600')}
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-300 bg-white">
+          <div className="bg-slate-950 px-3 py-2 text-white">
+            <h4 className="flex items-center gap-2 text-[11px] font-black">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Growth Contribution
+            </h4>
+          </div>
+          <div className="grid gap-2 p-3">
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total Revenue Growth</p>
+              <p className={cn('mt-2 text-2xl font-black', revenueGrowth !== 'N/A' && revenueGrowth < 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700')}>
+              {formatSignedGrowth(revenueGrowth)}
+            </p>
+              <p className="mt-2 text-[9px] font-black uppercase leading-4 text-slate-500">
+              CY {currentRangeLabel} vs LY {comparisonRangeLabel}
+            </p>
+              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2 text-[10px] font-black">
+              <div><p className="text-[9px] uppercase tracking-widest text-slate-400">CY Revenue</p><p>{formatCurrency(currentRevenue)}</p></div>
+              <div><p className="text-[9px] uppercase tracking-widest text-slate-400">LY Revenue</p><p>{formatCurrency(previousRevenue)}</p></div>
+            </div>
+          </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Paid Service Contribution</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{paidContribution.toFixed(1)}%</p>
+              <p className="mt-1 text-[9px] font-black uppercase leading-4 text-slate-500">Paid Service load share in CY selected period.</p>
+          </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Labour Share</p>
+                <p className="mt-2 text-xl font-black text-slate-950">{labourContribution.toFixed(1)}%</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Parts Share</p>
+                <p className="mt-2 text-xl font-black text-slate-950">{partsContribution.toFixed(1)}%</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BusinessExecutiveDashboard({
+  dateFilter,
+  dealerCode,
+  onDealerChange,
+}: {
+  dateFilter: BusinessDateFilter
+  dealerCode: string | null
+  onDealerChange: (dealerCode: string | null) => void
+}) {
+  const [activeExecutiveMetric, setActiveExecutiveMetric] = useState<ROAnalysisType>('load')
+  const [activeExecutiveTableMetric, setActiveExecutiveTableMetric] = useState<ROAnalysisType>('load')
+  const selectedDealer = normalizeKiaDealerCode(dealerCode)
+  const selectedLocation = selectedDealer || 'all'
+  const queryClient = useQueryClient()
+
+  const fetchExecutiveSummary = useCallback(async (view: 'table' | 'trend' | 'fy', nextDealerCode?: string | null) => {
+    const queryString = executiveQueryString(view, dateFilter, nextDealerCode)
+    return queryClient.fetchQuery({
+      queryKey: ['business-excellence', 'executive-dashboard', view, queryString],
+      queryFn: async () => {
+        const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+        logApiTimings(response, `executive-dashboard-${view}`)
+        if (!response.ok) throw new Error(`Failed to fetch executive dashboard ${view}`)
+        return await response.json() as ROAnalysisResponse
+      },
+      staleTime: DASHBOARD_STALE_TIME_MS,
+    })
+  }, [dateFilter, queryClient])
+
+  const tableQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'table', selectedLocation, dateFilter],
+    queryFn: () => fetchExecutiveSummary('table', selectedDealer),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const branchTableQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'branch-table', dateFilter],
+    queryFn: async () => {
+      const [all, jammu, udhampur] = await Promise.all([
+        fetchExecutiveSummary('table', null),
+        fetchExecutiveSummary('table', 'JK402'),
+        fetchExecutiveSummary('table', 'JK501'),
+      ])
+      return { all, jammu, udhampur }
+    },
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const trendQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'trend', selectedLocation, dateFilter],
+    queryFn: () => fetchExecutiveSummary('trend', selectedDealer),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const fyQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'fy', selectedLocation, dateFilter],
+    queryFn: () => fetchExecutiveSummary('fy', selectedDealer),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const selectedTable = tableQuery.data
+  const labourTotal = getExecutiveTotalRow(selectedTable, 'labour')
+  const partsTotal = getExecutiveTotalRow(selectedTable, 'parts')
+  const labourMtd = executivePeriod(labourTotal, 'mtd')
+  const partsMtd = executivePeriod(partsTotal, 'mtd')
+  const revenueMtd = combineExecutiveMetricValues(labourMtd, partsMtd)
+
+  const locationRows = useMemo(() => {
+    const buildRow = (label: string, response?: ROAnalysisResponse) => {
+      const row = getExecutiveTotalRow(response, 'load')
+      return {
+        label,
+        td: executivePeriod(row, 'td'),
+        mtd: executivePeriod(row, 'mtd'),
+        qtd: executivePeriod(row, 'qtd'),
+        ytd: executivePeriod(row, 'ytd'),
+      }
+    }
+    return [
+      buildRow('Jammu', branchTableQuery.data?.jammu),
+      buildRow('Udhampur', branchTableQuery.data?.udhampur),
+      buildRow('Total', branchTableQuery.data?.all),
+    ]
+  }, [branchTableQuery.data])
+
+  const serviceTypeRows = useMemo(() => {
+    return getExecutiveDisplayMetricRows(selectedTable, activeExecutiveTableMetric)
+      .map((row) => ({
+        name: row.name,
+        td: executivePeriod(row, 'td'),
+        mtd: executivePeriod(row, 'mtd'),
+        qtd: executivePeriod(row, 'qtd'),
+        ytd: executivePeriod(row, 'ytd'),
+      }))
+  }, [activeExecutiveTableMetric, selectedTable])
+
+  const trendData = useMemo(() => {
+    const labourTrend = trendQuery.data?.byMetric?.labour?.trend || []
+    const partsTrend = trendQuery.data?.byMetric?.parts?.trend || []
+    const loadTrend = trendQuery.data?.byMetric?.load?.trend || []
+    const byDate = new Map<string, {
+      label: string
+      cyRevenue: number
+      lyRevenue: number
+      cyLabour: number
+      lyLabour: number
+      cyParts: number
+      lyParts: number
+      cyLoad: number
+      lyLoad: number
+    }>()
+
+    loadTrend.forEach((item) => {
+      byDate.set(item.date, {
+        label: item.label,
+        cyRevenue: 0,
+        lyRevenue: 0,
+        cyLabour: 0,
+        lyLabour: 0,
+        cyParts: 0,
+        lyParts: 0,
+        cyLoad: Number(item.cy || 0),
+        lyLoad: Number(item.ly || 0),
+      })
+    })
+    labourTrend.forEach((item) => {
+      const existing = byDate.get(item.date) || { label: item.label, cyRevenue: 0, lyRevenue: 0, cyLabour: 0, lyLabour: 0, cyParts: 0, lyParts: 0, cyLoad: 0, lyLoad: 0 }
+      existing.cyRevenue += Number(item.cy || 0)
+      existing.lyRevenue += Number(item.ly || 0)
+      existing.cyLabour += Number(item.cy || 0)
+      existing.lyLabour += Number(item.ly || 0)
+      byDate.set(item.date, existing)
+    })
+    partsTrend.forEach((item) => {
+      const existing = byDate.get(item.date) || { label: item.label, cyRevenue: 0, lyRevenue: 0, cyLabour: 0, lyLabour: 0, cyParts: 0, lyParts: 0, cyLoad: 0, lyLoad: 0 }
+      existing.cyRevenue += Number(item.cy || 0)
+      existing.lyRevenue += Number(item.ly || 0)
+      existing.cyParts += Number(item.cy || 0)
+      existing.lyParts += Number(item.ly || 0)
+      byDate.set(item.date, existing)
+    })
+
+    return Array.from(byDate.values())
+  }, [trendQuery.data])
+
+  const activeTrendMeta = useMemo(() => {
+    if (activeExecutiveMetric === 'labour') {
+      return {
+        label: 'Labour',
+        title: 'Labour trend',
+        cyKey: 'cyLabour' as const,
+        lyKey: 'lyLabour' as const,
+        currentName: 'Current Labour',
+        previousName: 'Previous Labour',
+        formatter: formatCurrency,
+      }
+    }
+    if (activeExecutiveMetric === 'parts') {
+      return {
+        label: 'Parts',
+        title: 'Parts trend',
+        cyKey: 'cyParts' as const,
+        lyKey: 'lyParts' as const,
+        currentName: 'Current Parts',
+        previousName: 'Previous Parts',
+        formatter: formatCurrency,
+      }
+    }
+    return {
+      label: 'Load',
+      title: 'Load trend',
+      cyKey: 'cyLoad' as const,
+      lyKey: 'lyLoad' as const,
+      currentName: 'Current Load',
+      previousName: 'Previous Load',
+      formatter: (value: number) => Math.round(value).toLocaleString('en-IN'),
+    }
+  }, [activeExecutiveMetric])
+
+  const executiveTrendStats = useMemo(() => {
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const endDate = selectedRange.end
+    const daysInMonth = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).getDate()
+    const throughDay = Math.min(Math.max(endDate.getDate(), 1), daysInMonth)
+    const remainingDays = Math.max(daysInMonth - throughDay, 0)
+    const metricRows = trendData.map((point) => {
+      const dayNumber = Number(String(point.label || '').slice(0, 2))
+      return {
+        day: Number.isFinite(dayNumber) ? dayNumber : 0,
+        cy: Number(point[activeTrendMeta.cyKey] || 0),
+        ly: Number(point[activeTrendMeta.lyKey] || 0),
+      }
+    })
+    const monthTarget = metricRows.reduce((total, point) => total + point.ly, 0) * 1.1
+    const dailyTarget = daysInMonth > 0 ? monthTarget / daysInMonth : 0
+    const mtdTarget = dailyTarget * throughDay
+    const mtdAchieved = metricRows
+      .filter((point) => point.day > 0 && point.day <= throughDay)
+      .reduce((total, point) => total + point.cy, 0)
+    const shortfallTd = Math.max(mtdTarget - mtdAchieved, 0)
+    const avgPerDay = throughDay > 0 ? mtdAchieved / throughDay : 0
+    const projectedClosing = avgPerDay * daysInMonth
+    const monthlyShortfall = Math.max(monthTarget - projectedClosing, 0)
+    const askingRate = remainingDays > 0 ? Math.max(monthTarget - mtdAchieved, 0) / remainingDays : 0
+    const formatStat = activeTrendMeta.formatter
+
+    return {
+      dailyTarget,
+      cards: [
+        { label: 'Month Target', value: formatStat(monthTarget) },
+        { label: 'MTD Target', value: formatStat(mtdTarget) },
+        { label: 'MTD Achieved', value: formatStat(mtdAchieved) },
+        { label: 'Shortfall T.D', value: formatStat(shortfallTd), color: shortfallTd > 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700' },
+        { label: 'Monthly Shortfall', value: formatStat(monthlyShortfall), color: monthlyShortfall > 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700' },
+        { label: 'Projected Closing', value: formatStat(projectedClosing) },
+        { label: 'Asking Rate', value: formatStat(askingRate), color: askingRate > 0 ? 'text-slate-950' : 'text-emerald-700' },
+      ],
+    }
+  }, [activeTrendMeta, dateFilter, trendData])
+
+  const fyRows = useMemo(() => {
+    const byFy = new Map<string, { fy: string; load: number; labour: number; parts: number; revenue: number }>()
+    const applyMetric = (metric: ROAnalysisType, assign: (row: { fy: string; load: number; labour: number; parts: number; revenue: number }, value: number) => void) => {
+      ;(fyQuery.data?.byMetric?.[metric]?.fyTrends || []).forEach((item) => {
+        const existing = byFy.get(item.fy) || { fy: item.fy, load: 0, labour: 0, parts: 0, revenue: 0 }
+        assign(existing, Number(item.value || 0))
+        existing.revenue = existing.labour + existing.parts
+        byFy.set(item.fy, existing)
+      })
+    }
+    applyMetric('load', (row, value) => { row.load = value })
+    applyMetric('labour', (row, value) => { row.labour = value })
+    applyMetric('parts', (row, value) => { row.parts = value })
+    return Array.from(byFy.values()).sort((a, b) => b.fy.localeCompare(a.fy)).slice(0, 4)
+  }, [fyQuery.data])
+
+  const isLoading = tableQuery.isLoading || branchTableQuery.isLoading || trendQuery.isLoading || fyQuery.isLoading
+  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (!item.dealerCode && selectedLocation === 'all'))?.label || 'All Locations'
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Executive Dashboard</p>
+            <h2 className="mt-1 text-2xl font-black text-slate-950">Combined business performance</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              High-level RO Billing view for {selectedLocationLabel}; source logic matches RO Billing Report.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {EXECUTIVE_LOCATION_OPTIONS.map((option) => {
+              const active = option.dealerCode ? selectedDealer === option.dealerCode : selectedLocation === 'all'
+              return (
+                <button
+                  key={option.dealerCode || 'all'}
+                  type="button"
+                  onClick={() => onDealerChange(option.dealerCode)}
+                  className={cn(
+                    'rounded-2xl border px-4 py-3 text-left transition',
+                    active
+                      ? 'border-[#1f3f91] bg-[#1f3f91] text-white shadow-lg shadow-blue-900/15'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'
+                  )}
+                >
+                  <p className="text-xs font-black">{option.label}</p>
+                  <p className={cn('mt-1 text-[10px] font-bold', active ? 'text-white/75' : 'text-slate-500')}>{option.helper}</p>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <SheetContentSkeleton />
+      ) : (
+        <>
+          <div className="grid gap-4 xl:grid-cols-3">
+            <ExecutiveMetricCard
+              label="Total Revenue"
+              value={formatCurrency(revenueMtd.cy)}
+              previous={formatCurrency(revenueMtd.ly)}
+              growth={revenueMtd.growth}
+              helper="Labour + Parts revenue in selected MTD window"
+            />
+            <ExecutiveMetricCard
+              label="Parts Revenue"
+              value={formatCurrency(Number(partsMtd.cy || 0))}
+              previous={formatCurrency(Number(partsMtd.ly === 'N/A' ? 0 : partsMtd.ly || 0))}
+              growth={partsMtd.growth}
+              helper="Parts contribution using RO Billing Report calculations"
+            />
+            <ExecutiveMetricCard
+              label="Labour Revenue"
+              value={formatCurrency(Number(labourMtd.cy || 0))}
+              previous={formatCurrency(Number(labourMtd.ly === 'N/A' ? 0 : labourMtd.ly || 0))}
+              growth={labourMtd.growth}
+              helper="Labour contribution using RO Billing Report calculations"
+            />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+            <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between bg-[#1f3f91] px-4 py-3 text-white">
+                <h3 className="text-sm font-black">Overall Load</h3>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/75">Location performance</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] border-collapse text-xs">
+                  <thead className="bg-[#1f3f91] text-white">
+                    <tr>
+                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Location</th>
+                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-center">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
+                        <th key={label} colSpan={3} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                      ))}
+                    </tr>
+                    <tr>
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
+                        <th key={`${groupIndex}-${label}`} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                      )))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {locationRows.map((row) => (
+                      <tr key={row.label} className={row.label === 'Total' ? 'bg-slate-50 font-black' : 'bg-white'}>
+                        <td className="border border-slate-200 px-3 py-3 font-black text-slate-900">{row.label}</td>
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
+                          const metric = row[period]
+                          return (
+                            <React.Fragment key={`${row.label}-${period}`}>
+                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
+                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono text-slate-500">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
+                              <td className="border border-slate-200 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                            </React.Fragment>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-3 bg-[#1f3f91] px-4 py-3 text-white lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h3 className="text-sm font-black">Service Type Performance</h3>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/75">{selectedLocationLabel}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {EXECUTIVE_TABLE_METRICS.map((metric) => (
+                    <button
+                      key={metric.id}
+                      type="button"
+                      onClick={() => setActiveExecutiveTableMetric(metric.id)}
+                      className={cn(
+                        'rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider transition',
+                        activeExecutiveTableMetric === metric.id
+                          ? 'border-white bg-white text-[#1f3f91]'
+                          : 'border-white/30 bg-white/10 text-white hover:bg-white/20'
+                      )}
+                    >
+                      {metric.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[800px] border-collapse text-xs">
+                  <thead className="bg-[#1f3f91] text-white">
+                    <tr>
+                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Service Type</th>
+                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-center">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
+                        <th key={label} colSpan={3} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                      ))}
+                    </tr>
+                    <tr>
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
+                        <th key={`${groupIndex}-${label}`} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                      )))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serviceTypeRows.map((row) => (
+                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white')}>
+                        <td className="border border-slate-200 px-3 py-3 font-black">{row.name}</td>
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
+                          const metric = row[period]
+                          return (
+                            <React.Fragment key={`${row.name}-${period}`}>
+                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
+                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono text-slate-500">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
+                              <td className="border border-slate-200 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                            </React.Fragment>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <ExecutiveRevenuePerformance
+            response={selectedTable}
+            dateFilter={dateFilter}
+            selectedLocationLabel={selectedLocationLabel}
+          />
+
+          <div className="space-y-4">
+            <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Trend Graph</p>
+                  <h3 className="mt-1 text-lg font-black text-slate-950">{activeTrendMeta.title}</h3>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {([
+                    { id: 'load', label: 'Load' },
+                    { id: 'labour', label: 'Labour' },
+                    { id: 'parts', label: 'Parts' },
+                  ] as Array<{ id: ROAnalysisType; label: string }>).map((metric) => (
+                    <button
+                      key={metric.id}
+                      type="button"
+                      onClick={() => setActiveExecutiveMetric(metric.id)}
+                      className={cn(
+                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider',
+                        activeExecutiveMetric === metric.id
+                          ? 'border-[#1f3f91] bg-[#1f3f91] text-white'
+                          : 'border-slate-200 bg-white text-slate-600'
+                      )}
+                    >
+                      {metric.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 h-[360px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 20, right: 20, bottom: 10, left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 800, fill: '#64748b' }} interval="preserveStartEnd" />
+                    <YAxis tickFormatter={(value) => activeExecutiveMetric === 'load' ? Number(value || 0).toLocaleString('en-IN') : formatChartLabel(Number(value || 0))} tick={{ fontSize: 10, fontWeight: 800, fill: '#64748b' }} width={58} />
+                    <Tooltip
+                      formatter={(value, name) => [activeExecutiveMetric === 'load' ? Number(value || 0).toLocaleString('en-IN') : formatCurrency(Number(value || 0)), String(name)]}
+                      contentStyle={{ borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff' }}
+                    />
+                    <Legend />
+                    <ReferenceLine
+                      y={executiveTrendStats.dailyTarget}
+                      stroke="#f43f5e"
+                      strokeDasharray="5 5"
+                      label={{ position: 'right', value: 'Target', fill: '#f43f5e', fontSize: 11, fontWeight: 900 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey={activeTrendMeta.cyKey}
+                      name={activeTrendMeta.currentName}
+                      stroke="#1f3f91"
+                      strokeWidth={3}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey={activeTrendMeta.lyKey}
+                      name={activeTrendMeta.previousName}
+                      stroke="#e47b00"
+                      strokeWidth={3}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                {executiveTrendStats.cards.map((card) => (
+                  <div key={card.label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center shadow-sm">
+                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>
+                    <p className={cn('mt-2 text-xl font-black text-slate-950', card.color)}>{card.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between bg-[#1f3f91] px-4 py-3 text-white">
+                <h3 className="text-sm font-black">FY Trends</h3>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/75">Revenue, parts, labour, load</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[620px] border-collapse text-xs">
+                  <thead className="bg-slate-950 text-white">
+                    <tr>
+                      <th className="border border-slate-700 px-3 py-3 text-left">Financial Year</th>
+                      <th className="border border-slate-700 px-3 py-3 text-right">Load</th>
+                      <th className="border border-slate-700 px-3 py-3 text-right">Labour</th>
+                      <th className="border border-slate-700 px-3 py-3 text-right">Parts</th>
+                      <th className="border border-slate-700 px-3 py-3 text-right">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fyRows.map((row) => (
+                      <tr key={row.fy} className="bg-white">
+                        <td className="border border-slate-200 px-3 py-3 font-black text-slate-900">{row.fy}</td>
+                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black">{row.load.toLocaleString('en-IN')}</td>
+                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black">{formatCurrency(row.labour)}</td>
+                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black">{formatCurrency(row.parts)}</td>
+                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black text-[#1f3f91]">{formatCurrency(row.revenue)}</td>
+                      </tr>
+                    ))}
+                    {fyRows.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="border border-slate-200 px-3 py-8 text-center text-sm font-bold text-slate-500">
+                          No FY trend data available for this selection.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 type WorkshopMetric = {
   value: number
   ly?: number
@@ -3218,7 +4311,7 @@ type WorkshopPerformanceResponse = {
     totalRevenue: number
     avgBilling: number
   }>
-  meta: { jcDefinition: string; rowCount: number; cacheTtlSeconds: number }
+  meta: { jcDefinition: string; rowCount: number; cacheTtlSeconds: number; advisor?: string | null }
 }
 
 function formatWorkshopTableMoney(value: number) {
@@ -3366,12 +4459,15 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
 
 function WorkshopPerformanceSection({
   dateFilter,
+  dealerCode,
 }: {
   dateFilter: BusinessDateFilter
+  dealerCode?: string | null
 }) {
   const queryClient = useQueryClient()
   const [data, setData] = useState<WorkshopPerformanceResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedWorkshopAdvisor, setSelectedWorkshopAdvisor] = useState('all')
   const [expandedWorkshopRows, setExpandedWorkshopRows] = useState<Set<string>>(() => new Set())
   const [expandedWorkshopChart, setExpandedWorkshopChart] = useState<{ id: string; title: string } | null>(null)
 
@@ -3381,13 +4477,18 @@ function WorkshopPerformanceSection({
     async function fetchWorkshopPerformance() {
       try {
         setIsLoading(true)
+        if (isActive) setData(null)
         const range = getDefaultRODateRange(dateFilter)
         const params = new URLSearchParams({
           startDate: range.startDate,
           endDate: range.endDate,
         })
         appendBusinessComparisonParams(params, dateFilter)
-        params.set('version', 'v16')
+        appendKiaDealerCodeParam(params, dealerCode)
+        if (selectedWorkshopAdvisor !== 'all') {
+          params.set('advisor', selectedWorkshopAdvisor)
+        }
+        params.set('version', 'v17')
         const queryString = params.toString()
         const result = await queryClient.fetchQuery({
           queryKey: ['business-excellence', 'workshop-performance', queryString],
@@ -3411,10 +4512,16 @@ function WorkshopPerformanceSection({
     return () => {
       isActive = false
     }
-  }, [dateFilter, queryClient])
+  }, [dateFilter, dealerCode, queryClient, selectedWorkshopAdvisor])
 
   const rows = useMemo(() => buildWorkshopDisplayRows(data?.rows || []), [data?.rows])
   const coreRows = useMemo(() => buildWorkshopDisplayRows(data?.coreRows || data?.rows || []), [data?.coreRows, data?.rows])
+  const workshopAdvisorOptions = useMemo(() => {
+    const options = (data?.advisors || [])
+      .map((advisor) => advisor.advisor)
+      .filter((advisor): advisor is string => Boolean(advisor && advisor.trim()))
+    return Array.from(new Set(options)).sort((first, second) => first.localeCompare(second))
+  }, [data?.advisors])
   const chartRows = rows.filter((row) => !['Grand Total', 'MECH TOTAL'].includes(row.serviceType)).slice(0, 8)
   const trendRows = data?.dailyTrend.map((point) => {
     const date = parseBusinessDate(point.date)
@@ -3722,6 +4829,39 @@ function WorkshopPerformanceSection({
         </div>
       )}
 
+      <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/50">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Advisor Filter</p>
+            <h3 className="text-lg font-black tracking-tight text-slate-950">Service type performance by advisor</h3>
+            <p className="mt-1 text-xs font-bold text-slate-500">
+              Filter the Workshop Performance tables using service advisor from the selected date range.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <select
+              value={selectedWorkshopAdvisor}
+              onChange={(event) => setSelectedWorkshopAdvisor(event.target.value)}
+              className="h-11 min-w-[240px] rounded-2xl border border-slate-300 bg-white px-4 text-sm font-black text-slate-950 shadow-sm outline-none transition focus:border-[var(--dashboard-primary)] focus:ring-2 focus:ring-[rgba(var(--dashboard-primary-rgb),0.18)]"
+            >
+              <option value="all">All advisors</option>
+              {workshopAdvisorOptions.map((advisor) => (
+                <option key={advisor} value={advisor}>{advisor}</option>
+              ))}
+            </select>
+            {selectedWorkshopAdvisor !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSelectedWorkshopAdvisor('all')}
+                className="app-outline-action inline-flex h-11 items-center justify-center rounded-2xl px-4 text-sm font-black"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {renderWorkshopTable()}
       {renderWorkshopTable('core')}
 
@@ -3732,8 +4872,8 @@ function WorkshopPerformanceSection({
           return (
             <div key={card.label} className="rounded-[1.5rem] border border-white/70 bg-white/90 p-5 shadow-xl shadow-slate-200/50">
               <div className="mb-4 flex items-start justify-between gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
-                  <Wrench className="h-5 w-5" />
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-950">
+                  <Wrench className="h-5 w-5 text-slate-950" />
                 </div>
                 <span className={cn(
                   'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest',
@@ -3789,7 +4929,8 @@ function ROBillingAnalytics({
   activeSheet,
   prefetchedData,
   isPrefetching,
-  dateFilter
+  dateFilter,
+  dealerCode,
 }: {
   sheetId: string
   sheetName: string
@@ -3797,6 +4938,7 @@ function ROBillingAnalytics({
   prefetchedData: Record<string, unknown>[] | null
   isPrefetching: boolean
   dateFilter: BusinessDateFilter
+  dealerCode?: string | null
 }) {
   return (
     <LegacyROBillingAnalytics
@@ -3806,6 +4948,7 @@ function ROBillingAnalytics({
       prefetchedData={prefetchedData}
       isPrefetching={isPrefetching}
       dateFilter={dateFilter}
+      dealerCode={dealerCode}
     />
   )
 }
@@ -3816,7 +4959,8 @@ function LegacyROBillingAnalytics({
   activeSheet,
   prefetchedData,
   isPrefetching,
-  dateFilter
+  dateFilter,
+  dealerCode,
 }: {
   sheetId: string
   sheetName: string
@@ -3824,6 +4968,7 @@ function LegacyROBillingAnalytics({
   prefetchedData: Record<string, unknown>[] | null
   isPrefetching: boolean
   dateFilter: BusinessDateFilter
+  dealerCode?: string | null
 }) {
   const initialData = prefetchedData && prefetchedData.length > 0 ? prefetchedData : []
 
@@ -3837,6 +4982,7 @@ function LegacyROBillingAnalytics({
         prefetchedData={prefetchedData}
         isPrefetching={isPrefetching}
         dateFilter={dateFilter}
+        dealerCode={dealerCode}
       />
     </div>
   )
@@ -4098,7 +5244,8 @@ function ROBillingRevenueSummarySection({
 }
 function ServiceTypePerformance({
   data: initialData,
-  dateFilter
+  dateFilter,
+  dealerCode,
 }: {
   data: Record<string, unknown>[]
   sheetId: string
@@ -4107,6 +5254,7 @@ function ServiceTypePerformance({
   prefetchedData: Record<string, unknown>[] | null
   isPrefetching: boolean
   dateFilter: BusinessDateFilter
+  dealerCode?: string | null
 }) {
   const queryClient = useQueryClient()
   const [serverTableRowsByMetric, setServerTableRowsByMetric] = useState<Partial<Record<ROAnalysisType, StatRow[]>>>({})
@@ -4365,6 +5513,7 @@ function ServiceTypePerformance({
           endDate: range.endDate,
         })
         appendBusinessComparisonParams(params, dateFilter)
+        appendKiaDealerCodeParam(params, dealerCode)
         const queryString = params.toString()
         const result = await queryClient.fetchQuery({
           queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
@@ -4399,7 +5548,7 @@ function ServiceTypePerformance({
     return () => {
       isActive = false
     }
-  }, [convertServerTableRows, dateFilter, derivePerVehicleRows, queryClient, roAnalysisTypes])
+  }, [convertServerTableRows, dateFilter, dealerCode, derivePerVehicleRows, queryClient, roAnalysisTypes])
 
   const fetchAnalysisSummary = useCallback(async (analysisType: ROAnalysisType, view: 'trend' | 'fy' | 'analytics' | 'leaderboard') => {
     const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
@@ -4413,6 +5562,7 @@ function ServiceTypePerformance({
       endDate: range.endDate,
     })
     appendBusinessComparisonParams(params, dateFilter)
+    appendKiaDealerCodeParam(params, dealerCode)
     const queryString = params.toString()
     return queryClient.fetchQuery({
       queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
@@ -4424,7 +5574,7 @@ function ServiceTypePerformance({
       },
       staleTime: DASHBOARD_STALE_TIME_MS,
     })
-  }, [dateFilter, queryClient])
+  }, [dateFilter, dealerCode, queryClient])
 
   const fetchAnalysisBundle = useCallback(async (view: 'trend' | 'fy') => {
     const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
@@ -4439,6 +5589,7 @@ function ServiceTypePerformance({
       endDate: range.endDate,
     })
     appendBusinessComparisonParams(params, dateFilter)
+    appendKiaDealerCodeParam(params, dealerCode)
     const queryString = params.toString()
     return queryClient.fetchQuery({
       queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
@@ -4450,7 +5601,7 @@ function ServiceTypePerformance({
       },
       staleTime: DASHBOARD_STALE_TIME_MS,
     })
-  }, [dateFilter, queryClient])
+  }, [dateFilter, dealerCode, queryClient])
 
   useEffect(() => {
     let isActive = true
@@ -5164,6 +6315,23 @@ function ServiceTypePerformance({
     </div>
   )
 
+  const applyRollingCalendarTargets = useCallback(<T extends { cy: number; ly: number; target?: number }>(rows: T[]) => {
+    const monthTarget = rows.reduce((acc, point) => acc + Number(point.ly || 0), 0) * 1.1
+    let achievedTillPreviousDay = 0
+
+    return rows.map((point, index) => {
+      const remainingDaysIncludingToday = rows.length - index
+      const remainingTarget = Math.max(monthTarget - achievedTillPreviousDay, 0)
+      const target = remainingDaysIncludingToday > 0 ? remainingTarget / remainingDaysIncludingToday : 0
+      achievedTillPreviousDay += Number(point.cy || 0)
+
+      return {
+        ...point,
+        target,
+      }
+    })
+  }, [])
+
   const trendData = useMemo(() => {
     if (viewMode !== 'trend' && !showRoCalendarDialog && viewMode !== 'analytics') return []
     const serverTrend = serverTrendByMetric[activeAnalysisType]?.trend
@@ -5173,13 +6341,7 @@ function ServiceTypePerformance({
         cy: Number(point.cy || 0),
         ly: Number(point.ly || 0),
       }))
-      const flatDailyTarget = baseRows.length > 0
-        ? (baseRows.reduce((acc, point) => acc + Number(point.ly || 0), 0) * 1.1) / baseRows.length
-        : 0
-      return baseRows.map((point) => ({
-        ...point,
-        target: flatDailyTarget,
-      }))
+      return applyRollingCalendarTargets(baseRows)
     }
     if (!data || data.length === 0) return []
 
@@ -5289,14 +6451,8 @@ function ServiceTypePerformance({
         target: 0,
       }
     })
-    const flatDailyTarget = rows.length > 0
-      ? (rows.reduce((acc, point) => acc + Number(point.ly || 0), 0) * 1.1) / rows.length
-      : 0
-    return rows.map((point) => ({
-      ...point,
-      target: flatDailyTarget,
-    }))
-  }, [activeAnalysisType, data, activeTrend, dateFilter, serverTrendByMetric, showRoCalendarDialog, viewMode])
+    return applyRollingCalendarTargets(rows)
+  }, [activeAnalysisType, applyRollingCalendarTargets, data, activeTrend, dateFilter, serverTrendByMetric, showRoCalendarDialog, viewMode])
 
   const kpiStats = useMemo(() => {
     if (trendData.length === 0) {
@@ -7095,7 +8251,7 @@ function ServiceTypePerformance({
                   />
                 </div>
               ) : viewMode === 'intelligence' ? (
-                <PerformanceIntelligenceReport dateFilter={dateFilter} />
+                <PerformanceIntelligenceReport dateFilter={dateFilter} dealerCode={dealerCode} />
               ) : null}
           </>
         </CardContent>

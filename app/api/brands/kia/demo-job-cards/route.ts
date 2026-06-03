@@ -7,6 +7,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData, invalidateCachePattern } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -21,6 +22,7 @@ type DemoFilters = {
   pageSize: number
   search: string
   dueStatus: string
+  dealerCode: string | null
 }
 
 type NumericRow = Record<string, unknown>
@@ -51,13 +53,36 @@ function getFilters(searchParams: URLSearchParams): DemoFilters {
     pageSize: positiveInteger(searchParams.get('pageSize'), DEFAULT_PAGE_SIZE),
     search: String(searchParams.get('search') || '').trim(),
     dueStatus: String(searchParams.get('dueStatus') || 'all').trim() || 'all',
+    dealerCode: normalizeKiaDealerCode(searchParams.get('dealer_code')) || null,
   }
 }
 
 function createCacheKey(filters: DemoFilters, hasRemarksTable: boolean) {
-  return `kia:demo-job-cards:v5:${createHash('sha1')
+  return `kia:demo-job-cards:v6:${createHash('sha1')
     .update(JSON.stringify({ filters, hasRemarksTable }))
     .digest('hex')}`
+}
+
+function demoDealerFilter(filters: DemoFilters) {
+  if (!filters.dealerCode) return sql``
+
+  return sql`
+    AND EXISTS (
+      SELECT 1
+      FROM ro_billing_report rb
+      WHERE UPPER(TRIM(COALESCE(NULLIF(rb.dealer_code, ''), NULLIF(rb.main_dealer_code, '')))) = ${filters.dealerCode}
+        AND (
+          (
+            NULLIF(TRIM(demo_job_cards.vin), '') IS NOT NULL
+            AND UPPER(TRIM(COALESCE(rb.vin, ''))) = UPPER(TRIM(demo_job_cards.vin))
+          )
+          OR (
+            NULLIF(TRIM(demo_job_cards.reg_no), '') IS NOT NULL
+            AND UPPER(TRIM(COALESCE(rb.vehicle_reg_no, ''))) = UPPER(TRIM(demo_job_cards.reg_no))
+          )
+        )
+    )
+  `
 }
 
 function buildFilteredWhere(filters: DemoFilters) {
@@ -154,6 +179,7 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
       WHERE work_type = ${DEMO_WORK_TYPE}
         AND COALESCE(NULLIF(TRIM(vin), ''), NULLIF(TRIM(reg_no), '')) IS NOT NULL
         AND ro_date IS NOT NULL
+        ${demoDealerFilter(filters)}
     ),
     latest_vehicle AS (
       SELECT DISTINCT ON (vehicle_key)

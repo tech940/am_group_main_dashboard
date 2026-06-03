@@ -6,6 +6,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -24,6 +25,7 @@ type ComplaintFilters = {
   comparisonMode: string | null
   comparisonStartDate: string | null
   comparisonEndDate: string | null
+  dealerCode: string | null
 }
 
 type ComplaintChunk = 'summary' | 'secondary' | 'details' | 'full'
@@ -78,6 +80,7 @@ function complaintAttributeFilters(filters: ComplaintFilters) {
   return sql`
     AND (${filters.status}::text IS NULL OR status_group = ${filters.status})
     AND (${filters.dealer}::text IS NULL OR dealer_name = ${filters.dealer})
+    AND (${filters.dealerCode}::text IS NULL OR UPPER(TRIM(COALESCE(dealer_code, ''))) = ${filters.dealerCode})
     AND (${filters.area}::text IS NULL OR COALESCE(NULLIF(sr_area, ''), 'Unspecified') = ${filters.area})
     AND (${filters.model}::text IS NULL OR COALESCE(NULLIF(vehicle_model, ''), 'Unspecified') = ${filters.model})
     AND (${filters.source}::text IS NULL OR COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') = ${filters.source})
@@ -200,7 +203,7 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
 }
 
 function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
-  return `kia:business-excellence:complaints:v7:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `kia:business-excellence:complaints:v8:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {
@@ -726,11 +729,12 @@ export async function GET(request: Request) {
       area: getFilterValue(searchParams.get('area')),
       model: getFilterValue(searchParams.get('model')),
       source: getFilterValue(searchParams.get('source')),
-      periodPreset: searchParams.get('periodPreset') || null,
-      comparisonMode: searchParams.get('comparisonMode') || 'none',
-      comparisonStartDate,
-      comparisonEndDate,
-    }
+    periodPreset: searchParams.get('periodPreset') || null,
+    comparisonMode: searchParams.get('comparisonMode') || 'none',
+    comparisonStartDate,
+    comparisonEndDate,
+    dealerCode: normalizeKiaDealerCode(searchParams.get('dealer_code')) || null,
+  }
     const skipCache = searchParams.get('skipCache') === 'true'
     const requestedChunk = searchParams.get('chunk')
     const chunk: ComplaintChunk = requestedChunk === 'secondary' || requestedChunk === 'details' || requestedChunk === 'full'

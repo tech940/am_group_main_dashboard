@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { appendKiaDealerCodeParam, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 
@@ -18,6 +19,7 @@ type BusinessDateFilter = {
 type SummaryRequest = {
   report: string
   dateFilter?: BusinessDateFilter
+  dealerCode?: string | null
 }
 
 type AiMetricSignal = {
@@ -228,8 +230,9 @@ async function fetchJson(request: NextRequest, path: string) {
   return await response.json() as Record<string, unknown>
 }
 
-async function buildReportDataset(request: NextRequest, report: string, startDate: string, endDate: string) {
+async function buildReportDataset(request: NextRequest, report: string, startDate: string, endDate: string, dealerCode?: string | null) {
   const baseParams = new URLSearchParams({ startDate, endDate })
+  appendKiaDealerCodeParam(baseParams, dealerCode)
 
   if (report === 'Business Excellence Overview') {
     const data = await fetchJson(request, `/api/brands/kia/business-excellence/overview?${baseParams.toString()}`)
@@ -258,6 +261,7 @@ async function buildReportDataset(request: NextRequest, report: string, startDat
     endDate,
     groupBy: 'work_type',
   })
+  appendKiaDealerCodeParam(roParams, dealerCode)
   const tableParams = new URLSearchParams(roParams)
   tableParams.set('analysisType', 'load')
   tableParams.set('view', 'table')
@@ -277,6 +281,7 @@ async function buildReportDataset(request: NextRequest, report: string, startDat
   leaderboardParams.set('view', 'leaderboard')
 
   const intelligenceParams = new URLSearchParams({ startDate, endDate, limit: '50' })
+  appendKiaDealerCodeParam(intelligenceParams, dealerCode)
 
   const [table, trend, analytics, leaderboard, intelligence] = await Promise.all([
     fetchJson(request, `/api/brands/kia/business-excellence/ro-billing-analysis?${tableParams.toString()}`),
@@ -460,9 +465,9 @@ function buildSummaryText(summary: AiStructuredSummary) {
   ].filter(Boolean).join('\n')
 }
 
-function createCacheKey(report: string, startDate: string, endDate: string, dataset: unknown) {
-  return `kia:business-excellence:ai-summary:v5:${createHash('sha1')
-    .update(JSON.stringify({ report, startDate, endDate, dataset }))
+function createCacheKey(report: string, startDate: string, endDate: string, dataset: unknown, dealerCode?: string | null) {
+  return `kia:business-excellence:ai-summary:v6:${createHash('sha1')
+    .update(JSON.stringify({ report, startDate, endDate, dealerCode: normalizeKiaDealerCode(dealerCode), dataset }))
     .digest('hex')}`
 }
 
@@ -478,8 +483,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { startDate, endDate } = getDateRange(body.dateFilter || null)
-    const dataset = await buildReportDataset(request, report, startDate, endDate)
-    const cacheKey = createCacheKey(report, startDate, endDate, dataset)
+    const dealerCode = normalizeKiaDealerCode(body.dealerCode) || null
+    const dataset = await buildReportDataset(request, report, startDate, endDate, dealerCode)
+    const cacheKey = createCacheKey(report, startDate, endDate, dataset, dealerCode)
     const result = await getCachedData(
       cacheKey,
       async () => createAiSummary(report, startDate, endDate, dataset),
@@ -489,6 +495,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ...result,
       report,
+      dealerCode,
       dateRange: { startDate, endDate },
       generatedAt: new Date().toISOString(),
       cacheTtlSeconds: CACHE_TTL_SECONDS,

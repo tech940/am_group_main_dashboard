@@ -39,6 +39,7 @@ const brandNavigation = [
         key: 'service',
         submenus: [
           { name: 'Business Excellence', href: '/brands/kia/business-excellence/overview' },
+          { name: 'Service Appointment', href: '/brands/kia/service-appointment' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
           { name: 'Kia Proforma', href: '/brands/kia/proforma' },
@@ -64,6 +65,7 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/purchase-orders': 'purchase_orders.view',
   '/finance-orders': 'finance_orders.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',
+  '/brands/kia/service-appointment': 'kia.service_appointment.view',
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
   '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
   '/brands/kia/proforma': 'kia.proforma.view',
@@ -603,7 +605,7 @@ export function Sidebar() {
         </div>
 
         {/* User Section */}
-        <div className="shrink-0 border-t border-white/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0.06)_100%)] p-6">
+        {/* <div className="shrink-0 border-t border-white/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0.06)_100%)] p-6">
           <button
             onClick={async () => {
               if (signingOut) return
@@ -631,7 +633,7 @@ export function Sidebar() {
             )}
             {!collapsed && <span className="text-[10px]">{signingOut ? 'Signing out...' : 'Sign out'}</span>}
           </button>
-        </div>
+        </div> */}
       </div>
     </>
   )

@@ -43,6 +43,7 @@ import {
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import { logApiTimings } from '@/lib/api/client-timing'
 import { BusinessDateFilterValue, appendBusinessComparisonParams } from '@/lib/business-excellence/comparison'
+import { appendKiaDealerCodeParam } from '@/lib/kia/dealer-branch'
 import { cn } from '@/lib/utils'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
@@ -238,7 +239,7 @@ function getComplaintsDateRange(dateFilter: ComplaintsDateFilter) {
   }
 }
 
-function buildQueryString(filters: ComplaintFilters, dateRange: { startDate: string; endDate: string }, dateFilter?: ComplaintsDateFilter) {
+function buildQueryString(filters: ComplaintFilters, dateRange: { startDate: string; endDate: string }, dateFilter?: ComplaintsDateFilter, dealerCode?: string | null) {
   const params = new URLSearchParams()
   Object.entries(filters).forEach(([key, value]) => {
     if (value && value !== ALL_VALUE) params.set(key, value)
@@ -246,6 +247,7 @@ function buildQueryString(filters: ComplaintFilters, dateRange: { startDate: str
   if (dateRange.startDate) params.set('startDate', dateRange.startDate)
   if (dateRange.endDate) params.set('endDate', dateRange.endDate)
   appendBusinessComparisonParams(params, dateFilter)
+  appendKiaDealerCodeParam(params, dealerCode)
   return params.toString()
 }
 
@@ -292,7 +294,7 @@ function complaintSkeleton() {
   )
 }
 
-export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDateFilter }) {
+export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: ComplaintsDateFilter; dealerCode?: string | null }) {
   const queryClient = useQueryClient()
   const [data, setData] = useState<ComplaintResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -304,12 +306,13 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
   const [selectedCalendarDate, setSelectedCalendarDate] = useState('')
 
   const dateRange = useMemo(() => getComplaintsDateRange(dateFilter), [dateFilter])
-  const queryString = useMemo(() => buildQueryString(filters, dateRange, dateFilter), [dateFilter, dateRange, filters])
+  const queryString = useMemo(() => buildQueryString(filters, dateRange, dateFilter, dealerCode), [dateFilter, dateRange, dealerCode, filters])
 
   const fetchComplaints = useCallback(async () => {
     try {
       setIsLoading(true)
       setIsDetailLoading(false)
+      setData(null)
       const summaryQueryString = withChunk(queryString, 'summary')
       const result = await queryClient.fetchQuery({
         queryKey: ['business-excellence', 'kia-complaints', summaryQueryString],
@@ -700,8 +703,8 @@ export function KiaComplaintsSection({ dateFilter }: { dateFilter: ComplaintsDat
           return (
             <div key={card.label} className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <span className={cn('inline-flex h-10 w-10 items-center justify-center rounded-xl border', card.tone)}>
-                  <Icon className="h-4 w-4" />
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-950">
+                  <Icon className="h-4 w-4 text-slate-950" />
                 </span>
                 <span className="text-2xl font-black tracking-tight text-slate-950">{card.value}</span>
               </div>

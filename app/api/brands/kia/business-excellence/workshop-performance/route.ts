@@ -7,6 +7,7 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
+import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -21,6 +22,8 @@ type ComparisonParams = {
   comparisonStartDate: string | null
   comparisonEndDate: string | null
 }
+
+type DealerFilter = string | null
 
 type ServiceAggregate = {
   serviceType: string
@@ -105,10 +108,22 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
   }
 }
 
-function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams) {
-  return `kia:business-excellence:workshop-performance:v25:${createHash('sha1')
-    .update(JSON.stringify({ startDate, endDate, comparison }))
+function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
+  return `kia:business-excellence:workshop-performance:v27:${createHash('sha1')
+    .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
+}
+
+function roBillingDealerFilter(dealerCode: DealerFilter) {
+  return dealerCode
+    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
+    : sql``
+}
+
+function operationDealerFilter(dealerCode: DealerFilter) {
+  return dealerCode
+    ? sql`AND UPPER(TRIM(COALESCE(dealer_code, ''))) = ${dealerCode}`
+    : sql``
 }
 
 function accidentAdvisorSqlList() {
@@ -117,6 +132,12 @@ function accidentAdvisorSqlList() {
 
 function workshopCategoryExpression(columnName = 'service_advisor') {
   return sql`CASE WHEN LOWER(TRIM(COALESCE(${sql.raw(columnName)}, ''))) IN (${accidentAdvisorSqlList()}) THEN 'Accident' ELSE 'MECH' END`
+}
+
+function advisorWhereClause(advisor: string | null, columnName = 'service_advisor') {
+  return advisor
+    ? sql`AND COALESCE(NULLIF(TRIM(${sql.raw(columnName)}), ''), 'Unspecified') = ${advisor}`
+    : sql``
 }
 
 async function tableExists(tableName: string) {
@@ -130,7 +151,8 @@ async function tableExists(tableName: string) {
   return exists
 }
 
-async function shouldUseWorkshopJcSummary(startDate: string, endDate: string) {
+async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
+  if (dealerCode) return false
   if (!(await tableExists('workshop_performance_jc_summary_v1'))) return false
 
   const result = await db.execute(sql`
@@ -143,8 +165,8 @@ async function shouldUseWorkshopJcSummary(startDate: string, endDate: string) {
   return Boolean(resultRows(result)[0]?.usable)
 }
 
-async function fetchServiceSummary(startDate: string, endDate: string): Promise<ServiceAggregate[]> {
-  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate) ? sql`
+async function fetchServiceSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<ServiceAggregate[]> {
+  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode) ? sql`
     WITH classified AS (
       SELECT
         ${workshopCategoryExpression('service_advisor')} AS workshop_category,
@@ -156,6 +178,7 @@ async function fetchServiceSummary(startDate: string, endDate: string): Promise<
       FROM workshop_performance_jc_summary_v1
       WHERE report_date >= ${startDate}::date
         AND report_date < (${endDate}::date + INTERVAL '1 day')
+        ${advisorWhereClause(advisor)}
     )
     SELECT
       workshop_category AS group_type,
@@ -185,6 +208,8 @@ async function fetchServiceSummary(startDate: string, endDate: string): Promise<
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        ${roBillingDealerFilter(dealerCode)}
+        ${advisorWhereClause(advisor)}
     ),
     dedup AS (
       SELECT
@@ -221,8 +246,8 @@ async function fetchServiceSummary(startDate: string, endDate: string): Promise<
   }))
 }
 
-async function fetchCoreServiceSummary(startDate: string, endDate: string): Promise<ServiceAggregate[]> {
-  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate) ? sql`
+async function fetchCoreServiceSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<ServiceAggregate[]> {
+  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode) ? sql`
     SELECT
       group_type,
       service_type,
@@ -234,6 +259,7 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string): Prom
     FROM workshop_performance_jc_summary_v1
     WHERE report_date >= ${startDate}::date
       AND report_date < (${endDate}::date + INTERVAL '1 day')
+      ${advisorWhereClause(advisor)}
     GROUP BY group_type, service_type
     ORDER BY group_type ASC, total_jc DESC, service_type ASC
   ` : sql`
@@ -254,6 +280,8 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string): Prom
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        ${roBillingDealerFilter(dealerCode)}
+        ${advisorWhereClause(advisor)}
     ),
     dedup AS (
       SELECT
@@ -291,7 +319,7 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string): Prom
   }))
 }
 
-async function fetchAddonSummary(startDate: string, endDate: string): Promise<AddonAggregate[]> {
+async function fetchAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
   if (!(await tableExists('operation_wise_analysis_advisor_report'))) return []
 
   const result = await db.execute(sql`
@@ -329,6 +357,8 @@ async function fetchAddonSummary(startDate: string, endDate: string): Promise<Ad
       FROM operation_wise_analysis_advisor_report
       WHERE report_month >= date_trunc('month', ${startDate}::date)::date
         AND report_month <= date_trunc('month', ${endDate}::date)::date
+        ${operationDealerFilter(dealerCode)}
+        ${advisorWhereClause(advisor)}
     ),
     classified AS (
       SELECT
@@ -375,7 +405,7 @@ async function fetchAddonSummary(startDate: string, endDate: string): Promise<Ad
   }))
 }
 
-async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
+async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   if (!(await tableExists('operation_wise_analysis_report'))) return 0
 
   const result = await db.execute(sql`
@@ -394,6 +424,7 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
       WHERE report_month >= date_trunc('month', ${startDate}::date)::date
         AND report_month <= date_trunc('month', ${endDate}::date)::date
         AND LOWER(COALESCE(report_type, '')) = 'operation'
+        ${operationDealerFilter(dealerCode)}
     )
     SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
     FROM operation_rows
@@ -407,8 +438,17 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
   return numberValue(resultRows(result)[0]?.vas_amount)
 }
 
-async function fetchCoreAddonSummary(startDate: string, endDate: string): Promise<AddonAggregate[]> {
-  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate)
+async function fetchCoreAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
+  if (advisor) {
+    const addonTotals = summarizeAddons(await fetchAddonSummary(startDate, endDate, advisor, dealerCode))
+
+    return [{
+      serviceType: 'Others',
+      ...addonTotals,
+    }]
+  }
+
+  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
 
   return [{
     serviceType: 'Others',
@@ -420,8 +460,8 @@ async function fetchCoreAddonSummary(startDate: string, endDate: string): Promis
   }]
 }
 
-async function fetchDailyTrend(startDate: string, endDate: string) {
-  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate) ? sql`
+async function fetchDailyTrend(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null) {
+  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode) ? sql`
     SELECT
       report_date AS bill_date,
       COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -430,6 +470,7 @@ async function fetchDailyTrend(startDate: string, endDate: string) {
     FROM workshop_performance_jc_summary_v1
     WHERE report_date >= ${startDate}::date
       AND report_date < (${endDate}::date + INTERVAL '1 day')
+      ${advisorWhereClause(advisor)}
     GROUP BY report_date
     ORDER BY report_date ASC
   ` : sql`
@@ -442,6 +483,8 @@ async function fetchDailyTrend(startDate: string, endDate: string) {
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        ${roBillingDealerFilter(dealerCode)}
+        ${advisorWhereClause(advisor)}
     ),
     dedup AS (
       SELECT
@@ -471,8 +514,8 @@ async function fetchDailyTrend(startDate: string, endDate: string) {
   }))
 }
 
-async function fetchAdvisorSummary(startDate: string, endDate: string) {
-  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate) ? sql`
+async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
+  const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode) ? sql`
     SELECT
       service_advisor AS advisor,
       COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -483,7 +526,6 @@ async function fetchAdvisorSummary(startDate: string, endDate: string) {
       AND report_date < (${endDate}::date + INTERVAL '1 day')
     GROUP BY service_advisor
     ORDER BY (COALESCE(SUM(labour_amount), 0) + COALESCE(SUM(part_amount), 0)) DESC
-    LIMIT 10
   ` : sql`
     WITH base AS (
       SELECT
@@ -494,6 +536,7 @@ async function fetchAdvisorSummary(startDate: string, endDate: string) {
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
       SELECT
@@ -512,7 +555,6 @@ async function fetchAdvisorSummary(startDate: string, endDate: string) {
     FROM dedup
     GROUP BY advisor
     ORDER BY (COALESCE(SUM(labour_amt), 0) + COALESCE(SUM(part_amt), 0)) DESC
-    LIMIT 10
   `)
 
   return resultRows(result).map((row) => {
@@ -830,7 +872,9 @@ async function buildWorkshopPayload(
     comparisonMode: 'none',
     comparisonStartDate: null,
     comparisonEndDate: null,
-  }
+  },
+  advisor: string | null = null,
+  dealerCode: DealerFilter = null
 ) {
   const parsedStart = parseDateInput(startDate)
   const parsedEnd = parseDateInput(endDate)
@@ -849,38 +893,44 @@ async function buildWorkshopPayload(
     coreServiceRows,
     coreAddonRows,
   ] = await Promise.all([
-    fetchServiceSummary(startDate, endDate),
-    fetchAddonSummary(startDate, endDate),
-    fetchDailyTrend(startDate, endDate),
-    fetchAdvisorSummary(startDate, endDate),
+    fetchServiceSummary(startDate, endDate, advisor, dealerCode),
+    fetchAddonSummary(startDate, endDate, advisor, dealerCode),
+    fetchDailyTrend(startDate, endDate, advisor, dealerCode),
+    fetchAdvisorSummary(startDate, endDate, dealerCode),
     fetchAuxiliaryKpis(startDate, endDate),
     fetchAuxiliaryKpis(lyStart, lyEnd),
-    fetchServiceSummary(lyStart, lyEnd),
-    fetchAddonSummary(lyStart, lyEnd),
-    fetchCoreServiceSummary(startDate, endDate),
-    fetchCoreAddonSummary(startDate, endDate),
+    fetchServiceSummary(lyStart, lyEnd, advisor, dealerCode),
+    fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode),
+    fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode),
+    fetchCoreAddonSummary(startDate, endDate, advisor, dealerCode),
   ])
 
   const addonTotals = summarizeAddons(addonRows)
   const lyAddonTotals = summarizeAddons(lyAddonRows)
+  const auxiliaryCounts = advisor
+    ? { ewCount: 0, rsaCount: 0, mcpCount: 0, rsaAmount: 0 }
+    : auxiliary
+  const lyAuxiliaryCounts = advisor
+    ? { ewCount: 0, rsaCount: 0, mcpCount: 0, rsaAmount: 0 }
+    : lyAuxiliary
   const rows = buildManagementRows(serviceRows, addonRows)
   const totalRow = buildTotalRow(rows, addonTotals, {
-    ewCount: auxiliary.ewCount,
-    rsaCount: auxiliary.rsaCount,
-    mcpCount: auxiliary.mcpCount,
+    ewCount: auxiliaryCounts.ewCount,
+    rsaCount: auxiliaryCounts.rsaCount,
+    mcpCount: auxiliaryCounts.mcpCount,
   })
   const lyRows = buildManagementRows(lyServiceRows, lyAddonRows)
   const lyTotal = buildTotalRow(lyRows, lyAddonTotals, {
-    ewCount: lyAuxiliary.ewCount,
-    rsaCount: lyAuxiliary.rsaCount,
-    mcpCount: lyAuxiliary.mcpCount,
+    ewCount: lyAuxiliaryCounts.ewCount,
+    rsaCount: lyAuxiliaryCounts.rsaCount,
+    mcpCount: lyAuxiliaryCounts.mcpCount,
   })
   const coreAddonTotals = summarizeAddons(coreAddonRows)
   const coreRows = buildRows(coreServiceRows, coreAddonRows)
   const coreTotalRow = buildTotalRow(coreRows, coreAddonTotals, {
-    ewCount: auxiliary.ewCount,
-    rsaCount: auxiliary.rsaCount,
-    mcpCount: auxiliary.mcpCount,
+    ewCount: auxiliaryCounts.ewCount,
+    rsaCount: auxiliaryCounts.rsaCount,
+    mcpCount: auxiliaryCounts.mcpCount,
   })
 
   const totalRevenue = totalRow.labourAmount + totalRow.spareSale
@@ -896,9 +946,9 @@ async function buildWorkshopPayload(
       vasAmount: { value: totalRow.lessVas, ly: lyTotal.lessVas, growth: growth(totalRow.lessVas, lyTotal.lessVas) },
       labourPerRo: { value: totalRow.labourPerRo, ly: lyTotal.labourPerRo, growth: growth(totalRow.labourPerRo, lyTotal.labourPerRo) },
       sparePerRo: { value: totalRow.sparePerRo, ly: lyTotal.sparePerRo, growth: growth(totalRow.sparePerRo, lyTotal.sparePerRo) },
-      ewCount: { value: auxiliary.ewCount, growth: null },
-      mcpCount: { value: auxiliary.mcpCount, growth: null },
-      rsaCount: { value: auxiliary.rsaCount, ly: lyAuxiliary.rsaCount, growth: growth(auxiliary.rsaCount, lyAuxiliary.rsaCount), amount: auxiliary.rsaAmount },
+      ewCount: { value: auxiliaryCounts.ewCount, growth: null },
+      mcpCount: { value: auxiliaryCounts.mcpCount, growth: null },
+      rsaCount: { value: auxiliaryCounts.rsaCount, ly: lyAuxiliaryCounts.rsaCount, growth: growth(auxiliaryCounts.rsaCount, lyAuxiliaryCounts.rsaCount), amount: auxiliaryCounts.rsaAmount },
     },
     rows: [...rows, totalRow],
     coreRows: [...coreRows, coreTotalRow],
@@ -908,6 +958,8 @@ async function buildWorkshopPayload(
       rowCount: rows.length,
       jcDefinition: 'COUNT(DISTINCT COALESCE(bill_no, ro_no, id))',
       cacheTtlSeconds: CACHE_TTL_SECONDS,
+      advisor,
+      dealerCode,
       comparison,
       unsupportedComparisonSources: {
         ew_report: 'EW has only May 2026 data.',
@@ -932,13 +984,16 @@ export async function GET(request: Request) {
     : defaults.endDate
   const skipCache = searchParams.get('skipCache') === 'true'
   const comparison = getComparisonParams(searchParams)
+  const advisorParam = searchParams.get('advisor')
+  const advisor = advisorParam && advisorParam !== 'all' ? advisorParam.trim() || null : null
+  const dealerCode = normalizeKiaDealerCode(searchParams.get('dealer_code')) || null
 
   try {
     const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildWorkshopPayload(startDate, endDate, comparison)
+      ? buildWorkshopPayload(startDate, endDate, comparison, advisor, dealerCode)
       : getCachedData(
-        cacheKey(startDate, endDate, comparison),
-        () => buildWorkshopPayload(startDate, endDate, comparison),
+        cacheKey(startDate, endDate, comparison, advisor, dealerCode),
+        () => buildWorkshopPayload(startDate, endDate, comparison, advisor, dealerCode),
         CACHE_TTL_SECONDS
       )
     )

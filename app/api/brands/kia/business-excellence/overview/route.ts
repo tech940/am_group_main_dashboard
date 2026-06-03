@@ -6,6 +6,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -21,6 +22,8 @@ type ComparisonParams = {
   comparisonStartDate: string | null
   comparisonEndDate: string | null
 }
+
+type DealerFilter = string | null
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
@@ -92,14 +95,52 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
   }
 }
 
-function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams) {
-  return `kia:business-excellence:overview:v22:${chunk}:${createHash('sha1')
-    .update(JSON.stringify({ startDate, endDate, comparison }))
+function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
+  return `kia:business-excellence:overview:v23:${chunk}:${createHash('sha1')
+    .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
 
 function activeBillStatusSql() {
   return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`
+}
+
+function roBillingDealerFilter(dealerCode: DealerFilter) {
+  return dealerCode
+    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
+    : sql``
+}
+
+function complaintsDealerFilter(dealerCode: DealerFilter) {
+  return dealerCode
+    ? sql`AND UPPER(TRIM(COALESCE(dealer_code, ''))) = ${dealerCode}`
+    : sql``
+}
+
+function openRoDealerFilter(dealerCode: DealerFilter) {
+  return dealerCode ? sql`
+    AND EXISTS (
+      SELECT 1
+      FROM ro_billing_report rb
+      WHERE UPPER(TRIM(COALESCE(NULLIF(rb.dealer_code, ''), NULLIF(rb.main_dealer_code, '')))) = ${dealerCode}
+        AND (
+          (
+            NULLIF(TRIM(open_ro_yearly.vin), '') IS NOT NULL
+            AND UPPER(TRIM(COALESCE(rb.vin, ''))) = UPPER(TRIM(open_ro_yearly.vin))
+          )
+          OR (
+            NULLIF(TRIM(open_ro_yearly.reg_no), '') IS NOT NULL
+            AND UPPER(TRIM(COALESCE(rb.vehicle_reg_no, ''))) = UPPER(TRIM(open_ro_yearly.reg_no))
+          )
+        )
+    )
+  ` : sql``
+}
+
+function operationDealerFilter(dealerCode: DealerFilter) {
+  return dealerCode
+    ? sql`AND UPPER(TRIM(COALESCE(dealer_code, ''))) = ${dealerCode}`
+    : sql``
 }
 
 function sameDateLastYear(value: string) {
@@ -299,7 +340,8 @@ async function tableExists(tableName: string) {
   return exists
 }
 
-async function shouldUseWorkshopJcSummary(startDate: string, endDate: string) {
+async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
+  if (dealerCode) return false
   if (!(await tableExists('workshop_performance_jc_summary_v1'))) return false
 
   const result = await db.execute(sql`
@@ -312,7 +354,7 @@ async function shouldUseWorkshopJcSummary(startDate: string, endDate: string) {
   return Boolean(resultRows(result)[0]?.usable)
 }
 
-function roBillingBaseSql(startDate: string, endDate: string) {
+function roBillingBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
   return sql`
     WITH raw AS (
       SELECT
@@ -339,6 +381,7 @@ function roBillingBaseSql(startDate: string, endDate: string) {
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
+        ${roBillingDealerFilter(dealerCode)}
     ),
     ranked AS (
       SELECT
@@ -370,7 +413,7 @@ function roBillingBaseSql(startDate: string, endDate: string) {
   `
 }
 
-function openRoBaseSql(startDate: string, endDate: string) {
+function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
   return sql`
     WITH active AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
@@ -386,6 +429,7 @@ function openRoBaseSql(startDate: string, endDate: string) {
       WHERE LOWER(COALESCE(status, '')) = 'open'
         AND ro_date >= ${startDate}::date
         AND ro_date < (${endDate}::date + INTERVAL '1 day')
+        ${openRoDealerFilter(dealerCode)}
       ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
@@ -420,7 +464,7 @@ function openRoBaseSql(startDate: string, endDate: string) {
   `
 }
 
-function complaintsBaseSql(startDate: string, endDate: string) {
+function complaintsBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
   return sql`
     WITH latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
@@ -470,6 +514,7 @@ function complaintsBaseSql(startDate: string, endDate: string) {
       FROM latest
       WHERE complaint_date >= ${startDate}::date
         AND complaint_date < (${endDate}::date + INTERVAL '1 day')
+        ${complaintsDealerFilter(dealerCode)}
     )
   `
 }
@@ -507,8 +552,8 @@ async function fetchAddonKpis(startDate: string, endDate: string) {
   }
 }
 
-async function fetchWorkshopSnapshot(startDate: string, endDate: string) {
-  const hasWorkshopSummary = await shouldUseWorkshopJcSummary(startDate, endDate)
+async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
+  const hasWorkshopSummary = await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode)
   const serviceRows = await db.execute(hasWorkshopSummary ? sql`
     SELECT
       COALESCE(NULLIF(group_type, ''), NULLIF(service_type, ''), 'Others') AS service_type,
@@ -546,6 +591,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string) {
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
       SELECT
@@ -582,7 +628,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string) {
     }
   })
 
-  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate)
+  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
   const totalJc = rows.reduce((sum, row) => sum + row.totalJc, 0)
   const labourAmount = rows.reduce((sum, row) => sum + row.labourAmount, 0)
   const partsAmount = rows.reduce((sum, row) => sum + row.partsAmount, 0)
@@ -646,7 +692,7 @@ function emptyWorkshopSnapshot() {
   })
 }
 
-async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
+async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   if (!(await tableExists('operation_wise_analysis_report'))) return 0
 
   const result = await db.execute(sql`
@@ -665,6 +711,7 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string) {
       WHERE report_month >= date_trunc('month', ${startDate}::date)::date
         AND report_month <= date_trunc('month', ${endDate}::date)::date
         AND LOWER(COALESCE(report_type, '')) = 'operation'
+        ${operationDealerFilter(dealerCode)}
     )
     SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
     FROM operation_rows
@@ -687,19 +734,20 @@ async function buildOverviewPayload(
     comparisonMode: 'none',
     comparisonStartDate: null,
     comparisonEndDate: null,
-  }
+  },
+  dealerCode: DealerFilter = null
 ) {
   const includeSecondary = chunk === 'secondary' || chunk === 'full'
   const includeComparison = true
-  const roSql = roBillingBaseSql(startDate, endDate)
-  const openSql = openRoBaseSql(startDate, endDate)
-  const complaintSql = complaintsBaseSql(startDate, endDate)
+  const roSql = roBillingBaseSql(startDate, endDate, dealerCode)
+  const openSql = openRoBaseSql(startDate, endDate, dealerCode)
+  const complaintSql = complaintsBaseSql(startDate, endDate, dealerCode)
   const comparisonRange = resolveOverviewComparisonRange(startDate, endDate, comparison)
   const lyStartDate = comparisonRange.startDate
   const lyEndDate = comparisonRange.endDate
-  const lyRoSql = roBillingBaseSql(lyStartDate, lyEndDate)
-  const lyOpenSql = openRoBaseSql(lyStartDate, lyEndDate)
-  const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate)
+  const lyRoSql = roBillingBaseSql(lyStartDate, lyEndDate, dealerCode)
+  const lyOpenSql = openRoBaseSql(lyStartDate, lyEndDate, dealerCode)
+  const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate, dealerCode)
 
   const [
     roKpiRows,
@@ -877,7 +925,7 @@ async function buildOverviewPayload(
       ORDER BY EXTRACT(MONTH FROM complaint_date)::int ASC
     `) : emptyRows(),
     fetchAddonKpis(startDate, endDate),
-    fetchWorkshopSnapshot(startDate, endDate),
+    fetchWorkshopSnapshot(startDate, endDate, dealerCode),
     includeComparison ? db.execute(sql`
       ${lyRoSql}
       SELECT
@@ -906,7 +954,7 @@ async function buildOverviewPayload(
       FROM enriched
     `) : emptyRows(),
     includeComparison ? fetchAddonKpis(lyStartDate, lyEndDate) : emptyAddonKpis(),
-    includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate) : emptyWorkshopSnapshot(),
+    includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode) : emptyWorkshopSnapshot(),
   ])
 
   const roKpis = resultRows(roKpiRows)[0] || {}
@@ -1205,13 +1253,14 @@ export async function GET(request: Request) {
   const chunk: OverviewChunk = chunkParam === 'secondary' || chunkParam === 'full' ? chunkParam : 'summary'
   const skipCache = searchParams.get('skipCache') === 'true'
   const comparison = getComparisonParams(searchParams)
+  const dealerCode = normalizeKiaDealerCode(searchParams.get('dealer_code')) || null
 
   try {
     const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildOverviewPayload(startDate, endDate, chunk, comparison)
+      ? buildOverviewPayload(startDate, endDate, chunk, comparison, dealerCode)
       : getCachedData(
-        cacheKey(startDate, endDate, chunk, comparison),
-        () => buildOverviewPayload(startDate, endDate, chunk, comparison),
+        cacheKey(startDate, endDate, chunk, comparison, dealerCode),
+        () => buildOverviewPayload(startDate, endDate, chunk, comparison, dealerCode),
         CACHE_TTL_SECONDS
       ))
 

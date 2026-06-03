@@ -6,6 +6,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -25,9 +26,32 @@ type OpenRoFilters = {
   comparisonMode: string | null
   comparisonStartDate: string | null
   comparisonEndDate: string | null
+  dealerCode: string | null
 }
 
 type OpenRoChunk = 'summary' | 'details' | 'full'
+
+function openRoDealerFilter(filters: OpenRoFilters) {
+  if (!filters.dealerCode) return sql``
+
+  return sql`
+    AND EXISTS (
+      SELECT 1
+      FROM ro_billing_report rb
+      WHERE UPPER(TRIM(COALESCE(NULLIF(rb.dealer_code, ''), NULLIF(rb.main_dealer_code, '')))) = ${filters.dealerCode}
+        AND (
+          (
+            NULLIF(TRIM(open_ro_yearly.vin), '') IS NOT NULL
+            AND UPPER(TRIM(COALESCE(rb.vin, ''))) = UPPER(TRIM(open_ro_yearly.vin))
+          )
+          OR (
+            NULLIF(TRIM(open_ro_yearly.reg_no), '') IS NOT NULL
+            AND UPPER(TRIM(COALESCE(rb.vehicle_reg_no, ''))) = UPPER(TRIM(open_ro_yearly.reg_no))
+          )
+        )
+    )
+  `
+}
 
 function openRoBaseSql(filters: OpenRoFilters) {
   return sql`
@@ -67,6 +91,7 @@ function openRoBaseSql(filters: OpenRoFilters) {
       WHERE LOWER(COALESCE(status, '')) = 'open'
         AND (${filters.startDate}::date IS NULL OR ro_date >= ${filters.startDate}::date)
         AND (${filters.endDate}::date IS NULL OR ro_date < (${filters.endDate}::date + INTERVAL '1 day'))
+        ${openRoDealerFilter(filters)}
       ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
@@ -180,7 +205,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `kia:business-excellence:open-ro:v6:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:open-ro:v7:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -351,6 +376,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
         WHERE LOWER(COALESCE(status, '')) = 'open'
           AND (${filters.startDate}::date IS NULL OR ro_date >= ${filters.startDate}::date)
           AND (${filters.endDate}::date IS NULL OR ro_date < (${filters.endDate}::date + INTERVAL '1 day'))
+          ${openRoDealerFilter(filters)}
         ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
@@ -510,6 +536,7 @@ export async function GET(request: Request) {
     comparisonMode: searchParams.get('comparisonMode') || 'none',
     comparisonStartDate,
     comparisonEndDate,
+    dealerCode: normalizeKiaDealerCode(searchParams.get('dealer_code')) || null,
   }
 
   try {

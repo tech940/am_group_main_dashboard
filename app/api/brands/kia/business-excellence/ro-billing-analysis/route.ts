@@ -6,6 +6,7 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -53,6 +54,8 @@ type ComparisonRange = {
   startDate: Date
   endDate: Date
 } | null
+
+type DealerFilter = string | null
 
 type AnalysisRow = {
   name: string
@@ -557,6 +560,12 @@ function cancelledBillStatusSql() {
   return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) IN ('cancel', 'cancelled', 'canceled')`
 }
 
+function roBillingDealerFilter(dealerCode: DealerFilter) {
+  return dealerCode
+    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
+    : sql``
+}
+
 function measureWorkTypeRow(row: WorkTypeAggregateRow, period: PeriodKey, side: 'cy' | 'ly', analysisType: AnalysisType) {
   const prefix = `${period}_${side}` as const
   const load = numberValue(row[`${prefix}_load` as keyof WorkTypeAggregateRow])
@@ -696,23 +705,11 @@ function buildDailyTrendRows(rows: DailyAggregateRow[], analysisType: AnalysisTy
   return trend
 }
 
-async function fetchDailyAggregateRows(startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null) {
+async function fetchDailyAggregateRows(startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null, dealerCode: DealerFilter = null) {
   const relationalStart = comparisonRange && comparisonRange.startDate < startDate ? comparisonRange.startDate : (comparisonRange ? startDate : sameDateLastYear(startDate))
   const relationalEnd = comparisonRange && comparisonRange.endDate > endDate ? comparisonRange.endDate : endDate
 
-  const result = await db.execute(await hasDailySummaryV2() ? sql`
-    SELECT
-      bill_date,
-      COALESCE(SUM(load_count), 0)::int AS load,
-      COALESCE(SUM(labour_amount), 0)::float AS labour,
-      COALESCE(SUM(part_amount), 0)::float AS parts
-    FROM ro_billing_daily_summary_v2
-    WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
-      AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
-      AND ${activeBillStatusSql()}
-    GROUP BY bill_date
-    ORDER BY bill_date
-  ` : sql`
+  const result = await db.execute(sql`
     WITH dedup AS (
       SELECT
         bill_key,
@@ -729,6 +726,7 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date, compariso
         WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
           AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
+          ${roBillingDealerFilter(dealerCode)}
       ) base
       GROUP BY bill_key, bill_date
     )
@@ -754,8 +752,9 @@ function buildFiscalTrendRows(rows: FiscalAggregateRow[], analysisType: Analysis
     }))
 }
 
-async function fetchFiscalAggregateRows() {
-  const result = await db.execute(await hasDailySummaryV2() ? sql`
+async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
+  const useDailySummary = false
+  const result = await db.execute(useDailySummary && (await hasDailySummaryV2()) && !dealerCode ? sql`
     WITH fiscal AS (
       SELECT
         CASE
@@ -794,6 +793,7 @@ async function fetchFiscalAggregateRows() {
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
           AND ${activeBillStatusSql()}
+          ${roBillingDealerFilter(dealerCode)}
       ) base
       GROUP BY bill_key, bill_date
     ),
@@ -822,7 +822,7 @@ async function fetchFiscalAggregateRows() {
   return (result as unknown as FiscalAggregateRow[]) || []
 }
 
-async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date): Promise<AnalyticsQualitySummary> {
+async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date, dealerCode: DealerFilter = null): Promise<AnalyticsQualitySummary> {
   const lyStart = sameDateLastYear(startDate)
   const lyEnd = sameDateLastYear(endDate)
   const result = await db.execute(sql`
@@ -835,6 +835,7 @@ async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date): Pro
       WHERE bill_date >= ${toDateInputValue(lyStart)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
+        ${roBillingDealerFilter(dealerCode)}
     )
     SELECT
       COALESCE(AVG(rating) FILTER (
@@ -887,8 +888,8 @@ async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date): Pro
   }
 }
 
-async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Promise<AdvisorLeaderboardRow[]> {
-  const result = await db.execute(await hasDailySummaryV2() ? sql`
+async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, dealerCode: DealerFilter = null): Promise<AdvisorLeaderboardRow[]> {
+  const result = await db.execute((await hasDailySummaryV2()) && !dealerCode ? sql`
     WITH advisor_totals AS (
       SELECT
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS name,
@@ -946,6 +947,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Prom
         WHERE bill_date >= ${toDateInputValue(startDate)}::date
           AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
+          ${roBillingDealerFilter(dealerCode)}
       ) base
       GROUP BY service_advisor, bill_key
     ),
@@ -1005,7 +1007,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date): Prom
   }))
 }
 
-async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>) {
+async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>, dealerCode: DealerFilter = null) {
   const result = await db.execute(sql`
     WITH dedup AS (
       SELECT
@@ -1027,6 +1029,7 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
         WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
           AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
+          ${roBillingDealerFilter(dealerCode)}
       ) base
       GROUP BY work_type, service_type, bill_key, bill_date
     )
@@ -1061,59 +1064,11 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
   return (result as unknown as WorkTypeAggregateRow[]) || []
 }
 
-async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>) {
-  // Keep the management matrix internally consistent by using the same raw
-  // RO rows for MTD, QTD, and YTD. The summary view can lag behind raw imports,
-  // which makes month and year windows look impossible beside each other.
-  return fetchRawWorkTypeAggregateRows(windows)
-
-  const useDailySummary = await hasDailySummaryV2()
-  if (!useDailySummary) return fetchRawWorkTypeAggregateRows(windows)
-
-  const result = await db.execute(sql`
-    SELECT
-      work_type,
-      service_type,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::int AS td_cy_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::int AS mtd_cy_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::int AS mtd_ly_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::int AS qtd_cy_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::int AS qtd_ly_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::int AS ytd_cy_load,
-      COALESCE(SUM(load_count) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::int AS ytd_ly_load,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_labour,
-      COALESCE(SUM(labour_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_labour,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_parts,
-      COALESCE(SUM(part_amount) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_parts
-    FROM ro_billing_daily_summary_v2
-    WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
-      AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
-      AND ${activeBillStatusSql()}
-    GROUP BY work_type, service_type
-  `)
-
-  const rows = (result as unknown as WorkTypeAggregateRow[]) || []
-  const mtdCyLoad = rows.reduce((total, row) => total + numberValue(row.mtd_cy_load), 0)
-  const mtdLyLoad = rows.reduce((total, row) => total + numberValue(row.mtd_ly_load), 0)
-
-  if (mtdCyLoad > 0 && mtdLyLoad === 0) {
-    return fetchRawWorkTypeAggregateRows(windows)
-  }
-
-  return rows
+async function fetchWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>, dealerCode: DealerFilter = null) {
+  return fetchRawWorkTypeAggregateRows(windows, dealerCode)
 }
 
-async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: Date }) {
+async function fetchRows({ startDate, endDate, dealerCode }: { startDate?: Date; endDate?: Date; dealerCode?: DealerFilter }) {
   const hasDateRange = Boolean(startDate && endDate)
   const [result, freshness] = await Promise.all([
     hasDateRange
@@ -1138,6 +1093,7 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
         FROM ro_billing_report
         WHERE bill_date BETWEEN ${toDateInputValue(startDate!)}::date AND ${toDateInputValue(endDate!)}::date
           AND ${activeBillStatusSql()}
+          ${roBillingDealerFilter(dealerCode || null)}
       `)
       : db.execute(sql`
         SELECT
@@ -1160,8 +1116,14 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
           AND ${activeBillStatusSql()}
+          ${roBillingDealerFilter(dealerCode || null)}
       `),
-    db.execute(sql`SELECT MAX(uploaded_at) AS "uploadedAt", COUNT(*) FILTER (WHERE ${activeBillStatusSql()})::int AS "totalRows" FROM ro_billing_report`),
+    db.execute(sql`
+      SELECT
+        MAX(uploaded_at) AS "uploadedAt",
+        COUNT(*) FILTER (WHERE ${activeBillStatusSql()} ${roBillingDealerFilter(dealerCode || null)})::int AS "totalRows"
+      FROM ro_billing_report
+    `),
   ])
 
   return {
@@ -1174,7 +1136,7 @@ async function fetchRows({ startDate, endDate }: { startDate?: Date; endDate?: D
   }
 }
 
-async function fetchCancelledBillingSummary(startDate: Date, endDate: Date): Promise<CancelledBillingSummary> {
+async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, dealerCode: DealerFilter = null): Promise<CancelledBillingSummary> {
   const result = await db.execute(sql`
     WITH cancelled AS (
       SELECT
@@ -1193,6 +1155,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date): Pro
       WHERE bill_date >= ${toDateInputValue(startDate)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
         AND ${cancelledBillStatusSql()}
+        ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
       SELECT
@@ -1261,8 +1224,8 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date): Pro
   }
 }
 
-function createBaseRowsCacheKey(startDate?: Date, endDate?: Date) {
-  return `kia:business-excellence:ro-billing:base-rows:v4:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}`
+function createBaseRowsCacheKey(startDate?: Date, endDate?: Date, dealerCode: DealerFilter = null) {
+  return `kia:business-excellence:ro-billing:base-rows:v5:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1270,7 +1233,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v20:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v22:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1302,6 +1265,7 @@ export async function GET(request: Request) {
     const groupBy = normalizeGroupBy(searchParams.get('groupBy') || 'work_type')
     const skipCache = searchParams.get('skipCache') === 'true'
     const batchMetrics = searchParams.get('metrics') === 'all'
+    const dealerCode = normalizeKiaDealerCode(searchParams.get('dealer_code')) || null
 
     if (!RO_ANALYSIS_TYPES.includes(analysisType)) {
       return NextResponse.json({ error: 'Invalid analysis type' }, { status: 400 })
@@ -1334,6 +1298,8 @@ export async function GET(request: Request) {
     cacheParams.set('groupBy', groupBy)
     cacheParams.set('startDate', toDateInputValue(startDate))
     cacheParams.set('endDate', toDateInputValue(endDate))
+    if (dealerCode) cacheParams.set('dealer_code', dealerCode)
+    else cacheParams.delete('dealer_code')
     if (comparisonRange) {
       cacheParams.set('comparisonMode', 'custom')
       cacheParams.set('comparisonStartDate', toDateInputValue(comparisonRange.startDate))
@@ -1369,8 +1335,8 @@ export async function GET(request: Request) {
         filterOptions: {},
       }
       if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
-        const cancelledSummary = await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate))
-        const aggregateRows = await timer.time('work-type-sql-summary', () => fetchWorkTypeAggregateRows(windows))
+        const cancelledSummary = await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode))
+        const aggregateRows = await timer.time('work-type-sql-summary', () => fetchWorkTypeAggregateRows(windows, dealerCode))
         if (batchMetrics) {
           const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
             const rows = aggregateRowsToStats(aggregateRows, type)
@@ -1409,7 +1375,7 @@ export async function GET(request: Request) {
         }
       }
       if (view === 'trend' && groupBy === 'work_type' && !hasFilters) {
-        const aggregateRows = await timer.time('daily-trend-sql-summary', () => fetchDailyAggregateRows(startDate, endDate, comparisonRange))
+        const aggregateRows = await timer.time('daily-trend-sql-summary', () => fetchDailyAggregateRows(startDate, endDate, comparisonRange, dealerCode))
         if (batchMetrics) {
           const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
             const trend = buildDailyTrendRows(aggregateRows, type, startDate, endDate, comparisonRange)
@@ -1446,7 +1412,7 @@ export async function GET(request: Request) {
         }
       }
       if (view === 'analytics' && groupBy === 'work_type' && !hasFilters) {
-        const analyticsSummary = await timer.time('analytics-quality-sql-summary', () => fetchAnalyticsQualitySummary(startDate, endDate))
+        const analyticsSummary = await timer.time('analytics-quality-sql-summary', () => fetchAnalyticsQualitySummary(startDate, endDate, dealerCode))
         return {
           ...baseFastResponse,
           rowCounts: {
@@ -1458,7 +1424,7 @@ export async function GET(request: Request) {
         }
       }
       if (view === 'leaderboard' && groupBy === 'work_type' && !hasFilters) {
-        const advisorLeaderboard = await timer.time('advisor-leaderboard-sql-summary', () => fetchAdvisorLeaderboardRows(startDate, endDate))
+        const advisorLeaderboard = await timer.time('advisor-leaderboard-sql-summary', () => fetchAdvisorLeaderboardRows(startDate, endDate, dealerCode))
         return {
           ...baseFastResponse,
           rowCounts: {
@@ -1470,7 +1436,7 @@ export async function GET(request: Request) {
         }
       }
       if (view === 'fy' && groupBy === 'work_type' && !hasFilters) {
-        const aggregateRows = await timer.time('fy-trend-sql-summary', () => fetchFiscalAggregateRows())
+        const aggregateRows = await timer.time('fy-trend-sql-summary', () => fetchFiscalAggregateRows(dealerCode))
         if (batchMetrics) {
           const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
             const fyTrends = buildFiscalTrendRows(aggregateRows, type)
@@ -1510,10 +1476,10 @@ export async function GET(request: Request) {
       const windowEnds = Object.values(windows).flatMap((period) => [period.cyEnd, period.lyEnd])
       const relationalStart = view === 'fy' ? undefined : new Date(Math.min(...windowStarts.map((date) => date.getTime()), startDate.getTime()))
       const relationalEnd = view === 'fy' ? undefined : new Date(Math.max(...windowEnds.map((date) => date.getTime()), endDate.getTime()))
-      const baseRowsCacheKey = createBaseRowsCacheKey(relationalStart, relationalEnd)
+      const baseRowsCacheKey = createBaseRowsCacheKey(relationalStart, relationalEnd, dealerCode)
       const sheetData = await timer.time('base-rows', () => getCachedData(
         baseRowsCacheKey,
-        () => fetchRows({ startDate: relationalStart, endDate: relationalEnd }),
+        () => fetchRows({ startDate: relationalStart, endDate: relationalEnd, dealerCode }),
         CACHE_TTL_SECONDS
       ))
       const allRows = Array.isArray(sheetData.rows) ? sheetData.rows : []
@@ -1614,7 +1580,7 @@ export async function GET(request: Request) {
 
       return {
         ...baseResponse,
-        ...(view === 'table' ? { cancelledSummary: await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate)) } : {}),
+        ...(view === 'table' ? { cancelledSummary: await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode)) } : {}),
         totals: calculateMetrics(filteredRows, analysisType, windows),
         selectedRangeValue: aggregateForRange(filteredRows, analysisType, startDate, endDate),
         rows: flattenRows(groupedRows),

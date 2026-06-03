@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
@@ -21,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { logApiTimings } from '@/lib/api/client-timing'
 import { EXECUTIVE_TARGETS } from '@/lib/business-excellence/executive-targets'
+import { DEFAULT_KIA_DEALER_CODE, KIA_BRANCH_DEALERS, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 type DemoDueStatus = 'Scheduled' | 'Due Soon' | 'Overdue'
 
@@ -564,20 +566,32 @@ function RemarkViewModal({
 }
 
 export function DemoJobCardsPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [dueStatus, setDueStatus] = useState('all')
   const [page, setPage] = useState(1)
+  const [selectedDealerCode, setSelectedDealerCode] = useState(() => normalizeKiaDealerCode(searchParams.get('dealer_code')) || DEFAULT_KIA_DEALER_CODE)
   const [selectedVehicle, setSelectedVehicle] = useState<DemoVehicleRow | null>(null)
   const [viewingRemarkVehicle, setViewingRemarkVehicle] = useState<DemoVehicleRow | null>(null)
   const [healthVisible, setHealthVisible] = useState(false)
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setSelectedDealerCode(normalizeKiaDealerCode(searchParams.get('dealer_code')) || DEFAULT_KIA_DEALER_CODE)
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [searchParams])
 
   const queryString = useMemo(() => buildQueryString({
     search,
     dueStatus,
     page,
     pageSize: PAGE_SIZE,
-  }), [dueStatus, page, search])
+    dealer_code: selectedDealerCode,
+  }), [dueStatus, page, search, selectedDealerCode])
 
   const { data, error, isLoading, isFetching, refetch } = useQuery<DemoPayload>({
     queryKey: ['demo-job-cards', queryString],
@@ -601,6 +615,15 @@ export function DemoJobCardsPage() {
   const handleDueStatus = (value: string) => {
     setDueStatus(value)
     setPage(1)
+  }
+
+  const handleDealerChange = (dealerCode: string) => {
+    const nextDealerCode = normalizeKiaDealerCode(dealerCode) || DEFAULT_KIA_DEALER_CODE
+    setSelectedDealerCode(nextDealerCode)
+    setPage(1)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('dealer_code', nextDealerCode)
+    router.replace(`/brands/kia/demo-job-cards?${params.toString()}`, { scroll: false })
   }
 
   const rows = data?.rows || []
@@ -643,6 +666,24 @@ export function DemoJobCardsPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm" aria-label="Demo Job Cards branch filter">
+                {KIA_BRANCH_DEALERS.map((branch) => {
+                  const isActive = selectedDealerCode === branch.dealerCode
+                  return (
+                    <button
+                      key={branch.dealerCode}
+                      type="button"
+                      onClick={() => handleDealerChange(branch.dealerCode)}
+                      className={cn(
+                        'rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest transition',
+                        isActive ? 'bg-[var(--dashboard-action-bg)] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                      )}
+                    >
+                      {branch.label}
+                    </button>
+                  )
+                })}
+              </div>
               <Button
                 type="button"
                 onClick={() => setHealthVisible((visible) => !visible)}

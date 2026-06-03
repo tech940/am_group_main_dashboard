@@ -6,6 +6,7 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -396,11 +397,13 @@ export async function GET(request: Request) {
     const cacheParams = new URLSearchParams(searchParams)
     cacheParams.set('startDate', toDateInputValue(startDate))
     cacheParams.set('endDate', toDateInputValue(endDate))
+    const dealerCode = normalizeKiaDealerCode(searchParams.get('dealer_code'))
+    if (dealerCode) cacheParams.set('branch', dealerCode)
     const cacheKey = createCacheKey(cacheParams)
 
     const buildReport = async () => {
       const searchReg = (searchParams.get('searchReg') || '').trim().toLowerCase()
-      const branch = searchParams.get('branch') || 'all'
+      const branch = dealerCode || searchParams.get('branch') || 'all'
       const serviceType = searchParams.get('serviceType') || 'all'
       const advisor = searchParams.get('advisor') || 'all'
       const alertFilter = searchParams.get('alert') || 'all'
