@@ -86,6 +86,11 @@ function growth(current: number, previous: number) {
   return ((current - previous) / previous) * 100
 }
 
+function nullableGrowth(current: number, previous: number | null) {
+  if (previous === null) return null
+  return growth(current, previous)
+}
+
 function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
   return {
     preset: searchParams.get('periodPreset') || null,
@@ -96,7 +101,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `kia:business-excellence:overview:v23:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v26:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -140,6 +145,12 @@ function openRoDealerFilter(dealerCode: DealerFilter) {
 function operationDealerFilter(dealerCode: DealerFilter) {
   return dealerCode
     ? sql`AND UPPER(TRIM(COALESCE(dealer_code, ''))) = ${dealerCode}`
+    : sql``
+}
+
+function advWiseVasDealerFilter(dealerCode: DealerFilter) {
+  return dealerCode
+    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(retail_dealer_code, '')))) = ${dealerCode}`
     : sql``
 }
 
@@ -628,7 +639,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     }
   })
 
-  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
+  const vasPeriod = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
   const totalJc = rows.reduce((sum, row) => sum + row.totalJc, 0)
   const labourAmount = rows.reduce((sum, row) => sum + row.labourAmount, 0)
   const partsAmount = rows.reduce((sum, row) => sum + row.partsAmount, 0)
@@ -639,7 +650,14 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     labourAmount,
     partsAmount,
     totalRevenue: labourAmount + partsAmount,
-    vasAmount,
+    vasAmount: vasPeriod.amount,
+    vasAvailable: vasPeriod.available,
+    vasUnavailableReason: vasPeriod.unavailableReason,
+    vasSource: vasPeriod.source,
+    vasSourceTable: vasPeriod.sourceTable,
+    vasPeriodStart: vasPeriod.periodStart,
+    vasPeriodEnd: vasPeriod.periodEnd,
+    vasSourceRows: vasPeriod.sourceRows,
     labourPerRo: perUnit(labourAmount, totalJc),
     minDate: sourceRows.reduce<string | null>((current, row) => {
       const value = dateValue(row.min_date)
@@ -678,6 +696,13 @@ function emptyWorkshopSnapshot() {
     partsAmount: 0,
     totalRevenue: 0,
     vasAmount: 0,
+    vasAvailable: false,
+    vasUnavailableReason: 'Workshop VAS source table is unavailable',
+    vasSource: null as string | null,
+    vasSourceTable: null as string | null,
+    vasPeriodStart: null as string | null,
+    vasPeriodEnd: null as string | null,
+    vasSourceRows: 0,
     labourPerRo: 0,
     minDate: null as string | null,
     maxDate: null as string | null,
@@ -693,36 +718,131 @@ function emptyWorkshopSnapshot() {
 }
 
 async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  if (!(await tableExists('operation_wise_analysis_report'))) return 0
+  const hasOperationWise = await tableExists('operation_wise_analysis_report')
+  const hasInvoiceWise = await tableExists('adv_wise_lubricants_vas')
 
-  const result = await db.execute(sql`
-    WITH operation_rows AS (
-      SELECT DISTINCT
-        date_trunc('month', report_month::date)::date AS report_month,
-        report_type,
-        op_part_code,
-        op_part_desc,
-        dealer_code,
-        dealer_name,
-        ${numericText(sql.raw('total_amt'))} AS amount,
-        LOWER(COALESCE(op_part_code, '')) AS operation_code,
-        LOWER(CONCAT_WS(' ', report_type, op_part_code, op_part_desc)) AS description
-      FROM operation_wise_analysis_report
-      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
-        AND report_month <= date_trunc('month', ${endDate}::date)::date
-        AND LOWER(COALESCE(report_type, '')) = 'operation'
-        ${operationDealerFilter(dealerCode)}
-    )
-    SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
-    FROM operation_rows
-    WHERE operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
-      OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+  if (!hasOperationWise && !hasInvoiceWise) {
+    return {
+      amount: 0,
+      available: false,
+      unavailableReason: 'Workshop VAS source tables are unavailable',
+      source: null as string | null,
+      sourceTable: null as string | null,
+      periodStart: null as string | null,
+      periodEnd: null as string | null,
+      sourceRows: 0,
+    }
+  }
+
+  const vasFilter = sql`
+    (
+      description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
       OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
       OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
       OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
-  `)
+    )
+  `
 
-  return numberValue(resultRows(result)[0]?.vas_amount)
+  if (hasOperationWise) {
+    const result = await db.execute(sql`
+      WITH operation_rows AS (
+        SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
+          COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
+          date_trunc('month', report_month::date)::date AS report_month,
+          report_period_start::date AS report_period_start,
+          report_period_end::date AS report_period_end,
+          report_type,
+          op_part_code,
+          op_part_desc,
+          dealer_code,
+          dealer_name,
+          ${numericText(sql.raw('total_amt'))} AS amount,
+          LOWER(COALESCE(op_part_desc, '')) AS description
+        FROM operation_wise_analysis_report
+        WHERE report_period_start = ${startDate}::date
+          AND report_period_end = ${endDate}::date
+          AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
+          ${operationDealerFilter(dealerCode)}
+        ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+      )
+      SELECT
+        COALESCE(SUM(amount), 0)::float AS vas_amount,
+        COUNT(*)::int AS source_rows,
+        MIN(report_period_start)::text AS period_start,
+        MAX(report_period_end)::text AS period_end
+      FROM operation_rows
+      WHERE ${vasFilter}
+    `)
+
+    const row = resultRows(result)[0]
+    const sourceRows = numberValue(row?.source_rows)
+
+    if (sourceRows > 0) {
+      return {
+        amount: numberValue(row?.vas_amount),
+        available: true,
+        unavailableReason: null,
+        source: 'operation_period_exact',
+        sourceTable: 'operation_wise_analysis_report',
+        periodStart: dateValue(row?.period_start),
+        periodEnd: dateValue(row?.period_end),
+        sourceRows,
+      }
+    }
+  }
+
+  if (hasInvoiceWise) {
+    const result = await db.execute(sql`
+      WITH invoice_rows AS (
+        SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
+          COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
+          gst_invoice_date::date AS report_date,
+          dealer_code,
+          retail_dealer_code,
+          ${numericText(sql.raw('taxable_amount'))} AS amount,
+          LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc)) AS description
+        FROM adv_wise_lubricants_vas
+        WHERE gst_invoice_date >= ${startDate}::date
+          AND gst_invoice_date < (${endDate}::date + INTERVAL '1 day')
+          ${advWiseVasDealerFilter(dealerCode)}
+        ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+      )
+      SELECT
+        COALESCE(SUM(amount), 0)::float AS vas_amount,
+        COUNT(*)::int AS source_rows,
+        MIN(report_date)::text AS period_start,
+        MAX(report_date)::text AS period_end
+      FROM invoice_rows
+      WHERE ${vasFilter}
+    `)
+
+    const row = resultRows(result)[0]
+    const sourceRows = numberValue(row?.source_rows)
+
+    if (sourceRows > 0) {
+      return {
+        amount: numberValue(row?.vas_amount),
+        available: true,
+        unavailableReason: null,
+        source: 'invoice_vas_gst_date',
+        sourceTable: 'adv_wise_lubricants_vas',
+        periodStart: dateValue(row?.period_start),
+        periodEnd: dateValue(row?.period_end),
+        sourceRows,
+      }
+    }
+  }
+
+  return {
+    amount: 0,
+    available: false,
+    unavailableReason: `No matching VAS source period for ${startDate} to ${endDate}`,
+    source: null as string | null,
+    sourceTable: null as string | null,
+    periodStart: null as string | null,
+    periodEnd: null as string | null,
+    sourceRows: 0,
+  }
 }
 
 async function buildOverviewPayload(
@@ -1115,8 +1235,27 @@ async function buildOverviewPayload(
       },
       workshopVasAmount: {
         cy: workshopSnapshot.vasAmount,
-        ly: lyWorkshopSnapshot.vasAmount,
-        deltaPct: growth(workshopSnapshot.vasAmount, lyWorkshopSnapshot.vasAmount),
+        ly: lyWorkshopSnapshot.vasAvailable ? lyWorkshopSnapshot.vasAmount : null,
+        deltaPct: nullableGrowth(
+          workshopSnapshot.vasAmount,
+          lyWorkshopSnapshot.vasAvailable ? lyWorkshopSnapshot.vasAmount : null
+        ),
+        available: Boolean(workshopSnapshot.vasAvailable && lyWorkshopSnapshot.vasAvailable),
+        unavailableReason: !workshopSnapshot.vasAvailable
+          ? workshopSnapshot.vasUnavailableReason
+          : !lyWorkshopSnapshot.vasAvailable
+            ? lyWorkshopSnapshot.vasUnavailableReason
+            : null,
+        source: workshopSnapshot.vasSource,
+        sourceTable: workshopSnapshot.vasSourceTable,
+        periodStart: workshopSnapshot.vasPeriodStart,
+        periodEnd: workshopSnapshot.vasPeriodEnd,
+        sourceRows: workshopSnapshot.vasSourceRows,
+        lySource: lyWorkshopSnapshot.vasSource,
+        lySourceTable: lyWorkshopSnapshot.vasSourceTable,
+        lyPeriodStart: lyWorkshopSnapshot.vasPeriodStart,
+        lyPeriodEnd: lyWorkshopSnapshot.vasPeriodEnd,
+        lySourceRows: lyWorkshopSnapshot.vasSourceRows,
       },
     } : undefined,
     charts: {
@@ -1235,6 +1374,7 @@ async function buildOverviewPayload(
         ew: 'reg_date',
         rsa: 'invoice_date',
         mcp: 'package_purchase_date',
+        vas: 'operation_wise_analysis_report.report_period_start/report_period_end, fallback adv_wise_lubricants_vas.gst_invoice_date',
       },
     },
   }

@@ -109,7 +109,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `kia:business-excellence:workshop-performance:v27:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:v28:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -353,7 +353,8 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
           report_type,
           op_part_code,
           op_part_desc
-        )) AS description
+        )) AS description,
+        LOWER(COALESCE(op_part_desc, '')) AS vas_description
       FROM operation_wise_analysis_advisor_report
       WHERE report_month >= date_trunc('month', ${startDate}::date)::date
         AND report_month <= date_trunc('month', ${endDate}::date)::date
@@ -372,13 +373,12 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
             OR description ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
         ) AS is_wb,
         (
-          LOWER(COALESCE(report_type, '')) = 'operation'
+          LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
             AND (
-              operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
-                OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
-                OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
-                OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
-                OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
+              vas_description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+                OR vas_description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
+                OR vas_description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
+                OR vas_description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
             )
         ) AS is_vas
       FROM operation_rows
@@ -418,18 +418,16 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealer
         dealer_code,
         dealer_name,
         ${numericText(sql.raw('total_amt'))} AS amount,
-        LOWER(COALESCE(op_part_code, '')) AS operation_code,
-        LOWER(CONCAT_WS(' ', report_type, op_part_code, op_part_desc)) AS description
+        LOWER(COALESCE(op_part_desc, '')) AS description
       FROM operation_wise_analysis_report
       WHERE report_month >= date_trunc('month', ${startDate}::date)::date
         AND report_month <= date_trunc('month', ${endDate}::date)::date
-        AND LOWER(COALESCE(report_type, '')) = 'operation'
+        AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
         ${operationDealerFilter(dealerCode)}
     )
     SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
     FROM operation_rows
-    WHERE operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
-      OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+    WHERE description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
       OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
       OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
       OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'

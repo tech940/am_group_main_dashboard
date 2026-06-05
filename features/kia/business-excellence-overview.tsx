@@ -65,6 +65,13 @@ type WorkshopSnapshot = {
   partsAmount: number
   totalRevenue: number
   vasAmount: number
+  vasAvailable?: boolean
+  vasUnavailableReason?: string | null
+  vasSource?: string | null
+  vasSourceTable?: string | null
+  vasPeriodStart?: string | null
+  vasPeriodEnd?: string | null
+  vasSourceRows?: number
   labourPerRo: number
   minDate: string | null
   maxDate: string | null
@@ -167,8 +174,20 @@ function withChunk(queryString: string, chunk: 'summary' | 'secondary') {
 
 type ComparisonMetric = {
   cy: number
-  ly: number
-  deltaPct: number
+  ly: number | null
+  deltaPct: number | null
+  available?: boolean
+  unavailableReason?: string | null
+  source?: string | null
+  sourceTable?: string | null
+  periodStart?: string | null
+  periodEnd?: string | null
+  sourceRows?: number
+  lySource?: string | null
+  lySourceTable?: string | null
+  lyPeriodStart?: string | null
+  lyPeriodEnd?: string | null
+  lySourceRows?: number
 }
 
 type ROAnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
@@ -299,6 +318,14 @@ function deltaClass(deltaPct: number, positiveIsGood = true) {
   return good ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
 }
 
+function comparisonLyValue(metric: ComparisonMetric | undefined, fallback = 0) {
+  return typeof metric?.ly === 'number' && Number.isFinite(metric.ly) ? metric.ly : fallback
+}
+
+function comparisonDeltaValue(metric: ComparisonMetric | undefined, fallback: number | null = 0) {
+  return typeof metric?.deltaPct === 'number' && Number.isFinite(metric.deltaPct) ? metric.deltaPct : fallback
+}
+
 function isManagementTotalRowName(name: unknown) {
   const normalized = String(name || '').trim().toLowerCase()
   return normalized === 'mech' || normalized === 'mech total' || normalized === 'grand total'
@@ -310,11 +337,15 @@ function getManagementTotalRowClass(name: unknown) {
 
 function comparisonText(metric?: ComparisonMetric, formatter: (value: number) => string = formatNumber) {
   if (!metric) return 'LY loading'
+  if (metric.ly === null || metric.available === false) return 'LY unavailable'
   return `LY ${formatter(metric.ly)}`
 }
 
 function deltaText(metric?: ComparisonMetric) {
   if (!metric) return 'vs LY'
+  if (metric.ly === null || metric.deltaPct === null || metric.available === false) {
+    return 'No matching LY period'
+  }
   if (metric.ly <= 0 && metric.cy > 0) return 'New vs LY'
   if (metric.ly <= 0 && metric.cy <= 0) return 'No LY data'
   return `${formatDelta(metric.deltaPct)} vs LY`
@@ -698,7 +729,10 @@ function SnapshotTile({
           <span className="truncate text-slate-600">{comparison.lyText}</span>
           <span className={cn(
             'shrink-0 rounded-full px-2 py-0.5',
-            comparison.deltaText === 'No LY data' || comparison.deltaText === 'Insufficient history'
+            comparison.deltaText === 'No LY data'
+              || comparison.deltaText === 'Insufficient history'
+              || comparison.lyText === 'LY unavailable'
+              || comparison.deltaText.startsWith('No matching')
               ? 'bg-slate-100 text-slate-500'
               : deltaClass(comparison.deltaPct, positiveIsGood)
           )}>
@@ -1423,31 +1457,34 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     : 'Loading LY'
   const labourPerVehicle = safeDivide(data.kpis.labour, data.kpis.totalJc)
   const partsPerVehicle = safeDivide(data.kpis.parts, data.kpis.totalJc)
-  const lyJc = data.comparison?.totalJc.ly || 0
-  const lyLabourPerVehicle = safeDivide(data.comparison?.labour.ly || 0, lyJc)
-  const lyPartsPerVehicle = safeDivide(data.comparison?.parts.ly || 0, lyJc)
+  const lyJc = comparisonLyValue(data.comparison?.totalJc)
+  const lyLabourPerVehicle = safeDivide(comparisonLyValue(data.comparison?.labour), lyJc)
+  const lyPartsPerVehicle = safeDivide(comparisonLyValue(data.comparison?.parts), lyJc)
   const labourShare = data.kpis.revenue > 0 ? (data.kpis.labour / data.kpis.revenue) * 100 : 0
   const partsShare = data.kpis.revenue > 0 ? (data.kpis.parts / data.kpis.revenue) * 100 : 0
-  const lyRevenue = data.comparison?.revenue.ly || 0
-  const lyLabourShare = lyRevenue > 0 ? ((data.comparison?.labour.ly || 0) / lyRevenue) * 100 : 0
-  const lyPartsShare = lyRevenue > 0 ? ((data.comparison?.parts.ly || 0) / lyRevenue) * 100 : 0
+  const lyRevenue = comparisonLyValue(data.comparison?.revenue)
+  const lyLabourShare = lyRevenue > 0 ? (comparisonLyValue(data.comparison?.labour) / lyRevenue) * 100 : 0
+  const lyPartsShare = lyRevenue > 0 ? (comparisonLyValue(data.comparison?.parts) / lyRevenue) * 100 : 0
   const wipRiskCount = data.kpis.delayedRo + data.kpis.openOver15
   const wipRiskRate = data.kpis.openRo > 0 ? (wipRiskCount / data.kpis.openRo) * 100 : 0
-  const lyWipRiskCount = (data.comparison?.delayedRo.ly || 0) + (data.comparison?.openOver15.ly || 0)
+  const lyWipRiskCount = comparisonLyValue(data.comparison?.delayedRo) + comparisonLyValue(data.comparison?.openOver15)
   const complaintClosureRate = data.kpis.complaintsTotal > 0 ? (data.kpis.complaintsClosed / data.kpis.complaintsTotal) * 100 : 100
-  const lyComplaintClosed = Math.max(0, (data.comparison?.complaintsTotal.ly || 0) - (data.comparison?.complaintsOpen.ly || 0))
-  const lyComplaintClosureRate = (data.comparison?.complaintsTotal.ly || 0) > 0 ? (lyComplaintClosed / (data.comparison?.complaintsTotal.ly || 1)) * 100 : 0
+  const lyComplaintsTotal = comparisonLyValue(data.comparison?.complaintsTotal)
+  const lyComplaintClosed = Math.max(0, lyComplaintsTotal - comparisonLyValue(data.comparison?.complaintsOpen))
+  const lyComplaintClosureRate = lyComplaintsTotal > 0 ? (lyComplaintClosed / lyComplaintsTotal) * 100 : 0
   const addOnTotal = data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount
   const addOnPer100Jc = data.kpis.addOnPerJc * 100
-  const lyAddOnTotal = data.comparison ? data.comparison.ewCount.ly + data.comparison.rsaCount.ly + data.comparison.mcpCount.ly : 0
+  const lyAddOnTotal = data.comparison
+    ? comparisonLyValue(data.comparison.ewCount) + comparisonLyValue(data.comparison.rsaCount) + comparisonLyValue(data.comparison.mcpCount)
+    : 0
   const lyAddOnPer100Jc = safeDivide(lyAddOnTotal, lyJc) * 100
   const accidentOpenShare = data.kpis.openRo > 0 ? (data.kpis.accidentOpenJobs / data.kpis.openRo) * 100 : 0
   const roBillingRows = [
-    { metric: 'Revenue', cy: formatCurrency(data.kpis.revenue), ly: data.comparison ? formatCurrency(data.comparison.revenue.ly) : 'Loading', growth: data.comparison ? data.comparison.revenue.deltaPct : null },
-    { metric: 'Load / JC', cy: formatNumber(data.kpis.totalJc), ly: data.comparison ? formatNumber(data.comparison.totalJc.ly) : 'Loading', growth: data.comparison ? data.comparison.totalJc.deltaPct : null },
-    { metric: 'Labour Revenue', cy: formatCurrency(data.kpis.labour), ly: data.comparison ? formatCurrency(data.comparison.labour.ly) : 'Loading', growth: data.comparison ? data.comparison.labour.deltaPct : null },
-    { metric: 'Parts Revenue', cy: formatCurrency(data.kpis.parts), ly: data.comparison ? formatCurrency(data.comparison.parts.ly) : 'Loading', growth: data.comparison ? data.comparison.parts.deltaPct : null },
-    { metric: 'Average Billing', cy: formatCurrency(data.kpis.avgBilling), ly: data.comparison ? formatCurrency(data.comparison.avgBilling.ly) : 'Loading', growth: data.comparison ? data.comparison.avgBilling.deltaPct : null },
+    { metric: 'Revenue', cy: formatCurrency(data.kpis.revenue), ly: data.comparison ? formatCurrency(comparisonLyValue(data.comparison.revenue)) : 'Loading', growth: comparisonDeltaValue(data.comparison?.revenue, null) },
+    { metric: 'Load / JC', cy: formatNumber(data.kpis.totalJc), ly: data.comparison ? formatNumber(comparisonLyValue(data.comparison.totalJc)) : 'Loading', growth: comparisonDeltaValue(data.comparison?.totalJc, null) },
+    { metric: 'Labour Revenue', cy: formatCurrency(data.kpis.labour), ly: data.comparison ? formatCurrency(comparisonLyValue(data.comparison.labour)) : 'Loading', growth: comparisonDeltaValue(data.comparison?.labour, null) },
+    { metric: 'Parts Revenue', cy: formatCurrency(data.kpis.parts), ly: data.comparison ? formatCurrency(comparisonLyValue(data.comparison.parts)) : 'Loading', growth: comparisonDeltaValue(data.comparison?.parts, null) },
+    { metric: 'Average Billing', cy: formatCurrency(data.kpis.avgBilling), ly: data.comparison ? formatCurrency(comparisonLyValue(data.comparison.avgBilling)) : 'Loading', growth: comparisonDeltaValue(data.comparison?.avgBilling, null) },
     { metric: 'Labour / Vehicle', cy: formatCurrency(labourPerVehicle), ly: data.comparison ? formatCurrency(lyLabourPerVehicle) : 'Loading', growth: data.comparison ? growthFromValues(labourPerVehicle, lyLabourPerVehicle) : null },
     { metric: 'Parts / Vehicle', cy: formatCurrency(partsPerVehicle), ly: data.comparison ? formatCurrency(lyPartsPerVehicle) : 'Loading', growth: data.comparison ? growthFromValues(partsPerVehicle, lyPartsPerVehicle) : null },
     { metric: 'Labour %', cy: `${labourShare.toFixed(1)}%`, ly: data.comparison ? `${lyLabourShare.toFixed(1)}%` : 'Loading', growth: data.comparison ? growthFromValues(labourShare, lyLabourShare) : null },
@@ -1457,32 +1494,32 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   const serviceRowsByMetric = buildServiceTypeRowsByMetric(roAnalysisTableData)
   const roBillingTrendRows = getMetricTrend(roAnalysisTrendData, billingTrendMetric)
   const snapshotHealth = buildBusinessSnapshotHealth(data)
-  const lySnapshotRevenue = data.comparison?.revenue.ly || 0
+  const lySnapshotRevenue = comparisonLyValue(data.comparison?.revenue)
   const executiveCards = [
     {
       title: 'Workshop Performance',
       cy: formatCurrency(data.workshopSnapshot.totalRevenue),
-      ly: data.comparison ? formatCurrency(data.comparison.workshopRevenue.ly) : 'Loading',
+      ly: data.comparison ? formatCurrency(comparisonLyValue(data.comparison.workshopRevenue)) : 'Loading',
       growth: data.comparison ? data.comparison.workshopRevenue.deltaPct : null,
-      status: data.comparison && data.comparison.workshopRevenue.deltaPct >= 0 ? 'GOOD' : 'WATCH',
+      status: data.comparison && (comparisonDeltaValue(data.comparison.workshopRevenue) ?? 0) >= 0 ? 'GOOD' : 'WATCH',
     },
     {
       title: 'Open RO',
       cy: formatNumber(data.kpis.openRo),
-      ly: data.comparison && data.comparison.openRo.ly > 0 ? formatNumber(data.comparison.openRo.ly) : 'No history',
-      growth: data.comparison && data.comparison.openRo.ly > 0 ? data.comparison.openRo.deltaPct : null,
+      ly: data.comparison && comparisonLyValue(data.comparison.openRo) > 0 ? formatNumber(comparisonLyValue(data.comparison.openRo)) : 'No history',
+      growth: data.comparison && comparisonLyValue(data.comparison.openRo) > 0 ? data.comparison.openRo.deltaPct : null,
       status: data.kpis.openOver15 > 0 ? 'WATCH' : 'GOOD',
       positiveIsGood: false,
     },
     {
       title: 'Complaints',
       cy: formatNumber(data.kpis.complaintsTotal),
-      ly: data.comparison ? formatNumber(data.comparison.complaintsTotal.ly) : 'Loading',
+      ly: data.comparison ? formatNumber(comparisonLyValue(data.comparison.complaintsTotal)) : 'Loading',
       growth: data.comparison ? data.comparison.complaintsTotal.deltaPct : null,
       status: (() => {
         const growthValue = data.comparison?.complaintsTotal.deltaPct
-        if (data.kpis.complaintsOpen > 0 || (growthValue !== undefined && growthValue >= 200)) return 'CRITICAL'
-        if (growthValue !== undefined && growthValue > 0) return 'WATCH'
+        if (data.kpis.complaintsOpen > 0 || (growthValue !== undefined && growthValue !== null && growthValue >= 200)) return 'CRITICAL'
+        if (growthValue !== undefined && growthValue !== null && growthValue > 0) return 'WATCH'
         return 'GOOD'
       })(),
       positiveIsGood: false,
@@ -1490,10 +1527,10 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     {
       title: 'Add-ons',
       cy: formatNumber(data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount),
-      ly: data.comparison ? formatNumber(data.comparison.ewCount.ly + data.comparison.rsaCount.ly + data.comparison.mcpCount.ly) : 'Loading',
+      ly: data.comparison ? formatNumber(lyAddOnTotal) : 'Loading',
       growth: data.comparison ? growthFromValues(
         data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount,
-        data.comparison.ewCount.ly + data.comparison.rsaCount.ly + data.comparison.mcpCount.ly
+        lyAddOnTotal
       ) : null,
       status: 'TRACK',
     },
@@ -1636,8 +1673,8 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               value={formatNumber(data.kpis.openRo)}
               meta={`${formatNumber(data.kpis.delayedRo)} delayed / ${formatNumber(data.kpis.openOver15)} over 15D`}
               comparison={{
-                lyText: data.comparison && data.comparison.openRo.ly > 0 ? `LY ${formatNumber(data.comparison.openRo.ly)}` : 'Limited history',
-                deltaText: data.comparison && data.comparison.openRo.ly > 0 ? deltaText(data.comparison.openRo) : 'No LY data',
+                lyText: data.comparison && comparisonLyValue(data.comparison.openRo) > 0 ? `LY ${formatNumber(comparisonLyValue(data.comparison.openRo))}` : 'Limited history',
+                deltaText: data.comparison && comparisonLyValue(data.comparison.openRo) > 0 ? deltaText(data.comparison.openRo) : 'No LY data',
                 deltaPct: data.comparison?.openRo.deltaPct || 0,
               }}
               positiveIsGood={false}
@@ -1662,8 +1699,8 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               value={`${complaintClosureRate.toFixed(1)}%`}
               meta={`${formatNumber(data.kpis.complaintsClosed)} closed / ${formatNumber(data.kpis.complaintsTotal)} total`}
               comparison={{
-                lyText: data.comparison && (data.comparison.complaintsTotal.ly || 0) > 0 ? `LY ${lyComplaintClosureRate.toFixed(1)}%` : 'Limited history',
-                deltaText: data.comparison && (data.comparison.complaintsTotal.ly || 0) > 0 ? `${formatDelta(growthFromValues(complaintClosureRate, lyComplaintClosureRate) || 0)} vs LY` : 'No LY data',
+                lyText: data.comparison && lyComplaintsTotal > 0 ? `LY ${lyComplaintClosureRate.toFixed(1)}%` : 'Limited history',
+                deltaText: data.comparison && lyComplaintsTotal > 0 ? `${formatDelta(growthFromValues(complaintClosureRate, lyComplaintClosureRate) || 0)} vs LY` : 'No LY data',
                 deltaPct: growthFromValues(complaintClosureRate, lyComplaintClosureRate) || 0,
               }}
               tone={data.kpis.complaintsOpen > 0 ? 'watch' : 'good'}
