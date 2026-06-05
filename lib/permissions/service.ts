@@ -30,7 +30,7 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-const PERMISSION_CACHE_VERSION = 'v1'
+const PERMISSION_CACHE_VERSION = 'v2'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 export function isMissingPermissionTableError(error: unknown) {
