@@ -101,7 +101,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `kia:business-excellence:overview:v25:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v26:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -736,8 +736,7 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealer
 
   const vasFilter = sql`
     (
-      operation_code ~ '(^|[^a-z])vas([^a-z]|$)'
-      OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+      description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
       OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
       OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
       OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
@@ -758,12 +757,11 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealer
           dealer_code,
           dealer_name,
           ${numericText(sql.raw('total_amt'))} AS amount,
-          LOWER(COALESCE(op_part_code, '')) AS operation_code,
-          LOWER(CONCAT_WS(' ', report_type, op_part_code, op_part_desc)) AS description
+          LOWER(COALESCE(op_part_desc, '')) AS description
         FROM operation_wise_analysis_report
         WHERE report_period_start = ${startDate}::date
           AND report_period_end = ${endDate}::date
-          AND LOWER(COALESCE(report_type, '')) = 'operation'
+          AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
           ${operationDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
@@ -802,8 +800,7 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealer
           dealer_code,
           retail_dealer_code,
           ${numericText(sql.raw('taxable_amount'))} AS amount,
-          LOWER(COALESCE(op_part_code, '')) AS operation_code,
-          LOWER(CONCAT_WS(' ', op_part_code, op_part_desc, labour_desc, part_desc)) AS description
+          LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc)) AS description
         FROM adv_wise_lubricants_vas
         WHERE gst_invoice_date >= ${startDate}::date
           AND gst_invoice_date < (${endDate}::date + INTERVAL '1 day')
