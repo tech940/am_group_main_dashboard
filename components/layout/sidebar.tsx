@@ -66,7 +66,7 @@ const brandNavigation = [
     logo: '',
     color: 'text-blue-100',
     icon: Activity,
-    comingSoon: true,
+    comingSoon: false,
     sections: [
       {
         name: 'Service',
@@ -128,6 +128,7 @@ const brandNavigation = [
 ]
 
 const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
+const alwaysVisibleBrandKeys = new Set(['hyundai', 'platinum'])
 
 const sidebarPermissionByHref: Record<string, string> = {
   '/purchase-orders': 'purchase_orders.view',
@@ -208,6 +209,7 @@ export function Sidebar() {
   }
 
   const canAccessBrand = (brandKey: string) => {
+    if (alwaysVisibleBrandKeys.has(brandKey)) return true
     if (userRole === 'admin') return true
     if (!userBrand) return false
     if (hasAllBranchAccess(userBrand)) return true
@@ -217,6 +219,7 @@ export function Sidebar() {
   const visibleBrands = useMemo(() => {
     return availableBrands
       .filter((brand) => {
+        if (alwaysVisibleBrandKeys.has(brand.key)) return true
         if (userRole === 'admin') return true
         if (!userBrand) return false
         if (hasAllBranchAccess(userBrand)) return true
