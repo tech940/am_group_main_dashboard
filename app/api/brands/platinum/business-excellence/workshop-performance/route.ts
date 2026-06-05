@@ -109,7 +109,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:workshop-performance:v27:${createHash('sha1')
+  return `platinum:business-excellence:workshop-performance:v28:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -462,7 +462,7 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
   })
 }
 
-async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
+async function fetchAuxiliaryKpis(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   const [hasEw, hasMcp, hasRsa] = await Promise.all([
     tableExists('am_platinum_ew_report'),
     tableExists('am_platinum_mcp_report'),
@@ -504,6 +504,7 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
             WHERE reg_date >= ${startDate}::date
               AND reg_date < (${endDate}::date + INTERVAL '1 day')
               AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
+              ${dealerCode ? sql`AND UPPER(TRIM(COALESCE(dlr_no, ''))) = ${dealerCode}` : sql``}
             ORDER BY
               COALESCE(
                 NULLIF(TRIM(certi_no), ''),
@@ -787,8 +788,8 @@ async function buildWorkshopPayload(
     fetchAddonSummary(startDate, endDate, advisor, dealerCode),
     fetchDailyTrend(startDate, endDate, advisor, dealerCode),
     fetchAdvisorSummary(startDate, endDate, dealerCode),
-    fetchAuxiliaryKpis(startDate, endDate),
-    fetchAuxiliaryKpis(lyStart, lyEnd),
+    fetchAuxiliaryKpis(startDate, endDate, dealerCode),
+    fetchAuxiliaryKpis(lyStart, lyEnd, dealerCode),
     fetchServiceSummary(lyStart, lyEnd, advisor, dealerCode),
     fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode),
     fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode),

@@ -224,7 +224,7 @@ function DetailField({ label, value, className }: { label: string; value: React.
 }
 
 type OpenRoDateFilter = {
-  mode: 'month' | 'range' | 'preset' | 'custom'
+  mode: 'month' | 'range' | 'preset' | 'custom' | 'year'
   preset?: BusinessDateFilterValue['preset']
   month: number
   year: number

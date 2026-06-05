@@ -33,6 +33,7 @@ const brandNavigation = [
     logo: 'https://www.citypng.com/public/uploads/preview/kia-white-logo-hd-png-7017516947105094q5qjti6gq.png',
     color: 'text-blue-100',
     icon: Activity,
+    comingSoon: false,
     sections: [
       {
         name: 'Service',
@@ -40,15 +41,16 @@ const brandNavigation = [
         submenus: [
           { name: 'Business Excellence', href: '/brands/kia/business-excellence/overview' },
           { name: 'Service Appointment', href: '/brands/kia/service-appointment' },
-          { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
-          { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
           { name: 'Kia Proforma', href: '/brands/kia/proforma' },
         ],
       },
       {
         name: 'Sales',
         key: 'sales',
-        submenus: [],
+        submenus: [
+          { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
+          { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
+        ],
       },
       {
         name: 'H Promise',
@@ -64,6 +66,7 @@ const brandNavigation = [
     logo: '',
     color: 'text-blue-100',
     icon: Activity,
+    comingSoon: true,
     sections: [
       {
         name: 'Service',
@@ -71,15 +74,16 @@ const brandNavigation = [
         submenus: [
           { name: 'Business Excellence', href: '/brands/hyundai/business-excellence/overview' },
           { name: 'Service Appointment', href: '/brands/hyundai/service-appointment' },
-          { name: 'Demo Job Cards', href: '/brands/hyundai/demo-job-cards' },
-          { name: 'Demo Cars List', href: '/brands/hyundai/demo-cars-list' },
           { name: 'Hyundai Proforma', href: '/brands/hyundai/proforma' },
         ],
       },
       {
         name: 'Sales',
         key: 'sales',
-        submenus: [],
+        submenus: [
+          { name: 'Demo Job Cards', href: '/brands/hyundai/demo-job-cards' },
+          { name: 'Demo Cars List', href: '/brands/hyundai/demo-cars-list' },
+        ],
       },
       {
         name: 'H Promise',
@@ -95,6 +99,7 @@ const brandNavigation = [
     logo: '',
     color: 'text-blue-100',
     icon: Activity,
+    comingSoon: false,
     sections: [
       {
         name: 'Service',
@@ -102,15 +107,16 @@ const brandNavigation = [
         submenus: [
           { name: 'Business Excellence', href: '/brands/platinum/business-excellence/overview' },
           { name: 'Service Appointment', href: '/brands/platinum/service-appointment' },
-          { name: 'Demo Job Cards', href: '/brands/platinum/demo-job-cards' },
-          { name: 'Demo Cars List', href: '/brands/platinum/demo-cars-list' },
           { name: 'Platinum Proforma', href: '/brands/platinum/proforma' },
         ],
       },
       {
         name: 'Sales',
         key: 'sales',
-        submenus: [],
+        submenus: [
+          { name: 'Demo Job Cards', href: '/brands/platinum/demo-job-cards' },
+          { name: 'Demo Cars List', href: '/brands/platinum/demo-cars-list' },
+        ],
       },
       {
         name: 'H Promise',
@@ -229,9 +235,10 @@ export function Sidebar() {
   }, [userBrand, userRole])
 
   const toggleBrand = (brandName: string) => {
-    const brandKey = getBrandKey(brandName)
+    const brand = availableBrands.find((item) => item.name === brandName)
+    const brandKey = brand?.key || getBrandKey(brandName)
     // Only allow toggling if user can access this brand
-    if (canAccessBrand(brandKey)) {
+    if (!brand?.comingSoon && canAccessBrand(brandKey)) {
       setOpenBrands((current) => {
         const next = new Set(current)
         if (next.has(brandName)) {
@@ -532,17 +539,18 @@ export function Sidebar() {
                   const isOpen = openBrands.has(brand.name)
                   const isActive = pathname?.startsWith(brand.href)
                   const hasAccess = canAccessBrand(brand.key)
+                  const canOpenBrand = hasAccess && !brand.comingSoon
 
                   return (
                     <div key={brand.name} className="space-y-1.5">
                       <button
                         onClick={() => toggleBrand(brand.name)}
-                        disabled={!hasAccess}
+                        disabled={!canOpenBrand}
                         className={cn(
                           'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none relative w-full',
                           (isOpen || isActive)
                             ? 'bg-white/22 border-l-4 border-indigo-100 text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
-                            : hasAccess
+                            : canOpenBrand
                               ? 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-indigo-100/80 cursor-pointer group pl-3'
                               : 'bg-white/10 border-l-4 border-transparent text-indigo-50/45 opacity-60 cursor-not-allowed pl-3',
                           collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'py-3 pr-3'
@@ -568,7 +576,11 @@ export function Sidebar() {
                               "flex-1 text-left text-sm transition-colors",
                               (isOpen || isActive) ? "text-white" : "text-indigo-50/85 group-hover:text-white"
                             )}>{brand.name}</span>
-                            {!hasAccess ? (
+                            {brand.comingSoon ? (
+                              <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.14em] text-indigo-50/75">
+                                Coming soon
+                              </span>
+                            ) : !hasAccess ? (
                               <Lock className="h-4 w-4 text-slate-500" />
                             ) : (
                               <ChevronDown className={cn(
@@ -631,6 +643,8 @@ export function Sidebar() {
                                         <Link
                                           key={sub.name}
                                           href={sub.href}
+                                          target="_blank"
+                                          rel="noreferrer"
                                           prefetch={false}
                                           onClick={handleSidebarLinkClick}
                                           className={cn(

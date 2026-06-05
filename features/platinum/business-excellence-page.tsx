@@ -38,6 +38,7 @@ import {
 import { BusinessExcellenceOverview } from '@/features/platinum/business-excellence-overview'
 import { OpenRoSection } from '@/features/platinum/open-ro-section'
 import { KiaComplaintsSection } from '@/features/platinum/platinum-complaints-section'
+import { PlatinumSotAnalysisSection } from '@/features/platinum/sot-analysis-section'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   LineChart,
@@ -164,7 +165,7 @@ interface LoadedRows {
 }
 
 type BusinessDateFilter = {
-  mode: 'month' | 'range' | 'preset' | 'custom'
+  mode: 'month' | 'range' | 'preset' | 'custom' | 'year'
   preset?: BusinessDatePreset
   month: number
   year: number
@@ -172,6 +173,8 @@ type BusinessDateFilter = {
   endDate: string
   comparison?: BusinessDateFilterValue['comparison']
 } | null
+
+type AppliedBusinessDateFilter = NonNullable<BusinessDateFilter>
 
 function AnalyticsDateRangePicker({
   title = 'Date Range',
@@ -315,6 +318,7 @@ const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const PLATINUM_COMPLAINTS_REPORT = 'Platinum Complaints'
+const PLATINUM_SOT_REPORT = 'SOT Analysis'
 const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [BUSINESS_EXCELLENCE_OVERVIEW_REPORT]: 'overview',
   [EXECUTIVE_DASHBOARD_REPORT]: 'executive-dashboard',
@@ -322,6 +326,7 @@ const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
   [OPEN_RO_REPORT]: 'open-ro',
   [PLATINUM_COMPLAINTS_REPORT]: 'platinum-complaints',
+  [PLATINUM_SOT_REPORT]: 'sot-analysis',
 }
 const REPORT_NAMES_BY_SLUG: Record<string, string> = Object.fromEntries(
   Object.entries(REPORT_ROUTE_SLUGS).map(([name, slug]) => [slug, name])
@@ -381,6 +386,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
   },
+  {
+    id: 'sot-analysis',
+    brand: 'platinum',
+    sheetName: PLATINUM_SOT_REPORT,
+    tableName: 'am_platinum_trust_package',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
 ]
 const BUSINESS_MONTHS = [
   'January',
@@ -396,6 +410,48 @@ const BUSINESS_MONTHS = [
   'November',
   'December',
 ]
+const PLATINUM_DATA_START_YEAR = 2021
+
+function getPlatinumAvailableYears(today = new Date()) {
+  const currentYear = today.getFullYear()
+  return Array.from({ length: Math.max(currentYear - PLATINUM_DATA_START_YEAR + 1, 1) }, (_, index) => PLATINUM_DATA_START_YEAR + index)
+}
+
+function normalizePlatinumYear(value: string | number | null | undefined) {
+  const year = typeof value === 'number' ? value : Number(value)
+  const currentYear = new Date().getFullYear()
+  if (!Number.isInteger(year) || year < PLATINUM_DATA_START_YEAR || year > currentYear) return null
+  return year
+}
+
+function getPlatinumYearRange(year: number) {
+  const today = new Date()
+  const isCurrentYear = year === today.getFullYear()
+  return {
+    startDate: getInputDate(new Date(year, 0, 1)),
+    endDate: getInputDate(isCurrentYear ? today : new Date(year, 11, 31)),
+  }
+}
+
+function buildPlatinumYearDateFilter(
+  year: number,
+  range = getPlatinumYearRange(year),
+  customComparison?: Partial<{ startDate: string; endDate: string }>
+): AppliedBusinessDateFilter {
+  const comparison = customComparison?.startDate && customComparison?.endDate
+    ? { previousStartDate: customComparison.startDate, previousEndDate: customComparison.endDate }
+    : {}
+
+  return {
+    mode: 'year',
+    preset: 'custom',
+    month: 0,
+    year,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    comparison,
+  }
+}
 
 function cleanAiText(value: string) {
   return value.replace(/\*\*/g, '').trim()
@@ -551,10 +607,24 @@ function isBusinessDateParam(value: string | null | undefined) {
 function buildDateFilterFromQuery(params: URLSearchParams): BusinessDateFilter {
   const startDate = params.get('startDate') || ''
   const endDate = params.get('endDate') || ''
-  if (!isBusinessDateParam(startDate) || !isBusinessDateParam(endDate)) return null
 
   const compareStartDate = params.get('compareStartDate') || params.get('comparisonStartDate') || ''
   const compareEndDate = params.get('compareEndDate') || params.get('comparisonEndDate') || ''
+  const comparisonRange = isBusinessDateParam(compareStartDate) && isBusinessDateParam(compareEndDate)
+    ? { startDate: compareStartDate, endDate: compareEndDate }
+    : {}
+  const periodMode = params.get('periodMode')
+  const queryYear = normalizePlatinumYear(params.get('year'))
+
+  if (periodMode === 'year' && queryYear) {
+    const range = isBusinessDateParam(startDate) && isBusinessDateParam(endDate)
+      ? { startDate, endDate }
+      : getPlatinumYearRange(queryYear)
+    return buildPlatinumYearDateFilter(queryYear, range, comparisonRange)
+  }
+
+  if (!isBusinessDateParam(startDate) || !isBusinessDateParam(endDate)) return null
+
   const presetParam = params.get('periodPreset') as BusinessDatePreset | null
   const preset = presetParam && BUSINESS_DATE_PRESETS.some((item) => item.value === presetParam)
     ? presetParam
@@ -563,9 +633,7 @@ function buildDateFilterFromQuery(params: URLSearchParams): BusinessDateFilter {
   return buildBusinessDateFilter(
     preset,
     { startDate, endDate },
-    isBusinessDateParam(compareStartDate) && isBusinessDateParam(compareEndDate)
-      ? { startDate: compareStartDate, endDate: compareEndDate }
-      : {}
+    comparisonRange
   )
 }
 
@@ -575,6 +643,10 @@ function buildBusinessExcellenceDateQuery(filter: BusinessDateFilter, dealerCode
   if (filter) {
     params.set('startDate', filter.startDate)
     params.set('endDate', filter.endDate)
+    if (filter.mode === 'year') {
+      params.set('periodMode', 'year')
+      params.set('year', String(filter.year))
+    }
     if (filter.preset && filter.preset !== 'custom') {
       params.set('periodPreset', filter.preset)
     }
@@ -1409,6 +1481,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   const [activeTab, setActiveTab] = useState<string | null>(initialReportName)
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedPreset, setSelectedPreset] = useState<BusinessDatePreset>('mtd')
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [comparisonStartDate, setComparisonStartDate] = useState<string>('')
@@ -1431,12 +1504,13 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
   useEffect(() => {
     const params = new URLSearchParams(queryDateFilterKey)
-    const hasDateParams = params.has('startDate') || params.has('endDate') || params.has('compareStartDate') || params.has('compareEndDate')
+    const hasDateParams = params.has('startDate') || params.has('endDate') || params.has('compareStartDate') || params.has('compareEndDate') || params.get('periodMode') === 'year' || params.has('year')
     const timeout = window.setTimeout(() => {
       const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
       setSelectedDealerCode(normalizeKiaDealerCode(params.get('dealer_code')) || (activeReport === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE))
       if (!hasDateParams) {
         setSelectedPreset('mtd')
+        setSelectedYear(null)
         setStartDate('')
         setEndDate('')
         setComparisonStartDate('')
@@ -1450,6 +1524,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
       if (!nextFilter) return
 
       setSelectedPreset(nextFilter.preset || 'custom')
+      setSelectedYear(nextFilter.mode === 'year' ? nextFilter.year : null)
       setStartDate(nextFilter.startDate)
       setEndDate(nextFilter.endDate)
       setComparisonStartDate(nextFilter.comparison?.previousStartDate || '')
@@ -1465,6 +1540,10 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
     if (!appliedDateFilter) {
       const today = new Date()
       return `Current month - ${BUSINESS_MONTHS[today.getMonth()]} ${today.getFullYear()}`
+    }
+
+    if (appliedDateFilter.mode === 'year') {
+      return `Year ${appliedDateFilter.year} - ${appliedDateFilter.startDate} to ${appliedDateFilter.endDate}`
     }
 
     const presetLabel = BUSINESS_DATE_PRESETS.find((preset) => preset.value === appliedDateFilter.preset)?.label
@@ -1501,27 +1580,43 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   })
 
   const draftDateFilter = useMemo(
-    () => buildBusinessDateFilter(
-      startDate && endDate ? 'custom' : selectedPreset,
-      { startDate, endDate },
-      { startDate: comparisonStartDate, endDate: comparisonEndDate }
-    ),
-    [comparisonEndDate, comparisonStartDate, endDate, selectedPreset, startDate]
+    () => selectedYear
+      ? buildPlatinumYearDateFilter(
+        selectedYear,
+        { startDate, endDate },
+        { startDate: comparisonStartDate, endDate: comparisonEndDate }
+      )
+      : buildBusinessDateFilter(
+        startDate && endDate ? 'custom' : selectedPreset,
+        { startDate, endDate },
+        { startDate: comparisonStartDate, endDate: comparisonEndDate }
+      ),
+    [comparisonEndDate, comparisonStartDate, endDate, selectedPreset, selectedYear, startDate]
   )
 
-  const draftDateLabel = `${draftDateFilter.startDate} to ${draftDateFilter.endDate}`
-  const draftComparisonLabel = draftDateFilter.comparison.previousStartDate && draftDateFilter.comparison.previousEndDate
+  const draftDateLabel = draftDateFilter.mode === 'year'
+    ? `Year ${draftDateFilter.year} - ${draftDateFilter.startDate} to ${draftDateFilter.endDate}`
+    : `${draftDateFilter.startDate} to ${draftDateFilter.endDate}`
+  const draftComparisonLabel = draftDateFilter.comparison?.previousStartDate && draftDateFilter.comparison.previousEndDate
     ? `${draftDateFilter.comparison.previousStartDate} to ${draftDateFilter.comparison.previousEndDate}`
     : 'Not selected'
 
   const applyDateFilter = useCallback(() => {
-    const filter = buildBusinessDateFilter(
-      startDate && endDate ? 'custom' : selectedPreset,
-      { startDate, endDate },
-      datePanelMode === 'compare'
-        ? { startDate: comparisonStartDate, endDate: comparisonEndDate }
-        : {}
-    )
+    const filter = selectedYear
+      ? buildPlatinumYearDateFilter(
+        selectedYear,
+        { startDate, endDate },
+        datePanelMode === 'compare'
+          ? { startDate: comparisonStartDate, endDate: comparisonEndDate }
+          : {}
+      )
+      : buildBusinessDateFilter(
+        startDate && endDate ? 'custom' : selectedPreset,
+        { startDate, endDate },
+        datePanelMode === 'compare'
+          ? { startDate: comparisonStartDate, endDate: comparisonEndDate }
+          : {}
+      )
 
     setIsApplyingFilter(true)
     setTimeout(() => {
@@ -1536,12 +1631,13 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
         setIsApplyingFilter(false)
       }, 300)
     }, 100)
-  }, [activeTab, comparisonEndDate, comparisonStartDate, datePanelMode, endDate, initialReportName, router, selectedDealerCode, selectedPreset, startDate])
+  }, [activeTab, comparisonEndDate, comparisonStartDate, datePanelMode, endDate, initialReportName, router, selectedDealerCode, selectedPreset, selectedYear, startDate])
 
   const clearDateFilter = useCallback(() => {
     setIsApplyingFilter(true)
     setTimeout(() => {
       setSelectedPreset('mtd')
+      setSelectedYear(null)
       setStartDate('')
       setEndDate('')
       setComparisonStartDate('')
@@ -1580,6 +1676,26 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
     return getInputDate(shifted)
   }, [])
 
+  const platinumYearOptions = useMemo(() => getPlatinumAvailableYears(), [])
+
+  const selectPlatinumYear = useCallback((year: number) => {
+    const range = getPlatinumYearRange(year)
+    setSelectedYear(year)
+    setSelectedPreset('custom')
+    setStartDate(range.startDate)
+    setEndDate(range.endDate)
+
+    if (datePanelMode === 'compare') {
+      if (year > PLATINUM_DATA_START_YEAR) {
+        setComparisonStartDate(shiftDateByYears(range.startDate, -1))
+        setComparisonEndDate(shiftDateByYears(range.endDate, -1))
+      } else {
+        setComparisonStartDate('')
+        setComparisonEndDate('')
+      }
+    }
+  }, [datePanelMode, shiftDateByYears])
+
   const openDatePanel = useCallback((mode: 'current' | 'compare') => {
     const currentRange = resolveCurrentRange()
     if (!startDate || !endDate) {
@@ -1587,12 +1703,19 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
       setEndDate(currentRange.endDate)
     }
     if (mode === 'compare' && (!comparisonStartDate || !comparisonEndDate)) {
+      if (selectedYear && selectedYear <= PLATINUM_DATA_START_YEAR) {
+        setComparisonStartDate('')
+        setComparisonEndDate('')
+        setDatePanelMode(mode)
+        setShowDateControls((visible) => (visible && datePanelMode === mode ? false : true))
+        return
+      }
       setComparisonStartDate(shiftDateByYears(currentRange.startDate, -1))
       setComparisonEndDate(shiftDateByYears(currentRange.endDate, -1))
     }
     setDatePanelMode(mode)
     setShowDateControls((visible) => (visible && datePanelMode === mode ? false : true))
-  }, [comparisonEndDate, comparisonStartDate, datePanelMode, endDate, resolveCurrentRange, shiftDateByYears, startDate])
+  }, [comparisonEndDate, comparisonStartDate, datePanelMode, endDate, resolveCurrentRange, selectedYear, shiftDateByYears, startDate])
 
   const generateAiSummary = useCallback(async (report: string) => {
     setShowAiSummary(true)
@@ -1678,7 +1801,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === PLATINUM_COMPLAINTS_REPORT) {
+      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === PLATINUM_COMPLAINTS_REPORT || activeTab === PLATINUM_SOT_REPORT) {
         setFetchingRows(null)
         return
       }
@@ -1728,9 +1851,11 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
               const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
               const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
               const isKiaComplaintsSheet = selectedSheet.sheetName === PLATINUM_COMPLAINTS_REPORT
+              const isSotSheet = selectedSheet.sheetName === PLATINUM_SOT_REPORT
               const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
-              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
-              const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
+              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isSotSheet
+              const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet || isSotSheet
+              const supportsHealthPanel = isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
               const branchOptions = isExecutiveDashboardSheet
                 ? [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
                 : KIA_BRANCH_DEALERS
@@ -1834,7 +1959,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                             {isAiSummaryLoading ? 'Summarising' : 'AI Summary'}
                           </Button>
 
-                          {usesDateControls && !isOverviewSheet && (
+                          {supportsHealthPanel && (
                             <Button
                               type="button"
                               variant="outline"
@@ -2089,6 +2214,35 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                     </div>
                                   </div>
                                 </div>
+                                <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                                    <div>
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        Platinum Year
+                                      </p>
+                                      <p className="mt-1 text-xs font-bold text-slate-600">
+                                        {PLATINUM_DATA_START_YEAR} to {platinumYearOptions[platinumYearOptions.length - 1]}
+                                      </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                                      {platinumYearOptions.map((year) => (
+                                        <button
+                                          key={year}
+                                          type="button"
+                                          onClick={() => selectPlatinumYear(year)}
+                                          className={cn(
+                                            'h-9 min-w-[4rem] rounded-xl border px-3 text-[11px] font-black transition-all',
+                                            selectedYear === year
+                                              ? 'border-[var(--dashboard-action-bg)] bg-[var(--dashboard-action-bg)] text-white shadow-sm'
+                                              : 'border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:text-slate-950'
+                                          )}
+                                        >
+                                          {year}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
                                 {datePanelMode === 'current' ? (
                                   <AnalyticsDateRangePicker
                                     title="Current Date Range"
@@ -2096,6 +2250,8 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                     startDate={startDate}
                                     endDate={endDate}
                                     onChange={(nextStart, nextEnd) => {
+                                      setSelectedYear(null)
+                                      setSelectedPreset('custom')
                                       setStartDate(nextStart)
                                       setEndDate(nextEnd)
                                     }}
@@ -2108,6 +2264,8 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                       startDate={startDate}
                                       endDate={endDate}
                                       onChange={(nextStart, nextEnd) => {
+                                        setSelectedYear(null)
+                                        setSelectedPreset('custom')
                                         setStartDate(nextStart)
                                         setEndDate(nextEnd)
                                       }}
@@ -2128,7 +2286,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                             </div>
                           )}
                         {/* Executive health panel is opt-in from the report header. */}
-                        {showHealthPanel && usesDateControls && !isOverviewSheet && !isApplyingFilter && (
+                        {showHealthPanel && supportsHealthPanel && !isApplyingFilter && (
                           <BusinessExecutiveDecisionLayer
                             dateFilter={appliedDateFilter}
                             reportName={selectedSheet.sheetName}
@@ -2168,6 +2326,12 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                             <SheetContentSkeleton />
                           ) : (
                             <KiaComplaintsSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isSotSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <PlatinumSotAnalysisSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
                           )
                         ) : isROBillingSheet ? (
                           isApplyingFilter ? (
@@ -3303,9 +3467,16 @@ function getROTrendDateRange(dateFilter: BusinessDateFilter) {
 }
 
 const EXECUTIVE_LOCATION_OPTIONS = [
-  { label: 'All Locations', dealerCode: null as string | null, helper: 'JK402 + JK501' },
-  { label: 'Jammu', dealerCode: 'JK402', helper: 'Dealer JK402' },
-  { label: 'Udhampur', dealerCode: 'JK501', helper: 'Dealer JK501' },
+  {
+    label: 'All Locations',
+    dealerCode: null as string | null,
+    helper: KIA_BRANCH_DEALERS.map((branch) => branch.dealerCode).join(' + '),
+  },
+  ...KIA_BRANCH_DEALERS.map((branch) => ({
+    label: branch.label,
+    dealerCode: branch.dealerCode,
+    helper: `Dealer ${branch.dealerCode}`,
+  })),
 ]
 
 function executiveQueryString(view: 'table' | 'trend' | 'fy', dateFilter: BusinessDateFilter, dealerCode?: string | null) {
@@ -3767,12 +3938,17 @@ function BusinessExecutiveDashboard({
   const branchTableQuery = useQuery({
     queryKey: ['business-excellence', 'executive-dashboard', 'branch-table', dateFilter],
     queryFn: async () => {
-      const [all, jammu, udhampur] = await Promise.all([
+      const [all, ...branches] = await Promise.all([
         fetchExecutiveSummary('table', null),
-        fetchExecutiveSummary('table', 'JK402'),
-        fetchExecutiveSummary('table', 'JK501'),
+        ...KIA_BRANCH_DEALERS.map((branch) => fetchExecutiveSummary('table', branch.dealerCode)),
       ])
-      return { all, jammu, udhampur }
+      return {
+        all,
+        branches: KIA_BRANCH_DEALERS.map((branch, index) => ({
+          label: branch.label,
+          response: branches[index],
+        })),
+      }
     },
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
@@ -3808,8 +3984,7 @@ function BusinessExecutiveDashboard({
       }
     }
     return [
-      buildRow('Jammu', branchTableQuery.data?.jammu),
-      buildRow('Udhampur', branchTableQuery.data?.udhampur),
+      ...(branchTableQuery.data?.branches || []).map((branch) => buildRow(branch.label, branch.response)),
       buildRow('Total', branchTableQuery.data?.all),
     ]
   }, [branchTableQuery.data])

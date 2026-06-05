@@ -134,7 +134,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `platinum:business-excellence:performance-intelligence:v6:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:performance-intelligence:v7:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
@@ -147,7 +147,7 @@ function buildPerformanceWhere(startDate: Date, endDate: Date, filters: Performa
   }
 
   if (filters.branch !== 'all') {
-    clauses.push(sql`COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'Unspecified') = ${filters.branch}`)
+    clauses.push(sql`UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'Unspecified'))) = ${filters.branch}`)
   }
 
   if (filters.serviceType !== 'all') {

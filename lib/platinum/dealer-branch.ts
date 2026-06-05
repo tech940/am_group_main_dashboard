@@ -1,5 +1,7 @@
 export const PLATINUM_BRANCH_DEALERS = [
-  { label: 'Jammu', dealerCode: 'N5211' },
+  { label: 'Platinum Jammu', dealerCode: 'N5211' },
+  { label: 'Platinum Rajouri', dealerCode: 'N6824' },
+  { label: 'Platinum Poonch', dealerCode: 'N6828' },
 ] as const
 
 export type PlatinumDealerCode = (typeof PLATINUM_BRANCH_DEALERS)[number]['dealerCode']
@@ -15,7 +17,7 @@ export function normalizePlatinumDealerCode(value: string | null | undefined): P
 
 export function getPlatinumBranchLabel(dealerCode: string | null | undefined) {
   const normalized = normalizePlatinumDealerCode(dealerCode)
-  return PLATINUM_BRANCH_DEALERS.find((branch) => branch.dealerCode === normalized)?.label || 'Jammu'
+  return PLATINUM_BRANCH_DEALERS.find((branch) => branch.dealerCode === normalized)?.label || 'Platinum Jammu'
 }
 
 export function appendPlatinumDealerCodeParam(params: URLSearchParams, dealerCode: string | null | undefined) {

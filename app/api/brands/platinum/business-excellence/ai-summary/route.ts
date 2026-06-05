@@ -51,6 +51,7 @@ const SUPPORTED_REPORTS = new Set([
   'Workshop Performance',
   'Open RO (Repair Orders)',
   'Platinum Complaints',
+  'SOT Analysis',
 ])
 
 function toInputDate(date: Date) {
@@ -162,6 +163,23 @@ function compactComplaintsPayload(data: Record<string, unknown>) {
   }
 }
 
+function compactSotPayload(data: Record<string, unknown>) {
+  const charts = (data.charts || {}) as Record<string, unknown[]>
+
+  return {
+    asOfDate: data.asOfDate,
+    dateRange: data.dateRange,
+    kpis: data.kpis,
+    comparison: data.comparison,
+    dailyTrend: pickRows(charts.dailyTrend, 14, ['date', 'certificates', 'value'], true),
+    modelMix: pickRows(charts.modelMix, 8, ['name', 'certificates', 'value', 'avgValue', 'share']),
+    schemeMix: pickRows(charts.schemeMix, 8, ['name', 'certificates', 'value', 'avgValue', 'share']),
+    departmentMix: pickRows(charts.departmentMix, 6, ['name', 'certificates', 'value', 'share']),
+    registerRows: pickRows(data.rows as unknown[], 10, ['certNo', 'regDate', 'model', 'schemeNo', 'schemeDesc', 'department', 'customerName', 'hmilAmount']),
+    metadata: data.metadata,
+  }
+}
+
 function compactRoBillingPayload(parts: Record<string, Record<string, unknown>>) {
   const table = parts.table || {}
   const trend = parts.trend || {}
@@ -235,23 +253,28 @@ async function buildReportDataset(request: NextRequest, report: string, startDat
   appendPlatinumDealerCodeParam(baseParams, dealerCode)
 
   if (report === 'Business Excellence Overview') {
-    const data = await fetchJson(request, `/api/brands/Platinum/business-excellence/overview?${baseParams.toString()}`)
+    const data = await fetchJson(request, `/api/brands/platinum/business-excellence/overview?${baseParams.toString()}`)
     return compactOverviewPayload(data)
   }
 
   if (report === 'Open RO (Repair Orders)') {
-    const data = await fetchJson(request, `/api/brands/Platinum/business-excellence/open-ro?${baseParams.toString()}`)
+    const data = await fetchJson(request, `/api/brands/platinum/business-excellence/open-ro?${baseParams.toString()}`)
     return compactOpenRoPayload(data)
   }
 
   if (report === 'Workshop Performance') {
-    const data = await fetchJson(request, `/api/brands/Platinum/business-excellence/workshop-performance?${baseParams.toString()}`)
+    const data = await fetchJson(request, `/api/brands/platinum/business-excellence/workshop-performance?${baseParams.toString()}`)
     return compactWorkshopPayload(data)
   }
 
   if (report === 'Platinum Complaints') {
-    const data = await fetchJson(request, `/api/brands/Platinum/business-excellence/complaints?${baseParams.toString()}`)
+    const data = await fetchJson(request, `/api/brands/platinum/business-excellence/complaints?${baseParams.toString()}`)
     return compactComplaintsPayload(data)
+  }
+
+  if (report === 'SOT Analysis') {
+    const data = await fetchJson(request, `/api/brands/platinum/business-excellence/sot?${baseParams.toString()}`)
+    return compactSotPayload(data)
   }
 
   const roParams = new URLSearchParams({
@@ -284,11 +307,11 @@ async function buildReportDataset(request: NextRequest, report: string, startDat
   appendPlatinumDealerCodeParam(intelligenceParams, dealerCode)
 
   const [table, trend, analytics, leaderboard, intelligence] = await Promise.all([
-    fetchJson(request, `/api/brands/Platinum/business-excellence/ro-billing-analysis?${tableParams.toString()}`),
-    fetchJson(request, `/api/brands/Platinum/business-excellence/ro-billing-analysis?${trendParams.toString()}`),
-    fetchJson(request, `/api/brands/Platinum/business-excellence/ro-billing-analysis?${analyticsParams.toString()}`),
-    fetchJson(request, `/api/brands/Platinum/business-excellence/ro-billing-analysis?${leaderboardParams.toString()}`),
-    fetchJson(request, `/api/brands/Platinum/business-excellence/performance-intelligence?${intelligenceParams.toString()}`),
+    fetchJson(request, `/api/brands/platinum/business-excellence/ro-billing-analysis?${tableParams.toString()}`),
+    fetchJson(request, `/api/brands/platinum/business-excellence/ro-billing-analysis?${trendParams.toString()}`),
+    fetchJson(request, `/api/brands/platinum/business-excellence/ro-billing-analysis?${analyticsParams.toString()}`),
+    fetchJson(request, `/api/brands/platinum/business-excellence/ro-billing-analysis?${leaderboardParams.toString()}`),
+    fetchJson(request, `/api/brands/platinum/business-excellence/performance-intelligence?${intelligenceParams.toString()}`),
   ])
 
   return compactRoBillingPayload({ table, trend, analytics, leaderboard, intelligence })
@@ -466,7 +489,7 @@ function buildSummaryText(summary: AiStructuredSummary) {
 }
 
 function createCacheKey(report: string, startDate: string, endDate: string, dataset: unknown, dealerCode?: string | null) {
-  return `platinum:business-excellence:ai-summary:v6:${createHash('sha1')
+  return `platinum:business-excellence:ai-summary:v7:${createHash('sha1')
     .update(JSON.stringify({ report, startDate, endDate, dealerCode: normalizePlatinumDealerCode(dealerCode), dataset }))
     .digest('hex')}`
 }

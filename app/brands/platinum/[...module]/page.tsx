@@ -8,7 +8,7 @@ type PlatinumModuleDefinition = {
   title: string
   permission: string
   component?: 'business-excellence'
-  report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'workshop-performance' | 'open-ro' | 'platinum-complaints'
+  report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'workshop-performance' | 'open-ro' | 'platinum-complaints' | 'sot-analysis'
 }
 
 const PLATINUM_MODULES: Record<string, PlatinumModuleDefinition> = {
@@ -47,6 +47,12 @@ const PLATINUM_MODULES: Record<string, PlatinumModuleDefinition> = {
     permission: 'platinum.business_excellence.view',
     component: 'business-excellence',
     report: 'platinum-complaints',
+  },
+  'business-excellence/sot-analysis': {
+    title: 'SOT Analysis',
+    permission: 'platinum.business_excellence.view',
+    component: 'business-excellence',
+    report: 'sot-analysis',
   },
   'service-appointment': {
     title: 'Service Appointment',

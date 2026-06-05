@@ -33,6 +33,7 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
   ],
   open_ro_repair_orders: [{ table: 'am_platinum_repair_order_list', label: 'Open RO' }],
   Platinum_complaints: [{ table: 'am_platinum_call_center_complaints', label: 'Complaints' }],
+  sot_analysis: [{ table: 'am_platinum_trust_package', label: 'SOT Package' }],
 }
 
 function normalizeReportKey(value: string | null) {
@@ -55,11 +56,17 @@ async function readColumns(table: string) {
   return new Set(rows.map((row) => row.column_name))
 }
 
-function resolveDealerColumn(columns: Set<string>) {
+function resolveDealerColumn(table: string, columns: Set<string>) {
+  if (table === 'am_platinum_call_center_complaints' && columns.has('source_dealer_code')) return 'source_dealer_code'
+  if (table === 'am_platinum_repair_order_list' && columns.has('dealer')) return 'dealer'
+  if (table === 'am_platinum_ew_report' && columns.has('dlr_no')) return 'dlr_no'
+  if (table === 'am_platinum_trust_package' && columns.has('source_dealer_code')) return 'source_dealer_code'
+  if (table.startsWith('am_platinum_operation_wise_analysis') && columns.has('source_dealer_code')) return 'source_dealer_code'
   if (columns.has('dealer_code')) return 'dealer_code'
   if (columns.has('main_dealer_code')) return 'main_dealer_code'
   if (columns.has('billing_dealer_code')) return 'billing_dealer_code'
   if (columns.has('main_dealer')) return 'main_dealer'
+  if (columns.has('source_dealer_code')) return 'source_dealer_code'
   return null
 }
 
@@ -67,7 +74,7 @@ async function readSourceFreshness(source: FreshnessSource, dealerCode: string |
   const columns = await readColumns(source.table)
   if (!columns.has('uploaded_at')) return null
 
-  const dealerColumn = dealerCode ? resolveDealerColumn(columns) : null
+  const dealerColumn = dealerCode ? resolveDealerColumn(source.table, columns) : null
   const dealerWhere = dealerCode && dealerColumn
     ? sql`WHERE UPPER(TRIM(COALESCE(${sql.raw(`"${dealerColumn}"`)}::text, ''))) = ${dealerCode}`
     : sql``

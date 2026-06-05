@@ -80,7 +80,7 @@ function complaintAttributeFilters(filters: ComplaintFilters) {
   return sql`
     AND (${filters.status}::text IS NULL OR status_group = ${filters.status})
     AND (${filters.dealer}::text IS NULL OR dealer_name = ${filters.dealer})
-    AND (${filters.dealerCode}::text IS NULL OR UPPER(TRIM(COALESCE(dealer_code, ''))) = ${filters.dealerCode})
+    AND (${filters.dealerCode}::text IS NULL OR UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${filters.dealerCode})
     AND (${filters.area}::text IS NULL OR COALESCE(NULLIF(sr_area, ''), 'Unspecified') = ${filters.area})
     AND (${filters.model}::text IS NULL OR COALESCE(NULLIF(vehicle_model, ''), 'Unspecified') = ${filters.model})
     AND (${filters.source}::text IS NULL OR COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') = ${filters.source})
@@ -108,6 +108,7 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
         vin_no,
         dealer_name,
         dealer_code,
+        source_dealer_code,
         region,
         complaint_date,
         resolving_date,
@@ -203,7 +204,7 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
 }
 
 function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
-  return `platinum:business-excellence:complaints:v8:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `platinum:business-excellence:complaints:v9:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {
@@ -440,8 +441,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
-        COALESCE(NULLIF(dealer_name, ''), 'Unspecified') AS dealer,
-        COALESCE(NULLIF(dealer_code, ''), '-') AS dealer_code,
+        COALESCE(NULLIF(source_dealer_code, ''), 'Unspecified') AS dealer,
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), '-') AS dealer_code,
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE status_group <> 'Closed')::int AS open,
         COALESCE(AVG(resolution_days), 0)::float AS avg_days,
@@ -485,7 +486,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         mobile_no,
         vin_no,
         dealer_name,
-        dealer_code,
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), '-') AS dealer_code,
         region,
         complaint_date,
         resolving_date,

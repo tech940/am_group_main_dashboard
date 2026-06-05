@@ -51,7 +51,7 @@ function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsi
 }
 
 type ComplaintsDateFilter = {
-  mode: 'month' | 'range' | 'preset' | 'custom'
+  mode: 'month' | 'range' | 'preset' | 'custom' | 'year'
   preset?: BusinessDateFilterValue['preset']
   month: number
   year: number

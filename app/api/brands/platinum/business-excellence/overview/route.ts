@@ -96,7 +96,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:overview:v23:${chunk}:${createHash('sha1')
+  return `platinum:business-excellence:overview:v24:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -113,7 +113,7 @@ function roBillingDealerFilter(dealerCode: DealerFilter) {
 
 function complaintsDealerFilter(dealerCode: DealerFilter) {
   return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(dealer_code, ''))) = ${dealerCode}`
+    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}`
     : sql``
 }
 
@@ -201,7 +201,7 @@ function resolveOverviewComparisonRange(startDate: string, endDate: string, comp
   }
 }
 
-function ewDedupCountSql(startDate: string, endDate: string) {
+function ewDedupCountSql(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   return sql`
     WITH dedup AS (
       SELECT DISTINCT ON (
@@ -235,6 +235,7 @@ function ewDedupCountSql(startDate: string, endDate: string) {
       WHERE reg_date >= ${startDate}::date
         AND reg_date < (${endDate}::date + INTERVAL '1 day')
         AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
+        ${dealerCode ? sql`AND UPPER(TRIM(COALESCE(dlr_no, ''))) = ${dealerCode}` : sql``}
       ORDER BY
         COALESCE(
           NULLIF(TRIM(certi_no), ''),
@@ -499,7 +500,7 @@ function complaintsBaseSql(startDate: string, endDate: string, dealerCode: Deale
   `
 }
 
-async function fetchAddonKpis(startDate: string, endDate: string) {
+async function fetchAddonKpis(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   const [hasEw, hasMcp, hasRsa] = await Promise.all([
     tableExists('am_platinum_ew_report'),
     tableExists('am_platinum_mcp_report'),
@@ -508,7 +509,7 @@ async function fetchAddonKpis(startDate: string, endDate: string) {
 
   const [ew, mcp, rsa] = await Promise.all([
     hasEw
-      ? db.execute(ewDedupCountSql(startDate, endDate))
+      ? db.execute(ewDedupCountSql(startDate, endDate, dealerCode))
       : Promise.resolve([{ count: 0 }] as NumericRow[]),
     hasMcp
       ? db.execute(sql`
@@ -852,6 +853,7 @@ async function buildOverviewPayload(
             (complaint_date >= ${startDate}::date AND complaint_date < (${endDate}::date + INTERVAL '1 day'))
             OR (complaint_date >= ${lyStartDate}::date AND complaint_date < (${lyEndDate}::date + INTERVAL '1 day'))
           )
+          ${complaintsDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
       SELECT
@@ -878,7 +880,7 @@ async function buildOverviewPayload(
         ) > 0
       ORDER BY EXTRACT(MONTH FROM complaint_date)::int ASC
     `) : emptyRows(),
-    fetchAddonKpis(startDate, endDate),
+    fetchAddonKpis(startDate, endDate, dealerCode),
     fetchWorkshopSnapshot(startDate, endDate, dealerCode),
     includeComparison ? db.execute(sql`
       ${lyRoSql}
@@ -907,7 +909,7 @@ async function buildOverviewPayload(
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
       FROM enriched
     `) : emptyRows(),
-    includeComparison ? fetchAddonKpis(lyStartDate, lyEndDate) : emptyAddonKpis(),
+    includeComparison ? fetchAddonKpis(lyStartDate, lyEndDate, dealerCode) : emptyAddonKpis(),
     includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode) : emptyWorkshopSnapshot(),
   ])
 
