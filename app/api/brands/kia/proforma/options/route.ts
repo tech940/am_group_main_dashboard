@@ -11,46 +11,55 @@ import { requirePermission } from '@/lib/permissions/service'
 export const dynamic = 'force-dynamic'
 
 function rows(result: unknown) {
-  return Array.isArray(result) ? result as Record<string, unknown>[] : []
+  if (Array.isArray(result)) return result as Record<string, unknown>[]
+  if (result && typeof result === 'object' && 'rows' in result && Array.isArray((result as { rows?: unknown }).rows)) {
+    return (result as { rows: Record<string, unknown>[] }).rows
+  }
+  return []
 }
 
 export async function GET() {
-  const accessResponse = await requireBrandApiAccess('kia')
-  if (accessResponse) return accessResponse
+  try {
+    const accessResponse = await requireBrandApiAccess('kia')
+    if (accessResponse) return accessResponse
 
-  const appUser = await getAuthenticatedAppUser()
-  if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const permission = await requirePermission(appUser, 'kia.proforma.view')
-  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
-  const profile = await ensureKiaUserProfile(appUser)
-  if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const appUser = await getAuthenticatedAppUser()
+    if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const permission = await requirePermission(appUser, 'kia.proforma.view')
+    if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+    const profile = await ensureKiaUserProfile(appUser)
+    if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const [priceRows, modelRows, trimRows, bankRows, insuranceRows] = await Promise.all([
-    db.select().from(kiaPriceDetails).where(sql`LEFT(model, 2) <> '__'`).orderBy(asc(kiaPriceDetails.model), asc(kiaPriceDetails.trimDescription)),
-    db.execute(sql`SELECT DISTINCT model FROM kia_price_details WHERE NULLIF(TRIM(model), '') IS NOT NULL AND LEFT(model, 2) <> '__' ORDER BY model`),
-    db.execute(sql`SELECT DISTINCT model, trim_description FROM kia_price_details WHERE NULLIF(TRIM(trim_description), '') IS NOT NULL AND LEFT(model, 2) <> '__' ORDER BY model, trim_description`),
-    db.execute(sql`
-      SELECT DISTINCT COALESCE(NULLIF(TRIM(bank_name), ''), NULLIF(TRIM(hyp), '')) AS bank_name, bank_branch
-      FROM kia_price_details
-      WHERE COALESCE(NULLIF(TRIM(bank_name), ''), NULLIF(TRIM(hyp), '')) IS NOT NULL
-      ORDER BY bank_name, bank_branch
-    `),
-    db.execute(sql`SELECT DISTINCT insurance_company FROM kia_price_details WHERE NULLIF(TRIM(insurance_company), '') IS NOT NULL ORDER BY insurance_company`),
-  ])
+    const [priceRows, modelRows, trimRows, bankRows, insuranceRows] = await Promise.all([
+      db.select().from(kiaPriceDetails).where(sql`LEFT(model, 2) <> '__'`).orderBy(asc(kiaPriceDetails.model), asc(kiaPriceDetails.trimDescription)),
+      db.execute(sql`SELECT DISTINCT model FROM kia_price_details WHERE NULLIF(TRIM(model), '') IS NOT NULL AND LEFT(model, 2) <> '__' ORDER BY model`),
+      db.execute(sql`SELECT DISTINCT model, trim_description FROM kia_price_details WHERE NULLIF(TRIM(trim_description), '') IS NOT NULL AND LEFT(model, 2) <> '__' ORDER BY model, trim_description`),
+      db.execute(sql`
+        SELECT DISTINCT COALESCE(NULLIF(TRIM(bank_name), ''), NULLIF(TRIM(hyp), '')) AS bank_name, bank_branch
+        FROM kia_price_details
+        WHERE COALESCE(NULLIF(TRIM(bank_name), ''), NULLIF(TRIM(hyp), '')) IS NOT NULL
+        ORDER BY bank_name, bank_branch
+      `),
+      db.execute(sql`SELECT DISTINCT insurance_company FROM kia_price_details WHERE NULLIF(TRIM(insurance_company), '') IS NOT NULL ORDER BY insurance_company`),
+    ])
 
-  return NextResponse.json({
-    currentUser: {
-      id: appUser.id,
-      email: appUser.email,
-      fullName: appUser.fullName,
-      role: appUser.role,
-      isApprover: await canApproveKiaProformaForUser(appUser, profile.approver),
-    },
-    profile,
-    prices: priceRows,
-    models: rows(modelRows).map((row) => String(row.model || '')).filter(Boolean),
-    trims: rows(trimRows),
-    banks: rows(bankRows),
-    insuranceCompanies: rows(insuranceRows).map((row) => String(row.insurance_company || '')).filter(Boolean),
-  })
+    return NextResponse.json({
+      currentUser: {
+        id: appUser.id,
+        email: appUser.email,
+        fullName: appUser.fullName,
+        role: appUser.role,
+        isApprover: await canApproveKiaProformaForUser(appUser, profile.approver),
+      },
+      profile,
+      prices: priceRows,
+      models: rows(modelRows).map((row) => String(row.model || '')).filter(Boolean),
+      trims: rows(trimRows),
+      banks: rows(bankRows),
+      insuranceCompanies: rows(insuranceRows).map((row) => String(row.insurance_company || '')).filter(Boolean),
+    })
+  } catch (error) {
+    console.error('Error in GET /api/brands/kia/proforma/options:', error)
+    return NextResponse.json({ error: 'Failed to load Kia Proforma options' }, { status: 500 })
+  }
 }

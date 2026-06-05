@@ -77,14 +77,26 @@ function monthBounds(month: string) {
   }
 }
 
-function createCacheKey(filters: AppointmentFilters) {
-  const serialized = JSON.stringify(filters)
-  return `kia:service-appointment:v1:${createHash('sha1').update(serialized).digest('hex')}`
+function createCacheKey(filters: AppointmentFilters, sourceVersion: string | null) {
+  const serialized = JSON.stringify({ filters, sourceVersion: sourceVersion || 'no-source-version' })
+  return `kia:service-appointment:v2:${createHash('sha1').update(serialized).digest('hex')}`
 }
 
 async function tableExists(tableName: string) {
   const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
   return Boolean(resultRows(result)[0]?.exists)
+}
+
+async function getSourceVersion(dealerCode: string) {
+  if (!await tableExists('service_appointment')) return 'missing'
+
+  const result = await db.execute(sql`
+    SELECT MAX(uploaded_at)::text AS source_version
+    FROM service_appointment
+    WHERE UPPER(TRIM(COALESCE(dealer_code::text, ''))) = ${dealerCode}
+  `)
+
+  return String(resultRows(result)[0]?.source_version || 'empty')
 }
 
 function appointmentDateExpression() {
@@ -160,6 +172,12 @@ function baseSql(filters: AppointmentFilters) {
           OR appointment_no ILIKE ${`%${filters.search}%`}
         )
     ),
+    month_filtered AS (
+      SELECT *
+      FROM base
+      WHERE appointment_date >= ${monthBounds(filters.month).startDate}::date
+        AND appointment_date < ${monthBounds(filters.month).endDate}::date
+    ),
     paged AS (
       SELECT *
       FROM filtered
@@ -178,7 +196,7 @@ function baseSql(filters: AppointmentFilters) {
           'cancelled', COUNT(*) FILTER (WHERE status_group = 'cancelled')::integer,
           'advisors', COUNT(DISTINCT NULLIF(service_advisor, '-'))::integer
         )
-        FROM base
+        FROM month_filtered
       ) AS summary,
       COALESCE((
         SELECT jsonb_agg(jsonb_build_object(
@@ -219,9 +237,7 @@ function baseSql(filters: AppointmentFilters) {
             COUNT(*) FILTER (WHERE status_group = 'open')::integer AS open,
             COUNT(*) FILTER (WHERE status_group = 'closed')::integer AS closed,
             COUNT(*) FILTER (WHERE status_group = 'cancelled')::integer AS cancelled
-          FROM base
-          WHERE appointment_date >= ${monthBounds(filters.month).startDate}::date
-            AND appointment_date < ${monthBounds(filters.month).endDate}::date
+          FROM month_filtered
           GROUP BY appointment_date
         ) calendar_rows
       ), '[]'::jsonb) AS calendar_counts
@@ -342,10 +358,16 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const filters = getFilters(searchParams)
-    const payload = await timer.time('appointment-cache', () => getCachedData(
-      createCacheKey(filters),
-      () => buildPayload(filters),
-      CACHE_TTL_SECONDS
+    const sourceVersion = await timer.time('source-version', () => getSourceVersion(filters.dealerCode))
+    const bypassCache = searchParams.has('refresh') || searchParams.get('cache') === 'no-store'
+    const payload = await timer.time('appointment-cache', () => (
+      bypassCache
+        ? buildPayload(filters)
+        : getCachedData(
+          createCacheKey(filters, sourceVersion),
+          () => buildPayload(filters),
+          CACHE_TTL_SECONDS
+        )
     ))
     const timing = timer.finish()
 

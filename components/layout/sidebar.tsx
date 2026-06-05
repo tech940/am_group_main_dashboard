@@ -19,7 +19,7 @@ import {
   Landmark,
   Loader2
 } from 'lucide-react'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
@@ -57,6 +57,68 @@ const brandNavigation = [
       },
     ],
   },
+  {
+    name: 'AM Hyundai',
+    key: 'hyundai',
+    href: '/brands/hyundai',
+    logo: '',
+    color: 'text-blue-100',
+    icon: Activity,
+    sections: [
+      {
+        name: 'Service',
+        key: 'service',
+        submenus: [
+          { name: 'Business Excellence', href: '/brands/hyundai/business-excellence/overview' },
+          { name: 'Service Appointment', href: '/brands/hyundai/service-appointment' },
+          { name: 'Demo Job Cards', href: '/brands/hyundai/demo-job-cards' },
+          { name: 'Demo Cars List', href: '/brands/hyundai/demo-cars-list' },
+          { name: 'Hyundai Proforma', href: '/brands/hyundai/proforma' },
+        ],
+      },
+      {
+        name: 'Sales',
+        key: 'sales',
+        submenus: [],
+      },
+      {
+        name: 'H Promise',
+        key: 'h-promise',
+        submenus: [],
+      },
+    ],
+  },
+  {
+    name: 'AM Platinum',
+    key: 'platinum',
+    href: '/brands/platinum',
+    logo: '',
+    color: 'text-blue-100',
+    icon: Activity,
+    sections: [
+      {
+        name: 'Service',
+        key: 'service',
+        submenus: [
+          { name: 'Business Excellence', href: '/brands/platinum/business-excellence/overview' },
+          { name: 'Service Appointment', href: '/brands/platinum/service-appointment' },
+          { name: 'Demo Job Cards', href: '/brands/platinum/demo-job-cards' },
+          { name: 'Demo Cars List', href: '/brands/platinum/demo-cars-list' },
+          { name: 'Platinum Proforma', href: '/brands/platinum/proforma' },
+        ],
+      },
+      {
+        name: 'Sales',
+        key: 'sales',
+        submenus: [],
+      },
+      {
+        name: 'H Promise',
+        key: 'h-promise',
+        submenus: [],
+      },
+    ],
+  },
 ]
 
 const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
@@ -69,16 +131,33 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
   '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
   '/brands/kia/proforma': 'kia.proforma.view',
+  '/brands/hyundai/business-excellence/overview': 'hyundai.business_excellence.view',
+  '/brands/hyundai/service-appointment': 'hyundai.service_appointment.view',
+  '/brands/hyundai/demo-job-cards': 'hyundai.demo_job_cards.view',
+  '/brands/hyundai/demo-cars-list': 'hyundai.demo_cars_list.view',
+  '/brands/hyundai/proforma': 'hyundai.proforma.view',
+  '/brands/platinum/business-excellence/overview': 'platinum.business_excellence.view',
+  '/brands/platinum/service-appointment': 'platinum.service_appointment.view',
+  '/brands/platinum/demo-job-cards': 'platinum.demo_job_cards.view',
+  '/brands/platinum/demo-cars-list': 'platinum.demo_cars_list.view',
+  '/brands/platinum/proforma': 'platinum.proforma.view',
   '/admin/users': 'user_management.view',
   '/admin/settings': 'dashboard_settings.view',
 }
 
-function getBrandKey(brandName: string) {
-  return availableBrands.find((brand) => brand.name === brandName)?.key || ''
+function isSidebarHrefActive(href: string, pathname: string | null) {
+  if (!pathname) return false
+  if (href.includes('/business-excellence')) {
+    return pathname.startsWith(href.replace(/\/overview$/, ''))
+  }
+  if (href.endsWith('/proforma')) {
+    return pathname.startsWith(href)
+  }
+  return pathname === href
 }
 
-function getBrandName(brandKey: string) {
-  return availableBrands.find((brand) => brand.key === brandKey)?.name || ''
+function getBrandKey(brandName: string) {
+  return availableBrands.find((brand) => brand.name === brandName)?.key || ''
 }
 
 export function Sidebar() {
@@ -87,12 +166,11 @@ export function Sidebar() {
   const supabase = createClient()
   const { collapsed, setCollapsed } = useSidebar()
   const [openBrands, setOpenBrands] = useState<Set<string>>(() => new Set())
-  const [openBrandSections, setOpenBrandSections] = useState<Set<string>>(() => new Set(['kia:service']))
+  const [openBrandSections, setOpenBrandSections] = useState<Set<string>>(() => new Set())
   const [openAdmin, setOpenAdmin] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
-  const { userRole, isAdmin, canAccessAdmin, userBrand, loading } = useUserRole()
-  const initializedBrandMenuRef = useRef(false)
+  const { userRole, canAccessAdmin, userBrand, loading } = useUserRole()
   const canAccessFinanceOrders = ['admin', 'ceo', 'md', 'ea', 'accounts', 'finance_head'].includes(userRole || '')
 
   useEffect(() => {
@@ -149,24 +227,6 @@ export function Sidebar() {
         return aOrder - bOrder
       })
   }, [userBrand, userRole])
-
-  // Initialize brand menus once from access. Manual toggles should remain under user control after this.
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (loading || initializedBrandMenuRef.current) return
-    initializedBrandMenuRef.current = true
-
-    if (isAdmin || (userBrand && hasAllBranchAccess(userBrand))) {
-      setOpenBrands(new Set(visibleBrands.map((brand) => brand.name)))
-      return
-    }
-
-    if (userBrand) {
-      const brandName = getBrandName(userBrand)
-      if (brandName) setOpenBrands(new Set([brandName]))
-    }
-  }, [isAdmin, loading, userBrand, visibleBrands])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const toggleBrand = (brandName: string) => {
     const brandKey = getBrandKey(brandName)
@@ -525,9 +585,7 @@ export function Sidebar() {
                           {brand.sections.map((section) => {
                             const sectionKey = `${brand.key}:${section.key}`
                             const sectionOpen = openBrandSections.has(sectionKey)
-                            const sectionActive = section.submenus.some((sub) => sub.href === '/brands/kia/proforma'
-                              ? pathname?.startsWith('/brands/kia/proforma')
-                              : pathname === sub.href)
+                            const sectionActive = section.submenus.some((sub) => isSidebarHrefActive(sub.href, pathname))
                             const hasChildren = section.submenus.length > 0
 
                             return (
@@ -557,9 +615,7 @@ export function Sidebar() {
                                     {section.submenus.map((sub) => {
                                       const permissionKey = sidebarPermissionByHref[sub.href]
                                       const locked = permissionKey ? !hasPermission(permissionKey) : false
-                                      const active = sub.href === '/brands/kia/proforma'
-                                        ? pathname?.startsWith('/brands/kia/proforma')
-                                        : pathname === sub.href
+                                      const active = isSidebarHrefActive(sub.href, pathname)
 
                                       return locked ? (
                                         <button

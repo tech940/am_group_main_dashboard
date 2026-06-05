@@ -387,7 +387,10 @@ function useOptions() {
     setError('')
     try {
       const response = await fetch('/api/brands/kia/proforma/options')
-      if (!response.ok) throw new Error('Failed to load Kia Proforma options')
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(payload?.error || `Failed to load Kia Proforma options (${response.status})`)
+      }
       setData(await response.json())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load options')
@@ -405,21 +408,30 @@ function useProformas(mode: string, enabled = true) {
   const [rows, setRows] = useState<KiaProformaRow[]>([])
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, totalRows: 0 })
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [financeStatus, setFinanceStatus] = useState('all')
   const reload = useCallback(async () => {
     if (!enabled) return
     setLoading(true)
+    setError('')
     const params = new URLSearchParams({ page: '1', pageSize: String(PROFORMA_LIST_PAGE_SIZE), mode })
     if (search) params.set('search', search)
     if (financeStatus !== 'all') params.set('financeStatus', financeStatus)
     try {
       const response = await fetch(`/api/brands/kia/proforma?${params}`)
-      if (!response.ok) throw new Error('Failed to load proformas')
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(payload?.error || `Failed to load proformas (${response.status})`)
+      }
       const payload = await response.json()
       setRows(payload.rows || [])
       setPagination(payload.pagination || { page: 1, totalPages: 1, totalRows: 0 })
+    } catch (err) {
+      setRows([])
+      setPagination({ page: 1, totalPages: 1, totalRows: 0 })
+      setError(err instanceof Error ? err.message : 'Failed to load proformas')
     } finally {
       setLoading(false)
     }
@@ -427,7 +439,7 @@ function useProformas(mode: string, enabled = true) {
   useEffect(() => {
     reload()
   }, [reload])
-  return { rows, loading, search, setSearch, page, setPage, pagination, financeStatus, setFinanceStatus, reload }
+  return { rows, loading, error, search, setSearch, page, setPage, pagination, financeStatus, setFinanceStatus, reload }
 }
 
 const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: string; approverOnly?: boolean }[] = [
@@ -940,7 +952,7 @@ function ProformaTable({
 
 function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' | 'finance-remarks' | 'pending-approval' }) {
   const queryMode = mode === 'pending-approval' ? 'pending-approval' : 'all'
-  const { rows, loading, search, setSearch, page, setPage, financeStatus, setFinanceStatus, reload } = useProformas(queryMode, true)
+  const { rows, loading, error, search, setSearch, page, setPage, financeStatus, setFinanceStatus, reload } = useProformas(queryMode, true)
   const [selectedColumn, setSelectedColumn] = useState('')
   const [selectedValues, setSelectedValues] = useState<Set<string>>(new Set())
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
@@ -1073,7 +1085,12 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
         financeStatus={financeStatus}
         onClear={clearFilters}
       />
-      {loading ? <div className="h-72 animate-pulse rounded-[2rem] bg-white/70" /> : (
+      {error && !loading ? (
+        <div className="rounded-[2rem] border border-rose-200 bg-white p-5 font-bold text-rose-700 shadow-sm">
+          {error}
+          <Button variant="outline" className={cn('ml-3 h-9 rounded-xl', proformaOutlineButton)} onClick={reload}>Retry</Button>
+        </div>
+      ) : loading ? <div className="h-72 animate-pulse rounded-[2rem] bg-white/70" /> : (
         <ProformaTable
           rows={pagedRows}
           hiddenColumns={hiddenColumns}

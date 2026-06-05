@@ -29,6 +29,9 @@ const ACCENT_OPTIONS = [
   { id: 'purple', label: 'Purple', colors: ['#A05AFF', '#1BCFB4', '#4BCBEB', '#FE9496', '#9E58FF'] },
   { id: 'midnight', label: 'Midnight', colors: ['#0F172A', '#38BDF8', '#A855F7', '#22C55E', '#F59E0B', '#F43F5E'] },
   { id: 'executive-navy', label: 'Executive Navy', colors: ['#031430', '#0B2A55', '#D4AF37', '#E8EEF7', '#38BDF8', '#00E97E'] },
+  { id: 'executive-dark', label: 'Executive Dark', theme: 'dark', colors: ['#0F172A', '#1E293B', '#3B82F6', '#22C55E', '#F59E0B', '#EF4444', '#F8FAFC'] },
+  { id: 'clean-corporate', label: 'Clean Corporate', theme: 'light', colors: ['#F8FAFC', '#FFFFFF', '#2563EB', '#14B8A6', '#16A34A', '#F59E0B', '#DC2626'] },
+  { id: 'modern-luxury', label: 'Modern Luxury', theme: 'light', colors: ['#FAFAF9', '#FFFFFF', '#7C3AED', '#06B6D4', '#22C55E', '#EAB308', '#EF4444'] },
 ] as const
 
 type AccentId = typeof ACCENT_OPTIONS[number]['id']
@@ -158,8 +161,19 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   }
 
   const setAccentColor = (accent: AccentId) => {
+    const option = ACCENT_OPTIONS.find((item) => item.id === accent)
+    const preferredTheme = option && 'theme' in option ? option.theme : undefined
+
     document.documentElement.setAttribute('data-dashboard-accent', accent)
     window.localStorage.setItem(ACCENT_STORAGE_KEY, accent)
+
+    if (preferredTheme) {
+      const useDarkTheme = preferredTheme === 'dark'
+      document.documentElement.classList.toggle('dark', useDarkTheme)
+      window.localStorage.setItem('dashboard-theme', preferredTheme)
+      window.dispatchEvent(new Event(THEME_CHANGE_EVENT))
+    }
+
     window.dispatchEvent(new Event(ACCENT_CHANGE_EVENT))
   }
 
@@ -201,8 +215,8 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                aria-label="Change main color"
-                title="Main color"
+                aria-label="Change dashboard theme"
+                title="Theme"
                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--dashboard-primary-border)] bg-white text-slate-700 shadow-sm transition-all hover:bg-[var(--dashboard-primary-soft)] hover:text-[var(--dashboard-primary)] dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/16"
               >
                 <Palette className="h-5 w-5" />
@@ -210,7 +224,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
             </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64 rounded-2xl border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-slate-950">
               <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300">
-                Main Color
+                Theme
               </DropdownMenuLabel>
               {ACCENT_OPTIONS.map((option) => {
                 const isActive = option.id === activeAccent

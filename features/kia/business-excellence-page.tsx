@@ -3970,38 +3970,6 @@ function BusinessExecutiveDashboard({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-500">Executive Dashboard</p>
-            <h2 className="mt-1 text-2xl font-black text-slate-950">Combined business performance</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">
-              High-level RO Billing view for {selectedLocationLabel}; source logic matches RO Billing Report.
-            </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {EXECUTIVE_LOCATION_OPTIONS.map((option) => {
-              const active = option.dealerCode ? selectedDealer === option.dealerCode : selectedLocation === 'all'
-              return (
-                <button
-                  key={option.dealerCode || 'all'}
-                  type="button"
-                  onClick={() => onDealerChange(option.dealerCode)}
-                  className={cn(
-                    'rounded-2xl border px-4 py-3 text-left transition',
-                    active
-                      ? 'border-[#1f3f91] bg-[#1f3f91] text-white shadow-lg shadow-blue-900/15'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'
-                  )}
-                >
-                  <p className="text-xs font-black">{option.label}</p>
-                  <p className={cn('mt-1 text-[10px] font-bold', active ? 'text-white/75' : 'text-slate-500')}>{option.helper}</p>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      </div>
 
       {isLoading ? (
         <SheetContentSkeleton />

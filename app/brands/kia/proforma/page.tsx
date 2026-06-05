@@ -12,7 +12,7 @@ export default async function Page() {
   const access = await getBrandAccess('kia')
   if (!access.appUser) redirect('/auth/login')
   if (!access.allowed) forbidden()
-  const permission = await requirePermission(access.appUser, 'kia.proforma.create')
+  const permission = await requirePermission(access.appUser, 'kia.proforma.view')
   if (!permission.allowed) forbidden()
 
   return <KiaProformaPage section="generate" />

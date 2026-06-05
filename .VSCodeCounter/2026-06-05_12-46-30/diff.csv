@@ -1,0 +1,38 @@
+"filename", "language", "Markdown", "TypeScript", "PostCSS", "TypeScript JSX", "MS SQL", "comment", "blank", "total"
+"c:\Users\HP\Downloads\Main_Dashboard\PROJECT_CONTEXT.md", "Markdown", 21, 0, 0, 0, 0, 0, 2, 23
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\business-excellence\ai-summary\route.ts", "TypeScript", 0, 120, 0, 0, 0, 0, 12, 132
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\business-excellence\complaints\route.ts", "TypeScript", 0, 101, 0, 0, 0, 0, 9, 110
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\business-excellence\freshness\route.ts", "TypeScript", 0, 38, 0, 0, 0, 0, 8, 46
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\business-excellence\open-ro\route.ts", "TypeScript", 0, 38, 0, 0, 0, 0, 8, 46
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\business-excellence\overview\route.ts", "TypeScript", 0, 513, 0, 0, 0, 0, 42, 555
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\business-excellence\performance-intelligence\route.ts", "TypeScript", 0, 102, 0, 0, 0, 0, 11, 113
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\business-excellence\ro-billing-analysis\route.ts", "TypeScript", 0, 43, 0, 0, 0, 0, 9, 52
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\business-excellence\ro-billing-report\route.ts", "TypeScript", 0, 288, 0, 0, 0, 0, 15, 303
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\business-excellence\workshop-performance\route.ts", "TypeScript", 0, 100, 0, 0, 0, 0, 11, 111
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\hyundai\repair-orders\route.ts", "TypeScript", 0, 292, 0, 0, 0, 0, 15, 307
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\demo-cars-list\route.ts", "TypeScript", 0, 19, 0, 0, 0, 0, 2, 21
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\proforma\options\route.ts", "TypeScript", 0, 9, 0, 0, 0, 0, 0, 9
+"c:\Users\HP\Downloads\Main_Dashboard\app\api\brands\kia\service-appointment\route.ts", "TypeScript", 0, 19, 0, 0, 0, 0, 3, 22
+"c:\Users\HP\Downloads\Main_Dashboard\app\brands\hyundai\[...module]\page.tsx", "TypeScript JSX", 0, 0, 0, 121, 0, 0, 16, 137
+"c:\Users\HP\Downloads\Main_Dashboard\app\brands\hyundai\business-excellence\page.tsx", "TypeScript JSX", 0, 0, 0, 29, 0, 0, 7, 36
+"c:\Users\HP\Downloads\Main_Dashboard\app\brands\hyundai\page.tsx", "TypeScript JSX", 0, 0, 0, 22, 0, 0, 7, 29
+"c:\Users\HP\Downloads\Main_Dashboard\app\brands\kia\proforma\[section]\page.tsx", "TypeScript JSX", 0, 0, 0, -2, 0, 0, 0, -2
+"c:\Users\HP\Downloads\Main_Dashboard\app\brands\platinum\[...module]\page.tsx", "TypeScript JSX", 0, 0, 0, 62, 0, 0, 12, 74
+"c:\Users\HP\Downloads\Main_Dashboard\app\brands\platinum\page.tsx", "TypeScript JSX", 0, 0, 0, 27, 0, 0, 7, 34
+"c:\Users\HP\Downloads\Main_Dashboard\app\globals.css", "PostCSS", 0, 0, 303, 0, 0, 0, 19, 322
+"c:\Users\HP\Downloads\Main_Dashboard\components\layout\header.tsx", "TypeScript JSX", 0, 0, 0, 11, 0, 0, 3, 14
+"c:\Users\HP\Downloads\Main_Dashboard\components\layout\sidebar.tsx", "TypeScript JSX", 0, 0, 0, 62, 0, -3, -3, 56
+"c:\Users\HP\Downloads\Main_Dashboard\features\business-excellence\shared-ui.tsx", "TypeScript JSX", 0, 0, 0, 415, 0, 0, 20, 435
+"c:\Users\HP\Downloads\Main_Dashboard\features\hyundai\business-excellence-page.tsx", "TypeScript JSX", 0, 0, 0, 1353, 0, 0, 82, 1435
+"c:\Users\HP\Downloads\Main_Dashboard\features\hyundai\hyundai-module-placeholder.tsx", "TypeScript JSX", 0, 0, 0, 29, 0, 0, 3, 32
+"c:\Users\HP\Downloads\Main_Dashboard\features\hyundai\repair-orders-page.tsx", "TypeScript JSX", 0, 0, 0, 410, 0, 0, 33, 443
+"c:\Users\HP\Downloads\Main_Dashboard\features\kia\business-excellence-page.tsx", "TypeScript JSX", 0, 0, 0, -25, 0, 0, 1, -24
+"c:\Users\HP\Downloads\Main_Dashboard\features\kia\demo-cars-list-page.tsx", "TypeScript JSX", 0, 0, 0, 16, 0, 0, 0, 16
+"c:\Users\HP\Downloads\Main_Dashboard\features\kia\kia-proforma-page.tsx", "TypeScript JSX", 0, 0, 0, 17, 0, 0, 0, 17
+"c:\Users\HP\Downloads\Main_Dashboard\features\kia\service-appointment-page.tsx", "TypeScript JSX", 0, 0, 0, -268, 0, 0, -12, -280
+"c:\Users\HP\Downloads\Main_Dashboard\features\platinum\platinum-module-placeholder.tsx", "TypeScript JSX", 0, 0, 0, 29, 0, 0, 3, 32
+"c:\Users\HP\Downloads\Main_Dashboard\lib\branches.ts", "TypeScript", 0, 1, 0, 0, 0, 0, 0, 1
+"c:\Users\HP\Downloads\Main_Dashboard\lib\hyundai\business-excellence.ts", "TypeScript", 0, 721, 0, 0, 0, 0, 74, 795
+"c:\Users\HP\Downloads\Main_Dashboard\lib\permissions\registry.ts", "TypeScript", 0, 256, 0, 0, 0, 0, 0, 256
+"c:\Users\HP\Downloads\Main_Dashboard\scripts\create-demo-vehicle-details.sql", "MS SQL", 0, 0, 0, 0, 5, 0, 2, 7
+"Total", "-", 21, 2660, 303, 2308, 5, -3, 421, 5715
