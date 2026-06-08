@@ -76,7 +76,11 @@ function roBillingWhereClause(startDate?: string | null, endDate?: string | null
     clauses.push(sql`bill_date BETWEEN ${startDate}::date AND ${endDate}::date`)
   }
   if (dealerCode) {
-    clauses.push(sql`UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`)
+    clauses.push(sql`COALESCE(
+      NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+      NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+      NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+    ) = ${dealerCode}`)
   }
   return clauses.length > 0 ? sql`WHERE ${sql.join(clauses, sql` AND `)}` : sql``
 }

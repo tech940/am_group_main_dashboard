@@ -58,7 +58,9 @@ async function readColumns(table: string) {
 
 function resolveDealerColumn(table: string, columns: Set<string>) {
   if (table === 'am_platinum_call_center_complaints' && columns.has('source_dealer_code')) return 'source_dealer_code'
+  if (table === 'am_platinum_repair_order_list' && columns.has('source_dealer_code')) return 'source_dealer_code'
   if (table === 'am_platinum_repair_order_list' && columns.has('dealer')) return 'dealer'
+  if (table === 'am_platinum_ew_report' && columns.has('source_dealer_code')) return 'source_dealer_code'
   if (table === 'am_platinum_ew_report' && columns.has('dlr_no')) return 'dlr_no'
   if (table === 'am_platinum_trust_package' && columns.has('source_dealer_code')) return 'source_dealer_code'
   if (table.startsWith('am_platinum_operation_wise_analysis') && columns.has('source_dealer_code')) return 'source_dealer_code'

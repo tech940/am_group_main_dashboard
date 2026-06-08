@@ -61,7 +61,11 @@ function makeCoverage(
 
 export async function fetchPlatinumRoBillingCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
   const dealerFilter = dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
+    ? sql`AND COALESCE(
+        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+        NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+        NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+      ) = ${dealerCode}`
     : sql``
 
   const rows = await db.execute(sql`
@@ -81,7 +85,10 @@ export async function fetchPlatinumRoBillingCoverage(startDate: string, endDate:
 
 export async function fetchPlatinumOpenRoCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
   const dealerFilter = dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(dealer, ''))) = ${dealerCode}`
+    ? sql`AND COALESCE(
+        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+        NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), '')
+      ) = ${dealerCode}`
     : sql``
 
   const rows = await db.execute(sql`
@@ -122,7 +129,7 @@ export async function fetchPlatinumComplaintsCoverage(startDate: string, endDate
 
 export async function fetchPlatinumEwCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
   const dealerFilter = dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(dlr_no, ''))) = ${dealerCode}`
+    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}`
     : sql``
 
   const rows = await db.execute(sql`

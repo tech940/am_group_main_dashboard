@@ -35,7 +35,10 @@ type OpenRoChunk = 'summary' | 'details' | 'full'
 function openRoDealerFilter(filters: OpenRoFilters) {
   if (!filters.dealerCode) return sql``
 
-  return sql`AND UPPER(TRIM(COALESCE(am_platinum_repair_order_list.dealer, ''))) = ${filters.dealerCode}`
+  return sql`AND COALESCE(
+    NULLIF(NULLIF(UPPER(TRIM(COALESCE(am_platinum_repair_order_list.source_dealer_code, ''))), ''), 'ACTIVE'),
+    NULLIF(UPPER(TRIM(COALESCE(am_platinum_repair_order_list.dealer, ''))), '')
+  ) = ${filters.dealerCode}`
 }
 
 function openRoBaseSql(filters: OpenRoFilters) {
@@ -190,7 +193,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `platinum:business-excellence:open-ro:v11:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:open-ro:v12:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {

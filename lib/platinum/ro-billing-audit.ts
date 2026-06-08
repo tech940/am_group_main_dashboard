@@ -124,7 +124,11 @@ function numericText(column: ReturnType<typeof sql.raw>) {
 
 function dealerFilter(dealerCode: DealerFilter) {
   return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), ''))) = ${dealerCode}`
+    ? sql`AND COALESCE(
+        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+        NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+        NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+      ) = ${dealerCode}`
     : sql``
 }
 
@@ -309,7 +313,12 @@ export async function fetchPlatinumRoBillingAudit(
         COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
         NULLIF(TRIM(bill_no::text), '') AS bill_no,
         NULLIF(TRIM(r_o_no::text), '') AS r_o_no,
-        UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'UNMAPPED'))) AS dealer_code,
+        COALESCE(
+          NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+          NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+          NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
+          'UNMAPPED'
+        ) AS dealer_code,
         NULLIF(TRIM(work_type::text), '') AS work_type,
         NULLIF(TRIM(bill_type::text), '') AS bill_type,
         LOWER(TRIM(COALESCE(bill_type::text, ''))) AS bill_type_normalized,

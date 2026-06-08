@@ -564,7 +564,11 @@ function cancelledBillStatusSql() {
 
 function roBillingDealerFilter(dealerCode: DealerFilter) {
   return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
+    ? sql`AND COALESCE(
+        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+        NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+        NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+      ) = ${dealerCode}`
     : sql``
 }
 

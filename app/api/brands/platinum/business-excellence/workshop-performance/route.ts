@@ -171,14 +171,18 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:workshop-performance:v36:${createHash('sha1')
+  return `platinum:business-excellence:workshop-performance:v37:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
 
 function roBillingDealerFilter(dealerCode: DealerFilter) {
   return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
+    ? sql`AND COALESCE(
+        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+        NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+        NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+      ) = ${dealerCode}`
     : sql``
 }
 
@@ -704,7 +708,7 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string, dealerCode
             WHERE reg_date >= ${startDate}::date
               AND reg_date < (${endDate}::date + INTERVAL '1 day')
               AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
-              ${dealerCode ? sql`AND UPPER(TRIM(COALESCE(dlr_no, ''))) = ${dealerCode}` : sql``}
+              ${dealerCode ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}` : sql``}
             ORDER BY
               COALESCE(
                 NULLIF(TRIM(certi_no), ''),
