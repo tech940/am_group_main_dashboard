@@ -7,6 +7,7 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { fetchPlatinumSotCoverage } from '@/lib/platinum/business-excellence-coverage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 45
@@ -43,6 +44,15 @@ function defaultDateRange() {
   }
 }
 
+function shiftInputDateByYears(value: string, years: number) {
+  const [year, month, day] = value.split('-').map(Number)
+  const shifted = new Date(year + years, month - 1, day)
+  if (shifted.getMonth() !== month - 1) {
+    return toInputDate(new Date(year + years, month, 0))
+  }
+  return toInputDate(shifted)
+}
+
 function stringFilter(value: string | null) {
   const trimmed = String(value || '').trim()
   return trimmed && trimmed !== '__all__' ? trimmed : null
@@ -52,14 +62,22 @@ function readFilters(searchParams: URLSearchParams): SotFilters {
   const defaults = defaultDateRange()
   const startDate = searchParams.get('startDate')?.slice(0, 10) || defaults.startDate
   const endDate = searchParams.get('endDate')?.slice(0, 10) || defaults.endDate
-  const comparisonStartDate = searchParams.get('comparisonStartDate')?.slice(0, 10) || searchParams.get('compareStartDate')?.slice(0, 10) || null
-  const comparisonEndDate = searchParams.get('comparisonEndDate')?.slice(0, 10) || searchParams.get('compareEndDate')?.slice(0, 10) || null
+  const resolvedStartDate = isInputDate(startDate) ? startDate : defaults.startDate
+  const resolvedEndDate = isInputDate(endDate) ? endDate : defaults.endDate
+  const rawComparisonStartDate = searchParams.get('comparisonStartDate')?.slice(0, 10) || searchParams.get('compareStartDate')?.slice(0, 10) || null
+  const rawComparisonEndDate = searchParams.get('comparisonEndDate')?.slice(0, 10) || searchParams.get('compareEndDate')?.slice(0, 10) || null
+  const comparisonStartDate = isInputDate(rawComparisonStartDate)
+    ? rawComparisonStartDate
+    : shiftInputDateByYears(resolvedStartDate, -1)
+  const comparisonEndDate = isInputDate(rawComparisonEndDate)
+    ? rawComparisonEndDate
+    : shiftInputDateByYears(resolvedEndDate, -1)
 
   return {
-    startDate: isInputDate(startDate) ? startDate : defaults.startDate,
-    endDate: isInputDate(endDate) ? endDate : defaults.endDate,
-    comparisonStartDate: isInputDate(comparisonStartDate) ? comparisonStartDate : null,
-    comparisonEndDate: isInputDate(comparisonEndDate) ? comparisonEndDate : null,
+    startDate: resolvedStartDate,
+    endDate: resolvedEndDate,
+    comparisonStartDate,
+    comparisonEndDate,
     model: stringFilter(searchParams.get('model')),
     scheme: stringFilter(searchParams.get('scheme')),
     department: stringFilter(searchParams.get('department')),
@@ -68,7 +86,7 @@ function readFilters(searchParams: URLSearchParams): SotFilters {
 }
 
 function cacheKey(filters: SotFilters) {
-  return `platinum:business-excellence:sot:v2:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `platinum:business-excellence:sot:v4:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function numberValue(value: unknown) {
@@ -90,6 +108,19 @@ function dateValue(value: unknown) {
 function growth(current: number, previous: number) {
   if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return null
   return ((current - previous) / previous) * 100
+}
+
+function comparisonStatus(previous: number) {
+  return previous === 0 ? 'exact_zero' : 'available'
+}
+
+function comparisonMetric(current: number, previous: number) {
+  return {
+    cy: current,
+    ly: previous,
+    deltaPct: growth(current, previous),
+    comparisonStatus: comparisonStatus(previous),
+  }
 }
 
 function sotDealerFilterSql(filters: SotFilters) {
@@ -311,7 +342,7 @@ async function fetchOptions(filters: SotFilters) {
 
 async function buildPayload(filters: SotFilters) {
   const comparisonEnabled = Boolean(filters.comparisonStartDate && filters.comparisonEndDate)
-  const [kpis, comparisonKpis, metadata, dailyTrend, modelMix, schemeMix, departmentMix, rows, options] = await Promise.all([
+  const [kpis, comparisonKpis, metadata, dailyTrend, modelMix, schemeMix, departmentMix, rows, options, dealerCoverage] = await Promise.all([
     fetchKpis(filters, filters.startDate, filters.endDate),
     comparisonEnabled
       ? fetchKpis(filters, filters.comparisonStartDate!, filters.comparisonEndDate!)
@@ -323,6 +354,7 @@ async function buildPayload(filters: SotFilters) {
     fetchBreakdown(filters, 'department'),
     fetchRows(filters),
     fetchOptions(filters),
+    fetchPlatinumSotCoverage(filters.startDate, filters.endDate, filters.dealerCode),
   ])
 
   return {
@@ -346,6 +378,11 @@ async function buildPayload(filters: SotFilters) {
     comparison: {
       enabled: comparisonEnabled,
       kpis: comparisonKpis,
+      metrics: comparisonKpis ? {
+        certificates: comparisonMetric(kpis.certificates, comparisonKpis.certificates),
+        totalValue: comparisonMetric(kpis.totalValue, comparisonKpis.totalValue),
+        avgValue: comparisonMetric(kpis.avgValue, comparisonKpis.avgValue),
+      } : null,
       growth: comparisonKpis ? {
         certificates: growth(kpis.certificates, comparisonKpis.certificates),
         totalValue: growth(kpis.totalValue, comparisonKpis.totalValue),
@@ -359,7 +396,15 @@ async function buildPayload(filters: SotFilters) {
       departmentMix,
     },
     rows,
-    metadata,
+    metadata: {
+      ...metadata,
+      dealerCoverage: {
+        dealerCode: dealerCoverage.dealerCode,
+        isAllLocations: dealerCoverage.isAllLocations,
+        primary: dealerCoverage,
+        sot: dealerCoverage,
+      },
+    },
   }
 }
 

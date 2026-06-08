@@ -2,7 +2,7 @@ import { forbidden, redirect } from 'next/navigation'
 import { getBrandAccess } from '@/lib/auth/brand-access'
 import { requirePermission } from '@/lib/permissions/service'
 import { HyundaiModulePlaceholder } from '@/features/hyundai/hyundai-module-placeholder'
-import { HyundaiBusinessExcellencePage } from '@/features/hyundai/business-excellence-page'
+import HyundaiBusinessExcellencePage from '@/features/hyundai/business-excellence-page'
 
 type HyundaiModuleDefinition = {
   title: string
@@ -129,7 +129,7 @@ export default async function Page({
   }
 
   if (definition.component === 'business-excellence') {
-    return <HyundaiBusinessExcellencePage report={definition.report || 'overview'} />
+    return <HyundaiBusinessExcellencePage initialReport={definition.report || 'overview'} currentUserRole={access.appUser.role} />
   }
 
   return <HyundaiModulePlaceholder title={definition.title} />

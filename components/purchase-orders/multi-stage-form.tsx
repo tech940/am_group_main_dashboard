@@ -104,7 +104,8 @@ const subDepartments = [
   'FUEL DEMO',
   'FUEL GENSET',
   'FUEL NEW CAR DELIVERY',
-  'FUEL STOCK TRANSFER'
+  'FUEL STOCK TRANSFER',
+  'Others'
 ]
 
 interface MultiStageFormProps {

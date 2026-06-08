@@ -203,7 +203,7 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
 }
 
 function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
-  return `kia:business-excellence:complaints:v8:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `kia:business-excellence:complaints:v9:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {

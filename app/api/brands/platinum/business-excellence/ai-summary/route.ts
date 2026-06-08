@@ -240,12 +240,27 @@ async function fetchJson(request: NextRequest, path: string) {
       cookie: request.headers.get('cookie') || '',
     },
   })
+  const contentType = response.headers.get('content-type') || ''
+  const text = await response.text()
 
-  if (!response.ok) {
-    throw new Error(`Failed to load ${url.pathname}`)
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const snippet = text.trim().slice(0, 120).replace(/\s+/g, ' ')
+    throw new Error(`Failed to load ${url.pathname}: expected JSON but received ${contentType || 'unknown content type'}${snippet ? ` (${snippet})` : ''}`)
   }
 
-  return await response.json() as Record<string, unknown>
+  let payload: Record<string, unknown>
+  try {
+    payload = text ? JSON.parse(text) as Record<string, unknown> : {}
+  } catch {
+    throw new Error(`Failed to load ${url.pathname}: invalid JSON response`)
+  }
+
+  if (!response.ok) {
+    const message = typeof payload.error === 'string' ? payload.error : `Failed to load ${url.pathname}`
+    throw new Error(message)
+  }
+
+  return payload
 }
 
 async function buildReportDataset(request: NextRequest, report: string, startDate: string, endDate: string, dealerCode?: string | null) {
@@ -371,7 +386,19 @@ async function createAiSummary(report: string, startDate: string, endDate: strin
     }),
   })
 
-  const payload = await response.json() as Record<string, unknown>
+  const contentType = response.headers.get('content-type') || ''
+  const responseText = await response.text()
+  let payload: Record<string, unknown> = {}
+  if (contentType.toLowerCase().includes('application/json')) {
+    try {
+      payload = responseText ? JSON.parse(responseText) as Record<string, unknown> : {}
+    } catch {
+      throw new Error('Groq request returned invalid JSON')
+    }
+  } else if (!response.ok) {
+    throw new Error(`Groq request failed (${response.status})`)
+  }
+
   if (!response.ok) {
     const error = payload.error && typeof payload.error === 'object'
       ? String((payload.error as { message?: unknown }).message || 'Groq request failed')
@@ -489,7 +516,7 @@ function buildSummaryText(summary: AiStructuredSummary) {
 }
 
 function createCacheKey(report: string, startDate: string, endDate: string, dataset: unknown, dealerCode?: string | null) {
-  return `platinum:business-excellence:ai-summary:v7:${createHash('sha1')
+  return `platinum:business-excellence:ai-summary:v8:${createHash('sha1')
     .update(JSON.stringify({ report, startDate, endDate, dealerCode: normalizePlatinumDealerCode(dealerCode), dataset }))
     .digest('hex')}`
 }

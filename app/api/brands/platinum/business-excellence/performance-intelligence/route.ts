@@ -7,6 +7,7 @@ import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -134,12 +135,13 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `platinum:business-excellence:performance-intelligence:v7:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:performance-intelligence:v10:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
   const clauses = [
     sql`bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date`,
+    sql`LOWER(TRIM(COALESCE(bill_type::text, ''))) NOT LIKE '%cancel%'`,
   ]
 
   if (filters.searchReg) {
@@ -409,15 +411,18 @@ export async function GET(request: Request) {
       const alertFilter = searchParams.get('alert') || 'all'
       const model = searchParams.get('model') || 'all'
       const sqlFilters = { searchReg, branch, serviceType, advisor, model }
-      const report = await timer.time('sql-scored-report', () => fetchPerformanceReportSql({
-        startDate,
-        endDate,
-        filters: sqlFilters,
-        alertFilter,
-        page,
-        limit,
-        exportAll,
-      }))
+      const [report, dealerCoverage] = await Promise.all([
+        timer.time('sql-scored-report', () => fetchPerformanceReportSql({
+          startDate,
+          endDate,
+          filters: sqlFilters,
+          alertFilter,
+          page,
+          limit,
+          exportAll,
+        })),
+        timer.time('dealer-coverage', () => fetchPlatinumRoBillingCoverage(toDateInputValue(startDate), toDateInputValue(endDate), dealerCode)),
+      ])
 
       const total = report.total
       const totalPages = Math.max(1, Math.ceil(total / limit))
@@ -444,6 +449,15 @@ export async function GET(request: Request) {
           limit,
           total,
           totalPages,
+        },
+        meta: {
+          dealerCode: dealerCoverage.dealerCode,
+          dealerCoverage: {
+            dealerCode: dealerCoverage.dealerCode,
+            isAllLocations: dealerCoverage.isAllLocations,
+            primary: dealerCoverage,
+            roBilling: dealerCoverage,
+          },
         },
       }
     }

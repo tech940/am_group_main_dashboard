@@ -8,12 +8,19 @@ import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { fetchPlatinumWorkshopVasAmount } from '@/lib/platinum/business-excellence-vas'
+import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
+import {
+  emptyPlatinumRoBillingAudit,
+  fetchPlatinumRoBillingAudit,
+} from '@/lib/platinum/ro-billing-audit'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const tableExistsCache = new Map<string, boolean>()
+const tableColumnsCache = new Map<string, Set<string>>()
 
 type NumericRow = Record<string, unknown>
 type ComparisonParams = {
@@ -43,6 +50,13 @@ type AddonAggregate = {
   wbCount: number
   wbAmount: number
 }
+
+type SourceWarning = {
+  source: string
+  message: string
+}
+
+type PlatinumWorkshopVasMeta = Awaited<ReturnType<typeof fetchPlatinumWorkshopVasAmount>>
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
@@ -99,6 +113,54 @@ function growth(current: number, previous: number) {
   return ((current - previous) / previous) * 100
 }
 
+async function optionalSource<T>(
+  source: string,
+  promise: Promise<T>,
+  fallback: T,
+  warnings: SourceWarning[]
+) {
+  try {
+    return await promise
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    warnings.push({ source, message })
+    console.warn(`Platinum workshop optional source failed: ${source}`, error)
+    return fallback
+  }
+}
+
+function emptyAuxiliaryKpis() {
+  return { ewCount: 0, rsaCount: 0, mcpCount: 0, rsaAmount: 0 }
+}
+
+function emptyVasMeta(reason: string): PlatinumWorkshopVasMeta {
+  return {
+    amount: 0,
+    available: false,
+    unavailableReason: reason,
+    source: null,
+    sourceTable: null,
+    periodStart: null,
+    periodEnd: null,
+    sourceRows: 0,
+    dedupeMode: null,
+    latestSnapshotUploadedAt: null,
+  }
+}
+
+function emptyDealerCoverage(startDate: string, endDate: string, dealerCode: DealerFilter) {
+  return {
+    dealerCode: dealerCode || 'all',
+    isAllLocations: !dealerCode,
+    hasDataInRange: false,
+    rowCountInRange: 0,
+    latestAvailableDate: null,
+    dateBasis: 'bill_date',
+    sourceLabel: 'RO Billing',
+    emptyReason: `RO Billing coverage could not be checked for ${startDate} to ${endDate}.`,
+  }
+}
+
 function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
   return {
     preset: searchParams.get('periodPreset') || null,
@@ -109,7 +171,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:workshop-performance:v28:${createHash('sha1')
+  return `platinum:business-excellence:workshop-performance:v36:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -117,6 +179,16 @@ function cacheKey(startDate: string, endDate: string, comparison: ComparisonPara
 function roBillingDealerFilter(dealerCode: DealerFilter) {
   return dealerCode
     ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
+    : sql``
+}
+
+function activeBillStatusSql() {
+  return sql`LOWER(TRIM(COALESCE(bill_type::text, ''))) NOT LIKE '%cancel%'`
+}
+
+function operationDealerFilter(dealerCode: DealerFilter) {
+  return dealerCode
+    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}`
     : sql``
 }
 
@@ -143,6 +215,53 @@ async function tableExists(tableName: string) {
   const exists = Boolean(resultRows(result)[0]?.exists)
   tableExistsCache.set(tableName, exists)
   return exists
+}
+
+async function tableColumns(tableName: string) {
+  if (tableColumnsCache.has(tableName)) return tableColumnsCache.get(tableName)!
+
+  const result = await db.execute(sql`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = ${tableName}
+  `)
+  const columns = new Set(resultRows(result).map((row) => String(row.column_name)))
+  tableColumnsCache.set(tableName, columns)
+  return columns
+}
+
+function hasColumns(columns: Set<string>, required: string[]) {
+  return required.every((column) => columns.has(column))
+}
+
+function operationCountExpression(columns: Set<string>) {
+  const countColumns = [
+    'total_count',
+    'santro_count',
+    'getz_count',
+    'accent_count',
+    'elantra_count',
+    'nf_sonata_count',
+    'e_f_sonata_count',
+    'tucsan_count',
+    'terracan_count',
+    'i10_count',
+    'i20_count',
+    'verna_count',
+    'new_santro_count',
+    'next_gen_verna_count',
+    'venue_count',
+    'grand_i10_nios_count',
+    'new_creta_count',
+    'new_i20_count',
+    'elite_i20_count',
+    'xcent_count',
+    'other_count',
+  ].filter((column) => columns.has(column))
+
+  if (!countColumns.length) return sql`0`
+  return sql`GREATEST(${sql.join(countColumns.map((column) => sql`ABS(${numericText(sql.raw(column))})`), sql`, `)})`
 }
 
 async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
@@ -180,7 +299,7 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
       COUNT(DISTINCT jc_key)::int AS total_jc,
       COALESCE(SUM(labour_amount), 0)::float AS labour_amount,
       COALESCE(SUM(part_amount), 0)::float AS part_amount,
-      COALESCE(SUM(total_amount), 0)::float AS total_amount,
+      COALESCE(SUM(labour_amount + part_amount), 0)::float AS total_amount,
       COALESCE(SUM(discount_amount), 0)::float AS discount_amount
     FROM classified
     GROUP BY workshop_category
@@ -202,6 +321,7 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
@@ -222,7 +342,7 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
       COUNT(*)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount,
-      COALESCE(SUM(total_amt), 0)::float AS total_amount,
+      COALESCE(SUM(labour_amt + part_amt), 0)::float AS total_amount,
       COALESCE(SUM(discount_amount), 0)::float AS discount_amount
     FROM dedup
     GROUP BY workshop_category
@@ -248,7 +368,7 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
       COUNT(DISTINCT jc_key)::int AS total_jc,
       COALESCE(SUM(labour_amount), 0)::float AS labour_amount,
       COALESCE(SUM(part_amount), 0)::float AS part_amount,
-      COALESCE(SUM(total_amount), 0)::float AS total_amount,
+      COALESCE(SUM(labour_amount + part_amount), 0)::float AS total_amount,
       COALESCE(SUM(discount_amount), 0)::float AS discount_amount
     FROM am_platinum_workshop_performance_jc_summary_v1
     WHERE report_date >= ${startDate}::date
@@ -274,6 +394,7 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
@@ -295,7 +416,7 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
       COUNT(*)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount,
-      COALESCE(SUM(total_amt), 0)::float AS total_amount,
+      COALESCE(SUM(labour_amt + part_amt), 0)::float AS total_amount,
       COALESCE(SUM(discount_amount), 0)::float AS discount_amount
     FROM dedup
     GROUP BY group_type, service_type
@@ -314,18 +435,95 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
 }
 
 async function fetchAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
-  void startDate
-  void endDate
-  void advisor
-  void dealerCode
-  return []
+  if (!(await tableExists('am_platinum_operation_wise_analysis_advisor_report'))) return []
+
+  const columns = await tableColumns('am_platinum_operation_wise_analysis_advisor_report')
+  if (!hasColumns(columns, [
+    'service_advisor',
+    'report_month',
+    'report_type',
+    'op_part_code',
+    'op_part_desc',
+    'total_amt',
+    'source_dealer_code',
+  ])) {
+    return []
+  }
+
+  const operationCountSql = operationCountExpression(columns)
+  const result = await db.execute(sql`
+    WITH operation_rows AS (
+      SELECT DISTINCT
+        COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
+        ${workshopCategoryExpression('service_advisor')} AS workshop_category,
+        report_type,
+        op_part_code,
+        op_part_desc,
+        service_advisor,
+        source_dealer_code,
+        ${numericText(sql.raw('total_amt'))} AS amount,
+        ${operationCountSql} AS operation_count,
+        LOWER(COALESCE(op_part_code, '')) AS operation_code,
+        LOWER(CONCAT_WS(
+          ' ',
+          report_type,
+          op_part_code,
+          op_part_desc
+        )) AS description,
+        LOWER(COALESCE(op_part_desc, '')) AS vas_description
+      FROM am_platinum_operation_wise_analysis_advisor_report
+      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
+        AND report_month <= date_trunc('month', ${endDate}::date)::date
+        ${operationDealerFilter(dealerCode)}
+        ${advisorWhereClause(advisor)}
+    ),
+    classified AS (
+      SELECT
+        *,
+        (
+          operation_code ~ '(^|[^a-z])wa([^a-z]|$)'
+            OR description ~ '(wheel[[:space:]-]*alignment|alignment|align|(^|[^a-z])wa([^a-z]|$))'
+        ) AS is_wa,
+        (
+          operation_code ~ '(^|[^a-z])wb([^a-z]|$)'
+            OR description ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
+        ) AS is_wb,
+        (
+          LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
+            AND (
+              vas_description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+                OR vas_description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
+                OR vas_description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
+                OR vas_description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
+            )
+            AND vas_description !~ '(painting[[:space:]-]*charges[[:space:]-]*s1|removal[[:space:]]*&[[:space:]]*refit[[:space:]-]*work[[:space:]-]*s1)'
+        ) AS is_vas
+      FROM operation_rows
+    )
+    SELECT
+      workshop_category AS service_type,
+      COALESCE(SUM(amount) FILTER (WHERE is_vas), 0)::float AS vas_amount,
+      COALESCE(SUM(operation_count) FILTER (WHERE is_wa), 0)::int AS wa_count,
+      COALESCE(SUM(amount) FILTER (WHERE is_wa), 0)::float AS wa_amount,
+      COALESCE(SUM(operation_count) FILTER (WHERE is_wb), 0)::int AS wb_count,
+      COALESCE(SUM(amount) FILTER (WHERE is_wb), 0)::float AS wb_amount
+    FROM classified
+    GROUP BY workshop_category
+    ORDER BY CASE WHEN workshop_category = 'MECH' THEN 1 ELSE 2 END
+  `)
+
+  return resultRows(result).map((row) => ({
+    serviceType: String(row.service_type || 'Unspecified'),
+    vasAmount: numberValue(row.vas_amount),
+    waCount: numberValue(row.wa_count),
+    waAmount: numberValue(row.wa_amount),
+    wbCount: numberValue(row.wb_count),
+    wbAmount: numberValue(row.wb_amount),
+  }))
 }
 
 async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  void startDate
-  void endDate
-  void dealerCode
-  return 0
+  return (await fetchPlatinumWorkshopVasAmount(startDate, endDate, dealerCode)).amount
 }
 
 async function fetchCoreAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
@@ -373,6 +571,7 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
@@ -426,6 +625,7 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
@@ -595,6 +795,65 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string, dealerCode
     mcpCount: numberValue(resultRows(mcp)[0]?.count),
     rsaCount: numberValue(resultRows(rsa)[0]?.count),
     rsaAmount: numberValue(resultRows(rsa)[0]?.amount),
+  }
+}
+
+async function fetchSourceStatus() {
+  const [hasOperation, hasAdvisorOperation, hasEw, hasMcp, hasRsa] = await Promise.all([
+    tableExists('am_platinum_operation_wise_analysis_report'),
+    tableExists('am_platinum_operation_wise_analysis_advisor_report'),
+    tableExists('am_platinum_ew_report'),
+    tableExists('am_platinum_mcp_report'),
+    tableExists('am_platinum_rsa_report'),
+  ])
+
+  const operationColumns = hasOperation
+    ? await tableColumns('am_platinum_operation_wise_analysis_report')
+    : new Set<string>()
+  const advisorColumns = hasAdvisorOperation
+    ? await tableColumns('am_platinum_operation_wise_analysis_advisor_report')
+    : new Set<string>()
+  const operationUsable = hasOperation && hasColumns(operationColumns, [
+    'report_month',
+    'report_type',
+    'op_part_desc',
+    'total_amt',
+    'source_dealer_code',
+  ])
+  const advisorUsable = hasAdvisorOperation && hasColumns(advisorColumns, [
+    'service_advisor',
+    'report_month',
+    'report_type',
+    'op_part_code',
+    'op_part_desc',
+    'total_amt',
+    'source_dealer_code',
+  ])
+
+  return {
+    operationAnalysis: {
+      table: 'am_platinum_operation_wise_analysis_report',
+      available: operationUsable,
+      unavailableReason: operationUsable
+        ? null
+        : hasOperation
+          ? 'Table exists but does not expose KIA report_month/report_type period fields required for date-scoped VAS.'
+          : 'Table is unavailable.',
+    },
+    advisorOperationAnalysis: {
+      table: 'am_platinum_operation_wise_analysis_advisor_report',
+      available: advisorUsable,
+      unavailableReason: advisorUsable
+        ? null
+        : hasAdvisorOperation
+          ? 'Table exists but does not expose KIA advisor/date fields required for WA/WB/VAS classification.'
+          : 'Table is unavailable.',
+    },
+    auxiliaryAddons: {
+      ewAvailable: hasEw,
+      mcpAvailable: hasMcp,
+      rsaAvailable: hasRsa,
+    },
   }
 }
 
@@ -771,6 +1030,8 @@ async function buildWorkshopPayload(
   const parsedEnd = parseDateInput(endDate)
   const lyStart = comparison.comparisonStartDate || (parsedStart ? toDateInputValue(sameDateLastYear(parsedStart)) : startDate)
   const lyEnd = comparison.comparisonEndDate || (parsedEnd ? toDateInputValue(sameDateLastYear(parsedEnd)) : endDate)
+  const sourceWarnings: SourceWarning[] = []
+  const emptyAuxiliary = emptyAuxiliaryKpis()
 
   const [
     serviceRows,
@@ -783,20 +1044,54 @@ async function buildWorkshopPayload(
     lyAddonRows,
     coreServiceRows,
     coreAddonRows,
+    sourceStatus,
+    workshopVasMeta,
+    dealerCoverage,
+    roBillingAudit,
   ] = await Promise.all([
-    fetchServiceSummary(startDate, endDate, advisor, dealerCode),
-    fetchAddonSummary(startDate, endDate, advisor, dealerCode),
-    fetchDailyTrend(startDate, endDate, advisor, dealerCode),
-    fetchAdvisorSummary(startDate, endDate, dealerCode),
-    fetchAuxiliaryKpis(startDate, endDate, dealerCode),
-    fetchAuxiliaryKpis(lyStart, lyEnd, dealerCode),
-    fetchServiceSummary(lyStart, lyEnd, advisor, dealerCode),
-    fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode),
-    fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode),
-    fetchCoreAddonSummary(startDate, endDate, advisor, dealerCode),
+    optionalSource('service summary', fetchServiceSummary(startDate, endDate, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
+    optionalSource('add-on summary', fetchAddonSummary(startDate, endDate, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
+    optionalSource('daily trend', fetchDailyTrend(startDate, endDate, advisor, dealerCode), [] as Awaited<ReturnType<typeof fetchDailyTrend>>, sourceWarnings),
+    optionalSource('advisor summary', fetchAdvisorSummary(startDate, endDate, dealerCode), [] as Awaited<ReturnType<typeof fetchAdvisorSummary>>, sourceWarnings),
+    optionalSource('auxiliary KPIs', fetchAuxiliaryKpis(startDate, endDate, dealerCode), emptyAuxiliary, sourceWarnings),
+    optionalSource('LY auxiliary KPIs', fetchAuxiliaryKpis(lyStart, lyEnd, dealerCode), emptyAuxiliary, sourceWarnings),
+    optionalSource('LY service summary', fetchServiceSummary(lyStart, lyEnd, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
+    optionalSource('LY add-on summary', fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
+    optionalSource('core service summary', fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
+    optionalSource('core add-on summary', fetchCoreAddonSummary(startDate, endDate, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
+    optionalSource('source status', fetchSourceStatus(), null, sourceWarnings),
+    optionalSource(
+      'workshop VAS snapshot',
+      fetchPlatinumWorkshopVasAmount(startDate, endDate, dealerCode),
+      emptyVasMeta('Platinum VAS source could not be read.'),
+      sourceWarnings
+    ),
+    optionalSource(
+      'dealer coverage',
+      fetchPlatinumRoBillingCoverage(startDate, endDate, dealerCode),
+      emptyDealerCoverage(startDate, endDate, dealerCode),
+      sourceWarnings
+    ),
+    optionalSource(
+      'RO Billing audit',
+      fetchPlatinumRoBillingAudit(startDate, endDate, dealerCode),
+      emptyPlatinumRoBillingAudit(startDate, endDate, dealerCode),
+      sourceWarnings
+    ),
   ])
 
-  const addonTotals = summarizeAddons(addonRows)
+  const effectiveAddonRows = !advisor && addonRows.length === 0 && workshopVasMeta.available
+    ? [{
+      serviceType: 'Others',
+      vasAmount: workshopVasMeta.amount,
+      waCount: 0,
+      waAmount: 0,
+      wbCount: 0,
+      wbAmount: 0,
+    }]
+    : addonRows
+
+  const addonTotals = summarizeAddons(effectiveAddonRows)
   const lyAddonTotals = summarizeAddons(lyAddonRows)
   const auxiliaryCounts = advisor
     ? { ewCount: 0, rsaCount: 0, mcpCount: 0, rsaAmount: 0 }
@@ -804,7 +1099,7 @@ async function buildWorkshopPayload(
   const lyAuxiliaryCounts = advisor
     ? { ewCount: 0, rsaCount: 0, mcpCount: 0, rsaAmount: 0 }
     : lyAuxiliary
-  const rows = buildManagementRows(serviceRows, addonRows)
+  const rows = buildManagementRows(serviceRows, effectiveAddonRows)
   const totalRow = buildTotalRow(rows, addonTotals, {
     ewCount: auxiliaryCounts.ewCount,
     rsaCount: auxiliaryCounts.rsaCount,
@@ -826,6 +1121,18 @@ async function buildWorkshopPayload(
 
   const totalRevenue = totalRow.labourAmount + totalRow.spareSale
   const lyRevenue = lyTotal.labourAmount + lyTotal.spareSale
+  const hasComparableVasLy = workshopVasMeta.available
+  const vasLy = hasComparableVasLy ? lyTotal.lessVas : undefined
+  const vasComparisonStatus = !workshopVasMeta.available
+    ? 'source_missing'
+    : hasComparableVasLy
+      ? (Number(vasLy || 0) === 0 ? 'exact_zero' : 'available')
+      : 'not_comparable'
+  const vasComparisonLabel = !workshopVasMeta.available
+    ? 'Source missing'
+    : hasComparableVasLy
+      ? null
+      : 'No comparable LY'
 
   return {
     dateRange: { startDate, endDate, lyStartDate: lyStart, lyEndDate: lyEnd },
@@ -834,7 +1141,13 @@ async function buildWorkshopPayload(
       labourAmount: { value: totalRow.labourAmount, ly: lyTotal.labourAmount, growth: growth(totalRow.labourAmount, lyTotal.labourAmount) },
       spareSale: { value: totalRow.spareSale, ly: lyTotal.spareSale, growth: growth(totalRow.spareSale, lyTotal.spareSale) },
       totalRevenue: { value: totalRevenue, ly: lyRevenue, growth: growth(totalRevenue, lyRevenue) },
-      vasAmount: { value: totalRow.lessVas, ly: lyTotal.lessVas, growth: growth(totalRow.lessVas, lyTotal.lessVas) },
+      vasAmount: {
+        value: totalRow.lessVas,
+        ly: vasLy,
+        growth: vasLy === undefined ? null : growth(totalRow.lessVas, vasLy),
+        comparisonStatus: vasComparisonStatus,
+        comparisonLabel: vasComparisonLabel,
+      },
       labourPerRo: { value: totalRow.labourPerRo, ly: lyTotal.labourPerRo, growth: growth(totalRow.labourPerRo, lyTotal.labourPerRo) },
       sparePerRo: { value: totalRow.sparePerRo, ly: lyTotal.sparePerRo, growth: growth(totalRow.sparePerRo, lyTotal.sparePerRo) },
       ewCount: { value: auxiliaryCounts.ewCount, growth: null },
@@ -851,11 +1164,63 @@ async function buildWorkshopPayload(
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       advisor,
       dealerCode,
+      dealerCoverage: {
+        dealerCode: dealerCoverage.dealerCode,
+        isAllLocations: dealerCoverage.isAllLocations,
+        primary: dealerCoverage,
+        roBilling: dealerCoverage,
+      },
       comparison,
       unsupportedComparisonSources: {
-        am_platinum_ew_report: 'EW has only May 2026 data.',
-        am_platinum_mcp_report: 'MCP is close to one year but not enough for full LY comparisons yet.',
+        am_platinum_operation_wise_analysis_report: 'Platinum operation-wise add-ons are unavailable for KIA-style selected-period VAS because the table is snapshot-only and has no business period fields.',
+        am_platinum_operation_wise_analysis_advisor_report: 'Advisor-level WA/WB/VAS source is unavailable for Platinum.',
+        am_platinum_mcp_report: 'MCP source is unavailable for Platinum.',
+        am_platinum_rsa_report: 'RSA source is unavailable for Platinum.',
       },
+      sourceStatus: {
+        ...(sourceStatus || {
+          operationAnalysis: {
+            table: 'am_platinum_operation_wise_analysis_report',
+            available: false,
+            unavailableReason: 'Source status could not be checked.',
+          },
+          advisorOperationAnalysis: {
+            table: 'am_platinum_operation_wise_analysis_advisor_report',
+            available: false,
+            unavailableReason: 'Source status could not be checked.',
+          },
+          auxiliaryAddons: {
+            ewAvailable: false,
+            mcpAvailable: false,
+            rsaAvailable: false,
+          },
+        }),
+        warnings: sourceWarnings,
+        roBillingAudit: {
+          rawRows: roBillingAudit.rawRows,
+          activeRawRows: roBillingAudit.activeRawRows,
+          dedupedJc: roBillingAudit.dedupedJc,
+          duplicateRowsRemoved: roBillingAudit.duplicateRowsRemoved,
+          cancelledRows: roBillingAudit.cancelledRows,
+          latestUploadedAt: roBillingAudit.latestUploadedAt,
+        },
+      },
+      vas: {
+        available: workshopVasMeta.available,
+        unavailableReason: workshopVasMeta.unavailableReason,
+        source: workshopVasMeta.source,
+        sourceTable: workshopVasMeta.sourceTable,
+        periodStart: workshopVasMeta.periodStart,
+        periodEnd: workshopVasMeta.periodEnd,
+        sourceRows: workshopVasMeta.sourceRows,
+        dedupeMode: workshopVasMeta.dedupeMode,
+        latestSnapshotUploadedAt: workshopVasMeta.latestSnapshotUploadedAt,
+        lyAvailable: hasComparableVasLy,
+        comparisonStatus: vasComparisonStatus,
+        comparisonLabel: vasComparisonLabel,
+        lyUnavailableReason: hasComparableVasLy ? null : workshopVasMeta.unavailableReason || 'Platinum VAS has no date-scoped LY source',
+      },
+      roBillingAudit,
     },
   }
 }

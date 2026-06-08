@@ -15,14 +15,75 @@ import {
   Save,
   RefreshCw,
   AlertCircle,
-  Loader2
+  Loader2,
+  Mail,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+
+type ServiceDashboardEmailSettingsForm = {
+  enabled: boolean
+  recipients: string[]
+  cc: string[]
+  bcc: string[]
+  defaultDealerCode: string
+  sendTime: string
+  timezone: string
+}
+
+type AdminSettingsState = {
+  siteName: string
+  siteUrl: string
+  maintenanceMode: boolean
+  allowRegistration: boolean
+  emailNotifications: boolean
+  smsNotifications: boolean
+  autoBackup: boolean
+  backupFrequency: string
+  sessionTimeout: number
+  maxLoginAttempts: number
+  serviceDashboardEmailSettings: ServiceDashboardEmailSettingsForm
+}
+
+const DEFAULT_SERVICE_DASHBOARD_EMAIL_SETTINGS: ServiceDashboardEmailSettingsForm = {
+  enabled: false,
+  recipients: [],
+  cc: [],
+  bcc: [],
+  defaultDealerCode: '',
+  sendTime: '19:00',
+  timezone: 'Asia/Kolkata',
+}
+
+function readEmailLines(value: string) {
+  return value
+    .split(/[\n,;]/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function emailLines(values: string[]) {
+  return values.join('\n')
+}
+
+function normalizeServiceDashboardEmailSettings(value: unknown): ServiceDashboardEmailSettingsForm {
+  const source = value && typeof value === 'object' ? value as Partial<ServiceDashboardEmailSettingsForm> : {}
+  const asList = (list: unknown) => Array.isArray(list) ? list.map((item) => String(item || '').trim()).filter(Boolean) : []
+  return {
+    enabled: Boolean(source.enabled),
+    recipients: asList(source.recipients),
+    cc: asList(source.cc),
+    bcc: asList(source.bcc),
+    defaultDealerCode: source.defaultDealerCode ? String(source.defaultDealerCode) : '',
+    sendTime: typeof source.sendTime === 'string' && /^\d{2}:\d{2}$/.test(source.sendTime) ? source.sendTime : '19:00',
+    timezone: source.timezone || 'Asia/Kolkata',
+  }
+}
 
 export default function AdminSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<AdminSettingsState>({
     siteName: 'AM Group Dashboard',
     siteUrl: 'https://dashboard.amgroup.com',
     maintenanceMode: false,
@@ -33,6 +94,7 @@ export default function AdminSettingsPage() {
     backupFrequency: 'daily',
     sessionTimeout: 30,
     maxLoginAttempts: 5,
+    serviceDashboardEmailSettings: DEFAULT_SERVICE_DASHBOARD_EMAIL_SETTINGS,
   })
 
   const fetchSettings = useCallback(async () => {
@@ -42,7 +104,11 @@ export default function AdminSettingsPage() {
       if (response.ok) {
         const data = await response.json()
         // Merge fetched settings with defaults
-        setSettings(prev => ({ ...prev, ...data }))
+        setSettings(prev => ({
+          ...prev,
+          ...data,
+          serviceDashboardEmailSettings: normalizeServiceDashboardEmailSettings(data.serviceDashboardEmailSettings ?? prev.serviceDashboardEmailSettings),
+        }))
       }
     } catch (error) {
       console.error('Error fetching settings:', error)
@@ -78,6 +144,16 @@ export default function AdminSettingsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const updateServiceDashboardEmailSettings = (patch: Partial<ServiceDashboardEmailSettingsForm>) => {
+    setSettings((current) => ({
+      ...current,
+      serviceDashboardEmailSettings: {
+        ...current.serviceDashboardEmailSettings,
+        ...patch,
+      },
+    }))
   }
 
   if (loading) {
@@ -328,6 +404,97 @@ export default function AdminSettingsPage() {
                   onChange={(e) => setSettings({ ...settings, emailNotifications: e.target.checked })}
                   className="h-5 w-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                 />
+              </div>
+
+              <div className="space-y-4 rounded-2xl border border-teal-100 bg-teal-50/50 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 shadow-sm">
+                      <FileSpreadsheet className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-slate-900">KIA Service Dashboard Email</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-600">Send the Excel sheet every day at 7 PM IST.</p>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.serviceDashboardEmailSettings.enabled}
+                    onChange={(event) => updateServiceDashboardEmailSettings({ enabled: event.target.checked })}
+                    className="mt-1 h-5 w-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="serviceDashboardRecipients" className="text-xs font-black uppercase tracking-widest text-slate-600">Recipients</Label>
+                  <textarea
+                    id="serviceDashboardRecipients"
+                    value={emailLines(settings.serviceDashboardEmailSettings.recipients)}
+                    onChange={(event) => updateServiceDashboardEmailSettings({ recipients: readEmailLines(event.target.value) })}
+                    placeholder="md@example.com&#10;ceo@example.com&#10;manager@example.com"
+                    className="min-h-24 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-teal-300 focus:ring-4 focus:ring-teal-100"
+                  />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="serviceDashboardCc" className="text-xs font-black uppercase tracking-widest text-slate-600">CC</Label>
+                    <textarea
+                      id="serviceDashboardCc"
+                      value={emailLines(settings.serviceDashboardEmailSettings.cc)}
+                      onChange={(event) => updateServiceDashboardEmailSettings({ cc: readEmailLines(event.target.value) })}
+                      placeholder="optional@example.com"
+                      className="min-h-20 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-teal-300 focus:ring-4 focus:ring-teal-100"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="serviceDashboardBcc" className="text-xs font-black uppercase tracking-widest text-slate-600">BCC</Label>
+                    <textarea
+                      id="serviceDashboardBcc"
+                      value={emailLines(settings.serviceDashboardEmailSettings.bcc)}
+                      onChange={(event) => updateServiceDashboardEmailSettings({ bcc: readEmailLines(event.target.value) })}
+                      placeholder="optional@example.com"
+                      className="min-h-20 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-teal-300 focus:ring-4 focus:ring-teal-100"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="serviceDashboardDealer" className="text-xs font-black uppercase tracking-widest text-slate-600">Default Dealer</Label>
+                    <Input
+                      id="serviceDashboardDealer"
+                      value={settings.serviceDashboardEmailSettings.defaultDealerCode}
+                      onChange={(event) => updateServiceDashboardEmailSettings({ defaultDealerCode: event.target.value.toUpperCase() })}
+                      placeholder="Blank = default"
+                      className="rounded-xl border-slate-200 bg-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="serviceDashboardTime" className="text-xs font-black uppercase tracking-widest text-slate-600">Send Time</Label>
+                    <Input
+                      id="serviceDashboardTime"
+                      type="time"
+                      value={settings.serviceDashboardEmailSettings.sendTime}
+                      onChange={(event) => updateServiceDashboardEmailSettings({ sendTime: event.target.value })}
+                      className="rounded-xl border-slate-200 bg-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="serviceDashboardTimezone" className="text-xs font-black uppercase tracking-widest text-slate-600">Timezone</Label>
+                    <Input
+                      id="serviceDashboardTimezone"
+                      value={settings.serviceDashboardEmailSettings.timezone}
+                      onChange={(event) => updateServiceDashboardEmailSettings({ timezone: event.target.value })}
+                      className="rounded-xl border-slate-200 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                  <Mail className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>Gmail user and app password stay in environment variables: REPORT_MAIL_GMAIL_USER and REPORT_MAIL_GMAIL_APP_PASSWORD.</span>
+                </div>
               </div>
 
               <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">

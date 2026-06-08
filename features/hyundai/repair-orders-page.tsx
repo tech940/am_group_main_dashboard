@@ -76,7 +76,7 @@ type RepairOrdersPayload = {
 }
 
 const PAGE_SIZE = 10
-const DASHBOARD_STALE_TIME_MS = 75 * 60 * 1000
+const DASHBOARD_STALE_TIME_MS = 30 * 60 * 1000
 
 function buildQueryString(params: Record<string, string | number>) {
   const searchParams = new URLSearchParams()

@@ -73,7 +73,8 @@ const subDepartments = [
   'FUEL DEMO',
   'FUEL GENSET',
   'FUEL NEW CAR DELIVERY',
-  'FUEL STOCK TRANSFER'
+  'FUEL STOCK TRANSFER',
+  'Others'
 ]
 
 type Stage1Field = keyof Stage1FormData
@@ -159,25 +160,25 @@ export function Stage1InitialSubmission({
 
   return (
     <form onSubmit={handleSubmit} autoComplete="off">
-      <Card className="border-none shadow-xl">
-        <CardHeader className="bg-gradient-to-r from-[#023468] to-[#034b82] text-white">
+      <Card className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-xl">
+        <CardHeader className="bg-[#023468] text-white">
           <div className="flex items-center justify-between gap-4">
             <div>
-          <CardTitle className="text-2xl font-black">
-            {mode === 'edit' ? 'Edit Purchase Request' : 'Initial Purchase Request'}
-          </CardTitle>
-          <p className="text-sm text-[#edf4fb] mt-1">
+              <CardTitle className="text-2xl font-black text-white">
+                {mode === 'edit' ? 'Edit Purchase Request' : 'Initial Purchase Request'}
+              </CardTitle>
+              <p className="mt-1 text-sm font-medium text-white/85">
                 {mode === 'edit'
                   ? 'Update the purchase request details and save the correction'
                   : 'Fill in the details below to submit your purchase request for EA approval'}
-          </p>
+              </p>
             </div>
             {onCancel && (
               <Button
                 type="button"
                 variant="secondary"
                 onClick={onCancel}
-                className="rounded-2xl border border-white/20 bg-white/10 text-white hover:bg-white/20"
+                className="rounded-2xl border border-white/30 bg-white/15 text-white shadow-none hover:bg-white/25 hover:text-white"
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
@@ -185,11 +186,11 @@ export function Stage1InitialSubmission({
             )}
           </div>
         </CardHeader>
-        <CardContent className="p-6 space-y-6">
+        <CardContent className="space-y-6 bg-white p-6 text-slate-950">
           {/* Branch and Department Selection */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <Label htmlFor="branch" className="mb-2 block">
+              <Label htmlFor="branch" className="mb-2 block text-slate-950">
                 Branch <span className="text-red-500">*</span>
               </Label>
               <Select
@@ -213,7 +214,7 @@ export function Stage1InitialSubmission({
             </div>
 
             <div>
-              <Label htmlFor="department" className="mb-2 block">
+              <Label htmlFor="department" className="mb-2 block text-slate-950">
                 Department <span className="text-red-500">*</span>
               </Label>
               <Select
@@ -237,7 +238,7 @@ export function Stage1InitialSubmission({
             </div>
 
             <div>
-              <Label htmlFor="subDepartment" className="mb-2 block">
+              <Label htmlFor="subDepartment" className="mb-2 block text-slate-950">
                 Sub Department <span className="text-red-500">*</span>
               </Label>
               <Select
@@ -261,7 +262,7 @@ export function Stage1InitialSubmission({
             </div>
 
             <div>
-              <Label htmlFor="specifyOther" className="mb-2 block">
+              <Label htmlFor="specifyOther" className="mb-2 block text-slate-950">
                 Specify Other
               </Label>
               <Input
@@ -276,7 +277,7 @@ export function Stage1InitialSubmission({
           {/* Request Details */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <Label htmlFor="requestedBy" className="mb-2 block">
+              <Label htmlFor="requestedBy" className="mb-2 block text-slate-950">
                 Requested By <span className="text-red-500">*</span>
               </Label>
               <Input
@@ -292,7 +293,7 @@ export function Stage1InitialSubmission({
             </div>
 
             <div>
-              <Label htmlFor="quantityRequired" className="mb-2 block">
+              <Label htmlFor="quantityRequired" className="mb-2 block text-slate-950">
                 Quantity Required <span className="text-red-500">*</span>
               </Label>
               <Input
@@ -308,7 +309,7 @@ export function Stage1InitialSubmission({
             </div>
 
             <div>
-              <Label htmlFor="estimateIfAny" className="mb-2 block">
+              <Label htmlFor="estimateIfAny" className="mb-2 block text-slate-950">
                 Estimate If Any
               </Label>
               <Input
@@ -323,7 +324,7 @@ export function Stage1InitialSubmission({
 
           {/* Special Instructions */}
           <div>
-            <Label htmlFor="specialInstructions" className="mb-2 block">
+            <Label htmlFor="specialInstructions" className="mb-2 block text-slate-950">
               Special Instructions or Remarks (Detailed) <span className="text-red-500">*</span>
             </Label>
             <textarea

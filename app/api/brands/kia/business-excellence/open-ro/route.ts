@@ -109,17 +109,16 @@ function openRoBaseSql(filters: OpenRoFilters) {
           ELSE '>15D'
         END AS aging_bucket,
         CASE
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%accident%'
-            OR LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%bodyshop%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
+            OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
             THEN 'Accidental Repair'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%running%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
             THEN 'Running Repair'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%free%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
             THEN 'Free Service'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%paid%'
-            OR COALESCE(service_type, '') ~* '^[0-9]+K$'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
             THEN 'Paid Service'
-          ELSE 'Others'
+          ELSE COALESCE(NULLIF(work_type, ''), 'Others')
         END AS service_category,
         CASE
           WHEN COALESCE(revised_promise_date_time, promise_date_time) IS NOT NULL
@@ -205,7 +204,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `kia:business-excellence:open-ro:v7:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:open-ro:v9:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -391,17 +390,16 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
             ELSE '>15D'
           END AS aging_bucket,
           CASE
-            WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%accident%'
-              OR LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%bodyshop%'
+            WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
+              OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
               THEN 'Accidental Repair'
-            WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%running%'
+            WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
               THEN 'Running Repair'
-            WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%free%'
+            WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
               THEN 'Free Service'
-            WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%paid%'
-              OR COALESCE(service_type, '') ~* '^[0-9]+K$'
+            WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
               THEN 'Paid Service'
-            ELSE 'Others'
+            ELSE COALESCE(NULLIF(work_type, ''), 'Others')
           END AS service_category
         FROM active
       )

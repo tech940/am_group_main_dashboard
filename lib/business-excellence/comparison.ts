@@ -23,7 +23,7 @@ export type BusinessComparisonSelection = {
 }
 
 export type BusinessDateFilterValue = BusinessDateRange & {
-  mode: 'preset' | 'custom' | 'month' | 'range'
+  mode: 'preset' | 'custom' | 'month' | 'range' | 'year'
   preset: BusinessDatePreset
   month: number
   year: number
@@ -84,6 +84,38 @@ export function parseBusinessDate(value: string) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+export function getBusinessMonthToDateRange(today = new Date()): BusinessDateRange {
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  return {
+    startDate: toBusinessDate(new Date(current.getFullYear(), current.getMonth(), 1)),
+    endDate: toBusinessDate(current),
+  }
+}
+
+export function getBusinessYearRange(year: number, today = new Date()): BusinessDateRange {
+  const currentYear = today.getFullYear()
+  const endDate = year === currentYear
+    ? new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    : new Date(year, 11, 31)
+
+  return {
+    startDate: toBusinessDate(new Date(year, 0, 1)),
+    endDate: toBusinessDate(endDate),
+  }
+}
+
+export function normalizeBusinessYear(value: string | number | null | undefined, minYear: number, today = new Date()) {
+  const year = typeof value === 'number' ? value : Number(value)
+  const currentYear = today.getFullYear()
+  if (!Number.isInteger(year) || year < minYear || year > currentYear) return null
+  return year
+}
+
+export function getBusinessAvailableYears(minYear: number, today = new Date()) {
+  const currentYear = today.getFullYear()
+  return Array.from({ length: Math.max(currentYear - minYear + 1, 1) }, (_, index) => minYear + index)
+}
+
 function addDays(date: Date, days: number) {
   const next = new Date(date)
   next.setDate(next.getDate() + days)
@@ -131,8 +163,14 @@ export function getBusinessPresetRange(preset: BusinessDatePreset, today = new D
     case 'current_month':
     case 'custom':
     default:
-      return { startDate: toBusinessDate(new Date(current.getFullYear(), current.getMonth(), 1)), endDate: toBusinessDate(current) }
+      return getBusinessMonthToDateRange(current)
   }
+}
+
+export function businessComparisonSelection(customComparison?: Partial<BusinessDateRange>): BusinessComparisonSelection {
+  return customComparison?.startDate && customComparison?.endDate
+    ? { previousStartDate: customComparison.startDate, previousEndDate: customComparison.endDate }
+    : {}
 }
 
 export function buildBusinessDateFilter(preset: BusinessDatePreset, customRange?: Partial<BusinessDateRange>, customComparison?: Partial<BusinessDateRange>): BusinessDateFilterValue {
@@ -140,9 +178,6 @@ export function buildBusinessDateFilter(preset: BusinessDatePreset, customRange?
     ? { startDate: customRange.startDate, endDate: customRange.endDate }
     : getBusinessPresetRange(preset)
   const currentStart = parseBusinessDate(baseRange.startDate) || new Date()
-  const computedComparison = customComparison?.startDate && customComparison?.endDate
-    ? { startDate: customComparison.startDate, endDate: customComparison.endDate }
-    : null
 
   return {
     mode: preset === 'custom' ? 'custom' : 'preset',
@@ -151,11 +186,26 @@ export function buildBusinessDateFilter(preset: BusinessDatePreset, customRange?
     year: currentStart.getFullYear(),
     startDate: baseRange.startDate,
     endDate: baseRange.endDate,
-    comparison: {
-      previousStartDate: computedComparison?.startDate,
-      previousEndDate: computedComparison?.endDate,
-    },
+    comparison: businessComparisonSelection(customComparison),
   }
+}
+
+export function buildBusinessYearDateFilter(year: number, customComparison?: Partial<BusinessDateRange>, today = new Date()): BusinessDateFilterValue {
+  const range = getBusinessYearRange(year, today)
+
+  return {
+    mode: 'year',
+    preset: 'custom',
+    month: 0,
+    year,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    comparison: businessComparisonSelection(customComparison),
+  }
+}
+
+export function getEffectiveBusinessDateFilter(dateFilter?: BusinessDateFilterValue | null) {
+  return dateFilter || buildBusinessDateFilter('mtd')
 }
 
 export function appendBusinessComparisonParams(params: URLSearchParams, dateFilter?: { preset?: string; comparison?: BusinessComparisonSelection } | null) {

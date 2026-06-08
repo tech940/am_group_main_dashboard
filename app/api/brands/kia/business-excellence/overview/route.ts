@@ -101,7 +101,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `kia:business-excellence:overview:v26:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v29:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -373,17 +373,16 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
         CASE
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%accident%'
-            OR LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%bodyshop%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
+            OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
             THEN 'Accidental Repair'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%running%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
             THEN 'Running Repair'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%free%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
             THEN 'Free Service'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%paid%'
-            OR COALESCE(service_type, '') ~* '^[0-9]+K$'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
             THEN 'Paid Service'
-          ELSE 'Others'
+          ELSE COALESCE(NULLIF(work_type, ''), 'Others')
         END AS service_category,
         ${numericText(sql.raw('labour_amt'))} AS labour_amt,
         ${numericText(sql.raw('part_amt'))} AS part_amt,
@@ -454,17 +453,16 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
           ELSE '>15D'
         END AS aging_bucket,
         CASE
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%accident%'
-            OR LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%bodyshop%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
+            OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
             THEN 'Accidental Repair'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%running%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
             THEN 'Running Repair'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%free%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
             THEN 'Free Service'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%paid%'
-            OR COALESCE(service_type, '') ~* '^[0-9]+K$'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
             THEN 'Paid Service'
-          ELSE 'Others'
+          ELSE COALESCE(NULLIF(work_type, ''), 'Others')
         END AS service_category,
         CASE
           WHEN promise_date IS NOT NULL AND CURRENT_DATE > promise_date THEN 'Delayed'
@@ -567,7 +565,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
   const hasWorkshopSummary = await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode)
   const serviceRows = await db.execute(hasWorkshopSummary ? sql`
     SELECT
-      COALESCE(NULLIF(group_type, ''), NULLIF(service_type, ''), 'Others') AS service_type,
+      COALESCE(NULLIF(group_type, ''), 'Others') AS service_type,
       MIN(report_date)::text AS min_date,
       MAX(report_date)::text AS max_date,
       COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -576,7 +574,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     FROM workshop_performance_jc_summary_v1
     WHERE report_date >= ${startDate}::date
       AND report_date < (${endDate}::date + INTERVAL '1 day')
-    GROUP BY COALESCE(NULLIF(group_type, ''), NULLIF(service_type, ''), 'Others')
+    GROUP BY COALESCE(NULLIF(group_type, ''), 'Others')
     ORDER BY (COALESCE(SUM(labour_amount), 0) + COALESCE(SUM(part_amount), 0)) DESC
     LIMIT 8
   ` : sql`
@@ -585,17 +583,16 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
         bill_date::date AS report_date,
         CASE
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%accident%'
-            OR LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%bodyshop%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
+            OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
             THEN 'Accidental Repair'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%running%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
             THEN 'Running Repair'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%free%'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
             THEN 'Free Service'
-          WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%paid%'
-            OR COALESCE(service_type, '') ~* '^[0-9]+K$'
+          WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
             THEN 'Paid Service'
-          ELSE COALESCE(NULLIF(service_type, ''), NULLIF(work_type, ''), 'Others')
+          ELSE COALESCE(NULLIF(work_type, ''), 'Others')
         END AS service_type,
         ${numericText(sql.raw('labour_amt'))} AS labour_amt,
         ${numericText(sql.raw('part_amt'))} AS part_amt
@@ -741,6 +738,7 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealer
       OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
       OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
     )
+    AND description !~ '(painting[[:space:]-]*charges[[:space:]-]*s1|removal[[:space:]]*&[[:space:]]*refit[[:space:]-]*work[[:space:]-]*s1)'
   `
 
   if (hasOperationWise) {
@@ -787,6 +785,66 @@ async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealer
         periodStart: dateValue(row?.period_start),
         periodEnd: dateValue(row?.period_end),
         sourceRows,
+      }
+    }
+
+    const coveredPeriodResult = await db.execute(sql`
+      WITH latest_period AS (
+        SELECT
+          report_period_start::date AS report_period_start,
+          report_period_end::date AS report_period_end
+        FROM operation_wise_analysis_report
+        WHERE report_period_start = ${startDate}::date
+          AND report_period_end <= ${endDate}::date
+          AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
+          ${operationDealerFilter(dealerCode)}
+        GROUP BY report_period_start::date, report_period_end::date
+        ORDER BY report_period_end::date DESC
+        LIMIT 1
+      ),
+      operation_rows AS (
+        SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
+          COALESCE(NULLIF(source.row_hash, ''), source.id::text) AS addon_key,
+          date_trunc('month', source.report_month::date)::date AS report_month,
+          source.report_period_start::date AS report_period_start,
+          source.report_period_end::date AS report_period_end,
+          source.report_type,
+          source.op_part_code,
+          source.op_part_desc,
+          source.dealer_code,
+          source.dealer_name,
+          ${numericText(sql.raw('source.total_amt'))} AS amount,
+          LOWER(COALESCE(source.op_part_desc, '')) AS description
+        FROM operation_wise_analysis_report source
+        INNER JOIN latest_period
+          ON source.report_period_start::date = latest_period.report_period_start
+          AND source.report_period_end::date = latest_period.report_period_end
+        WHERE LOWER(COALESCE(source.report_type, '')) IN ('operation', 'part')
+          ${operationDealerFilter(dealerCode)}
+        ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
+      )
+      SELECT
+        COALESCE(SUM(amount), 0)::float AS vas_amount,
+        COUNT(*)::int AS source_rows,
+        MIN(report_period_start)::text AS period_start,
+        MAX(report_period_end)::text AS period_end
+      FROM operation_rows
+      WHERE ${vasFilter}
+    `)
+
+    const coveredPeriodRow = resultRows(coveredPeriodResult)[0]
+    const coveredPeriodSourceRows = numberValue(coveredPeriodRow?.source_rows)
+
+    if (coveredPeriodSourceRows > 0) {
+      return {
+        amount: numberValue(coveredPeriodRow?.vas_amount),
+        available: true,
+        unavailableReason: null,
+        source: 'operation_period_latest_within_range',
+        sourceTable: 'operation_wise_analysis_report',
+        periodStart: dateValue(coveredPeriodRow?.period_start),
+        periodEnd: dateValue(coveredPeriodRow?.period_end),
+        sourceRows: coveredPeriodSourceRows,
       }
     }
   }

@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/select'
 import { logApiTimings } from '@/lib/api/client-timing'
 import { BusinessDateFilterValue, appendBusinessComparisonParams } from '@/lib/business-excellence/comparison'
+import { readPlatinumJson } from '@/features/platinum/api-client'
 import { appendPlatinumDealerCodeParam } from '@/lib/platinum/dealer-branch'
 import { cn } from '@/lib/utils'
 
@@ -123,6 +124,11 @@ type SotResponse = {
   comparison: {
     enabled: boolean
     kpis: SotKpis | null
+    metrics: {
+      certificates: SotComparisonMetric
+      totalValue: SotComparisonMetric
+      avgValue: SotComparisonMetric
+    } | null
     growth: {
       certificates: number | null
       totalValue: number | null
@@ -143,7 +149,31 @@ type SotResponse = {
     uploadedAt: string | null
     dealerScoped: boolean
     sourceWarnings: string[]
+    dealerCoverage?: {
+      dealerCode: string | null
+      isAllLocations: boolean
+      primary?: DealerCoverage
+      sot?: DealerCoverage
+    }
   }
+}
+
+type SotComparisonMetric = {
+  cy: number
+  ly: number
+  deltaPct: number | null
+  comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+}
+
+type DealerCoverage = {
+  dealerCode: string | null
+  isAllLocations: boolean
+  hasDataInRange: boolean
+  rowCountInRange: number
+  latestAvailableDate: string | null
+  dateBasis: string
+  sourceLabel: string
+  emptyReason: string | null
 }
 
 type SotFilters = {
@@ -231,6 +261,35 @@ function formatGrowth(value?: number | null) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
 }
 
+function formatComparisonBadge(metric?: SotComparisonMetric | null) {
+  if (!metric) return 'N/A'
+  if (metric.comparisonStatus === 'exact_zero') return metric.cy > 0 ? 'New vs LY' : 'Flat vs LY'
+  if (metric.deltaPct === null || metric.deltaPct === undefined) return 'No comparable LY'
+  return formatGrowth(metric.deltaPct)
+}
+
+function comparisonBadgeTone(metric?: SotComparisonMetric | null) {
+  if (!metric) return 'text-slate-500 border-slate-200 bg-white'
+  if (metric.comparisonStatus === 'exact_zero') {
+    return metric.cy > 0
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : 'text-slate-500 border-slate-200 bg-white'
+  }
+  return kpiTone(metric.deltaPct)
+}
+
+function DealerCoverageNotice({ coverage }: { coverage?: DealerCoverage | null }) {
+  if (!coverage || coverage.hasDataInRange || coverage.isAllLocations) return null
+
+  const latest = coverage.latestAvailableDate ? formatDate(coverage.latestAvailableDate) : null
+  return (
+    <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">
+      No {coverage.sourceLabel} data for this dealer in the selected range.
+      {latest ? ` Latest ${coverage.sourceLabel} data is ${latest}.` : ' No historical data found for this dealer.'}
+    </div>
+  )
+}
+
 function kpiTone(value?: number | null) {
   if (value === null || value === undefined || !Number.isFinite(value)) return 'text-slate-500 border-slate-200 bg-white'
   return value >= 0
@@ -243,13 +302,15 @@ function SotKpiCard({
   label,
   value,
   subValue,
-  growthValue,
+  comparisonMetric,
+  lyValue,
 }: {
   icon: React.ReactNode
   label: string
   value: string
   subValue: string
-  growthValue?: number | null
+  comparisonMetric?: SotComparisonMetric | null
+  lyValue?: string | null
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -257,13 +318,14 @@ function SotKpiCard({
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-teal-700">
           {icon}
         </div>
-        <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest', kpiTone(growthValue))}>
-          {formatGrowth(growthValue)}
+        <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest', comparisonBadgeTone(comparisonMetric))}>
+          {formatComparisonBadge(comparisonMetric)}
         </span>
       </div>
       <p className="mt-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{value}</p>
       <p className="mt-1 text-xs font-bold text-slate-500">{subValue}</p>
+      {lyValue ? <p className="mt-2 text-xs font-bold text-slate-400">LY {lyValue}</p> : null}
     </div>
   )
 }
@@ -329,8 +391,7 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
       setIsLoading(true)
       const response = await fetch(`/api/brands/platinum/business-excellence/sot?${queryString}`)
       logApiTimings(response, 'business-excellence-sot')
-      if (!response.ok) throw new Error('Failed to load SOT analysis')
-      setData(await response.json() as SotResponse)
+      setData(await readPlatinumJson<SotResponse>(response, 'SOT analysis'))
     } catch (err) {
       console.error(err)
       setError('SOT analysis could not be loaded.')
@@ -349,7 +410,7 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
   }, [fetchSotAnalysis])
 
   const hasRows = Boolean(data?.rows?.length)
-  const activeGrowth = data?.comparison.growth
+  const activeMetrics = data?.comparison.metrics
 
   const renderTrendChart = (height = 280) => (
     data?.charts.dailyTrend.length ? (
@@ -518,27 +579,32 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
         ) : null}
       </div>
 
+      <DealerCoverageNotice coverage={data?.metadata.dealerCoverage?.primary} />
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <SotKpiCard
           icon={<Award className="h-5 w-5" />}
           label="Certificates"
           value={formatNumber(data?.kpis.certificates || 0)}
           subValue={`${formatNumber(data?.metadata.totalRows || 0)} source rows`}
-          growthValue={activeGrowth?.certificates}
+          comparisonMetric={activeMetrics?.certificates}
+          lyValue={activeMetrics ? formatNumber(activeMetrics.certificates.ly) : null}
         />
         <SotKpiCard
           icon={<IndianRupee className="h-5 w-5" />}
           label="HMIL Amount"
           value={formatMoney(data?.kpis.totalValue || 0)}
           subValue="Total package value"
-          growthValue={activeGrowth?.totalValue}
+          comparisonMetric={activeMetrics?.totalValue}
+          lyValue={activeMetrics ? formatMoney(activeMetrics.totalValue.ly) : null}
         />
         <SotKpiCard
           icon={<PackageCheck className="h-5 w-5" />}
           label="Average Value"
           value={formatMoney(data?.kpis.avgValue || 0)}
           subValue="Value per certificate"
-          growthValue={activeGrowth?.avgValue}
+          comparisonMetric={activeMetrics?.avgValue}
+          lyValue={activeMetrics ? formatMoney(activeMetrics.avgValue.ly) : null}
         />
         <SotKpiCard
           icon={<CarFront className="h-5 w-5" />}

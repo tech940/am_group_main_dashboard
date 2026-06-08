@@ -41,8 +41,12 @@ import {
 } from '@/components/ui/dialog'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import { logApiTimings } from '@/lib/api/client-timing'
+import { readPlatinumJson } from '@/features/platinum/api-client'
 import { BusinessDateFilterValue, appendBusinessComparisonParams } from '@/lib/business-excellence/comparison'
-import { appendPlatinumDealerCodeParam as appendKiaDealerCodeParam } from '@/lib/platinum/dealer-branch'
+import {
+  appendPlatinumDealerCodeParam as appendKiaDealerCodeParam,
+  getPlatinumBranchLabel,
+} from '@/lib/platinum/dealer-branch'
 import { cn } from '@/lib/utils'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
@@ -65,6 +69,15 @@ type WorkshopSnapshot = {
   partsAmount: number
   totalRevenue: number
   vasAmount: number
+  vasAvailable?: boolean
+  vasUnavailableReason?: string | null
+  vasSource?: string | null
+  vasSourceTable?: string | null
+  vasPeriodStart?: string | null
+  vasPeriodEnd?: string | null
+  vasSourceRows?: number
+  vasDedupeMode?: string | null
+  vasLatestSnapshotUploadedAt?: string | null
   labourPerRo: number
   minDate: string | null
   maxDate: string | null
@@ -113,9 +126,11 @@ type OverviewData = {
     parts: ComparisonMetric
     totalJc: ComparisonMetric
     avgBilling: ComparisonMetric
-    openRo: ComparisonMetric
-    delayedRo: ComparisonMetric
-    openOver15: ComparisonMetric
+    labourPerVehicle: ComparisonMetric
+    partsPerVehicle: ComparisonMetric
+    openRo: NullableComparisonMetric
+    delayedRo: NullableComparisonMetric
+    openOver15: NullableComparisonMetric
     complaintsTotal: ComparisonMetric
     complaintsOpen: ComparisonMetric
     complaintsOver15: ComparisonMetric
@@ -126,7 +141,7 @@ type OverviewData = {
     workshopRevenue: ComparisonMetric
     workshopTotalJc: ComparisonMetric
     workshopLabourPerRo: ComparisonMetric
-    workshopVasAmount: ComparisonMetric
+    workshopVasAmount: NullableComparisonMetric
   }
   workshopSnapshot: WorkshopSnapshot
   charts: {
@@ -156,6 +171,16 @@ type OverviewData = {
       complaints?: { minDate: string | null; maxDate: string | null }
       workshopPerformance?: { minDate: string | null; maxDate: string | null }
     }
+    dealerCoverage?: {
+      dealerCode: string | null
+      isAllLocations: boolean
+      primary?: DealerCoverage
+      roBilling?: DealerCoverage
+      openRo?: DealerCoverage
+      complaints?: DealerCoverage
+      workshopPerformance?: DealerCoverage
+    }
+    roBillingAudit?: PlatinumRoBillingAudit
   }
 }
 
@@ -168,7 +193,87 @@ function withChunk(queryString: string, chunk: 'summary' | 'secondary') {
 type ComparisonMetric = {
   cy: number
   ly: number
-  deltaPct: number
+  deltaPct: number | null
+  comparisonStatus?: ComparisonStatus
+  comparisonLabel?: string | null
+  unavailableReason?: string | null
+}
+
+type ComparisonStatus = 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+
+type DealerCoverage = {
+  dealerCode: string | null
+  isAllLocations: boolean
+  hasDataInRange: boolean
+  rowCountInRange: number
+  latestAvailableDate: string | null
+  dateBasis: string
+  sourceLabel: string
+  emptyReason: string | null
+}
+
+type PlatinumRoBillingAudit = {
+  sourceAvailable: boolean
+  rawRows: number
+  activeRawRows: number
+  cancelledRows: number
+  dedupedJc: number
+  duplicateRowsRemoved: number
+  labour: number
+  parts: number
+  revenue: number
+  latestUploadedAt: string | null
+  ly?: {
+    dedupedJc: number
+    revenue: number
+    jcGrowthPct: number | null
+    revenueGrowthPct: number | null
+  }
+  previousPeriod?: {
+    dedupedJc: number
+    revenue: number
+    jcGrowthPct: number | null
+    revenueGrowthPct: number | null
+  }
+  dailySplit?: Array<{ date: string; rawRows: number; dedupedJc: number; revenue: number }>
+  dealerSplit?: Array<{ dealerCode: string; rawRows: number; dedupedJc: number; revenue: number }>
+  topInvoices?: Array<{
+    billNo: string | null
+    roNo: string | null
+    billDate: string | null
+    dealerCode: string
+    workType: string | null
+    revenue: number
+  }>
+  anomaly?: {
+    level: 'none' | 'watch' | 'critical'
+    reasons: string[]
+    jcGrowthPct: number | null
+    revenueGrowthPct: number | null
+    previousJcGrowthPct: number | null
+    previousRevenueGrowthPct: number | null
+  }
+}
+
+type NullableComparisonMetric = {
+  cy: number
+  ly: number | null
+  deltaPct: number | null
+  available?: boolean
+  comparisonStatus?: ComparisonStatus
+  comparisonLabel?: string | null
+  unavailableReason?: string | null
+  rawLy?: number | null
+  source?: string | null
+  sourceTable?: string | null
+  periodStart?: string | null
+  periodEnd?: string | null
+  sourceRows?: number
+  lySource?: string | null
+  lySourceTable?: string | null
+  lyPeriodStart?: string | null
+  lyPeriodEnd?: string | null
+  lySourceRows?: number
 }
 
 type ROAnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
@@ -287,6 +392,25 @@ function formatDisplayDate(value?: string | null) {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
 }
 
+function formatCoverageDate(value?: string | null) {
+  if (!value) return 'No data'
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function formatAuditDateTime(value?: string | null) {
+  if (!value) return 'No upload timestamp'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function toneClass(tone: string) {
   if (tone === 'good') return 'border-emerald-200 bg-white text-emerald-800'
   if (tone === 'risk') return 'border-rose-200 bg-white text-rose-800'
@@ -308,16 +432,75 @@ function getManagementTotalRowClass(name: unknown) {
   return isManagementTotalRowName(name) ? 'be-management-total-row' : ''
 }
 
-function comparisonText(metric?: ComparisonMetric, formatter: (value: number) => string = formatNumber) {
+function comparisonText(metric?: ComparisonMetric | NullableComparisonMetric, formatter: (value: number) => string = formatNumber) {
   if (!metric) return 'LY loading'
+  if (metric.comparisonStatus === 'not_comparable') return metric.comparisonLabel || 'No comparable LY'
+  if (metric.comparisonStatus === 'source_missing') return 'Source missing'
+  if (metric.ly === null) return metric.comparisonLabel || 'No comparable LY'
+  if ('available' in metric && metric.available === false) return metric.unavailableReason ? 'Source missing' : 'No comparable LY'
   return `LY ${formatter(metric.ly)}`
 }
 
-function deltaText(metric?: ComparisonMetric) {
+function deltaText(metric?: ComparisonMetric | NullableComparisonMetric) {
   if (!metric) return 'vs LY'
+  if (metric.comparisonStatus === 'not_comparable') return metric.comparisonLabel || 'No comparable LY'
+  if (metric.comparisonStatus === 'source_missing') return 'Source missing'
+  if (metric.ly === null || metric.deltaPct === null || ('available' in metric && metric.available === false)) return metric.comparisonLabel || 'No comparable LY'
   if (metric.ly <= 0 && metric.cy > 0) return 'New vs LY'
-  if (metric.ly <= 0 && metric.cy <= 0) return 'No LY data'
+  if (metric.ly <= 0 && metric.cy <= 0) return 'Flat vs LY'
   return `${formatDelta(metric.deltaPct)} vs LY`
+}
+
+function DealerCoverageNotice({ coverage }: { coverage?: DealerCoverage }) {
+  if (!coverage || coverage.hasDataInRange || coverage.isAllLocations) return null
+
+  const latest = coverage.latestAvailableDate ? formatCoverageDate(coverage.latestAvailableDate) : null
+  const dealerLabel = getPlatinumBranchLabel(coverage.dealerCode)
+  return (
+    <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">
+      No {dealerLabel} {coverage.sourceLabel} data for the selected range.
+      {latest ? ` Latest ${coverage.sourceLabel} data is ${latest}.` : ` No ${dealerLabel} ${coverage.sourceLabel} history found.`}
+    </div>
+  )
+}
+
+function RoBillingAuditNotice({ audit }: { audit?: PlatinumRoBillingAudit }) {
+  if (!audit?.sourceAvailable || !audit.anomaly || audit.anomaly.level === 'none') return null
+
+  const topDay = [...(audit.dailySplit || [])].sort((a, b) => b.revenue - a.revenue)[0]
+  const topDealer = [...(audit.dealerSplit || [])].sort((a, b) => b.revenue - a.revenue)[0]
+  const topInvoice = audit.topInvoices?.[0]
+  const toneClassName = audit.anomaly.level === 'critical'
+    ? 'border-rose-200 bg-rose-50 text-rose-950'
+    : 'border-amber-200 bg-amber-50 text-amber-950'
+
+  return (
+    <div className={cn('rounded-[1.25rem] border px-4 py-3 text-sm shadow-sm', toneClassName)}>
+      <div className="mt-3 grid gap-2 text-[11px] font-black sm:grid-cols-2 xl:grid-cols-4">
+        <span className="rounded-xl border border-current/15 bg-white/70 px-3 py-2">Raw rows {formatNumber(audit.rawRows)}</span>
+        <span className="rounded-xl border border-current/15 bg-white/70 px-3 py-2">Deduped JC {formatNumber(audit.dedupedJc)}</span>
+        <span className="rounded-xl border border-current/15 bg-white/70 px-3 py-2">Duplicates removed {formatNumber(audit.duplicateRowsRemoved)}</span>
+        <span className="rounded-xl border border-current/15 bg-white/70 px-3 py-2">Latest upload {formatAuditDateTime(audit.latestUploadedAt)}</span>
+      </div>
+      <div className="mt-2 grid gap-2 text-[11px] font-bold sm:grid-cols-3">
+        {topDay && (
+          <span className="rounded-xl bg-white/60 px-3 py-2">
+            Top day {formatDisplayDate(topDay.date)}: {formatNumber(topDay.dedupedJc)} JC, {formatCurrency(topDay.revenue)}
+          </span>
+        )}
+        {topDealer && (
+          <span className="rounded-xl bg-white/60 px-3 py-2">
+            Top dealer {getPlatinumBranchLabel(topDealer.dealerCode)}: {formatNumber(topDealer.dedupedJc)} JC, {formatCurrency(topDealer.revenue)}
+          </span>
+        )}
+        {topInvoice && (
+          <span className="rounded-xl bg-white/60 px-3 py-2">
+            Top invoice {topInvoice.billNo || topInvoice.roNo || 'Unmapped'}: {formatCurrency(topInvoice.revenue)}
+          </span>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function growthFromValues(cy: number, ly: number) {
@@ -360,7 +543,8 @@ function buildBusinessSnapshotHealth(data: OverviewData) {
   const partsGrowth = data.comparison?.parts.deltaPct ?? null
   const loadGrowth = data.comparison?.totalJc.deltaPct ?? null
   const avgBillingGrowth = data.comparison?.avgBilling.deltaPct ?? null
-  const vasGrowth = data.comparison?.workshopVasAmount.deltaPct ?? null
+  const vasMetric = data.comparison?.workshopVasAmount
+  const vasGrowth = vasMetric?.available === false ? null : vasMetric?.deltaPct ?? null
   const complaintGrowth = data.comparison?.complaintsTotal.deltaPct ?? null
   const delayedRisk = scoreFromRiskPct(data.kpis.delayedRoPct, 2.2)
   const agedRisk = scoreFromRiskPct(data.kpis.agedRoPct, 2.6)
@@ -375,11 +559,19 @@ function buildBusinessSnapshotHealth(data: OverviewData) {
     { label: 'Parts Growth', weight: 12, score: scoreFromGrowth(partsGrowth), detail: partsGrowth === null ? 'No LY comparison' : formatDelta(partsGrowth) },
     { label: 'Load / JC Growth', weight: 12, score: scoreFromGrowth(loadGrowth), detail: loadGrowth === null ? 'No LY comparison' : formatDelta(loadGrowth) },
     { label: 'Average Billing Growth', weight: 12, score: scoreFromGrowth(avgBillingGrowth), detail: avgBillingGrowth === null ? 'No LY comparison' : formatDelta(avgBillingGrowth) },
-    { label: 'VAS Revenue Growth', weight: 10, score: scoreFromGrowth(vasGrowth), detail: vasGrowth === null ? 'No LY comparison' : formatDelta(vasGrowth) },
     { label: 'Delayed RO Control', weight: 8, score: delayedRisk, detail: `${data.kpis.delayedRoPct.toFixed(1)}% delayed` },
     { label: '>15D RO Control', weight: 7, score: agedRisk, detail: `${data.kpis.agedRoPct.toFixed(1)}% over 15D` },
     { label: 'Complaint Control', weight: 5, score: complaintRisk, detail: complaintGrowth === null ? `${data.kpis.complaintOpenPct.toFixed(1)}% open` : `${formatDelta(complaintGrowth)} complaints` },
   ]
+
+  if (vasGrowth !== null) {
+    components.splice(5, 0, {
+      label: 'VAS Revenue Growth',
+      weight: 10,
+      score: scoreFromGrowth(vasGrowth),
+      detail: formatDelta(vasGrowth),
+    })
+  }
 
   const weightedScore = components.reduce((sum, item) => sum + item.score * item.weight, 0) / components.reduce((sum, item) => sum + item.weight, 0)
   const sortedPositive = [...components].sort((a, b) => b.score - a.score).slice(0, 3)
@@ -673,7 +865,7 @@ function SnapshotTile({
   comparison?: {
     lyText: string
     deltaText: string
-    deltaPct: number
+    deltaPct: number | null
   }
   positiveIsGood?: boolean
   tone?: 'good' | 'watch' | 'risk' | 'neutral'
@@ -698,9 +890,16 @@ function SnapshotTile({
           <span className="truncate text-slate-600">{comparison.lyText}</span>
           <span className={cn(
             'shrink-0 rounded-full px-2 py-0.5',
-            comparison.deltaText === 'No LY data' || comparison.deltaText === 'Insufficient history'
+            comparison.deltaText === 'No LY data'
+              || comparison.deltaText === 'Insufficient history'
+              || comparison.deltaText === 'No comparable LY'
+              || comparison.deltaText === 'Current WIP only'
+              || comparison.deltaText === 'No LY WIP snapshot'
+              || comparison.deltaText === 'No selected-range data'
+              || comparison.deltaText === 'Source missing'
+              || comparison.deltaText === 'No complaints'
               ? 'bg-slate-100 text-slate-500'
-              : deltaClass(comparison.deltaPct, positiveIsGood)
+              : deltaClass(comparison.deltaPct || 0, positiveIsGood)
           )}>
             {comparison.deltaText}
           </span>
@@ -764,6 +963,39 @@ function BusinessHealthCard({
       </div>
       <p className="mt-2 text-[10px] font-bold opacity-65">Click to view score calculation</p>
     </button>
+  )
+}
+
+function BusinessHealthNoScoreCard({ reason }: { reason: string }) {
+  return (
+    <div className="min-h-[104px] rounded-xl border border-slate-300 bg-white p-4 text-left text-slate-950 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Business Health</p>
+          <div className="mt-2 flex items-end gap-2">
+            <span className="text-4xl font-black leading-none tracking-tight">N/A</span>
+            <span className="pb-1 text-sm font-black text-slate-400">/100</span>
+          </div>
+        </div>
+        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-slate-500 shadow-sm">
+          No score
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-wider">
+        <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
+          <span className="block text-slate-400">CY</span>
+          <span>No data</span>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
+          <span className="block text-slate-400">LY</span>
+          <span>No score</span>
+        </div>
+      </div>
+      <div className="mt-3 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-500 shadow-sm">
+        Overall N/A
+      </div>
+      <p className="mt-2 text-[10px] font-bold text-slate-500">{reason}</p>
+    </div>
   )
 }
 
@@ -1194,9 +1426,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     queryFn: async () => {
       const response = await fetch(`/api/brands/platinum/business-excellence/overview?${summaryQueryString}`)
       logApiTimings(response, 'business-excellence-overview')
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to load Business Excellence overview')
-      return payload as OverviewData
+      return await readPlatinumJson<OverviewData>(response, 'Business Excellence overview')
     },
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
@@ -1206,9 +1436,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     queryFn: async () => {
       const response = await fetch(`/api/brands/platinum/business-excellence/overview?${secondaryQueryString}`)
       logApiTimings(response, 'business-excellence-overview-secondary')
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to load Business Excellence overview details')
-      return payload as OverviewData
+      return await readPlatinumJson<OverviewData>(response, 'Business Excellence overview details')
     },
     enabled: Boolean(summaryData),
     staleTime: DASHBOARD_STALE_TIME_MS,
@@ -1219,9 +1447,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     queryFn: async () => {
       const response = await fetch(`/api/brands/platinum/business-excellence/ro-billing-analysis?${roAnalysisTableQueryString}`)
       logApiTimings(response, 'overview-ro-billing-analysis-table')
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to load RO Billing matrix')
-      return payload as ROAnalysisResponse
+      return await readPlatinumJson<ROAnalysisResponse>(response, 'Overview RO Billing matrix')
     },
     enabled: Boolean(summaryData),
     staleTime: DASHBOARD_STALE_TIME_MS,
@@ -1232,9 +1458,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     queryFn: async () => {
       const response = await fetch(`/api/brands/platinum/business-excellence/ro-billing-analysis?${roAnalysisTrendQueryString}`)
       logApiTimings(response, 'overview-ro-billing-analysis-trend')
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to load RO Billing trend')
-      return payload as ROAnalysisResponse
+      return await readPlatinumJson<ROAnalysisResponse>(response, 'Overview RO Billing trend')
     },
     enabled: Boolean(summaryData),
     staleTime: DASHBOARD_STALE_TIME_MS,
@@ -1417,6 +1641,12 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   }
 
   const latestBillingDate = formatDisplayDate(data.meta.sourceCoverage?.roBilling?.maxDate)
+  const vasTileValue = data.workshopSnapshot.vasAvailable === false
+    ? 'Unavailable'
+    : formatCurrency(data.workshopSnapshot.vasAmount)
+  const vasTileMeta = data.workshopSnapshot.vasAvailable === false
+    ? 'No KIA-style period source'
+    : 'Value added services'
   const periodLabel = `${formatDisplayDate(range.startDate)} - ${formatDisplayDate(range.endDate)}`
   const lyPeriodLabel = data.comparison
     ? `${formatDisplayDate(data.comparison.lyRange.startDate)} - ${formatDisplayDate(data.comparison.lyRange.endDate)}`
@@ -1424,8 +1654,6 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   const labourPerVehicle = safeDivide(data.kpis.labour, data.kpis.totalJc)
   const partsPerVehicle = safeDivide(data.kpis.parts, data.kpis.totalJc)
   const lyJc = data.comparison?.totalJc.ly || 0
-  const lyLabourPerVehicle = safeDivide(data.comparison?.labour.ly || 0, lyJc)
-  const lyPartsPerVehicle = safeDivide(data.comparison?.parts.ly || 0, lyJc)
   const labourShare = data.kpis.revenue > 0 ? (data.kpis.labour / data.kpis.revenue) * 100 : 0
   const partsShare = data.kpis.revenue > 0 ? (data.kpis.parts / data.kpis.revenue) * 100 : 0
   const lyRevenue = data.comparison?.revenue.ly || 0
@@ -1434,7 +1662,8 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   const wipRiskCount = data.kpis.delayedRo + data.kpis.openOver15
   const wipRiskRate = data.kpis.openRo > 0 ? (wipRiskCount / data.kpis.openRo) * 100 : 0
   const lyWipRiskCount = (data.comparison?.delayedRo.ly || 0) + (data.comparison?.openOver15.ly || 0)
-  const complaintClosureRate = data.kpis.complaintsTotal > 0 ? (data.kpis.complaintsClosed / data.kpis.complaintsTotal) * 100 : 100
+  const hasComplaintClosureData = data.kpis.complaintsTotal > 0
+  const complaintClosureRate = hasComplaintClosureData ? (data.kpis.complaintsClosed / data.kpis.complaintsTotal) * 100 : null
   const lyComplaintClosed = Math.max(0, (data.comparison?.complaintsTotal.ly || 0) - (data.comparison?.complaintsOpen.ly || 0))
   const lyComplaintClosureRate = (data.comparison?.complaintsTotal.ly || 0) > 0 ? (lyComplaintClosed / (data.comparison?.complaintsTotal.ly || 1)) * 100 : 0
   const addOnTotal = data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount
@@ -1448,8 +1677,8 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     { metric: 'Labour Revenue', cy: formatCurrency(data.kpis.labour), ly: data.comparison ? formatCurrency(data.comparison.labour.ly) : 'Loading', growth: data.comparison ? data.comparison.labour.deltaPct : null },
     { metric: 'Parts Revenue', cy: formatCurrency(data.kpis.parts), ly: data.comparison ? formatCurrency(data.comparison.parts.ly) : 'Loading', growth: data.comparison ? data.comparison.parts.deltaPct : null },
     { metric: 'Average Billing', cy: formatCurrency(data.kpis.avgBilling), ly: data.comparison ? formatCurrency(data.comparison.avgBilling.ly) : 'Loading', growth: data.comparison ? data.comparison.avgBilling.deltaPct : null },
-    { metric: 'Labour / Vehicle', cy: formatCurrency(labourPerVehicle), ly: data.comparison ? formatCurrency(lyLabourPerVehicle) : 'Loading', growth: data.comparison ? growthFromValues(labourPerVehicle, lyLabourPerVehicle) : null },
-    { metric: 'Parts / Vehicle', cy: formatCurrency(partsPerVehicle), ly: data.comparison ? formatCurrency(lyPartsPerVehicle) : 'Loading', growth: data.comparison ? growthFromValues(partsPerVehicle, lyPartsPerVehicle) : null },
+    { metric: 'Labour / Vehicle', cy: formatCurrency(labourPerVehicle), ly: data.comparison ? formatCurrency(data.comparison.labourPerVehicle.ly) : 'Loading', growth: data.comparison ? data.comparison.labourPerVehicle.deltaPct : null },
+    { metric: 'Parts / Vehicle', cy: formatCurrency(partsPerVehicle), ly: data.comparison ? formatCurrency(data.comparison.partsPerVehicle.ly) : 'Loading', growth: data.comparison ? data.comparison.partsPerVehicle.deltaPct : null },
     { metric: 'Labour %', cy: `${labourShare.toFixed(1)}%`, ly: data.comparison ? `${lyLabourShare.toFixed(1)}%` : 'Loading', growth: data.comparison ? growthFromValues(labourShare, lyLabourShare) : null },
     { metric: 'Parts %', cy: `${partsShare.toFixed(1)}%`, ly: data.comparison ? `${lyPartsShare.toFixed(1)}%` : 'Loading', growth: data.comparison ? growthFromValues(partsShare, lyPartsShare) : null },
   ]
@@ -1457,20 +1686,26 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   const serviceRowsByMetric = buildServiceTypeRowsByMetric(roAnalysisTableData)
   const roBillingTrendRows = getMetricTrend(roAnalysisTrendData, billingTrendMetric)
   const snapshotHealth = buildBusinessSnapshotHealth(data)
+  const primaryCoverage = data.meta.dealerCoverage?.primary
+  const hasSelectedRoBillingData = primaryCoverage?.hasDataInRange !== false
+  const noScoreReason = primaryCoverage && !primaryCoverage.hasDataInRange
+    ? `No ${getPlatinumBranchLabel(primaryCoverage.dealerCode)} RO Billing rows in this date range.`
+    : 'No selected-range RO Billing data.'
   const lySnapshotRevenue = data.comparison?.revenue.ly || 0
+  const workshopGrowth = data.comparison?.workshopRevenue.deltaPct ?? null
   const executiveCards = [
     {
       title: 'Workshop Performance',
       cy: formatCurrency(data.workshopSnapshot.totalRevenue),
       ly: data.comparison ? formatCurrency(data.comparison.workshopRevenue.ly) : 'Loading',
-      growth: data.comparison ? data.comparison.workshopRevenue.deltaPct : null,
-      status: data.comparison && data.comparison.workshopRevenue.deltaPct >= 0 ? 'GOOD' : 'WATCH',
+      growth: workshopGrowth,
+      status: workshopGrowth === null ? 'NO COMPARISON' : workshopGrowth >= 0 ? 'GOOD' : 'WATCH',
     },
     {
       title: 'Open RO',
       cy: formatNumber(data.kpis.openRo),
-      ly: data.comparison && data.comparison.openRo.ly > 0 ? formatNumber(data.comparison.openRo.ly) : 'No history',
-      growth: data.comparison && data.comparison.openRo.ly > 0 ? data.comparison.openRo.deltaPct : null,
+      ly: data.comparison ? comparisonText(data.comparison.openRo) : 'Loading',
+      growth: null,
       status: data.kpis.openOver15 > 0 ? 'WATCH' : 'GOOD',
       positiveIsGood: false,
     },
@@ -1480,9 +1715,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
       ly: data.comparison ? formatNumber(data.comparison.complaintsTotal.ly) : 'Loading',
       growth: data.comparison ? data.comparison.complaintsTotal.deltaPct : null,
       status: (() => {
-        const growthValue = data.comparison?.complaintsTotal.deltaPct
-        if (data.kpis.complaintsOpen > 0 || (growthValue !== undefined && growthValue >= 200)) return 'CRITICAL'
-        if (growthValue !== undefined && growthValue > 0) return 'WATCH'
+        const growthValue = data.comparison?.complaintsTotal.deltaPct ?? null
+        if (data.kpis.complaintsOpen > 0 || (growthValue !== null && growthValue >= 200)) return 'CRITICAL'
+        if (growthValue !== null && growthValue > 0) return 'WATCH'
         return 'GOOD'
       })(),
       positiveIsGood: false,
@@ -1510,13 +1745,13 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               <span className="rounded-full border border-blue-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-700">LY {lyPeriodLabel}</span>
               <span className={cn(
                 'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest',
-                snapshotHealth.overallGrowth === null
+                !hasSelectedRoBillingData || snapshotHealth.overallGrowth === null
                   ? 'border-slate-200 bg-white text-slate-500'
                   : snapshotHealth.overallGrowth >= 0
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                   : 'border-rose-200 bg-rose-50 text-rose-700'
               )}>
-                Overall {snapshotHealth.overallGrowth === null ? 'N/A' : formatDelta(snapshotHealth.overallGrowth)}
+                Overall {!hasSelectedRoBillingData || snapshotHealth.overallGrowth === null ? 'N/A' : formatDelta(snapshotHealth.overallGrowth)}
               </span>
             </div>
             <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Business Snapshot</h2>
@@ -1528,12 +1763,16 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <BusinessHealthCard
-            health={snapshotHealth}
-            cyRevenue={data.kpis.revenue}
-            lyRevenue={lySnapshotRevenue}
-            onClick={() => setHealthDialogOpen(true)}
-          />
+          {hasSelectedRoBillingData ? (
+            <BusinessHealthCard
+              health={snapshotHealth}
+              cyRevenue={data.kpis.revenue}
+              lyRevenue={lySnapshotRevenue}
+              onClick={() => setHealthDialogOpen(true)}
+            />
+          ) : (
+            <BusinessHealthNoScoreCard reason={noScoreReason} />
+          )}
           <SnapshotTile
               icon={TrendingUp}
               label="Revenue"
@@ -1600,9 +1839,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               value={formatCurrency(labourPerVehicle)}
               meta="Labour earned per RO"
               comparison={{
-                lyText: data.comparison ? `LY ${formatCurrency(lyLabourPerVehicle)}` : 'LY loading',
-                deltaText: data.comparison ? (growthFromValues(labourPerVehicle, lyLabourPerVehicle) === null ? 'No LY data' : `${formatDelta(growthFromValues(labourPerVehicle, lyLabourPerVehicle) || 0)} vs LY`) : 'vs LY',
-                deltaPct: growthFromValues(labourPerVehicle, lyLabourPerVehicle) || 0,
+                lyText: comparisonText(data.comparison?.labourPerVehicle, formatCurrency),
+                deltaText: deltaText(data.comparison?.labourPerVehicle),
+                deltaPct: data.comparison?.labourPerVehicle.deltaPct || 0,
               }}
               tone="neutral"
             />
@@ -1612,21 +1851,21 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               value={formatCurrency(partsPerVehicle)}
               meta="Parts earned per RO"
               comparison={{
-                lyText: data.comparison ? `LY ${formatCurrency(lyPartsPerVehicle)}` : 'LY loading',
-                deltaText: data.comparison ? (growthFromValues(partsPerVehicle, lyPartsPerVehicle) === null ? 'No LY data' : `${formatDelta(growthFromValues(partsPerVehicle, lyPartsPerVehicle) || 0)} vs LY`) : 'vs LY',
-                deltaPct: growthFromValues(partsPerVehicle, lyPartsPerVehicle) || 0,
+                lyText: comparisonText(data.comparison?.partsPerVehicle, formatCurrency),
+                deltaText: deltaText(data.comparison?.partsPerVehicle),
+                deltaPct: data.comparison?.partsPerVehicle.deltaPct || 0,
               }}
               tone="neutral"
             />
           <SnapshotTile
               icon={Wrench}
               label="VAS Revenue"
-              value={formatCurrency(data.workshopSnapshot.vasAmount)}
-              meta="Value added services"
+              value={vasTileValue}
+              meta={vasTileMeta}
               comparison={{
                 lyText: comparisonText(data.comparison?.workshopVasAmount, formatCurrency),
                 deltaText: deltaText(data.comparison?.workshopVasAmount),
-                deltaPct: data.comparison?.workshopVasAmount.deltaPct || 0,
+                deltaPct: data.comparison?.workshopVasAmount.deltaPct ?? null,
               }}
               tone="watch"
             />
@@ -1636,9 +1875,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               value={formatNumber(data.kpis.openRo)}
               meta={`${formatNumber(data.kpis.delayedRo)} delayed / ${formatNumber(data.kpis.openOver15)} over 15D`}
               comparison={{
-                lyText: data.comparison && data.comparison.openRo.ly > 0 ? `LY ${formatNumber(data.comparison.openRo.ly)}` : 'Limited history',
-                deltaText: data.comparison && data.comparison.openRo.ly > 0 ? deltaText(data.comparison.openRo) : 'No LY data',
-                deltaPct: data.comparison?.openRo.deltaPct || 0,
+                lyText: comparisonText(data.comparison?.openRo),
+                deltaText: deltaText(data.comparison?.openRo),
+                deltaPct: data.comparison?.openRo.deltaPct ?? null,
               }}
               positiveIsGood={false}
               tone={data.kpis.openOver15 > 0 ? 'watch' : 'good'}
@@ -1649,9 +1888,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               value={formatNumber(wipRiskCount)}
               meta={`${wipRiskRate.toFixed(1)}% of open RO needs attention`}
               comparison={{
-                lyText: data.comparison && lyWipRiskCount > 0 ? `LY ${formatNumber(lyWipRiskCount)}` : 'Limited history',
-                deltaText: data.comparison && lyWipRiskCount > 0 ? `${formatDelta(growthFromValues(wipRiskCount, lyWipRiskCount) || 0)} vs LY` : 'No LY data',
-                deltaPct: growthFromValues(wipRiskCount, lyWipRiskCount) || 0,
+                lyText: data.comparison?.openRo.comparisonStatus === 'not_comparable' ? 'Current WIP only' : `LY ${formatNumber(lyWipRiskCount)}`,
+                deltaText: data.comparison?.openRo.comparisonStatus === 'not_comparable' ? 'No LY WIP snapshot' : (growthFromValues(wipRiskCount, lyWipRiskCount) === null ? (wipRiskCount > 0 ? 'New vs LY' : 'Flat vs LY') : `${formatDelta(growthFromValues(wipRiskCount, lyWipRiskCount) || 0)} vs LY`),
+                deltaPct: data.comparison?.openRo.comparisonStatus === 'not_comparable' ? null : (growthFromValues(wipRiskCount, lyWipRiskCount) || 0),
               }}
               positiveIsGood={false}
               tone={wipRiskCount > 0 ? 'risk' : 'good'}
@@ -1659,14 +1898,26 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
           <SnapshotTile
               icon={ShieldCheck}
               label="Complaint Closure"
-              value={`${complaintClosureRate.toFixed(1)}%`}
-              meta={`${formatNumber(data.kpis.complaintsClosed)} closed / ${formatNumber(data.kpis.complaintsTotal)} total`}
+              value={hasComplaintClosureData ? `${complaintClosureRate!.toFixed(1)}%` : 'N/A'}
+              meta={hasComplaintClosureData ? `${formatNumber(data.kpis.complaintsClosed)} closed / ${formatNumber(data.kpis.complaintsTotal)} total` : 'No complaints'}
               comparison={{
-                lyText: data.comparison && (data.comparison.complaintsTotal.ly || 0) > 0 ? `LY ${lyComplaintClosureRate.toFixed(1)}%` : 'Limited history',
-                deltaText: data.comparison && (data.comparison.complaintsTotal.ly || 0) > 0 ? `${formatDelta(growthFromValues(complaintClosureRate, lyComplaintClosureRate) || 0)} vs LY` : 'No LY data',
-                deltaPct: growthFromValues(complaintClosureRate, lyComplaintClosureRate) || 0,
+                lyText: !hasComplaintClosureData
+                  ? 'No complaints'
+                  : data.comparison && (data.comparison.complaintsTotal.ly || 0) > 0
+                    ? `LY ${lyComplaintClosureRate.toFixed(1)}%`
+                    : (data.comparison ? 'LY 0 total' : 'LY loading'),
+                deltaText: !hasComplaintClosureData
+                  ? 'No complaints'
+                  : data.comparison && (data.comparison.complaintsTotal.ly || 0) > 0
+                    ? `${formatDelta(growthFromValues(complaintClosureRate!, lyComplaintClosureRate) || 0)} vs LY`
+                    : deltaText(data.comparison?.complaintsTotal),
+                deltaPct: !hasComplaintClosureData
+                  ? null
+                  : data.comparison && (data.comparison.complaintsTotal.ly || 0) > 0
+                    ? (growthFromValues(complaintClosureRate!, lyComplaintClosureRate) || 0)
+                    : (data.comparison?.complaintsTotal.deltaPct ?? null),
               }}
-              tone={data.kpis.complaintsOpen > 0 ? 'watch' : 'good'}
+              tone={!hasComplaintClosureData ? 'neutral' : data.kpis.complaintsOpen > 0 ? 'watch' : 'good'}
             />
           <SnapshotTile
               icon={Activity}
@@ -1674,9 +1925,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               value={`${addOnPer100Jc.toFixed(1)}/100 JC`}
               meta={`${formatNumber(addOnTotal)} add-ons sold`}
               comparison={{
-                lyText: data.comparison && lyAddOnPer100Jc > 0 ? `LY ${lyAddOnPer100Jc.toFixed(1)}/100` : 'Limited history',
-                deltaText: data.comparison && lyAddOnPer100Jc > 0 ? `${formatDelta(growthFromValues(addOnPer100Jc, lyAddOnPer100Jc) || 0)} vs LY` : 'No LY data',
-                deltaPct: growthFromValues(addOnPer100Jc, lyAddOnPer100Jc) || 0,
+                lyText: data.comparison ? `LY ${lyAddOnPer100Jc.toFixed(1)}/100` : 'LY loading',
+                deltaText: data.comparison ? (growthFromValues(addOnPer100Jc, lyAddOnPer100Jc) === null ? (addOnPer100Jc > 0 ? 'New vs LY' : 'Flat vs LY') : `${formatDelta(growthFromValues(addOnPer100Jc, lyAddOnPer100Jc) || 0)} vs LY`) : 'vs LY',
+                deltaPct: data.comparison ? (growthFromValues(addOnPer100Jc, lyAddOnPer100Jc) ?? (addOnPer100Jc > 0 ? 100 : 0)) : null,
               }}
               tone={addOnTotal > 0 ? 'good' : 'watch'}
             />

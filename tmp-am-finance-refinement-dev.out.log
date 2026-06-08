@@ -1,0 +1,145 @@
+
+> main_dashboard@0.1.0 dev
+> next dev --port 3001
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://10.129.179.163:3001
+- Environments: .env
+✓ Ready in 782ms
+- Experiments (use with caution):
+  ✓ authInterrupts
+
+ GET /api/health 200 in 1101ms (next.js: 322ms, application-code: 779ms)
+ GET /api/health 200 in 3.2s (next.js: 4ms, application-code: 3.2s)
+ GET /am-finance 200 in 4.5s (next.js: 2.1s, proxy.ts: 813ms, application-code: 1572ms)
+ GET /api/health 200 in 324ms (next.js: 54ms, application-code: 270ms)
+✅ Redis client initialized
+ GET /api/auth/user 200 in 696ms (next.js: 109ms, application-code: 587ms)
+Cache HIT for key: permissions:v2:user:03c73c91-78b1-403f-855e-da077555b2c6
+ GET /api/auth/permissions 200 in 420ms (next.js: 49ms, application-code: 371ms)
+Cache MISS for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0
+Cache MISS for key: am-finance:filters:v2
+ GET /api/notifications?limit=20 200 in 468ms (next.js: 57ms, application-code: 411ms)
+ GET /api/notifications?limit=20 200 in 455ms (next.js: 4ms, application-code: 451ms)
+Cached data for key: am-finance:filters:v2 (TTL: 300s)
+[api:am-finance] total=3096ms auth=37ms data=2668ms options=386ms
+ GET /api/am-finance?page=1&pageSize=25&sortBy=deliveryDate&sortDir=desc 200 in 3.2s (next.js: 58ms, application-code: 3.1s)
+Cache HIT for key: am-finance:filters:v2
+[api:am-finance-analytics] total=3913ms auth=109ms data=2618ms data=388ms response-cache=3804ms
+ GET /api/am-finance/analytics?section=overview 500 in 4.1s (next.js: 88ms, application-code: 4.0s)
+ GET /auth/login 200 in 771ms (next.js: 434ms, proxy.ts: 7ms, application-code: 330ms)
+ GET /am-finance 200 in 1157ms (next.js: 107ms, proxy.ts: 438ms, application-code: 612ms)
+ GET /am-finance 200 in 339ms (next.js: 4ms, proxy.ts: 241ms, application-code: 94ms)
+ GET /am-finance 200 in 326ms (next.js: 4ms, proxy.ts: 264ms, application-code: 58ms)
+ GET /am-finance 200 in 265ms (next.js: 4ms, proxy.ts: 224ms, application-code: 37ms)
+ GET /am-finance 200 in 249ms (next.js: 3ms, proxy.ts: 218ms, application-code: 28ms)
+ GET /am-finance 200 in 321ms (next.js: 4ms, proxy.ts: 267ms, application-code: 50ms)
+ GET /am-finance 200 in 296ms (next.js: 4ms, proxy.ts: 244ms, application-code: 48ms)
+ GET /am-finance 200 in 3.0s (next.js: 78ms, proxy.ts: 708ms, application-code: 2.2s)
+ POST /api/auth/login 200 in 1832ms (next.js: 714ms, application-code: 1118ms)
+✅ Redis client initialized
+Cache MISS for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0
+Cache HIT for key: am-finance:filters:v2
+Cached data for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0 (TTL: 60s)
+[api:am-finance-analytics] total=4216ms auth=503ms data=2975ms response-cache=3711ms
+ GET /api/am-finance/analytics?section=overview 200 in 4.3s (next.js: 88ms, application-code: 4.2s)
+Cache MISS for key: am-finance:analytics:v2:admin:437276c82b5ae066f85a7a3970c77b79dca80fc3
+Cache HIT for key: am-finance:filters:v2
+Cached data for key: am-finance:analytics:v2:admin:437276c82b5ae066f85a7a3970c77b79dca80fc3 (TTL: 60s)
+[api:am-finance-analytics] total=709ms auth=8ms data=514ms response-cache=701ms
+ GET /api/am-finance/analytics?section=payout-status 200 in 719ms (next.js: 4ms, application-code: 716ms)
+Cache MISS for key: am-finance:analytics:v2:admin:f82594a55e1581e247b57ede66e3a18f068dc68d
+Cache HIT for key: am-finance:filters:v2
+Cached data for key: am-finance:analytics:v2:admin:f82594a55e1581e247b57ede66e3a18f068dc68d (TTL: 60s)
+[api:am-finance-analytics] total=858ms auth=8ms data=682ms response-cache=851ms
+ GET /api/am-finance/analytics?section=hyp-bank-analysis 200 in 867ms (next.js: 3ms, application-code: 864ms)
+Cache MISS for key: am-finance:analytics:v2:admin:3d004ad84daaff7f8cddf3c5c1dcca0827609bce
+Cache HIT for key: am-finance:filters:v2
+Cached data for key: am-finance:analytics:v2:admin:3d004ad84daaff7f8cddf3c5c1dcca0827609bce (TTL: 60s)
+[api:am-finance-analytics] total=835ms auth=3ms data=623ms response-cache=832ms
+ GET /api/am-finance/analytics?section=team-performance 200 in 848ms (next.js: 2ms, application-code: 845ms)
+Cache MISS for key: am-finance:analytics:v2:admin:7f5d20166ec003eb14bce7f987e157ae149065e6
+Cache HIT for key: am-finance:filters:v2
+Cached data for key: am-finance:analytics:v2:admin:7f5d20166ec003eb14bce7f987e157ae149065e6 (TTL: 60s)
+[api:am-finance-analytics] total=894ms auth=11ms data=688ms response-cache=883ms
+ GET /api/am-finance/analytics?section=monthly-matrix 200 in 902ms (next.js: 1591µs, application-code: 900ms)
+Cache MISS for key: am-finance:analytics:v2:admin:d3cca928f07a4d207c0101b428ac715992a585ff
+Cache HIT for key: am-finance:filters:v2
+Cached data for key: am-finance:analytics:v2:admin:d3cca928f07a4d207c0101b428ac715992a585ff (TTL: 60s)
+[api:am-finance-analytics] total=582ms auth=9ms data=422ms response-cache=573ms
+ GET /api/am-finance/analytics?section=operations-compliance 200 in 589ms (next.js: 1484µs, application-code: 588ms)
+Cache MISS for key: am-finance:analytics:v2:admin:4c9ca49f168d2f7fe27678c5d2551d59d9761f65
+Cache HIT for key: am-finance:filters:v2
+Cached data for key: am-finance:analytics:v2:admin:4c9ca49f168d2f7fe27678c5d2551d59d9761f65 (TTL: 60s)
+[api:am-finance-analytics] total=1086ms auth=14ms data=900ms response-cache=1072ms
+ GET /api/am-finance/analytics?section=proforma-details 200 in 1095ms (next.js: 2ms, application-code: 1092ms)
+ POST /api/auth/login 200 in 1305ms (next.js: 1935µs, application-code: 1303ms)
+Cache HIT for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0
+[api:am-finance-analytics] total=788ms auth=9ms response-cache=779ms
+ GET /api/am-finance/analytics?section=overview 200 in 799ms (next.js: 2ms, application-code: 797ms)
+Cache HIT for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0
+[api:am-finance-analytics] total=130ms auth=15ms response-cache=114ms
+ GET /api/am-finance/analytics?section=overview 200 in 138ms (next.js: 3ms, application-code: 134ms)
+Cache HIT for key: am-finance:analytics:v2:admin:437276c82b5ae066f85a7a3970c77b79dca80fc3
+[api:am-finance-analytics] total=186ms auth=2ms response-cache=184ms
+ GET /api/am-finance/analytics?section=payout-status 200 in 193ms (next.js: 1703µs, application-code: 192ms)
+ GET /auth/login 200 in 131ms (next.js: 16ms, proxy.ts: 7ms, application-code: 108ms)
+ POST /api/auth/login 200 in 2.9s (next.js: 4ms, application-code: 2.9s)
+ GET /am-finance 200 in 1068ms (next.js: 13ms, proxy.ts: 278ms, application-code: 778ms)
+ GET /api/auth/user 200 in 498ms (next.js: 34ms, application-code: 464ms)
+Cache MISS for key: permissions:v2:user:03c73c91-78b1-403f-855e-da077555b2c6
+Cache MISS for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0
+Cache HIT for key: am-finance:filters:v2
+ GET /api/notifications?limit=20 200 in 1233ms (next.js: 4ms, application-code: 1229ms)
+ GET /api/notifications?limit=20 200 in 2.3s (next.js: 96ms, application-code: 2.3s)
+[api:am-finance] total=2618ms auth=203ms data=2176ms options=239ms
+ GET /api/am-finance?page=1&pageSize=25&sortBy=deliveryDate&sortDir=desc 200 in 2.7s (next.js: 53ms, application-code: 2.6s)
+Cached data for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0 (TTL: 60s)
+[api:am-finance-analytics] total=2924ms auth=292ms data=2105ms response-cache=2632ms
+ GET /api/am-finance/analytics?section=overview 200 in 2.9s (next.js: 4ms, application-code: 2.9s)
+ GET /api/notifications?limit=20 200 in 4.7s (next.js: 15ms, application-code: 4.7s)
+ GET /api/auth/permissions 200 in 99s (next.js: 45ms, application-code: 99s)
+ GET /auth/login 200 in 556ms (next.js: 77ms, proxy.ts: 141ms, application-code: 338ms)
+ POST /api/auth/login 200 in 3.8s (next.js: 17ms, application-code: 3.8s)
+ GET /am-finance 200 in 1126ms (next.js: 24ms, proxy.ts: 290ms, application-code: 812ms)
+ GET /api/auth/user 200 in 494ms (next.js: 4ms, application-code: 489ms)
+Cache MISS for key: permissions:v2:user:03c73c91-78b1-403f-855e-da077555b2c6
+Cache MISS for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0
+Cache MISS for key: am-finance:filters:v2
+Cached data for key: am-finance:filters:v2 (TTL: 300s)
+ GET /api/notifications?limit=20 200 in 2.2s (next.js: 9ms, application-code: 2.2s)
+ GET /api/notifications?limit=20 200 in 1433ms (next.js: 3ms, application-code: 1430ms)
+[api:am-finance] total=2758ms auth=248ms data=2297ms options=212ms
+ GET /api/am-finance?page=1&pageSize=25&sortBy=deliveryDate&sortDir=desc 200 in 2.8s (next.js: 6ms, application-code: 2.8s)
+ POST /api/auth/login 200 in 3.6s (next.js: 10ms, application-code: 3.6s)
+Cache MISS for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0
+Cache HIT for key: am-finance:filters:v2
+Cached data for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0 (TTL: 60s)
+[api:am-finance-analytics] total=4037ms auth=552ms data=2660ms response-cache=3485ms
+ GET /api/am-finance/analytics?section=overview 200 in 4.0s (next.js: 4ms, application-code: 4.0s)
+ GET /api/notifications?limit=20 200 in 1266ms (next.js: 6ms, application-code: 1261ms)
+ GET /api/notifications?limit=20 200 in 429ms (next.js: 2ms, application-code: 427ms)
+ GET /api/am-finance/analytics?section=overview 200 in 2.0min (next.js: 9ms, application-code: 2.0min)
+ GET /api/auth/permissions 200 in 2.0min (next.js: 25ms, application-code: 2.0min)
+ GET /api/notifications?limit=20 200 in 452ms (next.js: 6ms, application-code: 446ms)
+ GET /api/notifications?limit=20 200 in 442ms (next.js: 3ms, application-code: 439ms)
+ GET /api/notifications?limit=20 200 in 958ms (next.js: 5ms, application-code: 952ms)
+ GET /api/notifications?limit=20 200 in 499ms (next.js: 5ms, application-code: 494ms)
+ GET /api/notifications?limit=20 200 in 1014ms (next.js: 3ms, application-code: 1011ms)
+✓ Compiled in 669ms
+ GET /am-finance 200 in 1689ms (next.js: 226ms, proxy.ts: 868ms, application-code: 594ms)
+✅ Redis client initialized
+Cache MISS for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0
+ GET /api/notifications?limit=20 200 in 548ms (next.js: 67ms, application-code: 481ms)
+Cache HIT for key: am-finance:filters:v2
+ GET /api/notifications?limit=20 200 in 447ms (next.js: 3ms, application-code: 444ms)
+ GET /api/notifications?limit=20 200 in 4.6s (next.js: 33ms, application-code: 4.5s)
+ GET /api/notifications?limit=20 200 in 3.3s (next.js: 13ms, application-code: 3.3s)
+ POST /api/auth/login 200 in 1646ms (next.js: 112ms, application-code: 1534ms)
+Cache MISS for key: am-finance:analytics:v2:admin:028a5a4671a65dfd4193009b576a6f65951387e0
+Cache MISS for key: am-finance:filters:v2
+Cached data for key: am-finance:filters:v2 (TTL: 300s)
+ GET /api/am-finance/analytics?section=overview 200 in 30.0s (next.js: 10ms, application-code: 30.0s)
+ GET /api/am-finance?page=1&pageSize=25 200 in 27.6s (next.js: 5ms, application-code: 27.6s)
+[?25h

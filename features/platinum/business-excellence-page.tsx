@@ -36,9 +36,11 @@ import {
   Wrench,
 } from 'lucide-react'
 import { BusinessExcellenceOverview } from '@/features/platinum/business-excellence-overview'
+import { ExecutiveTableShell, type ExecutiveDashboardTableId } from '@/features/business-excellence/executive-table-shell'
 import { OpenRoSection } from '@/features/platinum/open-ro-section'
 import { KiaComplaintsSection } from '@/features/platinum/platinum-complaints-section'
 import { PlatinumSotAnalysisSection } from '@/features/platinum/sot-analysis-section'
+import { readPlatinumJson } from '@/features/platinum/api-client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   LineChart,
@@ -76,13 +78,19 @@ import {
   BusinessDatePreset,
   appendBusinessComparisonParams,
   buildBusinessDateFilter,
+  buildBusinessYearDateFilter,
+  getBusinessAvailableYears,
+  getBusinessYearRange,
+  getEffectiveBusinessDateFilter,
+  normalizeBusinessYear,
 } from '@/lib/business-excellence/comparison'
 import { EXECUTIVE_TARGETS } from '@/lib/business-excellence/executive-targets'
 import {
   DEFAULT_PLATINUM_DEALER_CODE as DEFAULT_KIA_DEALER_CODE,
+  PLATINUM_ALL_LOCATIONS_CODE,
   PLATINUM_BRANCH_DEALERS as KIA_BRANCH_DEALERS,
   appendPlatinumDealerCodeParam as appendKiaDealerCodeParam,
-  normalizePlatinumDealerCode as normalizeKiaDealerCode,
+  normalizePlatinumDealerSelection as normalizeKiaDealerCode,
 } from '@/lib/platinum/dealer-branch'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
@@ -164,15 +172,7 @@ interface LoadedRows {
   [sheetId: string]: LoadedData
 }
 
-type BusinessDateFilter = {
-  mode: 'month' | 'range' | 'preset' | 'custom' | 'year'
-  preset?: BusinessDatePreset
-  month: number
-  year: number
-  startDate: string
-  endDate: string
-  comparison?: BusinessDateFilterValue['comparison']
-} | null
+type BusinessDateFilter = BusinessDateFilterValue | null
 
 type AppliedBusinessDateFilter = NonNullable<BusinessDateFilter>
 
@@ -193,6 +193,7 @@ function AnalyticsDateRangePicker({
   const [viewDate, setViewDate] = useState(() => new Date(initialViewDate.getFullYear(), initialViewDate.getMonth(), 1))
   const selectedStart = parseBusinessDate(startDate)
   const selectedEnd = parseBusinessDate(endDate)
+
   const monthLabel = viewDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
   const dayCells = useMemo(() => {
     const monthStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1)
@@ -413,24 +414,15 @@ const BUSINESS_MONTHS = [
 const PLATINUM_DATA_START_YEAR = 2021
 
 function getPlatinumAvailableYears(today = new Date()) {
-  const currentYear = today.getFullYear()
-  return Array.from({ length: Math.max(currentYear - PLATINUM_DATA_START_YEAR + 1, 1) }, (_, index) => PLATINUM_DATA_START_YEAR + index)
+  return getBusinessAvailableYears(PLATINUM_DATA_START_YEAR, today)
 }
 
 function normalizePlatinumYear(value: string | number | null | undefined) {
-  const year = typeof value === 'number' ? value : Number(value)
-  const currentYear = new Date().getFullYear()
-  if (!Number.isInteger(year) || year < PLATINUM_DATA_START_YEAR || year > currentYear) return null
-  return year
+  return normalizeBusinessYear(value, PLATINUM_DATA_START_YEAR)
 }
 
 function getPlatinumYearRange(year: number) {
-  const today = new Date()
-  const isCurrentYear = year === today.getFullYear()
-  return {
-    startDate: getInputDate(new Date(year, 0, 1)),
-    endDate: getInputDate(isCurrentYear ? today : new Date(year, 11, 31)),
-  }
+  return getBusinessYearRange(year)
 }
 
 function buildPlatinumYearDateFilter(
@@ -438,18 +430,12 @@ function buildPlatinumYearDateFilter(
   range = getPlatinumYearRange(year),
   customComparison?: Partial<{ startDate: string; endDate: string }>
 ): AppliedBusinessDateFilter {
-  const comparison = customComparison?.startDate && customComparison?.endDate
-    ? { previousStartDate: customComparison.startDate, previousEndDate: customComparison.endDate }
-    : {}
-
+  const start = parseBusinessDate(range.startDate)
   return {
-    mode: 'year',
-    preset: 'custom',
-    month: 0,
-    year,
+    ...buildBusinessYearDateFilter(year, customComparison),
     startDate: range.startDate,
     endDate: range.endDate,
-    comparison,
+    month: start?.getMonth() ?? 0,
   }
 }
 
@@ -537,6 +523,46 @@ function formatCurrency(value: number) {
   if (rounded >= 10000000) return `${sign}${currencyPrefix}${(rounded / 10000000).toFixed(2)}Cr`
   if (rounded >= 100000) return `${sign}${currencyPrefix}${(rounded / 100000).toFixed(2)}L`
   return `${sign}${currencyPrefix}${rounded.toLocaleString('en-IN')}`
+}
+
+function formatCompactBusinessDate(value?: string | null) {
+  if (!value) return '-'
+  const date = parseBusinessDate(value)
+  if (!date) return value
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+type DealerCoverage = {
+  dealerCode: string | null
+  isAllLocations: boolean
+  hasDataInRange: boolean
+  rowCountInRange: number
+  latestAvailableDate: string | null
+  dateBasis: string
+  sourceLabel: string
+  emptyReason: string | null
+}
+
+type DealerCoverageBundle = {
+  dealerCode: string | null
+  isAllLocations: boolean
+  primary?: DealerCoverage | null
+  roBilling?: DealerCoverage | null
+  openRo?: DealerCoverage | null
+  complaints?: DealerCoverage | null
+  sot?: DealerCoverage | null
+}
+
+function DealerCoverageNotice({ coverage }: { coverage?: DealerCoverage | null }) {
+  if (!coverage || coverage.hasDataInRange || coverage.isAllLocations) return null
+
+  const latest = coverage.latestAvailableDate ? formatCompactBusinessDate(coverage.latestAvailableDate) : null
+  return (
+    <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">
+      No {coverage.sourceLabel} data for this dealer in the selected range.
+      {latest ? ` Latest ${coverage.sourceLabel} data is ${latest}.` : ' No historical data found for this dealer.'}
+    </div>
+  )
 }
 
 function formatBusinessFreshness(value?: string | null) {
@@ -653,6 +679,8 @@ function buildBusinessExcellenceDateQuery(filter: BusinessDateFilter, dealerCode
     if (filter.comparison?.previousStartDate && filter.comparison.previousEndDate) {
       params.set('compareStartDate', filter.comparison.previousStartDate)
       params.set('compareEndDate', filter.comparison.previousEndDate)
+      params.set('comparisonStartDate', filter.comparison.previousStartDate)
+      params.set('comparisonEndDate', filter.comparison.previousEndDate)
     }
   }
   return params.toString()
@@ -827,6 +855,10 @@ type PerformanceIntelligenceResponse = {
   }>
   rows: PerformanceIntelligenceRow[]
   pagination: { page: number; limit: number; total: number; totalPages: number }
+  meta?: {
+    dealerCode?: string | null
+    dealerCoverage?: DealerCoverageBundle
+  }
 }
 
 function formatPIAmount(value: number) {
@@ -877,8 +909,7 @@ function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter:
         queryFn: async () => {
           const response = await fetch(`/api/brands/platinum/business-excellence/performance-intelligence?${queryString}`)
           logApiTimings(response, 'performance-intelligence')
-          if (!response.ok) throw new Error('Failed to load Performance Intelligence Report')
-          return await response.json() as PerformanceIntelligenceResponse
+          return await readPlatinumJson<PerformanceIntelligenceResponse>(response, 'Performance Intelligence Report')
         },
         staleTime: DASHBOARD_STALE_TIME_MS,
       })
@@ -937,8 +968,7 @@ function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter:
       queryFn: async () => {
         const response = await fetch(`/api/brands/platinum/business-excellence/performance-intelligence?${queryString}`)
         logApiTimings(response, 'performance-intelligence-export')
-        if (!response.ok) throw new Error('Failed to export Performance Intelligence Report')
-        return await response.json() as PerformanceIntelligenceResponse
+        return await readPlatinumJson<PerformanceIntelligenceResponse>(response, 'Performance Intelligence export')
       },
       staleTime: DASHBOARD_STALE_TIME_MS,
     })
@@ -1030,6 +1060,7 @@ function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter:
 
   return (
     <section className="flex flex-col gap-6 bg-slate-50 p-4 lg:p-6">
+      <DealerCoverageNotice coverage={data?.meta?.dealerCoverage?.primary} />
       <div className="order-1 grid grid-cols-1 gap-5">
         <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/60">
           <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-[repeat(4,minmax(135px,1fr))_repeat(3,minmax(110px,0.78fr))]">
@@ -1487,10 +1518,10 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   const [comparisonStartDate, setComparisonStartDate] = useState<string>('')
   const [comparisonEndDate, setComparisonEndDate] = useState<string>('')
   const [datePanelMode, setDatePanelMode] = useState<'current' | 'compare'>('current')
-  const [appliedDateFilter, setAppliedDateFilter] = useState<BusinessDateFilter>(null)
+  const [appliedDateFilter, setAppliedDateFilter] = useState<BusinessDateFilter>(() => getEffectiveBusinessDateFilter())
   const [selectedDealerCode, setSelectedDealerCode] = useState<string | null>(() => {
     const normalized = normalizeKiaDealerCode(searchParams.get('dealer_code'))
-    return normalized || (initialReportName === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE)
+    return normalized || DEFAULT_KIA_DEALER_CODE
   })
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
   const [showDateControls, setShowDateControls] = useState(false)
@@ -1506,9 +1537,9 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
     const params = new URLSearchParams(queryDateFilterKey)
     const hasDateParams = params.has('startDate') || params.has('endDate') || params.has('compareStartDate') || params.has('compareEndDate') || params.get('periodMode') === 'year' || params.has('year')
     const timeout = window.setTimeout(() => {
-      const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
-      setSelectedDealerCode(normalizeKiaDealerCode(params.get('dealer_code')) || (activeReport === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE))
+      setSelectedDealerCode(normalizeKiaDealerCode(params.get('dealer_code')) || DEFAULT_KIA_DEALER_CODE)
       if (!hasDateParams) {
+        const fallback = getEffectiveBusinessDateFilter()
         setSelectedPreset('mtd')
         setSelectedYear(null)
         setStartDate('')
@@ -1516,7 +1547,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
         setComparisonStartDate('')
         setComparisonEndDate('')
         setDatePanelMode('current')
-        setAppliedDateFilter(null)
+        setAppliedDateFilter(fallback)
         return
       }
 
@@ -1571,8 +1602,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
     queryFn: async () => {
       const response = await fetch(`/api/brands/platinum/business-excellence/freshness?${freshnessQueryString}`)
       logApiTimings(response, 'business-excellence-freshness')
-      if (!response.ok) throw new Error('Failed to fetch Business Excellence freshness')
-      return await response.json()
+      return await readPlatinumJson<BusinessFreshnessResponse>(response, 'Business Excellence freshness')
     },
     enabled: Boolean(activeTab || initialReportName),
     staleTime: DASHBOARD_STALE_TIME_MS,
@@ -1636,6 +1666,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   const clearDateFilter = useCallback(() => {
     setIsApplyingFilter(true)
     setTimeout(() => {
+      const fallback = getEffectiveBusinessDateFilter()
       setSelectedPreset('mtd')
       setSelectedYear(null)
       setStartDate('')
@@ -1643,7 +1674,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
       setComparisonStartDate('')
       setComparisonEndDate('')
       setDatePanelMode('current')
-      setAppliedDateFilter(null)
+      setAppliedDateFilter(fallback)
       router.replace(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), null, selectedDealerCode), { scroll: false })
       setShowDateControls(false)
       setTimeout(() => {
@@ -1653,8 +1684,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   }, [activeTab, initialReportName, router, selectedDealerCode])
 
   const handleDealerChange = useCallback((dealerCode: string | null) => {
-    const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
-    const nextDealerCode = normalizeKiaDealerCode(dealerCode) || (activeReport === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE)
+    const nextDealerCode = normalizeKiaDealerCode(dealerCode) || DEFAULT_KIA_DEALER_CODE
     setSelectedDealerCode(nextDealerCode)
     router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), appliedDateFilter, nextDealerCode), { scroll: false })
   }, [activeTab, appliedDateFilter, initialReportName, router])
@@ -1677,24 +1707,22 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   }, [])
 
   const platinumYearOptions = useMemo(() => getPlatinumAvailableYears(), [])
+  const selectedComparisonYear = parseBusinessDate(comparisonStartDate)?.getFullYear() || null
+  const activeYearOption = datePanelMode === 'compare' ? selectedComparisonYear : selectedYear
 
   const selectPlatinumYear = useCallback((year: number) => {
     const range = getPlatinumYearRange(year)
+    if (datePanelMode === 'compare') {
+      setComparisonStartDate(range.startDate)
+      setComparisonEndDate(range.endDate)
+      return
+    }
+
     setSelectedYear(year)
     setSelectedPreset('custom')
     setStartDate(range.startDate)
     setEndDate(range.endDate)
-
-    if (datePanelMode === 'compare') {
-      if (year > PLATINUM_DATA_START_YEAR) {
-        setComparisonStartDate(shiftDateByYears(range.startDate, -1))
-        setComparisonEndDate(shiftDateByYears(range.endDate, -1))
-      } else {
-        setComparisonStartDate('')
-        setComparisonEndDate('')
-      }
-    }
-  }, [datePanelMode, shiftDateByYears])
+  }, [datePanelMode])
 
   const openDatePanel = useCallback((mode: 'current' | 'compare') => {
     const currentRange = resolveCurrentRange()
@@ -1735,11 +1763,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
         }),
       })
       logApiTimings(response, 'business-excellence-ai-summary')
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate AI summary')
-      }
+      const data = await readPlatinumJson<BusinessAiSummary>(response, 'Business Excellence AI summary')
 
       setAiSummary(data as BusinessAiSummary)
     } catch (error) {
@@ -1761,14 +1785,17 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
         limit: String(itemsPerPage),
       })
       appendKiaDealerCodeParam(params, selectedDealerCode)
+      const effectiveFilter = getEffectiveBusinessDateFilter(appliedDateFilter)
+      params.set('startDate', effectiveFilter.startDate)
+      params.set('endDate', effectiveFilter.endDate)
+      appendBusinessComparisonParams(params, effectiveFilter)
       const queryString = params.toString()
       const fullData = await queryClient.fetchQuery({
         queryKey: ['business-excellence', 'sheet-rows', queryString],
         queryFn: async () => {
           const response = await fetch(`/api/brands/platinum/business-excellence?${queryString}`)
           logApiTimings(response, 'business-excellence-sheet-rows')
-          if (!response.ok) throw new Error('Failed to fetch sheet rows')
-          return await response.json()
+          return await readPlatinumJson<LoadedData>(response, 'Business Excellence sheet rows')
         },
         staleTime: DASHBOARD_STALE_TIME_MS,
       })
@@ -1784,7 +1811,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
     } finally {
       setFetchingRows(null)
     }
-  }, [queryClient, selectedDealerCode]) // Removed loadedRows dependency
+  }, [appliedDateFilter, queryClient, selectedDealerCode]) // Removed loadedRows dependency
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -1814,9 +1841,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleTabChange = (sheetName: string) => {
-    const nextDealerCode = sheetName === EXECUTIVE_DASHBOARD_REPORT
-      ? normalizeKiaDealerCode(searchParams.get('dealer_code'))
-      : normalizeKiaDealerCode(selectedDealerCode) || DEFAULT_KIA_DEALER_CODE
+    const nextDealerCode = normalizeKiaDealerCode(selectedDealerCode) || DEFAULT_KIA_DEALER_CODE
     setSelectedDealerCode(nextDealerCode)
     router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(sheetName), appliedDateFilter, nextDealerCode))
   }
@@ -1856,9 +1881,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
               const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isSotSheet
               const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet || isSotSheet
               const supportsHealthPanel = isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
-              const branchOptions = isExecutiveDashboardSheet
-                ? [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
-                : KIA_BRANCH_DEALERS
+              const branchOptions = [{ label: 'All Locations', dealerCode: PLATINUM_ALL_LOCATIONS_CODE }, ...KIA_BRANCH_DEALERS]
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
                 : ''
@@ -1885,9 +1908,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                               </span>
                               <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" aria-label="Business Excellence branch filter">
                                 {branchOptions.map((branch) => {
-                                  const isActive = branch.dealerCode
-                                    ? selectedDealerCode === branch.dealerCode
-                                    : !normalizeKiaDealerCode(selectedDealerCode)
+                                  const isActive = selectedDealerCode === branch.dealerCode
                                   return (
                                     <button
                                       key={branch.dealerCode || 'all-locations'}
@@ -2232,7 +2253,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                           onClick={() => selectPlatinumYear(year)}
                                           className={cn(
                                             'h-9 min-w-[4rem] rounded-xl border px-3 text-[11px] font-black transition-all',
-                                            selectedYear === year
+                                            activeYearOption === year
                                               ? 'border-[var(--dashboard-action-bg)] bg-[var(--dashboard-action-bg)] text-white shadow-sm'
                                               : 'border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:text-slate-950'
                                           )}
@@ -2245,6 +2266,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                 </div>
                                 {datePanelMode === 'current' ? (
                                   <AnalyticsDateRangePicker
+                                    key={`platinum-current-${startDate}-${endDate}`}
                                     title="Current Date Range"
                                     clearLabel="Clear current range"
                                     startDate={startDate}
@@ -2259,6 +2281,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                 ) : (
                                   <div className="grid gap-3 md:grid-cols-2">
                                     <AnalyticsDateRangePicker
+                                      key={`platinum-cy-${startDate}-${endDate}`}
                                       title="CY Date Range"
                                       clearLabel="Clear CY range"
                                       startDate={startDate}
@@ -2271,6 +2294,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                                       }}
                                     />
                                     <AnalyticsDateRangePicker
+                                      key={`platinum-ly-${comparisonStartDate}-${comparisonEndDate}`}
                                       title="LY Date Range"
                                       clearLabel="Clear LY range"
                                       startDate={comparisonStartDate}
@@ -2453,6 +2477,10 @@ type ROAnalysisResponse = {
   cancelledSummary?: CancelledBillingSummary
   filterOptions: Record<string, string[]>
   rowCounts: { totalRows: number; rowsWithBillDate: number; filteredRows: number }
+  meta?: {
+    dealerCode?: string | null
+    dealerCoverage?: DealerCoverageBundle
+  }
 }
 
 function getInputDate(date: Date) {
@@ -3320,9 +3348,7 @@ function BusinessExecutiveDecisionLayer({
     queryFn: async () => {
       const response = await fetch(request.endpoint)
       logApiTimings(response, request.timingLabel)
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to load executive layer')
-      return payload
+      return await readPlatinumJson<unknown>(response, 'Executive decision layer')
     },
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
@@ -3469,7 +3495,7 @@ function getROTrendDateRange(dateFilter: BusinessDateFilter) {
 const EXECUTIVE_LOCATION_OPTIONS = [
   {
     label: 'All Locations',
-    dealerCode: null as string | null,
+    dealerCode: PLATINUM_ALL_LOCATIONS_CODE,
     helper: KIA_BRANCH_DEALERS.map((branch) => branch.dealerCode).join(' + '),
   },
   ...KIA_BRANCH_DEALERS.map((branch) => ({
@@ -3742,10 +3768,14 @@ function ExecutiveRevenuePerformance({
   response,
   dateFilter,
   selectedLocationLabel,
+  expandedTable,
+  onToggleTable,
 }: {
   response: ROAnalysisResponse | null | undefined
   dateFilter: BusinessDateFilter
   selectedLocationLabel: string
+  expandedTable: ExecutiveDashboardTableId | null
+  onToggleTable: (tableId: ExecutiveDashboardTableId) => void
 }) {
   const labourRows = useMemo(() => executiveRevenueRows(response, 'labour', 'Total Labour'), [response])
   const partsRows = useMemo(() => executiveRevenueRows(response, 'parts', 'Total Parts'), [response])
@@ -3793,14 +3823,21 @@ function ExecutiveRevenuePerformance({
     )
   }
 
-  const renderRevenueTable = (title: string, rows: ExecutiveRevenueRow[], headerClass: string) => (
-    <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-300 bg-white">
-      <div className={cn('px-3 py-2 text-white', headerClass)}>
-        <h4 className="flex items-center gap-2 text-[11px] font-black">
-          <IndianRupee className="h-3.5 w-3.5" />
-          {title}
-        </h4>
-      </div>
+  const renderRevenueTable = (
+    tableId: Extract<ExecutiveDashboardTableId, 'labour-revenue' | 'parts-revenue'>,
+    title: string,
+    rows: ExecutiveRevenueRow[],
+    headerClass: string
+  ) => (
+    <ExecutiveTableShell
+      title={title}
+      icon={<IndianRupee className="h-3.5 w-3.5" />}
+      headerClassName={cn('px-3 py-2 text-white', headerClass)}
+      titleClassName="text-[11px]"
+      className={cn('rounded-2xl border-slate-300', expandedTable === tableId && 'xl:col-span-3')}
+      isExpanded={expandedTable === tableId}
+      onToggleExpanded={() => onToggleTable(tableId)}
+    >
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight">
           <thead className="bg-slate-950 text-white">
@@ -3834,7 +3871,7 @@ function ExecutiveRevenuePerformance({
           </tbody>
         </table>
       </div>
-    </div>
+    </ExecutiveTableShell>
   )
 
   return (
@@ -3855,8 +3892,8 @@ function ExecutiveRevenuePerformance({
       </div>
 
       <div className="mt-4 grid gap-3 xl:grid-cols-3">
-        {renderRevenueTable('Labour Revenue', labourRows, 'bg-blue-600')}
-        {renderRevenueTable('Part Revenue', partsRows, 'bg-purple-600')}
+        {renderRevenueTable('labour-revenue', 'Labour Revenue', labourRows, 'bg-blue-600')}
+        {renderRevenueTable('parts-revenue', 'Part Revenue', partsRows, 'bg-purple-600')}
         <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-300 bg-white">
           <div className="bg-slate-950 px-3 py-2 text-white">
             <h4 className="flex items-center gap-2 text-[11px] font-black">
@@ -3911,9 +3948,14 @@ function BusinessExecutiveDashboard({
 }) {
   const [activeExecutiveMetric, setActiveExecutiveMetric] = useState<ROAnalysisType>('load')
   const [activeExecutiveTableMetric, setActiveExecutiveTableMetric] = useState<ROAnalysisType>('load')
+  const [expandedExecutiveTable, setExpandedExecutiveTable] = useState<ExecutiveDashboardTableId | null>(null)
   const selectedDealer = normalizeKiaDealerCode(dealerCode)
   const selectedLocation = selectedDealer || 'all'
   const queryClient = useQueryClient()
+
+  const toggleExecutiveTable = useCallback((tableId: ExecutiveDashboardTableId) => {
+    setExpandedExecutiveTable((current) => current === tableId ? null : tableId)
+  }, [])
 
   const fetchExecutiveSummary = useCallback(async (view: 'table' | 'trend' | 'fy', nextDealerCode?: string | null) => {
     const queryString = executiveQueryString(view, dateFilter, nextDealerCode)
@@ -3922,8 +3964,7 @@ function BusinessExecutiveDashboard({
       queryFn: async () => {
         const response = await fetch(`/api/brands/platinum/business-excellence/ro-billing-analysis?${queryString}`)
         logApiTimings(response, `executive-dashboard-${view}`)
-        if (!response.ok) throw new Error(`Failed to fetch executive dashboard ${view}`)
-        return await response.json() as ROAnalysisResponse
+        return await readPlatinumJson<ROAnalysisResponse>(response, `Executive dashboard ${view}`)
       },
       staleTime: DASHBOARD_STALE_TIME_MS,
     })
@@ -4141,7 +4182,7 @@ function BusinessExecutiveDashboard({
   }, [fyQuery.data])
 
   const isLoading = tableQuery.isLoading || branchTableQuery.isLoading || trendQuery.isLoading || fyQuery.isLoading
-  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (!item.dealerCode && selectedLocation === 'all'))?.label || 'All Locations'
+  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (item.dealerCode === PLATINUM_ALL_LOCATIONS_CODE && selectedLocation === 'all'))?.label || 'All Locations'
 
   return (
     <div className="space-y-4">
@@ -4175,11 +4216,13 @@ function BusinessExecutiveDashboard({
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-            <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between bg-[#1f3f91] px-4 py-3 text-white">
-                <h3 className="text-sm font-black">Overall Load</h3>
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/75">Location performance</p>
-              </div>
+            <ExecutiveTableShell
+              title="Overall Load"
+              subtitle="Location performance"
+              className={cn(expandedExecutiveTable === 'overall-load' && 'xl:col-span-2')}
+              isExpanded={expandedExecutiveTable === 'overall-load'}
+              onToggleExpanded={() => toggleExecutiveTable('overall-load')}
+            >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight">
                   <thead className="bg-[#1f3f91] text-white">
@@ -4216,14 +4259,13 @@ function BusinessExecutiveDashboard({
                   </tbody>
                 </table>
               </div>
-            </div>
+            </ExecutiveTableShell>
 
-            <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-3 bg-[#1f3f91] px-4 py-3 text-white lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h3 className="text-sm font-black">Service Type Performance</h3>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/75">{selectedLocationLabel}</p>
-                </div>
+            <ExecutiveTableShell
+              title="Service Type Performance"
+              subtitle={selectedLocationLabel}
+              headerContentClassName="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between"
+              actions={(
                 <div className="flex flex-wrap items-center gap-1.5">
                   {EXECUTIVE_TABLE_METRICS.map((metric) => (
                     <button
@@ -4241,7 +4283,11 @@ function BusinessExecutiveDashboard({
                     </button>
                   ))}
                 </div>
-              </div>
+              )}
+              className={cn(expandedExecutiveTable === 'service-type-performance' && 'xl:col-span-2')}
+              isExpanded={expandedExecutiveTable === 'service-type-performance'}
+              onToggleExpanded={() => toggleExecutiveTable('service-type-performance')}
+            >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight">
                   <thead className="bg-[#1f3f91] text-white">
@@ -4278,13 +4324,15 @@ function BusinessExecutiveDashboard({
                   </tbody>
                 </table>
               </div>
-            </div>
+            </ExecutiveTableShell>
           </div>
 
           <ExecutiveRevenuePerformance
             response={selectedTable}
             dateFilter={dateFilter}
             selectedLocationLabel={selectedLocationLabel}
+            expandedTable={expandedExecutiveTable}
+            onToggleTable={toggleExecutiveTable}
           />
 
           <div className="space-y-4">
@@ -4364,11 +4412,12 @@ function BusinessExecutiveDashboard({
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between bg-[#1f3f91] px-4 py-3 text-white">
-                <h3 className="text-sm font-black">FY Trends</h3>
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/75">Revenue, parts, labour, load</p>
-              </div>
+            <ExecutiveTableShell
+              title="FY Trends"
+              subtitle="Revenue, parts, labour, load"
+              isExpanded={expandedExecutiveTable === 'fy-trends'}
+              onToggleExpanded={() => toggleExecutiveTable('fy-trends')}
+            >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] border-collapse text-[11px] leading-tight">
                   <thead className="bg-slate-950 text-white">
@@ -4400,7 +4449,7 @@ function BusinessExecutiveDashboard({
                   </tbody>
                 </table>
               </div>
-            </div>
+            </ExecutiveTableShell>
           </div>
         </>
       )}
@@ -4413,6 +4462,8 @@ type WorkshopMetric = {
   ly?: number
   growth?: number | null
   amount?: number
+  comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+  comparisonLabel?: string | null
 }
 
 type WorkshopPerformanceRow = {
@@ -4462,7 +4513,32 @@ type WorkshopPerformanceResponse = {
     totalRevenue: number
     avgBilling: number
   }>
-  meta: { jcDefinition: string; rowCount: number; cacheTtlSeconds: number; advisor?: string | null }
+  meta: {
+    jcDefinition: string
+    rowCount: number
+    cacheTtlSeconds: number
+    advisor?: string | null
+    dealerCoverage?: {
+      dealerCode: string | null
+      isAllLocations: boolean
+      primary?: DealerCoverage
+      roBilling?: DealerCoverage
+    }
+    vas?: {
+      available?: boolean
+      unavailableReason?: string | null
+      source?: string | null
+      sourceTable?: string | null
+      periodStart?: string | null
+      periodEnd?: string | null
+      sourceRows?: number
+      dedupeMode?: string | null
+      lyAvailable?: boolean
+      comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+      comparisonLabel?: string | null
+      lyUnavailableReason?: string | null
+    }
+  }
 }
 
 function formatWorkshopTableMoney(value: number) {
@@ -4646,8 +4722,7 @@ function WorkshopPerformanceSection({
           queryFn: async () => {
             const response = await fetch(`/api/brands/platinum/business-excellence/workshop-performance?${queryString}`)
             logApiTimings(response, 'workshop-performance')
-            if (!response.ok) throw new Error('Failed to load Workshop Performance')
-            return await response.json() as WorkshopPerformanceResponse
+            return await readPlatinumJson<WorkshopPerformanceResponse>(response, 'Workshop Performance')
           },
           staleTime: DASHBOARD_STALE_TIME_MS,
         })
@@ -4682,12 +4757,19 @@ function WorkshopPerformanceSection({
     }
   }) || []
 
+  const vasUnavailable = data?.meta.vas?.available === false
+  const vasSnapshotMeta = vasUnavailable
+    ? 'No KIA-style period source'
+    : data?.meta.vas?.source === 'operation_latest_snapshot'
+      ? `Snapshot as of ${formatCompactBusinessDate(data.meta.vas.periodEnd)} / ${data.meta.vas.comparisonLabel || 'No comparable LY'}`
+      : undefined
+
   const kpiCards = data ? [
     { label: 'Total JC', metric: data.kpis.totalJc, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'teal' },
     { label: 'Labour Amount', metric: data.kpis.labourAmount, formatter: formatCurrency, tone: 'blue' },
     { label: 'Spare Sale', metric: data.kpis.spareSale, formatter: formatCurrency, tone: 'amber' },
     { label: 'Total Revenue', metric: data.kpis.totalRevenue, formatter: formatCurrency, tone: 'indigo' },
-    { label: 'VAS Revenue', metric: data.kpis.vasAmount, formatter: formatCurrency, tone: 'emerald' },
+    { label: 'VAS Revenue', metric: data.kpis.vasAmount, formatter: vasUnavailable ? () => 'Unavailable' : formatCurrency, tone: 'emerald', helper: vasSnapshotMeta },
     { label: 'Labour / RO', metric: data.kpis.labourPerRo, formatter: formatCurrency, tone: 'slate' },
     { label: 'EW Count', metric: data.kpis.ewCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'cyan' },
     { label: 'MCP Count', metric: data.kpis.mcpCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'rose' },
@@ -4980,6 +5062,8 @@ function WorkshopPerformanceSection({
         </div>
       )}
 
+      <DealerCoverageNotice coverage={data?.meta.dealerCoverage?.primary} />
+
       <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/50">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -5037,6 +5121,9 @@ function WorkshopPerformanceSection({
               <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{card.formatter(card.metric.value)}</p>
               {card.metric.ly !== undefined && (
                 <p className="mt-3 text-xs font-bold text-slate-400">LY {card.formatter(card.metric.ly)}</p>
+              )}
+              {'helper' in card && card.helper && (
+                <p className="mt-3 text-xs font-bold text-slate-400">{card.helper}</p>
               )}
             </div>
           )
@@ -5414,6 +5501,7 @@ function ServiceTypePerformance({
   const [serverAnalyticsSummary, setServerAnalyticsSummary] = useState<ROAnalysisResponse['analyticsSummary'] | null>(null)
   const [serverLeaderboard, setServerLeaderboard] = useState<SalesLeaderboardRow[]>([])
   const [cancelledSummary, setCancelledSummary] = useState<CancelledBillingSummary | null>(null)
+  const [roBillingDealerCoverage, setRoBillingDealerCoverage] = useState<DealerCoverage | null>(null)
   const [isServerViewLoading, setIsServerViewLoading] = useState(false)
   const [isServerTableLoading, setIsServerTableLoading] = useState(true)
   const [expandedRows, setExpandedRows] = useState<string[]>([])
@@ -5671,8 +5759,7 @@ function ServiceTypePerformance({
           queryFn: async () => {
             const response = await fetch(`/api/brands/platinum/business-excellence/ro-billing-analysis?${queryString}`)
             logApiTimings(response, 'ro-billing-table-summary')
-            if (!response.ok) throw new Error('Failed to fetch RO Billing table summary bundle')
-            return await response.json() as ROAnalysisResponse
+            return await readPlatinumJson<ROAnalysisResponse>(response, 'RO Billing table summary bundle')
           },
           staleTime: DASHBOARD_STALE_TIME_MS,
         })
@@ -5687,9 +5774,13 @@ function ServiceTypePerformance({
         if (isActive) {
           setServerTableRowsByMetric(convertedRowsByMetric)
           setCancelledSummary(result.cancelledSummary || null)
+          setRoBillingDealerCoverage(result.meta?.dealerCoverage?.primary || null)
         }
       } catch (error) {
-        if (isActive) console.error('Failed to fetch RO Billing table summary:', error)
+        if (isActive) {
+          console.error('Failed to fetch RO Billing table summary:', error)
+          setRoBillingDealerCoverage(null)
+        }
       } finally {
         if (isActive) setIsServerTableLoading(false)
       }
@@ -5720,8 +5811,7 @@ function ServiceTypePerformance({
       queryFn: async () => {
         const response = await fetch(`/api/brands/platinum/business-excellence/ro-billing-analysis?${queryString}`)
         logApiTimings(response, `ro-billing-${analysisType}-${view}`)
-        if (!response.ok) throw new Error(`Failed to fetch RO Billing ${analysisType} ${view} summary`)
-        return await response.json() as ROAnalysisResponse
+        return await readPlatinumJson<ROAnalysisResponse>(response, `RO Billing ${analysisType} ${view} summary`)
       },
       staleTime: DASHBOARD_STALE_TIME_MS,
     })
@@ -5747,8 +5837,7 @@ function ServiceTypePerformance({
       queryFn: async () => {
         const response = await fetch(`/api/brands/platinum/business-excellence/ro-billing-analysis?${queryString}`)
         logApiTimings(response, `ro-billing-${view}-bundle`)
-        if (!response.ok) throw new Error(`Failed to fetch RO Billing ${view} bundle`)
-        return await response.json() as ROAnalysisResponse
+        return await readPlatinumJson<ROAnalysisResponse>(response, `RO Billing ${view} bundle`)
       },
       staleTime: DASHBOARD_STALE_TIME_MS,
     })
@@ -7465,6 +7554,9 @@ function ServiceTypePerformance({
         </CardHeader>
         <CardContent className="p-0">
           <>
+            <div className="px-4 pt-4">
+              <DealerCoverageNotice coverage={roBillingDealerCoverage} />
+            </div>
             {viewMode === 'table' ? (
               <div className="p-6 pb-0">
                 <div className="overflow-x-auto">

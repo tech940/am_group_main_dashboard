@@ -5,6 +5,8 @@ export const PLATINUM_BRANCH_DEALERS = [
 ] as const
 
 export type PlatinumDealerCode = (typeof PLATINUM_BRANCH_DEALERS)[number]['dealerCode']
+export const PLATINUM_ALL_LOCATIONS_CODE = 'all'
+export type PlatinumDealerSelection = PlatinumDealerCode | typeof PLATINUM_ALL_LOCATIONS_CODE
 
 export const DEFAULT_PLATINUM_DEALER_CODE: PlatinumDealerCode = 'N5211'
 
@@ -15,12 +17,26 @@ export function normalizePlatinumDealerCode(value: string | null | undefined): P
     : null
 }
 
+export function isPlatinumAllLocations(value: string | null | undefined) {
+  return String(value || '').trim().toLowerCase() === PLATINUM_ALL_LOCATIONS_CODE
+}
+
+export function normalizePlatinumDealerSelection(value: string | null | undefined): PlatinumDealerSelection | null {
+  if (isPlatinumAllLocations(value)) return PLATINUM_ALL_LOCATIONS_CODE
+  return normalizePlatinumDealerCode(value)
+}
+
 export function getPlatinumBranchLabel(dealerCode: string | null | undefined) {
+  if (isPlatinumAllLocations(dealerCode) || !dealerCode) return 'All Locations'
   const normalized = normalizePlatinumDealerCode(dealerCode)
   return PLATINUM_BRANCH_DEALERS.find((branch) => branch.dealerCode === normalized)?.label || 'Platinum Jammu'
 }
 
 export function appendPlatinumDealerCodeParam(params: URLSearchParams, dealerCode: string | null | undefined) {
+  if (isPlatinumAllLocations(dealerCode)) {
+    params.set('dealer_code', PLATINUM_ALL_LOCATIONS_CODE)
+    return
+  }
   const normalized = normalizePlatinumDealerCode(dealerCode)
   if (normalized) params.set('dealer_code', normalized)
 }

@@ -6,6 +6,7 @@ import { CACHE_KEYS, CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
@@ -197,6 +198,20 @@ async function fetchTableRows({
   const selectedLimit = fetchAll ? 50000 : limit
   const selectedOffset = fetchAll ? 0 : offset
   const useBillDateWindow = table.slug === 'am_platinum_ro_billing_report' && startDate && endDate
+  const dealerCoverage = useBillDateWindow
+    ? await fetchPlatinumRoBillingCoverage(startDate, endDate, dealerCode || null)
+    : null
+  const meta = dealerCoverage
+    ? {
+        dealerCode: dealerCoverage.dealerCode,
+        dealerCoverage: {
+          dealerCode: dealerCoverage.dealerCode,
+          isAllLocations: dealerCoverage.isAllLocations,
+          primary: dealerCoverage,
+          roBilling: dealerCoverage,
+        },
+      }
+    : undefined
 
   if (table.slug === 'am_platinum_ro_billing_report' && fetchAll) {
     const rowsResult = await db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate, dealerCode, true))
@@ -212,6 +227,7 @@ async function fetchTableRows({
       page,
       limit: selectedLimit,
       rows: rowsResult,
+      meta,
     }
   }
 
@@ -233,6 +249,7 @@ async function fetchTableRows({
       page,
       limit: selectedLimit,
       rows: rowsResult,
+      meta,
     }
   }
 
@@ -269,6 +286,7 @@ async function fetchTableRows({
     page,
     limit: selectedLimit,
     rows: table.slug === 'am_platinum_ro_billing_report' ? rowsResult : rowsResult.map((row) => row.row),
+    meta,
   }
 }
 
@@ -298,7 +316,7 @@ export async function GET(request: Request) {
       const startDate = searchParams.get('startDate')
       const endDate = searchParams.get('endDate')
       const dealerCode = normalizePlatinumDealerCode(searchParams.get('dealer_code'))
-      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v6:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}:dealer:${dealerCode || 'all'}`
+      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v8:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}:dealer:${dealerCode || 'all'}`
       const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
         ? fetchTableRows({ table, page, limit, fetchAll, startDate, endDate, dealerCode })
         : getCachedData(cacheKey, () => fetchTableRows({ table, page, limit, fetchAll, startDate, endDate, dealerCode }), CACHE_TTL_SECONDS))

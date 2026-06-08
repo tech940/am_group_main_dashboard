@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertTriangle,
@@ -40,9 +39,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import { logApiTimings } from '@/lib/api/client-timing'
 import { BusinessDateFilterValue, appendBusinessComparisonParams } from '@/lib/business-excellence/comparison'
+import { readPlatinumJson } from '@/features/platinum/api-client'
 import { appendPlatinumDealerCodeParam as appendKiaDealerCodeParam } from '@/lib/platinum/dealer-branch'
 import { cn } from '@/lib/utils'
 
@@ -153,7 +152,24 @@ type ComplaintResponse = {
   }
   meta?: {
     chunk?: string
+    dealerCoverage?: {
+      dealerCode: string | null
+      isAllLocations: boolean
+      primary?: DealerCoverage
+      complaints?: DealerCoverage
+    }
   }
+}
+
+type DealerCoverage = {
+  dealerCode: string | null
+  isAllLocations: boolean
+  hasDataInRange: boolean
+  rowCountInRange: number
+  latestAvailableDate: string | null
+  dateBasis: string
+  sourceLabel: string
+  emptyReason: string | null
 }
 
 type ComplaintFilters = {
@@ -199,6 +215,18 @@ function formatDateLabel(value: string | null) {
   const date = new Date(`${value.slice(0, 10)}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value.slice(0, 10)
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
+function DealerCoverageNotice({ coverage }: { coverage?: DealerCoverage | null }) {
+  if (!coverage || coverage.hasDataInRange || coverage.isAllLocations) return null
+
+  const latest = coverage.latestAvailableDate ? formatDateLabel(coverage.latestAvailableDate) : null
+  return (
+    <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">
+      No {coverage.sourceLabel} data for this dealer in the selected range.
+      {latest ? ` Latest ${coverage.sourceLabel} data is ${latest}.` : ' No historical data found for this dealer.'}
+    </div>
+  )
 }
 
 function truncateLabel(value: string, length = 20) {
@@ -295,7 +323,6 @@ function complaintSkeleton() {
 }
 
 export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: ComplaintsDateFilter; dealerCode?: string | null }) {
-  const queryClient = useQueryClient()
   const [data, setData] = useState<ComplaintResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
@@ -313,66 +340,53 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
       setIsLoading(true)
       setIsDetailLoading(false)
       setData(null)
-      const summaryQueryString = withChunk(queryString, 'summary')
-      const result = await queryClient.fetchQuery({
-        queryKey: ['business-excellence', 'platinum-complaints', summaryQueryString],
-        queryFn: async () => {
-          const suffix = summaryQueryString ? `?${summaryQueryString}` : ''
-          const response = await fetch(`/api/brands/platinum/business-excellence/complaints${suffix}`)
-          logApiTimings(response, 'platinum-complaints')
-          if (!response.ok) throw new Error('Failed to load Platinum Complaints dashboard')
-          return await response.json() as ComplaintResponse
-        },
-        staleTime: DASHBOARD_STALE_TIME_MS,
-      })
+
+      const fetchChunk = async (chunk: 'summary' | 'secondary' | 'details', timingLabel: string) => {
+        const chunkQueryString = withChunk(queryString, chunk)
+        const suffix = chunkQueryString ? `?${chunkQueryString}` : ''
+        const response = await fetch(`/api/brands/platinum/business-excellence/complaints${suffix}`, {
+          cache: 'no-store',
+        })
+        logApiTimings(response, timingLabel)
+        return await readPlatinumJson<ComplaintResponse>(response, `Platinum Complaints ${chunk} data`)
+      }
+
+      const result = await fetchChunk('summary', 'platinum-complaints')
       setData(result)
       setIsLoading(false)
 
       setIsDetailLoading(true)
-      const secondaryQueryString = withChunk(queryString, 'secondary')
-      const detailsQueryString = withChunk(queryString, 'details')
-      const [secondaryResult, detailsResult] = await Promise.all([
-        queryClient.fetchQuery({
-          queryKey: ['business-excellence', 'platinum-complaints', secondaryQueryString],
-          queryFn: async () => {
-            const suffix = secondaryQueryString ? `?${secondaryQueryString}` : ''
-            const response = await fetch(`/api/brands/platinum/business-excellence/complaints${suffix}`)
-            logApiTimings(response, 'platinum-complaints-secondary')
-            if (!response.ok) throw new Error('Failed to load Platinum Complaints secondary data')
-            return await response.json() as ComplaintResponse
-          },
-          staleTime: DASHBOARD_STALE_TIME_MS,
-        }),
-        queryClient.fetchQuery({
-          queryKey: ['business-excellence', 'platinum-complaints', detailsQueryString],
-          queryFn: async () => {
-            const suffix = detailsQueryString ? `?${detailsQueryString}` : ''
-            const response = await fetch(`/api/brands/platinum/business-excellence/complaints${suffix}`)
-            logApiTimings(response, 'platinum-complaints-details')
-            if (!response.ok) throw new Error('Failed to load Platinum Complaints detail rows')
-            return await response.json() as ComplaintResponse
-          },
-          staleTime: DASHBOARD_STALE_TIME_MS,
-        }),
-      ])
+      const secondaryPromise = fetchChunk('secondary', 'platinum-complaints-secondary')
+        .then((secondaryResult) => {
+          setData((current) => current ? {
+            ...current,
+            comparison: secondaryResult.comparison || current.comparison,
+            charts: {
+              ...current.charts,
+              monthlyTrend: secondaryResult.charts?.monthlyTrend?.length ? secondaryResult.charts.monthlyTrend : current.charts.monthlyTrend,
+              subAreaBreakdown: secondaryResult.charts?.subAreaBreakdown?.length ? secondaryResult.charts.subAreaBreakdown : current.charts.subAreaBreakdown,
+            },
+          } : current)
+          return secondaryResult
+        })
 
-      setData((current) => current ? {
-        ...current,
-        comparison: secondaryResult.comparison || current.comparison,
-        charts: {
-          ...current.charts,
-          monthlyTrend: secondaryResult.charts?.monthlyTrend?.length ? secondaryResult.charts.monthlyTrend : current.charts.monthlyTrend,
-          subAreaBreakdown: secondaryResult.charts?.subAreaBreakdown?.length ? secondaryResult.charts.subAreaBreakdown : current.charts.subAreaBreakdown,
-        },
-        rows: detailsResult.rows || current.rows,
-      } : current)
+      const detailsPromise = fetchChunk('details', 'platinum-complaints-details')
+        .then((detailsResult) => {
+          setData((current) => current ? {
+            ...current,
+            rows: detailsResult.rows || current.rows,
+          } : current)
+          return detailsResult
+        })
+
+      await Promise.allSettled([secondaryPromise, detailsPromise])
     } catch (error) {
       console.error('Failed to load Platinum Complaints dashboard:', error)
     } finally {
       setIsLoading(false)
       setIsDetailLoading(false)
     }
-  }, [queryClient, queryString])
+  }, [queryString])
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -593,6 +607,8 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
         </div>
       )}
 
+      <DealerCoverageNotice coverage={data.meta?.dealerCoverage?.primary} />
+
       <div className="flex flex-col gap-3 rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-teal-100 bg-teal-50 text-teal-700">
@@ -601,7 +617,7 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Customer Voice Control</p>
             <p className="text-xs font-bold text-slate-500">
-              Complaint Date: {formatDateLabel(dateRange.startDate)} to {formatDateLabel(dateRange.endDate)}
+              Business Date: {formatDateLabel(dateRange.startDate)} to {formatDateLabel(dateRange.endDate)}
             </p>
           </div>
         </div>

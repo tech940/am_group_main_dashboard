@@ -14,7 +14,7 @@ export const maxDuration = 60
 const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const FILTER_COLUMNS = {
   workType: 'work_type',
-  serviceType: 'service_type',
+  serviceType: 'work_type',
   advisor: 'service_advisor',
   model: 'model',
   technician: 'technician',
@@ -467,8 +467,10 @@ function buildRevenueSummary(rows: DataRow[], startDate: Date, endDate: Date) {
 }
 
 type WorkTypeAggregateRow = {
+  aggregate_level?: string | null
   work_type: string | null
   service_type?: string | null
+  technician?: string | null
   td_cy_load: number
   mtd_cy_load: number
   mtd_ly_load: number
@@ -657,7 +659,10 @@ function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: Analys
   })
 
   const grouped = new Map<string, WorkTypeAggregateRow[]>()
-  rows.forEach((row) => {
+  const parentRows = rows.filter((row) => !row.aggregate_level || row.aggregate_level === 'parent')
+  const childRows = rows.filter((row) => row.aggregate_level && row.aggregate_level !== 'parent')
+
+  parentRows.forEach((row) => {
     const key = row.work_type || 'Unspecified'
     const existing = grouped.get(key)
     if (existing) {
@@ -669,10 +674,29 @@ function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: Analys
 
   return Array.from(grouped.entries()).map(([workType, workRows]) => {
     const parent = combineRows(workRows)
-    const children = workRows
-      .map((row) => toAnalysisRow(row.service_type || 'Unspecified', row, 1))
-      .sort((a, b) => a.name.localeCompare(b.name))
-
+    const normalizedWorkType = workType.trim().toLowerCase()
+    const children = childRows
+      .filter((row) => (row.work_type || 'Unspecified').trim().toLowerCase() === normalizedWorkType)
+      .filter((row) => {
+        if (['free service', 'free services'].includes(normalizedWorkType)) {
+          return row.aggregate_level === 'free_service_type' && Boolean(row.service_type && row.service_type !== 'Unspecified')
+        }
+        if (['running repair', 'running repairs'].includes(normalizedWorkType)) {
+          return row.aggregate_level === 'running_technician' && Boolean(row.technician && row.technician !== 'Unspecified')
+        }
+        return false
+      })
+      .map((row) => {
+        const childName = row.aggregate_level === 'running_technician'
+          ? row.technician || 'Unspecified'
+          : row.service_type || 'Unspecified'
+        return toAnalysisRow(childName, row, 1, [])
+      })
+      .sort((a, b) => {
+        const aValue = Number(a.metrics.mtd.cy || 0)
+        const bValue = Number(b.metrics.mtd.cy || 0)
+        return bValue - aValue || a.name.localeCompare(b.name)
+      })
     return toAnalysisRow(workType, parent, 0, children)
   })
 }
@@ -1009,33 +1033,76 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
 
 async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>, dealerCode: DealerFilter = null) {
   const result = await db.execute(sql`
-    WITH dedup AS (
+    WITH base AS (
       SELECT
+        COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
+        COALESCE(NULLIF(service_type, ''), 'Unspecified') AS service_type,
+        COALESCE(NULLIF(technician, ''), 'Unspecified') AS technician,
+        COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+        bill_date::date AS bill_date,
+        COALESCE(labour_amt, 0)::numeric AS labour_amt,
+        COALESCE(part_amt, 0)::numeric AS part_amt
+      FROM ro_billing_report
+      WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
+        AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
+        ${roBillingDealerFilter(dealerCode)}
+    ),
+    parent_dedup AS (
+      SELECT
+        'parent'::text AS aggregate_level,
         work_type,
-        service_type,
+        NULL::text AS service_type,
+        NULL::text AS technician,
         bill_key,
         bill_date,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
-      FROM (
-        SELECT
-          COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
-          COALESCE(NULLIF(service_type, ''), 'Unspecified') AS service_type,
-          COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
-          bill_date::date AS bill_date,
-          COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt
-        FROM ro_billing_report
-        WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
-          AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
-          AND ${activeBillStatusSql()}
-          ${roBillingDealerFilter(dealerCode)}
-      ) base
+      FROM base
+      GROUP BY work_type, bill_key, bill_date
+    ),
+    free_service_type_dedup AS (
+      SELECT
+        'free_service_type'::text AS aggregate_level,
+        work_type,
+        service_type,
+        NULL::text AS technician,
+        bill_key,
+        bill_date,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+      FROM base
+      WHERE LOWER(TRIM(work_type)) IN ('free service', 'free services')
+        AND service_type <> 'Unspecified'
       GROUP BY work_type, service_type, bill_key, bill_date
+    ),
+    running_technician_dedup AS (
+      SELECT
+        'running_technician'::text AS aggregate_level,
+        work_type,
+        NULL::text AS service_type,
+        technician,
+        bill_key,
+        bill_date,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+      FROM base
+      WHERE LOWER(TRIM(work_type)) IN ('running repair', 'running repairs')
+        AND technician <> 'Unspecified'
+      GROUP BY work_type, technician, bill_key, bill_date
+    ),
+    aggregate_rows AS (
+      SELECT * FROM parent_dedup
+      UNION ALL
+      SELECT * FROM free_service_type_dedup
+      UNION ALL
+      SELECT * FROM running_technician_dedup
     )
     SELECT
+      aggregate_level,
       work_type,
       service_type,
+      technician,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date)::int AS td_cy_load,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date)::int AS mtd_cy_load,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date)::int AS mtd_ly_load,
@@ -1057,8 +1124,8 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
       COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_parts,
       COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_parts,
       COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_parts
-    FROM dedup
-    GROUP BY work_type, service_type
+    FROM aggregate_rows
+    GROUP BY aggregate_level, work_type, service_type, technician
   `)
 
   return (result as unknown as WorkTypeAggregateRow[]) || []
@@ -1225,7 +1292,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
 }
 
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date, dealerCode: DealerFilter = null) {
-  return `kia:business-excellence:ro-billing:base-rows:v5:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
+  return `kia:business-excellence:ro-billing:base-rows:v7:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1233,14 +1300,14 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v22:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v25:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
   const key = normalizeSheetSlug(value)
   const aliases: Record<string, string> = {
     work_type: 'work_type',
-    service_type: 'service_type',
+    service_type: 'work_type',
     advisor: 'service_advisor',
     service_advisor: 'service_advisor',
     model: 'model',

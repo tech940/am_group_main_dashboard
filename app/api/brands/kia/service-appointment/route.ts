@@ -16,7 +16,7 @@ export const maxDuration = 60
 const PAGE_SIZE = 10
 const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 
-type AppointmentStatusFilter = 'all' | 'open' | 'closed' | 'cancelled'
+type AppointmentStatusFilter = 'all' | 'open' | 'close' | 'cancel' | 'customer_not_reported'
 
 type AppointmentFilters = {
   dealerCode: string
@@ -41,7 +41,10 @@ function positiveInteger(value: string | null, fallback: number) {
 
 function normalizeStatusFilter(value: string | null): AppointmentStatusFilter {
   const normalized = String(value || 'all').trim().toLowerCase()
-  if (normalized === 'open' || normalized === 'closed' || normalized === 'cancelled') return normalized
+  if (normalized === 'closed') return 'close'
+  if (normalized === 'cancelled' || normalized === 'canceled') return 'cancel'
+  if (normalized === 'customer-not-reported' || normalized === 'customer not reported') return 'customer_not_reported'
+  if (normalized === 'open' || normalized === 'close' || normalized === 'cancel' || normalized === 'customer_not_reported') return normalized
   return 'all'
 }
 
@@ -79,7 +82,7 @@ function monthBounds(month: string) {
 
 function createCacheKey(filters: AppointmentFilters, sourceVersion: string | null) {
   const serialized = JSON.stringify({ filters, sourceVersion: sourceVersion || 'no-source-version' })
-  return `kia:service-appointment:v2:${createHash('sha1').update(serialized).digest('hex')}`
+  return `kia:service-appointment:v3:${createHash('sha1').update(serialized).digest('hex')}`
 }
 
 async function tableExists(tableName: string) {
@@ -121,8 +124,11 @@ function appointmentDateExpression() {
 function statusGroupExpression() {
   return sql`
     CASE
-      WHEN lower(trim(coalesce(status::text, ''))) IN ('close', 'closed', 'completed', 'complete') THEN 'closed'
-      WHEN lower(trim(coalesce(status::text, ''))) LIKE '%cancel%' THEN 'cancelled'
+      WHEN lower(trim(coalesce(status::text, ''))) IN ('customer not reported', 'customer_not_reported', 'customer-not-reported', 'customer not report', 'not reported', 'no show', 'no-show', 'customer no show', 'customer-no-show', 'cnr') THEN 'customer_not_reported'
+      WHEN lower(trim(coalesce(status::text, ''))) LIKE '%not reported%' THEN 'customer_not_reported'
+      WHEN lower(trim(coalesce(status::text, ''))) LIKE '%no show%' THEN 'customer_not_reported'
+      WHEN lower(trim(coalesce(status::text, ''))) IN ('close', 'closed', 'completed', 'complete') THEN 'close'
+      WHEN lower(trim(coalesce(status::text, ''))) LIKE '%cancel%' THEN 'cancel'
       WHEN lower(trim(coalesce(status::text, ''))) IN ('open', 'pending', 'booked', 'new', 'in progress', 'in-progress') THEN 'open'
       WHEN nullif(trim(coalesce(status::text, '')), '') IS NULL THEN 'open'
       ELSE 'open'
@@ -177,6 +183,7 @@ function baseSql(filters: AppointmentFilters) {
       FROM base
       WHERE appointment_date >= ${monthBounds(filters.month).startDate}::date
         AND appointment_date < ${monthBounds(filters.month).endDate}::date
+        AND (${filters.status} = 'all' OR status_group = ${filters.status})
     ),
     paged AS (
       SELECT *
@@ -192,8 +199,11 @@ function baseSql(filters: AppointmentFilters) {
         SELECT jsonb_build_object(
           'total', COUNT(*)::integer,
           'open', COUNT(*) FILTER (WHERE status_group = 'open')::integer,
-          'closed', COUNT(*) FILTER (WHERE status_group = 'closed')::integer,
-          'cancelled', COUNT(*) FILTER (WHERE status_group = 'cancelled')::integer,
+          'close', COUNT(*) FILTER (WHERE status_group = 'close')::integer,
+          'closed', COUNT(*) FILTER (WHERE status_group = 'close')::integer,
+          'cancel', COUNT(*) FILTER (WHERE status_group = 'cancel')::integer,
+          'cancelled', COUNT(*) FILTER (WHERE status_group = 'cancel')::integer,
+          'customerNotReported', COUNT(*) FILTER (WHERE status_group = 'customer_not_reported')::integer,
           'advisors', COUNT(DISTINCT NULLIF(service_advisor, '-'))::integer
         )
         FROM month_filtered
@@ -227,16 +237,20 @@ function baseSql(filters: AppointmentFilters) {
           'date', appointment_date,
           'total', total,
           'open', open,
-          'closed', closed,
-          'cancelled', cancelled
+          'close', close,
+          'closed', close,
+          'cancel', cancel,
+          'cancelled', cancel,
+          'customerNotReported', customer_not_reported
         ) ORDER BY appointment_date)
         FROM (
           SELECT
             appointment_date,
             COUNT(*)::integer AS total,
             COUNT(*) FILTER (WHERE status_group = 'open')::integer AS open,
-            COUNT(*) FILTER (WHERE status_group = 'closed')::integer AS closed,
-            COUNT(*) FILTER (WHERE status_group = 'cancelled')::integer AS cancelled
+            COUNT(*) FILTER (WHERE status_group = 'close')::integer AS close,
+            COUNT(*) FILTER (WHERE status_group = 'cancel')::integer AS cancel,
+            COUNT(*) FILTER (WHERE status_group = 'customer_not_reported')::integer AS customer_not_reported
           FROM month_filtered
           GROUP BY appointment_date
         ) calendar_rows
@@ -254,7 +268,7 @@ function buildCalendar(filters: AppointmentFilters, calendarCounts: unknown) {
   const firstDay = new Date(Date.UTC(year, month - 1, 1))
   const gridStart = new Date(firstDay)
   gridStart.setUTCDate(firstDay.getUTCDate() - firstDay.getUTCDay())
-  const countMap = new Map<string, { total: number; open: number; closed: number; cancelled: number }>()
+  const countMap = new Map<string, { total: number; open: number; close: number; cancel: number; customerNotReported: number }>()
 
   asArray(calendarCounts).forEach((item) => {
     if (!item || typeof item !== 'object') return
@@ -264,8 +278,9 @@ function buildCalendar(filters: AppointmentFilters, calendarCounts: unknown) {
     countMap.set(dateKey, {
       total: Number(row.total || 0),
       open: Number(row.open || 0),
-      closed: Number(row.closed || 0),
-      cancelled: Number(row.cancelled || 0),
+      close: Number(row.close ?? row.closed ?? 0),
+      cancel: Number(row.cancel ?? row.cancelled ?? 0),
+      customerNotReported: Number(row.customerNotReported || 0),
     })
   })
 
@@ -273,8 +288,8 @@ function buildCalendar(filters: AppointmentFilters, calendarCounts: unknown) {
     const date = new Date(gridStart)
     date.setUTCDate(gridStart.getUTCDate() + index)
     const dateKey = date.toISOString().slice(0, 10)
-    const counts = countMap.get(dateKey) || { total: 0, open: 0, closed: 0, cancelled: 0 }
-    const other = Math.max(0, counts.total - counts.open - counts.closed - counts.cancelled)
+    const counts = countMap.get(dateKey) || { total: 0, open: 0, close: 0, cancel: 0, customerNotReported: 0 }
+    const other = Math.max(0, counts.total - counts.open - counts.close - counts.cancel - counts.customerNotReported)
 
     return {
       date: dateKey,
@@ -282,8 +297,11 @@ function buildCalendar(filters: AppointmentFilters, calendarCounts: unknown) {
       inCurrentMonth: date.getUTCMonth() === month - 1,
       total: counts.total,
       open: counts.open,
-      closed: counts.closed,
-      cancelled: counts.cancelled,
+      close: counts.close,
+      closed: counts.close,
+      cancel: counts.cancel,
+      cancelled: counts.cancel,
+      customerNotReported: counts.customerNotReported,
       other,
     }
   })
@@ -310,11 +328,11 @@ async function buildPayload(filters: AppointmentFilters) {
         branchLabel: getKiaBranchLabel(filters.dealerCode),
         warning: 'service_appointment table is not available yet.',
       },
-      summary: { total: 0, open: 0, closed: 0, cancelled: 0, advisors: 0 },
+      summary: { total: 0, open: 0, close: 0, closed: 0, cancel: 0, cancelled: 0, customerNotReported: 0, advisors: 0 },
       rows: [],
       calendar: buildCalendar(filters, []),
       pagination: { page: filters.page, pageSize: filters.pageSize, totalRows: 0, totalPages: 1 },
-      options: { statuses: ['all', 'open', 'closed', 'cancelled'] },
+      options: { statuses: ['all', 'open', 'close', 'cancel', 'customer_not_reported'] },
     }
   }
 
@@ -330,7 +348,7 @@ async function buildPayload(filters: AppointmentFilters) {
       dealerCode: filters.dealerCode,
       branchLabel: getKiaBranchLabel(filters.dealerCode),
     },
-    summary: row.summary || { total: 0, open: 0, closed: 0, cancelled: 0, advisors: 0 },
+    summary: row.summary || { total: 0, open: 0, close: 0, closed: 0, cancel: 0, cancelled: 0, customerNotReported: 0, advisors: 0 },
     rows: asArray(row.rows),
     calendar: buildCalendar(filters, row.calendar_counts),
     pagination: {
@@ -340,7 +358,7 @@ async function buildPayload(filters: AppointmentFilters) {
       totalPages: Math.max(1, Math.ceil(totalRows / filters.pageSize)),
     },
     options: {
-      statuses: ['all', 'open', 'closed', 'cancelled'],
+      statuses: ['all', 'open', 'close', 'cancel', 'customer_not_reported'],
     },
   }
 }

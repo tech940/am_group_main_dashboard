@@ -134,7 +134,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:performance-intelligence:v6:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:performance-intelligence:v8:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
@@ -151,7 +151,7 @@ function buildPerformanceWhere(startDate: Date, endDate: Date, filters: Performa
   }
 
   if (filters.serviceType !== 'all') {
-    clauses.push(sql`COALESCE(NULLIF(service_type, ''), NULLIF(work_type, ''), 'Unspecified') = ${filters.serviceType}`)
+    clauses.push(sql`COALESCE(NULLIF(work_type, ''), 'Unspecified') = ${filters.serviceType}`)
   }
 
   if (filters.advisor !== 'all') {
@@ -175,7 +175,7 @@ function buildScoredPerformanceSql(startDate: Date, endDate: Date, filters: Perf
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
         bill_date::date AS bill_date,
         COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'Unspecified') AS branch,
-        COALESCE(NULLIF(service_type, ''), NULLIF(work_type, ''), 'Unspecified') AS type,
+        COALESCE(NULLIF(work_type, ''), 'Unspecified') AS type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
         COALESCE(NULLIF(service_type, ''), 'Unspecified') AS service_type,
         COALESCE(NULLIF(model, ''), 'Unspecified') AS model,

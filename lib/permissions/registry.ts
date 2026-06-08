@@ -1,6 +1,6 @@
 import type { AppUser } from '@/lib/auth/app-user'
 
-export const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'] as const
+export const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve', 'audit'] as const
 
 export type PermissionAction = typeof PERMISSION_ACTIONS[number]
 export type PermissionRole = AppUser['role']
@@ -482,6 +482,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'create', 'edit', 'delete', 'approve'],
   },
   {
+    key: 'am_finance',
+    name: 'AM Finance',
+    parentKey: null,
+    description: 'Finance sheet register, payout status, bank performance analytics, and entry form.',
+    sortOrder: 55,
+    actions: ['view', 'create', 'edit', 'audit'],
+  },
+  {
     key: 'reports',
     name: 'Reports',
     parentKey: null,
@@ -612,8 +620,9 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...hyundaiPlatinumExecutiveGroups,
     'purchase_orders',
     'finance_orders',
+    'am_finance',
     'reports',
-  ], ['view', 'approve']),
+  ], ['view', 'approve', 'audit']),
   md: keysForGroups([
     'kia',
     'kia.service',
@@ -629,8 +638,9 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...hyundaiPlatinumExecutiveGroups,
     'purchase_orders',
     'finance_orders',
+    'am_finance',
     'reports',
-  ], ['view', 'approve']),
+  ], ['view', 'approve', 'audit']),
   ea: keysForGroups([
     'kia',
     'kia.service',
@@ -643,13 +653,32 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.proforma',
     'purchase_orders',
     'finance_orders',
+    'am_finance',
   ], ['view', 'approve']),
-  purchase_manager: keysForGroups(['purchase_orders'], ['view', 'create', 'edit']),
-  finance_head: keysForGroups(['finance_orders'], ['view', 'create', 'edit']),
-  accounts: keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),
-  manager: keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'approve']),
-  technician: keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
-  viewer: keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
+  purchase_manager: [
+    ...keysForGroups(['purchase_orders'], ['view', 'create', 'edit']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  finance_head: [
+    ...keysForGroups(['finance_orders'], ['view', 'create', 'edit']),
+    ...keysForGroups(['am_finance'], ['view', 'create', 'edit', 'audit']),
+  ],
+  accounts: [
+    ...keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),
+    ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
+  ],
+  manager: [
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'approve']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  technician: [
+    ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  viewer: [
+    ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
 }
 
 export function getTemplateMap(role: PermissionRole) {

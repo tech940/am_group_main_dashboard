@@ -88,7 +88,7 @@ type DemoPayload = {
   }
 }
 
-const DASHBOARD_STALE_TIME_MS = 75 * 60 * 1000
+const DASHBOARD_STALE_TIME_MS = 30 * 60 * 1000
 const PAGE_SIZE = 25
 
 function formatDate(value?: string | null) {

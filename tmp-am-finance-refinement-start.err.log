@@ -1,0 +1,276 @@
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+Error [AuthRetryableFetchError]: fetch failed
+    at t0 (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_0ms6rco._.js:24:42394)
+    at async tZ (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_0ms6rco._.js:24:41859)
+    at async r (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_0ms6rco._.js:37:22444)
+    at async (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_0ms6rco._.js:37:22707) {
+  __isAuthError: true,
+  status: 0,
+  code: undefined
+}
+Error [AuthRetryableFetchError]: fetch failed
+    at t0 (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_0ms6rco._.js:24:42394)
+    at async tZ (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_0ms6rco._.js:24:41859)
+    at async r (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_0ms6rco._.js:37:22444)
+    at async (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_0ms6rco._.js:37:22707) {
+  __isAuthError: true,
+  status: 0,
+  code: undefined
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo ENOTFOUND crreoeautoqzcgtlwlsd.supabase.co
+      at ignore-listed frames {
+    errno: -3008,
+    code: 'ENOTFOUND',
+    syscall: 'getaddrinfo',
+    hostname: 'crreoeautoqzcgtlwlsd.supabase.co'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error [ConnectTimeoutError]: Connect Timeout Error (attempted addresses: 172.64.149.246:443, 64:ff9b::ac40:95f6:443, 104.18.38.10:443, 64:ff9b::6812:260a:443, timeout: 10000ms)
+      at ignore-listed frames {
+    code: 'UND_ERR_CONNECT_TIMEOUT'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error [ConnectTimeoutError]: Connect Timeout Error (attempted addresses: 172.64.149.246:443, 64:ff9b::ac40:95f6:443, 104.18.38.10:443, 64:ff9b::6812:260a:443, timeout: 10000ms)
+      at ignore-listed frames {
+    code: 'UND_ERR_CONNECT_TIMEOUT'
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error [ConnectTimeoutError]: Connect Timeout Error (attempted addresses: 172.64.149.246:443, 64:ff9b::ac40:95f6:443, 104.18.38.10:443, 64:ff9b::6812:260a:443, timeout: 10000ms)
+      at ignore-listed frames {
+    code: 'UND_ERR_CONNECT_TIMEOUT'
+  }
+}
+Error fetching notifications: Error: Failed query: select "id", "title", "message", "type", "action_url", "purchase_order_id", "reference_number", "workflow_stage", "target_role", "dedupe_key", "metadata", "is_read", "user_id", "created_at"::text, "read_at"::text from "notifications" where "notifications"."user_id" = $1 order by "notifications"."created_at" desc limit $2
+params: 03c73c91-78b1-403f-855e-da077555b2c6,20
+    at e_.queryWithCache (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_026o_1c._.js:28:38808)
+    at async (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_026o_1c._.js:28:41470)
+    at async T (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\[root-of-the-server]__137-sll._.js:1:5782)
+    at async l (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\[root-of-the-server]__137-sll._.js:1:10787)
+    at async o (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\[root-of-the-server]__137-sll._.js:1:11828) {
+  query: 'select "id", "title", "message", "type", "action_url", "purchase_order_id", "reference_number", "workflow_stage", "target_role", "dedupe_key", "metadata", "is_read", "user_id", "created_at"::text, "read_at"::text from "notifications" where "notifications"."user_id" = $1 order by "notifications"."created_at" desc limit $2',
+  params: [ '03c73c91-78b1-403f-855e-da077555b2c6', 20 ],
+  [cause]: Error: read ECONNRESET
+      at ignore-listed frames {
+    errno: -4077,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}
+Redis error: Error: Failed query: 
+    WITH dedup AS (
+      SELECT DISTINCT ON (
+        COALESCE(
+          NULLIF(TRIM(certi_no), ''),
+          NULLIF(CONCAT_WS(
+            '|',
+            NULLIF(TRIM(vin), ''),
+            NULLIF(TRIM(scheme_desc), ''),
+            reg_date::text,
+            COALESCE(hml_amt, 0)::text
+          ), ''),
+          id::text
+        )
+      )
+        COALESCE(
+          NULLIF(TRIM(certi_no), ''),
+          NULLIF(CONCAT_WS(
+            '|',
+            NULLIF(TRIM(vin), ''),
+            NULLIF(TRIM(scheme_desc), ''),
+            reg_date::text,
+            COALESCE(hml_amt, 0)::text
+          ), ''),
+          id::text
+        ) AS ew_key,
+        reg_date,
+        uploaded_at,
+        id
+      FROM hyundai_ew_report
+      WHERE reg_date >= $1::date
+        AND reg_date < ($2::date + INTERVAL '1 day')
+        AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
+        
+      ORDER BY
+        COALESCE(
+          NULLIF(TRIM(certi_no), ''),
+          NULLIF(CONCAT_WS(
+            '|',
+            NULLIF(TRIM(vin), ''),
+            NULLIF(TRIM(scheme_desc), ''),
+            reg_date::text,
+            COALESCE(hml_amt, 0)::text
+          ), ''),
+          id::text
+        ),
+        uploaded_at DESC NULLS LAST,
+        id DESC
+    )
+    SELECT COUNT(*)::int AS count
+    FROM dedup
+  
+params: 2026-06-01,2026-06-07
+    at e_.queryWithCache (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_026o_1c._.js:28:38808)
+    at async nt (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\lib_redis_cache-utils_ts_0i9t12i._.js:1:71012)
+    at async Object.e [as time] (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_026o_1c._.js:28:44835) {
+  query: '\n' +
+    '    WITH dedup AS (\n' +
+    '      SELECT DISTINCT ON (\n' +
+    '        COALESCE(\n' +
+    "          NULLIF(TRIM(certi_no), ''),\n" +
+    '          NULLIF(CONCAT_WS(\n' +
+    "            '|',\n" +
+    "            NULLIF(TRIM(vin), ''),\n" +
+    "            NULLIF(TRIM(scheme_desc), ''),\n" +
+    '            reg_date::text,\n' +
+    '            COALESCE(hml_amt, 0)::text\n' +
+    "          ), ''),\n" +
+    '          id::text\n' +
+    '        )\n' +
+    '      )\n' +
+    '        COALESCE(\n' +
+    "          NULLIF(TRIM(certi_no), ''),\n" +
+    '          NULLIF(CONCAT_WS(\n' +
+    "            '|',\n" +
+    "            NULLIF(TRIM(vin), ''),\n" +
+    "            NULLIF(TRIM(scheme_desc), ''),\n" +
+    '            reg_date::text,\n' +
+    '            COALESCE(hml_amt, 0)::text\n' +
+    "          ), ''),\n" +
+    '          id::text\n' +
+    '        ) AS ew_key,\n' +
+    '        reg_date,\n' +
+    '        uploaded_at,\n' +
+    '        id\n' +
+    '      FROM hyundai_ew_report\n' +
+    '      WHERE reg_date >= $1::date\n' +
+    "        AND reg_date < ($2::date + INTERVAL '1 day')\n" +
+    "        AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'\n" +
+    '        \n' +
+    '      ORDER BY\n' +
+    '        COALESCE(\n' +
+    "          NULLIF(TRIM(certi_no), ''),\n" +
+    '          NULLIF(CONCAT_WS(\n' +
+    "            '|',\n" +
+    "            NULLIF(TRIM(vin), ''),\n" +
+    "            NULLIF(TRIM(scheme_desc), ''),\n" +
+    '            reg_date::text,\n' +
+    '            COALESCE(hml_amt, 0)::text\n' +
+    "          ), ''),\n" +
+    '          id::text\n' +
+    '        ),\n' +
+    '        uploaded_at DESC NULLS LAST,\n' +
+    '        id DESC\n' +
+    '    )\n' +
+    '    SELECT COUNT(*)::int AS count\n' +
+    '    FROM dedup\n' +
+    '  ',
+  params: [ '2026-06-01', '2026-06-07' ],
+  [cause]: Error: read ECONNRESET
+      at ignore-listed frames {
+    errno: -4077,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}

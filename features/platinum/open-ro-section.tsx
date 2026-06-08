@@ -47,6 +47,7 @@ import {
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import { logApiTimings } from '@/lib/api/client-timing'
 import { BusinessDateFilterValue, appendBusinessComparisonParams } from '@/lib/business-excellence/comparison'
+import { readPlatinumJson } from '@/features/platinum/api-client'
 import { appendPlatinumDealerCodeParam as appendKiaDealerCodeParam } from '@/lib/platinum/dealer-branch'
 import { cn } from '@/lib/utils'
 
@@ -151,10 +152,28 @@ type OpenRoResponse = {
     cacheTtlSeconds: number
     chunk?: string
     dateRange: { startDate: string | null; endDate: string | null }
+    dealerCode?: string | null
+    dealerCoverage?: {
+      dealerCode: string | null
+      isAllLocations: boolean
+      primary?: DealerCoverage
+      openRo?: DealerCoverage
+    }
     agingDefinition: string
     statusDefinition: string
     promiseDateDefinition: string
   }
+}
+
+type DealerCoverage = {
+  dealerCode: string | null
+  isAllLocations: boolean
+  hasDataInRange: boolean
+  rowCountInRange: number
+  latestAvailableDate: string | null
+  dateBasis: string
+  sourceLabel: string
+  emptyReason: string | null
 }
 
 type OpenRoFilters = {
@@ -196,6 +215,18 @@ function formatDateLabel(value: string | null) {
   const date = new Date(`${value.slice(0, 10)}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value.slice(0, 10)
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
+function DealerCoverageNotice({ coverage }: { coverage?: DealerCoverage | null }) {
+  if (!coverage || coverage.hasDataInRange || coverage.isAllLocations) return null
+
+  const latest = coverage.latestAvailableDate ? formatDateLabel(coverage.latestAvailableDate) : null
+  return (
+    <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">
+      No {coverage.sourceLabel} data for this dealer in the selected range.
+      {latest ? ` Latest ${coverage.sourceLabel} data is ${latest}.` : ' No historical data found for this dealer.'}
+    </div>
+  )
 }
 
 function normalizeDelayStatus(value: string) {
@@ -320,8 +351,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
           const suffix = summaryQueryString ? `?${summaryQueryString}` : ''
           const response = await fetch(`/api/brands/platinum/business-excellence/open-ro${suffix}`)
           logApiTimings(response, 'open-ro')
-          if (!response.ok) throw new Error('Failed to load Open RO dashboard')
-          return await response.json() as OpenRoResponse
+          return await readPlatinumJson<OpenRoResponse>(response, 'Open RO dashboard')
         },
         staleTime: DASHBOARD_STALE_TIME_MS,
       })
@@ -336,8 +366,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
           const suffix = detailsQueryString ? `?${detailsQueryString}` : ''
           const response = await fetch(`/api/brands/platinum/business-excellence/open-ro${suffix}`)
           logApiTimings(response, 'open-ro-details')
-          if (!response.ok) throw new Error('Failed to load Open RO details')
-          return await response.json() as OpenRoResponse
+          return await readPlatinumJson<OpenRoResponse>(response, 'Open RO details')
         },
         staleTime: DASHBOARD_STALE_TIME_MS,
       })
@@ -682,6 +711,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
           </div>
         </div>
       )}
+      <DealerCoverageNotice coverage={data.meta.dealerCoverage?.primary} />
       <div className="flex flex-col gap-3 rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-teal-100 bg-teal-50 text-teal-700">

@@ -21,10 +21,15 @@ type CalendarDay = {
   inCurrentMonth: boolean
   total: number
   open: number
+  close?: number
   closed: number
+  cancel?: number
   cancelled: number
+  customerNotReported: number
   other: number
 }
+
+type AppointmentStatusFilter = 'all' | 'open' | 'close' | 'cancel' | 'customer_not_reported'
 
 type AppointmentPayload = {
   meta: {
@@ -38,8 +43,11 @@ type AppointmentPayload = {
   summary: {
     total: number
     open: number
+    close?: number
     closed: number
+    cancel?: number
     cancelled: number
+    customerNotReported: number
     advisors: number
   }
   calendar: {
@@ -51,7 +59,14 @@ type AppointmentPayload = {
   }
 }
 
-const DASHBOARD_STALE_TIME_MS = 75 * 60 * 1000
+const DASHBOARD_STALE_TIME_MS = 30 * 60 * 1000
+const STATUS_OPTIONS: Array<{ value: AppointmentStatusFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'open', label: 'Open' },
+  { value: 'close', label: 'Close' },
+  { value: 'cancel', label: 'Cancel' },
+  { value: 'customer_not_reported', label: 'Customer not reported' },
+]
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7)
@@ -63,6 +78,14 @@ function buildQueryString(params: Record<string, string | number>) {
     if (value !== '') searchParams.set(key, String(value))
   })
   return searchParams.toString()
+}
+
+function normalizeStatusFilter(value: string | null): AppointmentStatusFilter {
+  const normalized = String(value || 'all').trim().toLowerCase()
+  if (normalized === 'closed') return 'close'
+  if (normalized === 'cancelled' || normalized === 'canceled') return 'cancel'
+  if (normalized === 'customer-not-reported' || normalized === 'customer not reported') return 'customer_not_reported'
+  return STATUS_OPTIONS.some((option) => option.value === normalized) ? normalized as AppointmentStatusFilter : 'all'
 }
 
 function formatDateTime(value?: string | null) {
@@ -89,14 +112,15 @@ function monthShift(month: string, offset: number) {
   return date.toISOString().slice(0, 7)
 }
 
-function statChipClass(tone: 'total' | 'open' | 'closed' | 'cancelled') {
+function statChipClass(tone: 'total' | 'open' | 'close' | 'cancel' | 'customer_not_reported') {
   if (tone === 'open') return 'border-amber-200 bg-amber-50 text-amber-700'
-  if (tone === 'closed') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  if (tone === 'cancelled') return 'border-rose-200 bg-rose-50 text-rose-700'
+  if (tone === 'close') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (tone === 'cancel') return 'border-rose-200 bg-rose-50 text-rose-700'
+  if (tone === 'customer_not_reported') return 'border-violet-200 bg-violet-50 text-violet-700'
   return 'border-slate-200 bg-slate-50 text-slate-700'
 }
 
-function SummaryPill({ label, value, tone = 'total' }: { label: string; value: number; tone?: 'total' | 'open' | 'closed' | 'cancelled' }) {
+function SummaryPill({ label, value, tone = 'total' }: { label: string; value: number; tone?: 'total' | 'open' | 'close' | 'cancel' | 'customer_not_reported' }) {
   return (
     <span className={cn('inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest', statChipClass(tone))}>
       <span>{label}</span>
@@ -112,7 +136,7 @@ function CalendarSkeleton() {
         <div key={`service-appointment-calendar-skeleton-${index}`} className="min-h-[92px] rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
           <div className="mx-auto h-6 w-14 animate-pulse rounded-full bg-slate-100" />
           <div className="mt-4 grid grid-cols-2 gap-1.5">
-            {Array.from({ length: 4 }).map((__, chipIndex) => (
+            {Array.from({ length: 5 }).map((__, chipIndex) => (
               <div key={`service-appointment-calendar-skeleton-chip-${index}-${chipIndex}`} className="h-7 animate-pulse rounded-lg bg-slate-100" />
             ))}
           </div>
@@ -152,9 +176,10 @@ function CalendarDayCard({ day }: { day: CalendarDay }) {
         {([
           ['BK', day.total, 'total' as const],
           ['OP', day.open, 'open' as const],
-          ['CL', day.closed, 'closed' as const],
-          ['CN', day.cancelled, 'cancelled' as const],
-        ] satisfies Array<[string, number, 'total' | 'open' | 'closed' | 'cancelled']>).map(([label, value, tone]) => (
+          ['CL', day.close ?? day.closed, 'close' as const],
+          ['CN', day.cancel ?? day.cancelled, 'cancel' as const],
+          ['NR', day.customerNotReported, 'customer_not_reported' as const],
+        ] satisfies Array<[string, number, 'total' | 'open' | 'close' | 'cancel' | 'customer_not_reported']>).map(([label, value, tone]) => (
           <span
             key={`${day.date}-${label}`}
             title={`${value} ${label}`}
@@ -173,11 +198,13 @@ export function ServiceAppointmentPage() {
   const searchParams = useSearchParams()
   const [calendarMonth, setCalendarMonth] = useState(currentMonth)
   const [selectedDealerCode, setSelectedDealerCode] = useState(() => normalizeKiaDealerCode(searchParams.get('dealer_code')) || DEFAULT_KIA_DEALER_CODE)
+  const [selectedStatus, setSelectedStatus] = useState<AppointmentStatusFilter>(() => normalizeStatusFilter(searchParams.get('status')))
   const [refreshNonce, setRefreshNonce] = useState(0)
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setSelectedDealerCode(normalizeKiaDealerCode(searchParams.get('dealer_code')) || DEFAULT_KIA_DEALER_CODE)
+      setSelectedStatus(normalizeStatusFilter(searchParams.get('status')))
     }, 0)
 
     return () => window.clearTimeout(timeout)
@@ -186,8 +213,9 @@ export function ServiceAppointmentPage() {
   const queryString = useMemo(() => buildQueryString({
     dealer_code: selectedDealerCode,
     month: calendarMonth,
+    status: selectedStatus,
     refresh: refreshNonce || '',
-  }), [calendarMonth, refreshNonce, selectedDealerCode])
+  }), [calendarMonth, refreshNonce, selectedDealerCode, selectedStatus])
 
   const { data, error, isLoading, isFetching } = useQuery<AppointmentPayload>({
     queryKey: ['service-appointment-calendar', queryString],
@@ -210,7 +238,18 @@ export function ServiceAppointmentPage() {
     router.replace(`/brands/kia/service-appointment?${params.toString()}`, { scroll: false })
   }
 
-  const summary = data?.summary || { total: 0, open: 0, closed: 0, cancelled: 0, advisors: 0 }
+  const handleStatusChange = (status: AppointmentStatusFilter) => {
+    setSelectedStatus(status)
+    const params = new URLSearchParams(searchParams.toString())
+    if (status === 'all') {
+      params.delete('status')
+    } else {
+      params.set('status', status)
+    }
+    router.replace(`/brands/kia/service-appointment?${params.toString()}`, { scroll: false })
+  }
+
+  const summary = data?.summary || { total: 0, open: 0, close: 0, closed: 0, cancel: 0, cancelled: 0, customerNotReported: 0, advisors: 0 }
   const days = data?.calendar.days || []
   const showSkeleton = isLoading || isFetching
 
@@ -223,6 +262,24 @@ export function ServiceAppointmentPage() {
             <div className="flex items-start gap-3">
               <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] text-[var(--dashboard-action-bg)]">
                 <CalendarDays className="h-5 w-5" />
+              </div>
+              <div className="inline-flex max-w-full flex-wrap rounded-2xl border border-slate-200 bg-white p-1 shadow-sm" aria-label="Service Appointment status filter">
+                {STATUS_OPTIONS.map((option) => {
+                  const isActive = selectedStatus === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleStatusChange(option.value)}
+                      className={cn(
+                        'rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest transition',
+                        isActive ? 'bg-[var(--dashboard-action-bg)] text-white shadow-sm' : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
               </div>
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Service Appointment Calendar</p>
@@ -287,8 +344,9 @@ export function ServiceAppointmentPage() {
             <div className="flex flex-wrap items-center gap-2">
               <SummaryPill label="Booked" value={summary.total} />
               <SummaryPill label="Open" value={summary.open} tone="open" />
-              <SummaryPill label="Closed" value={summary.closed} tone="closed" />
-              <SummaryPill label="Cancelled" value={summary.cancelled} tone="cancelled" />
+              <SummaryPill label="Close" value={summary.close ?? summary.closed} tone="close" />
+              <SummaryPill label="Cancel" value={summary.cancel ?? summary.cancelled} tone="cancel" />
+              <SummaryPill label="Customer not reported" value={summary.customerNotReported} tone="customer_not_reported" />
             </div>
           </div>
 

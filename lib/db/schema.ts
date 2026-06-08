@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, index, uniqueIndex } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, index, uniqueIndex, bigint, date } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
@@ -461,6 +461,77 @@ export const financeOrderComments = pgTable('finance_order_comments', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 }, (table) => ({
   financeOrderCommentsOrderIdx: index('finance_order_comments_order_idx').on(table.financeOrderId),
+}))
+
+export const financeSheet = pgTable('finance_sheet', {
+  id: bigint('id', { mode: 'number' }).primaryKey().default(sql`nextval('finance_sheet_id_seq'::regclass)`),
+  rowHash: text('row_hash').notNull(),
+  deliveryDate: date('delivery_date'),
+  customerName: text('customer_name'),
+  mobileNo: text('mobile_no'),
+  model: text('model'),
+  salesExecutive: text('sales_executive'),
+  mainDealer: text('main_dealer'),
+  location: text('location'),
+  tl: text('tl'),
+  hyp: text('hyp'),
+  branch: text('branch'),
+  loanAmount: decimal('loan_amount', { precision: 14, scale: 2 }),
+  panNumber: text('pan_number'),
+  payoutStatus: text('payout_status'),
+  reasonIfOuthouse: text('reason_if_outhouse'),
+  dealerPayoutPercent: text('dealer_payout_percent'),
+  payoutAmount: decimal('payout_amount', { precision: 14, scale: 2 }),
+  status: text('status'),
+  dsePayoutStatus: text('dse_payout_status'),
+  dealerPayoutStatus: text('dealer_payout_status'),
+  paymentReceivedDate: date('payment_received_date'),
+  amountReceived: decimal('amount_received', { precision: 14, scale: 2 }),
+  invoiceNumber: text('invoice_number'),
+  bankVisitScheduled: text('bank_visit_scheduled'),
+  dateOfBankVisit: date('date_of_bank_visit'),
+  visitedBy: text('visited_by'),
+  bankerRemarks: text('banker_remarks'),
+  vehicleRegistrationNumberToSale: text('vehicle_registration_number_to_sale'),
+  hypAsPerRc: text('hyp_as_per_rc'),
+  startTime: text('start_time'),
+  endTime: text('end_time'),
+  loginUser: text('login_user'),
+  bankIntRate: decimal('bank_int_rate', { precision: 8, scale: 2 }),
+  bankLogin: text('bank_login'),
+  bankInProforma: text('bank_in_proforma'),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+}, (table) => ({
+  financeSheetDeliveryDateIdx: index('finance_sheet_delivery_date_idx').on(table.deliveryDate),
+  financeSheetMainDealerIdx: index('finance_sheet_main_dealer_idx').on(table.mainDealer),
+  financeSheetLocationIdx: index('finance_sheet_location_idx').on(table.location),
+  financeSheetStatusIdx: index('finance_sheet_status_idx').on(table.status),
+  financeSheetPayoutStatusIdx: index('finance_sheet_payout_status_idx').on(table.payoutStatus),
+  financeSheetHypIdx: index('finance_sheet_hyp_idx').on(table.hyp),
+  financeSheetTlIdx: index('finance_sheet_tl_idx').on(table.tl),
+  financeSheetSalesExecutiveIdx: index('finance_sheet_sales_executive_idx').on(table.salesExecutive),
+  financeSheetBranchIdx: index('finance_sheet_branch_idx').on(table.branch),
+  financeSheetBankLoginIdx: index('finance_sheet_bank_login_idx').on(table.bankLogin),
+  financeSheetBankInProformaIdx: index('finance_sheet_bank_in_proforma_idx').on(table.bankInProforma),
+}))
+
+export const amFinanceAuditLogs = pgTable('am_finance_audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  financeSheetId: bigint('finance_sheet_id', { mode: 'number' }).references(() => financeSheet.id, { onDelete: 'cascade' }).notNull(),
+  action: text('action').notNull(),
+  fieldName: text('field_name'),
+  oldValue: text('old_value'),
+  newValue: text('new_value'),
+  performedBy: uuid('performed_by').references(() => users.id),
+  performedByName: text('performed_by_name'),
+  userRole: text('user_role').notNull(),
+  module: text('module').default('am_finance').notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  amFinanceAuditFinanceSheetIdx: index('am_finance_audit_finance_sheet_idx').on(table.financeSheetId, table.createdAt),
+  amFinanceAuditActorIdx: index('am_finance_audit_actor_idx').on(table.performedBy, table.createdAt),
+  amFinanceAuditActionIdx: index('am_finance_audit_action_idx').on(table.action),
 }))
 
 export const demoVehicleRemarks = pgTable('demo_vehicle_remarks', {

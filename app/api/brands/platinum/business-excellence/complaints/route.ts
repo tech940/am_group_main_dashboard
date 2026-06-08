@@ -1,17 +1,15 @@
-import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { getCachedData } from '@/lib/redis/cache-utils'
-import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { fetchPlatinumComplaintsCoverage } from '@/lib/platinum/business-excellence-coverage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
+const CACHE_TTL_SECONDS = 0
 
 type ComplaintFilters = {
   startDate: string | null
@@ -76,6 +74,14 @@ function numericText(column: ReturnType<typeof sql.raw>) {
   return sql`COALESCE(NULLIF(regexp_replace(${column}::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)`
 }
 
+function complaintBusinessDateSql() {
+  return sql`COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date`
+}
+
+function complaintResolutionEndSql() {
+  return sql`COALESCE(close_date, resolving_date, dealer_resolving_date)::date`
+}
+
 function complaintAttributeFilters(filters: ComplaintFilters) {
   return sql`
     AND (${filters.status}::text IS NULL OR status_group = ${filters.status})
@@ -88,12 +94,15 @@ function complaintAttributeFilters(filters: ComplaintFilters) {
 }
 
 function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: ComparisonScopeDates) {
+  const complaintBusinessDate = complaintBusinessDateSql()
+  const complaintResolutionEnd = complaintResolutionEndSql()
+
   return sql`
     WITH latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
         *
       FROM am_platinum_call_center_complaints
-      WHERE complaint_date IS NOT NULL
+      WHERE ${complaintBusinessDate} IS NOT NULL
       ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
@@ -110,7 +119,9 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
         dealer_code,
         source_dealer_code,
         region,
-        complaint_date,
+        ${complaintBusinessDate} AS complaint_date,
+        complaint_date AS source_complaint_date,
+        dealer_resolving_date,
         resolving_date,
         resolved_by_dealer,
         close_date,
@@ -138,15 +149,14 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
         END AS status_group,
         COALESCE(
           CASE
-            WHEN close_date IS NOT NULL THEN GREATEST((close_date - complaint_date)::int, 0)
-            WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - complaint_date)::int, 0)
+            WHEN ${complaintResolutionEnd} IS NOT NULL THEN GREATEST((${complaintResolutionEnd} - ${complaintBusinessDate})::int, 0)
             ELSE NULL
           END,
           ${numericText(sql.raw('pending_days'))}::int,
-          GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+          GREATEST((CURRENT_DATE - ${complaintBusinessDate})::int, 0)
         ) AS resolution_days,
         CASE
-          WHEN COALESCE(close_date, resolving_date) IS NULL THEN GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+          WHEN ${complaintResolutionEnd} IS NULL THEN GREATEST((CURRENT_DATE - ${complaintBusinessDate})::int, 0)
           ELSE 0
         END AS open_days,
         CASE
@@ -201,10 +211,6 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
     )
     `}
   `
-}
-
-function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
-  return `platinum:business-excellence:complaints:v9:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {
@@ -266,6 +272,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     detailRows,
     optionRows,
     metadataRows,
+    dealerCoverage,
   ] = await Promise.all([
     includeSummary ? db.execute(sql`
       ${baseSql}
@@ -286,21 +293,21 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM am_platinum_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
         SELECT
-          complaint_date,
+          COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date AS complaint_date,
           status,
           COALESCE(
             CASE
-              WHEN close_date IS NOT NULL THEN GREATEST((close_date - complaint_date)::int, 0)
-              WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - complaint_date)::int, 0)
+              WHEN COALESCE(close_date, resolving_date, dealer_resolving_date)::date IS NOT NULL
+                THEN GREATEST((COALESCE(close_date, resolving_date, dealer_resolving_date)::date - COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date)::int, 0)
               ELSE NULL
             END,
             ${numericText(sql.raw('pending_days'))}::int,
-            GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+            GREATEST((CURRENT_DATE - COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date)::int, 0)
           ) AS resolution_days,
           CASE
             WHEN LOWER(COALESCE(status, '')) IN ('close', 'closed', 'resolved') THEN 'Closed'
@@ -339,24 +346,29 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       LEFT JOIN monthly ly ON ly.year_no = ${trendYear - 1} AND ly.month_no = months.month_no
       ORDER BY months.month_no
     `) : Promise.resolve([]),
-    includeSecondary ? db.execute(sql`
+    (includeSummary || includeSecondary) ? db.execute(sql`
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM am_platinum_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
         SELECT
-          complaint_date,
+          COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date AS complaint_date,
+          dealer_name,
+          source_dealer_code,
+          sr_area,
+          vehicle_model,
+          complaint_sub_source,
           COALESCE(
             CASE
-              WHEN close_date IS NOT NULL THEN GREATEST((close_date - complaint_date)::int, 0)
-              WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - complaint_date)::int, 0)
+              WHEN COALESCE(close_date, resolving_date, dealer_resolving_date)::date IS NOT NULL
+                THEN GREATEST((COALESCE(close_date, resolving_date, dealer_resolving_date)::date - COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date)::int, 0)
               ELSE NULL
             END,
             ${numericText(sql.raw('pending_days'))}::int,
-            GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+            GREATEST((CURRENT_DATE - COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date)::int, 0)
           ) AS resolution_days,
           CASE
             WHEN LOWER(COALESCE(status, '')) IN ('close', 'closed', 'resolved') THEN 'Closed'
@@ -374,25 +386,27 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date >= ${currentComparisonStartDate}::date AND complaint_date <= ${currentComparisonEndDate}::date), 0)::float AS cy_avg_days,
         COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date >= ${previousComparisonStartDate}::date AND complaint_date <= ${previousComparisonRangeEndDate}::date), 0)::float AS ly_avg_days
       FROM enriched
+      WHERE TRUE
+        ${complaintAttributeFilters(filters)}
     `) : Promise.resolve([]),
     includeSecondary ? db.execute(sql`
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM am_platinum_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
         SELECT
-          complaint_date,
+          COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date AS complaint_date,
           COALESCE(
             CASE
-              WHEN close_date IS NOT NULL THEN GREATEST((close_date - complaint_date)::int, 0)
-              WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - complaint_date)::int, 0)
+              WHEN COALESCE(close_date, resolving_date, dealer_resolving_date)::date IS NOT NULL
+                THEN GREATEST((COALESCE(close_date, resolving_date, dealer_resolving_date)::date - COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date)::int, 0)
               ELSE NULL
             END,
             ${numericText(sql.raw('pending_days'))}::int,
-            GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+            GREATEST((CURRENT_DATE - COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date)::int, 0)
           ) AS resolution_days,
           CASE
             WHEN LOWER(COALESCE(status, '')) IN ('close', 'closed', 'resolved') THEN 'Closed'
@@ -521,7 +535,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM am_platinum_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
       SELECT jsonb_build_object(
@@ -550,11 +564,12 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     includeSummary ? db.execute(sql`
       SELECT
         COUNT(*)::int AS total_rows,
-        MIN(complaint_date) AS min_date,
-        MAX(complaint_date) AS max_date,
+        MIN(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date) AS min_date,
+        MAX(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date) AS max_date,
         MAX(uploaded_at) AS uploaded_at
       FROM am_platinum_call_center_complaints
     `) : Promise.resolve([]),
+    fetchPlatinumComplaintsCoverage(filters.startDate || currentComparisonStartDate, filters.endDate || currentComparisonEndDate, filters.dealerCode),
   ])
 
   const kpis = resultRows(kpiRows)[0] || {}
@@ -702,7 +717,14 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       detailLimit: 150,
       chunk,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
-      dateBasis: 'Complaint Date',
+      dateBasis: 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)',
+      dealerCode: filters.dealerCode,
+      dealerCoverage: {
+        dealerCode: dealerCoverage.dealerCode,
+        isAllLocations: dealerCoverage.isAllLocations,
+        primary: dealerCoverage,
+        complaints: dealerCoverage,
+      },
       comparison: {
         preset: filters.periodPreset,
         comparisonMode: filters.comparisonMode || 'none',
@@ -736,15 +758,12 @@ export async function GET(request: Request) {
     comparisonEndDate,
     dealerCode: normalizePlatinumDealerCode(searchParams.get('dealer_code')) || null,
   }
-    const skipCache = searchParams.get('skipCache') === 'true'
     const requestedChunk = searchParams.get('chunk')
     const chunk: ComplaintChunk = requestedChunk === 'secondary' || requestedChunk === 'details' || requestedChunk === 'full'
       ? requestedChunk
       : 'summary'
 
-    const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildComplaintsPayload(filters, chunk)
-      : getCachedData(cacheKey(filters, chunk), () => buildComplaintsPayload(filters, chunk), CACHE_TTL_SECONDS))
+    const data = await timer.time('db', () => buildComplaintsPayload(filters, chunk))
 
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data), timing.serverTiming)

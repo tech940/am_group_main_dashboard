@@ -6,7 +6,18 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { normalizePlatinumDealerCode, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
+import { fetchPlatinumWorkshopVasAmount } from '@/lib/platinum/business-excellence-vas'
+import {
+  fetchPlatinumComplaintsCoverage,
+  fetchPlatinumOpenRoCoverage,
+  fetchPlatinumRoBillingCoverage,
+} from '@/lib/platinum/business-excellence-coverage'
+import type { PlatinumDealerCoverage } from '@/lib/platinum/business-excellence-coverage'
+import {
+  emptyPlatinumRoBillingAudit,
+  fetchPlatinumRoBillingAudit,
+} from '@/lib/platinum/ro-billing-audit'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -86,6 +97,11 @@ function growth(current: number, previous: number) {
   return ((current - previous) / previous) * 100
 }
 
+function nullableGrowth(current: number, previous: number | null) {
+  if (previous === null) return null
+  return growth(current, previous)
+}
+
 function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
   return {
     preset: searchParams.get('periodPreset') || null,
@@ -96,13 +112,13 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:overview:v24:${chunk}:${createHash('sha1')
+  return `platinum:business-excellence:overview:v34:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
 
 function activeBillStatusSql() {
-  return sql`TRUE`
+  return sql`LOWER(TRIM(COALESCE(bill_type::text, ''))) NOT LIKE '%cancel%'`
 }
 
 function roBillingDealerFilter(dealerCode: DealerFilter) {
@@ -121,6 +137,35 @@ function openRoDealerFilter(dealerCode: DealerFilter) {
   return dealerCode
     ? sql`AND UPPER(TRIM(COALESCE(dealer, ''))) = ${dealerCode}`
     : sql``
+}
+
+function comparisonStatus(previous: number, status: 'available' | 'not_comparable' | 'source_missing' = 'available') {
+  if (status !== 'available') return status
+  return previous === 0 ? 'exact_zero' : 'available'
+}
+
+function roBillingComparisonStatus(previous: number, hasSelectedRangeData: boolean) {
+  return hasSelectedRangeData ? comparisonStatus(previous) : 'not_comparable'
+}
+
+function roBillingDelta(current: number, previous: number, hasSelectedRangeData: boolean) {
+  return hasSelectedRangeData ? growth(current, previous) : null
+}
+
+function roBillingComparisonLabel(hasSelectedRangeData: boolean) {
+  return hasSelectedRangeData ? null : 'No selected-range data'
+}
+
+function roBillingUnavailableReason(hasSelectedRangeData: boolean) {
+  return hasSelectedRangeData ? null : 'No RO Billing rows exist for the selected dealer/date range'
+}
+
+function complaintBusinessDateSql() {
+  return sql`COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date`
+}
+
+function complaintResolutionEndSql() {
+  return sql`COALESCE(close_date, resolving_date, dealer_resolving_date)::date`
 }
 
 function sameDateLastYear(value: string) {
@@ -446,20 +491,25 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
 }
 
 function complaintsBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
+  const complaintBusinessDate = complaintBusinessDateSql()
+  const complaintResolutionEnd = complaintResolutionEndSql()
+
   return sql`
     WITH latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
         *
       FROM am_platinum_call_center_complaints
-      WHERE complaint_date IS NOT NULL
+      WHERE ${complaintBusinessDate} IS NOT NULL
       ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
       SELECT
         complaint_no,
-        complaint_date,
+        ${complaintBusinessDate} AS complaint_date,
+        complaint_date AS source_complaint_date,
         close_date,
         resolving_date,
+        dealer_resolving_date,
         dealer_name,
         dealer_code,
         vehicle_model,
@@ -473,12 +523,11 @@ function complaintsBaseSql(startDate: string, endDate: string, dealerCode: Deale
         END AS status_group,
         COALESCE(
           CASE
-            WHEN close_date IS NOT NULL THEN GREATEST((close_date - complaint_date)::int, 0)
-            WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - complaint_date)::int, 0)
+            WHEN ${complaintResolutionEnd} IS NOT NULL THEN GREATEST((${complaintResolutionEnd} - ${complaintBusinessDate})::int, 0)
             ELSE NULL
           END,
           ${numericText(sql.raw('pending_days'))}::int,
-          GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+          GREATEST((CURRENT_DATE - ${complaintBusinessDate})::int, 0)
         ) AS resolution_days,
         CASE
           WHEN LOWER(CONCAT_WS(' ', complaint_remarks, sr_area, sr_sub_area, dealer_sr_area, dealer_sr_sub_area, pending_reason)) LIKE '%part%' THEN 'Parts Delay'
@@ -493,8 +542,8 @@ function complaintsBaseSql(startDate: string, endDate: string, dealerCode: Deale
           ELSE COALESCE(NULLIF(sr_area, ''), 'General Service')
         END AS signal_area
       FROM latest
-      WHERE complaint_date >= ${startDate}::date
-        AND complaint_date < (${endDate}::date + INTERVAL '1 day')
+      WHERE ${complaintBusinessDate} >= ${startDate}::date
+        AND ${complaintBusinessDate} < (${endDate}::date + INTERVAL '1 day')
         ${complaintsDealerFilter(dealerCode)}
     )
   `
@@ -535,7 +584,7 @@ async function fetchAddonKpis(startDate: string, endDate: string, dealerCode: De
 
 async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   const hasWorkshopSummary = await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode)
-  const serviceRows = await db.execute(hasWorkshopSummary ? sql`
+  const serviceRowsPromise = db.execute(hasWorkshopSummary ? sql`
     SELECT
       COALESCE(NULLIF(group_type, ''), 'Others') AS service_type,
       MIN(report_date)::text AS min_date,
@@ -572,6 +621,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
@@ -595,7 +645,28 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     GROUP BY service_type
     ORDER BY (COALESCE(SUM(labour_amt), 0) + COALESCE(SUM(part_amt), 0)) DESC
     LIMIT 8
-  `)
+  `).catch((error) => {
+    console.warn('Platinum overview workshop service snapshot failed:', error)
+    return [] as NumericRow[]
+  })
+
+  const vasPeriodPromise = fetchPlatinumWorkshopVasAmount(startDate, endDate, dealerCode).catch((error) => {
+    console.warn('Platinum overview VAS snapshot failed:', error)
+    return {
+      amount: 0,
+      available: false,
+      unavailableReason: 'Platinum VAS source could not be read.',
+      source: null,
+      sourceTable: null,
+      periodStart: null,
+      periodEnd: null,
+      sourceRows: 0,
+      dedupeMode: null,
+      latestSnapshotUploadedAt: null,
+    }
+  })
+
+  const [serviceRows, vasPeriod] = await Promise.all([serviceRowsPromise, vasPeriodPromise])
 
   const rows = resultRows(serviceRows).map((row) => {
     const labourAmount = numberValue(row.labour_amount)
@@ -609,7 +680,6 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     }
   })
 
-  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
   const totalJc = rows.reduce((sum, row) => sum + row.totalJc, 0)
   const labourAmount = rows.reduce((sum, row) => sum + row.labourAmount, 0)
   const partsAmount = rows.reduce((sum, row) => sum + row.partsAmount, 0)
@@ -620,7 +690,16 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     labourAmount,
     partsAmount,
     totalRevenue: labourAmount + partsAmount,
-    vasAmount,
+    vasAmount: vasPeriod.amount,
+    vasAvailable: vasPeriod.available,
+    vasUnavailableReason: vasPeriod.unavailableReason,
+    vasSource: vasPeriod.source,
+    vasSourceTable: vasPeriod.sourceTable,
+    vasPeriodStart: vasPeriod.periodStart,
+    vasPeriodEnd: vasPeriod.periodEnd,
+    vasSourceRows: vasPeriod.sourceRows,
+    vasDedupeMode: vasPeriod.dedupeMode,
+    vasLatestSnapshotUploadedAt: vasPeriod.latestSnapshotUploadedAt || null,
     labourPerRo: perUnit(labourAmount, totalJc),
     minDate: sourceRows.reduce<string | null>((current, row) => {
       const value = dateValue(row.min_date)
@@ -643,22 +722,35 @@ function emptyRows() {
   return Promise.resolve([] as NumericRow[])
 }
 
-function emptyAddonKpis() {
-  return Promise.resolve({
+function emptyAddonKpisValue() {
+  return {
     ewCount: 0,
     rsaCount: 0,
     mcpCount: 0,
     rsaAmount: 0,
-  })
+  }
 }
 
-function emptyWorkshopSnapshot() {
-  return Promise.resolve({
+function emptyAddonKpis() {
+  return Promise.resolve(emptyAddonKpisValue())
+}
+
+function emptyWorkshopSnapshotValue(reason = 'Workshop VAS source table is unavailable') {
+  return {
     totalJc: 0,
     labourAmount: 0,
     partsAmount: 0,
     totalRevenue: 0,
     vasAmount: 0,
+    vasAvailable: false,
+    vasUnavailableReason: reason,
+    vasSource: null as string | null,
+    vasSourceTable: null as string | null,
+    vasPeriodStart: null as string | null,
+    vasPeriodEnd: null as string | null,
+    vasSourceRows: 0,
+    vasDedupeMode: null as string | null,
+    vasLatestSnapshotUploadedAt: null as string | null,
     labourPerRo: 0,
     minDate: null as string | null,
     maxDate: null as string | null,
@@ -670,14 +762,50 @@ function emptyWorkshopSnapshot() {
       totalRevenue: number
       vasAmount: number
     }>,
-  })
+  }
 }
 
-async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  void startDate
-  void endDate
-  void dealerCode
-  return 0
+function emptyWorkshopSnapshot(reason?: string) {
+  return Promise.resolve(emptyWorkshopSnapshotValue(reason))
+}
+
+function emptyCoverageValue(
+  dealerCode: DealerFilter,
+  sourceLabel: string,
+  dateBasis: string,
+  reason = `${sourceLabel} coverage could not be checked`
+): PlatinumDealerCoverage {
+  return {
+    dealerCode: dealerCode || PLATINUM_ALL_LOCATIONS_CODE,
+    isAllLocations: !dealerCode,
+    hasDataInRange: false,
+    rowCountInRange: 0,
+    latestAvailableDate: null,
+    dateBasis,
+    sourceLabel,
+    emptyReason: reason,
+  }
+}
+
+type OptionalSourceWarning = {
+  source: string
+  message: string
+}
+
+async function safeOptional<T>(
+  source: string,
+  promise: Promise<T>,
+  fallback: T,
+  warnings: OptionalSourceWarning[]
+): Promise<T> {
+  try {
+    return await promise
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    warnings.push({ source, message })
+    console.warn(`Platinum overview optional source failed: ${source}`, error)
+    return fallback
+  }
 }
 
 async function buildOverviewPayload(
@@ -700,6 +828,7 @@ async function buildOverviewPayload(
   const comparisonRange = resolveOverviewComparisonRange(startDate, endDate, comparison)
   const lyStartDate = comparisonRange.startDate
   const lyEndDate = comparisonRange.endDate
+  const optionalWarnings: OptionalSourceWarning[] = []
   const lyRoSql = roBillingBaseSql(lyStartDate, lyEndDate, dealerCode)
   const lyOpenSql = openRoBaseSql(lyStartDate, lyEndDate, dealerCode)
   const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate, dealerCode)
@@ -724,6 +853,10 @@ async function buildOverviewPayload(
     lyComplaintKpiRows,
     lyAddonKpis,
     lyWorkshopSnapshot,
+    roBillingAudit,
+    roBillingCoverage,
+    openRoCoverage,
+    complaintsCoverage,
   ] = await Promise.all([
     db.execute(sql`
       ${roSql}
@@ -841,17 +974,18 @@ async function buildOverviewPayload(
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
           complaint_no,
-          complaint_date,
+          COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date AS complaint_date,
           status,
           close_date,
           resolving_date,
+          dealer_resolving_date,
           pending_days,
           uploaded_at
         FROM am_platinum_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
           AND (
-            (complaint_date >= ${startDate}::date AND complaint_date < (${endDate}::date + INTERVAL '1 day'))
-            OR (complaint_date >= ${lyStartDate}::date AND complaint_date < (${lyEndDate}::date + INTERVAL '1 day'))
+            (COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date >= ${startDate}::date AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date < (${endDate}::date + INTERVAL '1 day'))
+            OR (COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date >= ${lyStartDate}::date AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date < (${lyEndDate}::date + INTERVAL '1 day'))
           )
           ${complaintsDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
@@ -880,8 +1014,13 @@ async function buildOverviewPayload(
         ) > 0
       ORDER BY EXTRACT(MONTH FROM complaint_date)::int ASC
     `) : emptyRows(),
-    fetchAddonKpis(startDate, endDate, dealerCode),
-    fetchWorkshopSnapshot(startDate, endDate, dealerCode),
+    safeOptional('add-on KPIs', fetchAddonKpis(startDate, endDate, dealerCode), emptyAddonKpisValue(), optionalWarnings),
+    safeOptional(
+      'workshop snapshot',
+      fetchWorkshopSnapshot(startDate, endDate, dealerCode),
+      emptyWorkshopSnapshotValue('Workshop snapshot source is unavailable'),
+      optionalWarnings
+    ),
     includeComparison ? db.execute(sql`
       ${lyRoSql}
       SELECT
@@ -909,8 +1048,41 @@ async function buildOverviewPayload(
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
       FROM enriched
     `) : emptyRows(),
-    includeComparison ? fetchAddonKpis(lyStartDate, lyEndDate, dealerCode) : emptyAddonKpis(),
-    includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode) : emptyWorkshopSnapshot(),
+    includeComparison
+      ? safeOptional('LY add-on KPIs', fetchAddonKpis(lyStartDate, lyEndDate, dealerCode), emptyAddonKpisValue(), optionalWarnings)
+      : emptyAddonKpis(),
+    includeComparison
+      ? safeOptional(
+        'LY workshop snapshot',
+        fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode),
+        emptyWorkshopSnapshotValue('LY workshop snapshot source is unavailable'),
+        optionalWarnings
+      )
+      : emptyWorkshopSnapshot(),
+    safeOptional(
+      'RO Billing audit',
+      fetchPlatinumRoBillingAudit(startDate, endDate, dealerCode),
+      emptyPlatinumRoBillingAudit(startDate, endDate, dealerCode),
+      optionalWarnings
+    ),
+    safeOptional(
+      'RO Billing coverage',
+      fetchPlatinumRoBillingCoverage(startDate, endDate, dealerCode),
+      emptyCoverageValue(dealerCode, 'RO Billing', 'bill_date'),
+      optionalWarnings
+    ),
+    safeOptional(
+      'Open RO coverage',
+      fetchPlatinumOpenRoCoverage(startDate, endDate, dealerCode),
+      emptyCoverageValue(dealerCode, 'Open RO', 'r_o_date'),
+      optionalWarnings
+    ),
+    safeOptional(
+      'Complaints coverage',
+      fetchPlatinumComplaintsCoverage(startDate, endDate, dealerCode),
+      emptyCoverageValue(dealerCode, 'Complaints', 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)'),
+      optionalWarnings
+    ),
   ])
 
   const roKpis = resultRows(roKpiRows)[0] || {}
@@ -920,10 +1092,21 @@ async function buildOverviewPayload(
   const lyOpenKpis = resultRows(lyOpenKpiRows)[0] || {}
   const lyComplaintKpis = resultRows(lyComplaintKpiRows)[0] || {}
 
-  const totalJc = numberValue(roKpis.total_jc)
-  const revenue = numberValue(roKpis.revenue)
-  const labour = numberValue(roKpis.labour)
-  const parts = numberValue(roKpis.parts)
+  const useRoAudit = roBillingAudit.sourceAvailable
+  const totalJc = useRoAudit ? roBillingAudit.dedupedJc : numberValue(roKpis.total_jc)
+  const revenue = useRoAudit ? roBillingAudit.revenue : numberValue(roKpis.revenue)
+  const labour = useRoAudit ? roBillingAudit.labour : numberValue(roKpis.labour)
+  const parts = useRoAudit ? roBillingAudit.parts : numberValue(roKpis.parts)
+  const effectiveRoBillingCoverage = !roBillingCoverage.hasDataInRange && totalJc > 0
+    ? {
+      ...roBillingCoverage,
+      hasDataInRange: true,
+      rowCountInRange: totalJc,
+      latestAvailableDate: dateValue(roKpis.max_bill_date),
+      emptyReason: null,
+    }
+    : roBillingCoverage
+  const hasSelectedRoBillingData = effectiveRoBillingCoverage.hasDataInRange
   const totalOpenRo = numberValue(openKpis.total_open_ro)
   const delayedRo = numberValue(openKpis.delayed)
   const openOver15 = numberValue(openKpis.over_15)
@@ -933,10 +1116,14 @@ async function buildOverviewPayload(
   const bucketOrder = ['0-4D', '5-7D', '8-15D', '>15D']
   const bucketMap = new Map(resultRows(agingRows).map((row) => [String(row.bucket), numberValue(row.count)]))
   const addOnTotal = addonKpis.ewCount + addonKpis.rsaCount + addonKpis.mcpCount
-  const lyTotalJc = numberValue(lyRoKpis.total_jc)
-  const lyRevenue = numberValue(lyRoKpis.revenue)
-  const lyLabour = numberValue(lyRoKpis.labour)
-  const lyParts = numberValue(lyRoKpis.parts)
+  const lyTotalJc = useRoAudit ? roBillingAudit.ly.dedupedJc : numberValue(lyRoKpis.total_jc)
+  const lyRevenue = useRoAudit ? roBillingAudit.ly.revenue : numberValue(lyRoKpis.revenue)
+  const lyLabour = useRoAudit ? roBillingAudit.ly.labour : numberValue(lyRoKpis.labour)
+  const lyParts = useRoAudit ? roBillingAudit.ly.parts : numberValue(lyRoKpis.parts)
+  const labourPerVehicle = perUnit(labour, totalJc)
+  const partsPerVehicle = perUnit(parts, totalJc)
+  const lyLabourPerVehicle = perUnit(lyLabour, lyTotalJc)
+  const lyPartsPerVehicle = perUnit(lyParts, lyTotalJc)
   const lyOpenRo = numberValue(lyOpenKpis.total_open_ro)
   const lyDelayedRo = numberValue(lyOpenKpis.delayed)
   const lyOpenOver15 = numberValue(lyOpenKpis.over_15)
@@ -944,6 +1131,16 @@ async function buildOverviewPayload(
   const lyComplaintsOpen = numberValue(lyComplaintKpis.open)
   const lyComplaintsOver15 = numberValue(lyComplaintKpis.over_15)
   const lyAddOnTotal = lyAddonKpis.ewCount + lyAddonKpis.rsaCount + lyAddonKpis.mcpCount
+  const hasComparableWorkshopVasLy = Boolean(
+    workshopSnapshot.vasAvailable
+    && lyWorkshopSnapshot.vasAvailable
+  )
+  const workshopVasLyAmount = hasComparableWorkshopVasLy ? lyWorkshopSnapshot.vasAmount : null
+  const workshopVasUnavailableReason = !workshopSnapshot.vasAvailable
+    ? workshopSnapshot.vasUnavailableReason
+    : !lyWorkshopSnapshot.vasAvailable
+      ? lyWorkshopSnapshot.vasUnavailableReason
+      : null
 
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
@@ -982,97 +1179,182 @@ async function buildOverviewPayload(
       revenue: {
         cy: revenue,
         ly: lyRevenue,
-        deltaPct: growth(revenue, lyRevenue),
+        deltaPct: roBillingDelta(revenue, lyRevenue, hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyRevenue, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
       },
       labour: {
         cy: labour,
         ly: lyLabour,
-        deltaPct: growth(labour, lyLabour),
+        deltaPct: roBillingDelta(labour, lyLabour, hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyLabour, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
       },
       parts: {
         cy: parts,
         ly: lyParts,
-        deltaPct: growth(parts, lyParts),
+        deltaPct: roBillingDelta(parts, lyParts, hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyParts, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
       },
       totalJc: {
         cy: totalJc,
         ly: lyTotalJc,
-        deltaPct: growth(totalJc, lyTotalJc),
+        deltaPct: roBillingDelta(totalJc, lyTotalJc, hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyTotalJc, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
       },
       avgBilling: {
         cy: perUnit(revenue, totalJc),
         ly: perUnit(lyRevenue, lyTotalJc),
-        deltaPct: growth(perUnit(revenue, totalJc), perUnit(lyRevenue, lyTotalJc)),
+        deltaPct: roBillingDelta(perUnit(revenue, totalJc), perUnit(lyRevenue, lyTotalJc), hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyTotalJc, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
+      },
+      labourPerVehicle: {
+        cy: labourPerVehicle,
+        ly: lyLabourPerVehicle,
+        deltaPct: roBillingDelta(labourPerVehicle, lyLabourPerVehicle, hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyTotalJc, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
+      },
+      partsPerVehicle: {
+        cy: partsPerVehicle,
+        ly: lyPartsPerVehicle,
+        deltaPct: roBillingDelta(partsPerVehicle, lyPartsPerVehicle, hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyTotalJc, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
       },
       openRo: {
         cy: totalOpenRo,
-        ly: lyOpenRo,
-        deltaPct: growth(totalOpenRo, lyOpenRo),
+        ly: null,
+        deltaPct: null,
+        available: false,
+        comparisonStatus: 'not_comparable',
+        comparisonLabel: 'Current WIP only',
+        unavailableReason: 'Open RO is current-status data; no historical as-of snapshot exists',
+        rawLy: lyOpenRo,
       },
       delayedRo: {
         cy: delayedRo,
-        ly: lyDelayedRo,
-        deltaPct: growth(delayedRo, lyDelayedRo),
+        ly: null,
+        deltaPct: null,
+        available: false,
+        comparisonStatus: 'not_comparable',
+        comparisonLabel: 'Current WIP only',
+        unavailableReason: 'Open RO is current-status data; no historical as-of snapshot exists',
+        rawLy: lyDelayedRo,
       },
       openOver15: {
         cy: openOver15,
-        ly: lyOpenOver15,
-        deltaPct: growth(openOver15, lyOpenOver15),
+        ly: null,
+        deltaPct: null,
+        available: false,
+        comparisonStatus: 'not_comparable',
+        comparisonLabel: 'Current WIP only',
+        unavailableReason: 'Open RO is current-status data; no historical as-of snapshot exists',
+        rawLy: lyOpenOver15,
       },
       complaintsTotal: {
         cy: complaintsTotal,
         ly: lyComplaintsTotal,
         deltaPct: growth(complaintsTotal, lyComplaintsTotal),
+        comparisonStatus: comparisonStatus(lyComplaintsTotal),
       },
       complaintsOpen: {
         cy: complaintsOpen,
         ly: lyComplaintsOpen,
         deltaPct: growth(complaintsOpen, lyComplaintsOpen),
+        comparisonStatus: comparisonStatus(lyComplaintsOpen),
       },
       complaintsOver15: {
         cy: complaintsOver15,
         ly: lyComplaintsOver15,
         deltaPct: growth(complaintsOver15, lyComplaintsOver15),
+        comparisonStatus: comparisonStatus(lyComplaintsOver15),
       },
       addOnTotal: {
         cy: addOnTotal,
         ly: lyAddOnTotal,
         deltaPct: growth(addOnTotal, lyAddOnTotal),
+        comparisonStatus: comparisonStatus(lyAddOnTotal),
       },
       ewCount: {
         cy: addonKpis.ewCount,
         ly: lyAddonKpis.ewCount,
         deltaPct: growth(addonKpis.ewCount, lyAddonKpis.ewCount),
+        comparisonStatus: comparisonStatus(lyAddonKpis.ewCount),
       },
       rsaCount: {
         cy: addonKpis.rsaCount,
         ly: lyAddonKpis.rsaCount,
         deltaPct: growth(addonKpis.rsaCount, lyAddonKpis.rsaCount),
+        comparisonStatus: comparisonStatus(lyAddonKpis.rsaCount),
       },
       mcpCount: {
         cy: addonKpis.mcpCount,
         ly: lyAddonKpis.mcpCount,
         deltaPct: growth(addonKpis.mcpCount, lyAddonKpis.mcpCount),
+        comparisonStatus: comparisonStatus(lyAddonKpis.mcpCount),
       },
       workshopRevenue: {
         cy: workshopSnapshot.totalRevenue,
         ly: lyWorkshopSnapshot.totalRevenue,
-        deltaPct: growth(workshopSnapshot.totalRevenue, lyWorkshopSnapshot.totalRevenue),
+        deltaPct: roBillingDelta(workshopSnapshot.totalRevenue, lyWorkshopSnapshot.totalRevenue, hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyWorkshopSnapshot.totalRevenue, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
       },
       workshopTotalJc: {
         cy: workshopSnapshot.totalJc,
         ly: lyWorkshopSnapshot.totalJc,
-        deltaPct: growth(workshopSnapshot.totalJc, lyWorkshopSnapshot.totalJc),
+        deltaPct: roBillingDelta(workshopSnapshot.totalJc, lyWorkshopSnapshot.totalJc, hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyWorkshopSnapshot.totalJc, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
       },
       workshopLabourPerRo: {
         cy: workshopSnapshot.labourPerRo,
         ly: lyWorkshopSnapshot.labourPerRo,
-        deltaPct: growth(workshopSnapshot.labourPerRo, lyWorkshopSnapshot.labourPerRo),
+        deltaPct: roBillingDelta(workshopSnapshot.labourPerRo, lyWorkshopSnapshot.labourPerRo, hasSelectedRoBillingData),
+        comparisonStatus: roBillingComparisonStatus(lyWorkshopSnapshot.totalJc, hasSelectedRoBillingData),
+        comparisonLabel: roBillingComparisonLabel(hasSelectedRoBillingData),
+        unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
       },
       workshopVasAmount: {
         cy: workshopSnapshot.vasAmount,
-        ly: lyWorkshopSnapshot.vasAmount,
-        deltaPct: growth(workshopSnapshot.vasAmount, lyWorkshopSnapshot.vasAmount),
+        ly: workshopVasLyAmount,
+        deltaPct: nullableGrowth(workshopSnapshot.vasAmount, workshopVasLyAmount),
+        available: hasComparableWorkshopVasLy,
+        comparisonStatus: !workshopSnapshot.vasAvailable
+          ? 'source_missing'
+          : hasComparableWorkshopVasLy
+            ? comparisonStatus(workshopVasLyAmount || 0)
+            : 'not_comparable',
+        comparisonLabel: !workshopSnapshot.vasAvailable
+          ? 'Source missing'
+          : hasComparableWorkshopVasLy
+            ? null
+            : 'No comparable LY',
+        unavailableReason: workshopVasUnavailableReason,
+        source: workshopSnapshot.vasSource,
+        sourceTable: workshopSnapshot.vasSourceTable,
+        periodStart: workshopSnapshot.vasPeriodStart,
+        periodEnd: workshopSnapshot.vasPeriodEnd,
+        sourceRows: workshopSnapshot.vasSourceRows,
+        dedupeMode: workshopSnapshot.vasDedupeMode,
+        lySource: lyWorkshopSnapshot.vasSource,
+        lySourceTable: lyWorkshopSnapshot.vasSourceTable,
+        lyPeriodStart: lyWorkshopSnapshot.vasPeriodStart,
+        lyPeriodEnd: lyWorkshopSnapshot.vasPeriodEnd,
+        lySourceRows: lyWorkshopSnapshot.vasSourceRows,
       },
     } : undefined,
     charts: {
@@ -1166,6 +1448,15 @@ async function buildOverviewPayload(
         lySource: comparisonRange.source,
       },
       comparison,
+      dealerCoverage: {
+        dealerCode: effectiveRoBillingCoverage.dealerCode,
+        isAllLocations: effectiveRoBillingCoverage.isAllLocations,
+        primary: effectiveRoBillingCoverage,
+        roBilling: effectiveRoBillingCoverage,
+        openRo: openRoCoverage,
+        complaints: complaintsCoverage,
+        workshopPerformance: effectiveRoBillingCoverage,
+      },
       sourceCoverage: {
         roBilling: {
           minDate: dateValue(roKpis.min_bill_date),
@@ -1184,14 +1475,49 @@ async function buildOverviewPayload(
           maxDate: workshopSnapshot.maxDate,
         },
       },
+      sourceStatus: {
+        optionalWarnings,
+        roBilling: {
+          hasSelectedRangeData: hasSelectedRoBillingData,
+          comparisonStatus: hasSelectedRoBillingData ? 'available' : 'not_comparable',
+          unavailableReason: roBillingUnavailableReason(hasSelectedRoBillingData),
+          audit: {
+            rawRows: roBillingAudit.rawRows,
+            activeRawRows: roBillingAudit.activeRawRows,
+            dedupedJc: roBillingAudit.dedupedJc,
+            duplicateRowsRemoved: roBillingAudit.duplicateRowsRemoved,
+            cancelledRows: roBillingAudit.cancelledRows,
+            latestUploadedAt: roBillingAudit.latestUploadedAt,
+          },
+        },
+        vas: {
+          available: Boolean(workshopSnapshot.vasAvailable),
+          unavailableReason: workshopSnapshot.vasUnavailableReason,
+          source: workshopSnapshot.vasSource,
+          sourceTable: workshopSnapshot.vasSourceTable,
+          periodStart: workshopSnapshot.vasPeriodStart,
+          periodEnd: workshopSnapshot.vasPeriodEnd,
+        sourceRows: workshopSnapshot.vasSourceRows,
+        dedupeMode: workshopSnapshot.vasDedupeMode,
+        latestSnapshotUploadedAt: workshopSnapshot.vasLatestSnapshotUploadedAt,
+      },
+        openRo: {
+          promiseDatesAvailable: false,
+          amountFieldsAvailable: false,
+          comparisonStatus: 'not_comparable',
+          unavailableReason: 'Open RO is current-status data; no historical as-of snapshot exists.',
+        },
+      },
       dateBases: {
         roBilling: 'bill_date',
         openRo: 'ro_date',
-        complaints: 'complaint_date',
+        complaints: 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)',
         ew: 'reg_date',
         rsa: 'invoice_date',
         mcp: 'package_purchase_date',
+        vas: 'KIA-style operation period source only. Platinum operation-wise data is currently snapshot-only, so selected-period VAS is unavailable until report_period_start/report_period_end or an equivalent source exists.',
       },
+      roBillingAudit,
     },
   }
 }

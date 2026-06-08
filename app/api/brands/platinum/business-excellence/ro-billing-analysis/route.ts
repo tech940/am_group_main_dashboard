@@ -7,6 +7,8 @@ import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
+import { fetchPlatinumRoBillingAudit } from '@/lib/platinum/ro-billing-audit'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -553,11 +555,11 @@ function numberValue(value: unknown) {
 }
 
 function activeBillStatusSql() {
-  return sql`TRUE`
+  return sql`LOWER(TRIM(COALESCE(bill_type::text, ''))) NOT LIKE '%cancel%'`
 }
 
 function cancelledBillStatusSql() {
-  return sql`FALSE`
+  return sql`LOWER(TRIM(COALESCE(bill_type::text, ''))) LIKE '%cancel%'`
 }
 
 function roBillingDealerFilter(dealerCode: DealerFilter) {
@@ -1082,7 +1084,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
-        'Cancel' AS bill_status,
+        COALESCE(NULLIF(bill_type, ''), 'Cancel') AS bill_status,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
         COALESCE(total_amt, 0)::numeric AS total_amt
@@ -1160,7 +1162,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
 }
 
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date, dealerCode: DealerFilter = null) {
-  return `platinum:business-excellence:ro-billing:base-rows:v5:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
+  return `platinum:business-excellence:ro-billing:base-rows:v8:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1168,7 +1170,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `platinum:business-excellence:ro-billing:v22:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:ro-billing:v27:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1249,6 +1251,8 @@ export async function GET(request: Request) {
 
     const analyze = async () => {
       const windows = buildPeriodWindows(startDate, endDate, comparisonRange)
+      const dealerCoverage = await timer.time('dealer-coverage', () => fetchPlatinumRoBillingCoverage(toDateInputValue(startDate), toDateInputValue(endDate), dealerCode))
+      const roBillingAudit = await timer.time('ro-billing-audit', () => fetchPlatinumRoBillingAudit(toDateInputValue(startDate), toDateInputValue(endDate), dealerCode))
       const hasFilters = Array.from(searchParams.entries()).some(([key, value]) => {
         return key in FILTER_COLUMNS && value && value !== 'all'
       })
@@ -1268,6 +1272,16 @@ export async function GET(request: Request) {
           comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
         },
         filterOptions: {},
+        meta: {
+          dealerCode,
+          dealerCoverage: {
+            dealerCode: dealerCoverage.dealerCode,
+            isAllLocations: dealerCoverage.isAllLocations,
+            primary: dealerCoverage,
+            roBilling: dealerCoverage,
+          },
+          roBillingAudit,
+        },
       }
       if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
         const cancelledSummary = await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode))
@@ -1439,6 +1453,7 @@ export async function GET(request: Request) {
           rowsWithBillDate: rowsWithBillDate.length,
           filteredRows: filteredRows.length,
         },
+        meta: baseFastResponse.meta,
       }
 
       if (view === 'trend') {

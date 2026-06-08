@@ -109,7 +109,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `kia:business-excellence:workshop-performance:v28:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:v32:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -249,8 +249,8 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
 async function fetchCoreServiceSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<ServiceAggregate[]> {
   const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode) ? sql`
     SELECT
-      group_type,
-      service_type,
+      COALESCE(NULLIF(group_type, ''), 'Unspecified') AS group_type,
+      COALESCE(NULLIF(group_type, ''), 'Unspecified') AS service_type,
       COUNT(DISTINCT jc_key)::int AS total_jc,
       COALESCE(SUM(labour_amount), 0)::float AS labour_amount,
       COALESCE(SUM(part_amount), 0)::float AS part_amount,
@@ -260,13 +260,13 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
     WHERE report_date >= ${startDate}::date
       AND report_date < (${endDate}::date + INTERVAL '1 day')
       ${advisorWhereClause(advisor)}
-    GROUP BY group_type, service_type
-    ORDER BY group_type ASC, total_jc DESC, service_type ASC
+    GROUP BY COALESCE(NULLIF(group_type, ''), 'Unspecified')
+    ORDER BY group_type ASC, total_jc DESC
   ` : sql`
     WITH base AS (
       SELECT
-        COALESCE(NULLIF(work_type, ''), NULLIF(service_type, ''), 'Unspecified') AS group_type,
-        COALESCE(NULLIF(service_type, ''), NULLIF(work_type, ''), 'Unspecified') AS service_type,
+        COALESCE(NULLIF(work_type, ''), 'Unspecified') AS group_type,
+        COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
@@ -320,46 +320,71 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
 }
 
 async function fetchAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
-  if (!(await tableExists('operation_wise_analysis_advisor_report'))) return []
+  if (!(await tableExists('operation_wise_analysis_advisor_report'))) {
+    if (advisor) return []
+    return [{
+      serviceType: 'MECH',
+      vasAmount: await fetchWorkshopVasAmount(startDate, endDate, dealerCode),
+      waCount: 0,
+      waAmount: 0,
+      wbCount: 0,
+      wbAmount: 0,
+    }]
+  }
 
   const result = await db.execute(sql`
-    WITH operation_rows AS (
-      SELECT DISTINCT
-        COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
-        ${workshopCategoryExpression('service_advisor')} AS workshop_category,
-        report_type,
-        op_part_code,
-        op_part_desc,
-        service_advisor,
-        dealer_code,
-        dealer_name,
-        ${numericText(sql.raw('total_amt'))} AS amount,
-        GREATEST(
-          ABS(${numericText(sql.raw('total_count'))}),
-          ABS(${numericText(sql.raw('sp2ib_seltos_1_5_petrol_count'))}),
-          ABS(${numericText(sql.raw('sp2ic_seltos_1_4_petrol_count'))}),
-          ABS(${numericText(sql.raw('sp2id_seltos_1_5_diesel_count'))}),
-          ABS(${numericText(sql.raw('carnival_count'))}),
-          ABS(${numericText(sql.raw('qy1ib_sonet_1_5_diesel_count'))}),
-          ABS(${numericText(sql.raw('qy1ic_sonet_1_0_gasoline_count'))}),
-          ABS(${numericText(sql.raw('qy1id_sonet_1_2_gasoline_count'))}),
-          ABS(${numericText(sql.raw('ky1ia_carens_1_5_gasoline_count'))}),
-          ABS(${numericText(sql.raw('ky1ib_carens_1_5_diesel_count'))}),
-          ABS(${numericText(sql.raw('ky1ic_carens_1_4_gasoline_count'))})
-        ) AS operation_count,
-        LOWER(COALESCE(op_part_code, '')) AS operation_code,
-        LOWER(CONCAT_WS(
-          ' ',
-          report_type,
-          op_part_code,
-          op_part_desc
-        )) AS description,
-        LOWER(COALESCE(op_part_desc, '')) AS vas_description
+    WITH latest_period AS (
+      SELECT
+        report_period_start::date AS report_period_start,
+        report_period_end::date AS report_period_end
       FROM operation_wise_analysis_advisor_report
-      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
-        AND report_month <= date_trunc('month', ${endDate}::date)::date
+      WHERE report_period_start = ${startDate}::date
+        AND report_period_end <= ${endDate}::date
         ${operationDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
+      GROUP BY report_period_start::date, report_period_end::date
+      ORDER BY report_period_end::date DESC
+      LIMIT 1
+    ),
+    operation_rows AS (
+      SELECT DISTINCT
+        COALESCE(NULLIF(source.row_hash, ''), source.id::text) AS addon_key,
+        ${workshopCategoryExpression('source.service_advisor')} AS workshop_category,
+        source.report_type,
+        source.op_part_code,
+        source.op_part_desc,
+        source.service_advisor,
+        source.dealer_code,
+        source.dealer_name,
+        ${numericText(sql.raw('source.total_amt'))} AS amount,
+        GREATEST(
+          ABS(${numericText(sql.raw('source.total_count'))}),
+          ABS(${numericText(sql.raw('source.sp2ib_seltos_1_5_petrol_count'))}),
+          ABS(${numericText(sql.raw('source.sp2ic_seltos_1_4_petrol_count'))}),
+          ABS(${numericText(sql.raw('source.sp2id_seltos_1_5_diesel_count'))}),
+          ABS(${numericText(sql.raw('source.carnival_count'))}),
+          ABS(${numericText(sql.raw('source.qy1ib_sonet_1_5_diesel_count'))}),
+          ABS(${numericText(sql.raw('source.qy1ic_sonet_1_0_gasoline_count'))}),
+          ABS(${numericText(sql.raw('source.qy1id_sonet_1_2_gasoline_count'))}),
+          ABS(${numericText(sql.raw('source.ky1ia_carens_1_5_gasoline_count'))}),
+          ABS(${numericText(sql.raw('source.ky1ib_carens_1_5_diesel_count'))}),
+          ABS(${numericText(sql.raw('source.ky1ic_carens_1_4_gasoline_count'))})
+        ) AS operation_count,
+        LOWER(COALESCE(source.op_part_code, '')) AS operation_code,
+        LOWER(CONCAT_WS(
+          ' ',
+          source.report_type,
+          source.op_part_code,
+          source.op_part_desc
+        )) AS description,
+        LOWER(COALESCE(source.op_part_desc, '')) AS vas_description
+      FROM operation_wise_analysis_advisor_report source
+      INNER JOIN latest_period
+        ON source.report_period_start::date = latest_period.report_period_start
+        AND source.report_period_end::date = latest_period.report_period_end
+      WHERE 1 = 1
+        ${operationDealerFilter(dealerCode)}
+        ${advisorWhereClause(advisor, 'source.service_advisor')}
     ),
     classified AS (
       SELECT
@@ -380,6 +405,7 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
                 OR vas_description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
                 OR vas_description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
             )
+            AND vas_description !~ '(painting[[:space:]-]*charges[[:space:]-]*s1|removal[[:space:]]*&[[:space:]]*refit[[:space:]-]*work[[:space:]-]*s1)'
         ) AS is_vas
       FROM operation_rows
     )
@@ -395,7 +421,7 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
     ORDER BY CASE WHEN workshop_category = 'MECH' THEN 1 ELSE 2 END
   `)
 
-  return resultRows(result).map((row) => ({
+  const rows = resultRows(result).map((row) => ({
     serviceType: String(row.service_type || 'Unspecified'),
     vasAmount: numberValue(row.vas_amount),
     waCount: numberValue(row.wa_count),
@@ -403,34 +429,73 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
     wbCount: numberValue(row.wb_count),
     wbAmount: numberValue(row.wb_amount),
   }))
+
+  if (!advisor) {
+    const periodVasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
+    const targetRow = rows.find((row) => row.serviceType === 'MECH') || rows[0]
+    if (targetRow) {
+      targetRow.vasAmount = periodVasAmount
+    } else {
+      rows.push({
+        serviceType: 'MECH',
+        vasAmount: periodVasAmount,
+        waCount: 0,
+        waAmount: 0,
+        wbCount: 0,
+        wbAmount: 0,
+      })
+    }
+  }
+
+  return rows
 }
 
 async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   if (!(await tableExists('operation_wise_analysis_report'))) return 0
 
   const result = await db.execute(sql`
-    WITH operation_rows AS (
-      SELECT DISTINCT
-        date_trunc('month', report_month::date)::date AS report_month,
-        report_type,
-        op_part_code,
-        op_part_desc,
-        dealer_code,
-        dealer_name,
-        ${numericText(sql.raw('total_amt'))} AS amount,
-        LOWER(COALESCE(op_part_desc, '')) AS description
+    WITH latest_period AS (
+      SELECT
+        report_period_start::date AS report_period_start,
+        report_period_end::date AS report_period_end
       FROM operation_wise_analysis_report
-      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
-        AND report_month <= date_trunc('month', ${endDate}::date)::date
+      WHERE report_period_start = ${startDate}::date
+        AND report_period_end <= ${endDate}::date
         AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
         ${operationDealerFilter(dealerCode)}
+      GROUP BY report_period_start::date, report_period_end::date
+      ORDER BY report_period_end::date DESC
+      LIMIT 1
+    ),
+    operation_rows AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
+        COALESCE(NULLIF(source.row_hash, ''), source.id::text) AS addon_key,
+        source.report_period_start::date AS report_period_start,
+        source.report_period_end::date AS report_period_end,
+        source.report_type,
+        source.op_part_code,
+        source.op_part_desc,
+        source.dealer_code,
+        source.dealer_name,
+        ${numericText(sql.raw('source.total_amt'))} AS amount,
+        LOWER(COALESCE(source.op_part_desc, '')) AS description
+      FROM operation_wise_analysis_report source
+      INNER JOIN latest_period
+        ON source.report_period_start::date = latest_period.report_period_start
+        AND source.report_period_end::date = latest_period.report_period_end
+      WHERE LOWER(COALESCE(source.report_type, '')) IN ('operation', 'part')
+        ${operationDealerFilter(dealerCode)}
+      ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
     )
     SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
     FROM operation_rows
-    WHERE description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
+    WHERE (
+      description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
       OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
       OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
       OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
+    )
+      AND description !~ '(painting[[:space:]-]*charges[[:space:]-]*s1|removal[[:space:]]*&[[:space:]]*refit[[:space:]-]*work[[:space:]-]*s1)'
   `)
 
   return numberValue(resultRows(result)[0]?.vas_amount)

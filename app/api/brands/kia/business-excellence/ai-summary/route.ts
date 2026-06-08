@@ -466,7 +466,7 @@ function buildSummaryText(summary: AiStructuredSummary) {
 }
 
 function createCacheKey(report: string, startDate: string, endDate: string, dataset: unknown, dealerCode?: string | null) {
-  return `kia:business-excellence:ai-summary:v6:${createHash('sha1')
+  return `kia:business-excellence:ai-summary:v7:${createHash('sha1')
     .update(JSON.stringify({ report, startDate, endDate, dealerCode: normalizeKiaDealerCode(dealerCode), dataset }))
     .digest('hex')}`
 }

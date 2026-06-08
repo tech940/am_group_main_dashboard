@@ -7,6 +7,7 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { fetchPlatinumOpenRoCoverage } from '@/lib/platinum/business-excellence-coverage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -189,7 +190,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `platinum:business-excellence:open-ro:v8:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:open-ro:v11:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -257,7 +258,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
   const baseSql = openRoBaseSql(filters)
   const includeSummary = chunk !== 'details'
   const includeDetails = chunk !== 'summary'
-  const [kpiRows, summaryRows, delayReasonRows, bucketRows, advisorRows, workTypeRows, trendRows, detailRows, optionRows] = await Promise.all([
+  const [kpiRows, summaryRows, delayReasonRows, bucketRows, advisorRows, workTypeRows, trendRows, detailRows, optionRows, dealerCoverage] = await Promise.all([
     includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
@@ -395,6 +396,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
         COALESCE(jsonb_agg(DISTINCT insurance_company_name) FILTER (WHERE NULLIF(insurance_company_name, '') IS NOT NULL), '[]'::jsonb) AS insurance_companies
       FROM enriched
     `) : Promise.resolve([]),
+    fetchPlatinumOpenRoCoverage(filters.startDate || new Date().toISOString().slice(0, 10), filters.endDate || new Date().toISOString().slice(0, 10), filters.dealerCode),
   ])
 
   const kpis = resultRows(kpiRows)[0] || {}
@@ -482,13 +484,21 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       detailLimit: 1000,
       chunk,
       dateRange: { startDate: filters.startDate, endDate: filters.endDate },
+      dealerCode: filters.dealerCode,
+      dealerCoverage: {
+        dealerCode: dealerCoverage.dealerCode,
+        isAllLocations: dealerCoverage.isAllLocations,
+        primary: dealerCoverage,
+        openRo: dealerCoverage,
+      },
       statusDefinition: "LOWER(status) = 'open'",
       agingDefinition: 'CURRENT_DATE - ro_date',
       promiseDateDefinition: 'COALESCE(revised_promise_date_time, promise_date_time)',
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       comparison: {
         supported: false,
-        reason: 'am_platinum_repair_order_list currently has only Apr 2026 onward coverage, so historical comparisons are disabled.',
+        comparisonStatus: 'not_comparable',
+        reason: 'Open RO is current-status data; no historical as-of snapshot exists.',
         preset: filters.periodPreset,
         comparisonMode: filters.comparisonMode || 'none',
         comparisonStartDate: filters.comparisonStartDate,

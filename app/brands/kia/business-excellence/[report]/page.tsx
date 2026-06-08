@@ -9,6 +9,7 @@ const REPORT_TITLES: Record<string, string> = {
   'workshop-performance': 'Workshop Performance',
   'open-ro': 'Open RO (Repair Orders)',
   'kia-complaints': 'Kia Complaints',
+  'service-dashboard': 'Service Dashboard',
 }
 
 const EXECUTIVE_DASHBOARD_ALLOWED_ROLES = new Set(['admin', 'ceo', 'md'])

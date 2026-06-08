@@ -25,12 +25,16 @@ import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 
+const HYUNDAI_LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/4/44/Hyundai_Motor_Company_logo.svg'
+
 const brandNavigation = [
   {
     name: 'AM Kia',
     key: 'kia',
     href: '/brands/kia',
     logo: 'https://www.citypng.com/public/uploads/preview/kia-white-logo-hd-png-7017516947105094q5qjti6gq.png',
+    logoClassName: 'p-1.5',
+    logoContainerClassName: '',
     color: 'text-blue-100',
     icon: Activity,
     comingSoon: false,
@@ -63,7 +67,9 @@ const brandNavigation = [
     name: 'AM Hyundai',
     key: 'hyundai',
     href: '/brands/hyundai',
-    logo: '',
+    logo: HYUNDAI_LOGO_URL,
+    logoClassName: 'p-1',
+    logoContainerClassName: 'bg-white group-hover:bg-white',
     color: 'text-blue-100',
     icon: Activity,
     comingSoon: false,
@@ -96,7 +102,9 @@ const brandNavigation = [
     name: 'AM Platinum',
     key: 'platinum',
     href: '/brands/platinum',
-    logo: '',
+    logo: HYUNDAI_LOGO_URL,
+    logoClassName: 'p-1',
+    logoContainerClassName: 'bg-white group-hover:bg-white',
     color: 'text-blue-100',
     icon: Activity,
     comingSoon: false,
@@ -133,6 +141,7 @@ const alwaysVisibleBrandKeys = new Set(['hyundai', 'platinum'])
 const sidebarPermissionByHref: Record<string, string> = {
   '/purchase-orders': 'purchase_orders.view',
   '/finance-orders': 'finance_orders.view',
+  '/am-finance': 'am_finance.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',
   '/brands/kia/service-appointment': 'kia.service_appointment.view',
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
@@ -179,6 +188,7 @@ export function Sidebar() {
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
   const { userRole, canAccessAdmin, userBrand, loading } = useUserRole()
   const canAccessFinanceOrders = ['admin', 'ceo', 'md', 'ea', 'accounts', 'finance_head'].includes(userRole || '')
+  const canAccessAmFinance = Boolean(userRole)
 
   useEffect(() => {
     if (loading || !userRole) return
@@ -434,6 +444,36 @@ export function Sidebar() {
                   </button>
                 ))}
 
+                {canAccessAmFinance && (
+                  <Link
+                    href="/am-finance"
+                    target="_blank"
+                    rel="noreferrer"
+                    prefetch={false}
+                    onClick={handleSidebarLinkClick}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
+                      pathname === '/am-finance'
+                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
+                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
+                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                    )}
+                  >
+                    <div className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      pathname === '/am-finance' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
+                    )}>
+                      <Landmark className={cn(
+                        "h-4.5 w-4.5 transition-colors",
+                        pathname === '/am-finance' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
+                      )} />
+                    </div>
+                    {!collapsed && (
+                      <span className="flex-1 text-left text-sm">AM Finance</span>
+                    )}
+                  </Link>
+                )}
+
                 <div className="space-y-2">
                   <button
                     onClick={toggleAdmin}
@@ -561,13 +601,14 @@ export function Sidebar() {
                       >
                         <div className={cn(
                           "h-8 w-8 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0 transition-all",
-                          (isOpen || isActive) ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
+                          (isOpen || isActive) ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20",
+                          brand.logoContainerClassName
                         )}>
                           {brand.logo ? (
                             <img
                               src={brand.logo}
                               alt={brand.name}
-                              className="h-full w-full object-contain p-1.5"
+                              className={cn("h-full w-full object-contain", brand.logoClassName)}
                             />
                           ) : (
                             <brand.icon className="h-5 w-5 text-white" />

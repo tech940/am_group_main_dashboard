@@ -51,7 +51,7 @@ function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsi
 }
 
 type ComplaintsDateFilter = {
-  mode: 'month' | 'range' | 'preset' | 'custom'
+  mode: 'month' | 'range' | 'preset' | 'custom' | 'year'
   preset?: BusinessDateFilterValue['preset']
   month: number
   year: number
@@ -331,19 +331,23 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
       setIsDetailLoading(true)
       const secondaryQueryString = withChunk(queryString, 'secondary')
       const detailsQueryString = withChunk(queryString, 'details')
-      const [secondaryResult, detailsResult] = await Promise.all([
-        queryClient.fetchQuery({
-          queryKey: ['business-excellence', 'kia-complaints', secondaryQueryString],
-          queryFn: async () => {
-            const suffix = secondaryQueryString ? `?${secondaryQueryString}` : ''
-            const response = await fetch(`/api/brands/kia/business-excellence/complaints${suffix}`)
-            logApiTimings(response, 'kia-complaints-secondary')
-            if (!response.ok) throw new Error('Failed to load KIA complaints secondary data')
-            return await response.json() as ComplaintResponse
-          },
-          staleTime: DASHBOARD_STALE_TIME_MS,
-        }),
-        queryClient.fetchQuery({
+      const secondaryPromise = queryClient.fetchQuery({
+        queryKey: ['business-excellence', 'kia-complaints', secondaryQueryString],
+        queryFn: async () => {
+          const suffix = secondaryQueryString ? `?${secondaryQueryString}` : ''
+          const response = await fetch(`/api/brands/kia/business-excellence/complaints${suffix}`)
+          logApiTimings(response, 'kia-complaints-secondary')
+          if (!response.ok) throw new Error('Failed to load KIA complaints secondary data')
+          return await response.json() as ComplaintResponse
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
+      }).catch((error) => {
+        console.error('Failed to load KIA complaints secondary data:', error)
+        return null
+      })
+
+      try {
+        const detailsResult = await queryClient.fetchQuery({
           queryKey: ['business-excellence', 'kia-complaints', detailsQueryString],
           queryFn: async () => {
             const suffix = detailsQueryString ? `?${detailsQueryString}` : ''
@@ -353,8 +357,20 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
             return await response.json() as ComplaintResponse
           },
           staleTime: DASHBOARD_STALE_TIME_MS,
-        }),
-      ])
+        })
+
+        setData((current) => current ? {
+          ...current,
+          rows: detailsResult.rows ?? current.rows,
+        } : current)
+      } catch (error) {
+        console.error('Failed to load KIA complaints detail rows:', error)
+      } finally {
+        setIsDetailLoading(false)
+      }
+
+      const secondaryResult = await secondaryPromise
+      if (!secondaryResult) return
 
       setData((current) => current ? {
         ...current,
@@ -364,7 +380,6 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
           monthlyTrend: secondaryResult.charts?.monthlyTrend?.length ? secondaryResult.charts.monthlyTrend : current.charts.monthlyTrend,
           subAreaBreakdown: secondaryResult.charts?.subAreaBreakdown?.length ? secondaryResult.charts.subAreaBreakdown : current.charts.subAreaBreakdown,
         },
-        rows: detailsResult.rows || current.rows,
       } : current)
     } catch (error) {
       console.error('Failed to load KIA complaints dashboard:', error)

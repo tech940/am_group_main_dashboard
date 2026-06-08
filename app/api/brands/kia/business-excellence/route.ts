@@ -298,7 +298,7 @@ export async function GET(request: Request) {
       const startDate = searchParams.get('startDate')
       const endDate = searchParams.get('endDate')
       const dealerCode = normalizeKiaDealerCode(searchParams.get('dealer_code'))
-      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v6:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}:dealer:${dealerCode || 'all'}`
+      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v7:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}:dealer:${dealerCode || 'all'}`
       const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
         ? fetchTableRows({ table, page, limit, fetchAll, startDate, endDate, dealerCode })
         : getCachedData(cacheKey, () => fetchTableRows({ table, page, limit, fetchAll, startDate, endDate, dealerCode }), CACHE_TTL_SECONDS))

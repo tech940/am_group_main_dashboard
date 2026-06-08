@@ -23,7 +23,19 @@ export default async function Page({
 
   const resolvedSearchParams = await searchParams
   const forwardedParams = new URLSearchParams()
-  for (const key of ['startDate', 'endDate', 'compareStartDate', 'compareEndDate', 'comparisonStartDate', 'comparisonEndDate', 'periodPreset']) {
+  for (const key of [
+    'startDate',
+    'endDate',
+    'compareStartDate',
+    'compareEndDate',
+    'comparisonStartDate',
+    'comparisonEndDate',
+    'comparisonMode',
+    'periodPreset',
+    'periodMode',
+    'year',
+    'dealer_code',
+  ]) {
     const value = resolvedSearchParams[key]
     if (typeof value === 'string' && value) {
       forwardedParams.set(key, value)
