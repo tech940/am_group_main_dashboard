@@ -37,9 +37,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { calculateKiaProformaPricing, getKiaBankOptions } from '@/lib/kia-proforma/pricing'
+import { calculateMgProformaPricing, getMgBankOptions } from '@/lib/mg-proforma/pricing'
 
-export type KiaProformaSection =
+export type MgProformaSection =
   | 'generate'
   | 'all'
   | 'finance-remarks'
@@ -55,7 +55,7 @@ type CurrentUser = {
   isApprover: boolean
 }
 
-type KiaProfile = {
+type MgProfile = {
   id: string
   email: string
   consultantName: string
@@ -70,6 +70,7 @@ type KiaProfile = {
 type PriceRow = {
   model: string
   trimDescription: string
+  colour?: string | null
   hyp?: string | null
   bankName?: string | null
   bankBranch?: string | null
@@ -84,7 +85,7 @@ type PriceRow = {
   insuranceCompany?: string | null
 }
 
-type KiaProformaRow = {
+type MgProformaRow = {
   id: string
   entryTime: string
   proformaDate: string
@@ -122,6 +123,8 @@ type KiaProformaRow = {
   empCode: string | null
   approvalStatus: string
   approvedBy: string | null
+  checkedBy: string | null
+  emailSendStatus: string | null
   linkPreview: string | null
   financeStatus: string | null
   financeRemarks: string | null
@@ -131,12 +134,15 @@ type KiaProformaRow = {
 
 type OptionsPayload = {
   currentUser: CurrentUser
-  profile: KiaProfile
+  profile: MgProfile
   prices: PriceRow[]
   models: string[]
   trims: { model: string; trim_description: string }[]
   banks: { bank_name: string; bank_branch: string | null }[]
   insuranceCompanies: string[]
+  priceColours: string[]
+  fuelTypes: string[]
+  vehicleColours: string[]
 }
 
 type FormState = {
@@ -212,7 +218,7 @@ const EMPTY_FORM: FormState = {
   additionalDiscount: '0',
 }
 
-const TABLE_COLUMNS: { key: keyof KiaProformaRow | 'index'; label: string; numeric?: boolean }[] = [
+const TABLE_COLUMNS: { key: keyof MgProformaRow | 'index'; label: string; numeric?: boolean }[] = [
   { key: 'index', label: '#' },
   { key: 'entryTime', label: 'Entry Time' },
   { key: 'proformaDate', label: 'Proforma Date' },
@@ -245,12 +251,14 @@ const TABLE_COLUMNS: { key: keyof KiaProformaRow | 'index'; label: string; numer
   { key: 'consultant', label: 'Consultant' },
   { key: 'location', label: 'Location' },
   { key: 'empCode', label: 'Emp Code' },
+  { key: 'checkedBy', label: 'Checked By' },
+  { key: 'emailSendStatus', label: 'Email Send Status' },
   { key: 'approvalStatus', label: 'Approval Status' },
 ]
 
 const CHART_COLORS = ['#8a1552', '#2563eb', '#f59e0b', '#ef4444', '#14b8a6', '#64748b', '#7c3aed']
-const proformaPrimaryButton = 'kia-proforma-primary-action'
-const proformaOutlineButton = 'kia-proforma-outline-action'
+const proformaPrimaryButton = 'mg-proforma-primary-action'
+const proformaOutlineButton = 'mg-proforma-outline-action'
 const PROFORMA_LIST_PAGE_SIZE = 1000
 const PROFORMA_TABLE_PAGE_SIZE = 10
 
@@ -284,9 +292,9 @@ function dateKey(value?: string | null) {
   return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 }
 
-function proformaColumnValue(row: KiaProformaRow, column: string) {
+function proformaColumnValue(row: MgProformaRow, column: string) {
   if (column === 'index') return ''
-  const value = row[column as keyof KiaProformaRow]
+  const value = row[column as keyof MgProformaRow]
   if (column === 'entryTime') return formatDateTime(String(value || ''))
   if (column === 'proformaDate' || column === 'financeUpdatedTime') return formatDate(String(value || ''))
   return String(value ?? '-')
@@ -371,10 +379,10 @@ function useOptions() {
     setLoading(true)
     setError('')
     try {
-      const response = await fetch('/api/brands/kia/proforma/options')
+      const response = await fetch('/api/brands/mg/proforma/options')
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
-        throw new Error(payload?.error || `Failed to load Kia Proforma options (${response.status})`)
+        throw new Error(payload?.error || `Failed to load MG Proforma options (${response.status})`)
       }
       setData(await response.json())
     } catch (err) {
@@ -390,7 +398,7 @@ function useOptions() {
 }
 
 function useProformas(mode: string, enabled = true) {
-  const [rows, setRows] = useState<KiaProformaRow[]>([])
+  const [rows, setRows] = useState<MgProformaRow[]>([])
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, totalRows: 0 })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -405,7 +413,7 @@ function useProformas(mode: string, enabled = true) {
     if (search) params.set('search', search)
     if (financeStatus !== 'all') params.set('financeStatus', financeStatus)
     try {
-      const response = await fetch(`/api/brands/kia/proforma?${params}`)
+      const response = await fetch(`/api/brands/mg/proforma?${params}`)
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
         throw new Error(payload?.error || `Failed to load proformas (${response.status})`)
@@ -427,18 +435,18 @@ function useProformas(mode: string, enabled = true) {
   return { rows, loading, error, search, setSearch, page, setPage, pagination, financeStatus, setFinanceStatus, reload }
 }
 
-const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: string; approverOnly?: boolean }[] = [
-  { section: 'generate', label: 'Generate Proforma', href: '/brands/kia/proforma' },
-  { section: 'all', label: 'All Proforma Details', href: '/brands/kia/proforma/all-proforma-details' },
-  { section: 'finance-remarks', label: 'Finance Remarks', href: '/brands/kia/proforma/finance-remarks' },
-  { section: 'pending-approval', label: 'Pending Approval', href: '/brands/kia/proforma/pending-approval', approverOnly: true },
-  { section: 'analytics', label: 'Hyp / Ins Analytics', href: '/brands/kia/proforma/hyp-ins-analytics' },
-  { section: 'insights', label: 'Business Insights', href: '/brands/kia/proforma/business-insights' },
+const PROFORMA_NAV_ITEMS: { section: MgProformaSection; label: string; href: string; approverOnly?: boolean }[] = [
+  { section: 'generate', label: 'Generate Proforma', href: '/brands/mg/proforma' },
+  { section: 'all', label: 'All Proforma Details', href: '/brands/mg/proforma/all-proforma-details' },
+  { section: 'finance-remarks', label: 'Finance Remarks', href: '/brands/mg/proforma/finance-remarks' },
+  { section: 'pending-approval', label: 'Pending Approval', href: '/brands/mg/proforma/pending-approval', approverOnly: true },
+  { section: 'analytics', label: 'Hyp / Ins Analytics', href: '/brands/mg/proforma/hyp-ins-analytics' },
+  { section: 'insights', label: 'Business Insights', href: '/brands/mg/proforma/business-insights' },
 ]
 
-function ModuleHeader({ section, profile, isApprover }: { section: KiaProformaSection; profile?: KiaProfile | null; isApprover: boolean }) {
-  const titles: Record<KiaProformaSection, { title: string; subtitle: string; icon: React.ReactNode }> = {
-    generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: <FileText className="h-5 w-5" /> },
+function ModuleHeader({ section, profile, isApprover }: { section: MgProformaSection; profile?: MgProfile | null; isApprover: boolean }) {
+  const titles: Record<MgProformaSection, { title: string; subtitle: string; icon: React.ReactNode }> = {
+    generate: { title: 'Generate Proforma', subtitle: 'Create MG customer proformas with pricing, discounts, and approval queue.', icon: <FileText className="h-5 w-5" /> },
     all: { title: 'All Proforma Details', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: <Columns3 className="h-5 w-5" /> },
     'finance-remarks': { title: 'Finance Remarks', subtitle: 'Update finance status and remarks against every proforma.', icon: <WalletCards className="h-5 w-5" /> },
     'pending-approval': { title: 'Pending Approval', subtitle: 'Verify discounts and cost fields before approval.', icon: <ShieldCheck className="h-5 w-5" /> },
@@ -454,7 +462,7 @@ function ModuleHeader({ section, profile, isApprover }: { section: KiaProformaSe
             {current.icon}
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">Kia Proforma</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">MG Proforma</p>
             <h1 className="text-2xl font-black tracking-tight text-slate-950">{current.title}</h1>
             <p className="mt-1 max-w-3xl text-sm font-semibold text-slate-600">{current.subtitle}</p>
           </div>
@@ -462,7 +470,7 @@ function ModuleHeader({ section, profile, isApprover }: { section: KiaProformaSe
         {profile && (
           <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-right shadow-sm">
             <p className="text-xs font-black text-slate-950">{profile.consultantName}</p>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{profile.dealerLocation || 'AM Kia'} / {profile.employeeCode || 'No emp code'}</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{profile.dealerLocation || 'AM MG'} / {profile.employeeCode || 'No emp code'}</p>
           </div>
         )}
       </div>
@@ -492,15 +500,14 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
-  const editablePrices = form.customerType === 'CSD' || form.customerType === 'Bharat Series'
   const filteredTrims = useMemo(() => {
     return options.trims.filter((trim) => !form.modelName || trim.model === form.modelName).map((trim) => trim.trim_description)
   }, [form.modelName, options.trims])
   const pricing = useMemo(() => {
-    return calculateKiaProformaPricing(form, options.prices, options.banks)
+    return calculateMgProformaPricing(form, options.prices, options.banks)
   }, [form, options.banks, options.prices])
   const filteredBranches = pricing.branchOptions
-  const bankOptions = useMemo(() => getKiaBankOptions(options.banks), [options.banks])
+  const bankOptions = useMemo(() => getMgBankOptions(options.banks), [options.banks])
   const prefillExShowroom = pricing.prefill?.exShowroom
   const prefillTcsValue = pricing.prefill?.tcsValue
   const prefillRegistrationCharges = pricing.prefill?.registrationCharges
@@ -562,7 +569,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
 
   function canonicalizeTrim() {
     setForm((current) => {
-      const result = calculateKiaProformaPricing(current, options.prices, options.banks)
+      const result = calculateMgProformaPricing(current, options.prices, options.banks)
       if (!result.canonicalTrim || current.trimDescription === result.canonicalTrim) return current
       return { ...current, trimDescription: result.canonicalTrim, modelName: result.price?.model || current.modelName }
     })
@@ -570,7 +577,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
 
   function canonicalizeBank() {
     setForm((current) => {
-      const result = calculateKiaProformaPricing(current, options.prices, options.banks)
+      const result = calculateMgProformaPricing(current, options.prices, options.banks)
       if (!current.bankName.trim()) return current
       if (!result.bankIsValid) return { ...current, bankName: '', bankBranch: '' }
       return {
@@ -583,7 +590,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
 
   function canonicalizeBranch() {
     setForm((current) => {
-      const result = calculateKiaProformaPricing(current, options.prices, options.banks)
+      const result = calculateMgProformaPricing(current, options.prices, options.banks)
       if (!current.bankBranch.trim()) return current
       if (!result.branchIsValid) return { ...current, bankBranch: '' }
       return { ...current, bankBranch: result.canonicalBranch }
@@ -594,8 +601,8 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
     const next: Record<string, string> = {}
     if (!form.customerName.trim()) next.customerName = 'Customer name is required'
     if (!/^\d{10}$/.test(form.mobileNumber)) next.mobileNumber = 'Mobile number must be 10 digits'
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) next.customerEmail = 'Valid email is required'
-    ;(['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'bankName', 'vehicleStatus'] as (keyof FormState)[]).forEach((key) => {
+    if (form.customerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) next.customerEmail = 'Enter a valid email'
+    ;(['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'bankName'] as (keyof FormState)[]).forEach((key) => {
       if (!String(form[key] || '').trim()) next[key] = 'Required'
     })
     if (form.trimDescription.trim() && !pricing.trimIsValid) next.trimDescription = 'Select a valid trim'
@@ -609,7 +616,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
     if (!validate()) return
     setSaving(true)
     try {
-      const response = await fetch('/api/brands/kia/proforma', {
+      const response = await fetch('/api/brands/mg/proforma', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ...form, totalCustomerCost: totals.totalCustomerCost, grandTotalCost: totals.grandTotalCost }),
@@ -641,7 +648,6 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
       <div className="grid items-start gap-5 xl:grid-cols-2">
         <FormSection title="Customer Details" subtitle="Customer identity and contact information for the proforma.">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Customer Type"><Select value={form.customerType} onValueChange={(value) => update('customerType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['Customer', 'CSD', 'Bharat Series'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Proforma Date"><TextInput type="date" value={form.proformaDate} onChange={(event) => update('proformaDate', event.target.value)} /></Field>
             <Field label="Customer Name" error={errors.customerName}><TextInput value={form.customerName} onChange={(event) => update('customerName', event.target.value)} /></Field>
             <Field label="Mobile Number" error={errors.mobileNumber}><TextInput inputMode="numeric" maxLength={10} value={form.mobileNumber} onChange={(event) => update('mobileNumber', event.target.value.replace(/\D/g, '').slice(0, 10))} /></Field>
@@ -654,19 +660,17 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
 
         <FormSection title="Vehicle & Bank Insurance" subtitle="Vehicle selection, finance/bank details, insurance, and registration context.">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Model" error={errors.modelName}><DataListInput listId="kia-models" value={form.modelName} onChange={(value) => { update('modelName', value); update('trimDescription', '') }} options={options.models} /></Field>
-            <Field label="Variant / Trim" error={errors.trimDescription}><DataListInput listId="kia-trims" value={form.trimDescription} onChange={(value) => update('trimDescription', value)} onBlur={canonicalizeTrim} options={filteredTrims} /></Field>
-            <Field label="Vehicle Color" error={errors.vehicleColor}><TextInput value={form.vehicleColor} onChange={(event) => update('vehicleColor', event.target.value)} /></Field>
-            <Field label="Fuel Type"><Select value={form.fuelType} onValueChange={(value) => update('fuelType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['DIESEL', 'PETROL', 'ELECTRIC'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Bank" error={errors.bankName}><DataListInput listId="kia-banks" value={form.bankName} onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '' }))} onBlur={canonicalizeBank} options={bankOptions} /></Field>
-            <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="kia-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} /></Field>
-            <Field label="Loan Amount"><TextInput type="number" value={form.loanAmount} onChange={(event) => update('loanAmount', event.target.value)} /></Field>
-            <Field label="Insurance Company"><DataListInput listId="kia-insurance" value={form.insuranceCompany} onChange={(value) => update('insuranceCompany', value)} options={options.insuranceCompanies} /></Field>
-            <Field label="Vehicle Status"><Select value={form.vehicleStatus} onValueChange={(value) => update('vehicleStatus', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['IN HOUSE', 'OUT HOUSE'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Model" error={errors.modelName}><DataListInput listId="mg-models" value={form.modelName} onChange={(value) => { update('modelName', value); update('trimDescription', '') }} options={options.models} /></Field>
+            <Field label="Variant / Trim" error={errors.trimDescription}><DataListInput listId="mg-trims" value={form.trimDescription} onChange={(value) => update('trimDescription', value)} onBlur={canonicalizeTrim} options={filteredTrims} /></Field>
+            <Field label="Vehicle Color" error={errors.vehicleColor}><DataListInput listId="mg-vehicle-colours" value={form.vehicleColor} onChange={(value) => update('vehicleColor', value)} options={options.vehicleColours} /></Field>
+            <Field label="Fuel Type"><Select value={form.fuelType} onValueChange={(value) => update('fuelType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{options.fuelTypes.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Bank" error={errors.bankName}><DataListInput listId="mg-banks" value={form.bankName} onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '' }))} onBlur={canonicalizeBank} options={bankOptions} /></Field>
+            <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="mg-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} /></Field>
+            <Field label="Insurance Company"><DataListInput listId="mg-insurance" value={form.insuranceCompany} onChange={(value) => update('insuranceCompany', value)} options={options.insuranceCompanies} /></Field>
           </div>
         </FormSection>
 
-        <FormSection title="Price Details" subtitle={editablePrices ? 'Editable because the customer type allows manual pricing.' : 'Auto-filled from the selected model, trim, bank, and branch.'}>
+        <FormSection title="Price Details" subtitle="Auto-filled from PRICE DETAILS and editable before saving.">
           <div className="grid gap-4 md:grid-cols-2">
             {[
               ['exShowroom', 'Ex-Showroom'],
@@ -678,7 +682,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
               ['extWarranty', 'Extended Warranty'],
             ].map(([key, label]) => (
               <Field key={key} label={label}>
-                <TextInput type="number" value={form[key as keyof FormState]} disabled={!editablePrices} onChange={(event) => update(key as keyof FormState, event.target.value)} />
+                <TextInput type="number" value={form[key as keyof FormState]} onChange={(event) => update(key as keyof FormState, event.target.value)} />
               </Field>
             ))}
           </div>
@@ -731,7 +735,7 @@ function FilterBar({
   onClear,
   onApply,
 }: {
-  rows: KiaProformaRow[]
+  rows: MgProformaRow[]
   search: string
   setSearch: (value: string) => void
   mode: 'all' | 'finance-remarks' | 'pending-approval'
@@ -811,11 +815,11 @@ function ProformaTable({
   action,
   hideEmptyColumns = false,
 }: {
-  rows: KiaProformaRow[]
+  rows: MgProformaRow[]
   hiddenColumns: Set<string>
   setHiddenColumns: (value: Set<string>) => void
-  extra?: (row: KiaProformaRow) => React.ReactNode
-  action?: (row: KiaProformaRow) => React.ReactNode
+  extra?: (row: MgProformaRow) => React.ReactNode
+  action?: (row: MgProformaRow) => React.ReactNode
   hideEmptyColumns?: boolean
 }) {
   const [showColumnManager, setShowColumnManager] = useState(false)
@@ -824,7 +828,7 @@ function ProformaTable({
     if (hiddenColumns.has(String(column.key))) return false
     if (!hideEmptyColumns || column.key === 'index' || column.key === 'customerName') return true
     return rows.some((row) => {
-      const value = row[column.key as keyof KiaProformaRow]
+      const value = row[column.key as keyof MgProformaRow]
       return value !== null && value !== undefined && String(value).trim() !== ''
     })
   })
@@ -939,7 +943,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const [dateStart, setDateStart] = useState('')
   const [dateEnd, setDateEnd] = useState('')
   const [bankFilter, setBankFilter] = useState('')
-  const columnStorageKey = `kia-proforma:hidden-columns:${options.currentUser.id}:${mode}`
+  const columnStorageKey = `mg-proforma:hidden-columns:${options.currentUser.id}:${mode}`
   const [hiddenColumns, setHiddenColumnsState] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
     try {
@@ -949,7 +953,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
       return new Set()
     }
   })
-  const [verifying, setVerifying] = useState<KiaProformaRow | null>(null)
+  const [verifying, setVerifying] = useState<MgProformaRow | null>(null)
   const [verifyState, setVerifyState] = useState<VerifyState>({})
   const [financeDrafts, setFinanceDrafts] = useState<Record<string, { status: string; remarks: string }>>({})
   const isFinance = mode === 'finance-remarks'
@@ -986,9 +990,9 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     }
   }
 
-  async function saveFinance(row: KiaProformaRow) {
+  async function saveFinance(row: MgProformaRow) {
     const draft = financeDrafts[row.id] || { status: row.financeStatus || 'Pending', remarks: row.financeRemarks || '' }
-    const response = await fetch(`/api/brands/kia/proforma/${row.id}`, {
+    const response = await fetch(`/api/brands/mg/proforma/${row.id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'finance', financeStatus: draft.status, financeRemarks: draft.remarks }),
@@ -1001,7 +1005,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     if (!verifying) return
     const checks = { ...verifyState }
     if (allApproved) FIELD_VERIFY.forEach(([key]) => { checks[key] = { status: 'APPROVED', reason: '' } })
-    const response = await fetch(`/api/brands/kia/proforma/${verifying.id}`, {
+    const response = await fetch(`/api/brands/mg/proforma/${verifying.id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'approval', checks }),
@@ -1012,7 +1016,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     await reload()
   }
 
-  const financeExtra = isFinance ? (row: KiaProformaRow) => {
+  const financeExtra = isFinance ? (row: MgProformaRow) => {
     const draft = financeDrafts[row.id] || { status: row.financeStatus || 'Pending', remarks: row.financeRemarks || '' }
     return (
       <div className="grid min-w-[420px] gap-2 md:grid-cols-[180px_1fr_auto]">
@@ -1072,7 +1076,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
           action={(row) => (
             <div className="flex gap-2">
               {mode === 'pending-approval' && <Button className={cn('rounded-xl', proformaPrimaryButton)} onClick={() => setVerifying(row)}>VERIFY</Button>}
-              <Button variant="outline" className={cn('rounded-xl', proformaOutlineButton)} onClick={() => window.open(`/api/brands/kia/proforma/${row.id}/preview`, '_blank')}>Open</Button>
+              <Button variant="outline" className={cn('rounded-xl', proformaOutlineButton)} onClick={() => window.open(`/api/brands/mg/proforma/${row.id}/preview`, '_blank')}>Open</Button>
             </div>
           )}
         />
@@ -1109,7 +1113,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
               <div key={key} className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[220px_180px_1fr]">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
-                  <p className="mt-1 text-lg font-black">{formatCurrency(verifying?.[key as keyof KiaProformaRow])}</p>
+                  <p className="mt-1 text-lg font-black">{formatCurrency(verifying?.[key as keyof MgProformaRow])}</p>
                 </div>
                 <Select value={verifyState[key]?.status || 'blank'} onValueChange={(value) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { reason: '' }), status: value === 'blank' ? '' : value } }))}>
                   <SelectTrigger className="rounded-xl bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
@@ -1130,16 +1134,15 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
 }
 
 function AnalyticsView({ insights = false, userId }: { insights?: boolean; userId: string }) {
-  const [type, setType] = useState<'bank' | 'insurance' | 'status'>('bank')
+  const [type, setType] = useState<'bank' | 'insurance'>('bank')
   const [grouping, setGrouping] = useState<'daily' | 'monthly' | 'yearly'>('monthly')
-  const [status, setStatus] = useState('all')
   const [top, setTop] = useState<'all' | '5'>('all')
   const [dateStart, setDateStart] = useState('')
   const [dateEnd, setDateEnd] = useState('')
   const [periodSearch, setPeriodSearch] = useState('')
   const [selectedConsultants, setSelectedConsultants] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
-  const columnStorageKey = `kia-proforma:hidden-columns:${userId}:${insights ? 'business-insights' : 'hyp-ins-analytics'}`
+  const columnStorageKey = `mg-proforma:hidden-columns:${userId}:${insights ? 'business-insights' : 'hyp-ins-analytics'}`
   const [hiddenPeriods, setHiddenPeriods] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
     try {
@@ -1163,17 +1166,17 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
   const reload = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ type, grouping, status, top })
+      const params = new URLSearchParams({ type, grouping, top })
       if (dateStart) params.set('startDate', dateStart)
       if (dateEnd) params.set('endDate', dateEnd)
       if (selectedConsultants.size > 0) params.set('consultants', Array.from(selectedConsultants).join(','))
-      const response = await fetch(`/api/brands/kia/proforma/analytics?${params}`)
+      const response = await fetch(`/api/brands/mg/proforma/analytics?${params}`)
       if (!response.ok) throw new Error('Failed to load analytics')
       setPayload(await response.json())
     } finally {
       setLoading(false)
     }
-  }, [dateEnd, dateStart, grouping, selectedConsultants, status, top, type])
+  }, [dateEnd, dateStart, grouping, selectedConsultants, top, type])
   useEffect(() => { reload() }, [reload])
 
   const periods = Array.from(new Set(payload.pivot.map((row) => String(row.period)))).sort()
@@ -1206,17 +1209,10 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
     return acc
   }, {})
   const approvalDist = Object.entries(approvalTotals).map(([name, value]) => ({ name, value: Number(value) }))
-  const statusTotals = payload.distributions.reduce<Record<string, number>>((acc, row) => {
-    const key = String(row.vehicle_status || 'Unknown')
-    acc[key] = (acc[key] || 0) + Number(row.total || 0)
-    return acc
-  }, {})
-  const statusDist = Object.entries(statusTotals).map(([name, value]) => ({ name, value: Number(value) }))
   const consultants = payload.consultants.map((row) => String(row.consultant || '')).filter(Boolean)
   const activeFilters = [
-    type !== 'bank' ? { key: 'type', label: type === 'insurance' ? 'Metric: Insurance' : 'Metric: Status', clear: () => setType('bank') } : null,
+    type !== 'bank' ? { key: 'type', label: 'Metric: Insurance', clear: () => setType('bank') } : null,
     grouping !== 'monthly' ? { key: 'grouping', label: `Period: ${grouping}`, clear: () => setGrouping('monthly') } : null,
-    status !== 'all' ? { key: 'status', label: `Status: ${status}`, clear: () => setStatus('all') } : null,
     top !== 'all' ? { key: 'top', label: 'Top 5', clear: () => setTop('all') } : null,
     dateStart ? { key: 'dateStart', label: `From ${formatDate(dateStart)}`, clear: () => setDateStart('') } : null,
     dateEnd ? { key: 'dateEnd', label: `To ${formatDate(dateEnd)}`, clear: () => setDateEnd('') } : null,
@@ -1225,7 +1221,6 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
   const resetAnalyticsFilters = () => {
     setType('bank')
     setGrouping('monthly')
-    setStatus('all')
     setTop('all')
     setDateStart('')
     setDateEnd('')
@@ -1243,9 +1238,9 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
     <div className="space-y-4">
       <div className="rounded-[1.75rem] border border-slate-200 bg-white/90 p-4 shadow-sm">
         <div className="grid gap-3 lg:grid-cols-[1.1fr_0.8fr_0.8fr_0.8fr_0.8fr]">
-          <Select value={type} onValueChange={(value: 'bank' | 'insurance' | 'status') => { setType(value); setPage(1) }}>
+          <Select value={type} onValueChange={(value: 'bank' | 'insurance') => { setType(value); setPage(1) }}>
             <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white font-bold"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="bank">By Bank Name</SelectItem><SelectItem value="insurance">By Insurance Company</SelectItem>{!insights && <SelectItem value="status">By Vehicle Status</SelectItem>}</SelectContent>
+            <SelectContent><SelectItem value="bank">By Bank Name</SelectItem><SelectItem value="insurance">By Insurance Company</SelectItem></SelectContent>
           </Select>
           <Select value={grouping} onValueChange={(value: 'daily' | 'monthly' | 'yearly') => { setGrouping(value); setPage(1) }}>
             <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white font-bold"><SelectValue /></SelectTrigger>
@@ -1253,22 +1248,13 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
           </Select>
           <Input type="date" value={dateStart} onChange={(event) => { setDateStart(event.target.value); setPage(1) }} className="h-11 rounded-xl border-slate-200 bg-white font-bold" />
           <Input type="date" value={dateEnd} onChange={(event) => { setDateEnd(event.target.value); setPage(1) }} className="h-11 rounded-xl border-slate-200 bg-white font-bold" />
-          {!insights ? (
-            <Select value={status} onValueChange={(value) => { setStatus(value); setPage(1) }}>
-              <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white font-bold"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="IN HOUSE">In House</SelectItem><SelectItem value="OUT HOUSE">Out House</SelectItem></SelectContent>
-            </Select>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" className={cn('h-11 rounded-xl', top === 'all' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('all')}>All</Button>
-              <Button variant="outline" className={cn('h-11 rounded-xl', top === '5' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('5')}>Top 5</Button>
-            </div>
-          )}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" className={cn('h-11 rounded-xl', top === 'all' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('all')}>All</Button>
+            <Button variant="outline" className={cn('h-11 rounded-xl', top === '5' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('5')}>Top 5</Button>
+          </div>
         </div>
         {!insights && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button variant="outline" className={cn('h-9 rounded-xl', top === 'all' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('all')}>All</Button>
-            <Button variant="outline" className={cn('h-9 rounded-xl', top === '5' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('5')}>Top 5</Button>
             <Button className={cn('h-9 rounded-xl', proformaPrimaryButton)} onClick={() => { setPage(1); reload() }}><Filter className="mr-2 h-4 w-4" />Apply Filters</Button>
             <Button variant="outline" className={cn('h-9 rounded-xl', proformaOutlineButton)} onClick={resetAnalyticsFilters}><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>
           </div>
@@ -1306,7 +1292,6 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
             </ResponsiveContainer>
           </ChartCard>
           <PieCard title="Approval status distribution" data={approvalDist} />
-          <PieCard title="In House vs Out House" data={statusDist} />
           <PieCard title="Customer address integrity" data={payload.addressIntegrity.map((row) => ({ name: String(row.name), value: Number(row.value || 0) }))} />
           <PieCard title="Model name distribution" data={payload.modelDistribution.map((row) => ({ name: String(row.name), value: Number(row.value || 0) }))} />
           <PieCard title="Fuel type distribution" data={payload.fuelDistribution.map((row) => ({ name: String(row.name), value: Number(row.value || 0) }))} />
@@ -1375,22 +1360,22 @@ function PieCard({ title, data }: { title: string; data: { name: string; value: 
   )
 }
 
-export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
+export function MgProformaPage({ section }: { section: MgProformaSection }) {
   const { data: options, loading, error, reload } = useOptions()
   const approverOnly = section === 'pending-approval'
   if (loading) {
-    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="space-y-4"><div className="h-32 animate-pulse rounded-[2rem] bg-white/70" /><div className="h-96 animate-pulse rounded-[2rem] bg-white/70" /></div></MainLayout>
+    return <MainLayout title="MG Proforma" subtitle="AM MG operational proforma system"><div className="space-y-4"><div className="h-32 animate-pulse rounded-[2rem] bg-white/70" /><div className="h-96 animate-pulse rounded-[2rem] bg-white/70" /></div></MainLayout>
   }
   if (error || !options) {
-    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 font-bold text-rose-700">{error || 'Unable to load Kia Proforma.'}</div></MainLayout>
+    return <MainLayout title="MG Proforma" subtitle="AM MG operational proforma system"><div className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 font-bold text-rose-700">{error || 'Unable to load MG Proforma.'}</div></MainLayout>
   }
   if (approverOnly && !options.currentUser.isApprover) {
-    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><h1 className="text-2xl font-black">Access required</h1><p className="mt-2 font-semibold text-amber-800">This page is available only for Kia Proforma approvers or manager roles.</p></div></MainLayout>
+    return <MainLayout title="MG Proforma" subtitle="AM MG operational proforma system"><div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><h1 className="text-2xl font-black">Access required</h1><p className="mt-2 font-semibold text-amber-800">This page is available only for MG Proforma approvers or manager roles.</p></div></MainLayout>
   }
 
   return (
-    <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
-      <div className="kia-proforma-shell space-y-5">
+    <MainLayout title="MG Proforma" subtitle="AM MG operational proforma system">
+      <div className="mg-proforma-shell space-y-5">
         <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} />
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}

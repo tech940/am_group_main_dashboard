@@ -1,6 +1,6 @@
 # Project Context
 
-Last updated: 2026-06-03
+Last updated: 2026-06-10
 
 ## Project Overview
 
@@ -20,6 +20,15 @@ The application is designed for operational users across Admin, CEO, Purchase Ma
   - Redis for server-side dashboard/API caching.
   - Optional PostgreSQL materialized summary view for RO Billing daily aggregates.
 - Storage: Supabase Storage for purchase-order images/PDFs.
+
+## MG Proforma Workbook Alignment
+
+- MG Proforma follows `C:\Users\HP\Downloads\MG PROFORMA (Responses).xlsx`, not the copied KIA Proforma field set. The MG form and management tables must not display `Customer Type`, `Vehicle Status`, or `Loan Amount`; those database columns remain only with safe defaults for backward compatibility.
+- `scripts/import-mg-proforma-xlsx.js` is the MG-specific importer. It dry-runs by default, supports `--file`, `--setup`, `--apply`, and `--replace`, reads `PRICE DETAILS`, `Form Responses 1`, and `MAIL DETAILS`, and must not create auth users.
+- `PRICE DETAILS` maps `MODEL` + `Trim Description` + `Colour` into `mg_price_details`; `Metalic` is normalized to `Metallic`. Pricing lookup uses model + trim first, and only uses price colour to disambiguate multiple rows. Customer-facing vehicle colour remains `mg_proformas.vehicle_color` from old `Form Responses 1.Color` or user input.
+- MG totals use the workbook formula: customer total = ex-showroom + TCS + registration/RTO + insurance + fastag + accessories + warranty. Grand total subtracts cash discount, exchange, booking amount, govt employee discount, and additional discount. Historical `Form Responses 1` imports preserve workbook total/grand total and set `fastag_value = 0` because that sheet has no Fastag column.
+- Historical MG rows preserve dealer location, `CHECKED BY`, `EMAIL SEND STATUS`, and `APPROVAL STATUS` using `location`, `checked_by`, `email_send_status`, and `approval_status`. Customer email is optional; validate it only when a value is entered.
+- Sidebar brand logos use white AM Group assets for AM MG (`https://amgroupind.com/wp-content/uploads/2024/10/mg-am-1.png`) and AM Hyundai/AM Platinum (`https://amgroupind.com/wp-content/uploads/2024/10/hyundai.png`). Keep their logo chip dark or transparent enough that white logo art stays visible.
 
 ## Business Excellence Date & Comparison Rules
 

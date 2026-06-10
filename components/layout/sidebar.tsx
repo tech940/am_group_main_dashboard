@@ -25,7 +25,8 @@ import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 
-const HYUNDAI_LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/4/44/Hyundai_Motor_Company_logo.svg'
+const HYUNDAI_LOGO_URL = 'https://amgroupind.com/wp-content/uploads/2024/10/hyundai.png'
+const MG_LOGO_URL = 'https://amgroupind.com/wp-content/uploads/2024/10/mg-am-1.png'
 
 const brandNavigation = [
   {
@@ -69,7 +70,7 @@ const brandNavigation = [
     href: '/brands/hyundai',
     logo: HYUNDAI_LOGO_URL,
     logoClassName: 'p-1',
-    logoContainerClassName: 'bg-white group-hover:bg-white',
+    logoContainerClassName: 'bg-slate-950/35 ring-1 ring-white/15 group-hover:bg-slate-950/45',
     color: 'text-blue-100',
     icon: Activity,
     comingSoon: false,
@@ -104,7 +105,7 @@ const brandNavigation = [
     href: '/brands/platinum',
     logo: HYUNDAI_LOGO_URL,
     logoClassName: 'p-1',
-    logoContainerClassName: 'bg-white group-hover:bg-white',
+    logoContainerClassName: 'bg-slate-950/35 ring-1 ring-white/15 group-hover:bg-slate-950/45',
     color: 'text-blue-100',
     icon: Activity,
     comingSoon: false,
@@ -124,6 +125,41 @@ const brandNavigation = [
         submenus: [
           { name: 'Demo Job Cards', href: '/brands/platinum/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/platinum/demo-cars-list' },
+        ],
+      },
+      {
+        name: 'H Promise',
+        key: 'h-promise',
+        submenus: [],
+      },
+    ],
+  },
+  {
+    name: 'AM MG',
+    key: 'mg',
+    href: '/brands/mg',
+    logo: MG_LOGO_URL,
+    logoClassName: 'p-1',
+    logoContainerClassName: 'bg-slate-950/35 ring-1 ring-white/15 group-hover:bg-slate-950/45',
+    color: 'text-blue-100',
+    icon: Activity,
+    comingSoon: false,
+    sections: [
+      {
+        name: 'Service',
+        key: 'service',
+        submenus: [
+          { name: 'Business Excellence', href: '/brands/mg/business-excellence/overview' },
+          { name: 'Service Appointment', href: '/brands/mg/service-appointment' },
+          { name: 'MG Proforma', href: '/brands/mg/proforma' },
+        ],
+      },
+      {
+        name: 'Sales',
+        key: 'sales',
+        submenus: [
+          { name: 'Demo Job Cards', href: '/brands/mg/demo-job-cards' },
+          { name: 'Demo Cars List', href: '/brands/mg/demo-cars-list' },
         ],
       },
       {
@@ -157,6 +193,11 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/platinum/demo-job-cards': 'platinum.demo_job_cards.view',
   '/brands/platinum/demo-cars-list': 'platinum.demo_cars_list.view',
   '/brands/platinum/proforma': 'platinum.proforma.view',
+  '/brands/mg/business-excellence/overview': 'mg.business_excellence.view',
+  '/brands/mg/service-appointment': 'mg.service_appointment.view',
+  '/brands/mg/demo-job-cards': 'mg.demo_job_cards.view',
+  '/brands/mg/demo-cars-list': 'mg.demo_cars_list.view',
+  '/brands/mg/proforma': 'mg.proforma.view',
   '/admin/users': 'user_management.view',
   '/admin/settings': 'dashboard_settings.view',
 }

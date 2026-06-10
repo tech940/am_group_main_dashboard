@@ -801,6 +801,79 @@
     backdrop-filter: none !important;
   }
 
+  .mg-proforma-primary-action {
+    background: linear-gradient(135deg, var(--dashboard-action-bg), var(--dashboard-action-hover)) !important;
+    background-color: var(--dashboard-action-bg) !important;
+    border-color: color-mix(in srgb, var(--dashboard-action-bg) 66%, white) !important;
+    color: var(--dashboard-action-fg) !important;
+    box-shadow: 0 12px 24px color-mix(in srgb, var(--dashboard-action-bg) 18%, transparent) !important;
+    text-shadow: 0 1px 1px rgba(15, 23, 42, 0.28);
+  }
+
+  .mg-proforma-primary-action:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg)) !important;
+    background-color: var(--dashboard-action-hover) !important;
+    color: var(--dashboard-action-fg) !important;
+  }
+
+  .mg-proforma-primary-action :where(span, svg) {
+    color: inherit !important;
+    stroke: currentColor !important;
+  }
+
+  .mg-proforma-primary-action:disabled {
+    background: #e2e8f0 !important;
+    border-color: #94a3b8 !important;
+    color: #334155 !important;
+    box-shadow: none !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
+  }
+
+  .mg-proforma-outline-action {
+    background: color-mix(in srgb, var(--dashboard-action-bg) 11%, #ffffff) !important;
+    background-color: color-mix(in srgb, var(--dashboard-action-bg) 11%, #ffffff) !important;
+    border-color: color-mix(in srgb, var(--dashboard-action-bg) 52%, #ffffff) !important;
+    color: var(--dashboard-action-bg) !important;
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--dashboard-action-bg) 10%, transparent) !important;
+    backdrop-filter: none !important;
+  }
+
+  .mg-proforma-outline-action:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--dashboard-action-bg) 17%, #ffffff) !important;
+    background-color: color-mix(in srgb, var(--dashboard-action-bg) 17%, #ffffff) !important;
+    border-color: var(--dashboard-action-hover) !important;
+    color: var(--dashboard-action-hover) !important;
+  }
+
+  .mg-proforma-outline-action :where(span, svg) {
+    color: inherit !important;
+    stroke: currentColor !important;
+  }
+
+  .mg-proforma-outline-action:disabled {
+    background: #eef2f7 !important;
+    border-color: #94a3b8 !important;
+    color: #334155 !important;
+    box-shadow: none !important;
+    opacity: 1 !important;
+  }
+
+  .mg-proforma-shell :where(button, [role="button"], [role="combobox"], input, select, textarea) {
+    backdrop-filter: none !important;
+  }
+
+  .mg-proforma-shell :where([role="combobox"], input, select, textarea) {
+    background-color: #ffffff !important;
+    border-color: color-mix(in srgb, var(--dashboard-action-bg) 28%, #cbd5e1) !important;
+    color: #0f172a !important;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04) !important;
+  }
+
+  .mg-proforma-shell :where(.bg-white\/80, .bg-white\/85, .bg-white\/88) {
+    backdrop-filter: none !important;
+  }
+
   .finance-primary-action {
     background: linear-gradient(135deg, var(--dashboard-action-bg), var(--dashboard-action-hover)) !important;
     background-color: var(--dashboard-action-bg) !important;
