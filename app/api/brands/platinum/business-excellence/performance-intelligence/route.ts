@@ -135,7 +135,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `platinum:business-excellence:performance-intelligence:v11:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:performance-intelligence:v12:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
@@ -178,7 +178,7 @@ function buildScoredPerformanceSql(startDate: Date, endDate: Date, filters: Perf
     WITH base AS (
       SELECT
         id::text AS id,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS bill_key,
         bill_date::date AS bill_date,
         COALESCE(
           NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
@@ -206,10 +206,10 @@ function buildScoredPerformanceSql(startDate: Date, endDate: Date, filters: Perf
       WHERE ${whereClause}
     ),
     dedup AS (
-      SELECT DISTINCT ON (bill_key)
+      SELECT DISTINCT ON (branch, bill_key)
         *
       FROM base
-      ORDER BY bill_key, ABS(labour_amt) DESC, ABS(part_amt) DESC, id DESC
+      ORDER BY branch, bill_key, ABS(labour_amt + part_amt) DESC, id DESC
     ),
     enriched AS (
       SELECT

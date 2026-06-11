@@ -41,12 +41,21 @@ function openRoDealerFilter(filters: OpenRoFilters) {
   ) = ${filters.dealerCode}`
 }
 
+function openRoDealerKeySql() {
+  return sql`COALESCE(
+    NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+    NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), ''),
+    'UNMAPPED'
+  )`
+}
+
 function openRoBaseSql(filters: OpenRoFilters) {
   return sql`
     WITH active AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
+      SELECT DISTINCT ON (${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text))
         id,
-        COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
+        ${openRoDealerKeySql()} AS dealer_key,
+        COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text) AS ro_key,
         r_o_no,
         r_o_date::date AS ro_date,
         reg_no,
@@ -80,7 +89,7 @@ function openRoBaseSql(filters: OpenRoFilters) {
         AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
         AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}
-      ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+      ORDER BY ${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
       SELECT
@@ -193,7 +202,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `platinum:business-excellence:open-ro:v12:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:open-ro:v13:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -354,7 +363,8 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
     `) : Promise.resolve([]),
     includeSummary ? db.execute(sql`
       WITH active AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
+        SELECT DISTINCT ON (${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text))
+        ${openRoDealerKeySql()} AS dealer_key,
         svc_adv AS service_adv,
         work_type,
         work_type AS service_type,
@@ -365,7 +375,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
           AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
           AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
           ${openRoDealerFilter(filters)}
-        ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+        ORDER BY ${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
         SELECT

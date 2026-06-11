@@ -572,6 +572,15 @@ function roBillingDealerFilter(dealerCode: DealerFilter) {
     : sql``
 }
 
+function roBillingDealerKeySql() {
+  return sql`COALESCE(
+    NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+    NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+    NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
+    'UNMAPPED'
+  )`
+}
+
 function measureWorkTypeRow(row: WorkTypeAggregateRow, period: PeriodKey, side: 'cy' | 'ly', analysisType: AnalysisType) {
   const prefix = `${period}_${side}` as const
   const load = numberValue(row[`${prefix}_load` as keyof WorkTypeAggregateRow])
@@ -701,29 +710,52 @@ function buildDailyTrendRows(rows: DailyAggregateRow[], analysisType: AnalysisTy
 }
 
 async function fetchDailyAggregateRows(startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null, dealerCode: DealerFilter = null) {
-  const relationalStart = comparisonRange && comparisonRange.startDate < startDate ? comparisonRange.startDate : (comparisonRange ? startDate : sameDateLastYear(startDate))
-  const relationalEnd = comparisonRange && comparisonRange.endDate > endDate ? comparisonRange.endDate : endDate
+  const comparisonStart = comparisonRange?.startDate || sameDateLastYear(startDate)
+  const comparisonEnd = comparisonRange?.endDate || sameDateLastYear(endDate)
 
   const result = await db.execute(sql`
-    WITH dedup AS (
+    WITH range_def AS (
+      SELECT *
+      FROM (
+        VALUES
+          ('current'::text, ${toDateInputValue(startDate)}::date, ${toDateInputValue(endDate)}::date),
+          ('comparison'::text, ${toDateInputValue(comparisonStart)}::date, ${toDateInputValue(comparisonEnd)}::date)
+      ) AS ranges(period_key, start_date, end_date)
+    ),
+    ranked AS (
       SELECT
+        period_key,
+        dealer_key,
         bill_key,
         bill_date,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        labour_amt,
+        part_amt,
+        ROW_NUMBER() OVER (
+          PARTITION BY period_key, dealer_key, bill_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM (
         SELECT
-          COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+          ranges.period_key,
+          id,
+          ${roBillingDealerKeySql()} AS dealer_key,
+          COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS bill_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt
+          COALESCE(part_amt, 0)::numeric AS part_amt,
+          uploaded_at
         FROM am_platinum_ro_billing_report
-        WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
-          AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
-          AND ${activeBillStatusSql()}
+        JOIN range_def ranges
+          ON bill_date >= ranges.start_date
+         AND bill_date < (ranges.end_date + INTERVAL '1 day')
+        WHERE ${activeBillStatusSql()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
-      GROUP BY bill_key, bill_date
+    ),
+    dedup AS (
+      SELECT period_key, dealer_key, bill_key, bill_date, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       bill_date,
@@ -773,24 +805,41 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
     ORDER BY fiscal_start_year DESC
     LIMIT 5
   ` : sql`
-    WITH dedup AS (
+    WITH ranked AS (
       SELECT
+        dealer_key,
         bill_key,
         bill_date,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        labour_amt,
+        part_amt,
+        ROW_NUMBER() OVER (
+          PARTITION BY dealer_key, bill_key, (
+            CASE
+              WHEN EXTRACT(MONTH FROM bill_date) >= 4 THEN EXTRACT(YEAR FROM bill_date)::int
+              ELSE EXTRACT(YEAR FROM bill_date)::int - 1
+            END
+          )
+          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM (
         SELECT
-          COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+          id,
+          ${roBillingDealerKeySql()} AS dealer_key,
+          COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS bill_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt
+          COALESCE(part_amt, 0)::numeric AS part_amt,
+          uploaded_at
         FROM am_platinum_ro_billing_report
         WHERE bill_date IS NOT NULL
           AND ${activeBillStatusSql()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
-      GROUP BY bill_key, bill_date
+    ),
+    dedup AS (
+      SELECT dealer_key, bill_key, bill_date, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     ),
     fiscal AS (
       SELECT
@@ -870,27 +919,39 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
     ORDER BY ranked.revenue DESC, ranked.load DESC, ranked.name ASC
     LIMIT 100
   ` : sql`
-    WITH dedup AS (
+    WITH ranked_rows AS (
       SELECT
         service_advisor AS name,
+        dealer_key,
         bill_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+        labour_amt,
+        part_amt,
+        labour_amt + part_amt AS total_amt,
+        ROW_NUMBER() OVER (
+          PARTITION BY dealer_key, bill_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM (
         SELECT
+          id,
+          ${roBillingDealerKeySql()} AS dealer_key,
           COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS service_advisor,
-          COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+          COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS bill_key,
+          bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           COALESCE(part_amt, 0)::numeric AS part_amt,
-          COALESCE(total_amt, 0)::numeric AS total_amt
+          uploaded_at
         FROM am_platinum_ro_billing_report
         WHERE bill_date >= ${toDateInputValue(startDate)}::date
           AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
-      GROUP BY service_advisor, bill_key
+    ),
+    dedup AS (
+      SELECT name, dealer_key, bill_key, labour_amt, part_amt, total_amt
+      FROM ranked_rows
+      WHERE row_rank = 1
     ),
     advisor_totals AS (
       SELECT
@@ -950,54 +1011,82 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
 
 async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>, dealerCode: DealerFilter = null) {
   const result = await db.execute(sql`
-    WITH dedup AS (
+    WITH range_def AS (
+      SELECT *
+      FROM (
+        VALUES
+          ('td_cy'::text, ${toDateInputValue(windows.td.cyStart)}::date, ${toDateInputValue(windows.td.cyEnd)}::date),
+          ('mtd_cy'::text, ${toDateInputValue(windows.mtd.cyStart)}::date, ${toDateInputValue(windows.mtd.cyEnd)}::date),
+          ('mtd_ly'::text, ${toDateInputValue(windows.mtd.lyStart)}::date, ${toDateInputValue(windows.mtd.lyEnd)}::date),
+          ('qtd_cy'::text, ${toDateInputValue(windows.qtd.cyStart)}::date, ${toDateInputValue(windows.qtd.cyEnd)}::date),
+          ('qtd_ly'::text, ${toDateInputValue(windows.qtd.lyStart)}::date, ${toDateInputValue(windows.qtd.lyEnd)}::date),
+          ('ytd_cy'::text, ${toDateInputValue(windows.ytd.cyStart)}::date, ${toDateInputValue(windows.ytd.cyEnd)}::date),
+          ('ytd_ly'::text, ${toDateInputValue(windows.ytd.lyStart)}::date, ${toDateInputValue(windows.ytd.lyEnd)}::date)
+      ) AS ranges(period_key, start_date, end_date)
+    ),
+    ranked AS (
       SELECT
+        period_key,
+        dealer_key,
         work_type,
         service_type,
         bill_key,
         bill_date,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        labour_amt,
+        part_amt,
+        ROW_NUMBER() OVER (
+          PARTITION BY period_key, dealer_key, bill_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM (
         SELECT
+          ranges.period_key,
+          id,
+          ${roBillingDealerKeySql()} AS dealer_key,
           COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
           COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
-          COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+          COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS bill_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt
+          COALESCE(part_amt, 0)::numeric AS part_amt,
+          uploaded_at
         FROM am_platinum_ro_billing_report
-        WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
-          AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
-          AND ${activeBillStatusSql()}
+        JOIN range_def ranges
+          ON bill_date >= ranges.start_date
+         AND bill_date < (ranges.end_date + INTERVAL '1 day')
+        WHERE ${activeBillStatusSql()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
-      GROUP BY work_type, service_type, bill_key, bill_date
+    ),
+    dedup AS (
+      SELECT period_key, dealer_key, work_type, service_type, bill_key, bill_date, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       work_type,
       service_type,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date)::int AS td_cy_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date)::int AS mtd_cy_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date)::int AS mtd_ly_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date)::int AS qtd_cy_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date)::int AS qtd_ly_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date)::int AS ytd_cy_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date)::int AS ytd_ly_load,
-      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_labour,
-      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_labour,
-      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_labour,
-      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_labour,
-      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_labour,
-      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_labour,
-      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_labour,
-      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_parts,
-      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_parts,
-      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_parts,
-      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_parts,
-      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date), 0)::float AS qtd_ly_parts,
-      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_parts,
-      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_parts
+      COUNT(*) FILTER (WHERE period_key = 'td_cy')::int AS td_cy_load,
+      COUNT(*) FILTER (WHERE period_key = 'mtd_cy')::int AS mtd_cy_load,
+      COUNT(*) FILTER (WHERE period_key = 'mtd_ly')::int AS mtd_ly_load,
+      COUNT(*) FILTER (WHERE period_key = 'qtd_cy')::int AS qtd_cy_load,
+      COUNT(*) FILTER (WHERE period_key = 'qtd_ly')::int AS qtd_ly_load,
+      COUNT(*) FILTER (WHERE period_key = 'ytd_cy')::int AS ytd_cy_load,
+      COUNT(*) FILTER (WHERE period_key = 'ytd_ly')::int AS ytd_ly_load,
+      COALESCE(SUM(labour_amt) FILTER (WHERE period_key = 'td_cy'), 0)::float AS td_cy_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE period_key = 'mtd_cy'), 0)::float AS mtd_cy_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE period_key = 'mtd_ly'), 0)::float AS mtd_ly_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE period_key = 'qtd_cy'), 0)::float AS qtd_cy_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE period_key = 'qtd_ly'), 0)::float AS qtd_ly_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE period_key = 'ytd_cy'), 0)::float AS ytd_cy_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE period_key = 'ytd_ly'), 0)::float AS ytd_ly_labour,
+      COALESCE(SUM(part_amt) FILTER (WHERE period_key = 'td_cy'), 0)::float AS td_cy_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE period_key = 'mtd_cy'), 0)::float AS mtd_cy_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE period_key = 'mtd_ly'), 0)::float AS mtd_ly_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE period_key = 'qtd_cy'), 0)::float AS qtd_cy_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE period_key = 'qtd_ly'), 0)::float AS qtd_ly_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE period_key = 'ytd_cy'), 0)::float AS ytd_cy_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE period_key = 'ytd_ly'), 0)::float AS ytd_ly_parts
     FROM dedup
     GROUP BY work_type, service_type
   `)
@@ -1081,7 +1170,9 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
   const result = await db.execute(sql`
     WITH cancelled AS (
       SELECT
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+        id,
+        ${roBillingDealerKeySql()} AS dealer_key,
+        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS bill_key,
         NULLIF(bill_no, '') AS bill_no,
         NULLIF(r_o_no, '') AS ro_no,
         bill_date::date AS bill_date,
@@ -1091,28 +1182,27 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
         COALESCE(NULLIF(bill_type, ''), 'Cancel') AS bill_status,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
-        COALESCE(total_amt, 0)::numeric AS total_amt
+        COALESCE(total_amt, 0)::numeric AS total_amt,
+        uploaded_at
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${toDateInputValue(startDate)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
         AND ${cancelledBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
-        bill_key,
-        (ARRAY_AGG(bill_no ORDER BY bill_date DESC NULLS LAST))[1] AS bill_no,
-        (ARRAY_AGG(ro_no ORDER BY bill_date DESC NULLS LAST))[1] AS ro_no,
-        MAX(bill_date)::text AS bill_date,
-        (ARRAY_AGG(work_type ORDER BY ABS(COALESCE(total_amt, labour_amt + part_amt, 0)) DESC))[1] AS work_type,
-        (ARRAY_AGG(service_type ORDER BY ABS(COALESCE(total_amt, labour_amt + part_amt, 0)) DESC))[1] AS service_type,
-        (ARRAY_AGG(advisor ORDER BY bill_date DESC NULLS LAST))[1] AS advisor,
-        (ARRAY_AGG(bill_status ORDER BY bill_date DESC NULLS LAST))[1] AS bill_status,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY dealer_key, bill_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC NULLS LAST, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM cancelled
-      GROUP BY bill_key
+    ),
+    dedup AS (
+      SELECT *
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       bill_key,
@@ -1166,7 +1256,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
 }
 
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date, dealerCode: DealerFilter = null) {
-  return `platinum:business-excellence:ro-billing:base-rows:v8:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
+  return `platinum:business-excellence:ro-billing:base-rows:v9:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1174,7 +1264,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `platinum:business-excellence:ro-billing:v27:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:ro-billing:v28:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {

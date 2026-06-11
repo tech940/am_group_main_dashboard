@@ -199,7 +199,7 @@ type ComparisonMetric = {
   unavailableReason?: string | null
 }
 
-type ComparisonStatus = 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+type ComparisonStatus = 'available' | 'exact_zero' | 'not_comparable' | 'source_missing' | 'period_mismatch'
 
 type DealerCoverage = {
   dealerCode: string | null
@@ -445,6 +445,7 @@ function deltaText(metric?: ComparisonMetric | NullableComparisonMetric) {
   if (!metric) return 'vs LY'
   if (metric.comparisonStatus === 'not_comparable') return metric.comparisonLabel || 'No comparable LY'
   if (metric.comparisonStatus === 'source_missing') return 'Source missing'
+  if (metric.comparisonStatus === 'period_mismatch') return metric.comparisonLabel || 'LY period differs'
   if (metric.ly === null || metric.deltaPct === null || ('available' in metric && metric.available === false)) return metric.comparisonLabel || 'No comparable LY'
   if (metric.ly <= 0 && metric.cy > 0) return 'New vs LY'
   if (metric.ly <= 0 && metric.cy <= 0) return 'Flat vs LY'

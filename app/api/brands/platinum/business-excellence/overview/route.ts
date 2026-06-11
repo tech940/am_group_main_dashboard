@@ -112,7 +112,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:overview:v35:${chunk}:${createHash('sha1')
+  return `platinum:business-excellence:overview:v36:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -129,6 +129,15 @@ function roBillingDealerFilter(dealerCode: DealerFilter) {
         NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
       ) = ${dealerCode}`
     : sql``
+}
+
+function roBillingDealerKeySql() {
+  return sql`COALESCE(
+    NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+    NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+    NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
+    'UNMAPPED'
+  )`
 }
 
 function complaintsDealerFilter(dealerCode: DealerFilter) {
@@ -392,7 +401,8 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
     WITH raw AS (
       SELECT
         bill_date::date AS report_date,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        ${roBillingDealerKeySql()} AS dealer_key,
+        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
         CASE
           WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
@@ -409,7 +419,9 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
         END AS service_category,
         ${numericText(sql.raw('labour_amt'))} AS labour_amt,
         ${numericText(sql.raw('part_amt'))} AS part_amt,
-        ${numericText(sql.raw('total_amt'))} AS total_amt
+        ${numericText(sql.raw('total_amt'))} AS total_amt,
+        uploaded_at,
+        id
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
@@ -420,22 +432,23 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
       SELECT
         *,
         ROW_NUMBER() OVER (
-          PARTITION BY jc_key
-          ORDER BY ABS(labour_amt + part_amt) DESC, report_date DESC
+          PARTITION BY dealer_key, jc_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, report_date DESC, uploaded_at DESC NULLS LAST, id DESC
         ) AS row_rank
       FROM raw
     ),
     base AS (
       SELECT
         jc_key,
-        (ARRAY_AGG(report_date ORDER BY row_rank ASC))[1] AS report_date,
-        (ARRAY_AGG(advisor ORDER BY row_rank ASC))[1] AS advisor,
-        (ARRAY_AGG(service_category ORDER BY row_rank ASC))[1] AS service_category,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+        dealer_key,
+        report_date,
+        advisor,
+        service_category,
+        labour_amt,
+        part_amt,
+        total_amt
       FROM ranked
-      GROUP BY jc_key
+      WHERE row_rank = 1
     ),
     enriched AS (
       SELECT
@@ -449,8 +462,8 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
 function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
   return sql`
     WITH active AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
-        COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
+      SELECT DISTINCT ON (COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text))
+        COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text) AS ro_key,
         r_o_date::date AS ro_date,
         svc_adv AS service_adv,
         work_type,
@@ -463,7 +476,7 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
         AND r_o_date >= ${startDate}::date
         AND r_o_date < (${endDate}::date + INTERVAL '1 day')
         ${openRoDealerFilter(dealerCode)}
-      ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+      ORDER BY COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
       SELECT
@@ -608,7 +621,8 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
   ` : sql`
     WITH raw AS (
       SELECT
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
+        ${roBillingDealerKeySql()} AS dealer_key,
         bill_date::date AS report_date,
         CASE
           WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
@@ -631,15 +645,24 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
         AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
+        dealer_key,
         jc_key,
-        (ARRAY_AGG(report_date ORDER BY report_date DESC))[1] AS report_date,
-        (ARRAY_AGG(service_type ORDER BY ABS(labour_amt + part_amt) DESC))[1] AS service_type,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        report_date,
+        service_type,
+        labour_amt,
+        part_amt,
+        ROW_NUMBER() OVER (
+          PARTITION BY dealer_key, jc_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, report_date DESC
+        ) AS row_rank
       FROM raw
-      GROUP BY jc_key
+    ),
+    dedup AS (
+      SELECT jc_key, dealer_key, report_date, service_type, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       service_type,
@@ -1138,11 +1161,13 @@ async function buildOverviewPayload(
   const lyComplaintsOpen = numberValue(lyComplaintKpis.open)
   const lyComplaintsOver15 = numberValue(lyComplaintKpis.over_15)
   const lyAddOnTotal = lyAddonKpis.ewCount + lyAddonKpis.rsaCount + lyAddonKpis.mcpCount
-  const hasComparableWorkshopVasLy = Boolean(
+  const hasWorkshopVasLy = Boolean(
     workshopSnapshot.vasAvailable
     && lyWorkshopSnapshot.vasAvailable
   )
-  const workshopVasLyAmount = hasComparableWorkshopVasLy ? lyWorkshopSnapshot.vasAmount : null
+  const workshopVasPeriodsAlign = hasWorkshopVasLy
+    && workshopSnapshot.vasPeriodStart?.slice(5, 7) === lyWorkshopSnapshot.vasPeriodStart?.slice(5, 7)
+  const workshopVasLyAmount = hasWorkshopVasLy ? lyWorkshopSnapshot.vasAmount : null
   const workshopVasUnavailableReason = !workshopSnapshot.vasAvailable
     ? workshopSnapshot.vasUnavailableReason
     : !lyWorkshopSnapshot.vasAvailable
@@ -1338,18 +1363,24 @@ async function buildOverviewPayload(
       workshopVasAmount: {
         cy: workshopSnapshot.vasAmount,
         ly: workshopVasLyAmount,
-        deltaPct: nullableGrowth(workshopSnapshot.vasAmount, workshopVasLyAmount),
-        available: hasComparableWorkshopVasLy,
+        deltaPct: workshopVasPeriodsAlign
+          ? nullableGrowth(workshopSnapshot.vasAmount, workshopVasLyAmount)
+          : null,
+        available: hasWorkshopVasLy,
         comparisonStatus: !workshopSnapshot.vasAvailable
           ? 'source_missing'
-          : hasComparableWorkshopVasLy
-            ? comparisonStatus(workshopVasLyAmount || 0)
-            : 'not_comparable',
+          : !hasWorkshopVasLy
+            ? 'not_comparable'
+            : workshopVasPeriodsAlign
+              ? comparisonStatus(workshopVasLyAmount || 0)
+              : 'period_mismatch',
         comparisonLabel: !workshopSnapshot.vasAvailable
           ? 'Source missing'
-          : hasComparableWorkshopVasLy
-            ? null
-            : 'No comparable LY',
+          : !hasWorkshopVasLy
+            ? 'No comparable LY'
+            : workshopVasPeriodsAlign
+              ? null
+              : `LY source covers ${lyWorkshopSnapshot.vasPeriodStart} to ${lyWorkshopSnapshot.vasPeriodEnd}`,
         unavailableReason: workshopVasUnavailableReason,
         source: workshopSnapshot.vasSource,
         sourceTable: workshopSnapshot.vasSourceTable,
@@ -1522,7 +1553,7 @@ async function buildOverviewPayload(
         ew: 'reg_date',
         rsa: 'invoice_date',
         mcp: 'package_purchase_date',
-        vas: 'KIA-style operation period source only. Platinum operation-wise data is currently snapshot-only, so selected-period VAS is unavailable until report_period_start/report_period_end or an equivalent source exists.',
+        vas: 'am_platinum_operation_wise_analysis_report report_period_start/report_period_end; prefers the latest covered period and falls back to the smallest containing period when the source has no partial-period snapshot.',
       },
       roBillingAudit,
     },

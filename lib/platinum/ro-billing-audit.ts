@@ -341,7 +341,7 @@ export async function fetchPlatinumRoBillingAudit(
       SELECT
         *,
         ROW_NUMBER() OVER (
-          PARTITION BY period_key, jc_key
+          PARTITION BY period_key, dealer_code, jc_key
           ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC NULLS LAST, uploaded_at DESC NULLS LAST
         ) AS row_rank
       FROM active

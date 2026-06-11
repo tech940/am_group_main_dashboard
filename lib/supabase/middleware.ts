@@ -30,26 +30,37 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // IMPORTANT: Avoid writing any logic between createServerClient and
-  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
+  // IMPORTANT: Avoid writing any logic between createServerClient and the
+  // auth verification call. Supabase may refresh the session and write cookies.
   // issues with users being randomly logged out.
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let authenticated = false
+  try {
+    const { data, error } = await supabase.auth.getClaims()
+    authenticated = !error && typeof data?.claims?.sub === 'string'
+  } catch {
+    // A stale local clock can make a server-valid JWT look expired. Do not
+    // consume the refresh token in Proxy; the page/API data-access guard will
+    // perform the definitive server-side check once.
+  }
 
   // Protected routes
   const protectedPaths = ['/dashboard', '/workshop', '/recon', '/inventory', '/reports', '/team', '/admin', '/brands', '/purchase-orders', '/finance-orders', '/am-finance']
   const isProtectedPath = protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))
+  const hasAuthCookie = request.cookies.getAll().some(({ name, value }) => (
+    name.startsWith('sb-')
+    && name.includes('auth-token')
+    && Boolean(value)
+  ))
 
-  if (!user && isProtectedPath) {
+  if (!authenticated && !hasAuthCookie && isProtectedPath) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
     return NextResponse.redirect(url)
   }
 
   // Redirect to dashboard if user is logged in and tries to access login page
-  if (user && request.nextUrl.pathname === '/auth/login') {
+  if (authenticated && request.nextUrl.pathname === '/auth/login') {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)

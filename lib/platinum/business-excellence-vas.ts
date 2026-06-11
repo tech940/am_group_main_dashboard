@@ -107,8 +107,6 @@ function emptyResult(reason: string): PlatinumVasResult {
   }
 }
 
-const PERIOD_UNSUPPORTED_REASON = 'No KIA-style period source for Platinum VAS. am_platinum_operation_wise_analysis_report is snapshot-only and cannot support selected-period VAS until report_period_start/report_period_end or an equivalent business-period source exists.'
-
 function vasFilter() {
   return sql`
     (
@@ -141,7 +139,17 @@ export async function fetchPlatinumWorkshopVasAmount(
 
   if (hasColumns(columns, ['report_period_start', 'report_period_end', 'total_amt', 'source_dealer_code']) && hasDescription) {
     const result = await db.execute(sql`
-      WITH operation_rows AS (
+      WITH candidate_period AS (
+        SELECT report_period_start::date AS period_start,
+               report_period_end::date AS period_end
+        FROM am_platinum_operation_wise_analysis_report
+        WHERE report_period_start <= ${endDate}::date
+          ${reportTypeFilter(columns)}
+          ${operationDealerFilter(dealerCode)}
+        ORDER BY report_period_start DESC
+        LIMIT 1
+      ),
+      operation_rows AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
           COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
           report_period_start::date AS period_start,
@@ -151,34 +159,41 @@ export async function fetchPlatinumWorkshopVasAmount(
           ${codeSql} AS code,
           ${descriptionSql} AS description
         FROM am_platinum_operation_wise_analysis_report
-        WHERE report_period_start = ${startDate}::date
-          AND report_period_end = ${endDate}::date
+        CROSS JOIN candidate_period
+        WHERE report_period_start = candidate_period.period_start
+          AND report_period_end = candidate_period.period_end
           ${reportTypeFilter(columns)}
           ${operationDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
       SELECT
-        COALESCE(SUM(amount), 0)::float AS vas_amount,
-        COUNT(*)::int AS source_rows,
+        COALESCE(SUM(amount) FILTER (WHERE ${vasFilter()}), 0)::float AS vas_amount,
+        COUNT(*)::int AS period_rows,
+        COUNT(*) FILTER (WHERE ${vasFilter()})::int AS source_rows,
         MIN(period_start)::text AS period_start,
         MAX(period_end)::text AS period_end
       FROM operation_rows
-      WHERE ${vasFilter()}
     `)
     const row = resultRows(result)[0]
+    const periodRows = numberValue(row?.period_rows)
     const sourceRows = numberValue(row?.source_rows)
 
-    if (sourceRows > 0) {
+    if (periodRows > 0) {
+      const periodEnd = dateValue(row?.period_end)
       return {
         amount: numberValue(row?.vas_amount),
         available: true,
         unavailableReason: null,
-        source: 'operation_period_exact',
+        source: periodEnd === endDate
+          ? 'operation_period_exact'
+          : periodEnd && periodEnd < endDate
+            ? 'operation_period_covered'
+            : 'operation_period_containing',
         sourceTable,
         periodStart: dateValue(row?.period_start),
-        periodEnd: dateValue(row?.period_end),
+        periodEnd,
         sourceRows,
-        dedupeMode: null,
+        dedupeMode: 'row_hash_latest',
       }
     }
   }
@@ -198,8 +213,8 @@ export async function fetchPlatinumWorkshopVasAmount(
   const snapshotRow = resultRows(snapshotMeta)[0]
 
   return {
-    ...emptyResult(PERIOD_UNSUPPORTED_REASON),
-    source: 'snapshot_only',
+    ...emptyResult(`No Platinum VAS source period covers ${endDate} for the selected location.`),
+    source: 'operation_period_unavailable',
     sourceTable,
     sourceRows: 0,
     latestSnapshotUploadedAt: dateValue(snapshotRow?.latest_uploaded_at),

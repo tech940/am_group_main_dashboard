@@ -171,7 +171,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:workshop-performance:v37:${createHash('sha1')
+  return `platinum:business-excellence:workshop-performance:v38:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -184,6 +184,15 @@ function roBillingDealerFilter(dealerCode: DealerFilter) {
         NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
       ) = ${dealerCode}`
     : sql``
+}
+
+function roBillingDealerKeySql() {
+  return sql`COALESCE(
+    NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+    NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+    NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
+    'UNMAPPED'
+  )`
 }
 
 function activeBillStatusSql() {
@@ -311,8 +320,11 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
   ` : sql`
     WITH base AS (
       SELECT
+        id,
+        ${roBillingDealerKeySql()} AS dealer_key,
         ${workshopCategoryExpression('service_advisor')} AS workshop_category,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
+        bill_date::date AS bill_date,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
         COALESCE(total_amt, 0)::numeric AS total_amt,
@@ -321,7 +333,8 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
           COALESCE(total_disc, 0)::numeric,
           ${numericText(sql.raw('labour_disc'))},
           ${numericText(sql.raw('part_disc'))}
-        ) AS discount_amount
+        ) AS discount_amount,
+        uploaded_at
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
@@ -329,16 +342,25 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
+        dealer_key,
         workshop_category,
         jc_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt,
-        MAX(discount_amount) AS discount_amount
+        labour_amt,
+        part_amt,
+        total_amt,
+        discount_amount,
+        ROW_NUMBER() OVER (
+          PARTITION BY dealer_key, jc_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM base
-      GROUP BY workshop_category, jc_key
+    ),
+    dedup AS (
+      SELECT workshop_category, dealer_key, jc_key, labour_amt, part_amt, total_amt, discount_amount
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       workshop_category AS group_type,
@@ -383,9 +405,12 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
   ` : sql`
     WITH base AS (
       SELECT
+        id,
+        ${roBillingDealerKeySql()} AS dealer_key,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS group_type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
+        bill_date::date AS bill_date,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
         COALESCE(total_amt, 0)::numeric AS total_amt,
@@ -394,7 +419,8 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
           COALESCE(total_disc, 0)::numeric,
           ${numericText(sql.raw('labour_disc'))},
           ${numericText(sql.raw('part_disc'))}
-        ) AS discount_amount
+        ) AS discount_amount,
+        uploaded_at
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
@@ -402,17 +428,26 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
+        dealer_key,
         group_type,
         service_type,
         jc_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt,
-        MAX(discount_amount) AS discount_amount
+        labour_amt,
+        part_amt,
+        total_amt,
+        discount_amount,
+        ROW_NUMBER() OVER (
+          PARTITION BY dealer_key, jc_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM base
-      GROUP BY group_type, service_type, jc_key
+    ),
+    dedup AS (
+      SELECT group_type, service_type, dealer_key, jc_key, labour_amt, part_amt, total_amt, discount_amount
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       group_type,
@@ -568,10 +603,13 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
   ` : sql`
     WITH base AS (
       SELECT
+        id,
+        ${roBillingDealerKeySql()} AS dealer_key,
         bill_date::date AS bill_date,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
-        COALESCE(part_amt, 0)::numeric AS part_amt
+        COALESCE(part_amt, 0)::numeric AS part_amt,
+        uploaded_at
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
@@ -579,14 +617,23 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
+        dealer_key,
         bill_date,
         jc_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        labour_amt,
+        part_amt,
+        ROW_NUMBER() OVER (
+          PARTITION BY dealer_key, jc_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM base
-      GROUP BY bill_date, jc_key
+    ),
+    dedup AS (
+      SELECT bill_date, dealer_key, jc_key, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       bill_date,
@@ -622,24 +669,37 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
   ` : sql`
     WITH base AS (
       SELECT
+        id,
+        ${roBillingDealerKeySql()} AS dealer_key,
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
+        bill_date::date AS bill_date,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
-        COALESCE(part_amt, 0)::numeric AS part_amt
+        COALESCE(part_amt, 0)::numeric AS part_amt,
+        uploaded_at
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
+        dealer_key,
         advisor,
         jc_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        labour_amt,
+        part_amt,
+        ROW_NUMBER() OVER (
+          PARTITION BY dealer_key, jc_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM base
-      GROUP BY advisor, jc_key
+    ),
+    dedup AS (
+      SELECT advisor, dealer_key, jc_key, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       advisor,
@@ -1050,6 +1110,7 @@ async function buildWorkshopPayload(
     coreAddonRows,
     sourceStatus,
     workshopVasMeta,
+    lyWorkshopVasMeta,
     dealerCoverage,
     roBillingAudit,
   ] = await Promise.all([
@@ -1068,6 +1129,12 @@ async function buildWorkshopPayload(
       'workshop VAS snapshot',
       fetchPlatinumWorkshopVasAmount(startDate, endDate, dealerCode),
       emptyVasMeta('Platinum VAS source could not be read.'),
+      sourceWarnings
+    ),
+    optionalSource(
+      'LY workshop VAS snapshot',
+      fetchPlatinumWorkshopVasAmount(lyStart, lyEnd, dealerCode),
+      emptyVasMeta('Platinum LY VAS source could not be read.'),
       sourceWarnings
     ),
     optionalSource(
@@ -1125,18 +1192,26 @@ async function buildWorkshopPayload(
 
   const totalRevenue = totalRow.labourAmount + totalRow.spareSale
   const lyRevenue = lyTotal.labourAmount + lyTotal.spareSale
-  const hasComparableVasLy = workshopVasMeta.available
-  const vasLy = hasComparableVasLy ? lyTotal.lessVas : undefined
+  const hasVasLy = lyWorkshopVasMeta.available
+  const vasPeriodsAlign = workshopVasMeta.available
+    && hasVasLy
+    && workshopVasMeta.periodStart?.slice(5) === lyWorkshopVasMeta.periodStart?.slice(5)
+    && workshopVasMeta.periodEnd?.slice(5) === lyWorkshopVasMeta.periodEnd?.slice(5)
+  const vasLy = hasVasLy ? lyWorkshopVasMeta.amount : undefined
   const vasComparisonStatus = !workshopVasMeta.available
     ? 'source_missing'
-    : hasComparableVasLy
+    : !hasVasLy
+      ? 'not_comparable'
+      : vasPeriodsAlign
       ? (Number(vasLy || 0) === 0 ? 'exact_zero' : 'available')
-      : 'not_comparable'
+      : 'period_mismatch'
   const vasComparisonLabel = !workshopVasMeta.available
     ? 'Source missing'
-    : hasComparableVasLy
+    : !hasVasLy
+      ? 'No comparable LY'
+      : vasPeriodsAlign
       ? null
-      : 'No comparable LY'
+      : `LY source covers ${lyWorkshopVasMeta.periodStart} to ${lyWorkshopVasMeta.periodEnd}`
 
   return {
     dateRange: { startDate, endDate, lyStartDate: lyStart, lyEndDate: lyEnd },
@@ -1148,7 +1223,7 @@ async function buildWorkshopPayload(
       vasAmount: {
         value: totalRow.lessVas,
         ly: vasLy,
-        growth: vasLy === undefined ? null : growth(totalRow.lessVas, vasLy),
+        growth: vasLy === undefined || !vasPeriodsAlign ? null : growth(totalRow.lessVas, vasLy),
         comparisonStatus: vasComparisonStatus,
         comparisonLabel: vasComparisonLabel,
       },
@@ -1176,7 +1251,9 @@ async function buildWorkshopPayload(
       },
       comparison,
       unsupportedComparisonSources: {
-        am_platinum_operation_wise_analysis_report: 'Platinum operation-wise add-ons are unavailable for KIA-style selected-period VAS because the table is snapshot-only and has no business period fields.',
+        am_platinum_operation_wise_analysis_report: workshopVasMeta.available
+          ? null
+          : workshopVasMeta.unavailableReason,
         am_platinum_operation_wise_analysis_advisor_report: 'Advisor-level WA/WB/VAS source is unavailable for Platinum.',
         am_platinum_mcp_report: 'MCP source is unavailable for Platinum.',
         am_platinum_rsa_report: 'RSA source is unavailable for Platinum.',
@@ -1219,10 +1296,15 @@ async function buildWorkshopPayload(
         sourceRows: workshopVasMeta.sourceRows,
         dedupeMode: workshopVasMeta.dedupeMode,
         latestSnapshotUploadedAt: workshopVasMeta.latestSnapshotUploadedAt,
-        lyAvailable: hasComparableVasLy,
+        lyAvailable: hasVasLy,
         comparisonStatus: vasComparisonStatus,
         comparisonLabel: vasComparisonLabel,
-        lyUnavailableReason: hasComparableVasLy ? null : workshopVasMeta.unavailableReason || 'Platinum VAS has no date-scoped LY source',
+        lyUnavailableReason: hasVasLy ? null : lyWorkshopVasMeta.unavailableReason,
+        lySource: lyWorkshopVasMeta.source,
+        lySourceTable: lyWorkshopVasMeta.sourceTable,
+        lyPeriodStart: lyWorkshopVasMeta.periodStart,
+        lyPeriodEnd: lyWorkshopVasMeta.periodEnd,
+        lySourceRows: lyWorkshopVasMeta.sourceRows,
       },
       roBillingAudit,
     },

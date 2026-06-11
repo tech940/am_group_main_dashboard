@@ -4462,7 +4462,7 @@ type WorkshopMetric = {
   ly?: number
   growth?: number | null
   amount?: number
-  comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+  comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing' | 'period_mismatch'
   comparisonLabel?: string | null
 }
 
@@ -4534,9 +4534,14 @@ type WorkshopPerformanceResponse = {
       sourceRows?: number
       dedupeMode?: string | null
       lyAvailable?: boolean
-      comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+      comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing' | 'period_mismatch'
       comparisonLabel?: string | null
       lyUnavailableReason?: string | null
+      lySource?: string | null
+      lySourceTable?: string | null
+      lyPeriodStart?: string | null
+      lyPeriodEnd?: string | null
+      lySourceRows?: number
     }
   }
 }
@@ -4759,10 +4764,11 @@ function WorkshopPerformanceSection({
 
   const vasUnavailable = data?.meta.vas?.available === false
   const vasSnapshotMeta = vasUnavailable
-    ? 'No KIA-style period source'
-    : data?.meta.vas?.source === 'operation_latest_snapshot'
-      ? `Snapshot as of ${formatCompactBusinessDate(data.meta.vas.periodEnd)} / ${data.meta.vas.comparisonLabel || 'No comparable LY'}`
-      : undefined
+    ? data?.meta.vas?.unavailableReason || 'VAS source unavailable'
+    : data?.meta.vas?.comparisonLabel
+      || (data?.meta.vas?.periodEnd
+        ? `Source period ends ${formatCompactBusinessDate(data.meta.vas.periodEnd)}`
+        : undefined)
 
   const kpiCards = data ? [
     { label: 'Total JC', metric: data.kpis.totalJc, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'teal' },
