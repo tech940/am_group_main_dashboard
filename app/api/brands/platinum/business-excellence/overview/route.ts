@@ -1522,7 +1522,7 @@ async function buildOverviewPayload(
         ew: 'reg_date',
         rsa: 'invoice_date',
         mcp: 'package_purchase_date',
-        vas: 'KIA-style operation period source only. Platinum operation-wise data is currently snapshot-only, so selected-period VAS is unavailable until report_period_start/report_period_end or an equivalent source exists.',
+        vas: 'report_period_start/report_period_end from am_platinum_operation_wise_analysis_report. Falls back to latest snapshot when no rows match the selected period.',
       },
       roBillingAudit,
     },

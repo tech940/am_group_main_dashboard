@@ -107,7 +107,7 @@ function emptyResult(reason: string): PlatinumVasResult {
   }
 }
 
-const PERIOD_UNSUPPORTED_REASON = 'No KIA-style period source for Platinum VAS. am_platinum_operation_wise_analysis_report is snapshot-only and cannot support selected-period VAS until report_period_start/report_period_end or an equivalent business-period source exists.'
+const PERIOD_UNSUPPORTED_REASON = 'No date-scoped VAS rows found for the selected period in am_platinum_operation_wise_analysis_report. Showing latest snapshot instead. Select a wider date range or verify report_period_start/report_period_end coverage.'
 
 function vasFilter() {
   return sql`
@@ -151,8 +151,8 @@ export async function fetchPlatinumWorkshopVasAmount(
           ${codeSql} AS code,
           ${descriptionSql} AS description
         FROM am_platinum_operation_wise_analysis_report
-        WHERE report_period_start = ${startDate}::date
-          AND report_period_end = ${endDate}::date
+        WHERE report_period_start <= ${endDate}::date
+          AND report_period_end >= ${startDate}::date
           ${reportTypeFilter(columns)}
           ${operationDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC

@@ -1175,12 +1175,7 @@ async function buildWorkshopPayload(
         roBilling: dealerCoverage,
       },
       comparison,
-      unsupportedComparisonSources: {
-        am_platinum_operation_wise_analysis_report: 'Platinum operation-wise add-ons are unavailable for KIA-style selected-period VAS because the table is snapshot-only and has no business period fields.',
-        am_platinum_operation_wise_analysis_advisor_report: 'Advisor-level WA/WB/VAS source is unavailable for Platinum.',
-        am_platinum_mcp_report: 'MCP source is unavailable for Platinum.',
-        am_platinum_rsa_report: 'RSA source is unavailable for Platinum.',
-      },
+      unsupportedComparisonSources: {},
       sourceStatus: {
         ...(sourceStatus || {
           operationAnalysis: {
