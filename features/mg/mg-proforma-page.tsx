@@ -222,6 +222,7 @@ const TABLE_COLUMNS: { key: keyof MgProformaRow | 'index'; label: string; numeri
   { key: 'index', label: '#' },
   { key: 'entryTime', label: 'Entry Time' },
   { key: 'proformaDate', label: 'Proforma Date' },
+  { key: 'customerType', label: 'Customer Type' },
   { key: 'customerName', label: 'Customer Name' },
   { key: 'mobileNumber', label: 'Mobile Number' },
   { key: 'customerAddress', label: 'Customer Address' },
@@ -319,7 +320,7 @@ function Field({ label, error, children }: { label: string; error?: string; chil
 }
 
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <Input {...props} className={cn('h-11 rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 font-semibold shadow-sm focus:border-[var(--dashboard-primary-light)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--dashboard-primary-light)_18%,transparent)]', props.className)} />
+  return <Input {...props} className={cn('h-11 rounded-xl border-[var(--dashboard-primary-border)] bg-white font-semibold shadow-sm focus:border-[var(--dashboard-primary-light)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--dashboard-primary-light)_18%,transparent)]', props.className)} />
 }
 
 function DataListInput({
@@ -361,7 +362,7 @@ function DataListInput({
 
 function FormSection({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-[1.5rem] border border-slate-200 bg-white/82 p-4 shadow-sm">
+    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 border-b border-slate-200 pb-3">
         <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">{title}</p>
         <p className="mt-1 text-xs font-semibold text-slate-500">{subtitle}</p>
@@ -455,7 +456,7 @@ function ModuleHeader({ section, profile, isApprover }: { section: MgProformaSec
   }
   const current = titles[section]
   return (
-    <section className="rounded-[2rem] border border-[var(--dashboard-primary-border)] bg-white/85 p-5 shadow-xl shadow-slate-900/5">
+    <section className="rounded-[2rem] border border-[var(--dashboard-primary-border)] bg-white p-5 shadow-xl shadow-slate-900/5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="grid h-12 w-12 place-items-center rounded-2xl border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] text-[var(--dashboard-action-bg)]">
@@ -468,13 +469,13 @@ function ModuleHeader({ section, profile, isApprover }: { section: MgProformaSec
           </div>
         </div>
         {profile && (
-          <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-right shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-right shadow-sm">
             <p className="text-xs font-black text-slate-950">{profile.consultantName}</p>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{profile.dealerLocation || 'AM MG'} / {profile.employeeCode || 'No emp code'}</p>
           </div>
         )}
       </div>
-      <nav className="mt-5 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-2">
+      <nav className="mt-5 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-2">
         {PROFORMA_NAV_ITEMS
           .filter((item) => !item.approverOnly || isApprover)
           .map((item) => (
@@ -597,20 +598,20 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
     })
   }
 
-  function validate() {
-    const next: Record<string, string> = {}
-    if (!form.customerName.trim()) next.customerName = 'Customer name is required'
-    if (!/^\d{10}$/.test(form.mobileNumber)) next.mobileNumber = 'Mobile number must be 10 digits'
-    if (form.customerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) next.customerEmail = 'Enter a valid email'
-    ;(['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'bankName'] as (keyof FormState)[]).forEach((key) => {
-      if (!String(form[key] || '').trim()) next[key] = 'Required'
-    })
-    if (form.trimDescription.trim() && !pricing.trimIsValid) next.trimDescription = 'Select a valid trim'
-    if (form.bankName.trim() && !pricing.bankIsValid) next.bankName = 'Select a valid bank'
-    if (form.bankBranch.trim() && !pricing.branchIsValid) next.bankBranch = 'Select a valid branch for this bank'
-    setErrors(next)
-    return Object.keys(next).length === 0
-  }
+    function validate() {
+      const next: Record<string, string> = {}
+      if (!form.customerName.trim()) next.customerName = 'Customer name is required'
+      if (!/^\d{10}$/.test(form.mobileNumber)) next.mobileNumber = 'Mobile number must be 10 digits'
+      if (form.customerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) next.customerEmail = 'Enter a valid email'
+      ;(['customerType', 'customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'bankName'] as (keyof FormState)[]).forEach((key) => {
+        if (!String(form[key] || '').trim()) next[key] = 'Required'
+      })
+      if (form.trimDescription.trim() && !pricing.trimIsValid) next.trimDescription = 'Select a valid trim'
+      if (form.bankName.trim() && !pricing.bankIsValid) next.bankName = 'Select a valid bank'
+      if (form.bankBranch.trim() && !pricing.branchIsValid) next.bankBranch = 'Select a valid branch for this bank'
+      setErrors(next)
+      return Object.keys(next).length === 0
+    }
 
   async function submit() {
     if (!validate()) return
@@ -633,7 +634,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
   }
 
   return (
-    <section className="rounded-[2rem] border border-slate-200 bg-white/88 p-5 shadow-xl shadow-slate-900/5">
+    <section className="mg-proforma-shell rounded-[2rem] border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/5">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">Customer Proforma</p>
@@ -646,31 +647,32 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
       </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-2">
-        <FormSection title="Customer Details" subtitle="Customer identity and contact information for the proforma.">
+        <FormSection title="Customer Details" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Customer Type"><Select value={form.customerType} onValueChange={(value) => update('customerType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['Customer', 'CSD', 'Bharat Series'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Proforma Date"><TextInput type="date" value={form.proformaDate} onChange={(event) => update('proformaDate', event.target.value)} /></Field>
             <Field label="Customer Name" error={errors.customerName}><TextInput value={form.customerName} onChange={(event) => update('customerName', event.target.value)} /></Field>
             <Field label="Mobile Number" error={errors.mobileNumber}><TextInput inputMode="numeric" maxLength={10} value={form.mobileNumber} onChange={(event) => update('mobileNumber', event.target.value.replace(/\D/g, '').slice(0, 10))} /></Field>
             <Field label="Customer Email" error={errors.customerEmail}><TextInput type="email" value={form.customerEmail} onChange={(event) => update('customerEmail', event.target.value)} /></Field>
             <div className="md:col-span-2">
-              <Field label="Customer Address" error={errors.customerAddress}><Textarea value={form.customerAddress} onChange={(event) => update('customerAddress', event.target.value)} className="min-h-20 rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 font-semibold shadow-sm focus:border-[var(--dashboard-primary-light)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--dashboard-primary-light)_18%,transparent)]" /></Field>
+              <Field label="Customer Address" error={errors.customerAddress}><Textarea value={form.customerAddress} onChange={(event) => update('customerAddress', event.target.value)} className="min-h-20 rounded-xl border-[var(--dashboard-primary-border)] bg-white font-semibold shadow-sm focus:border-[var(--dashboard-primary-light)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--dashboard-primary-light)_18%,transparent)]" /></Field>
             </div>
           </div>
         </FormSection>
 
-        <FormSection title="Vehicle & Bank Insurance" subtitle="Vehicle selection, finance/bank details, insurance, and registration context.">
+        <FormSection title="Vehicle & Bank Insurance" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Model" error={errors.modelName}><DataListInput listId="mg-models" value={form.modelName} onChange={(value) => { update('modelName', value); update('trimDescription', '') }} options={options.models} /></Field>
             <Field label="Variant / Trim" error={errors.trimDescription}><DataListInput listId="mg-trims" value={form.trimDescription} onChange={(value) => update('trimDescription', value)} onBlur={canonicalizeTrim} options={filteredTrims} /></Field>
             <Field label="Vehicle Color" error={errors.vehicleColor}><DataListInput listId="mg-vehicle-colours" value={form.vehicleColor} onChange={(value) => update('vehicleColor', value)} options={options.vehicleColours} /></Field>
-            <Field label="Fuel Type"><Select value={form.fuelType} onValueChange={(value) => update('fuelType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{options.fuelTypes.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Fuel Type"><Select value={form.fuelType} onValueChange={(value) => update('fuelType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{options.fuelTypes.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Bank" error={errors.bankName}><DataListInput listId="mg-banks" value={form.bankName} onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '' }))} onBlur={canonicalizeBank} options={bankOptions} /></Field>
             <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="mg-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} /></Field>
             <Field label="Insurance Company"><DataListInput listId="mg-insurance" value={form.insuranceCompany} onChange={(value) => update('insuranceCompany', value)} options={options.insuranceCompanies} /></Field>
           </div>
         </FormSection>
 
-        <FormSection title="Price Details" subtitle="Auto-filled from PRICE DETAILS and editable before saving.">
+        <FormSection title="Price Details" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
             {[
               ['exShowroom', 'Ex-Showroom'],
@@ -688,7 +690,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
           </div>
         </FormSection>
 
-        <FormSection title="Discounts & Deductions" subtitle="Offers, exchange, booking and final adjustment deductions.">
+        <FormSection title="Discounts & Deductions" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
             {[
               ['cashDiscount', 'Consumer / Cash Offer'],
@@ -767,7 +769,7 @@ function FilterBar({
     bankFilter ? { key: 'bank', label: `Bank: ${bankFilter}`, clear: () => setBankFilter?.('') } : null,
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[]
   return (
-    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="grid gap-3 xl:grid-cols-[minmax(260px,1.3fr)_repeat(2,170px)_220px_220px_auto]">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -833,13 +835,13 @@ function ProformaTable({
     })
   })
   const stickyClass = (key: string, header = false) => {
-    if (key === 'index') return cn('sticky left-0 z-20 w-12 min-w-12', header ? 'bg-slate-950' : 'bg-white')
-    if (key === 'customerName') return cn('sticky left-12 z-20 min-w-[190px]', header ? 'bg-slate-950' : 'bg-white shadow-[8px_0_14px_rgba(15,23,42,0.04)]')
+    if (key === 'index') return cn('sticky left-0 z-20 w-12 min-w-12', header ? 'bg-slate-950' : 'bg-slate-50')
+    if (key === 'customerName') return cn('sticky left-12 z-20 min-w-[190px]', header ? 'bg-slate-950' : 'bg-slate-50 shadow-[8px_0_14px_rgba(15,23,42,0.08)]')
     return ''
   }
   const columnOptions = TABLE_COLUMNS.filter((column) => column.key !== 'index' && column.label.toLowerCase().includes(columnSearch.toLowerCase()))
   return (
-    <div className="rounded-[1.75rem] border border-slate-200 bg-white/88 shadow-xl shadow-slate-900/5">
+    <div className="mg-proforma-shell rounded-[1.75rem] border border-slate-200 bg-white shadow-xl shadow-slate-900/5">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Proforma Register</p>
@@ -853,7 +855,7 @@ function ProformaTable({
         </div>
       </div>
       {showColumnManager && (
-        <div className="space-y-3 border-b border-slate-200 bg-slate-50/80 p-3">
+        <div className="space-y-3 border-b border-slate-200 bg-slate-50 p-3">
           <div className="flex flex-wrap items-center gap-2">
             <Input value={columnSearch} onChange={(event) => setColumnSearch(event.target.value)} placeholder="Search columns..." className="h-9 max-w-xs rounded-xl bg-white text-xs font-semibold" />
             <Button variant="outline" className={cn('h-9 rounded-xl text-xs', proformaOutlineButton)} onClick={() => setHiddenColumns(new Set())}>Show all</Button>
@@ -875,7 +877,7 @@ function ProformaTable({
                   }}
                   className={cn(
                     'rounded-full border px-3 py-1.5 text-xs font-black transition',
-                    visible ? 'border-[var(--dashboard-primary-border)] bg-white text-[var(--dashboard-action-bg)]' : 'border-slate-200 bg-slate-100 text-slate-500'
+                    visible ? 'border-[var(--dashboard-primary-border)] bg-slate-50 text-[var(--dashboard-action-bg)]' : 'border-slate-200 bg-slate-100 text-slate-500'
                   )}
                 >
                   {column.label}
@@ -886,18 +888,18 @@ function ProformaTable({
         </div>
       )}
       <div className="max-h-[620px] overflow-auto">
-        <table className="w-max min-w-full table-auto border-collapse text-xs">
+        <table className="mg-proforma-table w-max min-w-full table-auto border-collapse text-xs">
           <thead className="sticky top-0 z-10 bg-slate-950 text-white">
             <tr>
               {visibleColumns.map((column) => (
-                <th key={String(column.key)} className={cn('whitespace-nowrap border-r border-white/15 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.16em]', stickyClass(String(column.key), true))}>
+                <th key={String(column.key)} className={cn('whitespace-nowrap border-r border-white/30 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.16em]', stickyClass(String(column.key), true))}>
                   <span className="inline-flex items-center gap-2">
                     {column.label}
                     {column.key !== 'index' && (
                       <button
                         type="button"
                         title={`Hide ${column.label}`}
-                        className="rounded-md border border-white/15 px-1 text-[10px] text-white/75 hover:bg-white/10 hover:text-white"
+                        className="rounded-md border border-white/30 px-1 text-[10px] text-white hover:bg-white/30 hover:text-white"
                         onClick={() => {
                           const next = new Set(hiddenColumns)
                           next.add(String(column.key))
@@ -918,14 +920,14 @@ function ProformaTable({
             {rows.length === 0 ? (
               <tr><td colSpan={visibleColumns.length + (extra ? 1 : 0) + (action ? 1 : 0)} className="py-16 text-center font-bold text-slate-500">No proformas match this view.</td></tr>
             ) : rows.map((row, index) => (
-              <tr key={row.id} className="border-b border-slate-200 align-top hover:bg-slate-50/80">
+              <tr key={row.id} className="border-b border-slate-200 align-top hover:bg-slate-100">
                 {visibleColumns.map((column) => {
                   const raw = column.key === 'index' ? index + 1 : row[column.key]
                   const value = column.numeric ? formatCurrency(raw) : column.key === 'entryTime' ? formatDateTime(String(raw)) : column.key === 'proformaDate' || column.key === 'financeUpdatedTime' ? formatDate(String(raw)) : String(raw ?? '-')
                   return <td key={String(column.key)} className={cn('whitespace-nowrap border-r border-slate-200 px-3 py-2.5 text-xs font-semibold leading-tight text-slate-800', stickyClass(String(column.key)))}>{column.key === 'approvalStatus' ? <Badge className={cn('border', statusClass(row.approvalStatus))}>{row.approvalStatus}</Badge> : value}</td>
                 })}
-                {extra && <td className="min-w-[320px] border-r border-slate-200 px-3 py-2.5 text-xs">{extra(row)}</td>}
-                {action && <td className="sticky right-0 whitespace-nowrap bg-white px-3 py-2.5 text-xs shadow-[-10px_0_18px_rgba(15,23,42,0.04)]">{action(row)}</td>}
+                {extra && <td className="min-w-[320px] border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">{extra(row)}</td>}
+                {action && <td className="sticky right-0 whitespace-nowrap bg-slate-50 px-3 py-2.5 text-xs shadow-[-10px_0_18px_rgba(15,23,42,0.08)]">{action(row)}</td>}
               </tr>
             ))}
           </tbody>
@@ -1066,7 +1068,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
           {error}
           <Button variant="outline" className={cn('ml-3 h-9 rounded-xl', proformaOutlineButton)} onClick={reload}>Retry</Button>
         </div>
-      ) : loading ? <div className="h-72 animate-pulse rounded-[2rem] bg-white/70" /> : (
+      ) : loading ? <div className="h-72 animate-pulse rounded-[2rem] bg-slate-100" /> : (
         <ProformaTable
           rows={pagedRows}
           hiddenColumns={hiddenColumns}
@@ -1081,7 +1083,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
           )}
         />
       )}
-      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 p-3">
+      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-3">
         <p className="text-sm font-bold text-slate-600">
           Showing {filteredRows.length === 0 ? 0 : ((currentClientPage - 1) * PROFORMA_TABLE_PAGE_SIZE) + 1}-{Math.min(currentClientPage * PROFORMA_TABLE_PAGE_SIZE, filteredRows.length)} of {filteredRows.length} records
         </p>
@@ -1236,7 +1238,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
 
   return (
     <div className="space-y-4">
-      <div className="rounded-[1.75rem] border border-slate-200 bg-white/90 p-4 shadow-sm">
+      <div className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 lg:grid-cols-[1.1fr_0.8fr_0.8fr_0.8fr_0.8fr]">
           <Select value={type} onValueChange={(value: 'bank' | 'insurance') => { setType(value); setPage(1) }}>
             <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white font-bold"><SelectValue /></SelectTrigger>
@@ -1284,7 +1286,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
           </div>
         )}
       </div>
-      {loading ? <div className="h-80 animate-pulse rounded-[2rem] bg-white/70" /> : insights ? (
+      {loading ? <div className="h-80 animate-pulse rounded-[2rem] bg-slate-100" /> : insights ? (
         <div className="grid gap-4 xl:grid-cols-2">
           <ChartCard title="Category trend">
             <ResponsiveContainer width="100%" height={320}>
@@ -1298,7 +1300,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white/90 p-3">
+          <div className="rounded-[1.5rem] border border-slate-200 bg-white p-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Period columns</span>
@@ -1324,7 +1326,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
               ))}
             </div>
           </div>
-          <div className="overflow-auto rounded-[1.75rem] border border-slate-200 bg-white/88">
+          <div className="overflow-auto rounded-[1.75rem] border border-slate-200 bg-white">
             <table className="w-max min-w-full table-auto text-xs">
               <thead className="bg-slate-950 text-white"><tr><th className="whitespace-nowrap px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-widest">Category</th>{visiblePeriods.map((period) => <th key={period} className="whitespace-nowrap px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest">{period}</th>)}<th className="whitespace-nowrap px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest">Grand Total</th></tr></thead>
               <tbody>
@@ -1333,7 +1335,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 p-3">
+<div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-3">
             <p className="text-sm font-bold text-slate-600">Page {currentPivotPage} of {totalPivotPages} / {pivotRows.length} records</p>
             <div className="flex gap-2">
               <Button variant="outline" className={cn('rounded-xl', proformaOutlineButton)} disabled={currentPivotPage <= 1} onClick={() => setPage(currentPivotPage - 1)}>Prev</Button>
@@ -1347,7 +1349,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="rounded-[1.75rem] border border-slate-200 bg-white/88 p-4 shadow-sm"><p className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{title}</p>{children}</div>
+  return <div className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm"><p className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{title}</p>{children}</div>
 }
 
 function PieCard({ title, data }: { title: string; data: { name: string; value: number }[] }) {
@@ -1364,7 +1366,7 @@ export function MgProformaPage({ section }: { section: MgProformaSection }) {
   const { data: options, loading, error, reload } = useOptions()
   const approverOnly = section === 'pending-approval'
   if (loading) {
-    return <MainLayout title="MG Proforma" subtitle="AM MG operational proforma system"><div className="space-y-4"><div className="h-32 animate-pulse rounded-[2rem] bg-white/70" /><div className="h-96 animate-pulse rounded-[2rem] bg-white/70" /></div></MainLayout>
+    return <MainLayout title="MG Proforma" subtitle="AM MG operational proforma system"><div className="space-y-4"><div className="h-32 animate-pulse rounded-[2rem] bg-slate-100" /><div className="h-96 animate-pulse rounded-[2rem] bg-slate-100" /></div></MainLayout>
   }
   if (error || !options) {
     return <MainLayout title="MG Proforma" subtitle="AM MG operational proforma system"><div className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 font-bold text-rose-700">{error || 'Unable to load MG Proforma.'}</div></MainLayout>

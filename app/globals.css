@@ -804,16 +804,18 @@
   .mg-proforma-primary-action {
     background: linear-gradient(135deg, var(--dashboard-action-bg), var(--dashboard-action-hover)) !important;
     background-color: var(--dashboard-action-bg) !important;
-    border-color: color-mix(in srgb, var(--dashboard-action-bg) 66%, white) !important;
+    border-color: var(--dashboard-action-bg) !important;
     color: var(--dashboard-action-fg) !important;
-    box-shadow: 0 12px 24px color-mix(in srgb, var(--dashboard-action-bg) 18%, transparent) !important;
+    box-shadow: 0 4px 16px rgba(75, 73, 172, 0.24) !important;
     text-shadow: 0 1px 1px rgba(15, 23, 42, 0.28);
   }
 
   .mg-proforma-primary-action:hover:not(:disabled) {
     background: linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg)) !important;
     background-color: var(--dashboard-action-hover) !important;
+    border-color: var(--dashboard-action-hover) !important;
     color: var(--dashboard-action-fg) !important;
+    box-shadow: 0 6px 20px rgba(75, 73, 172, 0.32) !important;
   }
 
   .mg-proforma-primary-action :where(span, svg) {
@@ -831,17 +833,15 @@
   }
 
   .mg-proforma-outline-action {
-    background: color-mix(in srgb, var(--dashboard-action-bg) 11%, #ffffff) !important;
-    background-color: color-mix(in srgb, var(--dashboard-action-bg) 11%, #ffffff) !important;
-    border-color: color-mix(in srgb, var(--dashboard-action-bg) 52%, #ffffff) !important;
+    background-color: #f1f5f9 !important;
+    border-color: var(--dashboard-primary-border) !important;
     color: var(--dashboard-action-bg) !important;
-    box-shadow: 0 8px 20px color-mix(in srgb, var(--dashboard-action-bg) 10%, transparent) !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06) !important;
     backdrop-filter: none !important;
   }
 
   .mg-proforma-outline-action:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--dashboard-action-bg) 17%, #ffffff) !important;
-    background-color: color-mix(in srgb, var(--dashboard-action-bg) 17%, #ffffff) !important;
+    background-color: #e2e8f0 !important;
     border-color: var(--dashboard-action-hover) !important;
     color: var(--dashboard-action-hover) !important;
   }
@@ -1271,6 +1271,40 @@
 
   .glass-dashboard-content .ro-analysis-table thead th {
     border-color: rgba(226, 232, 240, 0.55) !important;
+  }
+
+  .glass-dashboard-content .mg-proforma-table tbody,
+  .glass-dashboard-content .mg-proforma-table tbody tr,
+  .glass-dashboard-content .mg-proforma-table tbody td {
+    background-color: #ffffff !important;
+  }
+
+  .glass-dashboard-content .mg-proforma-table tbody tr:nth-child(even),
+  .glass-dashboard-content .mg-proforma-table tbody tr:nth-child(even) td {
+    background-color: #f8fafc !important;
+  }
+
+  .glass-dashboard-content .mg-proforma-table tbody tr:hover,
+  .glass-dashboard-content .mg-proforma-table tbody tr:hover td {
+    background-color: #f1f5f9 !important;
+  }
+
+  .glass-dashboard-content .mg-proforma-table th {
+    background-color: var(--dashboard-primary) !important;
+    color: white !important;
+  }
+
+  .glass-dashboard-content .mg-proforma-table .sticky-left-index,
+  .glass-dashboard-content .mg-proforma-table .sticky-left-customer,
+  .glass-dashboard-content .mg-proforma-table .sticky-right-action,
+  .glass-dashboard-content .mg-proforma-table .sticky-right-finance {
+    background-color: #f8fafc !important;
+  }
+
+  .glass-dashboard-content .mg-proforma-table .sticky-left-customer,
+  .glass-dashboard-content .mg-proforma-table .sticky-right-action,
+  .glass-dashboard-content .mg-proforma-table .sticky-right-finance {
+    box-shadow: 4px 0 12px -2px rgba(15, 23, 42, 0.06) !important;
   }
 
   .glass-dashboard-content .approval-table-checkbox {

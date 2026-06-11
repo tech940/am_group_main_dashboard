@@ -37,6 +37,7 @@ function readDate(body: Record<string, unknown>, key: string) {
 
 function validatePayload(body: Record<string, unknown>) {
   const required = [
+    'customerType',
     'proformaDate',
     'customerName',
     'mobileNumber',
@@ -61,7 +62,7 @@ function validatePayload(body: Record<string, unknown>) {
 function buildValues(body: Record<string, unknown>, appUser: NonNullable<Awaited<ReturnType<typeof getAuthenticatedAppUser>>>, profile: NonNullable<Awaited<ReturnType<typeof ensureMgUserProfile>>>) {
   const values: typeof mgProformas.$inferInsert = {
     proformaDate: readDate(body, 'proformaDate')!,
-    customerType: 'Customer',
+    customerType: readText(body, 'customerType') || 'Customer',
     customerName: readText(body, 'customerName'),
     mobileNumber: readText(body, 'mobileNumber'),
     customerAddress: readText(body, 'customerAddress'),
@@ -137,6 +138,7 @@ export async function GET(request: NextRequest) {
     if (search) {
       const like = `%${search}%`
       filters.push(or(
+        ilike(mgProformas.customerType, like),
         ilike(mgProformas.customerName, like),
         ilike(mgProformas.mobileNumber, like),
         ilike(mgProformas.bankName, like),
