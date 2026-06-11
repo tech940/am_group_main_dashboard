@@ -5,6 +5,7 @@ import { getCachedData, invalidateCachePattern } from '@/lib/redis/cache-utils'
 import { CACHE_KEYS, CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
@@ -68,10 +69,19 @@ function tableSql(table: BusinessExcellenceTable) {
   return sql.raw(`"${table.table}"`)
 }
 
-function roBillingProjectedRowsSql(table: BusinessExcellenceTable, selectedLimit: number, selectedOffset: number, startDate?: string | null, endDate?: string | null, skipSort = false) {
-  const dateFilter = startDate && endDate
-    ? sql`WHERE bill_date BETWEEN ${startDate}::date AND ${endDate}::date`
-    : sql``
+function roBillingWhereClause(startDate?: string | null, endDate?: string | null, dealerCode?: string | null) {
+  const clauses = []
+  if (startDate && endDate) {
+    clauses.push(sql`bill_date BETWEEN ${startDate}::date AND ${endDate}::date`)
+  }
+  if (dealerCode) {
+    clauses.push(sql`UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`)
+  }
+  return clauses.length > 0 ? sql`WHERE ${sql.join(clauses, sql` AND `)}` : sql``
+}
+
+function roBillingProjectedRowsSql(table: BusinessExcellenceTable, selectedLimit: number, selectedOffset: number, startDate?: string | null, endDate?: string | null, dealerCode?: string | null, skipSort = false) {
+  const dateFilter = roBillingWhereClause(startDate, endDate, dealerCode)
 
   return sql`
     SELECT
@@ -108,10 +118,8 @@ function roBillingProjectedRowsSql(table: BusinessExcellenceTable, selectedLimit
   `
 }
 
-function roBillingStatsSql(table: BusinessExcellenceTable, startDate?: string | null, endDate?: string | null) {
-  const dateFilter = startDate && endDate
-    ? sql`WHERE bill_date BETWEEN ${startDate}::date AND ${endDate}::date`
-    : sql``
+function roBillingStatsSql(table: BusinessExcellenceTable, startDate?: string | null, endDate?: string | null, dealerCode?: string | null) {
+  const dateFilter = roBillingWhereClause(startDate, endDate, dealerCode)
 
   return sql`
     SELECT COUNT(*)::int AS "totalRows", MAX(uploaded_at) AS "uploadedAt"
@@ -175,6 +183,7 @@ async function fetchTableRows({
   fetchAll,
   startDate,
   endDate,
+  dealerCode,
 }: {
   table: BusinessExcellenceTable
   page: number
@@ -182,6 +191,7 @@ async function fetchTableRows({
   fetchAll: boolean
   startDate?: string | null
   endDate?: string | null
+  dealerCode?: string | null
 }) {
   const offset = (page - 1) * limit
   const selectedLimit = fetchAll ? 50000 : limit
@@ -189,7 +199,7 @@ async function fetchTableRows({
   const useBillDateWindow = table.slug === 'ro_billing_report' && startDate && endDate
 
   if (table.slug === 'ro_billing_report' && fetchAll) {
-    const rowsResult = await db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate, true))
+    const rowsResult = await db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate, dealerCode, true))
 
     return {
       id: table.slug,
@@ -207,8 +217,8 @@ async function fetchTableRows({
 
   if (table.slug === 'ro_billing_report') {
     const [statsRows, rowsResult] = await Promise.all([
-      db.execute(roBillingStatsSql(table, startDate, endDate)),
-      db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate)),
+      db.execute(roBillingStatsSql(table, startDate, endDate, dealerCode)),
+      db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate, dealerCode)),
     ])
     const stats = statsRows[0]
 
@@ -229,7 +239,7 @@ async function fetchTableRows({
   const [metadata, rowsResult] = await Promise.all([
     getTableMetadata(table),
     table.slug === 'ro_billing_report'
-      ? db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate))
+      ? db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate, dealerCode))
       : useBillDateWindow
       ? db.execute(sql`
           SELECT to_jsonb(t) AS row
@@ -287,17 +297,18 @@ export async function GET(request: Request) {
       const fetchAll = searchParams.get('fetchAll') === 'true'
       const startDate = searchParams.get('startDate')
       const endDate = searchParams.get('endDate')
-      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v5:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}`
-      const data = await timer.time(skipCache ? 'db' : 'cache-db', () => skipCache
-        ? fetchTableRows({ table, page, limit, fetchAll, startDate, endDate })
-        : getCachedData(cacheKey, () => fetchTableRows({ table, page, limit, fetchAll, startDate, endDate }), CACHE_TTL_SECONDS))
+      const dealerCode = normalizeKiaDealerCode(searchParams.get('dealer_code'))
+      const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:${table.slug}:v7:${fetchAll ? 'all' : `page:${page}:limit:${limit}`}:start:${startDate || 'none'}:end:${endDate || 'none'}:dealer:${dealerCode || 'all'}`
+      const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
+        ? fetchTableRows({ table, page, limit, fetchAll, startDate, endDate, dealerCode })
+        : getCachedData(cacheKey, () => fetchTableRows({ table, page, limit, fetchAll, startDate, endDate, dealerCode }), CACHE_TTL_SECONDS))
 
       const { serverTiming } = timer.finish()
       return withServerTiming(NextResponse.json(data), serverTiming)
     }
 
     const cacheKey = `${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:metadata:kia:ro_billing_only:v1`
-    const data = await timer.time(skipCache ? 'metadata-db' : 'metadata-cache-db', () => skipCache
+    const data = await timer.time(skipCache ? 'metadata-db' : 'response-cache', () => skipCache
       ? fetchMetadata()
       : getCachedData(cacheKey, fetchMetadata, CACHE_TTL_SECONDS))
 
@@ -314,8 +325,7 @@ export async function POST() {
   const accessError = await requireBrandApiAccess('kia')
   if (accessError) return accessError
 
-  await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:relational:*`)
-  await invalidateCachePattern('ro_billing:*')
+  await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:*`)
   return NextResponse.json(
     {
       error: 'Business Excellence now uses relational SQL tables populated by the cron/import pipeline. Spreadsheet JSON uploads are disabled for this section.',

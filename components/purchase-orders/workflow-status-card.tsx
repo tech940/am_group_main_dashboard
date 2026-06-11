@@ -30,90 +30,141 @@ interface WorkflowStatusCardProps {
 const toneStyles: Record<CardTone, {
   surface: string
   border: string
+  glow: string
+  accentBar: string
   accentDot: string
   statusBg: string
   metricBg: string
+  metricIcon: string
   footerText: string
+  footerBg: string
 }> = {
   sky: {
-    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
-    border: 'border-sky-200',
+    surface: 'bg-[#cfeaff]',
+    border: 'border-sky-300',
+    glow: 'bg-sky-400/35',
+    accentBar: 'from-sky-500 via-cyan-400 to-blue-300',
     accentDot: 'bg-sky-500',
-    statusBg: 'bg-sky-50 border-sky-200 text-sky-700',
-    metricBg: 'bg-sky-50/50 border-sky-100',
-    footerText: 'text-sky-600',
+    statusBg: 'bg-white/55 border-sky-300/80 text-sky-950',
+    metricBg: 'bg-white/34 border-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]',
+    metricIcon: 'text-sky-600',
+    footerText: 'text-sky-800',
+    footerBg: 'bg-white/36 border-white/55',
   },
   amber: {
-    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
-    border: 'border-amber-200',
+    surface: 'bg-[#ffdca8]',
+    border: 'border-orange-300',
+    glow: 'bg-orange-400/35',
+    accentBar: 'from-amber-500 via-orange-400 to-yellow-300',
     accentDot: 'bg-amber-500',
-    statusBg: 'bg-amber-50 border-amber-200 text-amber-700',
-    metricBg: 'bg-amber-50/50 border-amber-100',
-    footerText: 'text-amber-600',
+    statusBg: 'bg-white/55 border-orange-300/80 text-orange-950',
+    metricBg: 'bg-white/34 border-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]',
+    metricIcon: 'text-amber-600',
+    footerText: 'text-orange-800',
+    footerBg: 'bg-white/36 border-white/55',
   },
   violet: {
-    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
-    border: 'border-violet-200',
+    surface: 'bg-[#ddc7ff]',
+    border: 'border-violet-300',
+    glow: 'bg-violet-400/35',
+    accentBar: 'from-violet-500 via-indigo-400 to-sky-300',
     accentDot: 'bg-violet-500',
-    statusBg: 'bg-violet-50 border-violet-200 text-violet-700',
-    metricBg: 'bg-violet-50/50 border-violet-100',
-    footerText: 'text-violet-600',
+    statusBg: 'bg-white/55 border-violet-300/80 text-violet-950',
+    metricBg: 'bg-white/34 border-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]',
+    metricIcon: 'text-violet-600',
+    footerText: 'text-violet-800',
+    footerBg: 'bg-white/36 border-white/55',
   },
   indigo: {
-    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
-    border: 'border-indigo-200',
+    surface: 'bg-[#cdd8ff]',
+    border: 'border-indigo-300',
+    glow: 'bg-indigo-400/35',
+    accentBar: 'from-indigo-500 via-blue-500 to-sky-300',
     accentDot: 'bg-indigo-500',
-    statusBg: 'bg-indigo-50 border-indigo-200 text-indigo-700',
-    metricBg: 'bg-indigo-50/50 border-indigo-100',
-    footerText: 'text-indigo-600',
+    statusBg: 'bg-white/55 border-indigo-300/80 text-indigo-950',
+    metricBg: 'bg-white/34 border-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]',
+    metricIcon: 'text-indigo-600',
+    footerText: 'text-indigo-800',
+    footerBg: 'bg-white/36 border-white/55',
   },
   teal: {
-    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
-    border: 'border-teal-200',
-    accentDot: 'bg-teal-500',
-    statusBg: 'bg-teal-50 border-teal-200 text-teal-700',
-    metricBg: 'bg-teal-50/50 border-teal-100',
-    footerText: 'text-teal-600',
+    surface: 'bg-[#dbeafe]',
+    border: 'border-[#8ca8c0]',
+    glow: 'bg-[#023468]/25',
+    accentBar: 'from-[#023468] via-[#034b82] to-[#8ca8c0]',
+    accentDot: 'bg-[#023468]',
+    statusBg: 'bg-white/55 border-[#8ca8c0]/80 text-[#012348]',
+    metricBg: 'bg-white/34 border-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]',
+    metricIcon: 'text-[#023468]',
+    footerText: 'text-[#023468]',
+    footerBg: 'bg-white/36 border-white/55',
   },
   emerald: {
-    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
-    border: 'border-emerald-200',
-    accentDot: 'bg-emerald-500',
-    statusBg: 'bg-emerald-50 border-emerald-200 text-emerald-700',
-    metricBg: 'bg-emerald-50/50 border-emerald-100',
-    footerText: 'text-emerald-600',
+    surface: 'bg-[#edf4fb]',
+    border: 'border-[#8ca8c0]',
+    glow: 'bg-[#023468]/25',
+    accentBar: 'from-[#023468] via-[#034b82] to-[#b9ccde]',
+    accentDot: 'bg-[#023468]',
+    statusBg: 'bg-white/55 border-[#8ca8c0]/80 text-[#012348]',
+    metricBg: 'bg-white/34 border-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]',
+    metricIcon: 'text-[#023468]',
+    footerText: 'text-[#012348]',
+    footerBg: 'bg-white/36 border-white/55',
   },
   rose: {
-    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
-    border: 'border-rose-200',
+    surface: 'bg-[#ffcbd8]',
+    border: 'border-rose-300',
+    glow: 'bg-rose-400/35',
+    accentBar: 'from-rose-500 via-red-400 to-orange-300',
     accentDot: 'bg-rose-500',
-    statusBg: 'bg-rose-50 border-rose-200 text-rose-700',
-    metricBg: 'bg-rose-50/50 border-rose-100',
-    footerText: 'text-rose-600',
+    statusBg: 'bg-white/55 border-rose-300/80 text-rose-950',
+    metricBg: 'bg-white/34 border-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]',
+    metricIcon: 'text-rose-600',
+    footerText: 'text-rose-800',
+    footerBg: 'bg-white/36 border-white/55',
   },
   slate: {
-    surface: 'bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/70',
-    border: 'border-slate-200',
+    surface: 'bg-[#dce3ea]',
+    border: 'border-slate-300',
+    glow: 'bg-slate-400/30',
+    accentBar: 'from-slate-500 via-slate-400 to-slate-300',
     accentDot: 'bg-slate-500',
-    statusBg: 'bg-slate-50 border-slate-200 text-slate-700',
-    metricBg: 'bg-slate-50/50 border-slate-100',
+    statusBg: 'bg-white/55 border-slate-300/80 text-slate-900',
+    metricBg: 'bg-white/34 border-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]',
+    metricIcon: 'text-slate-500',
     footerText: 'text-slate-600',
+    footerBg: 'bg-white/36 border-white/55',
   },
 }
 
-function MetricIcon({ icon }: { icon?: CardMetric['icon'] }) {
+function MetricIcon({ icon, className }: { icon?: CardMetric['icon']; className?: string }) {
   switch (icon) {
     case 'quantity':
-      return <Package2 className="h-3.5 w-3.5 text-slate-500" />
+      return <Package2 className={cn('h-3.5 w-3.5', className)} />
     case 'requester':
-      return <User2 className="h-3.5 w-3.5 text-slate-500" />
+      return <User2 className={cn('h-3.5 w-3.5', className)} />
     case 'assignee':
-      return <Users2 className="h-3.5 w-3.5 text-slate-500" />
+      return <Users2 className={cn('h-3.5 w-3.5', className)} />
     case 'time':
-      return <Clock3 className="h-3.5 w-3.5 text-slate-500" />
+      return <Clock3 className={cn('h-3.5 w-3.5', className)} />
     default:
       return null
   }
+}
+
+function getStageCode(statusLabel: string, stageLabel: string) {
+  const combinedLabel = `${statusLabel} ${stageLabel}`.toLowerCase()
+
+  if (combinedLabel.includes('ea')) return 'EA'
+  if (combinedLabel.includes('md')) return 'MD'
+  if (combinedLabel.includes('grn')) return 'GRN'
+  if (combinedLabel.includes('account')) return 'ACC'
+  if (combinedLabel.includes('vendor')) return 'VEN'
+  if (combinedLabel.includes('hold')) return 'HLD'
+  if (combinedLabel.includes('denied') || combinedLabel.includes('reject')) return 'NO'
+  if (combinedLabel.includes('complete')) return 'OK'
+
+  return 'PO'
 }
 
 export function WorkflowStatusCard({
@@ -131,6 +182,7 @@ export function WorkflowStatusCard({
   className,
 }: WorkflowStatusCardProps) {
   const styles = toneStyles[tone]
+  const stageCode = getStageCode(statusLabel, stageLabel)
 
   return (
     <div
@@ -144,57 +196,63 @@ export function WorkflowStatusCard({
         }
       }}
       className={cn(
-        'group relative overflow-hidden rounded-2xl border-2 p-4 shadow-sm transition-all duration-200 sm:p-5',
+        'group relative overflow-hidden rounded-[22px] border p-4 shadow-[0_16px_38px_rgba(15,23,42,0.10)] transition-all duration-300 sm:p-5',
         styles.surface,
         styles.border,
-        onClick && 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md',
+        onClick && 'cursor-pointer hover:-translate-y-1 hover:shadow-[0_24px_70px_rgba(15,23,42,0.14)]',
         className
       )}
     >
-      <div className="space-y-4">
+      <div className={cn('pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r', styles.accentBar)} />
+      <div className={cn('pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-45 blur-2xl transition-opacity duration-300 group-hover:opacity-65', styles.glow)} />
+
+      <div className="relative flex min-h-[318px] flex-col space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div className={cn(
-            'inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider',
+            'inline-flex min-h-9 max-w-[72%] items-center gap-2 rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider shadow-sm',
             styles.statusBg
           )}>
-            <span className={cn('h-2 w-2 rounded-full', styles.accentDot)} />
-            {statusLabel}
+            <span className={cn('h-2 w-2 shrink-0 rounded-full', styles.accentDot)} />
+            <span className="line-clamp-2">{statusLabel}</span>
           </div>
-          <div
-            className="flex flex-shrink-0 items-center gap-2"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            {timestampLabel && (
-              <span className="text-right text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                {timestampLabel}
-              </span>
-            )}
-            {headerAction}
+          <div className="flex flex-shrink-0 items-start gap-2">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-white/65 text-[12px] font-black tracking-tight text-slate-900 shadow-sm ring-1 ring-white/70">
+              {stageCode}
+            </div>
+            <div
+              className="flex items-center gap-2"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              {headerAction}
+            </div>
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <h3 className="text-xl font-black tracking-tight text-slate-900">
-            {orderNumber}
-          </h3>
-          <p className="line-clamp-2 text-sm text-slate-600">
+        <div className="space-y-2.5">
+          <span className="sr-only">Purchase order {orderNumber}</span>
+          <p className="line-clamp-2 min-h-[45px] text-[19px] font-black leading-[1.16] tracking-tight text-slate-950">
             {description}
           </p>
+          {timestampLabel && (
+            <div className="inline-flex rounded-full bg-white/48 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-700 ring-1 ring-white/55">
+              {timestampLabel}
+            </div>
+          )}
         </div>
 
-        <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
+        <div className="line-clamp-2 rounded-[14px] bg-white/36 px-3 py-2 text-[11px] font-black uppercase leading-4 tracking-wider text-slate-800 ring-1 ring-white/50">
           {departmentLine}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2.5">
           {metrics.slice(0, 4).map((metric) => (
             <div
               key={`${metric.label}-${metric.value}`}
-              className={cn('rounded-xl border px-3 py-2.5', styles.metricBg)}
+              className={cn('min-h-[58px] rounded-[14px] border px-3 py-2 transition-colors group-hover:bg-white/65', styles.metricBg)}
             >
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                <MetricIcon icon={metric.icon} />
+              <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                <MetricIcon icon={metric.icon} className={styles.metricIcon} />
                 {metric.label}
               </div>
               <p className="mt-1 line-clamp-1 text-sm font-bold text-slate-900">
@@ -204,15 +262,15 @@ export function WorkflowStatusCard({
           ))}
         </div>
 
-        <div className="border-t border-slate-200 pt-3">
-          <p className={cn('text-[11px] font-bold uppercase tracking-wider', styles.footerText)}>
+        <div className={cn('mt-auto rounded-[14px] border px-3 py-2', styles.footerBg)}>
+          <p className={cn('text-[10px] font-black uppercase tracking-[0.14em]', styles.footerText)}>
             Stage: {stageLabel}
           </p>
         </div>
 
         {actions && (
           <div
-            className="border-t border-slate-200 pt-4"
+            className="border-t border-slate-200/70 pt-4"
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
           >

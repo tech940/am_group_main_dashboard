@@ -2,8 +2,18 @@ import { NextResponse } from 'next/server'
 import { and, count, desc, eq, ilike, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { isUserBranchValue } from '@/lib/branches'
+import {
+  BRANCH_MODULE_ACCESS_ROLE_KEEP,
+  buildBranchModuleAccessPermissionChanges,
+  canUseBranchModuleAccessRole,
+  isBranchModuleAccessRoleEditValue,
+  isBranchModuleAccessRoleValue,
+  type BranchModuleAccessRoleEditValue,
+  type BranchModuleAccessRoleValue,
+} from '@/lib/branch-module-access'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
+import { isMissingPermissionTableError, updateUserPermissionOverrides } from '@/lib/permissions/service'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -18,6 +28,164 @@ function normalizeUserBranchAccess(value: unknown) {
   }
 
   return isUserBranchValue(value) ? value : undefined
+}
+
+function normalizeCreateBranchModuleRole(value: unknown): BranchModuleAccessRoleValue {
+  return isBranchModuleAccessRoleValue(value) ? value : 'inherit'
+}
+
+function normalizeEditBranchModuleRole(value: unknown): BranchModuleAccessRoleEditValue {
+  return isBranchModuleAccessRoleEditValue(value) ? value : BRANCH_MODULE_ACCESS_ROLE_KEEP
+}
+
+const VALID_USER_ROLES = users.role.enumValues
+const BULK_CREATE_LIMIT = 50
+
+type CreateUserInput = {
+  email: unknown
+  fullName: unknown
+  password: unknown
+  role: unknown
+  brand?: unknown
+  department?: unknown
+  branchModuleRole?: unknown
+}
+
+function normalizeCreateUserInput(input: CreateUserInput) {
+  const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : ''
+  const fullName = typeof input.fullName === 'string' ? input.fullName.trim() : ''
+  const password = typeof input.password === 'string' ? input.password : ''
+  const role = typeof input.role === 'string' ? input.role.trim() : ''
+  const department = typeof input.department === 'string' && input.department.trim()
+    ? input.department.trim()
+    : null
+
+  if (!email || !fullName || !password || !role) {
+    return { error: 'Missing required fields: email, fullName, password, role' } as const
+  }
+
+  if (!VALID_USER_ROLES.includes(role as typeof users.role.enumValues[number])) {
+    return { error: `Invalid role: ${role}` } as const
+  }
+
+  const normalizedBrand = normalizeUserBranchAccess(input.brand)
+
+  if (normalizedBrand === undefined) {
+    return { error: 'Invalid branch access selected' } as const
+  }
+
+  if (input.branchModuleRole !== undefined && !isBranchModuleAccessRoleValue(input.branchModuleRole)) {
+    return { error: 'Invalid branch module role selected' } as const
+  }
+
+  const normalizedBranchModuleRole = normalizeCreateBranchModuleRole(input.branchModuleRole)
+
+  if (
+    normalizedBranchModuleRole !== 'inherit'
+    && !canUseBranchModuleAccessRole(normalizedBrand)
+  ) {
+    return { error: 'Select a branch before applying branch module access' } as const
+  }
+
+  return {
+    email,
+    fullName,
+    password,
+    role: role as typeof users.role.enumValues[number],
+    brand: normalizedBrand,
+    department,
+    branchModuleRole: normalizedBranchModuleRole,
+  } as const
+}
+
+async function applyBranchModuleRolePreset(params: {
+  targetUserId: string
+  changedByUserId: string
+  branchAccess: string | null | undefined
+  role: BranchModuleAccessRoleValue
+}) {
+  const changes = buildBranchModuleAccessPermissionChanges(params.branchAccess, params.role)
+  if (Object.keys(changes).length === 0) return null
+
+  try {
+    await updateUserPermissionOverrides({
+      targetUserId: params.targetUserId,
+      changedByUserId: params.changedByUserId,
+      changes,
+      reason: `Applied branch module role preset: ${params.role}`,
+    })
+    return null
+  } catch (error) {
+    if (isMissingPermissionTableError(error)) {
+      return 'Branch module role was not applied because permission tables are not installed. Run npm run db:setup-permissions-manager.'
+    }
+    throw error
+  }
+}
+
+async function createUserWithProfile(input: CreateUserInput, changedByUserId: string) {
+  const normalized = normalizeCreateUserInput(input)
+
+  if ('error' in normalized) {
+    return { ok: false, error: normalized.error } as const
+  }
+
+  const existingUser = await db.select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, normalized.email))
+    .limit(1)
+
+  if (existingUser.length > 0) {
+    return { ok: false, error: 'User with this email already exists' } as const
+  }
+
+  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    email: normalized.email,
+    password: normalized.password,
+    email_confirm: true,
+    user_metadata: {
+      full_name: normalized.fullName,
+    },
+  })
+
+  if (authError || !authData.user) {
+    return { ok: false, error: authError?.message || 'Failed to create auth user' } as const
+  }
+
+  try {
+    const [newUser] = await db.insert(users).values({
+      supabaseId: authData.user.id,
+      email: normalized.email,
+      fullName: normalized.fullName,
+      role: normalized.role,
+      brand: normalized.brand,
+      department: normalized.department,
+      isActive: true,
+    }).returning({
+      id: users.id,
+      email: users.email,
+      fullName: users.fullName,
+      role: users.role,
+      brand: users.brand,
+      department: users.department,
+      isActive: users.isActive,
+      createdAt: users.createdAt,
+    })
+
+    const permissionWarning = normalized.branchModuleRole !== 'inherit' && canUseBranchModuleAccessRole(normalized.brand)
+      ? await applyBranchModuleRolePreset({
+        targetUserId: newUser.id,
+        changedByUserId,
+        branchAccess: normalized.brand,
+        role: normalized.branchModuleRole,
+      })
+      : null
+
+    return { ok: true, user: newUser, permissionWarning } as const
+  } catch (error) {
+    await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => null)
+    throw error
+  }
 }
 
 // GET - Fetch paginated users
@@ -139,77 +307,67 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { email, fullName, password, role, brand, department } = body
 
-    // Validate required fields
-    if (!email || !fullName || !password || !role) {
-      return NextResponse.json(
-        { error: 'Missing required fields: email, fullName, password, role' },
-        { status: 400 }
-      )
-    }
+    if (Array.isArray(body.bulkUsers)) {
+      const bulkUsers = body.bulkUsers.slice(0, BULK_CREATE_LIMIT) as CreateUserInput[]
 
-    const normalizedBrand = normalizeUserBranchAccess(brand)
-
-    if (normalizedBrand === undefined) {
-      return NextResponse.json(
-        { error: 'Invalid branch access selected' },
-        { status: 400 }
-      )
-    }
-
-    // Check if user already exists
-    const existingUser = await db.select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1)
-
-    if (existingUser.length > 0) {
-      return NextResponse.json(
-        { error: 'User with this email already exists' },
-        { status: 409 }
-      )
-    }
-
-    // Create user in Supabase Auth first using admin client
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: fullName,
+      if (bulkUsers.length === 0) {
+        return NextResponse.json({ error: 'No users provided for bulk creation' }, { status: 400 })
       }
-    })
 
-    if (authError || !authData.user) {
-      console.error('Supabase auth error:', authError)
-      return NextResponse.json(
-        { error: authError?.message || 'Failed to create auth user' },
-        { status: 500 }
-      )
+      if (body.bulkUsers.length > BULK_CREATE_LIMIT) {
+        return NextResponse.json({ error: `Bulk create supports up to ${BULK_CREATE_LIMIT} users at a time` }, { status: 400 })
+      }
+
+      const results = []
+
+      for (const [index, candidate] of bulkUsers.entries()) {
+        try {
+          const result = await createUserWithProfile(candidate, appUser.id)
+          const email = typeof candidate.email === 'string' ? candidate.email.trim().toLowerCase() : ''
+          const fullName = typeof candidate.fullName === 'string' ? candidate.fullName.trim() : ''
+          results.push(result.ok
+            ? {
+              index,
+              email: result.user.email,
+              fullName: result.user.fullName,
+              status: 'created',
+              user: result.user,
+              permissionWarning: result.permissionWarning,
+            }
+            : {
+              index,
+              email,
+              fullName,
+              status: 'failed',
+              error: result.error,
+            })
+        } catch (error) {
+          console.error('Bulk user create row failed:', error)
+          results.push({
+            index,
+            email: typeof candidate.email === 'string' ? candidate.email.trim().toLowerCase() : '',
+            fullName: typeof candidate.fullName === 'string' ? candidate.fullName.trim() : '',
+            status: 'failed',
+            error: 'Failed to create user',
+          })
+        }
+      }
+
+      const created = results.filter((result) => result.status === 'created').length
+      const failed = results.length - created
+
+      return NextResponse.json({ created, failed, results }, { status: created > 0 ? 201 : 400 })
     }
 
-    // Create user profile in our database
-    const [newUser] = await db.insert(users).values({
-      supabaseId: authData.user.id,
-      email,
-      fullName,
-      role,
-      brand: normalizedBrand,
-      department: department || null,
-      isActive: true,
-    }).returning({
-      id: users.id,
-      email: users.email,
-      fullName: users.fullName,
-      role: users.role,
-      brand: users.brand,
-      department: users.department,
-      isActive: users.isActive,
-      createdAt: users.createdAt,
-    })
+    const result = await createUserWithProfile(body, appUser.id)
 
-    return NextResponse.json(newUser, { status: 201 })
+    if (!result.ok) {
+      const errorMessage = result.error || 'Failed to create user'
+      return NextResponse.json({ error: errorMessage }, { status: errorMessage.includes('already exists') ? 409 : 400 })
+    }
+
+    return NextResponse.json({ ...result.user, permissionWarning: result.permissionWarning }, { status: 201 })
   } catch (error) {
     console.error('Error creating user:', error)
     return NextResponse.json(
@@ -229,10 +387,17 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json()
-    const { id, ...updateData } = body
+    const { id, branchModuleRole, ...updateData } = body
 
     if (!id) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+    }
+
+    if (branchModuleRole !== undefined && !isBranchModuleAccessRoleEditValue(branchModuleRole)) {
+      return NextResponse.json(
+        { error: 'Invalid branch module role selected' },
+        { status: 400 }
+      )
     }
 
     const [existingUser] = await db.select({
@@ -317,7 +482,18 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    return NextResponse.json(updatedUser)
+    const normalizedBranchModuleRole = normalizeEditBranchModuleRole(branchModuleRole)
+    const permissionWarning = normalizedBranchModuleRole !== BRANCH_MODULE_ACCESS_ROLE_KEEP
+      && canUseBranchModuleAccessRole(updatedUser.brand)
+      ? await applyBranchModuleRolePreset({
+        targetUserId: updatedUser.id,
+        changedByUserId: appUser.id,
+        branchAccess: updatedUser.brand,
+        role: normalizedBranchModuleRole,
+      })
+      : null
+
+    return NextResponse.json({ ...updatedUser, permissionWarning })
   } catch (error) {
     console.error('Error updating user:', error)
     return NextResponse.json({ error: 'Failed to update user' }, { status: 500 })

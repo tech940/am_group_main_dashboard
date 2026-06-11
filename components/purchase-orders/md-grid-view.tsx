@@ -7,12 +7,16 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { CheckCircle, XCircle, PauseCircle, Loader2, Eye, CheckCheck, XOctagon } from 'lucide-react'
 import { WorkflowStatusCard } from '@/components/purchase-orders/workflow-status-card'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
+import {
+  PurchaseOrderImagePreviewButton,
+  getPurchaseOrderTransactionLabel,
+  type PurchaseOrderDocumentSource,
+} from '@/components/purchase-orders/order-image-preview-button'
 import { formatWorkflowStageLabel, getWorkflowStatusPresentation } from '@/components/purchase-orders/workflow-card-theme'
 import { formatIndiaDateTime } from '@/lib/date-time'
 import { cn } from '@/lib/utils'
 
-interface PurchaseOrder {
-  id: string
+interface PurchaseOrder extends PurchaseOrderDocumentSource {
   order_number?: string
   orderNumber?: string
   department?: string
@@ -251,7 +255,7 @@ export function MDGridView({
       <Button
         onClick={() => void handleBulkAction('approve')}
         disabled={isLoading || bulkActionLoading !== null}
-        className="rounded-2xl bg-white text-emerald-800 hover:bg-emerald-50"
+        className="app-primary-action rounded-2xl"
       >
         {bulkActionLoading === 'approve' ? (
           <>
@@ -288,7 +292,7 @@ export function MDGridView({
         type="button"
         onClick={toggleSelectAll}
         disabled={isLoading || actionableOrders.length === 0}
-        className="rounded-2xl bg-white text-emerald-800 hover:bg-emerald-50"
+        className="app-outline-action rounded-2xl"
       >
         <CheckCheck className="mr-2 h-5 w-5" />
         Select All
@@ -299,10 +303,10 @@ export function MDGridView({
   return (
     <div className="space-y-6">
       {showHeader ? (
-        <div className="flex items-center justify-between rounded-[28px] bg-gradient-to-r from-teal-700 to-emerald-700 p-6 text-white shadow-xl">
+        <div className="flex items-center justify-between rounded-[28px] border border-[var(--dashboard-primary-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--dashboard-primary)_10%,white),color-mix(in_srgb,var(--dashboard-primary-light)_18%,white))] p-6 shadow-xl shadow-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)]">
           <div>
-            <h2 className="text-3xl font-black">{dashboardTitle}</h2>
-            <p className="mt-1 text-teal-100">
+            <h2 className="text-3xl font-black text-[var(--dashboard-action-bg)]">{dashboardTitle}</h2>
+            <p className="mt-1 font-semibold text-slate-600">
               {dashboardSubtitle || `${pendingOrders.length} purchase order${pendingOrders.length !== 1 ? 's' : ''} awaiting your approval`}
             </p>
           </div>
@@ -310,7 +314,7 @@ export function MDGridView({
         </div>
       ) : bulkControls ? (
         <div className="flex justify-end rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="[&_.bg-white]:border [&_.bg-white]:border-emerald-200 [&_.bg-white]:bg-emerald-50 [&_.bg-white]:text-emerald-800">
+          <div>
             {bulkControls}
           </div>
         </div>
@@ -319,7 +323,7 @@ export function MDGridView({
       {orders.length === 0 ? (
         <Card className="rounded-[28px] border-none shadow-xl">
           <CardContent className="p-12 text-center">
-            <CheckCircle className="mx-auto mb-4 h-16 w-16 text-green-500" />
+            <CheckCircle className="mx-auto mb-4 h-16 w-16 text-[var(--dashboard-action-bg)]" />
             <h3 className="mb-2 text-xl font-semibold text-gray-700">All Caught Up!</h3>
             <p className="text-gray-500">{emptyMessage}</p>
           </CardContent>
@@ -335,6 +339,7 @@ export function MDGridView({
             const isLoadingDetails = loadingDetailsId === order.id
             const isActionable = isOrderActionable(order)
             const isSelected = selectedOrders.has(order.id)
+            const transactionLabel = getPurchaseOrderTransactionLabel(order)
 
             return (
               <WorkflowStatusCard
@@ -347,12 +352,14 @@ export function MDGridView({
                 timestampLabel={formatDateTime(order.created_at || order.createdAt || '')}
                 headerAction={(
                   <div className="flex items-center gap-2">
+                    <PurchaseOrderImagePreviewButton order={order} className="h-9 w-9 rounded-2xl" />
                     {isActionable && (
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={() => toggleSelection(order.id)}
-                        aria-label={`Select order ${order.order_number || order.orderNumber || order.id}`}
-                        className="border-white/60 bg-white/15 data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-emerald-700"
+                        aria-label={`Select ${transactionLabel}`}
+                        title={`Select ${transactionLabel}`}
+                        className="border-slate-300 bg-white text-white shadow-sm data-[state=checked]:border-[var(--dashboard-action-bg)] data-[state=checked]:bg-[var(--dashboard-action-bg)] data-[state=checked]:text-[var(--dashboard-action-fg)]"
                       />
                     )}
                     <Button
@@ -361,8 +368,8 @@ export function MDGridView({
                       size="icon"
                       onClick={() => void handleViewDetails(order)}
                       disabled={isLoadingDetails}
-                      className="h-9 w-9 rounded-2xl border border-white/15 bg-white/12 text-white hover:bg-white/20"
-                      title="View details"
+                      className="h-9 w-9 rounded-2xl border border-[var(--dashboard-primary-border)] bg-white/80 text-slate-700 shadow-sm hover:bg-white hover:text-[var(--dashboard-action-bg)]"
+                      title={`View details for ${transactionLabel}`}
                     >
                       {isLoadingDetails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
                     </Button>
@@ -401,7 +408,7 @@ export function MDGridView({
                         <Button
                           onClick={() => void handleApprove(order.id)}
                           disabled={isProcessing}
-                          className="rounded-2xl bg-white text-emerald-800 hover:bg-emerald-50"
+                          className="app-primary-action rounded-2xl"
                         >
                           {isProcessing ? (
                             <Loader2 className="h-4 w-4 animate-spin" />

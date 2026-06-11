@@ -2,6 +2,7 @@ export const BRANCH_OPTIONS = [
   { value: 'kia', label: 'AM Kia' },
   { value: 'tata', label: 'AM Tata' },
   { value: 'hyundai', label: 'AM Hyundai' },
+  { value: 'platinum', label: 'AM Platinum' },
   { value: 'honda', label: 'AM Diamond Honda' },
   { value: 'ktm', label: 'AM KTM' },
   { value: 'triumph', label: 'AM Triumph' },

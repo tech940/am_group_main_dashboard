@@ -75,11 +75,11 @@ export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoad
   return (
     <form onSubmit={handleSubmit} autoComplete="off">
       <Card className="border-none shadow-xl">
-        <CardHeader className="bg-gradient-to-r from-teal-500 to-teal-600 text-white">
+        <CardHeader className="bg-gradient-to-r from-[#023468] to-[#034b82] text-white">
           <CardTitle className="text-2xl font-black">
             Goods Receipt Note (GRN)
           </CardTitle>
-          <p className="text-sm text-teal-50 mt-1">
+          <p className="text-sm text-[#edf4fb] mt-1">
             Purchase Manager: Record goods receipt details
           </p>
         </CardHeader>
@@ -240,7 +240,7 @@ export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoad
             <Button
               type="submit"
               disabled={isLoading}
-              className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white px-8 py-6 text-lg font-semibold"
+              className="bg-gradient-to-r from-[#023468] to-[#034b82] hover:from-[#023468] hover:to-[#034b82] text-white px-8 py-6 text-lg font-semibold"
             >
               {isLoading ? (
                 <>
@@ -256,8 +256,8 @@ export function Stage4GRN({ orderId, orderDetails, initialData, onSubmit, isLoad
             </Button>
           </div>
 
-          <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
-            <p className="text-sm text-teal-800">
+          <div className="bg-[#edf4fb] border border-[#b9ccde] rounded-lg p-4">
+            <p className="text-sm text-[#023468]">
               <strong>Note:</strong> After submission, this request will be sent to Accounts Department for final processing and payment.
             </p>
           </div>

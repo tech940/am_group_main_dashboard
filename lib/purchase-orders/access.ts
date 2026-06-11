@@ -105,26 +105,12 @@ export function getPurchaseOrderListVisibilityFilter(appUser: AppUser): SQL<unkn
       return and(...baseFilters)!
     case 'md':
       return and(
-        ...baseFilters,
-        ...(branchFilter ? [branchFilter] : [])
+        ...baseFilters
       )!
     case 'ea':
       return and(
         ...baseFilters,
-        ...(branchFilter ? [branchFilter] : []),
-        or(
-          eq(purchaseOrders.assignedTo, appUser.id),
-          eq(purchaseOrders.status, 'awaiting_ea_approval'),
-          eq(purchaseOrders.status, 'awaiting_md_approval'),
-          eq(purchaseOrders.status, 'awaiting_grn'),
-          eq(purchaseOrders.status, 'awaiting_accounts'),
-          eq(purchaseOrders.status, 'completed'),
-          eq(purchaseOrders.status, 'ea_denied'),
-          eq(purchaseOrders.status, 'md_denied'),
-          eq(purchaseOrders.status, 'ea_on_hold'),
-          eq(purchaseOrders.status, 'md_on_hold'),
-          eq(purchaseOrders.eaApprovedBy, appUser.id)
-        )!
+        ...(branchFilter ? [branchFilter] : [])
       )!
     case 'accounts':
       return and(
@@ -161,21 +147,11 @@ export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrder
 
   const branchMatches = hasAllBranchAccess(appUser.brand) || !order.brand || order.brand === appUser.brand
 
-  switch (appUser.role) {
+    switch (appUser.role) {
     case 'md':
-      return branchMatches
+      return true
     case 'ea':
-      return branchMatches && ([
-        'awaiting_ea_approval',
-        'awaiting_md_approval',
-        'awaiting_grn',
-        'awaiting_accounts',
-        'completed',
-        'ea_denied',
-        'md_denied',
-        'ea_on_hold',
-        'md_on_hold',
-      ].includes(order.status) || order.eaApprovedBy === appUser.id)
+      return branchMatches
     case 'accounts':
       return ['awaiting_accounts', 'completed'].includes(order.status)
     default:

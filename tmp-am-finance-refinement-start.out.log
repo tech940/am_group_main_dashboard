@@ -1,0 +1,37 @@
+
+> main_dashboard@0.1.0 start
+> next start --port 3001
+
+▲ Next.js 16.2.6
+- Local:         http://localhost:3001
+- Network:       http://10.129.179.163:3001
+✓ Ready in 143ms
+✅ Redis client initialized
+[api:am-finance-analytics] total=2426ms auth=4ms data=1653ms response-cache=2421ms
+[api:am-finance-analytics] total=1181ms auth=3ms data=920ms response-cache=1178ms
+[api:am-finance] total=2275ms auth=4ms data=2165ms options=105ms
+[api:am-finance] total=1067ms auth=5ms data=766ms options=296ms
+[api:am-finance-analytics] total=1724ms auth=5ms data=1056ms response-cache=1719ms
+[api:am-finance-analytics] total=5250ms auth=2865ms data=1123ms response-cache=2385ms
+[api:am-finance-analytics] total=6716ms auth=3032ms data=2773ms response-cache=3684ms
+[api:am-finance-analytics] total=6712ms auth=2338ms data=3657ms response-cache=4374ms
+[api:am-finance-analytics] total=2253ms auth=6ms data=1234ms response-cache=2247ms
+[api:am-finance-analytics] total=6419ms auth=2837ms data=2870ms response-cache=3582ms
+[api:am-finance-analytics] total=2060ms auth=10ms data=1341ms response-cache=2050ms
+[api:am-finance-analytics] total=2660ms auth=615ms data=1336ms response-cache=2045ms
+[api:am-finance] total=7410ms auth=4130ms data=2465ms options=814ms
+[api:am-finance-analytics] total=1618ms auth=6ms data=930ms response-cache=1612ms
+[api:am-finance] total=1426ms auth=3ms data=655ms options=768ms
+[api:am-finance-analytics] total=1635ms auth=3ms data=1266ms response-cache=1632ms
+[api:am-finance-analytics] total=1158ms auth=3ms data=979ms response-cache=1156ms
+[api:Platinum-business-excellence-freshness] total=2870ms auth=8ms freshness-db=2862ms
+[api:business-excellence-overview] total=3839ms auth=12ms response-cache=3826ms
+[api:ro-billing-analysis] total=2453ms auth=418ms dealer-coverage=1385ms daily-trend-sql-summary=397ms response-cache=2032ms
+[api:business-excellence-overview] total=2670ms auth=442ms response-cache=2228ms
+[api:ro-billing-analysis] total=2869ms auth=424ms dealer-coverage=1381ms cancelled-billing-summary=489ms work-type-sql-summary=401ms response-cache=2443ms
+[api:business-excellence-overview] total=1383ms auth=9ms response-cache=1374ms
+[api:business-excellence-overview] total=1407ms auth=76ms response-cache=1331ms
+[api:ro-billing-analysis] total=1372ms auth=14ms daily-trend-sql-summary=1019ms response-cache=1355ms
+[api:ro-billing-analysis] total=1808ms auth=17ms cancelled-billing-summary=1169ms work-type-sql-summary=396ms response-cache=1788ms
+[api:hyundai-business-excellence-freshness] total=731969ms auth=11ms freshness-db=731958ms
+[api:business-excellence-overview] total=734529ms auth=15ms response-cache=734513ms

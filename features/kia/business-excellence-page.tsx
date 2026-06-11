@@ -5,28 +5,42 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   FileSpreadsheet,
   RefreshCw,
   Loader2,
   Activity,
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Users,
   Award,
   Sparkles,
   Table as TableIcon,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
   BarChart3,
-  Search,
   FileText,
   ShieldAlert,
   X,
   Maximize2,
   SlidersHorizontal,
   Crown,
+  Wrench,
 } from 'lucide-react'
-import { AccessControlOverlay } from '@/components/shared/access-control-overlay'
-import { useUserRole } from '@/lib/hooks/use-user-role'
+import { BusinessExcellenceOverview } from '@/features/kia/business-excellence-overview'
+import { ExecutiveTableShell, type ExecutiveDashboardTableId } from '@/features/business-excellence/executive-table-shell'
+import { OpenRoSection } from '@/features/kia/open-ro-section'
+import { KiaComplaintsSection } from '@/features/kia/kia-complaints-section'
+import { KiaServiceDashboardPreviewSection } from '@/features/kia/service-dashboard-preview-section'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   LineChart,
   Line,
@@ -54,8 +68,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
+import { logApiTimings } from '@/lib/api/client-timing'
+import {
+  BUSINESS_DATE_PRESETS,
+  BusinessDateFilterValue,
+  BusinessDatePreset,
+  appendBusinessComparisonParams,
+  buildBusinessDateFilter,
+  buildBusinessYearDateFilter,
+  getBusinessAvailableYears,
+  getBusinessYearRange,
+  getEffectiveBusinessDateFilter,
+  normalizeBusinessYear,
+} from '@/lib/business-excellence/comparison'
+import { EXECUTIVE_TARGETS } from '@/lib/business-excellence/executive-targets'
+import {
+  DEFAULT_KIA_DEALER_CODE,
+  KIA_BRANCH_DEALERS,
+  appendKiaDealerCodeParam,
+  normalizeKiaDealerCode,
+} from '@/lib/kia/dealer-branch'
 
 function ResponsiveContainer(props: React.ComponentProps<typeof RechartsResponsiveContainer>) {
   return <RechartsResponsiveContainer minWidth={0} minHeight={0} debounce={50} {...props} />
@@ -75,6 +109,16 @@ interface StatRow {
   ytdLY: number | 'N/A'
   ytdGrowth: string
   subRows: StatRow[]
+}
+
+type BusinessFreshnessResponse = {
+  sourceUpdatedAt: string | null
+  sources?: Array<{
+    table: string
+    label: string
+    sourceUpdatedAt: string | null
+    rowCount: number
+  }>
 }
 
 function AnimatedMetric({
@@ -126,15 +170,229 @@ interface LoadedRows {
   [sheetId: string]: LoadedData
 }
 
-type BusinessDateFilter = {
-  mode: 'month' | 'range'
-  month: number
-  year: number
+type BusinessDateFilter = BusinessDateFilterValue | null
+
+function AnalyticsDateRangePicker({
+  title = 'Date Range',
+  clearLabel = 'Clear range',
+  startDate,
+  endDate,
+  onChange,
+}: {
+  title?: string
+  clearLabel?: string
   startDate: string
   endDate: string
-} | null
+  onChange: (startDate: string, endDate: string) => void
+}) {
+  const initialViewDate = parseBusinessDate(startDate) || new Date()
+  const [viewDate, setViewDate] = useState(() => new Date(initialViewDate.getFullYear(), initialViewDate.getMonth(), 1))
+  const selectedStart = parseBusinessDate(startDate)
+  const selectedEnd = parseBusinessDate(endDate)
 
+  const monthLabel = viewDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  const dayCells = useMemo(() => {
+    const monthStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1)
+    const gridStart = new Date(monthStart)
+    gridStart.setDate(monthStart.getDate() - monthStart.getDay())
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(gridStart)
+      date.setDate(gridStart.getDate() + index)
+      return date
+    })
+  }, [viewDate])
+
+  const selectDate = (date: Date) => {
+    const selected = getInputDate(date)
+    if (!selectedStart || selectedEnd || date < selectedStart) {
+      onChange(selected, '')
+      return
+    }
+    onChange(startDate, selected)
+  }
+
+  return (
+    <div className="solid-calendar-surface rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-2.5 shadow-sm transition">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setViewDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
+          className="app-outline-action flex h-9 w-9 items-center justify-center rounded-xl"
+          aria-label="Previous month"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <div className="text-center">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</p>
+          <p className="text-sm font-black text-slate-950 dark:text-white">{monthLabel}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setViewDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
+          className="app-outline-action flex h-9 w-9 items-center justify-center rounded-xl"
+          aria-label="Next month"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-black uppercase tracking-widest text-slate-400">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <div key={`${day}-${index}`} className="py-0.5">{day}</div>)}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-1">
+        {dayCells.map((date) => {
+          const dateValue = getInputDate(date)
+          const inCurrentMonth = date.getMonth() === viewDate.getMonth()
+          const isStart = dateValue === startDate
+          const isEnd = dateValue === endDate
+          const inRange = selectedStart && selectedEnd && date >= selectedStart && date <= selectedEnd
+          return (
+            <button
+              key={dateValue}
+              type="button"
+              onClick={() => selectDate(date)}
+              className={cn(
+                'h-8 rounded-lg text-[11px] font-black transition',
+                inCurrentMonth ? 'text-slate-700 dark:text-slate-100' : 'text-slate-300 dark:text-slate-600',
+                inRange && 'bg-[var(--dashboard-primary-soft)] text-[var(--dashboard-action-bg)]',
+                (isStart || isEnd) && 'app-primary-action shadow-sm'
+              )}
+            >
+              {date.getDate()}
+            </button>
+          )
+        })}
+      </div>
+      <div className="mt-2 flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-[11px] font-bold text-slate-600">
+        <div className="flex items-center justify-between gap-3">
+          <span>Start</span>
+          <span className="font-black text-slate-950 dark:text-white">{startDate || 'Select date'}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span>End</span>
+          <span className="font-black text-slate-950 dark:text-white">{endDate || 'Select date'}</span>
+        </div>
+        {(startDate || endDate) && (
+          <button type="button" onClick={() => onChange('', '')} className="mt-1 text-left text-[11px] font-black text-rose-600">
+            {clearLabel}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+type BusinessAiSummary = {
+  report: string
+  summary: string
+  structuredSummary?: {
+    title: string
+    executiveRead: string
+    metricSignals: Array<{
+      label: string
+      value: string
+      context: string
+      tone?: 'good' | 'watch' | 'risk' | 'neutral'
+    }>
+    keyFindings: string[]
+    risks: string[]
+    actions: Array<{
+      owner: string
+      action: string
+      priority?: 'High' | 'Medium' | 'Low'
+    }>
+  } | null
+  model: string
+  generatedAt: string
+  dateRange: {
+    startDate: string
+    endDate: string
+  }
+}
+
+const BUSINESS_EXCELLENCE_OVERVIEW_REPORT = 'Business Excellence Overview'
+const EXECUTIVE_DASHBOARD_REPORT = 'Executive Dashboard'
 const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
+const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
+const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
+const KIA_COMPLAINTS_REPORT = 'Kia Complaints'
+const SERVICE_DASHBOARD_REPORT = 'Service Dashboard'
+const REPORT_ROUTE_SLUGS: Record<string, string> = {
+  [BUSINESS_EXCELLENCE_OVERVIEW_REPORT]: 'overview',
+  [EXECUTIVE_DASHBOARD_REPORT]: 'executive-dashboard',
+  [DEFAULT_BUSINESS_EXCELLENCE_SHEET]: 'ro-billing-report',
+  [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
+  [OPEN_RO_REPORT]: 'open-ro',
+  [KIA_COMPLAINTS_REPORT]: 'kia-complaints',
+  [SERVICE_DASHBOARD_REPORT]: 'service-dashboard',
+}
+const REPORT_NAMES_BY_SLUG: Record<string, string> = Object.fromEntries(
+  Object.entries(REPORT_ROUTE_SLUGS).map(([name, slug]) => [slug, name])
+)
+const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
+  {
+    id: 'overview',
+    brand: 'kia',
+    sheetName: BUSINESS_EXCELLENCE_OVERVIEW_REPORT,
+    tableName: 'business_excellence_overview',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'executive-dashboard',
+    brand: 'kia',
+    sheetName: EXECUTIVE_DASHBOARD_REPORT,
+    tableName: 'ro_billing_report',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'ro-billing-report',
+    brand: 'kia',
+    sheetName: DEFAULT_BUSINESS_EXCELLENCE_SHEET,
+    tableName: 'ro_billing_report',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'workshop-performance',
+    brand: 'kia',
+    sheetName: WORKSHOP_PERFORMANCE_REPORT,
+    tableName: 'workshop_performance',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'open-ro',
+    brand: 'kia',
+    sheetName: OPEN_RO_REPORT,
+    tableName: 'open_ro_yearly',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'kia-complaints',
+    brand: 'kia',
+    sheetName: KIA_COMPLAINTS_REPORT,
+    tableName: 'kia_call_center_complaints',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'service-dashboard',
+    brand: 'kia',
+    sheetName: SERVICE_DASHBOARD_REPORT,
+    tableName: 'service_dashboard_export',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+]
 const BUSINESS_MONTHS = [
   'January',
   'February',
@@ -149,6 +407,24 @@ const BUSINESS_MONTHS = [
   'November',
   'December',
 ]
+const KIA_DATA_START_YEAR = 2025
+
+function cleanAiText(value: string) {
+  return value.replace(/\*\*/g, '').trim()
+}
+
+function aiToneClass(tone?: string) {
+  if (tone === 'good') return 'border-emerald-100 bg-emerald-50 text-emerald-800'
+  if (tone === 'risk') return 'border-rose-100 bg-rose-50 text-rose-800'
+  if (tone === 'watch') return 'border-amber-100 bg-amber-50 text-amber-800'
+  return 'border-slate-100 bg-slate-50 text-slate-800'
+}
+
+function priorityClass(priority?: string) {
+  if (priority === 'High') return 'bg-rose-100 text-rose-700'
+  if (priority === 'Low') return 'bg-slate-100 text-slate-600'
+  return 'bg-amber-100 text-amber-700'
+}
 
 function normalizeSheetKey(value: string) {
   return value
@@ -157,13 +433,6 @@ function normalizeSheetKey(value: string) {
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
-}
-
-function getDefaultBusinessExcellenceSheet(sheets: SavedSheetMetadata[]) {
-  const defaultKey = normalizeSheetKey(DEFAULT_BUSINESS_EXCELLENCE_SHEET)
-  return sheets.find((sheet) => normalizeSheetKey(sheet.sheetName) === defaultKey)
-    || sheets.find((sheet) => normalizeSheetKey(sheet.sheetName).includes(defaultKey))
-    || sheets[0]
 }
 
 function getRecordValue(row: Record<string, unknown>, snakeKey: string, legacyKey?: string) {
@@ -181,13 +450,31 @@ function formatChartLabel(value: unknown) {
   return Math.round(num).toLocaleString('en-IN')
 }
 
-function getGrowthBadgeClass(value: number | string | 'N/A') {
-  if (value === 'N/A') return 'text-slate-400 bg-slate-50 border-slate-200'
+function formatChartNumber(value: unknown) {
   const num = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(num)) return 'text-slate-400 bg-slate-50 border-slate-200'
+  if (!Number.isFinite(num)) return '0'
+  return num.toLocaleString('en-IN', {
+    minimumFractionDigits: Math.abs(num % 1) > 0 ? 2 : 0,
+    maximumFractionDigits: 2,
+  })
+}
+
+function getGrowthBadgeClass(value: number | string | 'N/A') {
+  if (value === 'N/A') return 'text-slate-400 bg-white border-slate-200'
+  const num = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(num)) return 'text-slate-400 bg-white border-slate-200'
   return num >= 0
-    ? 'text-teal-700 bg-teal-50 border-teal-100'
-    : 'text-rose-700 bg-rose-50 border-rose-100'
+    ? 'text-emerald-700 bg-white border-emerald-200'
+    : 'text-[lab(53_89.72_88.48)] bg-white border-[lab(53_89.72_88.48)]'
+}
+
+function isManagementTotalRowName(name: unknown) {
+  const normalized = String(name || '').trim().toLowerCase()
+  return normalized === 'mech' || normalized === 'mech total' || normalized === 'grand total'
+}
+
+function getManagementTotalRowClass(name: unknown) {
+  return isManagementTotalRowName(name) ? 'be-management-total-row' : ''
 }
 
 function formatSignedGrowth(value: number | string | 'N/A') {
@@ -198,7 +485,29 @@ function formatSignedGrowth(value: number | string | 'N/A') {
 }
 
 function formatCurrency(value: number) {
-  return `₹${Math.round(value).toLocaleString('en-IN')}`
+  const safeValue = Number.isFinite(value) ? value : 0
+  const rounded = Math.round(Math.abs(safeValue))
+  const sign = safeValue < 0 ? '-' : ''
+  const currencyPrefix = '\u20b9'
+
+  if (rounded >= 10000000) return `${sign}${currencyPrefix}${(rounded / 10000000).toFixed(2)}Cr`
+  if (rounded >= 100000) return `${sign}${currencyPrefix}${(rounded / 100000).toFixed(2)}L`
+  return `${sign}${currencyPrefix}${rounded.toLocaleString('en-IN')}`
+}
+
+function formatBusinessFreshness(value?: string | null) {
+  if (!value) return 'Not available'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Not available'
+  return `${date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  })} IST`
 }
 
 function SmartTrendValueLabel({
@@ -237,6 +546,146 @@ function SmartTrendValueLabel({
   )
 }
 
+function getBusinessExcellenceReportName(value?: string | null) {
+  if (!value) return BUSINESS_EXCELLENCE_OVERVIEW_REPORT
+  return REPORT_NAMES_BY_SLUG[value] || value
+}
+
+function getBusinessExcellenceReportPath(sheetName: string) {
+  const slug = REPORT_ROUTE_SLUGS[sheetName] || normalizeSheetKey(sheetName).replace(/_/g, '-')
+  return `/brands/kia/business-excellence/${slug}`
+}
+
+function isBusinessDateParam(value: string | null | undefined) {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && parseBusinessDate(value))
+}
+
+function buildDateFilterFromQuery(params: URLSearchParams): BusinessDateFilter {
+  const startDate = params.get('startDate') || ''
+  const endDate = params.get('endDate') || ''
+
+  const compareStartDate = params.get('compareStartDate') || params.get('comparisonStartDate') || ''
+  const compareEndDate = params.get('compareEndDate') || params.get('comparisonEndDate') || ''
+  const comparisonRange = isBusinessDateParam(compareStartDate) && isBusinessDateParam(compareEndDate)
+    ? { startDate: compareStartDate, endDate: compareEndDate }
+    : {}
+  const periodMode = params.get('periodMode')
+  const queryYear = normalizeBusinessYear(params.get('year'), KIA_DATA_START_YEAR)
+
+  if (periodMode === 'year' && queryYear) {
+    const range = isBusinessDateParam(startDate) && isBusinessDateParam(endDate)
+      ? { startDate, endDate }
+      : getBusinessYearRange(queryYear)
+    const start = parseBusinessDate(range.startDate)
+    return {
+      ...buildBusinessYearDateFilter(queryYear, comparisonRange),
+      startDate: range.startDate,
+      endDate: range.endDate,
+      month: start?.getMonth() ?? 0,
+    }
+  }
+
+  if (!isBusinessDateParam(startDate) || !isBusinessDateParam(endDate)) return null
+
+  const presetParam = params.get('periodPreset') as BusinessDatePreset | null
+  const preset = presetParam && BUSINESS_DATE_PRESETS.some((item) => item.value === presetParam)
+    ? presetParam
+    : 'custom'
+
+  return buildBusinessDateFilter(
+    preset,
+    { startDate, endDate },
+    comparisonRange
+  )
+}
+
+function buildBusinessExcellenceDateQuery(filter: BusinessDateFilter, dealerCode?: string | null) {
+  const params = new URLSearchParams()
+  appendKiaDealerCodeParam(params, dealerCode)
+  if (filter) {
+    params.set('startDate', filter.startDate)
+    params.set('endDate', filter.endDate)
+    if (filter.mode === 'year') {
+      params.set('periodMode', 'year')
+      params.set('year', String(filter.year))
+    }
+    if (filter.preset && filter.preset !== 'custom') {
+      params.set('periodPreset', filter.preset)
+    }
+    if (filter.comparison?.previousStartDate && filter.comparison.previousEndDate) {
+      params.set('compareStartDate', filter.comparison.previousStartDate)
+      params.set('compareEndDate', filter.comparison.previousEndDate)
+      params.set('comparisonStartDate', filter.comparison.previousStartDate)
+      params.set('comparisonEndDate', filter.comparison.previousEndDate)
+    }
+  }
+  return params.toString()
+}
+
+function appendBusinessExcellenceDateQuery(path: string, filter: BusinessDateFilter, dealerCode?: string | null) {
+  const query = buildBusinessExcellenceDateQuery(filter, dealerCode)
+  return query ? `${path}?${query}` : path
+}
+
+function WorkshopTrendValueLabel({
+  x,
+  y,
+  value,
+  index = 0,
+  series,
+}: {
+  x?: number | string
+  y?: number | string
+  value?: number | string
+  index?: number
+  series: 'revenue' | 'jc'
+}) {
+  const num = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(num)) return null
+
+  const xPos = Number(x || 0)
+  const baseY = Number(y || 0)
+  const yPos = series === 'revenue'
+    ? baseY + (index % 2 === 0 ? -13 : -22)
+    : baseY + (index % 2 === 0 ? 17 : 26)
+
+  return (
+    <text
+      x={xPos}
+      y={yPos}
+      textAnchor="middle"
+      fill={series === 'revenue' ? '#2563EB' : '#023468'}
+      fontSize={8}
+      fontWeight={900}
+      paintOrder="stroke"
+      stroke="#ffffff"
+      strokeWidth={4}
+    >
+      {series === 'revenue' ? formatChartLabel(num) : Math.round(num).toLocaleString('en-IN')}
+    </text>
+  )
+}
+
+function canAccessExecutiveDashboard(role?: string | null) {
+  return ['admin', 'ceo', 'md'].includes(String(role || '').trim().toLowerCase())
+}
+
+function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[], role?: string | null) {
+  const baseReports = canAccessExecutiveDashboard(role)
+    ? BUSINESS_EXCELLENCE_REPORTS
+    : BUSINESS_EXCELLENCE_REPORTS.filter((sheet) => sheet.sheetName !== EXECUTIVE_DASHBOARD_REPORT)
+
+  if (sheets.length === 0) return baseReports
+
+  const byName = new Map<string, SavedSheetMetadata>()
+  baseReports.forEach((sheet) => byName.set(sheet.sheetName, sheet))
+  sheets.forEach((sheet) => {
+    if (byName.has(sheet.sheetName)) byName.set(sheet.sheetName, sheet)
+  })
+
+  return baseReports.map((sheet) => byName.get(sheet.sheetName) || sheet)
+}
+
 function TrendAxisTick({
   x,
   y,
@@ -265,7 +714,7 @@ function parseBusinessDate(value: unknown): Date | null {
 
   if (value === null || value === undefined) return null
   const trimmed = String(value).trim()
-  if (!trimmed || trimmed === '-' || trimmed === '—' || trimmed === 'â€”') return null
+  if (!trimmed || trimmed === '-' || trimmed === '\u2014') return null
 
   const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/)
   if (isoMatch) {
@@ -354,7 +803,7 @@ function formatPIDate(value: string) {
   return date.toLocaleDateString('en-CA')
 }
 
-function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDateFilter }) {
+function PerformanceIntelligenceReport({ dateFilter, dealerCode }: { dateFilter: BusinessDateFilter; dealerCode?: string | null }) {
   const queryClient = useQueryClient()
   const [data, setData] = useState<PerformanceIntelligenceResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -379,6 +828,8 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
         page: String(page),
         limit: '50',
       })
+      appendBusinessComparisonParams(params, dateFilter)
+      appendKiaDealerCodeParam(params, dealerCode)
 
       Object.entries(filters).forEach(([key, value]) => {
         if (value && value !== 'all') params.set(key, value)
@@ -389,6 +840,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
         queryKey: ['business-excellence', 'performance-intelligence', queryString],
         queryFn: async () => {
           const response = await fetch(`/api/brands/kia/business-excellence/performance-intelligence?${queryString}`)
+          logApiTimings(response, 'performance-intelligence')
           if (!response.ok) throw new Error('Failed to load Performance Intelligence Report')
           return await response.json() as PerformanceIntelligenceResponse
         },
@@ -401,7 +853,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
     } finally {
       setLoading(false)
     }
-  }, [filters, page, queryClient, range.endDate, range.startDate])
+  }, [dateFilter, dealerCode, filters, page, queryClient, range.endDate, range.startDate])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -436,6 +888,8 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
       limit: '100',
       export: 'all',
     })
+    appendBusinessComparisonParams(params, dateFilter)
+    appendKiaDealerCodeParam(params, dealerCode)
 
     Object.entries(filters).forEach(([key, value]) => {
       if (value && value !== 'all') params.set(key, value)
@@ -446,6 +900,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
       queryKey: ['business-excellence', 'performance-intelligence-export', queryString],
       queryFn: async () => {
         const response = await fetch(`/api/brands/kia/business-excellence/performance-intelligence?${queryString}`)
+        logApiTimings(response, 'performance-intelligence-export')
         if (!response.ok) throw new Error('Failed to export Performance Intelligence Report')
         return await response.json() as PerformanceIntelligenceResponse
       },
@@ -658,7 +1113,7 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
                           <p className="truncate text-sm font-black text-slate-950" title={advisor.advisor}>{advisor.advisor}</p>
                         </div>
                         <p className="mt-2 text-[11px] font-bold text-slate-500">
-                          {advisor.transactions.toLocaleString('en-IN')} transactions · {advisor.alerts.toLocaleString('en-IN')} alerts
+                          {advisor.transactions.toLocaleString('en-IN')} transactions - {advisor.alerts.toLocaleString('en-IN')} alerts
                         </p>
                       </div>
                       <span className={cn('rounded-full border px-3 py-1 text-sm font-black', scoreTone)}>
@@ -688,18 +1143,6 @@ function PerformanceIntelligenceReport({ dateFilter }: { dateFilter: BusinessDat
 
       <div className="order-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
-          <label className="space-y-2 xl:col-span-1">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Search Reg</span>
-            <div className="flex h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3">
-              <Search className="mr-2 h-4 w-4 text-slate-400" />
-              <input
-                value={filters.searchReg}
-                onChange={(event) => updateFilter('searchReg', event.target.value)}
-                placeholder="Search Registration..."
-                className="w-full bg-transparent text-sm font-semibold outline-none"
-              />
-            </div>
-          </label>
           {[
             { key: 'branch', label: 'Branch', options: data?.filterOptions.branches || [], all: 'All Locations' },
             { key: 'serviceType', label: 'Service Type', options: data?.filterOptions.serviceTypes || [], all: 'All Types' },
@@ -990,35 +1433,88 @@ function SheetRowsTable({
   )
 }
 
-export default function KiaBusinessExcellencePage() {
+export default function KiaBusinessExcellencePage({ initialReport, currentUserRole }: { initialReport?: string; currentUserRole?: string | null } = {}) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
-  const [savedSheets, setSavedSheets] = useState<SavedSheetMetadata[]>([])
+  const initialReportName = getBusinessExcellenceReportName(initialReport)
+  const [savedSheets] = useState<SavedSheetMetadata[]>(BUSINESS_EXCELLENCE_REPORTS)
   const [loadedRows, setLoadedRows] = useState<LoadedRows>({})
-  const [loading, setLoading] = useState(true)
+  const loading = false
   const [fetchingRows, setFetchingRows] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<string | null>(initialReportName)
   const [currentPage, setCurrentPage] = useState(1)
-  const [dateFilterMode, setDateFilterMode] = useState<'month' | 'range'>('month')
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth())
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
+  const [selectedPreset, setSelectedPreset] = useState<BusinessDatePreset>('mtd')
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
-  const [appliedDateFilter, setAppliedDateFilter] = useState<{
-    mode: 'month' | 'range'
-    month: number
-    year: number
-    startDate: string
-    endDate: string
-  } | null>(null)
+  const [comparisonStartDate, setComparisonStartDate] = useState<string>('')
+  const [comparisonEndDate, setComparisonEndDate] = useState<string>('')
+  const [datePanelMode, setDatePanelMode] = useState<'current' | 'compare'>('current')
+  const [appliedDateFilter, setAppliedDateFilter] = useState<BusinessDateFilter>(() => getEffectiveBusinessDateFilter())
+  const [selectedDealerCode, setSelectedDealerCode] = useState<string | null>(() => {
+    const normalized = normalizeKiaDealerCode(searchParams.get('dealer_code'))
+    return normalized || (initialReportName === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE)
+  })
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
   const [showDateControls, setShowDateControls] = useState(false)
-  const { isAdmin } = useUserRole()
+  const [showHealthPanel, setShowHealthPanel] = useState(false)
+  const [showAiSummary, setShowAiSummary] = useState(false)
+  const [aiSummary, setAiSummary] = useState<BusinessAiSummary | null>(null)
+  const [aiSummaryError, setAiSummaryError] = useState('')
+  const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false)
+  const [isServiceDashboardDownloading, setIsServiceDashboardDownloading] = useState(false)
   const itemsPerPage = 10
+  const queryDateFilterKey = searchParams.toString()
+
+  useEffect(() => {
+    const params = new URLSearchParams(queryDateFilterKey)
+    const hasDateParams = params.has('startDate') || params.has('endDate') || params.has('compareStartDate') || params.has('compareEndDate') || params.get('periodMode') === 'year' || params.has('year')
+    const timeout = window.setTimeout(() => {
+      const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
+      setSelectedDealerCode(normalizeKiaDealerCode(params.get('dealer_code')) || (activeReport === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE))
+      if (!hasDateParams) {
+        const fallback = getEffectiveBusinessDateFilter()
+        setSelectedPreset('mtd')
+        setSelectedYear(null)
+        setStartDate('')
+        setEndDate('')
+        setComparisonStartDate('')
+        setComparisonEndDate('')
+        setDatePanelMode('current')
+        setAppliedDateFilter(fallback)
+        return
+      }
+
+      const nextFilter = buildDateFilterFromQuery(params)
+      if (!nextFilter) return
+
+      setSelectedPreset(nextFilter.preset || 'custom')
+      setSelectedYear(nextFilter.mode === 'year' ? nextFilter.year : null)
+      setStartDate(nextFilter.startDate)
+      setEndDate(nextFilter.endDate)
+      setComparisonStartDate(nextFilter.comparison?.previousStartDate || '')
+      setComparisonEndDate(nextFilter.comparison?.previousEndDate || '')
+      setDatePanelMode(nextFilter.comparison?.previousStartDate && nextFilter.comparison.previousEndDate ? 'compare' : 'current')
+      setAppliedDateFilter(nextFilter)
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [activeTab, initialReportName, queryDateFilterKey])
 
   const activeDateLabel = useMemo(() => {
     if (!appliedDateFilter) {
       const today = new Date()
       return `Current month - ${BUSINESS_MONTHS[today.getMonth()]} ${today.getFullYear()}`
+    }
+
+    const presetLabel = BUSINESS_DATE_PRESETS.find((preset) => preset.value === appliedDateFilter.preset)?.label
+    if (presetLabel && appliedDateFilter.mode === 'preset') {
+      return `${presetLabel} - ${appliedDateFilter.startDate} to ${appliedDateFilter.endDate}`
+    }
+
+    if (appliedDateFilter.mode === 'year') {
+      return `Year ${appliedDateFilter.year} - ${appliedDateFilter.startDate} to ${appliedDateFilter.endDate}`
     }
 
     if (appliedDateFilter.mode === 'month') {
@@ -1028,43 +1524,241 @@ export default function KiaBusinessExcellencePage() {
     return `${appliedDateFilter.startDate || 'Start'} to ${appliedDateFilter.endDate || 'End'}`
   }, [appliedDateFilter])
 
-  const draftDateLabel = dateFilterMode === 'month'
-    ? `${BUSINESS_MONTHS[selectedMonth]} ${selectedYear}`
-    : `${startDate || 'Start date'} to ${endDate || 'End date'}`
+  const freshnessQueryString = useMemo(() => {
+    const params = new URLSearchParams({
+      report: activeTab || initialReportName,
+    })
+    appendKiaDealerCodeParam(params, selectedDealerCode)
+    return params.toString()
+  }, [activeTab, initialReportName, selectedDealerCode])
+
+  const freshnessQuery = useQuery<BusinessFreshnessResponse>({
+    queryKey: ['business-excellence', 'freshness', freshnessQueryString],
+    queryFn: async () => {
+      const response = await fetch(`/api/brands/kia/business-excellence/freshness?${freshnessQueryString}`)
+      logApiTimings(response, 'business-excellence-freshness')
+      if (!response.ok) throw new Error('Failed to fetch Business Excellence freshness')
+      return await response.json()
+    },
+    enabled: Boolean(activeTab || initialReportName),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+    retry: 1,
+  })
+
+  const draftDateFilter = useMemo(
+    () => selectedYear
+      ? buildBusinessYearDateFilter(
+        selectedYear,
+        { startDate: comparisonStartDate, endDate: comparisonEndDate }
+      )
+      : buildBusinessDateFilter(
+        startDate && endDate ? 'custom' : selectedPreset,
+        { startDate, endDate },
+        { startDate: comparisonStartDate, endDate: comparisonEndDate }
+      ),
+    [comparisonEndDate, comparisonStartDate, endDate, selectedPreset, selectedYear, startDate]
+  )
+
+  const draftDateLabel = draftDateFilter.mode === 'year'
+    ? `Year ${draftDateFilter.year} - ${draftDateFilter.startDate} to ${draftDateFilter.endDate}`
+    : `${draftDateFilter.startDate} to ${draftDateFilter.endDate}`
+  const draftComparisonLabel = draftDateFilter.comparison.previousStartDate && draftDateFilter.comparison.previousEndDate
+    ? `${draftDateFilter.comparison.previousStartDate} to ${draftDateFilter.comparison.previousEndDate}`
+    : 'Not selected'
 
   const applyDateFilter = useCallback(() => {
-    const filter = {
-      mode: dateFilterMode,
-      month: selectedMonth,
-      year: selectedYear,
-      startDate,
-      endDate
-    }
+    const filter = selectedYear
+      ? buildBusinessYearDateFilter(
+        selectedYear,
+        datePanelMode === 'compare'
+          ? { startDate: comparisonStartDate, endDate: comparisonEndDate }
+          : {}
+      )
+      : buildBusinessDateFilter(
+        startDate && endDate ? 'custom' : selectedPreset,
+        { startDate, endDate },
+        datePanelMode === 'compare'
+          ? { startDate: comparisonStartDate, endDate: comparisonEndDate }
+          : {}
+      )
 
     setIsApplyingFilter(true)
     setTimeout(() => {
+      if (datePanelMode === 'current') {
+        setComparisonStartDate('')
+        setComparisonEndDate('')
+      }
       setAppliedDateFilter(filter)
+      router.replace(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), filter, selectedDealerCode), { scroll: false })
       setShowDateControls(false)
       setTimeout(() => {
         setIsApplyingFilter(false)
       }, 300)
     }, 100)
-  }, [dateFilterMode, endDate, selectedMonth, selectedYear, startDate])
+  }, [activeTab, comparisonEndDate, comparisonStartDate, datePanelMode, endDate, initialReportName, router, selectedDealerCode, selectedPreset, selectedYear, startDate])
 
   const clearDateFilter = useCallback(() => {
     setIsApplyingFilter(true)
     setTimeout(() => {
-      setSelectedMonth(new Date().getMonth())
-      setSelectedYear(new Date().getFullYear())
+      const fallback = getEffectiveBusinessDateFilter()
+      setSelectedPreset('mtd')
+      setSelectedYear(null)
       setStartDate('')
       setEndDate('')
-      setAppliedDateFilter(null)
+      setComparisonStartDate('')
+      setComparisonEndDate('')
+      setDatePanelMode('current')
+      setAppliedDateFilter(fallback)
+      router.replace(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), null, selectedDealerCode), { scroll: false })
       setShowDateControls(false)
       setTimeout(() => {
         setIsApplyingFilter(false)
       }, 300)
     }, 100)
+  }, [activeTab, initialReportName, router, selectedDealerCode])
+
+  const handleDealerChange = useCallback((dealerCode: string | null) => {
+    const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
+    const nextDealerCode = normalizeKiaDealerCode(dealerCode) || (activeReport === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE)
+    setSelectedDealerCode(nextDealerCode)
+    router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), appliedDateFilter, nextDealerCode), { scroll: false })
+  }, [activeTab, appliedDateFilter, initialReportName, router])
+
+  const resolveCurrentRange = useCallback(() => {
+    if (startDate && endDate) return { startDate, endDate }
+    if (appliedDateFilter?.startDate && appliedDateFilter.endDate) {
+      return { startDate: appliedDateFilter.startDate, endDate: appliedDateFilter.endDate }
+    }
+    const fallback = buildBusinessDateFilter('mtd')
+    return { startDate: fallback.startDate, endDate: fallback.endDate }
+  }, [appliedDateFilter, endDate, startDate])
+
+  const shiftDateByYears = useCallback((value: string, years: number) => {
+    const parsed = parseBusinessDate(value)
+    if (!parsed) return ''
+    const shifted = new Date(parsed)
+    shifted.setFullYear(shifted.getFullYear() + years)
+    return getInputDate(shifted)
   }, [])
+
+  const kiaYearOptions = useMemo(() => getBusinessAvailableYears(KIA_DATA_START_YEAR), [])
+  const selectedComparisonYear = parseBusinessDate(comparisonStartDate)?.getFullYear() || null
+  const activeYearOption = datePanelMode === 'compare' ? selectedComparisonYear : selectedYear
+
+  const selectKiaYear = useCallback((year: number) => {
+    const range = getBusinessYearRange(year)
+    if (datePanelMode === 'compare') {
+      setComparisonStartDate(range.startDate)
+      setComparisonEndDate(range.endDate)
+      return
+    }
+
+    setSelectedYear(year)
+    setSelectedPreset('custom')
+    setStartDate(range.startDate)
+    setEndDate(range.endDate)
+  }, [datePanelMode])
+
+  const openDatePanel = useCallback((mode: 'current' | 'compare') => {
+    const currentRange = resolveCurrentRange()
+    if (!startDate || !endDate) {
+      setStartDate(currentRange.startDate)
+      setEndDate(currentRange.endDate)
+    }
+    if (mode === 'compare' && (!comparisonStartDate || !comparisonEndDate)) {
+      if (selectedYear && selectedYear <= KIA_DATA_START_YEAR) {
+        setComparisonStartDate('')
+        setComparisonEndDate('')
+        setDatePanelMode(mode)
+        setShowDateControls((visible) => (visible && datePanelMode === mode ? false : true))
+        return
+      }
+      setComparisonStartDate(shiftDateByYears(currentRange.startDate, -1))
+      setComparisonEndDate(shiftDateByYears(currentRange.endDate, -1))
+    }
+    setDatePanelMode(mode)
+    setShowDateControls((visible) => (visible && datePanelMode === mode ? false : true))
+  }, [comparisonEndDate, comparisonStartDate, datePanelMode, endDate, resolveCurrentRange, selectedYear, shiftDateByYears, startDate])
+
+  const generateAiSummary = useCallback(async (report: string) => {
+    setShowAiSummary(true)
+    setIsAiSummaryLoading(true)
+    setAiSummaryError('')
+
+    try {
+      const response = await fetch('/api/brands/kia/business-excellence/ai-summary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          report,
+          dateFilter: appliedDateFilter,
+          dealerCode: selectedDealerCode,
+        }),
+      })
+      logApiTimings(response, 'business-excellence-ai-summary')
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate AI summary')
+      }
+
+      setAiSummary(data as BusinessAiSummary)
+    } catch (error) {
+      console.error('Failed to generate Business Excellence AI summary:', error)
+      setAiSummaryError(error instanceof Error ? error.message : 'Failed to generate AI summary')
+    } finally {
+      setIsAiSummaryLoading(false)
+    }
+  }, [appliedDateFilter, selectedDealerCode])
+
+  const downloadServiceDashboard = useCallback(async () => {
+    setIsServiceDashboardDownloading(true)
+    try {
+      const effectiveFilter = getEffectiveBusinessDateFilter(appliedDateFilter)
+      const params = new URLSearchParams({
+        endDate: effectiveFilter.endDate,
+      })
+      appendKiaDealerCodeParam(params, selectedDealerCode)
+
+      const response = await fetch(`/api/brands/kia/business-excellence/service-dashboard-export?${params.toString()}`, {
+        cache: 'no-store',
+      })
+      logApiTimings(response, 'kia-service-dashboard-export')
+
+      if (!response.ok) {
+        let message = 'Failed to download Service Dashboard'
+        try {
+          const payload = await response.json()
+          message = payload.error || message
+        } catch {
+          // Binary route may not return JSON when an upstream error interrupts the response.
+        }
+        throw new Error(message)
+      }
+
+      const disposition = response.headers.get('Content-Disposition') || ''
+      const fileNameMatch = disposition.match(/filename\*=UTF-8''([^;]+)|filename="([^"]+)"/)
+      const fileName = fileNameMatch
+        ? decodeURIComponent(fileNameMatch[1] || fileNameMatch[2])
+        : `AM_KIA_Service_Dashboard_${effectiveFilter.endDate}.xlsx`
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = fileName
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Failed to download KIA Service Dashboard:', error)
+      alert(error instanceof Error ? error.message : 'Failed to download Service Dashboard')
+    } finally {
+      setIsServiceDashboardDownloading(false)
+    }
+  }, [appliedDateFilter, selectedDealerCode])
 
   const fetchSheetRows = useCallback(async (sheet: SavedSheetMetadata, page: number = 1) => {
     const sheetId = sheet.id
@@ -1076,11 +1770,17 @@ export default function KiaBusinessExcellencePage() {
         page: String(page),
         limit: String(itemsPerPage),
       })
+      const effectiveFilter = getEffectiveBusinessDateFilter(appliedDateFilter)
+      params.set('startDate', effectiveFilter.startDate)
+      params.set('endDate', effectiveFilter.endDate)
+      appendBusinessComparisonParams(params, effectiveFilter)
+      appendKiaDealerCodeParam(params, selectedDealerCode)
       const queryString = params.toString()
       const fullData = await queryClient.fetchQuery({
         queryKey: ['business-excellence', 'sheet-rows', queryString],
         queryFn: async () => {
           const response = await fetch(`/api/brands/kia/business-excellence?${queryString}`)
+          logApiTimings(response, 'business-excellence-sheet-rows')
           if (!response.ok) throw new Error('Failed to fetch sheet rows')
           return await response.json()
         },
@@ -1098,46 +1798,27 @@ export default function KiaBusinessExcellencePage() {
     } finally {
       setFetchingRows(null)
     }
-  }, [queryClient]) // Removed loadedRows dependency
-
-  const fetchSavedMetadata = useCallback(async () => {
-    try {
-      setLoading(true)
-      const queryKey = ['business-excellence', 'metadata', 'kia']
-      const data = await queryClient.fetchQuery({
-        queryKey,
-        queryFn: async () => {
-          const response = await fetch('/api/brands/kia/business-excellence?brand=kia')
-          if (!response.ok) throw new Error('Failed to fetch Business Excellence metadata')
-          return await response.json()
-        },
-        staleTime: DASHBOARD_STALE_TIME_MS,
-      })
-        setSavedSheets(data)
-        if (data.length > 0) {
-          const selectedSheet = activeTab
-            ? data.find((sheet: SavedSheetMetadata) => sheet.sheetName === activeTab) || getDefaultBusinessExcellenceSheet(data)
-            : getDefaultBusinessExcellenceSheet(data)
-          if (selectedSheet) {
-            setFetchingRows(selectedSheet.id)
-          }
-          setActiveTab(selectedSheet?.sheetName || null)
-        }
-    } catch (error) {
-      console.error('Failed to fetch saved metadata:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [activeTab, queryClient])
+  }, [appliedDateFilter, queryClient, selectedDealerCode]) // Removed loadedRows dependency
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    fetchSavedMetadata()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    setActiveTab(initialReportName)
+    setCurrentPage(1)
+    setShowHealthPanel(false)
+  }, [initialReportName])
+
+  useEffect(() => {
+    setShowAiSummary(false)
+    setAiSummary(null)
+    setAiSummaryError('')
+  }, [activeTab, appliedDateFilter, selectedDealerCode])
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
+      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === KIA_COMPLAINTS_REPORT || activeTab === SERVICE_DASHBOARD_REPORT) {
+        setFetchingRows(null)
+        return
+      }
       const sheet = savedSheets.find(s => s.sheetName === activeTab)
       if (sheet) {
         fetchSheetRows(sheet, currentPage)
@@ -1147,24 +1828,26 @@ export default function KiaBusinessExcellencePage() {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleTabChange = (sheetName: string) => {
-    setActiveTab(sheetName)
-    setCurrentPage(1) // Reset pagination
-    const sheet = savedSheets.find(s => s.sheetName === sheetName)
-    if (sheet && !loadedRows[sheet.id]) {
-      setFetchingRows(sheet.id)
-    }
+    const nextDealerCode = sheetName === EXECUTIVE_DASHBOARD_REPORT
+      ? normalizeKiaDealerCode(searchParams.get('dealer_code'))
+      : normalizeKiaDealerCode(selectedDealerCode) || DEFAULT_KIA_DEALER_CODE
+    setSelectedDealerCode(nextDealerCode)
+    router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(sheetName), appliedDateFilter, nextDealerCode))
   }
+
+  const reportOptions = useMemo(() => getBusinessExcellenceReportOptions(savedSheets, currentUserRole), [currentUserRole, savedSheets])
 
   return (
     <MainLayout title="Business Excellence" subtitle="AM Kia Performance Analytics">
-      <div className="space-y-4 w-full animate-in fade-in duration-500">
-        {loading && savedSheets.length === 0 && <BusinessExcellencePageSkeleton />}
+      <div className="business-excellence-boundaries">
+        <div className="space-y-4 w-full animate-in fade-in duration-500">
+          {loading && savedSheets.length === 0 && <BusinessExcellencePageSkeleton />}
 
-        {/* Performance Analytics Section - Show for selected sheet */}
-        {savedSheets.length > 0 && activeTab && (
-          <div className="space-y-4">
-            {(() => {
-              const selectedSheet = savedSheets.find(s => s.sheetName === activeTab)
+          {/* Performance Analytics Section - Show for selected sheet */}
+          {reportOptions.length > 0 && activeTab && (
+            <div className="space-y-4">
+              {(() => {
+              const selectedSheet = reportOptions.find(s => s.sheetName === activeTab)
 
               if (!selectedSheet) {
                 return (
@@ -1177,7 +1860,21 @@ export default function KiaBusinessExcellencePage() {
               }
 
               // Check if this is RO Billing sheet to show analytics
+              const isOverviewSheet = selectedSheet.sheetName === BUSINESS_EXCELLENCE_OVERVIEW_REPORT
               const isROBillingSheet = selectedSheet.sheetName.toLowerCase().includes('ro billing')
+              const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
+              const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
+              const isKiaComplaintsSheet = selectedSheet.sheetName === KIA_COMPLAINTS_REPORT
+              const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
+              const isServiceDashboardSheet = selectedSheet.sheetName === SERVICE_DASHBOARD_REPORT
+              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet
+              const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
+              const branchOptions = isExecutiveDashboardSheet
+                ? [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
+                : KIA_BRANCH_DEALERS
+              const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
+                ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
+                : ''
 
               return (
                 <div className="animate-in slide-in-from-bottom-4 duration-500">
@@ -1191,12 +1888,41 @@ export default function KiaBusinessExcellencePage() {
                           <div className="min-w-0">
                             <CardTitle className="truncate text-lg font-black tracking-tight text-slate-900">{selectedSheet.sheetName}</CardTitle>
                           </div>
-                          {isROBillingSheet && (
+                          {usesDateControls && (
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-black text-slate-700">
                                 {activeDateLabel}
                               </span>
-                              <span className="rounded-full bg-teal-50 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest text-teal-700">Bill Date</span>
+                              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
+                                Updated: {freshnessQuery.isLoading && !freshnessQuery.data ? 'Checking...' : freshnessQuery.isError ? 'Not available' : formatBusinessFreshness(freshnessQuery.data?.sourceUpdatedAt)}
+                              </span>
+                              <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" aria-label="Business Excellence branch filter">
+                                {branchOptions.map((branch) => {
+                                  const isActive = branch.dealerCode
+                                    ? selectedDealerCode === branch.dealerCode
+                                    : !normalizeKiaDealerCode(selectedDealerCode)
+                                  return (
+                                    <button
+                                      key={branch.dealerCode || 'all-locations'}
+                                      type="button"
+                                      onClick={() => handleDealerChange(branch.dealerCode)}
+                                      className={cn(
+                                        'rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest transition',
+                                        isActive
+                                          ? 'bg-[var(--dashboard-action-bg)] text-white shadow-sm'
+                                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                                      )}
+                                    >
+                                      {branch.label}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                              {activeComparisonText && (
+                                <span className="rounded-full border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] px-3 py-1.5 text-[10px] font-black text-[var(--dashboard-action-bg)]">
+                                  {activeComparisonText}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1204,11 +1930,10 @@ export default function KiaBusinessExcellencePage() {
                         <div className="flex flex-wrap items-center gap-2">
                           {/* Sheet Selector */}
                           <div className="flex items-center gap-2">
-                            <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest">Sheet:</p>
                             <Select
                               value={selectedSheet.sheetName}
                               onValueChange={(value) => {
-                                console.log('🔄 Sheet changed to:', value)
+                                console.log('Sheet changed to:', value)
                                 handleTabChange(value)
                               }}
                             >
@@ -1216,7 +1941,7 @@ export default function KiaBusinessExcellencePage() {
                                 <SelectValue placeholder="Choose a sheet" />
                               </SelectTrigger>
                               <SelectContent className="rounded-xl border-slate-100 bg-white shadow-2xl z-[100]">
-                                {savedSheets.map((sheet) => (
+                                {reportOptions.map((sheet) => (
                                   <SelectItem key={sheet.id} value={sheet.sheetName} className="font-bold rounded-lg m-1 text-xs">
                                     {sheet.sheetName}
                                   </SelectItem>
@@ -1225,287 +1950,411 @@ export default function KiaBusinessExcellencePage() {
                             </Select>
                           </div>
 
-                          {isROBillingSheet && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={isAiSummaryLoading || isApplyingFilter}
+                            onClick={() => {
+                              if (aiSummary?.report === selectedSheet.sheetName && !aiSummaryError) {
+                                setShowAiSummary(true)
+                                return
+                              }
+                              void generateAiSummary(selectedSheet.sheetName)
+                            }}
+                            className="h-9 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-black text-violet-700 shadow-sm hover:border-violet-300 hover:bg-violet-100 disabled:opacity-70"
+                          >
+                            {isAiSummaryLoading ? (
+                              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="mr-2 h-3.5 w-3.5" />
+                            )}
+                            {isAiSummaryLoading ? 'Summarising' : 'AI Summary'}
+                          </Button>
+
+                          {usesDateControls && !isOverviewSheet && !isServiceDashboardSheet && (
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => setShowDateControls((value) => !value)}
+                              disabled={isApplyingFilter}
+                              onClick={() => setShowHealthPanel((visible) => !visible)}
+                              className={cn(
+                                'h-9 rounded-xl px-3 text-xs font-black shadow-sm',
+                                showHealthPanel ? 'app-primary-action' : 'app-outline-action'
+                              )}
+                            >
+                              <Activity className="mr-2 h-3.5 w-3.5" />
+                              {showHealthPanel ? 'Hide Health' : 'Show Health'}
+                            </Button>
+                          )}
+
+                          {usesDateControls && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openDatePanel('current')}
                               className="h-9 rounded-xl border border-teal-200/80 bg-white/65 px-3 text-xs font-black text-slate-700 shadow-sm hover:border-teal-300 hover:bg-white/85"
                             >
                               <SlidersHorizontal className="mr-2 h-3.5 w-3.5" />
-                              {showDateControls ? 'Hide Date' : 'Change Date'}
+                              {showDateControls && datePanelMode === 'current' ? 'Hide Date' : 'Select Date'}
+                            </Button>
+                          )}
+                          {supportsComparison && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openDatePanel('compare')}
+                              className={cn(
+                                'h-9 rounded-xl px-3 text-xs font-black shadow-sm',
+                                (showDateControls && datePanelMode === 'compare') || activeComparisonText ? 'app-primary-action' : 'app-outline-action'
+                              )}
+                            >
+                              <CalendarDays className="mr-2 h-3.5 w-3.5" />
+                              {showDateControls && datePanelMode === 'compare' ? 'Hide Compare' : 'Compare Dates'}
+                            </Button>
+                          )}
+                          {usesDateControls && appliedDateFilter && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={isApplyingFilter}
+                              onClick={clearDateFilter}
+                              className="app-outline-action h-9 rounded-xl px-3 text-xs font-black shadow-sm"
+                            >
+                              <X className="mr-2 h-3.5 w-3.5" />
+                              Reset Dates
                             </Button>
                           )}
                         </div>
                       </div>
                     </CardHeader>
+                    <Dialog open={showAiSummary} onOpenChange={setShowAiSummary}>
+                      <DialogContent className="max-h-[88vh] overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[980px]">
+                        <DialogHeader className="border-b border-white/10 bg-[var(--dashboard-action-bg)] px-6 py-5 text-white">
+                          <div className="flex items-start gap-3 pr-10">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/10">
+                              {isAiSummaryLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/70">CEO AI Brief</p>
+                              <DialogTitle className="mt-1 text-2xl font-black tracking-tight text-white">
+                                {aiSummary?.structuredSummary?.title || `${selectedSheet.sheetName} Summary`}
+                              </DialogTitle>
+                              <DialogDescription className="mt-2 text-sm font-semibold text-white/75">
+                                {selectedSheet.sheetName} - {activeDateLabel}
+                              </DialogDescription>
+                            </div>
+                          </div>
+                        </DialogHeader>
+
+                        <div className="max-h-[calc(88vh-116px)] overflow-y-auto bg-slate-50 p-5">
+                          {isAiSummaryLoading ? (
+                            <div className="space-y-4">
+                              <div className="h-28 animate-pulse rounded-3xl bg-white" />
+                              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                {[1, 2, 3, 4].map((item) => (
+                                  <div key={item} className="h-28 animate-pulse rounded-2xl bg-white" />
+                                ))}
+                              </div>
+                              <div className="grid gap-3 lg:grid-cols-3">
+                                {[1, 2, 3].map((item) => (
+                                  <div key={item} className="h-52 animate-pulse rounded-2xl bg-white" />
+                                ))}
+                              </div>
+                            </div>
+                          ) : aiSummaryError ? (
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                              {aiSummaryError}
+                            </div>
+                          ) : aiSummary?.structuredSummary ? (
+                            <div className="space-y-4">
+                              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Executive Read</p>
+                                <p className="mt-3 text-base font-semibold leading-7 text-slate-800">
+                                  {cleanAiText(aiSummary.structuredSummary.executiveRead)}
+                                </p>
+                              </div>
+
+                              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                {aiSummary.structuredSummary.metricSignals.map((signal, index) => (
+                                  <div key={`${signal.label}-${index}`} className={cn('rounded-2xl border p-4 shadow-sm', aiToneClass(signal.tone))}>
+                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{signal.label}</p>
+                                    <p className="mt-2 text-2xl font-black tracking-tight">{signal.value}</p>
+                                    <p className="mt-2 text-xs font-semibold leading-5 opacity-80">{cleanAiText(signal.context)}</p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="grid gap-4 xl:grid-cols-3">
+                                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                                  <div className="mb-4 flex items-center gap-2">
+                                    <BarChart3 className="h-4 w-4 text-[var(--dashboard-action-bg)]" />
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Good News</p>
+                                  </div>
+                                  <div className="space-y-3">
+                                    {aiSummary.structuredSummary.keyFindings.map((finding, index) => (
+                                      <div key={`${finding}-${index}`} className="flex gap-3 text-sm font-semibold leading-5 text-slate-700">
+                                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[var(--dashboard-action-bg)]" />
+                                        <span>{cleanAiText(finding)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-3xl border border-rose-200 bg-white p-5 shadow-sm">
+                                  <div className="mb-4 flex items-center gap-2">
+                                    <ShieldAlert className="h-4 w-4 text-rose-700" />
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Bad News</p>
+                                  </div>
+                                  <div className="space-y-3">
+                                    {aiSummary.structuredSummary.risks.map((risk, index) => (
+                                      <div key={`${risk}-${index}`} className="flex gap-3 text-sm font-semibold leading-5 text-rose-900">
+                                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-rose-500" />
+                                        <span>{cleanAiText(risk)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-3xl border border-amber-200 bg-white p-5 shadow-sm">
+                                  <div className="mb-4 flex items-center gap-2">
+                                    <Wrench className="h-4 w-4 text-amber-700" />
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Immediate Actions</p>
+                                  </div>
+                                  <div className="space-y-3">
+                                    {aiSummary.structuredSummary.actions.map((action, index) => (
+                                      <div key={`${action.action}-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                                        <div className="mb-2 flex items-center justify-between gap-2">
+                                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{action.owner}</span>
+                                          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-black', priorityClass(action.priority))}>
+                                            {action.priority || 'Medium'}
+                                          </span>
+                                        </div>
+                                        <p className="text-sm font-semibold leading-5 text-slate-800">{cleanAiText(action.action)}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-[10px] font-black uppercase tracking-widest text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+                                <span>Generated with {aiSummary.model}</span>
+                                <span>{new Date(aiSummary.generatedAt).toLocaleString('en-IN')}</span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={isAiSummaryLoading}
+                                  onClick={() => void generateAiSummary(selectedSheet.sheetName)}
+                                  className="app-outline-action h-8 rounded-xl px-3 text-[11px] font-black"
+                                >
+                                  <RefreshCw className="mr-2 h-3 w-3" />
+                                  Regenerate
+                                </Button>
+                              </div>
+                            </div>
+                          ) : aiSummary ? (
+                            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                              <div className="whitespace-pre-line text-sm font-semibold leading-6 text-slate-700">
+                                {cleanAiText(aiSummary.summary)}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center">
+                              <Sparkles className="mx-auto h-8 w-8 text-[var(--dashboard-action-bg)]" />
+                              <p className="mt-3 text-sm font-semibold text-slate-500">Generating a clean CEO-ready readout.</p>
+                            </div>
+                          )}
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                     <CardContent className="p-0">
                       <>
                           {showDateControls && (
-                            <div className="border-b border-slate-100 bg-slate-50/70 p-3">
-                              <div className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm">
-                              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                                <div className="flex flex-wrap items-center gap-3">
-                                  <div className="rounded-2xl border border-teal-100/80 bg-white/35 p-1 shadow-sm">
-                                    <button
-                                      type="button"
-                                      onClick={() => setDateFilterMode('month')}
-                                      className={cn(
-                                        "rounded-xl border px-4 py-2 text-[11px] font-black transition",
-                                        dateFilterMode === 'month'
-                                          ? "border-teal-200 bg-white/80 text-slate-950 shadow-sm"
-                                          : "border-transparent text-slate-600 hover:border-teal-100 hover:bg-white/55 hover:text-slate-800"
+                            <div className="solid-calendar-surface border-b border-slate-100 bg-white p-3">
+                              <div className={cn(
+                                'solid-calendar-surface rounded-[1.25rem] border border-[var(--dashboard-primary-border)] bg-white p-3 shadow-sm',
+                                datePanelMode === 'current' ? 'max-w-[640px]' : 'max-w-[860px]'
+                              )}>
+                                <div className="mb-3 rounded-2xl border border-slate-200 bg-white p-3">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                    <div className="grid flex-1 gap-3 sm:grid-cols-2">
+                                      <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                          {datePanelMode === 'compare' ? 'CY Range' : 'Selected Range'}
+                                        </p>
+                                        <p className="mt-1 text-sm font-black text-slate-950">{draftDateLabel}</p>
+                                      </div>
+                                      {datePanelMode === 'compare' && (
+                                        <div>
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">LY Range</p>
+                                          <p className="mt-1 text-sm font-black text-slate-950">{draftComparisonLabel}</p>
+                                        </div>
                                       )}
-                                    >
-                                      Month
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setDateFilterMode('range')}
-                                      className={cn(
-                                        "rounded-xl border px-4 py-2 text-[11px] font-black transition",
-                                        dateFilterMode === 'range'
-                                          ? "border-teal-200 bg-white/80 text-slate-950 shadow-sm"
-                                          : "border-transparent text-slate-600 hover:border-teal-100 hover:bg-white/55 hover:text-slate-800"
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                                      <Button
+                                        size="sm"
+                                        className="app-primary-action calendar-apply-action h-10 rounded-2xl px-5 text-xs font-black"
+                                        disabled={isApplyingFilter}
+                                        onClick={applyDateFilter}
+                                      >
+                                        {isApplyingFilter ? (
+                                          <>
+                                            <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                                            Applying
+                                          </>
+                                        ) : (
+                                          'Apply'
+                                        )}
+                                      </Button>
+                                      {appliedDateFilter && (
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          disabled={isApplyingFilter}
+                                          onClick={clearDateFilter}
+                                          className="app-outline-action h-10 rounded-2xl px-4 text-xs font-black"
+                                        >
+                                          Clear
+                                        </Button>
                                       )}
-                                    >
-                                      Date Range
-                                    </button>
+                                    </div>
                                   </div>
-
-                                  {dateFilterMode === 'month' ? (
-                                    <>
-                                      <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(parseInt(v))}>
-                                        <SelectTrigger className="h-10 w-[150px] rounded-2xl border border-teal-200/80 bg-white/65 text-xs font-black shadow-sm">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent className="z-[100] rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
-                                          {BUSINESS_MONTHS.map((month, idx) => (
-                                            <SelectItem key={idx} value={idx.toString()} className="text-xs">{month}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-
-                                      <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
-                                        <SelectTrigger className="h-10 w-[110px] rounded-2xl border border-teal-200/80 bg-white/65 text-xs font-black shadow-sm">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent className="z-[100] rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
-                                          {[2024, 2025, 2026, 2027].map((year) => (
-                                            <SelectItem key={year} value={year.toString()} className="text-xs">{year}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <label className="flex items-center gap-2 text-xs font-black text-slate-500">
-                                        From
-                                        <input
-                                          type="date"
-                                          value={startDate}
-                                          onChange={(e) => setStartDate(e.target.value)}
-                                          className="h-10 rounded-2xl border border-teal-200/80 bg-white/65 px-3 text-xs font-black text-slate-800 shadow-sm"
-                                        />
-                                      </label>
-                                      <label className="flex items-center gap-2 text-xs font-black text-slate-500">
-                                        To
-                                        <input
-                                          type="date"
-                                          value={endDate}
-                                          onChange={(e) => setEndDate(e.target.value)}
-                                          className="h-10 rounded-2xl border border-teal-200/80 bg-white/65 px-3 text-xs font-black text-slate-800 shadow-sm"
-                                        />
-                                      </label>
-                                    </>
-                                  )}
                                 </div>
-
-                                <div className="flex flex-wrap items-center gap-3">
-                                  <span className="rounded-full bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                                    Preview: {draftDateLabel}
-                                  </span>
-                                  <Button
-                                    size="sm"
-                                    className="h-10 rounded-2xl border border-teal-800/80 bg-teal-700 px-5 text-xs font-black text-white shadow-lg shadow-teal-100 hover:bg-teal-800"
-                                    disabled={isApplyingFilter}
-                                    onClick={applyDateFilter}
-                                  >
-                                    {isApplyingFilter ? (
-                                      <>
-                                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                                        Applying
-                                      </>
-                                    ) : (
-                                      'Apply'
-                                    )}
-                                  </Button>
-                                  {appliedDateFilter && (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      disabled={isApplyingFilter}
-                                      onClick={clearDateFilter}
-                                      className="h-10 rounded-2xl border border-slate-200/80 bg-white/50 px-4 text-xs font-black text-slate-600 hover:bg-white/80"
-                                    >
-                                      Clear
-                                    </Button>
-                                  )}
+                                <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                                    <div>
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        KIA Year
+                                      </p>
+                                      <p className="mt-1 text-xs font-bold text-slate-600">
+                                        {KIA_DATA_START_YEAR} to {kiaYearOptions[kiaYearOptions.length - 1]}
+                                      </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                                      {kiaYearOptions.map((year) => (
+                                        <button
+                                          key={year}
+                                          type="button"
+                                          onClick={() => selectKiaYear(year)}
+                                          className={cn(
+                                            'h-9 min-w-[4rem] rounded-xl border px-3 text-[11px] font-black transition-all',
+                                            activeYearOption === year
+                                              ? 'border-[var(--dashboard-action-bg)] bg-[var(--dashboard-action-bg)] text-white shadow-sm'
+                                              : 'border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:text-slate-950'
+                                          )}
+                                        >
+                                          {year}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
+                                {datePanelMode === 'current' ? (
+                                  <AnalyticsDateRangePicker
+                                    key={`kia-current-${startDate}-${endDate}`}
+                                    title="Current Date Range"
+                                    clearLabel="Clear current range"
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    onChange={(nextStart, nextEnd) => {
+                                      setSelectedYear(null)
+                                      setSelectedPreset('custom')
+                                      setStartDate(nextStart)
+                                      setEndDate(nextEnd)
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="grid gap-3 md:grid-cols-2">
+                                    <AnalyticsDateRangePicker
+                                      key={`kia-cy-${startDate}-${endDate}`}
+                                      title="CY Date Range"
+                                      clearLabel="Clear CY range"
+                                      startDate={startDate}
+                                      endDate={endDate}
+                                      onChange={(nextStart, nextEnd) => {
+                                        setSelectedYear(null)
+                                        setSelectedPreset('custom')
+                                        setStartDate(nextStart)
+                                        setEndDate(nextEnd)
+                                      }}
+                                    />
+                                    <AnalyticsDateRangePicker
+                                      key={`kia-ly-${comparisonStartDate}-${comparisonEndDate}`}
+                                      title="LY Date Range"
+                                      clearLabel="Clear LY range"
+                                      startDate={comparisonStartDate}
+                                      endDate={comparisonEndDate}
+                                      onChange={(nextStart, nextEnd) => {
+                                        setComparisonStartDate(nextStart)
+                                        setComparisonEndDate(nextEnd)
+                                      }}
+                                    />
+                                  </div>
+                                )}
                               </div>
                             </div>
                           )}
-                        {false && (
-                        <div className="p-6 bg-slate-50/50 border-b border-slate-100">
-                          <div className="flex items-center gap-4 flex-wrap">
-                            {/* Filter Mode Toggle */}
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant={dateFilterMode === 'month' ? 'default' : 'outline'}
-                                onClick={() => setDateFilterMode('month')}
-                                className="rounded-lg h-8 text-xs font-bold"
-                              >
-                                Month
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant={dateFilterMode === 'range' ? 'default' : 'outline'}
-                                onClick={() => setDateFilterMode('range')}
-                                className="rounded-lg h-8 text-xs font-bold"
-                              >
-                                Date Range
-                              </Button>
-                            </div>
-
-                            {/* Month/Year Selectors */}
-                            {dateFilterMode === 'month' && (
-                              <>
-                                <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(parseInt(v))}>
-                                  <SelectTrigger className="w-[140px] h-8 rounded-lg text-xs font-bold">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="z-[100] rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
-                                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((month, idx) => (
-                                      <SelectItem key={idx} value={idx.toString()} className="text-xs">{month}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-
-                                <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
-                                  <SelectTrigger className="w-[100px] h-8 rounded-lg text-xs font-bold">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="z-[100] rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl">
-                                    {[2024, 2025, 2026, 2027].map((year) => (
-                                      <SelectItem key={year} value={year.toString()} className="text-xs">{year}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </>
-                            )}
-
-                            {/* Date Range Inputs */}
-                            {dateFilterMode === 'range' && (
-                              <>
-                                <div className="flex items-center gap-2">
-                                  <label className="text-xs font-bold text-slate-600">From:</label>
-                                  <input
-                                    type="date"
-                                    value={startDate}
-                                    onChange={(e) => setStartDate(e.target.value)}
-                                    className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-bold"
-                                  />
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <label className="text-xs font-bold text-slate-600">To:</label>
-                                  <input
-                                    type="date"
-                                    value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
-                                    className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-bold"
-                                  />
-                                </div>
-                              </>
-                            )}
-
-                            {/* Apply Filter Button */}
-                            <Button
-                              size="sm"
-                              className="rounded-lg h-8 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs px-4"
-                              disabled={isApplyingFilter}
-                              onClick={() => {
-                                const filter = {
-                                  mode: dateFilterMode,
-                                  month: selectedMonth,
-                                  year: selectedYear,
-                                  startDate,
-                                  endDate
-                                }
-                                setIsApplyingFilter(true)
-                                console.log('📅 Filter Applied:', filter)
-
-                                // Use setTimeout to show loading state before heavy computation
-                                setTimeout(() => {
-                                  setAppliedDateFilter(filter)
-                                  // Keep loading state for a moment to ensure user sees the feedback
-                                  setTimeout(() => {
-                                    setIsApplyingFilter(false)
-                                  }, 300)
-                                }, 100)
-                              }}
-                            >
-                              {isApplyingFilter ? (
-                                <>
-                                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                                  Applying...
-                                </>
-                              ) : (
-                                'Apply Filter'
-                              )}
-                            </Button>
-
-                            {/* Clear Filter Button */}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="rounded-lg h-8 text-xs font-bold"
-                              disabled={isApplyingFilter}
-                              onClick={() => {
-                                setIsApplyingFilter(true)
-                                console.log('🔄 Filter Cleared')
-
-                                setTimeout(() => {
-                                  setSelectedMonth(new Date().getMonth())
-                                  setSelectedYear(new Date().getFullYear())
-                                  setStartDate('')
-                                  setEndDate('')
-                                  setAppliedDateFilter(null)
-                                  setTimeout(() => {
-                                    setIsApplyingFilter(false)
-                                  }, 300)
-                                }, 100)
-                              }}
-                            >
-                              {isApplyingFilter ? (
-                                <>
-                                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                                  Clearing...
-                                </>
-                              ) : (
-                                'Clear'
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-
+                        {/* Executive health panel is opt-in from the report header. */}
+                        {showHealthPanel && usesDateControls && !isOverviewSheet && !isServiceDashboardSheet && !isApplyingFilter && (
+                          <BusinessExecutiveDecisionLayer
+                            dateFilter={appliedDateFilter}
+                            reportName={selectedSheet.sheetName}
+                            dealerCode={selectedDealerCode}
+                          />
                         )}
-
-                        {/* Performance Analytics Section - Only for RO Billing */}
-                        {isROBillingSheet ? (
+                        {isExecutiveDashboardSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <BusinessExecutiveDashboard
+                              dateFilter={appliedDateFilter}
+                              dealerCode={selectedDealerCode}
+                              onDealerChange={handleDealerChange}
+                            />
+                          )
+                        ) : isOverviewSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <BusinessExcellenceOverview dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isWorkshopPerformanceSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <WorkshopPerformanceSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isOpenRoSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <OpenRoSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isKiaComplaintsSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <KiaComplaintsSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isServiceDashboardSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <KiaServiceDashboardPreviewSection
+                              dateFilter={appliedDateFilter}
+                              dealerCode={selectedDealerCode}
+                              onDownload={() => void downloadServiceDashboard()}
+                              downloading={isServiceDashboardDownloading}
+                            />
+                          )
+                        ) : isROBillingSheet ? (
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
                           ) : (
@@ -1513,11 +2362,11 @@ export default function KiaBusinessExcellencePage() {
                               <ROBillingAnalytics
                                 sheetId={selectedSheet.id}
                                 sheetName={selectedSheet.sheetName}
-                                isAdmin={isAdmin}
                                 activeSheet={selectedSheet.sheetName}
                                 prefetchedData={null}
                                 isPrefetching={false}
                                 dateFilter={appliedDateFilter}
+                                dealerCode={selectedDealerCode}
                               />
                             </>
                           )
@@ -1536,9 +2385,10 @@ export default function KiaBusinessExcellencePage() {
 
                 </div>
               )
-            })()}
-          </div>
-        )}
+              })()}
+            </div>
+          )}
+        </div>
       </div>
     </MainLayout>
   )
@@ -1546,7 +2396,7 @@ export default function KiaBusinessExcellencePage() {
 
 // Wrapper component that uses pre-fetched data or fetches if not available
 type ROAnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
-type ROAnalysisView = 'table' | 'trend' | 'fy' | 'analytics' | 'revenue' | 'leaderboard' | 'intelligence'
+type ROAnalysisView = 'table' | 'trend' | 'calendar' | 'fy' | 'analytics' | 'revenue' | 'leaderboard' | 'intelligence'
 type DailyProgressMetric = 'all' | 'revenue' | 'labour' | 'parts' | 'load'
 type PeriodKey = 'td' | 'mtd' | 'qtd' | 'ytd'
 
@@ -1571,6 +2421,28 @@ type ROAnalysisRow = {
   depth: number
   metrics: Record<'td' | 'mtd' | 'qtd' | 'ytd', ROAnalysisMetric>
   children?: ROAnalysisRow[]
+}
+
+type CancelledBillingRow = {
+  billKey: string
+  billNo: string
+  roNo: string
+  billDate: string | null
+  workType: string
+  serviceType: string
+  advisor: string
+  billStatus: string
+  labour: number
+  parts: number
+  total: number
+}
+
+type CancelledBillingSummary = {
+  count: number
+  labour: number
+  parts: number
+  total: number
+  rows: CancelledBillingRow[]
 }
 
 type ROAnalysisResponse = {
@@ -1599,6 +2471,7 @@ type ROAnalysisResponse = {
   distribution: Array<{ name: string; value: number }>
   advisorLeaderboard?: SalesLeaderboardRow[]
   byMetric?: Partial<Record<ROAnalysisType, ROAnalysisResponse>>
+  cancelledSummary?: CancelledBillingSummary
   filterOptions: Record<string, string[]>
   rowCounts: { totalRows: number; rowsWithBillDate: number; filteredRows: number }
 }
@@ -1610,16 +2483,10 @@ function getInputDate(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-function getDefaultRODateRange(dateFilter: {
-  mode: 'month' | 'range'
-  month: number
-  year: number
-  startDate: string
-  endDate: string
-} | null) {
+function getDefaultRODateRange(dateFilter: BusinessDateFilter) {
   const today = new Date()
 
-  if (dateFilter?.mode === 'range' && dateFilter.startDate && dateFilter.endDate) {
+  if (dateFilter?.startDate && dateFilter.endDate) {
     return { startDate: dateFilter.startDate, endDate: dateFilter.endDate }
   }
 
@@ -1641,14 +2508,963 @@ function getDefaultRODateRange(dateFilter: {
   }
 }
 
-function getROTrendDateRange(dateFilter: {
-  mode: 'month' | 'range'
-  month: number
-  year: number
-  startDate: string
-  endDate: string
-} | null) {
-  if (dateFilter?.mode === 'range' && dateFilter.startDate && dateFilter.endDate) {
+function getSelectedBusinessDateRange(dateFilter?: BusinessDateFilter | null) {
+  const today = new Date()
+  const start = dateFilter?.startDate ? parseBusinessDate(dateFilter.startDate) : null
+  const end = dateFilter?.endDate ? parseBusinessDate(dateFilter.endDate) : null
+
+  if (start && end) {
+    return { start, end }
+  }
+
+  if (dateFilter?.mode === 'month') {
+    const selectedMonthStart = new Date(dateFilter.year, dateFilter.month, 1)
+    const selectedMonthEnd = dateFilter.year === today.getFullYear() && dateFilter.month === today.getMonth()
+      ? today
+      : new Date(dateFilter.year, dateFilter.month + 1, 0)
+    return { start: selectedMonthStart, end: selectedMonthEnd }
+  }
+
+  return {
+    start: new Date(today.getFullYear(), today.getMonth(), 1),
+    end: today,
+  }
+}
+
+function formatCurrencyFull(value: number) {
+  const safeValue = Number.isFinite(value) ? value : 0
+  const sign = safeValue < 0 ? '-' : ''
+  return `${sign}\u20b9${Math.abs(safeValue).toLocaleString('en-IN', {
+    minimumFractionDigits: Math.abs(safeValue % 1) > 0 ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+type ExecutiveComparisonMetric = {
+  cy: number
+  ly: number
+  deltaPct: number
+}
+
+type ExecutiveHealthModel = {
+  title: string
+  score: number
+  previousScore: number | null
+  status: string
+  confidence: 'High Confidence' | 'Medium Confidence' | 'Limited Confidence'
+  scoreDrivers: {
+    positive: string[]
+    negative: string[]
+  }
+  kpiStrip: ExecutiveMetricCard[]
+  target: {
+    label: string
+    target: string
+    achieved: string
+    percent: number | null
+    status: string
+  }
+  topDriver: ExecutiveMetricCard
+  biggestConcern: ExecutiveMetricCard
+  cards: {
+    drivers: ExecutiveInsightCard
+    risks: ExecutiveInsightCard
+    opportunities: ExecutiveInsightCard
+    focus: ExecutiveInsightCard
+  }
+  components: Array<{ label: string; score: number; helper: string }>
+}
+
+type ExecutiveTone = 'neutral' | 'good' | 'warning' | 'risk'
+
+type ExecutiveMetricCard = {
+  label: string
+  value: string
+  helper?: string
+  tone?: ExecutiveTone
+}
+
+type ExecutiveInsightCard = {
+  title: string
+  items: ExecutiveMetricCard[]
+  tone?: ExecutiveTone
+}
+
+type ExecutiveRequest = {
+  endpoint: string
+  timingLabel: string
+}
+
+type ExecutiveMetricPeriod = {
+  cy: number
+  ly: number | 'N/A'
+  growth: number | string
+}
+
+type ExecutiveMetricRow = {
+  name: string
+  depth?: number
+  metrics?: {
+    mtd?: ExecutiveMetricPeriod
+  }
+  children?: ExecutiveMetricRow[]
+}
+
+type ExecutiveRoBillingData = {
+  byMetric?: Partial<Record<ROAnalysisType, { rows?: ExecutiveMetricRow[] }>>
+  cancelledSummary?: { total?: number }
+}
+
+type ExecutiveWorkshopData = {
+  kpis?: Record<string, { value?: number; ly?: number; growth?: number | null }>
+  rows?: Array<Record<string, unknown>>
+}
+
+type ExecutiveOpenRoData = {
+  kpis?: {
+    totalOpenRo?: number
+    avgAging?: number
+    over15Days?: number
+    delayedRo?: number
+  }
+  rows?: Array<{ serviceType?: string; totalWip?: number; avgDays?: number; bucketOver15?: number }>
+}
+
+type ExecutiveComplaintsData = {
+  kpis?: {
+    total?: number
+    open?: number
+    closed?: number
+    over15?: number
+    delayRelated?: number
+    avgResolutionDays?: number
+  }
+  comparison?: {
+    currentPeriod?: { count?: number; open?: number; avgDays?: number }
+    previousPeriod?: { count?: number; open?: number; avgDays?: number }
+  }
+  charts?: {
+    areaBreakdown?: Array<{ name?: string; total?: number; open?: number; avgDays?: number }>
+  }
+}
+
+function clampScore(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function scoreFromGrowth(growth: number | null | undefined, fallback = 72) {
+  if (!Number.isFinite(Number(growth))) return fallback
+  return clampScore(70 + Number(growth) * 1.35)
+}
+
+function scoreFromPressure(value: number | null | undefined, warningPoint: number, penalty = 2.2) {
+  const safeValue = Number(value || 0)
+  return clampScore(92 - Math.max(safeValue - warningPoint, 0) * penalty - Math.min(safeValue, warningPoint) * 0.45)
+}
+
+function executiveStatus(score: number) {
+  if (score >= 90) return 'EXCELLENT'
+  if (score >= 75) return 'GOOD'
+  if (score >= 60) return 'WATCH'
+  return 'CRITICAL'
+}
+
+function numberOrZero(value: unknown) {
+  const parsed = Number(value || 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function metricGrowth(current: number, previous: number) {
+  return previous > 0 ? ((current - previous) / previous) * 100 : null
+}
+
+function scoreAgainstTarget(value: number, target: number, floor = 35) {
+  if (target <= 0) return 70
+  return clampScore(Math.max(floor, Math.min(100, (value / target) * 85)))
+}
+
+function scoreTrendLabel(previousScore: number | null, score: number) {
+  if (previousScore === null) return 'Previous: insufficient history'
+  const delta = score - previousScore
+  return `${previousScore} previous / ${delta >= 0 ? '+' : ''}${delta} ${delta >= 0 ? 'improvement' : 'decline'}`
+}
+
+function topList(items: Array<string | null | false | undefined>, fallback: string, limit = 3) {
+  const filtered = items.filter(Boolean) as string[]
+  return (filtered.length ? filtered : [fallback]).slice(0, limit)
+}
+
+function targetPercent(achieved: number, target: number, mode: 'higher' | 'lower' = 'higher') {
+  if (target <= 0) return null
+  const percent = mode === 'higher' ? (achieved / target) * 100 : (target / Math.max(achieved, 1)) * 100
+  return Math.max(0, Math.min(999, percent))
+}
+
+function targetStatus(percent: number | null) {
+  if (percent === null) return 'LIMITED'
+  if (percent >= 90) return 'EXCELLENT'
+  if (percent >= 75) return 'GOOD'
+  if (percent >= 60) return 'WATCH'
+  return 'CRITICAL'
+}
+
+function formatPlainNumber(value: number) {
+  return Math.round(value).toLocaleString('en-IN')
+}
+
+function targetCard(label: string, target: number, achieved: number, mode: 'higher' | 'lower' = 'higher', formatter: (value: number) => string = formatPlainNumber) {
+  const percent = targetPercent(achieved, target, mode)
+  return {
+    label,
+    target: formatter(target),
+    achieved: formatter(achieved),
+    percent,
+    status: targetStatus(percent),
+  }
+}
+
+function metricCard(label: string, value: string, helper?: string, tone: ExecutiveTone = 'neutral'): ExecutiveMetricCard {
+  return { label, value, helper, tone }
+}
+
+function itemCards(items: Array<ExecutiveMetricCard | null | false | undefined>, fallback: ExecutiveMetricCard, limit = 3) {
+  const filtered = items.filter(Boolean) as ExecutiveMetricCard[]
+  return filtered.length ? filtered.slice(0, limit) : [fallback]
+}
+
+function buildExecutiveRequest(reportName: string, dateFilter: BusinessDateFilter, dealerCode?: string | null): ExecutiveRequest {
+  const range = getDefaultRODateRange(dateFilter)
+  const params = new URLSearchParams(range)
+  appendBusinessComparisonParams(params, dateFilter)
+  appendKiaDealerCodeParam(params, dealerCode)
+
+  if (reportName.toLowerCase().includes('ro billing')) {
+    params.set('brand', 'kia')
+    params.set('sheet', 'ro_billing_report')
+    params.set('view', 'table')
+    params.set('groupBy', 'work_type')
+    params.set('metrics', 'all')
+    return {
+      endpoint: `/api/brands/kia/business-excellence/ro-billing-analysis?${params.toString()}`,
+      timingLabel: 'business-excellence-executive-ro-billing',
+    }
+  }
+
+  if (reportName === WORKSHOP_PERFORMANCE_REPORT) {
+    return {
+      endpoint: `/api/brands/kia/business-excellence/workshop-performance?${params.toString()}`,
+      timingLabel: 'business-excellence-executive-workshop',
+    }
+  }
+
+  if (reportName === OPEN_RO_REPORT) {
+    params.set('chunk', 'summary')
+    return {
+      endpoint: `/api/brands/kia/business-excellence/open-ro?${params.toString()}`,
+      timingLabel: 'business-excellence-executive-open-ro',
+    }
+  }
+
+  if (reportName === KIA_COMPLAINTS_REPORT) {
+    params.set('chunk', 'summary')
+    return {
+      endpoint: `/api/brands/kia/business-excellence/complaints?${params.toString()}`,
+      timingLabel: 'business-excellence-executive-complaints',
+    }
+  }
+
+  params.set('chunk', 'summary')
+  return {
+    endpoint: `/api/brands/kia/business-excellence/overview?${params.toString()}`,
+    timingLabel: 'business-excellence-executive-overview',
+  }
+}
+
+function roMetricTotal(data: ExecutiveRoBillingData | undefined, metric: ROAnalysisType, field: keyof ExecutiveMetricPeriod = 'cy') {
+  const rows = data?.byMetric?.[metric]?.rows || []
+  return rows
+    .filter((row) => (row.depth || 0) === 0)
+    .reduce((sum, row) => sum + numberOrZero(row.metrics?.mtd?.[field]), 0)
+}
+
+function buildRoBillingHealth(payload: unknown): ExecutiveHealthModel {
+  const data = (payload ?? {}) as ExecutiveRoBillingData
+  const load = roMetricTotal(data, 'load')
+  const loadLy = roMetricTotal(data, 'load', 'ly')
+  const labour = roMetricTotal(data, 'labour')
+  const labourLy = roMetricTotal(data, 'labour', 'ly')
+  const parts = roMetricTotal(data, 'parts')
+  const partsLy = roMetricTotal(data, 'parts', 'ly')
+  const revenue = labour + parts
+  const revenueLy = labourLy + partsLy
+  const billingQuality = load > 0 ? revenue / load : 0
+  const previousBillingQuality = loadLy > 0 ? revenueLy / loadLy : 0
+  const revenueGrowth = metricGrowth(revenue, revenueLy)
+  const labourGrowth = metricGrowth(labour, labourLy)
+  const partsGrowth = metricGrowth(parts, partsLy)
+  const loadGrowth = metricGrowth(load, loadLy)
+  const partsShare = revenue > 0 ? (parts / revenue) * 100 : 0
+  const labourShare = revenue > 0 ? (labour / revenue) * 100 : 0
+  const revenueScore = scoreFromGrowth(revenueGrowth)
+  const labourScore = scoreFromGrowth(labourGrowth)
+  const partsScore = scoreFromGrowth(partsGrowth)
+  const loadScore = scoreFromGrowth(loadGrowth)
+  const qualityScore = scoreAgainstTarget(billingQuality, Math.max(previousBillingQuality, 1), 45)
+  const score = clampScore(revenueScore * 0.28 + labourScore * 0.2 + partsScore * 0.2 + loadScore * 0.17 + qualityScore * 0.15)
+  const previousScore = revenueLy > 0 ? clampScore(70 + Math.min(Math.max(metricGrowth(revenueLy, revenue) || 0, -20), 20) * 0.4) : null
+  const cancelledTotal = numberOrZero(data.cancelledSummary?.total)
+  const billingQualityGap = Math.max(previousBillingQuality - billingQuality, 0)
+  const revenueAtRisk = cancelledTotal + billingQualityGap * load
+  const target = targetCard('Revenue Target', EXECUTIVE_TARGETS.roBilling.revenue, revenue, 'higher', formatCurrency)
+  const topDriver = partsGrowth !== null && partsGrowth >= Math.max(labourGrowth ?? -999, revenueGrowth ?? -999)
+    ? metricCard('Top Driver', 'Parts Revenue Growth', formatSignedGrowth(partsGrowth), 'good')
+    : labourGrowth !== null && labourGrowth >= Math.max(partsGrowth ?? -999, revenueGrowth ?? -999)
+      ? metricCard('Top Driver', 'Labour Revenue Growth', formatSignedGrowth(labourGrowth), 'good')
+      : metricCard('Top Driver', 'Billing Revenue', formatCurrency(revenue), 'good')
+  const biggestConcern = cancelledTotal > 0
+    ? metricCard('Biggest Concern', 'Cancelled Billing', formatCurrency(cancelledTotal), 'risk')
+    : billingQualityGap > 0
+      ? metricCard('Biggest Concern', 'Billing Quality Gap', `${formatCurrency(billingQualityGap)} / RO`, 'risk')
+      : metricCard('Biggest Concern', 'Discount Leakage', `Below ${formatCurrency(EXECUTIVE_TARGETS.roBilling.maxDiscountLeakage)} watch level`, 'warning')
+
+  return {
+    title: 'RO Billing Health',
+    score,
+    previousScore,
+    status: executiveStatus(score),
+    confidence: revenueLy > 0 ? 'High Confidence' : 'Medium Confidence',
+    scoreDrivers: {
+      positive: topList([
+        revenueGrowth !== null && revenueGrowth > 0 && `Revenue ${formatSignedGrowth(revenueGrowth)}`,
+        partsGrowth !== null && partsGrowth > 0 && `Parts ${formatSignedGrowth(partsGrowth)}`,
+        labourGrowth !== null && labourGrowth > 0 && `Labour ${formatSignedGrowth(labourGrowth)}`,
+      ], 'Billing quality is the primary support signal', 2),
+      negative: topList([
+        revenueGrowth !== null && revenueGrowth < 0 && `Revenue ${formatSignedGrowth(revenueGrowth)}`,
+        labourGrowth !== null && labourGrowth < 0 && `Labour ${formatSignedGrowth(labourGrowth)}`,
+        partsGrowth !== null && partsGrowth < 0 && `Parts ${formatSignedGrowth(partsGrowth)}`,
+        cancelledTotal > 0 && `Cancelled billing ${formatCurrency(cancelledTotal)}`,
+      ], 'No major billing detractor', 2),
+    },
+    kpiStrip: [
+      metricCard('Revenue', formatCurrency(revenue), `${formatSignedGrowth(revenueGrowth ?? 'N/A')} vs comparison`, revenueGrowth !== null && revenueGrowth < 0 ? 'risk' : 'good'),
+      metricCard('Revenue At Risk', formatCurrency(revenueAtRisk), 'Cancelled billing + billing quality gap', revenueAtRisk > 0 ? 'risk' : 'good'),
+      metricCard('Top Contributor', parts > labour ? 'Parts' : 'Labour', `${Math.max(partsShare, labourShare).toFixed(1)}% of billing`, 'neutral'),
+      metricCard('Weakest Area', labourGrowth !== null && labourGrowth < partsGrowth! ? 'Labour' : 'Billing Quality', `${formatCurrency(billingQuality)} / RO`, 'warning'),
+      metricCard('Target Achievement', target.percent === null ? 'N/A' : `${target.percent.toFixed(1)}%`, target.status, target.percent !== null && target.percent < 75 ? 'risk' : 'good'),
+    ],
+    target,
+    topDriver,
+    biggestConcern,
+    cards: {
+      drivers: {
+        title: 'Revenue Drivers',
+        items: [
+          metricCard('Parts Revenue', formatCurrency(parts), `${partsShare.toFixed(1)}% share`, 'neutral'),
+          metricCard('Labour Revenue', formatCurrency(labour), `${labourShare.toFixed(1)}% share`, 'neutral'),
+          metricCard('Billed RO Load', load.toLocaleString('en-IN'), `${formatCurrency(billingQuality)} / RO`, 'neutral'),
+        ],
+      },
+      risks: {
+        title: 'Revenue Risks',
+        tone: 'risk',
+        items: itemCards([
+          cancelledTotal > 0 && metricCard('Cancelled Billing', formatCurrency(cancelledTotal), 'Direct leakage', 'risk'),
+          billingQualityGap > 0 && metricCard('Billing Quality Gap', formatCurrency(billingQualityGap * load), `${formatCurrency(billingQualityGap)} / RO below comparison`, 'risk'),
+          loadGrowth !== null && loadGrowth < 0 && metricCard('RO Load Drop', formatSignedGrowth(loadGrowth), 'Lower load can reduce revenue', 'warning'),
+        ], metricCard('Leakage Watch', 'Controlled', 'No major revenue leakage signal', 'good')),
+      },
+      opportunities: {
+        title: 'Revenue Opportunities',
+        tone: 'good',
+        items: [
+          metricCard('Labour / Vehicle Lift', formatCurrency(labour * 0.1), '10% improvement potential', 'good'),
+          metricCard('Parts / Vehicle Lift', formatCurrency(parts * 0.1), '10% improvement potential', 'good'),
+          metricCard('Billing Quality', formatCurrency(Math.max(EXECUTIVE_TARGETS.roBilling.labourPerVehicle + EXECUTIVE_TARGETS.roBilling.partsPerVehicle - billingQuality, 0) * load), 'Target billing mix gap', 'good'),
+        ],
+      },
+      focus: {
+        title: 'Focus Areas',
+        items: [
+          metricCard('Improve Labour / Vehicle', formatCurrency(billingQuality), 'Raise average billing quality', 'neutral'),
+          metricCard('Reduce Discount Leakage', formatCurrency(cancelledTotal), 'Review cancelled/discounted billing', 'warning'),
+          metricCard('Protect RO Load', load.toLocaleString('en-IN'), 'Keep billed job-card flow steady', 'neutral'),
+        ],
+      },
+    },
+    components: [
+      { label: 'Revenue Growth', score: revenueScore, helper: `${formatSignedGrowth(revenueGrowth ?? 'N/A')} vs comparison` },
+      { label: 'Labour Growth', score: labourScore, helper: `${formatSignedGrowth(labourGrowth ?? 'N/A')} labour` },
+      { label: 'Parts Growth', score: partsScore, helper: `${formatSignedGrowth(partsGrowth ?? 'N/A')} parts` },
+      { label: 'Billing Quality', score: qualityScore, helper: `${formatCurrency(billingQuality)} per RO` },
+    ],
+  }
+}
+
+function buildWorkshopHealth(payload: unknown): ExecutiveHealthModel {
+  const data = (payload ?? {}) as ExecutiveWorkshopData
+  const kpis = data.kpis || {}
+  const revenue = numberOrZero(kpis.totalRevenue?.value)
+  const labour = numberOrZero(kpis.labourAmount?.value)
+  const parts = numberOrZero(kpis.spareSale?.value)
+  const vas = numberOrZero(kpis.vasAmount?.value)
+  const totalJc = numberOrZero(kpis.totalJc?.value)
+  const labPerRo = numberOrZero(kpis.labourPerRo?.value)
+  const sparePerRo = numberOrZero(kpis.sparePerRo?.value)
+  const revenueGrowth = kpis.totalRevenue?.growth
+  const labPerRoGrowth = kpis.labourPerRo?.growth
+  const partsGrowth = kpis.spareSale?.growth
+  const vasGrowth = kpis.vasAmount?.growth
+  const rows = data.rows || []
+  const mech = rows.find((row) => row.serviceType === 'MECH')
+  const accident = rows.find((row) => row.serviceType === 'Accident')
+  const mechRevenue = numberOrZero(mech?.labourAmount) + numberOrZero(mech?.spareSale)
+  const accidentRevenue = numberOrZero(accident?.labourAmount) + numberOrZero(accident?.spareSale)
+  const waCount = rows.reduce((sum, row) => sum + numberOrZero(row.waCount), 0)
+  const wbCount = rows.reduce((sum, row) => sum + numberOrZero(row.wbCount), 0)
+  const vasPenetration = labour > 0 ? (vas / labour) * 100 : 0
+  const revenueScore = scoreFromGrowth(Number(revenueGrowth))
+  const labourEfficiencyScore = scoreFromGrowth(Number(labPerRoGrowth))
+  const partsScore = scoreFromGrowth(Number(partsGrowth))
+  const vasScore = scoreAgainstTarget(vasPenetration, 20, 35)
+  const addonScore = scoreAgainstTarget(waCount + wbCount, Math.max(totalJc * 0.35, 1), 35)
+  const score = clampScore(revenueScore * 0.25 + labourEfficiencyScore * 0.22 + partsScore * 0.2 + vasScore * 0.18 + addonScore * 0.15)
+  const previousScore = numberOrZero(kpis.totalRevenue?.ly) > 0 ? 70 : null
+  const addonPenetration = totalJc > 0 ? ((waCount + wbCount) / totalJc) * 100 : 0
+  const revenueAtRisk = Math.max(EXECUTIVE_TARGETS.workshop.labourPerRo - labPerRo, 0) * totalJc
+  const target = targetCard('Workshop Revenue Target', EXECUTIVE_TARGETS.workshop.revenue, revenue, 'higher', formatCurrency)
+  const topDriver = accidentRevenue > mechRevenue
+    ? metricCard('Top Driver', 'Accident Revenue', formatCurrency(accidentRevenue), 'good')
+    : metricCard('Top Driver', 'MECH Revenue', formatCurrency(mechRevenue), 'good')
+  const biggestConcern = addonPenetration < EXECUTIVE_TARGETS.workshop.addonPenetrationPct
+    ? metricCard('Biggest Concern', 'Low WA/WB Penetration', `${addonPenetration.toFixed(1)}%`, 'risk')
+    : vasPenetration < EXECUTIVE_TARGETS.workshop.vasPenetrationPct
+      ? metricCard('Biggest Concern', 'Low VAS Penetration', `${vasPenetration.toFixed(1)}%`, 'risk')
+      : metricCard('Biggest Concern', 'Labour / RO Watch', formatCurrency(labPerRo), 'warning')
+
+  return {
+    title: 'Workshop Health',
+    score,
+    previousScore,
+    status: executiveStatus(score),
+    confidence: numberOrZero(kpis.totalRevenue?.ly) > 0 ? 'High Confidence' : 'Medium Confidence',
+    scoreDrivers: {
+      positive: topList([
+        Number(revenueGrowth) > 0 && `Revenue ${formatSignedGrowth(Number(revenueGrowth))}`,
+        Number(partsGrowth) > 0 && `Parts ${formatSignedGrowth(Number(partsGrowth))}`,
+        Number(vasGrowth) > 0 && `VAS ${formatSignedGrowth(Number(vasGrowth))}`,
+      ], 'Workshop revenue mix is holding', 2),
+      negative: topList([
+        Number(labPerRoGrowth) < 0 && `Labour / RO ${formatSignedGrowth(Number(labPerRoGrowth))}`,
+        addonPenetration < EXECUTIVE_TARGETS.workshop.addonPenetrationPct && `WA/WB penetration ${addonPenetration.toFixed(1)}%`,
+        vasPenetration < EXECUTIVE_TARGETS.workshop.vasPenetrationPct && `VAS penetration ${vasPenetration.toFixed(1)}%`,
+      ], 'No major workshop detractor', 2),
+    },
+    kpiStrip: [
+      metricCard('Revenue', formatCurrency(revenue), `${formatSignedGrowth(revenueGrowth ?? 'N/A')} total`, Number(revenueGrowth) < 0 ? 'risk' : 'good'),
+      metricCard('Revenue At Risk', formatCurrency(revenueAtRisk), 'Labour / RO target gap', revenueAtRisk > 0 ? 'risk' : 'good'),
+      metricCard('Top Contributor', accidentRevenue > mechRevenue ? 'Accident' : 'MECH', formatCurrency(Math.max(accidentRevenue, mechRevenue)), 'neutral'),
+      metricCard('Weakest Area', addonPenetration < vasPenetration ? 'WA / WB' : 'VAS', `${Math.min(addonPenetration, vasPenetration).toFixed(1)}%`, 'warning'),
+      metricCard('Target Achievement', target.percent === null ? 'N/A' : `${target.percent.toFixed(1)}%`, target.status, target.percent !== null && target.percent < 75 ? 'risk' : 'good'),
+    ],
+    target,
+    topDriver,
+    biggestConcern,
+    cards: {
+      drivers: {
+        title: 'Workshop Drivers',
+        items: [
+          metricCard('MECH Contribution', formatCurrency(mechRevenue), `${revenue > 0 ? ((mechRevenue / revenue) * 100).toFixed(1) : '0.0'}% share`, 'neutral'),
+          metricCard('Accident Contribution', formatCurrency(accidentRevenue), `${revenue > 0 ? ((accidentRevenue / revenue) * 100).toFixed(1) : '0.0'}% share`, 'neutral'),
+          metricCard('Parts / RO', formatCurrency(sparePerRo), `${formatSignedGrowth(partsGrowth ?? 'N/A')} parts`, 'neutral'),
+        ],
+      },
+      risks: {
+        title: 'Workshop Risks',
+        tone: 'risk',
+        items: itemCards([
+          Number(labPerRoGrowth) < 0 && metricCard('Labour / RO Decline', formatSignedGrowth(Number(labPerRoGrowth)), formatCurrency(labPerRo), 'risk'),
+          addonPenetration < EXECUTIVE_TARGETS.workshop.addonPenetrationPct && metricCard('WA/WB Gap', `${addonPenetration.toFixed(1)}%`, `${waCount + wbCount} add-ons from ${totalJc} JC`, 'risk'),
+          vasPenetration < EXECUTIVE_TARGETS.workshop.vasPenetrationPct && metricCard('VAS Gap', `${vasPenetration.toFixed(1)}%`, formatCurrency(vas), 'warning'),
+        ], metricCard('Operating Risk', 'Controlled', 'No major workshop risk signal', 'good')),
+      },
+      opportunities: {
+        title: 'Workshop Opportunities',
+        tone: 'good',
+        items: [
+          metricCard('Labour Efficiency Lift', formatCurrency(labour * 0.1), '10% upside', 'good'),
+          metricCard('Parts Efficiency Lift', formatCurrency(parts * 0.1), '10% upside', 'good'),
+          metricCard('Addon Conversion', `${Math.max(Math.round(totalJc * 0.35 - (waCount + wbCount)), 0)} jobs`, 'WA/WB target gap', 'good'),
+        ],
+      },
+      focus: {
+        title: 'Focus Areas',
+        items: [
+          metricCard('Improve WA Conversion', `${waCount} WA`, `${EXECUTIVE_TARGETS.workshop.addonPenetrationPct}% addon target`, 'warning'),
+          metricCard('Increase VAS Penetration', `${vasPenetration.toFixed(1)}%`, `${EXECUTIVE_TARGETS.workshop.vasPenetrationPct}% target`, 'warning'),
+          metricCard('Protect Labour / RO', formatCurrency(labPerRo), `${formatCurrency(EXECUTIVE_TARGETS.workshop.labourPerRo)} target`, 'neutral'),
+        ],
+      },
+    },
+    components: [
+      { label: 'Revenue Mix', score: revenueScore, helper: `${formatSignedGrowth(revenueGrowth ?? 'N/A')} total revenue` },
+      { label: 'Labour / RO', score: labourEfficiencyScore, helper: `${formatCurrency(labPerRo)} per RO` },
+      { label: 'Parts / RO', score: partsScore, helper: `${formatCurrency(sparePerRo)} per RO` },
+      { label: 'VAS / WA / WB', score: clampScore((vasScore + addonScore) / 2), helper: `${waCount} WA / ${wbCount} WB` },
+    ],
+  }
+}
+
+function buildOpenRoHealth(payload: unknown): ExecutiveHealthModel {
+  const data = (payload ?? {}) as ExecutiveOpenRoData
+  const kpis = data.kpis || {}
+  const total = numberOrZero(kpis.totalOpenRo)
+  const delayed = numberOrZero(kpis.delayedRo)
+  const over15 = numberOrZero(kpis.over15Days)
+  const avgAging = numberOrZero(kpis.avgAging)
+  const score = clampScore(94 - avgAging * 3.2 - delayed * 4.5 - over15 * 2.8)
+  const closureScore = scoreAgainstTarget(Math.max(20 - avgAging, 0), 20, 25)
+  const agingScore = clampScore(100 - avgAging * 6)
+  const delayScore = clampScore(100 - delayed * 8)
+  const wipScore = clampScore(100 - total * 1.4)
+  const topWip = [...(data.rows || [])].sort((a, b) => numberOrZero(b.totalWip) - numberOrZero(a.totalWip))[0]
+  const target = targetCard('Open RO Control Target', EXECUTIVE_TARGETS.openRo.maxOpenRo, total, 'lower')
+  const riskLoad = over15 + delayed
+  const topDriver = avgAging <= EXECUTIVE_TARGETS.openRo.maxAvgAgingDays
+    ? metricCard('Top Driver', 'Fast Closure Rate', `${avgAging.toFixed(1)}D avg`, 'good')
+    : metricCard('Top Driver', 'WIP Visibility', `${total} open RO`, 'neutral')
+  const biggestConcern = over15 > 0
+    ? metricCard('Biggest Concern', '15+ Day Aging', `${over15} vehicles`, 'risk')
+    : delayed > 0
+      ? metricCard('Biggest Concern', 'Delayed RO', `${delayed} jobs`, 'risk')
+      : metricCard('Biggest Concern', 'Average Aging', `${avgAging.toFixed(1)}D`, avgAging > EXECUTIVE_TARGETS.openRo.maxAvgAgingDays ? 'warning' : 'good')
+
+  return {
+    title: 'Open RO Health',
+    score,
+    previousScore: null,
+    status: executiveStatus(score),
+    confidence: 'Limited Confidence',
+    scoreDrivers: {
+      positive: topList([
+        avgAging <= EXECUTIVE_TARGETS.openRo.maxAvgAgingDays && `Avg aging ${avgAging.toFixed(1)}D`,
+        delayed === 0 && 'No delayed RO',
+        over15 === 0 && 'No 15+ day vehicle',
+      ], 'Open RO queue is visible for daily control', 2),
+      negative: topList([
+        avgAging > EXECUTIVE_TARGETS.openRo.maxAvgAgingDays && `Avg aging ${avgAging.toFixed(1)}D`,
+        delayed > 0 && `${delayed} delayed RO`,
+        over15 > 0 && `${over15} vehicles above 15D`,
+      ], 'No major WIP detractor', 2),
+    },
+    kpiStrip: [
+      metricCard('Open RO', total.toLocaleString('en-IN'), 'Current WIP load', total > EXECUTIVE_TARGETS.openRo.maxOpenRo ? 'warning' : 'good'),
+      metricCard('Operational Risk', riskLoad.toLocaleString('en-IN'), 'Delayed + 15D vehicles', riskLoad > 0 ? 'risk' : 'good'),
+      metricCard('Top WIP Bucket', topWip?.serviceType || 'No pressure', topWip ? `${numberOrZero(topWip.totalWip)} jobs` : 'Clean queue', 'neutral'),
+      metricCard('Weakest Area', over15 > 0 ? '>15D Aging' : 'Closure Velocity', `${avgAging.toFixed(1)}D avg`, over15 > 0 || avgAging > 5 ? 'risk' : 'good'),
+      metricCard('Target Achievement', target.percent === null ? 'N/A' : `${target.percent.toFixed(1)}%`, target.status, target.percent !== null && target.percent < 75 ? 'risk' : 'good'),
+    ],
+    target,
+    topDriver,
+    biggestConcern,
+    cards: {
+      drivers: {
+        title: 'Operational Drivers',
+        items: [
+          metricCard('WIP Load', total.toLocaleString('en-IN'), 'Open repair orders', 'neutral'),
+          metricCard('Average Aging', `${avgAging.toFixed(1)}D`, `${EXECUTIVE_TARGETS.openRo.maxAvgAgingDays}D target`, avgAging > 5 ? 'warning' : 'good'),
+          metricCard('Top Bucket', topWip?.serviceType || 'No pressure', topWip ? `${numberOrZero(topWip.totalWip)} jobs` : 'No dominant bucket', 'neutral'),
+        ],
+      },
+      risks: {
+        title: 'Operational Risks',
+        tone: 'risk',
+        items: itemCards([
+          over15 > 0 && metricCard('15+ Day Vehicles', over15.toLocaleString('en-IN'), 'Delayed billing conversion', 'risk'),
+          delayed > 0 && metricCard('Delayed RO', delayed.toLocaleString('en-IN'), 'Promise/closure risk', 'risk'),
+          avgAging > EXECUTIVE_TARGETS.openRo.maxAvgAgingDays && metricCard('Aging Pressure', `${avgAging.toFixed(1)}D`, 'Slower closure velocity', 'warning'),
+        ], metricCard('WIP Risk', 'Controlled', 'No major operational aging signal', 'good')),
+      },
+      opportunities: {
+        title: 'Operational Opportunities',
+        tone: 'good',
+        items: [
+          metricCard('Close 20% WIP', Math.ceil(total * 0.2).toLocaleString('en-IN'), 'Fast queue reduction lever', 'good'),
+          metricCard('Attack 15D First', over15.toLocaleString('en-IN'), 'Highest priority closure queue', over15 > 0 ? 'warning' : 'good'),
+          metricCard('Clear Delays', delayed.toLocaleString('en-IN'), 'Recover closure velocity', delayed > 0 ? 'warning' : 'good'),
+        ],
+      },
+      focus: {
+        title: 'Focus Areas',
+        items: [
+          metricCard('Reduce >15D Vehicles', over15.toLocaleString('en-IN'), 'Daily escalation queue', 'risk'),
+          metricCard('Improve Closure Velocity', `${avgAging.toFixed(1)}D`, 'Bring average aging down', 'warning'),
+          metricCard('Close Delayed RO', delayed.toLocaleString('en-IN'), 'Protect billing conversion', 'warning'),
+        ],
+      },
+    },
+    components: [
+      { label: 'WIP Health', score: wipScore, helper: `${total} open ROs` },
+      { label: 'Aging', score: agingScore, helper: `${avgAging.toFixed(1)} avg days` },
+      { label: 'Delayed RO', score: delayScore, helper: `${delayed} delayed` },
+      { label: 'Closure Velocity', score: closureScore, helper: `${over15} above 15 days` },
+    ],
+  }
+}
+
+function buildComplaintHealth(payload: unknown): ExecutiveHealthModel {
+  const data = (payload ?? {}) as ExecutiveComplaintsData
+  const kpis = data.kpis || {}
+  const total = numberOrZero(kpis.total)
+  const open = numberOrZero(kpis.open)
+  const closed = numberOrZero(kpis.closed)
+  const over15 = numberOrZero(kpis.over15)
+  const avgDays = numberOrZero(kpis.avgResolutionDays)
+  const closureRate = total > 0 ? (closed / total) * 100 : 100
+  const current = data.comparison?.currentPeriod
+  const previous = data.comparison?.previousPeriod
+  const currentScore = clampScore(closureRate - open * 4 - over15 * 5 - Math.max(avgDays - 3, 0) * 3)
+  const previousTotal = numberOrZero(previous?.count)
+  const previousOpen = numberOrZero(previous?.open)
+  const previousAvgDays = numberOrZero(previous?.avgDays)
+  const previousScore = previousTotal > 0 ? clampScore(90 - previousOpen * 4 - Math.max(previousAvgDays - 3, 0) * 3) : null
+  const topArea = [...(data.charts?.areaBreakdown || [])].sort((a, b) => numberOrZero(b.total) - numberOrZero(a.total))[0]
+  const complaintGrowth = metricGrowth(numberOrZero(current?.count), previousTotal)
+  const target = targetCard('Complaint Closure Target', EXECUTIVE_TARGETS.complaints.closureRatePct, closureRate, 'higher', (value) => `${value.toFixed(0)}%`)
+  const customerRisk = open + over15
+  const topDriver = closureRate >= EXECUTIVE_TARGETS.complaints.closureRatePct
+    ? metricCard('Top Driver', 'Closure Rate', `${closureRate.toFixed(1)}%`, 'good')
+    : metricCard('Top Driver', 'Closed Complaints', closed.toLocaleString('en-IN'), 'neutral')
+  const biggestConcern = over15 > 0
+    ? metricCard('Biggest Concern', 'Complaint Aging', `${over15} over 15D`, 'risk')
+    : open > EXECUTIVE_TARGETS.complaints.maxOpenComplaints
+      ? metricCard('Biggest Concern', 'Open Complaints', open.toLocaleString('en-IN'), 'risk')
+      : metricCard('Biggest Concern', 'Resolution Days', `${avgDays.toFixed(1)}D`, avgDays > EXECUTIVE_TARGETS.complaints.maxAvgResolutionDays ? 'warning' : 'good')
+
+  return {
+    title: 'Customer Health',
+    score: currentScore,
+    previousScore,
+    status: executiveStatus(currentScore),
+    confidence: previousTotal > 0 ? 'High Confidence' : 'Medium Confidence',
+    scoreDrivers: {
+      positive: topList([
+        closureRate >= EXECUTIVE_TARGETS.complaints.closureRatePct && `Closure rate ${closureRate.toFixed(1)}%`,
+        open === 0 && 'No open complaint backlog',
+        complaintGrowth !== null && complaintGrowth < 0 && `Complaints down ${Math.abs(complaintGrowth).toFixed(1)}%`,
+      ], 'Customer closure visibility is available', 2),
+      negative: topList([
+        open > 0 && `${open} open complaints`,
+        over15 > 0 && `${over15} complaints above 15D`,
+        complaintGrowth !== null && complaintGrowth > 0 && `Complaints up ${complaintGrowth.toFixed(1)}%`,
+      ], 'No major customer detractor', 2),
+    },
+    kpiStrip: [
+      metricCard('Complaints', total.toLocaleString('en-IN'), `${open} open`, open > 0 ? 'warning' : 'good'),
+      metricCard('Customer Risk', customerRisk.toLocaleString('en-IN'), 'Open + aged complaints', customerRisk > 0 ? 'risk' : 'good'),
+      metricCard('Top Complaint Area', topArea?.name || 'No concentration', topArea ? `${numberOrZero(topArea.total)} cases` : 'Clean', 'neutral'),
+      metricCard('Weakest Area', over15 > 0 ? 'Aging' : 'Closure Rate', `${avgDays.toFixed(1)}D avg`, over15 > 0 || avgDays > 3 ? 'risk' : 'good'),
+      metricCard('Target Achievement', target.percent === null ? 'N/A' : `${target.percent.toFixed(1)}%`, target.status, target.percent !== null && target.percent < 75 ? 'risk' : 'good'),
+    ],
+    target,
+    topDriver,
+    biggestConcern,
+    cards: {
+      drivers: {
+        title: 'Complaint Drivers',
+        items: [
+          metricCard('Closure Rate', `${closureRate.toFixed(1)}%`, `${closed} closed / ${total} total`, closureRate >= 90 ? 'good' : 'warning'),
+          metricCard('Open Backlog', open.toLocaleString('en-IN'), 'Current customer pressure', open > 0 ? 'warning' : 'good'),
+          metricCard('Top Area', topArea?.name || 'No concentration', topArea ? `${numberOrZero(topArea.total)} complaints` : 'No dominant area', 'neutral'),
+        ],
+      },
+      risks: {
+        title: 'Customer Risks',
+        tone: 'risk',
+        items: itemCards([
+          open > 0 && metricCard('Open Complaints', open.toLocaleString('en-IN'), 'Can affect repeat visits', 'risk'),
+          over15 > 0 && metricCard('Aged Complaints', over15.toLocaleString('en-IN'), 'CSI risk', 'risk'),
+          avgDays > EXECUTIVE_TARGETS.complaints.maxAvgResolutionDays && metricCard('Resolution Time', `${avgDays.toFixed(1)}D`, 'Above target', 'warning'),
+        ], metricCard('Customer Risk', 'Controlled', 'No major complaint pressure', 'good')),
+      },
+      opportunities: {
+        title: 'Customer Opportunities',
+        tone: 'good',
+        items: [
+          metricCard('Close Open Cases', open.toLocaleString('en-IN'), 'Fastest CSI improvement', open > 0 ? 'warning' : 'good'),
+          metricCard('Reduce Aging', `${avgDays.toFixed(1)}D`, `${EXECUTIVE_TARGETS.complaints.maxAvgResolutionDays}D target`, 'good'),
+          metricCard('Root-Cause Area', topArea?.name || 'No concentration', topArea ? 'Use area action plan' : 'Monitor new cases', 'neutral'),
+        ],
+      },
+      focus: {
+        title: 'Focus Areas',
+        items: [
+          metricCard('Reduce Complaint Aging', `${avgDays.toFixed(1)}D`, 'Protect CSI', 'warning'),
+          metricCard('Improve Closure Rate', `${closureRate.toFixed(1)}%`, `${EXECUTIVE_TARGETS.complaints.closureRatePct}% target`, 'warning'),
+          metricCard('Clear Open Complaints', open.toLocaleString('en-IN'), 'Daily customer callback queue', 'risk'),
+        ],
+      },
+    },
+    components: [
+      { label: 'Closure Rate', score: clampScore(closureRate), helper: `${closureRate.toFixed(1)}% closed` },
+      { label: 'Open Complaints', score: clampScore(100 - open * 8), helper: `${open} open` },
+      { label: 'Aging', score: clampScore(100 - avgDays * 6), helper: `${avgDays.toFixed(1)} avg days` },
+      { label: 'Repeat Risk', score: clampScore(100 - over15 * 10), helper: `${over15} over 15 days` },
+    ],
+  }
+}
+
+function buildOverviewHealth(payload: unknown): ExecutiveHealthModel {
+  const data = (payload ?? {}) as { comparison?: { revenue?: ExecutiveComparisonMetric; avgBilling?: ExecutiveComparisonMetric; openRo?: ExecutiveComparisonMetric; complaintsOpen?: ExecutiveComparisonMetric }, kpis?: { revenue?: number; labour?: number; parts?: number; openRo?: number; delayedRo?: number; complaintsOpen?: number } }
+  const revenueGrowth = data.comparison?.revenue?.deltaPct
+  const avgBillingGrowth = data.comparison?.avgBilling?.deltaPct
+  const openRo = numberOrZero(data.kpis?.openRo)
+  const delayed = numberOrZero(data.kpis?.delayedRo)
+  const complaints = numberOrZero(data.kpis?.complaintsOpen)
+  const revenue = numberOrZero(data.kpis?.revenue)
+  const labour = numberOrZero(data.kpis?.labour)
+  const parts = numberOrZero(data.kpis?.parts)
+  const revenueScore = scoreFromGrowth(revenueGrowth)
+  const efficiencyScore = scoreFromGrowth(avgBillingGrowth)
+  const operationsScore = scoreFromPressure(openRo + delayed * 2, 25, 1.2)
+  const customerScore = scoreFromPressure(complaints, 2, 9)
+  const score = clampScore(revenueScore * 0.35 + efficiencyScore * 0.25 + operationsScore * 0.25 + customerScore * 0.15)
+  const labourShare = revenue > 0 ? (labour / revenue) * 100 : 0
+  const partsShare = revenue > 0 ? (parts / revenue) * 100 : 0
+  const target = targetCard('Business Revenue Target', EXECUTIVE_TARGETS.overview.revenue, revenue, 'higher', formatCurrency)
+  const topDriver = parts > labour
+    ? metricCard('Top Driver', 'Parts Revenue', `${partsShare.toFixed(1)}% share`, 'good')
+    : metricCard('Top Driver', 'Labour Revenue', `${labourShare.toFixed(1)}% share`, 'good')
+  const biggestConcern = delayed > 0
+    ? metricCard('Biggest Concern', 'Delayed RO', delayed.toLocaleString('en-IN'), 'risk')
+    : complaints > 0
+      ? metricCard('Biggest Concern', 'Open Complaints', complaints.toLocaleString('en-IN'), 'risk')
+      : metricCard('Biggest Concern', 'Average Billing', formatSignedGrowth(avgBillingGrowth ?? 'N/A'), Number(avgBillingGrowth) < 0 ? 'warning' : 'good')
+  return {
+    title: 'Business Health',
+    score,
+    previousScore: data.comparison?.revenue ? 70 : null,
+    status: executiveStatus(score),
+    confidence: data.comparison?.revenue ? 'High Confidence' : 'Medium Confidence',
+    scoreDrivers: {
+      positive: topList([
+        Number(revenueGrowth) > 0 && `Revenue ${formatSignedGrowth(Number(revenueGrowth))}`,
+        Number(avgBillingGrowth) > 0 && `Avg billing ${formatSignedGrowth(Number(avgBillingGrowth))}`,
+        delayed === 0 && 'No delayed RO pressure',
+      ], 'Revenue mix is available', 2),
+      negative: topList([
+        Number(revenueGrowth) < 0 && `Revenue ${formatSignedGrowth(Number(revenueGrowth))}`,
+        delayed > 0 && `${delayed} delayed RO`,
+        complaints > 0 && `${complaints} open complaints`,
+      ], 'No major business detractor', 2),
+    },
+    kpiStrip: [
+      metricCard('Revenue', formatCurrency(revenue), `${formatSignedGrowth(revenueGrowth ?? 'N/A')} vs comparison`, Number(revenueGrowth) < 0 ? 'risk' : 'good'),
+      metricCard('Revenue At Risk', formatCurrency(Math.max(delayed, 0) * (revenue / Math.max(openRo || 1, 1))), 'Delayed RO exposure estimate', delayed > 0 ? 'risk' : 'good'),
+      metricCard('Top Contributor', parts > labour ? 'Parts' : 'Labour', `${Math.max(partsShare, labourShare).toFixed(1)}% share`, 'neutral'),
+      metricCard('Weakest Area', delayed > 0 ? 'Delayed RO' : complaints > 0 ? 'Complaints' : 'Avg Billing', delayed > 0 ? `${delayed} delayed` : `${complaints} open`, delayed > 0 || complaints > 0 ? 'risk' : 'good'),
+      metricCard('Target Achievement', target.percent === null ? 'N/A' : `${target.percent.toFixed(1)}%`, target.status, target.percent !== null && target.percent < 75 ? 'risk' : 'good'),
+    ],
+    target,
+    topDriver,
+    biggestConcern,
+    cards: {
+      drivers: {
+        title: 'Business Drivers',
+        items: [
+          metricCard('Labour Revenue', formatCurrency(labour), `${labourShare.toFixed(1)}% share`, 'neutral'),
+          metricCard('Parts Revenue', formatCurrency(parts), `${partsShare.toFixed(1)}% share`, 'neutral'),
+          metricCard('Average Billing', formatSignedGrowth(avgBillingGrowth ?? 'N/A'), 'Efficiency movement', Number(avgBillingGrowth) < 0 ? 'warning' : 'good'),
+        ],
+      },
+      risks: {
+        title: 'Business Risks',
+        tone: 'risk',
+        items: itemCards([
+          delayed > 0 && metricCard('Delayed RO', delayed.toLocaleString('en-IN'), 'Can push billing out', 'risk'),
+          complaints > 0 && metricCard('Open Complaints', complaints.toLocaleString('en-IN'), 'Customer retention risk', 'risk'),
+          Number(avgBillingGrowth) < 0 && metricCard('Avg Billing Drop', formatSignedGrowth(Number(avgBillingGrowth)), 'Efficiency risk', 'warning'),
+        ], metricCard('Business Risk', 'Controlled', 'No major business pressure', 'good')),
+      },
+      opportunities: {
+        title: 'Business Opportunities',
+        tone: 'good',
+        items: [
+          metricCard('10% Billing Lift', formatCurrency(revenue * 0.1), 'Revenue upside', 'good'),
+          metricCard('Close Delayed RO', delayed.toLocaleString('en-IN'), 'Recover billing conversion', delayed > 0 ? 'warning' : 'good'),
+          metricCard('Protect Customer Experience', complaints.toLocaleString('en-IN'), 'Close open complaints', complaints > 0 ? 'warning' : 'good'),
+        ],
+      },
+      focus: {
+        title: 'Focus Areas',
+        items: [
+          metricCard('Protect Revenue Growth', formatCurrency(revenue), 'Primary management metric', 'neutral'),
+          metricCard('Reduce Delayed RO', delayed.toLocaleString('en-IN'), 'Operations focus', delayed > 0 ? 'risk' : 'good'),
+          metricCard('Close Open Complaints', complaints.toLocaleString('en-IN'), 'Customer focus', complaints > 0 ? 'warning' : 'good'),
+        ],
+      },
+    },
+    components: [
+      { label: 'Revenue Score', score: revenueScore, helper: `${formatSignedGrowth(revenueGrowth ?? 'N/A')} revenue` },
+      { label: 'Efficiency Score', score: efficiencyScore, helper: `${formatSignedGrowth(avgBillingGrowth ?? 'N/A')} avg billing` },
+      { label: 'Operations Score', score: operationsScore, helper: `${openRo} open / ${delayed} delayed` },
+      { label: 'Customer Score', score: customerScore, helper: `${complaints} open complaints` },
+    ],
+  }
+}
+
+function executiveStatusClass(status: string) {
+  if (status === 'EXCELLENT' || status === 'GOOD') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (status === 'WATCH') return 'border-amber-200 bg-amber-50 text-amber-700'
+  return 'border-rose-200 bg-rose-50 text-rose-700'
+}
+
+function executiveToneClass(tone: ExecutiveTone = 'neutral') {
+  if (tone === 'good') return 'border-emerald-100 bg-emerald-50/70 text-emerald-800'
+  if (tone === 'warning') return 'border-amber-100 bg-amber-50/70 text-amber-800'
+  if (tone === 'risk') return 'border-rose-100 bg-rose-50/70 text-rose-800'
+  return 'border-slate-200 bg-slate-50/80 text-slate-800'
+}
+
+function BusinessExecutiveDecisionLayer({
+  dateFilter,
+  reportName,
+  dealerCode,
+}: {
+  dateFilter: BusinessDateFilter
+  reportName: string
+  dealerCode?: string | null
+}) {
+  const request = useMemo(() => buildExecutiveRequest(reportName, dateFilter, dealerCode), [dateFilter, dealerCode, reportName])
+  const { data, isLoading } = useQuery<unknown, Error>({
+    queryKey: ['business-excellence', 'executive-decision-layer', reportName, request.endpoint],
+    queryFn: async () => {
+      const response = await fetch(request.endpoint)
+      logApiTimings(response, request.timingLabel)
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Failed to load executive layer')
+      return payload
+    },
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const executiveRead = useMemo(() => {
+    if (reportName.toLowerCase().includes('ro billing')) return buildRoBillingHealth(data)
+    if (reportName === WORKSHOP_PERFORMANCE_REPORT) return buildWorkshopHealth(data)
+    if (reportName === OPEN_RO_REPORT) return buildOpenRoHealth(data)
+    if (reportName === KIA_COMPLAINTS_REPORT) return buildComplaintHealth(data)
+    return buildOverviewHealth(data)
+  }, [data, reportName])
+
+  if (isLoading) {
+    return (
+      <div className="border-b border-slate-100 bg-slate-50/60 p-4">
+        <div className="grid gap-3 lg:grid-cols-[320px_1fr]">
+          <div className="h-56 animate-pulse rounded-[1.5rem] bg-white" />
+          <div className="h-56 animate-pulse rounded-[1.5rem] bg-white" />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="border-b border-slate-100 bg-gradient-to-br from-white via-slate-50 to-[var(--dashboard-primary-soft)] p-4">
+      <div className="rounded-[1.5rem] border border-[var(--dashboard-primary-border)] bg-white/94 p-4 shadow-sm">
+        <div className="grid gap-3 xl:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/85 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--dashboard-action-bg)]">{executiveRead.title}</p>
+              <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest', executiveStatusClass(executiveRead.status))}>{executiveRead.status}</span>
+            </div>
+            <div className="mt-3 flex items-end gap-2">
+              <p className="text-5xl font-black tracking-tight text-slate-950">{executiveRead.score}</p>
+              <p className="pb-1 text-sm font-black uppercase tracking-widest text-slate-400">/ 100</p>
+            </div>
+            <p className="mt-2 text-xs font-black text-slate-600">{scoreTrendLabel(executiveRead.previousScore, executiveRead.score)}</p>
+            <p className="mt-2 inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{executiveRead.confidence}</p>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_260px]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">What Changed</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Positive</p>
+                  <div className="mt-2 space-y-1.5">
+                    {executiveRead.scoreDrivers.positive.slice(0, 2).map((item) => (
+                      <p key={item} className="text-xs font-black text-slate-900">{item}</p>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Negative</p>
+                  <div className="mt-2 space-y-1.5">
+                    {executiveRead.scoreDrivers.negative.slice(0, 2).map((item) => (
+                      <p key={item} className="text-xs font-black text-slate-900">{item}</p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[executiveRead.topDriver, executiveRead.biggestConcern].map((item) => (
+                <div key={item.label} className={cn('rounded-2xl border p-3', executiveToneClass(item.tone))}>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{item.label}</p>
+                  <p className="mt-1 text-base font-black leading-tight">{item.value}</p>
+                  {item.helper && <p className="mt-1 text-[11px] font-bold opacity-75">{item.helper}</p>}
+                </div>
+              ))}
+              {executiveRead.kpiStrip.slice(1, 3).map((item) => (
+                <div key={item.label} className={cn('rounded-2xl border p-3', executiveToneClass(item.tone))}>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{item.label}</p>
+                  <p className="mt-1 text-base font-black leading-tight">{item.value}</p>
+                  {item.helper && <p className="mt-1 text-[11px] font-bold opacity-75">{item.helper}</p>}
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/85 p-4 text-slate-800">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{executiveRead.target.label}</p>
+                <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-black', executiveStatusClass(executiveRead.target.status))}>{executiveRead.target.status}</span>
+              </div>
+              <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">
+                {executiveRead.target.percent === null ? 'N/A' : `${executiveRead.target.percent.toFixed(1)}%`}
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-black">
+                <div><p className="text-[10px] uppercase tracking-widest text-slate-400">Target</p><p>{executiveRead.target.target}</p></div>
+                <div><p className="text-[10px] uppercase tracking-widest text-slate-400">Achieved</p><p>{executiveRead.target.achieved}</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-3">
+          {[executiveRead.cards.drivers, executiveRead.cards.risks, executiveRead.cards.focus].map((card) => (
+            <div key={card.title} className={cn('rounded-2xl border p-4', executiveToneClass(card.tone))}>
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{card.title}</p>
+              <div className="mt-3 space-y-3">
+                {card.items.slice(0, 2).map((item) => (
+                  <div key={`${card.title}-${item.label}`} className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-xs font-black uppercase tracking-wide">{item.label}</p>
+                      {item.helper && <p className="mt-1 text-[11px] font-bold opacity-75">{item.helper}</p>}
+                    </div>
+                    <p className="shrink-0 text-sm font-black">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function getROTrendDateRange(dateFilter: BusinessDateFilter) {
+  if (dateFilter?.startDate && dateFilter.endDate) {
     const start = parseBusinessDate(dateFilter.startDate)
     const end = parseBusinessDate(dateFilter.endDate)
     if (start && end && start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
@@ -1671,38 +3487,1653 @@ function getROTrendDateRange(dateFilter: {
   }
 }
 
+const EXECUTIVE_LOCATION_OPTIONS = [
+  { label: 'All Locations', dealerCode: null as string | null, helper: 'JK402 + JK501' },
+  { label: 'Jammu', dealerCode: 'JK402', helper: 'Dealer JK402' },
+  { label: 'Udhampur', dealerCode: 'JK501', helper: 'Dealer JK501' },
+]
+
+function executiveQueryString(view: 'table' | 'trend' | 'fy', dateFilter: BusinessDateFilter, dealerCode?: string | null) {
+  const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
+  const params = new URLSearchParams({
+    brand: 'kia',
+    sheet: 'ro_billing_report',
+    analysisType: 'load',
+    view,
+    groupBy: 'work_type',
+    metrics: 'all',
+    startDate: range.startDate,
+    endDate: range.endDate,
+  })
+  appendBusinessComparisonParams(params, dateFilter)
+  appendKiaDealerCodeParam(params, dealerCode)
+  return params.toString()
+}
+
+function getExecutiveMetricRows(response: ROAnalysisResponse | null | undefined, metric: ROAnalysisType) {
+  return response?.byMetric?.[metric]?.rows || (metric === 'load' ? response?.rows : undefined) || []
+}
+
+function buildExecutiveSyntheticRow(name: string, sourceRows: ROAnalysisRow[]): ROAnalysisRow {
+  const buildMetric = (period: PeriodKey): ROAnalysisMetric => {
+    const cy = sourceRows.reduce((total, row) => total + Number(row.metrics?.[period]?.cy || 0), 0)
+    let hasLy = false
+    const lyTotal = sourceRows.reduce((total, row) => {
+      const ly = row.metrics?.[period]?.ly
+      if (ly === 'N/A' || ly === undefined || ly === null) return total
+      hasLy = true
+      return total + Number(ly || 0)
+    }, 0)
+    const ly: number | 'N/A' = hasLy ? lyTotal : 'N/A'
+    const growth: number | 'N/A' = ly !== 'N/A' && ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A'
+    return { cy, ly, growth }
+  }
+
+  return {
+    name,
+    depth: 0,
+    metrics: {
+      td: buildMetric('td'),
+      mtd: buildMetric('mtd'),
+      qtd: buildMetric('qtd'),
+      ytd: buildMetric('ytd'),
+    },
+    children: [],
+  }
+}
+
+function getExecutiveDisplayBaseRows(response: ROAnalysisResponse | null | undefined, metric: 'load' | 'labour' | 'parts') {
+  const topRows = getExecutiveMetricRows(response, metric).filter((row) => row.depth === 0)
+  const normalizeName = (name: string) => name
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+
+  const matchesAny = (row: ROAnalysisRow, names: string[]) => {
+    const normalized = normalizeName(row.name || '')
+    return names.some((name) => normalized === normalizeName(name))
+  }
+
+  const paidNames = ['Paid Service']
+  const freeNames = ['Free Service', 'Free Services', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA First Free Service', 'TMA Second Free Service', 'TMA Third Free Service', 'Sixth Free Service']
+  const runningNames = ['Running Repair', 'Running Repairs']
+  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop']
+  const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
+
+  const paidRows = topRows.filter((row) => matchesAny(row, paidNames))
+  const freeRows = topRows.filter((row) => matchesAny(row, freeNames))
+  const runningRows = topRows.filter((row) => matchesAny(row, runningNames))
+  const accidentRows = topRows.filter((row) => matchesAny(row, accidentNames))
+  const otherRows = topRows.filter((row) => !matchesAny(row, classifiedNames))
+
+  const paid = buildExecutiveSyntheticRow('Paid Service', paidRows)
+  const free = buildExecutiveSyntheticRow('Free Services', freeRows)
+  const running = buildExecutiveSyntheticRow('Running Repairs', runningRows)
+  const mech = buildExecutiveSyntheticRow('MECH', [paid, free, running])
+  const others = buildExecutiveSyntheticRow('Others', otherRows)
+  const mechTotal = buildExecutiveSyntheticRow('MECH TOTAL', [mech, others])
+  const accident = buildExecutiveSyntheticRow('Accident', accidentRows)
+  const grandTotal = buildExecutiveSyntheticRow('Grand Total', [mechTotal, accident])
+
+  return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
+}
+
+function deriveExecutivePerVehicleRows(amountRows: ROAnalysisRow[], loadRows: ROAnalysisRow[]) {
+  const amountByName = new Map(amountRows.map((row) => [row.name, row]))
+  const deriveMetric = (amount: ROAnalysisMetric | undefined, load: ROAnalysisMetric | undefined): ROAnalysisMetric => {
+    const cyLoad = Number(load?.cy || 0)
+    const cy = cyLoad > 0 ? Number(amount?.cy || 0) / cyLoad : 0
+    const amountLy = amount?.ly
+    const loadLy = load?.ly
+    const ly = amountLy !== 'N/A' && loadLy !== 'N/A' && Number(loadLy || 0) > 0
+      ? Number(amountLy || 0) / Number(loadLy || 0)
+      : 'N/A'
+    const growth = ly !== 'N/A' && ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A'
+    return { cy, ly, growth }
+  }
+
+  return loadRows.map((loadRow) => {
+    const amountRow = amountByName.get(loadRow.name)
+    return {
+      name: loadRow.name,
+      depth: 0,
+      metrics: {
+        td: deriveMetric(amountRow?.metrics.td, loadRow.metrics.td),
+        mtd: deriveMetric(amountRow?.metrics.mtd, loadRow.metrics.mtd),
+        qtd: deriveMetric(amountRow?.metrics.qtd, loadRow.metrics.qtd),
+        ytd: deriveMetric(amountRow?.metrics.ytd, loadRow.metrics.ytd),
+      },
+      children: [],
+    } satisfies ROAnalysisRow
+  })
+}
+
+function getExecutiveDisplayMetricRows(response: ROAnalysisResponse | null | undefined, metric: ROAnalysisType) {
+  if (metric === 'lab_per_veh') {
+    return deriveExecutivePerVehicleRows(
+      getExecutiveDisplayBaseRows(response, 'labour'),
+      getExecutiveDisplayBaseRows(response, 'load')
+    )
+  }
+  if (metric === 'part_per_veh') {
+    return deriveExecutivePerVehicleRows(
+      getExecutiveDisplayBaseRows(response, 'parts'),
+      getExecutiveDisplayBaseRows(response, 'load')
+    )
+  }
+  return getExecutiveDisplayBaseRows(response, metric)
+}
+
+function findExecutiveRow(rows: ROAnalysisRow[], names: string[]) {
+  const normalizedNames = names.map((name) => name.toLowerCase())
+  const stack = [...rows]
+  while (stack.length > 0) {
+    const row = stack.shift()
+    if (!row) continue
+    if (normalizedNames.includes(String(row.name || '').trim().toLowerCase())) return row
+    if (row.children?.length) stack.push(...row.children)
+  }
+  return null
+}
+
+function getExecutiveTotalRow(response: ROAnalysisResponse | null | undefined, metric: ROAnalysisType) {
+  const rows = getExecutiveDisplayMetricRows(response, metric)
+  return findExecutiveRow(rows, ['Grand Total', 'Total']) || null
+}
+
+function executivePeriod(row: ROAnalysisRow | null | undefined, period: PeriodKey) {
+  return row?.metrics?.[period] || { cy: 0, ly: 0, growth: 'N/A' as const }
+}
+
+function combineExecutiveMetricValues(primary: ROAnalysisMetric, secondary: ROAnalysisMetric) {
+  const cy = Number(primary.cy || 0) + Number(secondary.cy || 0)
+  const primaryLy = primary.ly === 'N/A' ? 0 : Number(primary.ly || 0)
+  const secondaryLy = secondary.ly === 'N/A' ? 0 : Number(secondary.ly || 0)
+  const ly = primaryLy + secondaryLy
+  const growth = ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A'
+  return { cy, ly, growth }
+}
+
+function ExecutiveGrowthBadge({ value }: { value: number | string | 'N/A' }) {
+  const numericValue = value === 'N/A' ? Number.NaN : Number(value)
+  const toneClass = value === 'N/A' || !Number.isFinite(numericValue)
+    ? 'executive-growth-badge-neutral'
+    : numericValue >= 0
+      ? 'executive-growth-badge-positive'
+      : 'executive-growth-badge-negative'
+
+  return (
+    <span className={cn(
+      'executive-growth-badge inline-flex items-center justify-center rounded-full border bg-white px-2.5 py-1 text-[10px] font-black',
+      toneClass,
+      getGrowthBadgeClass(value)
+    )}>
+      {formatSignedGrowth(value)}
+    </span>
+  )
+}
+
+function ExecutiveMetricCard({
+  label,
+  value,
+  previous,
+  growth,
+  helper,
+}: {
+  label: string
+  value: string
+  previous: string
+  growth: number | string | 'N/A'
+  helper: string
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{label}</p>
+          <p className="mt-3 text-2xl font-black text-slate-950">{value}</p>
+        </div>
+        <ExecutiveGrowthBadge value={growth} />
+      </div>
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Previous</p>
+        <p className="mt-1 text-sm font-black text-slate-800">{previous}</p>
+      </div>
+      <p className="mt-3 text-xs font-bold text-slate-500">{helper}</p>
+    </div>
+  )
+}
+
+type ExecutiveRevenueRow = { key: string; label: string; row: ROAnalysisRow }
+
+const EXECUTIVE_REVENUE_CATEGORY_MAP = [
+  ['MECH', 'Mechanical'],
+  ['Accident', 'Accidental'],
+  ['Paid Service', 'Paid Service'],
+  ['Free Services', 'Free Service'],
+  ['Running Repairs', 'Running Repair'],
+  ['Others', 'Others'],
+] as const
+
+function executiveRevenueRows(response: ROAnalysisResponse | null | undefined, metric: 'labour' | 'parts', totalLabel: string) {
+  const rows = getExecutiveDisplayMetricRows(response, metric)
+  const items = EXECUTIVE_REVENUE_CATEGORY_MAP.reduce<ExecutiveRevenueRow[]>((acc, [name, label]) => {
+    const row = findExecutiveRow(rows, [name])
+    if (row) acc.push({ key: name, label, row })
+    return acc
+  }, [])
+  const total = getExecutiveTotalRow(response, metric)
+  if (total) items.push({ key: `${metric}-total`, label: totalLabel, row: total })
+  return items
+}
+
+function formatExecutiveRevenueMoney(value: number | string | 'N/A' | undefined | null) {
+  if (value === 'N/A' || value === undefined || value === null) return 'N/A'
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 'N/A'
+  return formatCurrency(numeric)
+}
+
+const EXECUTIVE_TABLE_METRICS: Array<{ id: ROAnalysisType; label: string }> = [
+  { id: 'load', label: 'Load' },
+  { id: 'labour', label: 'Labour' },
+  { id: 'parts', label: 'Parts' },
+  { id: 'lab_per_veh', label: 'Lab / Veh' },
+  { id: 'part_per_veh', label: 'Part / Veh' },
+]
+
+function formatExecutiveTableMetricValue(metric: ROAnalysisType, value: number | string | 'N/A' | undefined | null) {
+  if (value === 'N/A' || value === undefined || value === null) return 'N/A'
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 'N/A'
+  if (metric === 'load') return Math.round(numeric).toLocaleString('en-IN')
+  return formatCurrency(numeric)
+}
+
+function ExecutiveRevenuePerformance({
+  response,
+  dateFilter,
+  selectedLocationLabel,
+  expandedTable,
+  onToggleTable,
+}: {
+  response: ROAnalysisResponse | null | undefined
+  dateFilter: BusinessDateFilter
+  selectedLocationLabel: string
+  expandedTable: ExecutiveDashboardTableId | null
+  onToggleTable: (tableId: ExecutiveDashboardTableId) => void
+}) {
+  const labourRows = useMemo(() => executiveRevenueRows(response, 'labour', 'Total Labour'), [response])
+  const partsRows = useMemo(() => executiveRevenueRows(response, 'parts', 'Total Parts'), [response])
+  const labourTotal = getExecutiveTotalRow(response, 'labour')
+  const partsTotal = getExecutiveTotalRow(response, 'parts')
+  const loadTotal = getExecutiveTotalRow(response, 'load')
+  const paidLoad = findExecutiveRow(getExecutiveDisplayMetricRows(response, 'load'), ['Paid Service'])
+  const selectedRange = getSelectedBusinessDateRange(dateFilter)
+  const comparisonStart = dateFilter?.comparison?.previousStartDate
+    ? parseBusinessDate(dateFilter.comparison.previousStartDate)
+    : null
+  const comparisonEnd = dateFilter?.comparison?.previousEndDate
+    ? parseBusinessDate(dateFilter.comparison.previousEndDate)
+    : null
+  const fallbackLyStart = new Date(selectedRange.start)
+  fallbackLyStart.setFullYear(fallbackLyStart.getFullYear() - 1)
+  const fallbackLyEnd = new Date(selectedRange.end)
+  fallbackLyEnd.setFullYear(fallbackLyEnd.getFullYear() - 1)
+  const rangeFormatter = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  const rangeLabel = (start: Date, end: Date) => getInputDate(start) === getInputDate(end)
+    ? rangeFormatter.format(start)
+    : `${rangeFormatter.format(start)} to ${rangeFormatter.format(end)}`
+  const currentRangeLabel = rangeLabel(selectedRange.start, selectedRange.end)
+  const comparisonRangeLabel = rangeLabel(comparisonStart || fallbackLyStart, comparisonEnd || fallbackLyEnd)
+  const currentRevenue = Number(labourTotal?.metrics?.mtd?.cy || 0) + Number(partsTotal?.metrics?.mtd?.cy || 0)
+  const previousRevenue = Number(labourTotal?.metrics?.mtd?.ly === 'N/A' ? 0 : labourTotal?.metrics?.mtd?.ly || 0)
+    + Number(partsTotal?.metrics?.mtd?.ly === 'N/A' ? 0 : partsTotal?.metrics?.mtd?.ly || 0)
+  const revenueGrowth = previousRevenue > 0 ? ((currentRevenue - previousRevenue) / previousRevenue) * 100 : 'N/A'
+  const paidContribution = Number(loadTotal?.metrics?.mtd?.cy || 0) > 0
+    ? (Number(paidLoad?.metrics?.mtd?.cy || 0) / Number(loadTotal?.metrics?.mtd?.cy || 0)) * 100
+    : 0
+  const partsContribution = currentRevenue > 0 ? (Number(partsTotal?.metrics?.mtd?.cy || 0) / currentRevenue) * 100 : 0
+  const labourContribution = currentRevenue > 0 ? (Number(labourTotal?.metrics?.mtd?.cy || 0) / currentRevenue) * 100 : 0
+
+  const renderPeriodCells = (row: ROAnalysisRow, period: PeriodKey) => {
+    const metric = executivePeriod(row, period)
+    return (
+      <React.Fragment key={`${row.name}-${period}`}>
+        <td className="min-w-[78px] whitespace-nowrap border border-slate-300 px-2 py-2 text-right font-mono font-black">{formatExecutiveRevenueMoney(metric.cy)}</td>
+        <td className="min-w-[78px] whitespace-nowrap border border-slate-300 px-2 py-2 text-right font-mono font-bold text-slate-500">{formatExecutiveRevenueMoney(metric.ly)}</td>
+        <td className="min-w-[82px] whitespace-nowrap border border-slate-300 px-2 py-2 text-center">
+          <ExecutiveGrowthBadge value={metric.growth} />
+        </td>
+      </React.Fragment>
+    )
+  }
+
+  const renderRevenueTable = (
+    tableId: Extract<ExecutiveDashboardTableId, 'labour-revenue' | 'parts-revenue'>,
+    title: string,
+    rows: ExecutiveRevenueRow[],
+    headerClass: string
+  ) => (
+    <ExecutiveTableShell
+      title={title}
+      icon={<IndianRupee className="h-3.5 w-3.5" />}
+      headerClassName={cn('px-3 py-2 text-white', headerClass)}
+      titleClassName="text-[11px]"
+      className={cn('rounded-2xl border-slate-300', expandedTable === tableId && 'xl:col-span-3')}
+      isExpanded={expandedTable === tableId}
+      onToggleExpanded={() => onToggleTable(tableId)}
+    >
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] border-collapse text-[11px] leading-tight">
+          <thead className="bg-slate-950 text-white">
+            <tr>
+              <th className="min-w-[130px] border border-slate-600 px-2 py-2 text-left">Category</th>
+              {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
+                <th key={label} colSpan={3} className="border border-slate-600 px-2 py-2 text-center">{label}</th>
+              ))}
+            </tr>
+            <tr>
+              <th className="border border-slate-600 px-2 py-1.5"></th>
+              {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', '%'].map((label) => (
+                <th key={`${groupIndex}-${label}`} className="border border-slate-600 px-2 py-1.5 text-center">{label}</th>
+              )))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ key, label, row }) => (
+              <tr key={key} className={cn(getManagementTotalRowClass(row.name) || 'bg-white')}>
+                <td className="whitespace-nowrap border border-slate-300 px-2 py-2 font-black leading-tight">{label}</td>
+                {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => renderPeriodCells(row, period))}
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={10} className="border border-slate-300 bg-white px-3 py-6 text-center text-xs font-bold text-slate-500">
+                  Data not available.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </ExecutiveTableShell>
+  )
+
+  return (
+    <div className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white">
+            <TrendingUp className="h-4 w-4 text-slate-700" />
+          </div>
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-[0.24em] text-slate-400">Revenue Performance</p>
+            <h3 className="text-lg font-black text-slate-950">{selectedLocationLabel}</h3>
+          </div>
+        </div>
+        <p className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
+          CY {currentRangeLabel} vs LY {comparisonRangeLabel}
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-3">
+        {renderRevenueTable('labour-revenue', 'Labour Revenue', labourRows, 'bg-blue-600')}
+        {renderRevenueTable('parts-revenue', 'Part Revenue', partsRows, 'bg-purple-600')}
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-300 bg-white">
+          <div className="bg-slate-950 px-3 py-2 text-white">
+            <h4 className="flex items-center gap-2 text-[11px] font-black">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Growth Contribution
+            </h4>
+          </div>
+          <div className="grid gap-2 p-3">
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total Revenue Growth</p>
+              <p className={cn('mt-2 text-2xl font-black', revenueGrowth !== 'N/A' && revenueGrowth < 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700')}>
+              {formatSignedGrowth(revenueGrowth)}
+            </p>
+              <p className="mt-2 text-[9px] font-black uppercase leading-4 text-slate-500">
+              CY {currentRangeLabel} vs LY {comparisonRangeLabel}
+            </p>
+              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2 text-[10px] font-black">
+              <div><p className="text-[9px] uppercase tracking-widest text-slate-400">CY Revenue</p><p>{formatCurrency(currentRevenue)}</p></div>
+              <div><p className="text-[9px] uppercase tracking-widest text-slate-400">LY Revenue</p><p>{formatCurrency(previousRevenue)}</p></div>
+            </div>
+          </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Paid Service Contribution</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{paidContribution.toFixed(1)}%</p>
+              <p className="mt-1 text-[9px] font-black uppercase leading-4 text-slate-500">Paid Service load share in CY selected period.</p>
+          </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Labour Share</p>
+                <p className="mt-2 text-xl font-black text-slate-950">{labourContribution.toFixed(1)}%</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Parts Share</p>
+                <p className="mt-2 text-xl font-black text-slate-950">{partsContribution.toFixed(1)}%</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BusinessExecutiveDashboard({
+  dateFilter,
+  dealerCode,
+  onDealerChange,
+}: {
+  dateFilter: BusinessDateFilter
+  dealerCode: string | null
+  onDealerChange: (dealerCode: string | null) => void
+}) {
+  const [activeExecutiveMetric, setActiveExecutiveMetric] = useState<ROAnalysisType>('load')
+  const [activeExecutiveTableMetric, setActiveExecutiveTableMetric] = useState<ROAnalysisType>('load')
+  const [expandedExecutiveTable, setExpandedExecutiveTable] = useState<ExecutiveDashboardTableId | null>(null)
+  const selectedDealer = normalizeKiaDealerCode(dealerCode)
+  const selectedLocation = selectedDealer || 'all'
+  const queryClient = useQueryClient()
+
+  const toggleExecutiveTable = useCallback((tableId: ExecutiveDashboardTableId) => {
+    setExpandedExecutiveTable((current) => current === tableId ? null : tableId)
+  }, [])
+
+  const fetchExecutiveSummary = useCallback(async (view: 'table' | 'trend' | 'fy', nextDealerCode?: string | null) => {
+    const queryString = executiveQueryString(view, dateFilter, nextDealerCode)
+    return queryClient.fetchQuery({
+      queryKey: ['business-excellence', 'executive-dashboard', view, queryString],
+      queryFn: async () => {
+        const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+        logApiTimings(response, `executive-dashboard-${view}`)
+        if (!response.ok) throw new Error(`Failed to fetch executive dashboard ${view}`)
+        return await response.json() as ROAnalysisResponse
+      },
+      staleTime: DASHBOARD_STALE_TIME_MS,
+    })
+  }, [dateFilter, queryClient])
+
+  const tableQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'table', selectedLocation, dateFilter],
+    queryFn: () => fetchExecutiveSummary('table', selectedDealer),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const branchTableQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'branch-table', dateFilter],
+    queryFn: async () => {
+      const [all, jammu, udhampur] = await Promise.all([
+        fetchExecutiveSummary('table', null),
+        fetchExecutiveSummary('table', 'JK402'),
+        fetchExecutiveSummary('table', 'JK501'),
+      ])
+      return { all, jammu, udhampur }
+    },
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const trendQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'trend', selectedLocation, dateFilter],
+    queryFn: () => fetchExecutiveSummary('trend', selectedDealer),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const fyQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'fy', selectedLocation, dateFilter],
+    queryFn: () => fetchExecutiveSummary('fy', selectedDealer),
+    staleTime: DASHBOARD_STALE_TIME_MS,
+  })
+
+  const selectedTable = tableQuery.data
+  const labourTotal = getExecutiveTotalRow(selectedTable, 'labour')
+  const partsTotal = getExecutiveTotalRow(selectedTable, 'parts')
+  const labourMtd = executivePeriod(labourTotal, 'mtd')
+  const partsMtd = executivePeriod(partsTotal, 'mtd')
+  const revenueMtd = combineExecutiveMetricValues(labourMtd, partsMtd)
+
+  const locationRows = useMemo(() => {
+    const buildRow = (label: string, response?: ROAnalysisResponse) => {
+      const row = getExecutiveTotalRow(response, 'load')
+      return {
+        label,
+        td: executivePeriod(row, 'td'),
+        mtd: executivePeriod(row, 'mtd'),
+        qtd: executivePeriod(row, 'qtd'),
+        ytd: executivePeriod(row, 'ytd'),
+      }
+    }
+    return [
+      buildRow('Jammu', branchTableQuery.data?.jammu),
+      buildRow('Udhampur', branchTableQuery.data?.udhampur),
+      buildRow('Total', branchTableQuery.data?.all),
+    ]
+  }, [branchTableQuery.data])
+
+  const serviceTypeRows = useMemo(() => {
+    return getExecutiveDisplayMetricRows(selectedTable, activeExecutiveTableMetric)
+      .map((row) => ({
+        name: row.name,
+        td: executivePeriod(row, 'td'),
+        mtd: executivePeriod(row, 'mtd'),
+        qtd: executivePeriod(row, 'qtd'),
+        ytd: executivePeriod(row, 'ytd'),
+      }))
+  }, [activeExecutiveTableMetric, selectedTable])
+
+  const trendData = useMemo(() => {
+    const labourTrend = trendQuery.data?.byMetric?.labour?.trend || []
+    const partsTrend = trendQuery.data?.byMetric?.parts?.trend || []
+    const loadTrend = trendQuery.data?.byMetric?.load?.trend || []
+    const byDate = new Map<string, {
+      label: string
+      cyRevenue: number
+      lyRevenue: number
+      cyLabour: number
+      lyLabour: number
+      cyParts: number
+      lyParts: number
+      cyLoad: number
+      lyLoad: number
+    }>()
+
+    loadTrend.forEach((item) => {
+      byDate.set(item.date, {
+        label: item.label,
+        cyRevenue: 0,
+        lyRevenue: 0,
+        cyLabour: 0,
+        lyLabour: 0,
+        cyParts: 0,
+        lyParts: 0,
+        cyLoad: Number(item.cy || 0),
+        lyLoad: Number(item.ly || 0),
+      })
+    })
+    labourTrend.forEach((item) => {
+      const existing = byDate.get(item.date) || { label: item.label, cyRevenue: 0, lyRevenue: 0, cyLabour: 0, lyLabour: 0, cyParts: 0, lyParts: 0, cyLoad: 0, lyLoad: 0 }
+      existing.cyRevenue += Number(item.cy || 0)
+      existing.lyRevenue += Number(item.ly || 0)
+      existing.cyLabour += Number(item.cy || 0)
+      existing.lyLabour += Number(item.ly || 0)
+      byDate.set(item.date, existing)
+    })
+    partsTrend.forEach((item) => {
+      const existing = byDate.get(item.date) || { label: item.label, cyRevenue: 0, lyRevenue: 0, cyLabour: 0, lyLabour: 0, cyParts: 0, lyParts: 0, cyLoad: 0, lyLoad: 0 }
+      existing.cyRevenue += Number(item.cy || 0)
+      existing.lyRevenue += Number(item.ly || 0)
+      existing.cyParts += Number(item.cy || 0)
+      existing.lyParts += Number(item.ly || 0)
+      byDate.set(item.date, existing)
+    })
+
+    return Array.from(byDate.values())
+  }, [trendQuery.data])
+
+  const activeTrendMeta = useMemo(() => {
+    if (activeExecutiveMetric === 'labour') {
+      return {
+        label: 'Labour',
+        title: 'Labour trend',
+        cyKey: 'cyLabour' as const,
+        lyKey: 'lyLabour' as const,
+        currentName: 'Current Labour',
+        previousName: 'Previous Labour',
+        formatter: formatCurrency,
+      }
+    }
+    if (activeExecutiveMetric === 'parts') {
+      return {
+        label: 'Parts',
+        title: 'Parts trend',
+        cyKey: 'cyParts' as const,
+        lyKey: 'lyParts' as const,
+        currentName: 'Current Parts',
+        previousName: 'Previous Parts',
+        formatter: formatCurrency,
+      }
+    }
+    return {
+      label: 'Load',
+      title: 'Load trend',
+      cyKey: 'cyLoad' as const,
+      lyKey: 'lyLoad' as const,
+      currentName: 'Current Load',
+      previousName: 'Previous Load',
+      formatter: (value: number) => Math.round(value).toLocaleString('en-IN'),
+    }
+  }, [activeExecutiveMetric])
+
+  const executiveTrendStats = useMemo(() => {
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const endDate = selectedRange.end
+    const daysInMonth = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).getDate()
+    const throughDay = Math.min(Math.max(endDate.getDate(), 1), daysInMonth)
+    const remainingDays = Math.max(daysInMonth - throughDay, 0)
+    const metricRows = trendData.map((point) => {
+      const dayNumber = Number(String(point.label || '').slice(0, 2))
+      return {
+        day: Number.isFinite(dayNumber) ? dayNumber : 0,
+        cy: Number(point[activeTrendMeta.cyKey] || 0),
+        ly: Number(point[activeTrendMeta.lyKey] || 0),
+      }
+    })
+    const monthTarget = metricRows.reduce((total, point) => total + point.ly, 0) * 1.1
+    const dailyTarget = daysInMonth > 0 ? monthTarget / daysInMonth : 0
+    const mtdTarget = dailyTarget * throughDay
+    const mtdAchieved = metricRows
+      .filter((point) => point.day > 0 && point.day <= throughDay)
+      .reduce((total, point) => total + point.cy, 0)
+    const shortfallTd = Math.max(mtdTarget - mtdAchieved, 0)
+    const avgPerDay = throughDay > 0 ? mtdAchieved / throughDay : 0
+    const projectedClosing = avgPerDay * daysInMonth
+    const monthlyShortfall = Math.max(monthTarget - projectedClosing, 0)
+    const askingRate = remainingDays > 0 ? Math.max(monthTarget - mtdAchieved, 0) / remainingDays : 0
+    const formatStat = activeTrendMeta.formatter
+
+    return {
+      dailyTarget,
+      cards: [
+        { label: 'Month Target', value: formatStat(monthTarget) },
+        { label: 'MTD Target', value: formatStat(mtdTarget) },
+        { label: 'MTD Achieved', value: formatStat(mtdAchieved) },
+        { label: 'Shortfall T.D', value: formatStat(shortfallTd), color: shortfallTd > 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700' },
+        { label: 'Monthly Shortfall', value: formatStat(monthlyShortfall), color: monthlyShortfall > 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-emerald-700' },
+        { label: 'Projected Closing', value: formatStat(projectedClosing) },
+        { label: 'Asking Rate', value: formatStat(askingRate), color: askingRate > 0 ? 'text-slate-950' : 'text-emerald-700' },
+      ],
+    }
+  }, [activeTrendMeta, dateFilter, trendData])
+
+  const fyRows = useMemo(() => {
+    const byFy = new Map<string, { fy: string; load: number; labour: number; parts: number; revenue: number }>()
+    const applyMetric = (metric: ROAnalysisType, assign: (row: { fy: string; load: number; labour: number; parts: number; revenue: number }, value: number) => void) => {
+      ;(fyQuery.data?.byMetric?.[metric]?.fyTrends || []).forEach((item) => {
+        const existing = byFy.get(item.fy) || { fy: item.fy, load: 0, labour: 0, parts: 0, revenue: 0 }
+        assign(existing, Number(item.value || 0))
+        existing.revenue = existing.labour + existing.parts
+        byFy.set(item.fy, existing)
+      })
+    }
+    applyMetric('load', (row, value) => { row.load = value })
+    applyMetric('labour', (row, value) => { row.labour = value })
+    applyMetric('parts', (row, value) => { row.parts = value })
+    return Array.from(byFy.values()).sort((a, b) => b.fy.localeCompare(a.fy)).slice(0, 4)
+  }, [fyQuery.data])
+
+  const isLoading = tableQuery.isLoading || branchTableQuery.isLoading || trendQuery.isLoading || fyQuery.isLoading
+  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (!item.dealerCode && selectedLocation === 'all'))?.label || 'All Locations'
+
+  return (
+    <div className="space-y-4">
+
+      {isLoading ? (
+        <SheetContentSkeleton />
+      ) : (
+        <>
+          <div className="grid gap-4 xl:grid-cols-3">
+            <ExecutiveMetricCard
+              label="Total Revenue"
+              value={formatCurrency(revenueMtd.cy)}
+              previous={formatCurrency(revenueMtd.ly)}
+              growth={revenueMtd.growth}
+              helper="Labour + Parts revenue in selected MTD window"
+            />
+            <ExecutiveMetricCard
+              label="Parts Revenue"
+              value={formatCurrency(Number(partsMtd.cy || 0))}
+              previous={formatCurrency(Number(partsMtd.ly === 'N/A' ? 0 : partsMtd.ly || 0))}
+              growth={partsMtd.growth}
+              helper="Parts contribution using RO Billing Report calculations"
+            />
+            <ExecutiveMetricCard
+              label="Labour Revenue"
+              value={formatCurrency(Number(labourMtd.cy || 0))}
+              previous={formatCurrency(Number(labourMtd.ly === 'N/A' ? 0 : labourMtd.ly || 0))}
+              growth={labourMtd.growth}
+              helper="Labour contribution using RO Billing Report calculations"
+            />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+            <ExecutiveTableShell
+              title="Overall Load"
+              subtitle="Location performance"
+              className={cn(expandedExecutiveTable === 'overall-load' && 'xl:col-span-2')}
+              isExpanded={expandedExecutiveTable === 'overall-load'}
+              onToggleExpanded={() => toggleExecutiveTable('overall-load')}
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#1f3f91] text-white">
+                    <tr>
+                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Location</th>
+                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-center">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
+                        <th key={label} colSpan={3} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                      ))}
+                    </tr>
+                    <tr>
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
+                        <th key={`${groupIndex}-${label}`} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                      )))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {locationRows.map((row) => (
+                      <tr key={row.label} className={row.label === 'Total' ? 'bg-slate-50 font-black' : 'bg-white'}>
+                        <td className="border border-slate-200 px-3 py-3 font-black text-slate-900">{row.label}</td>
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue('load', row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
+                          const metric = row[period]
+                          return (
+                            <React.Fragment key={`${row.label}-${period}`}>
+                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue('load', metric.cy)}</td>
+                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono text-slate-500">{formatExecutiveTableMetricValue('load', metric.ly)}</td>
+                              <td className="border border-slate-200 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                            </React.Fragment>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </ExecutiveTableShell>
+
+            <ExecutiveTableShell
+              title="Service Type Performance"
+              subtitle={selectedLocationLabel}
+              headerContentClassName="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between"
+              actions={(
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {EXECUTIVE_TABLE_METRICS.map((metric) => (
+                    <button
+                      key={metric.id}
+                      type="button"
+                      onClick={() => setActiveExecutiveTableMetric(metric.id)}
+                      className={cn(
+                        'executive-table-metric-button rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-sm transition',
+                        activeExecutiveTableMetric === metric.id
+                          ? 'border-white bg-white text-[#1f3f91]'
+                          : 'border-white bg-white text-[#1f3f91] hover:bg-slate-50'
+                      )}
+                    >
+                      {metric.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              className={cn(expandedExecutiveTable === 'service-type-performance' && 'xl:col-span-2')}
+              isExpanded={expandedExecutiveTable === 'service-type-performance'}
+              onToggleExpanded={() => toggleExecutiveTable('service-type-performance')}
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[800px] border-collapse text-[11px] leading-tight">
+                  <thead className="bg-[#1f3f91] text-white">
+                    <tr>
+                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-left">Service Type</th>
+                      <th rowSpan={2} className="border border-white/30 px-3 py-3 text-center">TD</th>
+                      {(['MTD', 'QTD', 'YTD'] as const).map((label) => (
+                        <th key={label} colSpan={3} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                      ))}
+                    </tr>
+                    <tr>
+                      {Array.from({ length: 3 }).flatMap((_, groupIndex) => ['CY', 'LY', 'Growth'].map((label) => (
+                        <th key={`${groupIndex}-${label}`} className="border border-white/30 px-3 py-2 text-center">{label}</th>
+                      )))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serviceTypeRows.map((row) => (
+                      <tr key={row.name} className={cn(getManagementTotalRowClass(row.name) || 'bg-white')}>
+                        <td className="border border-slate-200 px-3 py-3 font-black">{row.name}</td>
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, row.td.cy)}</td>
+                        {(['mtd', 'qtd', 'ytd'] as PeriodKey[]).map((period) => {
+                          const metric = row[period]
+                          return (
+                            <React.Fragment key={`${row.name}-${period}`}>
+                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono font-black">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.cy)}</td>
+                              <td className="whitespace-nowrap border border-slate-200 px-3 py-3 text-center font-mono text-slate-500">{formatExecutiveTableMetricValue(activeExecutiveTableMetric, metric.ly)}</td>
+                              <td className="border border-slate-200 px-3 py-3 text-center"><ExecutiveGrowthBadge value={metric.growth} /></td>
+                            </React.Fragment>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </ExecutiveTableShell>
+          </div>
+
+          <ExecutiveRevenuePerformance
+            response={selectedTable}
+            dateFilter={dateFilter}
+            selectedLocationLabel={selectedLocationLabel}
+            expandedTable={expandedExecutiveTable}
+            onToggleTable={toggleExecutiveTable}
+          />
+
+          <div className="space-y-4">
+            <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Trend Graph</p>
+                  <h3 className="mt-1 text-lg font-black text-slate-950">{activeTrendMeta.title}</h3>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {([
+                    { id: 'load', label: 'Load' },
+                    { id: 'labour', label: 'Labour' },
+                    { id: 'parts', label: 'Parts' },
+                  ] as Array<{ id: ROAnalysisType; label: string }>).map((metric) => (
+                    <button
+                      key={metric.id}
+                      type="button"
+                      onClick={() => setActiveExecutiveMetric(metric.id)}
+                      className={cn(
+                        'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider',
+                        activeExecutiveMetric === metric.id
+                          ? 'border-[#1f3f91] bg-[#1f3f91] text-white'
+                          : 'border-slate-200 bg-white text-slate-600'
+                      )}
+                    >
+                      {metric.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 h-[360px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 20, right: 20, bottom: 10, left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 800, fill: '#64748b' }} interval="preserveStartEnd" />
+                    <YAxis tickFormatter={(value) => activeExecutiveMetric === 'load' ? Number(value || 0).toLocaleString('en-IN') : formatChartLabel(Number(value || 0))} tick={{ fontSize: 10, fontWeight: 800, fill: '#64748b' }} width={58} />
+                    <Tooltip
+                      formatter={(value, name) => [activeExecutiveMetric === 'load' ? Number(value || 0).toLocaleString('en-IN') : formatCurrency(Number(value || 0)), String(name)]}
+                      contentStyle={{ borderRadius: 14, border: '1px solid #cbd5e1', background: '#fff' }}
+                    />
+                    <Legend />
+                    <ReferenceLine
+                      y={executiveTrendStats.dailyTarget}
+                      stroke="#f43f5e"
+                      strokeDasharray="5 5"
+                      label={{ position: 'right', value: 'Target', fill: '#f43f5e', fontSize: 11, fontWeight: 900 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey={activeTrendMeta.cyKey}
+                      name={activeTrendMeta.currentName}
+                      stroke="#1f3f91"
+                      strokeWidth={3}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey={activeTrendMeta.lyKey}
+                      name={activeTrendMeta.previousName}
+                      stroke="#e47b00"
+                      strokeWidth={3}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                {executiveTrendStats.cards.map((card) => (
+                  <div key={card.label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center shadow-sm">
+                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>
+                    <p className={cn('mt-2 text-xl font-black text-slate-950', card.color)}>{card.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <ExecutiveTableShell
+              title="FY Trends"
+              subtitle="Revenue, parts, labour, load"
+              isExpanded={expandedExecutiveTable === 'fy-trends'}
+              onToggleExpanded={() => toggleExecutiveTable('fy-trends')}
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[620px] border-collapse text-[11px] leading-tight">
+                  <thead className="bg-slate-950 text-white">
+                    <tr>
+                      <th className="border border-slate-700 px-3 py-3 text-left">Financial Year</th>
+                      <th className="border border-slate-700 px-3 py-3 text-right">Load</th>
+                      <th className="border border-slate-700 px-3 py-3 text-right">Labour</th>
+                      <th className="border border-slate-700 px-3 py-3 text-right">Parts</th>
+                      <th className="border border-slate-700 px-3 py-3 text-right">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fyRows.map((row) => (
+                      <tr key={row.fy} className="bg-white">
+                        <td className="border border-slate-200 px-3 py-3 font-black text-slate-900">{row.fy}</td>
+                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black">{row.load.toLocaleString('en-IN')}</td>
+                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black">{formatCurrency(row.labour)}</td>
+                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black">{formatCurrency(row.parts)}</td>
+                        <td className="border border-slate-200 px-3 py-3 text-right font-mono font-black text-[#1f3f91]">{formatCurrency(row.revenue)}</td>
+                      </tr>
+                    ))}
+                    {fyRows.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="border border-slate-200 px-3 py-8 text-center text-sm font-bold text-slate-500">
+                          No FY trend data available for this selection.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </ExecutiveTableShell>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+type WorkshopMetric = {
+  value: number
+  ly?: number
+  growth?: number | null
+  amount?: number
+}
+
+type WorkshopPerformanceRow = {
+  serviceType: string
+  groupType?: string
+  totalJc: number
+  totalJcPercent: number
+  labourAmount: number
+  labourPercent: number
+  labourPerRo: number
+  lessVas: number
+  vasPercent: number
+  labPerRoMinusVas: number
+  labMinusVas: number
+  spareSale: number
+  sparePerRo: number
+  discount: number
+  waCount: number
+  waAmount: number
+  waPerRoPercent: number
+  wbCount: number
+  wbAmount: number
+  wbPerRoPercent: number
+  ewCount: number
+  rsaCount: number
+  mcpCount: number
+  subRows?: WorkshopPerformanceRow[]
+}
+
+type WorkshopPerformanceResponse = {
+  dateRange: { startDate: string; endDate: string; lyStartDate: string; lyEndDate: string }
+  kpis: Record<string, WorkshopMetric>
+  rows: WorkshopPerformanceRow[]
+  coreRows?: WorkshopPerformanceRow[]
+  dailyTrend: Array<{
+    date: string
+    totalJc: number
+    labourAmount: number
+    partAmount: number
+    totalRevenue: number
+  }>
+  advisors: Array<{
+    advisor: string
+    totalJc: number
+    labourAmount: number
+    partAmount: number
+    totalRevenue: number
+    avgBilling: number
+  }>
+  meta: { jcDefinition: string; rowCount: number; cacheTtlSeconds: number; advisor?: string | null }
+}
+
+function formatWorkshopTableMoney(value: number) {
+  const safeValue = Number(value || 0)
+  const absValue = Math.abs(safeValue)
+  const sign = safeValue < 0 ? '-' : ''
+  const currencyPrefix = '\u20b9'
+
+  if (absValue >= 10000000) {
+    return `${sign}${currencyPrefix}${(absValue / 10000000).toFixed(2)}Cr`
+  }
+
+  if (absValue >= 100000) {
+    return `${sign}${currencyPrefix}${(absValue / 100000).toFixed(2)}L`
+  }
+
+  return `${sign}${currencyPrefix}${Math.round(absValue).toLocaleString('en-IN')}`
+}
+
+function zeroWorkshopRow(serviceType: string): WorkshopPerformanceRow {
+  return {
+    serviceType,
+    totalJc: 0,
+    totalJcPercent: 0,
+    labourAmount: 0,
+    labourPercent: 0,
+    labourPerRo: 0,
+    lessVas: 0,
+    vasPercent: 0,
+    labPerRoMinusVas: 0,
+    labMinusVas: 0,
+    spareSale: 0,
+    sparePerRo: 0,
+    discount: 0,
+    waCount: 0,
+    waAmount: 0,
+    waPerRoPercent: 0,
+    wbCount: 0,
+    wbAmount: 0,
+    wbPerRoPercent: 0,
+    ewCount: 0,
+    rsaCount: 0,
+    mcpCount: 0,
+  }
+}
+
+function aggregateWorkshopRows(serviceType: string, sourceRows: WorkshopPerformanceRow[], totals: { jc: number; labour: number }): WorkshopPerformanceRow {
+  const base = sourceRows.reduce((acc, row) => {
+    acc.totalJc += Number(row.totalJc || 0)
+    acc.labourAmount += Number(row.labourAmount || 0)
+    acc.lessVas += Number(row.lessVas || 0)
+    acc.labMinusVas += Number(row.labMinusVas || 0)
+    acc.spareSale += Number(row.spareSale || 0)
+    acc.discount += Number(row.discount || 0)
+    acc.waCount += Number(row.waCount || 0)
+    acc.waAmount += Number(row.waAmount || 0)
+    acc.wbCount += Number(row.wbCount || 0)
+    acc.wbAmount += Number(row.wbAmount || 0)
+    acc.ewCount += Number(row.ewCount || 0)
+    acc.rsaCount += Number(row.rsaCount || 0)
+    acc.mcpCount += Number(row.mcpCount || 0)
+    return acc
+  }, zeroWorkshopRow(serviceType))
+
+  base.totalJcPercent = totals.jc > 0 ? (base.totalJc / totals.jc) * 100 : 0
+  base.labourPercent = totals.labour > 0 ? (base.labourAmount / totals.labour) * 100 : 0
+  base.labourPerRo = base.totalJc > 0 ? base.labourAmount / base.totalJc : 0
+  base.vasPercent = base.labourAmount > 0 ? (base.lessVas / base.labourAmount) * 100 : 0
+  base.labPerRoMinusVas = base.totalJc > 0 ? base.labMinusVas / base.totalJc : 0
+  base.sparePerRo = base.totalJc > 0 ? base.spareSale / base.totalJc : 0
+  base.waPerRoPercent = base.totalJc > 0 ? (base.waCount / base.totalJc) * 100 : 0
+  base.wbPerRoPercent = base.totalJc > 0 ? (base.wbCount / base.totalJc) * 100 : 0
+
+  return base
+}
+
+function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
+  const serverGrandTotal = rawRows.find((row) => row.serviceType === 'Grand Total')
+  const rows = rawRows.filter((row) => row.serviceType !== 'Grand Total')
+  const managementRows = rows.filter((row) => row.serviceType === 'MECH' || row.serviceType === 'Accident')
+
+  if (managementRows.length > 0 && managementRows.length === rows.length) {
+    const sortedManagementRows = managementRows.sort((a, b) => (a.serviceType === 'MECH' ? 0 : 1) - (b.serviceType === 'MECH' ? 0 : 1))
+    return serverGrandTotal ? [...sortedManagementRows, serverGrandTotal] : sortedManagementRows
+  }
+
+  const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const isMileageServiceLabel = (value: string) => /^(\d{2,3})k$/.test(normalized(value))
+  const categoryLabel = (row: WorkshopPerformanceRow) => row.groupType || row.serviceType
+  const hasAny = (value: string, needles: string[]) => needles.some((needle) => normalized(value).includes(needle))
+  const comparable = (value: string) => normalized(value).replace(/\bservices\b/g, 'service').replace(/\brepairs\b/g, 'repair')
+  const distinctChildren = (parentName: string, sourceRows: WorkshopPerformanceRow[]) => {
+    const parentKey = comparable(parentName)
+    const seen = new Set<string>()
+
+    return sourceRows.filter((row) => {
+      const childKey = comparable(row.serviceType)
+      if (!childKey || childKey === parentKey || seen.has(childKey)) return false
+      seen.add(childKey)
+      return true
+    })
+  }
+
+  const paidRows = rows.filter((row) => hasAny(categoryLabel(row), ['paid service', 'service package']) || /(^|\s)(20|30|40|50|60|70|80|90|100|110|120|130|140|150|160|170)k(\s|$)/.test(normalized(categoryLabel(row))))
+  const freeRows = rows.filter((row) => hasAny(categoryLabel(row), ['free service', 'free services', 'tma first', 'tma second', 'tma third', 'sixth free']))
+  const runningRows = rows.filter((row) => hasAny(categoryLabel(row), ['running repair', 'running repairs']))
+  const accidentRows = rows.filter((row) => hasAny(categoryLabel(row), ['accident', 'accidental repair', 'bodyshop']))
+  const assigned = new Set([...paidRows, ...freeRows, ...runningRows, ...accidentRows])
+  const otherRows = rows.filter((row) => !assigned.has(row))
+
+  const totalJc = Number(serverGrandTotal?.totalJc || 0) || rows.reduce((sum, row) => sum + Number(row.totalJc || 0), 0)
+  const totalLabour = Number(serverGrandTotal?.labourAmount || 0) || rows.reduce((sum, row) => sum + Number(row.labourAmount || 0), 0)
+  const totals = { jc: totalJc, labour: totalLabour }
+  const paid = aggregateWorkshopRows('Paid Service', paidRows, totals)
+  paid.subRows = distinctChildren(paid.serviceType, paidRows).filter((row) => !isMileageServiceLabel(row.serviceType))
+  const free = aggregateWorkshopRows('Free Services', freeRows, totals)
+  free.subRows = distinctChildren(free.serviceType, freeRows)
+  const running = aggregateWorkshopRows('Running Repairs', runningRows, totals)
+  running.subRows = distinctChildren(running.serviceType, runningRows)
+  const mech = aggregateWorkshopRows('MECH', [paid, free, running], totals)
+  const others = aggregateWorkshopRows('Others', otherRows, totals)
+  others.subRows = distinctChildren(others.serviceType, otherRows)
+  const mechTotal = aggregateWorkshopRows('MECH TOTAL', [mech, others], totals)
+  const accident = aggregateWorkshopRows('Accident', accidentRows, totals)
+  accident.subRows = []
+  const grandTotal = aggregateWorkshopRows('Grand Total', [mechTotal, accident], totals)
+
+  if (serverGrandTotal) {
+    grandTotal.lessVas = Number(serverGrandTotal.lessVas || 0)
+    grandTotal.vasPercent = grandTotal.labourAmount > 0 ? (grandTotal.lessVas / grandTotal.labourAmount) * 100 : 0
+    grandTotal.labPerRoMinusVas = grandTotal.totalJc > 0 ? grandTotal.labMinusVas / grandTotal.totalJc : 0
+    grandTotal.waCount = Number(serverGrandTotal.waCount || 0)
+    grandTotal.waAmount = Number(serverGrandTotal.waAmount || 0)
+    grandTotal.waPerRoPercent = grandTotal.totalJc > 0 ? (grandTotal.waCount / grandTotal.totalJc) * 100 : 0
+    grandTotal.wbCount = Number(serverGrandTotal.wbCount || 0)
+    grandTotal.wbAmount = Number(serverGrandTotal.wbAmount || 0)
+    grandTotal.wbPerRoPercent = grandTotal.totalJc > 0 ? (grandTotal.wbCount / grandTotal.totalJc) * 100 : 0
+    grandTotal.ewCount = Number(serverGrandTotal.ewCount || 0)
+    grandTotal.rsaCount = Number(serverGrandTotal.rsaCount || 0)
+    grandTotal.mcpCount = Number(serverGrandTotal.mcpCount || 0)
+  }
+
+  return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
+}
+
+function WorkshopPerformanceSection({
+  dateFilter,
+  dealerCode,
+}: {
+  dateFilter: BusinessDateFilter
+  dealerCode?: string | null
+}) {
+  const queryClient = useQueryClient()
+  const [data, setData] = useState<WorkshopPerformanceResponse | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [selectedWorkshopAdvisor, setSelectedWorkshopAdvisor] = useState('all')
+  const [expandedWorkshopRows, setExpandedWorkshopRows] = useState<Set<string>>(() => new Set())
+  const [expandedWorkshopChart, setExpandedWorkshopChart] = useState<{ id: string; title: string } | null>(null)
+
+  useEffect(() => {
+    let isActive = true
+
+    async function fetchWorkshopPerformance() {
+      try {
+        setIsLoading(true)
+        if (isActive) setData(null)
+        const range = getDefaultRODateRange(dateFilter)
+        const params = new URLSearchParams({
+          startDate: range.startDate,
+          endDate: range.endDate,
+        })
+        appendBusinessComparisonParams(params, dateFilter)
+        appendKiaDealerCodeParam(params, dealerCode)
+        if (selectedWorkshopAdvisor !== 'all') {
+          params.set('advisor', selectedWorkshopAdvisor)
+        }
+        params.set('version', 'v17')
+        const queryString = params.toString()
+        const result = await queryClient.fetchQuery({
+          queryKey: ['business-excellence', 'workshop-performance', queryString],
+          queryFn: async () => {
+            const response = await fetch(`/api/brands/kia/business-excellence/workshop-performance?${queryString}`)
+            logApiTimings(response, 'workshop-performance')
+            if (!response.ok) throw new Error('Failed to load Workshop Performance')
+            return await response.json() as WorkshopPerformanceResponse
+          },
+          staleTime: DASHBOARD_STALE_TIME_MS,
+        })
+        if (isActive) setData(result)
+      } catch (error) {
+        if (isActive) console.error('Failed to load Workshop Performance:', error)
+      } finally {
+        if (isActive) setIsLoading(false)
+      }
+    }
+
+    fetchWorkshopPerformance()
+    return () => {
+      isActive = false
+    }
+  }, [dateFilter, dealerCode, queryClient, selectedWorkshopAdvisor])
+
+  const rows = useMemo(() => buildWorkshopDisplayRows(data?.rows || []), [data?.rows])
+  const coreRows = useMemo(() => buildWorkshopDisplayRows(data?.coreRows || data?.rows || []), [data?.coreRows, data?.rows])
+  const workshopAdvisorOptions = useMemo(() => {
+    const options = (data?.advisors || [])
+      .map((advisor) => advisor.advisor)
+      .filter((advisor): advisor is string => Boolean(advisor && advisor.trim()))
+    return Array.from(new Set(options)).sort((first, second) => first.localeCompare(second))
+  }, [data?.advisors])
+  const chartRows = rows.filter((row) => !['Grand Total', 'MECH TOTAL'].includes(row.serviceType)).slice(0, 8)
+  const trendRows = data?.dailyTrend.map((point) => {
+    const date = parseBusinessDate(point.date)
+    return {
+      ...point,
+      day: date ? `${String(date.getDate()).padStart(2, '0')} ${date.toLocaleDateString('en-US', { weekday: 'short' })}` : point.date,
+    }
+  }) || []
+
+  const kpiCards = data ? [
+    { label: 'Total JC', metric: data.kpis.totalJc, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'teal' },
+    { label: 'Labour Amount', metric: data.kpis.labourAmount, formatter: formatCurrency, tone: 'blue' },
+    { label: 'Spare Sale', metric: data.kpis.spareSale, formatter: formatCurrency, tone: 'amber' },
+    { label: 'Total Revenue', metric: data.kpis.totalRevenue, formatter: formatCurrency, tone: 'indigo' },
+    { label: 'VAS Revenue', metric: data.kpis.vasAmount, formatter: formatCurrency, tone: 'emerald' },
+    { label: 'Labour / RO', metric: data.kpis.labourPerRo, formatter: formatCurrency, tone: 'slate' },
+    { label: 'EW Count', metric: data.kpis.ewCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'cyan' },
+    { label: 'MCP Count', metric: data.kpis.mcpCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'rose' },
+  ] : []
+
+  const formatPercent = (value: number) => `${value.toFixed(1)}%`
+  const formatCompactMoney = (value: number) => formatChartLabel(value)
+  const getPercentToneClass = (value: number) => {
+    if (value > 0) return 'be-tone-positive text-emerald-700'
+    if (value < 0) return 'be-tone-negative text-rose-600'
+    return 'be-tone-neutral text-slate-500'
+  }
+
+  const toggleWorkshopRow = (serviceType: string) => {
+    setExpandedWorkshopRows((current) => {
+      const next = new Set(current)
+      if (next.has(serviceType)) {
+        next.delete(serviceType)
+      } else {
+        next.add(serviceType)
+      }
+      return next
+    })
+  }
+  const renderWorkshopExpandButton = (id: string, title: string) => (
+    <button
+      type="button"
+      onClick={() => setExpandedWorkshopChart({ id, title })}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-teal-100 bg-white text-teal-700 shadow-sm transition hover:border-teal-200 hover:bg-teal-50"
+      aria-label={`Expand ${title}`}
+    >
+      <Maximize2 className="h-4 w-4" />
+    </button>
+  )
+  const renderWorkshopChart = (chartId: string) => {
+    if (chartId === 'service-mix') {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartRows} margin={{ top: 22, right: 22, bottom: 16, left: 0 }}>
+            <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
+            <XAxis dataKey="serviceType" tick={{ fontSize: 11, fontWeight: 800, fill: '#475569' }} />
+            <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={formatCompactMoney} />
+            <Tooltip formatter={(value) => formatCurrency(Number(value || 0))} contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0' }} />
+            <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 900 }} />
+            <Bar dataKey="labourAmount" name="Labour" stackId="revenue" fill="#023468" radius={[0, 0, 8, 8]} />
+            <Bar dataKey="spareSale" name="Spare Sale" stackId="revenue" fill="#D97706" />
+            <Bar dataKey="lessVas" name="VAS" stackId="revenue" fill="#2563EB" radius={[8, 8, 0, 0]}>
+              <LabelList dataKey="lessVas" position="top" formatter={formatChartLabel} fill="#0f172a" fontSize={10} fontWeight={900} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={trendRows} margin={{ top: 36, right: 28, bottom: 14, left: 0 }}>
+          <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
+          <XAxis dataKey="day" interval={0} minTickGap={0} tick={<TrendAxisTick />} tickMargin={12} height={58} />
+          <YAxis yAxisId="amount" tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={formatCompactMoney} />
+          <YAxis yAxisId="jc" orientation="right" tick={{ fontSize: 11, fill: '#023468' }} />
+          <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0' }} />
+          <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 900 }} />
+          <Line yAxisId="amount" type="monotone" dataKey="totalRevenue" name="Revenue" stroke="#2563EB" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} isAnimationActive={false}>
+            <LabelList dataKey="totalRevenue" content={<WorkshopTrendValueLabel series="revenue" />} />
+          </Line>
+          <Line yAxisId="jc" type="monotone" dataKey="totalJc" name="JC" stroke="#023468" strokeWidth={3} dot={{ r: 3, fill: '#fff', strokeWidth: 2 }} isAnimationActive={false}>
+            <LabelList dataKey="totalJc" content={<WorkshopTrendValueLabel series="jc" />} />
+          </Line>
+        </LineChart>
+      </ResponsiveContainer>
+    )
+  }
+
+  if (isLoading && !data) {
+    return (
+      <div className="space-y-5 bg-slate-50 p-6 lg:p-8">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div key={index} className="h-32 animate-pulse rounded-[1.5rem] bg-white shadow-lg shadow-slate-200/50" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <div className="h-[360px] animate-pulse rounded-[2rem] bg-white shadow-lg shadow-slate-200/50" />
+          <div className="h-[360px] animate-pulse rounded-[2rem] bg-white shadow-lg shadow-slate-200/50" />
+        </div>
+        <div className="h-[420px] animate-pulse rounded-[2rem] bg-white shadow-lg shadow-slate-200/50" />
+      </div>
+    )
+  }
+
+  if (!data) {
+    return (
+      <div className="bg-slate-50 p-8">
+        <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-xl shadow-slate-200/50">
+          <Wrench className="mx-auto mb-4 h-10 w-10 text-slate-300" />
+          <p className="text-sm font-black uppercase tracking-widest text-slate-400">Workshop Performance data is unavailable.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const renderWorkshopTable = (variant: 'full' | 'core' = 'full') => {
+    const isCore = variant === 'core'
+    const tableRows = isCore ? coreRows : rows
+    const headings = isCore
+      ? [
+          'Service Type',
+          'Total JC',
+          'JC %',
+          'Labour Amt',
+          'Labour %',
+          'Labour/RO',
+          'LAB/RO(-VAS)',
+          'Spare Sale',
+          'Spare/RO',
+          'Discount',
+        ]
+      : [
+          'Service Type',
+          'Total JC',
+          'JC %',
+          'Labour Amt',
+          'Labour %',
+          'Labour/RO',
+          'VAS %',
+          'LAB/RO(-VAS)',
+          'Spare Sale',
+          'Spare/RO',
+          'Discount',
+          'WA Count',
+          'WA Amt',
+          'WA/RO %',
+          'WB Count',
+          'WB Amt',
+          'WB/RO %',
+          'Less VAS',
+          'EW Count',
+          'RSA Count',
+          'MCP Count',
+        ]
+
+    return (
+    <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
+      <div className="border-b border-slate-100 p-6">
+        <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Workshop Matrix</p>
+        <h3 className="text-2xl font-black tracking-tight text-slate-950">
+          {isCore ? 'Service type core performance table' : 'Service type performance table'}
+        </h3>
+        <p className="mt-2 text-xs font-bold text-slate-500">
+          {isCore
+            ? 'Core RO, labour, spare, and discount view without addon and auxiliary columns.'
+            : 'WA = Wheel Alignment, WB = Wheel Balancing, VAS = Value Added Services.'}
+        </p>
+      </div>
+      <div className="overflow-auto">
+        <table className={cn('w-full border-collapse text-left', isCore ? 'min-w-[980px]' : 'min-w-[1480px]')}>
+          <thead className="bg-teal-800 text-white">
+            <tr>
+              {headings.map((heading) => (
+                <th key={heading} className="border border-teal-700/80 px-3 py-3 text-[8px] font-black uppercase tracking-widest">
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {tableRows.flatMap((row) => {
+              const isTotal = row.serviceType === 'Grand Total'
+              const subRows = row.subRows || []
+              const hasSubRows = subRows.length > 0 && !isTotal
+              const isExpanded = expandedWorkshopRows.has(row.serviceType)
+              const renderRow = (item: WorkshopPerformanceRow, options?: { child?: boolean; parentTotal?: boolean }) => {
+                const isGrandTotal = item.serviceType === 'Grand Total'
+                const isContributionSubtotal = Boolean(options?.parentTotal)
+
+                return (
+                <tr
+                  key={`${options?.child ? `${row.serviceType}-child-` : ''}${item.serviceType}`}
+                  className={cn(
+                    isGrandTotal ? 'bg-slate-100/90 text-slate-950 shadow-[inset_4px_0_0_#023468]' : options?.child ? 'bg-slate-50/70 text-slate-700' : 'bg-white hover:bg-slate-50',
+                    options?.parentTotal && 'bg-slate-100/90',
+                    getManagementTotalRowClass(item.serviceType)
+                  )}
+                >
+                  <td className={cn('border border-slate-200 px-3 py-2 text-[11px] font-black leading-tight', options?.child && 'pl-9 font-bold')}>
+                    <div className="flex items-center gap-2">
+                      {!options?.child && hasSubRows ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleWorkshopRow(row.serviceType)}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-teal-200 hover:text-teal-700"
+                          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.serviceType}`}
+                        >
+                          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !isExpanded && '-rotate-90')} />
+                        </button>
+                      ) : options?.child ? (
+                        <span className="h-px w-4 bg-slate-300" />
+                      ) : (
+                        <span className="h-6 w-6" />
+                      )}
+                      <span>{item.serviceType}</span>
+                    </div>
+                  </td>
+                  <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{item.totalJc.toLocaleString('en-IN')}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.totalJcPercent))}>
+                    {isContributionSubtotal ? '-' : formatPercent(item.totalJcPercent)}
+                  </td>
+                  <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{formatWorkshopTableMoney(item.labourAmount)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.labourPercent))}>
+                    {isContributionSubtotal ? '-' : formatPercent(item.labourPercent)}
+                  </td>
+                  <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.labourPerRo)}</td>
+                  {!isCore && (
+                    <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', getPercentToneClass(item.vasPercent))}>{formatPercent(item.vasPercent)}</td>
+                  )}
+                  <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.labPerRoMinusVas)}</td>
+                  <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{formatWorkshopTableMoney(item.spareSale)}</td>
+                  <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.sparePerRo)}</td>
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', item.discount > 0 && 'text-rose-600')}>{formatWorkshopTableMoney(item.discount)}</td>
+                  {!isCore && (
+                    <>
+                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{item.waCount.toLocaleString('en-IN')}</td>
+                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.waAmount)}</td>
+                      <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', getPercentToneClass(item.waPerRoPercent))}>{formatPercent(item.waPerRoPercent)}</td>
+                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{item.wbCount.toLocaleString('en-IN')}</td>
+                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.wbAmount)}</td>
+                      <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', getPercentToneClass(item.wbPerRoPercent))}>{formatPercent(item.wbPerRoPercent)}</td>
+                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.lessVas)}</td>
+                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
+                        {isGrandTotal ? item.ewCount.toLocaleString('en-IN') : '-'}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
+                        {isGrandTotal ? item.rsaCount.toLocaleString('en-IN') : '-'}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
+                        {isGrandTotal ? item.mcpCount.toLocaleString('en-IN') : '-'}
+                      </td>
+                    </>
+                  )}
+                </tr>
+                )
+              }
+
+              return [
+                renderRow(row, { parentTotal: isCore ? row.serviceType === 'MECH' || row.serviceType === 'MECH TOTAL' : row.serviceType === 'MECH TOTAL' }),
+                ...(isExpanded ? subRows.map((subRow) => renderRow(subRow, { child: true })) : []),
+              ]
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+  }
+
+  return (
+    <div className="space-y-6 bg-slate-50 p-6 lg:p-8">
+      {expandedWorkshopChart && (
+        <div className="fixed inset-0 z-[120] bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div
+            className="expanded-chart-shell flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl"
+            style={{ backgroundColor: '#ffffff' }}
+          >
+            <div
+              className="expanded-chart-header flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3"
+              style={{ backgroundColor: '#ffffff' }}
+            >
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Expanded Workshop Chart</p>
+                <h3 className="text-lg font-black tracking-tight text-slate-950">{expandedWorkshopChart.title}</h3>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setExpandedWorkshopChart(null)}
+                className="h-9 w-9 rounded-xl p-0 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                aria-label="Close expanded chart"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="expanded-chart-body min-h-0 flex-1 bg-white p-5" style={{ backgroundColor: '#ffffff' }}>
+              <div className="expanded-chart-surface h-full rounded-2xl bg-white" style={{ backgroundColor: '#ffffff' }}>
+                {renderWorkshopChart(expandedWorkshopChart.id)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/50">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Advisor Filter</p>
+            <h3 className="text-lg font-black tracking-tight text-slate-950">Service type performance by advisor</h3>
+            <p className="mt-1 text-xs font-bold text-slate-500">
+              Filter the Workshop Performance tables using service advisor from the selected date range.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <select
+              value={selectedWorkshopAdvisor}
+              onChange={(event) => setSelectedWorkshopAdvisor(event.target.value)}
+              className="h-11 min-w-[240px] rounded-2xl border border-slate-300 bg-white px-4 text-sm font-black text-slate-950 shadow-sm outline-none transition focus:border-[var(--dashboard-primary)] focus:ring-2 focus:ring-[rgba(var(--dashboard-primary-rgb),0.18)]"
+            >
+              <option value="all">All advisors</option>
+              {workshopAdvisorOptions.map((advisor) => (
+                <option key={advisor} value={advisor}>{advisor}</option>
+              ))}
+            </select>
+            {selectedWorkshopAdvisor !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSelectedWorkshopAdvisor('all')}
+                className="app-outline-action inline-flex h-11 items-center justify-center rounded-2xl px-4 text-sm font-black"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {renderWorkshopTable()}
+      {renderWorkshopTable('core')}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {kpiCards.map((card) => {
+          const growthValue = card.metric.growth
+          const hasGrowth = typeof growthValue === 'number'
+          return (
+            <div key={card.label} className="rounded-[1.5rem] border border-white/70 bg-white/90 p-5 shadow-xl shadow-slate-200/50">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-950">
+                  <Wrench className="h-5 w-5 text-slate-950" />
+                </div>
+                <span className={cn(
+                  'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest',
+                  getGrowthBadgeClass(hasGrowth ? growthValue : 'N/A')
+                )}>
+                  {hasGrowth ? formatSignedGrowth(growthValue) : 'N/A'}
+                </span>
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{card.label}</p>
+              <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{card.formatter(card.metric.value)}</p>
+              {card.metric.ly !== undefined && (
+                <p className="mt-3 text-xs font-bold text-slate-400">LY {card.formatter(card.metric.ly)}</p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="space-y-6">
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
+          <div className="mb-6 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Service Mix</p>
+              <h3 className="text-2xl font-black tracking-tight text-slate-950">Labour, spares, and VAS by service type</h3>
+            </div>
+            {renderWorkshopExpandButton('service-mix', 'Service Mix')}
+          </div>
+          <div className="h-[460px]">
+            {renderWorkshopChart('service-mix')}
+          </div>
+        </div>
+
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
+          <div className="mb-6 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Daily Trend</p>
+              <h3 className="text-2xl font-black tracking-tight text-slate-950">JC load and revenue movement</h3>
+            </div>
+            {renderWorkshopExpandButton('daily-trend', 'Daily Trend')}
+          </div>
+          <div className="h-[460px]">
+            {renderWorkshopChart('daily-trend')}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ROBillingAnalytics({
   sheetId,
   sheetName,
-  isAdmin,
   activeSheet,
   prefetchedData,
   isPrefetching,
-  dateFilter
+  dateFilter,
+  dealerCode,
 }: {
   sheetId: string
   sheetName: string
-  isAdmin: boolean
   activeSheet: string | null
   prefetchedData: Record<string, unknown>[] | null
   isPrefetching: boolean
-  dateFilter: {
-    mode: 'month' | 'range'
-    month: number
-    year: number
-    startDate: string
-    endDate: string
-  } | null
+  dateFilter: BusinessDateFilter
+  dealerCode?: string | null
 }) {
   return (
     <LegacyROBillingAnalytics
       sheetId={sheetId}
       sheetName={sheetName}
-      isAdmin={isAdmin}
       activeSheet={activeSheet}
       prefetchedData={prefetchedData}
       isPrefetching={isPrefetching}
       dateFilter={dateFilter}
+      dealerCode={dealerCode}
     />
   )
 }
@@ -1710,25 +5141,19 @@ function ROBillingAnalytics({
 function LegacyROBillingAnalytics({
   sheetId,
   sheetName,
-  isAdmin,
   activeSheet,
   prefetchedData,
   isPrefetching,
-  dateFilter
+  dateFilter,
+  dealerCode,
 }: {
   sheetId: string
   sheetName: string
-  isAdmin: boolean
   activeSheet: string | null
   prefetchedData: Record<string, unknown>[] | null
   isPrefetching: boolean
-  dateFilter: {
-    mode: 'month' | 'range'
-    month: number
-    year: number
-    startDate: string
-    endDate: string
-  } | null
+  dateFilter: BusinessDateFilter
+  dealerCode?: string | null
 }) {
   const initialData = prefetchedData && prefetchedData.length > 0 ? prefetchedData : []
 
@@ -1736,13 +5161,13 @@ function LegacyROBillingAnalytics({
     <div className="space-y-8 mt-8">
       <ServiceTypePerformance
         data={initialData}
-        isAdmin={isAdmin}
         sheetId={sheetId}
         sheetName={sheetName}
         activeSheet={activeSheet}
         prefetchedData={prefetchedData}
         isPrefetching={isPrefetching}
         dateFilter={dateFilter}
+        dealerCode={dealerCode}
       />
     </div>
   )
@@ -1751,9 +5176,11 @@ function LegacyROBillingAnalytics({
 function ROBillingRevenueSummarySection({
   rowsByMetric,
   isLoading,
+  dateFilter,
 }: {
   rowsByMetric: Partial<Record<ROAnalysisType, StatRow[]>>
   isLoading: boolean
+  dateFilter: BusinessDateFilter
 }) {
   const [activeRevenueTab, setActiveRevenueTab] = useState<'labour' | 'parts' | 'growth'>('labour')
   const labourRows = rowsByMetric.labour || []
@@ -1763,6 +5190,28 @@ function ROBillingRevenueSummarySection({
   const labourTotal = getGrandTotal(labourRows)
   const partsTotal = getGrandTotal(partsRows)
   const loadTotal = getGrandTotal(loadRows)
+  type RevenuePerformanceRow = { key: string; label: string; row: StatRow }
+  const revenueCategoryMap = [
+    ['MECH', 'Mechanical'],
+    ['Accident', 'Accidental'],
+    ['Paid Service', 'Paid Service'],
+    ['Free Services', 'Free Service'],
+    ['Running Repairs', 'Running Repair'],
+    ['Others', 'Others'],
+  ] as const
+  const buildRevenueRows = (rows: StatRow[], totalLabel: string) => {
+    const categoryRows = revenueCategoryMap.reduce<RevenuePerformanceRow[]>((items, [name, label]) => {
+      const row = rows.find((item) => item.name === name)
+      if (row) items.push({ key: name, label, row })
+      return items
+    }, [])
+    const grandTotal = getGrandTotal(rows)
+    if (grandTotal) categoryRows.push({ key: 'Grand Total', label: totalLabel, row: grandTotal })
+    return categoryRows
+  }
+  const labourRevenueRows = buildRevenueRows(labourRows, 'Total Labour')
+  const partsRevenueRows = buildRevenueRows(partsRows, 'Total Parts')
+  const activeRevenueRows = activeRevenueTab === 'labour' ? labourRevenueRows : partsRevenueRows
   const paidLoad = loadRows.find((row) => row.name === 'Paid Service')
   const paidServiceContribution = loadTotal && Number(loadTotal.cy || 0) > 0
     ? (Number(paidLoad?.cy || 0) / Number(loadTotal.cy || 0)) * 100
@@ -1781,11 +5230,39 @@ function ROBillingRevenueSummarySection({
     if (Number.isNaN(numeric)) return 'N/A'
     return `${numeric >= 0 ? '+' : '-'}${Math.abs(numeric).toFixed(1)}%`
   }
-  const metricData = activeRevenueTab === 'labour' ? labourTotal : partsTotal
+  const growthBadgeClass = (value: string | number | 'N/A') => {
+    if (value === 'N/A' || Number.isNaN(Number(value))) {
+      return 'border-slate-200 bg-white text-slate-400'
+    }
+    return Number(value) >= 0
+      ? 'border-[lab(80_-85.05_36.36)] bg-white text-[lab(80_-85.05_36.36)]'
+      : 'border-[lab(53_89.72_88.48)] bg-white text-[lab(53_89.72_88.48)]'
+  }
+  const selectedRange = getSelectedBusinessDateRange(dateFilter)
+  const comparisonStart = dateFilter?.comparison?.previousStartDate
+    ? parseBusinessDate(dateFilter.comparison.previousStartDate)
+    : null
+  const comparisonEnd = dateFilter?.comparison?.previousEndDate
+    ? parseBusinessDate(dateFilter.comparison.previousEndDate)
+    : null
+  const fallbackLyStart = new Date(selectedRange.start)
+  fallbackLyStart.setFullYear(fallbackLyStart.getFullYear() - 1)
+  const fallbackLyEnd = new Date(selectedRange.end)
+  fallbackLyEnd.setFullYear(fallbackLyEnd.getFullYear() - 1)
+  const revenueDateFormatter = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  const formatRevenueRange = (start: Date, end: Date) => {
+    const sameDay = getInputDate(start) === getInputDate(end)
+    return sameDay
+      ? revenueDateFormatter.format(start)
+      : `${revenueDateFormatter.format(start)} to ${revenueDateFormatter.format(end)}`
+  }
+  const currentRevenueRangeLabel = formatRevenueRange(selectedRange.start, selectedRange.end)
+  const comparisonRevenueRangeLabel = formatRevenueRange(comparisonStart || fallbackLyStart, comparisonEnd || fallbackLyEnd)
+  const currentRevenue = Number(labourTotal?.cy || 0) + Number(partsTotal?.cy || 0)
+  const comparisonRevenue = Number(labourTotal?.ly === 'N/A' ? 0 : labourTotal?.ly || 0)
+    + Number(partsTotal?.ly === 'N/A' ? 0 : partsTotal?.ly || 0)
   const revenueGrowth = (() => {
-    const current = Number(labourTotal?.ytdCY || 0) + Number(partsTotal?.ytdCY || 0)
-    const previous = Number(labourTotal?.ytdLY === 'N/A' ? 0 : labourTotal?.ytdLY || 0) + Number(partsTotal?.ytdLY === 'N/A' ? 0 : partsTotal?.ytdLY || 0)
-    return previous > 0 ? ((current - previous) / previous) * 100 : 'N/A'
+    return comparisonRevenue > 0 ? ((currentRevenue - comparisonRevenue) / comparisonRevenue) * 100 : 'N/A'
   })()
 
   if (isLoading && labourRows.length === 0 && partsRows.length === 0) {
@@ -1832,7 +5309,7 @@ function ROBillingRevenueSummarySection({
         <Card className="overflow-hidden rounded-2xl border-none shadow-xl shadow-slate-200/50">
           <CardHeader className={cn('p-5 text-white', activeRevenueTab === 'labour' ? 'bg-blue-600' : 'bg-purple-600')}>
             <CardTitle className="flex items-center gap-2 text-lg font-black">
-              <DollarSign className="h-5 w-5" />
+              <IndianRupee className="h-5 w-5" />
               {activeRevenueTab === 'labour' ? 'Labour' : 'Part'} Revenue Performance
             </CardTitle>
           </CardHeader>
@@ -1858,30 +5335,30 @@ function ROBillingRevenueSummarySection({
                 </tr>
               </thead>
               <tbody>
-                {metricData ? (
-                  <tr className="hover:bg-slate-50/50">
-                    <td className="px-6 py-6 text-sm font-black text-slate-700">Total {activeRevenueTab.charAt(0).toUpperCase() + activeRevenueTab.slice(1)}</td>
+                {activeRevenueRows.length > 0 ? (
+                  activeRevenueRows.map(({ key, label, row }) => (
+                  <tr key={key} className={cn('hover:bg-slate-50/50', getManagementTotalRowClass(row.name))}>
+                    <td className="px-6 py-5 text-sm font-black">{label}</td>
                     {([
-                      { key: 'mtd', cy: metricData.cy, ly: metricData.ly, growth: metricData.growth },
-                      { key: 'qtd', cy: metricData.qtdCY, ly: metricData.qtdLY, growth: metricData.qtdGrowth },
-                      { key: 'ytd', cy: metricData.ytdCY, ly: metricData.ytdLY, growth: metricData.ytdGrowth },
+                      { key: 'mtd', cy: row.cy, ly: row.ly, growth: row.growth },
+                      { key: 'qtd', cy: row.qtdCY, ly: row.qtdLY, growth: row.qtdGrowth },
+                      { key: 'ytd', cy: row.ytdCY, ly: row.ytdLY, growth: row.ytdGrowth },
                     ] as const).map((period) => (
                       <React.Fragment key={period.key}>
-                        <td className={cn('px-4 py-6 text-center text-sm font-bold', moneyTextClass(period.cy))}>{renderMoney(period.cy)}</td>
-                        <td className={cn('px-4 py-6 text-center text-sm font-medium', moneyTextClass(period.ly, 'text-slate-400'))}>{renderMoney(period.ly)}</td>
-                        <td className={cn(
-                          'border-r border-slate-50 px-4 py-6 text-center text-sm font-black last:border-r-0',
-                          period.growth === 'N/A'
-                            ? 'text-slate-400'
-                            : Number(period.growth) >= 0
-                              ? 'text-teal-700'
-                              : 'text-rose-600'
-                        )}>
-                          {formatGrowth(period.growth)}
+                        <td className={cn('px-4 py-5 text-center text-sm font-bold', moneyTextClass(period.cy))}>{renderMoney(period.cy)}</td>
+                        <td className={cn('px-4 py-5 text-center text-sm font-medium', moneyTextClass(period.ly, 'text-slate-400'))}>{renderMoney(period.ly)}</td>
+                        <td className="border-r border-slate-50 px-4 py-5 text-center last:border-r-0">
+                          <span className={cn(
+                            'inline-flex min-w-[76px] justify-center rounded-full border px-3 py-1 text-xs font-black',
+                            growthBadgeClass(period.growth)
+                          )}>
+                            {formatGrowth(period.growth)}
+                          </span>
                         </td>
                       </React.Fragment>
                     ))}
                   </tr>
+                  ))
                 ) : (
                   <tr>
                     <td colSpan={10} className="px-6 py-10 text-center text-sm font-bold text-slate-500">
@@ -1901,16 +5378,35 @@ function ROBillingRevenueSummarySection({
           <Card className="rounded-3xl border-none shadow-xl shadow-slate-200/50">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-500">Total Revenue Growth</CardTitle>
-              <BarChart3 className={cn('h-4 w-4', revenueGrowth !== 'N/A' && revenueGrowth < 0 ? 'text-rose-500' : 'text-teal-600')} />
+              <BarChart3 className={cn('h-4 w-4', revenueGrowth !== 'N/A' && revenueGrowth < 0 ? 'text-[lab(53_89.72_88.48)]' : 'text-[lab(80_-85.05_36.36)]')} />
             </CardHeader>
             <CardContent>
               <div className={cn(
                 'text-3xl font-black',
-                revenueGrowth === 'N/A' ? 'text-slate-800' : revenueGrowth < 0 ? 'text-rose-600' : 'text-teal-700'
+                revenueGrowth === 'N/A'
+                  ? 'text-slate-800'
+                  : revenueGrowth < 0
+                    ? 'text-[lab(53_89.72_88.48)]'
+                    : 'text-[lab(80_-85.05_36.36)]'
               )}>
                 {formatGrowth(revenueGrowth)}
               </div>
-              <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">Month over Month</p>
+              <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">
+                CY {currentRevenueRangeLabel} vs LY {comparisonRevenueRangeLabel}
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CY Revenue</p>
+                  <p className="mt-1 text-sm font-black text-slate-950">{formatCurrency(currentRevenue)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">LY Revenue</p>
+                  <p className="mt-1 text-sm font-black text-slate-950">{formatCurrency(comparisonRevenue)}</p>
+                </div>
+              </div>
+              <p className="mt-3 text-[10px] font-bold uppercase leading-4 text-slate-500">
+                Growth = (CY Revenue - LY Revenue) / LY Revenue x 100
+              </p>
             </CardContent>
           </Card>
 
@@ -1921,7 +5417,9 @@ function ROBillingRevenueSummarySection({
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-black text-slate-800">{paidServiceContribution.toFixed(1)}%</div>
-              <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">Of total workshop load</p>
+              <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">
+                Paid Service load share in CY selected period
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -1931,23 +5429,17 @@ function ROBillingRevenueSummarySection({
 }
 function ServiceTypePerformance({
   data: initialData,
-  isAdmin,
-  dateFilter
+  dateFilter,
+  dealerCode,
 }: {
   data: Record<string, unknown>[]
-  isAdmin: boolean
   sheetId: string
   sheetName: string
   activeSheet: string | null
   prefetchedData: Record<string, unknown>[] | null
   isPrefetching: boolean
-  dateFilter: {
-    mode: 'month' | 'range'
-    month: number
-    year: number
-    startDate: string
-    endDate: string
-  } | null
+  dateFilter: BusinessDateFilter
+  dealerCode?: string | null
 }) {
   const queryClient = useQueryClient()
   const [serverTableRowsByMetric, setServerTableRowsByMetric] = useState<Partial<Record<ROAnalysisType, StatRow[]>>>({})
@@ -1955,11 +5447,14 @@ function ServiceTypePerformance({
   const [serverFyByMetric, setServerFyByMetric] = useState<Partial<Record<ROAnalysisType, ROAnalysisResponse>>>({})
   const [serverAnalyticsSummary, setServerAnalyticsSummary] = useState<ROAnalysisResponse['analyticsSummary'] | null>(null)
   const [serverLeaderboard, setServerLeaderboard] = useState<SalesLeaderboardRow[]>([])
+  const [cancelledSummary, setCancelledSummary] = useState<CancelledBillingSummary | null>(null)
   const [isServerViewLoading, setIsServerViewLoading] = useState(false)
   const [isServerTableLoading, setIsServerTableLoading] = useState(true)
   const [expandedRows, setExpandedRows] = useState<string[]>([])
   const [activeTrend, setActiveTrend] = useState("Load Trend")
   const [activeDailyMetric, setActiveDailyMetric] = useState<DailyProgressMetric>('all')
+  const [selectedRoCalendarDate, setSelectedRoCalendarDate] = useState('')
+  const [showRoCalendarDialog, setShowRoCalendarDialog] = useState(false)
   const [viewMode, setViewMode] = useState<ROAnalysisView>('table')
   const [fySearchQuery, setFySearchQuery] = useState('')
   const [expandedChart, setExpandedChart] = useState<{ title: string; chartId: string } | null>(null)
@@ -1976,22 +5471,27 @@ function ServiceTypePerformance({
   const dailyProgressMetrics: Array<{ id: DailyProgressMetric; label: string; color: string }> = useMemo(() => [
     { id: 'all', label: 'All', color: '#64748B' },
     { id: 'revenue', label: 'Total Revenue', color: '#1D4ED8' },
-    { id: 'labour', label: 'Labour', color: '#0F766E' },
+    { id: 'labour', label: 'Labour', color: '#023468' },
     { id: 'parts', label: 'Parts', color: '#D97706' },
     { id: 'load', label: 'Load', color: '#BE123C' },
   ], [])
+  const showDailySeries = useCallback((series: Exclude<DailyProgressMetric, 'all'>) => {
+    return activeDailyMetric === 'all' || activeDailyMetric === series
+  }, [activeDailyMetric])
 
   const convertServerTableRows = useCallback((rows: ROAnalysisRow[] = []): StatRow[] => {
     const topRows = rows.filter((row) => row.depth === 0)
     const toStatRow = (name: string, sourceRows: ROAnalysisRow[], isParent = false): StatRow => {
       const sumMetric = (period: PeriodKey, key: 'cy' | 'ly'): number | 'N/A' => {
         let total = 0
+        let hasNumericValue = false
         for (const row of sourceRows) {
           const value = row.metrics[period]?.[key]
-          if (value === 'N/A') return 'N/A'
+          if (value === 'N/A') continue
+          hasNumericValue = true
           total += Number(value || 0)
         }
-        return total
+        return key === 'cy' || hasNumericValue ? total : 'N/A'
       }
 
       const cy = sumMetric('mtd', 'cy') as number
@@ -2086,17 +5586,22 @@ function ServiceTypePerformance({
     }
     const paid = toStatRow('Paid Service', paidRows, paidRows.length > 0)
     paid.subRows = buildSubRows(paidRows, paid.name)
+    paid.isParent = paid.subRows.length > 0
     const free = toStatRow('Free Services', freeRows, freeRows.length > 0)
     free.subRows = buildSubRows(freeRows, free.name)
+    free.isParent = free.subRows.length > 0
     const running = toStatRow('Running Repairs', runningRows, runningRows.length > 0)
     running.subRows = buildSubRows(runningRows, running.name)
+    running.isParent = running.subRows.length > 0
     const others = toStatRow('Others', otherRows, otherRows.length > 0)
     others.subRows = otherRows
       .filter((row) => isCleanServiceName(row.name, others.name))
       .map((row) => toStatRow(row.name, [row]))
       .sort((a, b) => a.name.localeCompare(b.name))
+    others.isParent = others.subRows.length > 0
     const accident = toStatRow('Accident', accidentRows, accidentRows.length > 0)
     accident.subRows = buildSubRows(accidentRows, accident.name)
+    accident.isParent = accident.subRows.length > 0
     const mech = toStatRow('MECH', [paid, free, running].map((row) => ({
       name: row.name,
       depth: 0,
@@ -2134,6 +5639,48 @@ function ServiceTypePerformance({
     return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
   }, [])
 
+  const derivePerVehicleRows = useCallback((amountRows: StatRow[] = [], loadRows: StatRow[] = []): StatRow[] => {
+    const amountByName = new Map(amountRows.map((row) => [row.name, row]))
+    const ratio = (amount: number | 'N/A' | undefined, load: number | 'N/A' | undefined): number | 'N/A' => {
+      if (amount === 'N/A' || load === 'N/A') return 'N/A'
+      const safeAmount = Number(amount || 0)
+      const safeLoad = Number(load || 0)
+      return safeLoad > 0 ? safeAmount / safeLoad : 0
+    }
+    const growthString = (current: number, previous: number | 'N/A') => {
+      if (previous === 'N/A' || previous <= 0) return 'N/A'
+      return (((current - previous) / previous) * 100).toFixed(1)
+    }
+    const deriveRow = (loadRow: StatRow, amountRow?: StatRow): StatRow => {
+      const childAmountByName = new Map((amountRow?.subRows || []).map((row) => [row.name, row]))
+      const subRows = (loadRow.subRows || []).map((loadSubRow) => deriveRow(loadSubRow, childAmountByName.get(loadSubRow.name)))
+      const cy = ratio(amountRow?.cy, loadRow.cy) as number
+      const ly = ratio(amountRow?.ly, loadRow.ly)
+      const qtdCY = ratio(amountRow?.qtdCY, loadRow.qtdCY) as number
+      const qtdLY = ratio(amountRow?.qtdLY, loadRow.qtdLY)
+      const ytdCY = ratio(amountRow?.ytdCY, loadRow.ytdCY) as number
+      const ytdLY = ratio(amountRow?.ytdLY, loadRow.ytdLY)
+
+      return {
+        name: loadRow.name,
+        isParent: subRows.length > 0,
+        td: ratio(amountRow?.td, loadRow.td) as number,
+        cy,
+        ly,
+        growth: growthString(cy, ly),
+        qtdCY,
+        qtdLY,
+        qtdGrowth: growthString(qtdCY, qtdLY),
+        ytdCY,
+        ytdLY,
+        ytdGrowth: growthString(ytdCY, ytdLY),
+        subRows,
+      }
+    }
+
+    return loadRows.map((loadRow) => deriveRow(loadRow, amountByName.get(loadRow.name)))
+  }, [])
+
   useEffect(() => {
     let isActive = true
     async function fetchTableSummary() {
@@ -2150,22 +5697,30 @@ function ServiceTypePerformance({
           startDate: range.startDate,
           endDate: range.endDate,
         })
+        appendBusinessComparisonParams(params, dateFilter)
+        appendKiaDealerCodeParam(params, dealerCode)
         const queryString = params.toString()
         const result = await queryClient.fetchQuery({
           queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
           queryFn: async () => {
             const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+            logApiTimings(response, 'ro-billing-table-summary')
             if (!response.ok) throw new Error('Failed to fetch RO Billing table summary bundle')
             return await response.json() as ROAnalysisResponse
           },
           staleTime: DASHBOARD_STALE_TIME_MS,
         })
-        const tableResults = roAnalysisTypes.map((analysisType) => {
+        const convertedRowsByMetric: Partial<Record<ROAnalysisType, StatRow[]>> = {}
+        for (const analysisType of roAnalysisTypes) {
+          if (analysisType === 'lab_per_veh' || analysisType === 'part_per_veh') continue
           const metricResult = result.byMetric?.[analysisType] || result
-          return [analysisType, convertServerTableRows(metricResult.rows || [])] as const
-        })
+          convertedRowsByMetric[analysisType] = convertServerTableRows(metricResult.rows || [])
+        }
+        convertedRowsByMetric.lab_per_veh = derivePerVehicleRows(convertedRowsByMetric.labour, convertedRowsByMetric.load)
+        convertedRowsByMetric.part_per_veh = derivePerVehicleRows(convertedRowsByMetric.parts, convertedRowsByMetric.load)
         if (isActive) {
-          setServerTableRowsByMetric(Object.fromEntries(tableResults) as Partial<Record<ROAnalysisType, StatRow[]>>)
+          setServerTableRowsByMetric(convertedRowsByMetric)
+          setCancelledSummary(result.cancelledSummary || null)
         }
       } catch (error) {
         if (isActive) console.error('Failed to fetch RO Billing table summary:', error)
@@ -2178,7 +5733,7 @@ function ServiceTypePerformance({
     return () => {
       isActive = false
     }
-  }, [convertServerTableRows, dateFilter, queryClient, roAnalysisTypes])
+  }, [convertServerTableRows, dateFilter, dealerCode, derivePerVehicleRows, queryClient, roAnalysisTypes])
 
   const fetchAnalysisSummary = useCallback(async (analysisType: ROAnalysisType, view: 'trend' | 'fy' | 'analytics' | 'leaderboard') => {
     const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
@@ -2191,17 +5746,20 @@ function ServiceTypePerformance({
       startDate: range.startDate,
       endDate: range.endDate,
     })
+    appendBusinessComparisonParams(params, dateFilter)
+    appendKiaDealerCodeParam(params, dealerCode)
     const queryString = params.toString()
     return queryClient.fetchQuery({
       queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
       queryFn: async () => {
         const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+        logApiTimings(response, `ro-billing-${analysisType}-${view}`)
         if (!response.ok) throw new Error(`Failed to fetch RO Billing ${analysisType} ${view} summary`)
         return await response.json() as ROAnalysisResponse
       },
       staleTime: DASHBOARD_STALE_TIME_MS,
     })
-  }, [dateFilter, queryClient])
+  }, [dateFilter, dealerCode, queryClient])
 
   const fetchAnalysisBundle = useCallback(async (view: 'trend' | 'fy') => {
     const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
@@ -2215,25 +5773,28 @@ function ServiceTypePerformance({
       startDate: range.startDate,
       endDate: range.endDate,
     })
+    appendBusinessComparisonParams(params, dateFilter)
+    appendKiaDealerCodeParam(params, dealerCode)
     const queryString = params.toString()
     return queryClient.fetchQuery({
       queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
       queryFn: async () => {
         const response = await fetch(`/api/brands/kia/business-excellence/ro-billing-analysis?${queryString}`)
+        logApiTimings(response, `ro-billing-${view}-bundle`)
         if (!response.ok) throw new Error(`Failed to fetch RO Billing ${view} bundle`)
         return await response.json() as ROAnalysisResponse
       },
       staleTime: DASHBOARD_STALE_TIME_MS,
     })
-  }, [dateFilter, queryClient])
+  }, [dateFilter, dealerCode, queryClient])
 
   useEffect(() => {
     let isActive = true
     async function fetchActiveSummaryView() {
-      if (viewMode !== 'trend' && viewMode !== 'fy' && viewMode !== 'analytics' && viewMode !== 'leaderboard') return
+      if (viewMode !== 'trend' && !showRoCalendarDialog && viewMode !== 'fy' && viewMode !== 'analytics' && viewMode !== 'leaderboard') return
       try {
         setIsServerViewLoading(true)
-        if (viewMode === 'trend') {
+        if (viewMode === 'trend' || showRoCalendarDialog) {
           const result = await fetchAnalysisBundle('trend')
           if (isActive) {
             setServerTrendByMetric((prev) => ({
@@ -2282,7 +5843,7 @@ function ServiceTypePerformance({
     return () => {
       isActive = false
     }
-  }, [fetchAnalysisBundle, fetchAnalysisSummary, viewMode])
+  }, [fetchAnalysisBundle, fetchAnalysisSummary, showRoCalendarDialog, viewMode])
 
   const formatValue = (val: number | string | 'N/A' | undefined | null) => {
     if (val === 'N/A' || val === undefined || val === null) return 'N/A'
@@ -2355,7 +5916,13 @@ function ServiceTypePerformance({
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
             <XAxis dataKey="day" axisLine={false} tickLine={false} tick={<TrendAxisTick />} interval={0} minTickGap={0} tickMargin={14} height={54} />
             <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 800, fill: '#64748b' }} width={64} />
-            <Tooltip contentStyle={tooltipStyle} />
+            <Tooltip
+              formatter={(value, name) => [
+                String(name).toLowerCase().includes('revenue') ? formatCurrencyFull(Number(value || 0)) : formatChartNumber(value),
+                String(name),
+              ]}
+              contentStyle={tooltipStyle}
+            />
             <ReferenceLine y={dailyTarget} stroke="#f43f5e" strokeDasharray="5 5" label={{ position: 'right', value: 'Target', fill: '#f43f5e', fontSize: 12, fontWeight: 900 }} />
             <Line type="monotone" dataKey="cy" name="This Year" stroke="#0B5D7A" strokeWidth={4} dot={{ r: 5, strokeWidth: 2, fill: '#fff' }}>
               <LabelList dataKey="cy" content={<SmartTrendValueLabel total={trendData.length} series="cy" />} />
@@ -2378,20 +5945,28 @@ function ServiceTypePerformance({
             <XAxis dataKey="day" interval={0} minTickGap={0} tick={<TrendAxisTick />} tickMargin={12} height={58} />
             <YAxis yAxisId="amount" tick={{ fontSize: 12, fill: '#64748b' }} />
             <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 12, fill: '#BE123C' }} />
-            <Tooltip contentStyle={tooltipStyle} />
+            <Tooltip formatter={(value, name) => [formatChartNumber(value), String(name)]} contentStyle={tooltipStyle} />
             <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
-            <Line yAxisId="amount" type="monotone" dataKey="labour" name="Labour" stroke="#0F766E" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#0F766E' }}>
-              {(activeDailyMetric === 'all' || activeDailyMetric === 'labour') && <LabelList dataKey="labour" position="bottom" formatter={formatChartLabel} fill="#0F766E" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />}
-            </Line>
-            <Line yAxisId="amount" type="monotone" dataKey="parts" name="Parts" stroke="#D97706" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#D97706' }}>
-              {(activeDailyMetric === 'all' || activeDailyMetric === 'parts') && <LabelList dataKey="parts" position="bottom" offset={18} formatter={formatChartLabel} fill="#D97706" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />}
-            </Line>
-            <Line yAxisId="amount" type="monotone" dataKey="revenue" name="Total Revenue" stroke="#1D4ED8" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'revenue' ? 4.5 : 2.75} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'revenue' ? 1 : 0.55} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'revenue' ? 4.5 : 2.5, strokeWidth: 2.5, fill: '#fff', stroke: '#1D4ED8' }} activeDot={{ r: 7, strokeWidth: 3, fill: '#fff', stroke: '#1D4ED8' }}>
-              {(activeDailyMetric === 'all' || activeDailyMetric === 'revenue') && <LabelList dataKey="revenue" position="top" formatter={formatChartLabel} fill="#1D4ED8" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />}
-            </Line>
-            <Line yAxisId="load" type="monotone" dataKey="load" name="Load" stroke="#BE123C" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'load' ? 4 : 2.75} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'load' ? 1 : 0.6} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'load' ? 4.5 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#BE123C' }}>
-              {(activeDailyMetric === 'all' || activeDailyMetric === 'load') && <LabelList dataKey="load" position="top" offset={14} formatter={formatChartLabel} fill="#BE123C" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />}
-            </Line>
+            {showDailySeries('labour') && (
+              <Line yAxisId="amount" type="monotone" dataKey="labour" name="Labour" stroke="#023468" strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#023468' }}>
+                <LabelList dataKey="labour" position="bottom" formatter={formatChartLabel} fill="#023468" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />
+              </Line>
+            )}
+            {showDailySeries('parts') && (
+              <Line yAxisId="amount" type="monotone" dataKey="parts" name="Parts" stroke="#D97706" strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#D97706' }}>
+                <LabelList dataKey="parts" position="bottom" offset={18} formatter={formatChartLabel} fill="#D97706" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />
+              </Line>
+            )}
+            {showDailySeries('revenue') && (
+              <Line yAxisId="amount" type="monotone" dataKey="revenue" name="Total Revenue" stroke="#1D4ED8" strokeWidth={4.5} dot={{ r: 4.5, strokeWidth: 2.5, fill: '#fff', stroke: '#1D4ED8' }} activeDot={{ r: 7, strokeWidth: 3, fill: '#fff', stroke: '#1D4ED8' }}>
+                <LabelList dataKey="revenue" position="top" formatter={formatChartLabel} fill="#1D4ED8" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />
+              </Line>
+            )}
+            {showDailySeries('load') && (
+              <Line yAxisId="load" type="monotone" dataKey="load" name="Load" stroke="#BE123C" strokeWidth={4} dot={{ r: 4.5, strokeWidth: 2, fill: '#fff', stroke: '#BE123C' }}>
+                <LabelList dataKey="load" position="top" offset={14} formatter={formatChartLabel} fill="#BE123C" fontSize={activeDailyMetric === 'all' ? 8 : 10} fontWeight={900} />
+              </Line>
+            )}
           </LineChart>
         </ResponsiveContainer>
       )
@@ -2404,9 +5979,15 @@ function ServiceTypePerformance({
             <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 13, fontWeight: 900, fill: '#475569' }} />
             <YAxis tick={{ fontSize: 12, fill: '#64748b' }} />
-            <Tooltip contentStyle={tooltipStyle} />
+            <Tooltip
+              formatter={(value, name) => [
+                formatCurrencyFull(Number(value || 0)),
+                String(name),
+              ]}
+              contentStyle={tooltipStyle}
+            />
             <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
-            <Bar dataKey="labour" name="Labour" stackId="revenue" fill="#0F766E" radius={[0, 0, 8, 8]}>
+            <Bar dataKey="labour" name="Labour" stackId="revenue" fill="#023468" radius={[0, 0, 8, 8]}>
               <LabelList dataKey="labour" position="insideTop" formatter={formatChartLabel} fill="#fff" fontSize={11} fontWeight={900} />
             </Bar>
             <Bar dataKey="parts" name="Parts" stackId="revenue" fill="#D97706" radius={[8, 8, 0, 0]}>
@@ -2469,7 +6050,13 @@ function ServiceTypePerformance({
             <XAxis dataKey="name" tick={{ fontSize: 13, fontWeight: 900, fill: '#475569' }} />
             <YAxis yAxisId="amount" tick={{ fontSize: 12, fill: '#64748b' }} />
             <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 12, fill: '#BE123C' }} />
-            <Tooltip contentStyle={tooltipStyle} />
+            <Tooltip
+              formatter={(value, name) => [
+                String(name).toLowerCase().includes('revenue') ? formatCurrencyFull(Number(value || 0)) : formatChartNumber(value),
+                String(name),
+              ]}
+              contentStyle={tooltipStyle}
+            />
             <Legend iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 900 }} />
             <Bar yAxisId="amount" dataKey="revenue" name="Revenue" fill="#1D4ED8" radius={[12, 12, 0, 0]}>
               <LabelList dataKey="revenue" position="top" formatter={formatChartLabel} fill="#1D4ED8" fontSize={11} fontWeight={900} />
@@ -2491,7 +6078,7 @@ function ServiceTypePerformance({
 
     // Helper to parse dates from DD/MM/YYYY or YYYY-MM-DD formats
     const parseDate = (dateStr: string): Date | null => {
-      if (!dateStr || dateStr === '—' || dateStr === '-' || dateStr === '') return null
+      if (!dateStr || dateStr === '\u2014' || dateStr === '-' || dateStr === '') return null
       const trimmed = String(dateStr).trim()
       // Check YYYY-MM-DD
       if (trimmed.includes('-')) {
@@ -2539,46 +6126,13 @@ function ServiceTypePerformance({
       }
     })
 
-    const today = new Date()
-    const todayYear = today.getFullYear()
-    const todayMonth = today.getMonth()
-    const todayDay = today.getDate()
-
-    const defaultYear = todayYear
-    const defaultMonth = todayMonth
-
-    let cyYear = defaultYear
-    let cyMonth = defaultMonth
-    let cyDay = 31
-
-    let isRangeMode = false
-    let rangeStart = new Date()
-    let rangeEnd = new Date()
-
-    if (dateFilter) {
-      if (dateFilter.mode === 'month') {
-        cyYear = dateFilter.year
-        cyMonth = dateFilter.month
-        if (cyYear === todayYear && cyMonth === todayMonth) {
-          cyDay = todayDay
-        } else {
-          cyDay = new Date(cyYear, cyMonth + 1, 0).getDate()
-        }
-      } else if (dateFilter.mode === 'range' && dateFilter.startDate && dateFilter.endDate) {
-        isRangeMode = true
-        rangeStart = parseDate(dateFilter.startDate) || new Date()
-        rangeEnd = parseDate(dateFilter.endDate) || new Date()
-        cyYear = rangeEnd.getFullYear()
-        cyMonth = rangeEnd.getMonth()
-        cyDay = rangeEnd.getDate()
-      }
-    } else {
-      if (cyYear === todayYear && cyMonth === todayMonth) {
-        cyDay = todayDay
-      } else {
-        cyDay = new Date(cyYear, cyMonth + 1, 0).getDate()
-      }
-    }
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const cyYear = selectedRange.end.getFullYear()
+    const cyMonth = selectedRange.end.getMonth()
+    const cyDay = selectedRange.end.getDate()
+    const isRangeMode = Boolean(dateFilter?.startDate && dateFilter.endDate)
+    const rangeStart = selectedRange.start
+    const rangeEnd = selectedRange.end
 
     let cyMtdStart: Date, cyMtdEnd: Date, lyMtdStart: Date, lyMtdEnd: Date
 
@@ -2602,32 +6156,40 @@ function ServiceTypePerformance({
       lyMtdEnd = new Date(cyYear - 1, cyMonth, cyDay, 23, 59, 59, 999)
     }
 
+    const lyEquivalentDayEnd = isRangeMode
+      ? (() => {
+          const shiftedEnd = new Date(rangeEnd)
+          shiftedEnd.setFullYear(shiftedEnd.getFullYear() - 1)
+          shiftedEnd.setHours(23, 59, 59, 999)
+          return shiftedEnd
+        })()
+      : new Date(cyYear - 1, cyMonth, cyDay, 23, 59, 59, 999)
     const quarterStartMonth = Math.floor(cyMonth / 3) * 3
     const cyQtdStart = new Date(cyYear, quarterStartMonth, 1, 0, 0, 0, 0)
     const cyQtdEnd = new Date(cyMtdEnd)
 
     const lyQtdStart = new Date(cyYear - 1, quarterStartMonth, 1, 0, 0, 0, 0)
-    const lyQtdEnd = new Date(lyMtdEnd)
+    const lyQtdEnd = isRangeMode
+      ? new Date(lyMtdEnd)
+      : new Date(cyYear - 1, cyMonth, cyDay, 23, 59, 59, 999)
 
-    let fiscalYearStartCY = cyYear
-    if (cyMonth < 3) {
-      fiscalYearStartCY = cyYear - 1
-    }
-    const cyYtdStart = new Date(fiscalYearStartCY, 3, 1, 0, 0, 0, 0)
+    const cyYtdStart = new Date(cyYear, 0, 1, 0, 0, 0, 0)
     const cyYtdEnd = new Date(cyMtdEnd)
 
-    const lyYtdStart = new Date(fiscalYearStartCY - 1, 3, 1, 0, 0, 0, 0)
-    const lyYtdEnd = new Date(lyMtdEnd)
+    const lyYtdStart = new Date(cyYear - 1, 0, 1, 0, 0, 0, 0)
+    const lyYtdEnd = isRangeMode
+      ? new Date(lyMtdEnd)
+      : new Date(cyYear - 1, cyMonth, cyDay, 23, 59, 59, 999)
     const cyTdStart = new Date(cyMtdEnd)
     cyTdStart.setHours(0, 0, 0, 0)
     const cyTdEnd = new Date(cyMtdEnd)
     cyTdEnd.setHours(23, 59, 59, 999)
-    const lyTdStart = new Date(lyMtdEnd)
+    const lyTdStart = new Date(lyEquivalentDayEnd)
     lyTdStart.setHours(0, 0, 0, 0)
-    const lyTdEnd = new Date(lyMtdEnd)
+    const lyTdEnd = new Date(lyEquivalentDayEnd)
     lyTdEnd.setHours(23, 59, 59, 999)
 
-    console.log('📅 statsData Boundaries Derived:', {
+    console.log('statsData boundaries derived:', {
       cyMtd: `[${cyMtdStart.toISOString()} -> ${cyMtdEnd.toISOString()}]`,
       lyMtd: `[${lyMtdStart.toISOString()} -> ${lyMtdEnd.toISOString()}]`,
       cyQtd: `[${cyQtdStart.toISOString()} -> ${cyQtdEnd.toISOString()}]`,
@@ -2841,12 +6403,14 @@ function ServiceTypePerformance({
 
       const sumLyField = (field: 'ly' | 'qtdLY' | 'ytdLY'): number | 'N/A' => {
         let sum = 0
+        let hasNumericValue = false
         for (const r of rows) {
           const val = r[field]
-          if (val === 'N/A') return 'N/A'
+          if (val === 'N/A') continue
+          hasNumericValue = true
           sum += val
         }
-        return sum
+        return hasNumericValue ? sum : 'N/A'
       }
 
       const ly = sumLyField('ly')
@@ -2890,8 +6454,10 @@ function ServiceTypePerformance({
 
   const activeServerTableRows = serverTableRowsByMetric[activeAnalysisType] || null
   const effectiveStatsData = viewMode === 'table' && activeServerTableRows ? activeServerTableRows : statsData
+  const hasCustomComparison = false
   const hasRawRows = data.length > 0
   const isTrendSummaryPending = viewMode === 'trend' && !hasRawRows && !serverTrendByMetric[activeAnalysisType]
+  const isCalendarSummaryPending = showRoCalendarDialog && !hasRawRows && !serverTrendByMetric[activeAnalysisType]
   const isFySummaryPending = viewMode === 'fy' && !hasRawRows && roAnalysisTypes.some((analysisType) => !serverFyByMetric[analysisType])
   const isAnalyticsSummaryPending = viewMode === 'analytics' && !hasRawRows && (
     roAnalysisTypes.some((analysisType) => !serverTrendByMetric[analysisType])
@@ -2934,21 +6500,38 @@ function ServiceTypePerformance({
     </div>
   )
 
+  const applyRollingCalendarTargets = useCallback(<T extends { cy: number; ly: number; target?: number }>(rows: T[]) => {
+    const monthTarget = rows.reduce((acc, point) => acc + Number(point.ly || 0), 0) * 1.1
+    let achievedTillPreviousDay = 0
+
+    return rows.map((point, index) => {
+      const remainingDaysIncludingToday = rows.length - index
+      const remainingTarget = Math.max(monthTarget - achievedTillPreviousDay, 0)
+      const target = remainingDaysIncludingToday > 0 ? remainingTarget / remainingDaysIncludingToday : 0
+      achievedTillPreviousDay += Number(point.cy || 0)
+
+      return {
+        ...point,
+        target,
+      }
+    })
+  }, [])
+
   const trendData = useMemo(() => {
-    if (viewMode !== 'trend' && viewMode !== 'analytics') return []
+    if (viewMode !== 'trend' && !showRoCalendarDialog && viewMode !== 'analytics') return []
     const serverTrend = serverTrendByMetric[activeAnalysisType]?.trend
     if (serverTrend && serverTrend.length > 0) {
-      return serverTrend.map((point) => ({
+      const baseRows = serverTrend.map((point) => ({
         day: point.label,
         cy: Number(point.cy || 0),
         ly: Number(point.ly || 0),
-        target: Number(point.ly || 0) * 1.1,
       }))
+      return applyRollingCalendarTargets(baseRows)
     }
     if (!data || data.length === 0) return []
 
     const parseDate = (dateStr: string): Date | null => {
-      if (!dateStr || dateStr === '—' || dateStr === '-' || dateStr === '') return null
+      if (!dateStr || dateStr === '\u2014' || dateStr === '-' || dateStr === '') return null
       const trimmed = String(dateStr).trim()
       if (trimmed.includes('-')) {
         const parts = trimmed.split('-')
@@ -2978,20 +6561,9 @@ function ServiceTypePerformance({
       return null
     }
 
-    const today = new Date()
-    let targetYear = today.getFullYear()
-    let targetMonth = today.getMonth()
-
-    if (dateFilter?.mode === 'month') {
-      targetYear = dateFilter.year
-      targetMonth = dateFilter.month
-    } else if (dateFilter?.mode === 'range' && dateFilter.endDate) {
-      const rangeEndDate = parseDate(dateFilter.endDate)
-      if (rangeEndDate) {
-        targetYear = rangeEndDate.getFullYear()
-        targetMonth = rangeEndDate.getMonth()
-      }
-    }
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const targetYear = selectedRange.end.getFullYear()
+    const targetMonth = selectedRange.end.getMonth()
 
     const isLabourAmount = activeTrend === 'Labour Trend'
     const isPartsAmount = activeTrend === 'Parts Trend'
@@ -3041,7 +6613,7 @@ function ServiceTypePerformance({
     const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
     const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 
-    return Array.from({ length: daysInMonth }, (_, i) => {
+    const rows = Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1
       const date = new Date(targetYear, targetMonth, day)
       const dayName = dayNames[date.getDay()]
@@ -3061,10 +6633,11 @@ function ServiceTypePerformance({
         day: `${String(day).padStart(2, '0')} ${dayName}`,
         cy,
         ly,
-        target: ly * 1.1
+        target: 0,
       }
     })
-  }, [activeAnalysisType, data, activeTrend, dateFilter, serverTrendByMetric, viewMode])
+    return applyRollingCalendarTargets(rows)
+  }, [activeAnalysisType, applyRollingCalendarTargets, data, activeTrend, dateFilter, serverTrendByMetric, showRoCalendarDialog, viewMode])
 
   const kpiStats = useMemo(() => {
     if (trendData.length === 0) {
@@ -3081,19 +6654,10 @@ function ServiceTypePerformance({
 
     if (!data || data.length === 0) {
       const today = new Date()
-      const rangeEnd = dateFilter?.mode === 'range' && dateFilter.endDate
-        ? parseBusinessDate(dateFilter.endDate)
-        : null
-      const targetYear = dateFilter?.mode === 'month'
-        ? dateFilter.year
-        : rangeEnd
-          ? rangeEnd.getFullYear()
-          : today.getFullYear()
-      const targetMonth = dateFilter?.mode === 'month'
-        ? dateFilter.month
-        : rangeEnd
-          ? rangeEnd.getMonth()
-          : today.getMonth()
+      const selectedRange = getSelectedBusinessDateRange(dateFilter)
+      const rangeEnd = selectedRange.end
+      const targetYear = rangeEnd.getFullYear()
+      const targetMonth = rangeEnd.getMonth()
       const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
       const selectedThroughDay = rangeEnd && rangeEnd.getFullYear() === targetYear && rangeEnd.getMonth() === targetMonth
         ? rangeEnd.getDate()
@@ -3104,43 +6668,35 @@ function ServiceTypePerformance({
       const monthTarget = trendData.reduce((acc, day) => acc + Number(day.ly || 0), 0) * 1.1
       const mtdTarget = monthTarget * (elapsedDays / daysInMonth)
       const mtdAchieved = trendData.slice(0, elapsedDays).reduce((acc, day) => acc + Number(day.cy || 0), 0)
-      const totalAch = trendData.reduce((acc, day) => acc + Number(day.cy || 0), 0)
-      const shortfall = mtdTarget - mtdAchieved
-      const monthlyShortfall = monthTarget - totalAch
+      const shortfall = Math.max(mtdTarget - mtdAchieved, 0)
       const projectedClosing = elapsedDays > 0 ? (mtdAchieved / elapsedDays) * daysInMonth : 0
+      const monthlyShortfall = Math.max(monthTarget - projectedClosing, 0)
       const remainingDays = daysInMonth - elapsedDays
-      const askingRate = remainingDays > 0 ? monthlyShortfall / remainingDays : 0
+      const askingRate = remainingDays > 0 ? Math.max(monthTarget - mtdAchieved, 0) / remainingDays : 0
 
       return [
         { label: 'Month Target', value: formatValue(monthTarget) },
         { label: 'MTD Target', value: formatValue(mtdTarget) },
         { label: 'MTD Achieved', value: formatValue(mtdAchieved) },
-        { label: 'Shortfall T.D', value: formatValue(Math.abs(shortfall)), color: shortfall < 0 ? 'text-emerald-600' : 'text-rose-600' },
-        { label: 'Monthly Shortfall', value: formatValue(Math.abs(monthlyShortfall)), color: monthlyShortfall < 0 ? 'text-emerald-600' : 'text-rose-600' },
+        { label: 'Shortfall T.D', value: formatValue(shortfall), color: shortfall > 0 ? 'text-rose-600' : 'text-emerald-600' },
+        { label: 'Monthly Shortfall', value: formatValue(monthlyShortfall), color: monthlyShortfall > 0 ? 'text-rose-600' : 'text-emerald-600' },
         { label: 'Projected Closing', value: formatValue(projectedClosing), color: projectedClosing < 0 ? 'text-rose-600' : undefined },
         { label: 'Asking Rate', value: formatValue(askingRate), color: askingRate < 0 ? 'text-rose-600' : askingRate > 0 ? 'text-teal-700' : undefined },
       ]
     }
 
     const today = new Date()
-    let targetYear = today.getFullYear()
-    let targetMonth = today.getMonth()
-
-    if (dateFilter?.mode === 'month') {
-      targetYear = dateFilter.year
-      targetMonth = dateFilter.month
-    } else if (dateFilter?.mode === 'range' && dateFilter.endDate) {
-      const end = parseBusinessDate(dateFilter.endDate)
-      if (end) {
-        targetYear = end.getFullYear()
-        targetMonth = end.getMonth()
-      }
-    }
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const targetYear = selectedRange.end.getFullYear()
+    const targetMonth = selectedRange.end.getMonth()
 
     const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
-    const currentDay = targetYear === today.getFullYear() && targetMonth === today.getMonth()
-      ? Math.min(today.getDate(), daysInMonth)
-      : daysInMonth
+    const selectedRangeEnd = selectedRange.end
+    const currentDay = selectedRangeEnd && selectedRangeEnd.getFullYear() === targetYear && selectedRangeEnd.getMonth() === targetMonth
+      ? Math.min(Math.max(selectedRangeEnd.getDate(), 1), daysInMonth)
+      : targetYear === today.getFullYear() && targetMonth === today.getMonth()
+        ? Math.min(today.getDate(), daysInMonth)
+        : daysInMonth
 
     const measureMonth = (year: number, throughDay = daysInMonth) => {
       const isLabourAmount = activeTrend === 'Labour Trend'
@@ -3178,31 +6734,26 @@ function ServiceTypePerformance({
     const monthTarget = lyTotal * 1.1
     const mtdAchieved = achTillDate
     const mtdTarget = monthTarget * (currentDay / daysInMonth)
-    const shortfall = mtdTarget - mtdAchieved
-    const totalAch = measureMonth(targetYear)
-    const monthlyShortfall = monthTarget - totalAch
+    const shortfall = Math.max(mtdTarget - mtdAchieved, 0)
     const avgPerDay = currentDay > 0 ? mtdAchieved / currentDay : 0
     const projectedClosing = avgPerDay * daysInMonth
+    const monthlyShortfall = Math.max(monthTarget - projectedClosing, 0)
     const remainingDays = daysInMonth - currentDay
-    const askingRate = remainingDays > 0 ? monthlyShortfall / remainingDays : 0
-    const shortfallDisplay = Math.abs(shortfall)
-    const monthlyShortfallDisplay = Math.abs(monthlyShortfall)
-    const isShortfallSurplus = shortfall < 0
-    const isMonthlyShortfallSurplus = monthlyShortfall < 0
+    const askingRate = remainingDays > 0 ? Math.max(monthTarget - mtdAchieved, 0) / remainingDays : 0
 
     return [
       { label: 'Month Target', value: formatValue(monthTarget) },
-            { label: 'MTD Target', value: formatValue(mtdTarget) },
+      { label: 'MTD Target', value: formatValue(mtdTarget) },
       { label: 'MTD Achieved', value: formatValue(mtdAchieved) },
       {
         label: 'Shortfall T.D',
-        value: formatValue(shortfallDisplay),
-        color: isShortfallSurplus ? 'text-emerald-600' : 'text-rose-600'
+        value: formatValue(shortfall),
+        color: shortfall > 0 ? 'text-rose-600' : 'text-emerald-600'
       },
       {
         label: 'Monthly Shortfall',
-        value: formatValue(monthlyShortfallDisplay),
-        color: isMonthlyShortfallSurplus ? 'text-emerald-600' : 'text-rose-600'
+        value: formatValue(monthlyShortfall),
+        color: monthlyShortfall > 0 ? 'text-rose-600' : 'text-emerald-600'
       },
       { label: 'Projected Closing', value: formatValue(projectedClosing), color: projectedClosing < 0 ? 'text-rose-600' : undefined },
       { label: 'Asking Rate', value: formatValue(askingRate), color: askingRate < 0 ? 'text-rose-600' : askingRate > 0 ? 'text-teal-700' : undefined },
@@ -3212,6 +6763,47 @@ function ServiceTypePerformance({
   const dailyTarget = trendData.length > 0
     ? (trendData.reduce((acc, day) => acc + day.ly, 0) * 1.1) / trendData.length
     : 0
+  const roBillingCalendar = useMemo(() => {
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const anchorDate = selectedRange.end
+    const monthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1)
+    const gridStart = new Date(monthStart)
+    gridStart.setDate(monthStart.getDate() - monthStart.getDay())
+    const trendByDay = new Map<string, { day: string; cy: number; ly: number; target: number }>()
+
+    trendData.forEach((point) => {
+      const dayNumber = String(point.day || '').slice(0, 2)
+      if (/^\d{2}$/.test(dayNumber)) trendByDay.set(dayNumber, point)
+    })
+
+    const days = Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(gridStart)
+      date.setDate(gridStart.getDate() + index)
+      const key = getInputDate(date)
+      const dayNumber = String(date.getDate()).padStart(2, '0')
+      const point = trendByDay.get(dayNumber)
+      const cy = Number(point?.cy || 0)
+      const ly = Number(point?.ly || 0)
+      const growthValue = ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A'
+      return {
+        key,
+        date,
+        inMonth: date.getMonth() === anchorDate.getMonth(),
+        point,
+        cy,
+        ly,
+        target: Number(point?.target || 0),
+        growth: growthValue,
+      }
+    })
+
+    return {
+      monthLabel: anchorDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+      days,
+      rowsByDate: new Map(days.map((day) => [day.key, day])),
+    }
+  }, [dateFilter, trendData])
+  const activeRoCalendarDate = selectedRoCalendarDate || getInputDate(getSelectedBusinessDateRange(dateFilter).end)
   // Historical FY Trends Data
   const fyTrendsData = useMemo(() => {
     if (viewMode !== 'fy' && viewMode !== 'analytics') return []
@@ -3373,7 +6965,7 @@ function ServiceTypePerformance({
       }
       const kpis = [
         { label: 'Total RO Load', value: cySummary.load, ly: lySummary.load, growth: growth(cySummary.load, lySummary.load), icon: Activity, accent: 'teal', formatter: (n: number) => Math.round(n).toLocaleString('en-IN') },
-        { label: 'Labour Revenue', value: cySummary.labour, ly: lySummary.labour, growth: growth(cySummary.labour, lySummary.labour), icon: DollarSign, accent: 'blue', formatter: formatCurrency },
+        { label: 'Labour Revenue', value: cySummary.labour, ly: lySummary.labour, growth: growth(cySummary.labour, lySummary.labour), icon: IndianRupee, accent: 'blue', formatter: formatCurrency },
         { label: 'Parts Revenue', value: cySummary.parts, ly: lySummary.parts, growth: growth(cySummary.parts, lySummary.parts), icon: BarChart3, accent: 'violet', formatter: formatCurrency },
         { label: 'Labour / Vehicle', value: cySummary.labPerVehicle, ly: lySummary.labPerVehicle, growth: growth(cySummary.labPerVehicle, lySummary.labPerVehicle), icon: TrendingUp, accent: 'emerald', formatter: formatCurrency },
         { label: 'Parts / Vehicle', value: cySummary.partPerVehicle, ly: lySummary.partPerVehicle, growth: growth(cySummary.partPerVehicle, lySummary.partPerVehicle), icon: TrendingUp, accent: 'amber', formatter: formatCurrency },
@@ -3412,12 +7004,12 @@ function ServiceTypePerformance({
           },
         ],
         revenueMix: [
-          { name: 'Labour', value: cySummary.labour, color: '#0F766E' },
+          { name: 'Labour', value: cySummary.labour, color: '#023468' },
           { name: 'Parts', value: cySummary.parts, color: '#D97706' },
         ].filter((item) => item.value > 0),
         operatingMix: [
           { name: 'Avg Billing', value: cySummary.averageBilling, color: '#1D4ED8' },
-          { name: 'Lab / Veh', value: cySummary.labPerVehicle, color: '#0F766E' },
+          { name: 'Lab / Veh', value: cySummary.labPerVehicle, color: '#023468' },
           { name: 'Part / Veh', value: cySummary.partPerVehicle, color: '#D97706' },
         ],
         advisorLeaderboard: [],
@@ -3453,24 +7045,9 @@ function ServiceTypePerformance({
       return null
     }
 
-    const today = new Date()
-    let cyStart = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0)
-    let cyEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999)
-
-    if (dateFilter?.mode === 'month') {
-      cyStart = new Date(dateFilter.year, dateFilter.month, 1, 0, 0, 0, 0)
-      const endDay = dateFilter.year === today.getFullYear() && dateFilter.month === today.getMonth()
-        ? today.getDate()
-        : new Date(dateFilter.year, dateFilter.month + 1, 0).getDate()
-      cyEnd = new Date(dateFilter.year, dateFilter.month, endDay, 23, 59, 59, 999)
-    } else if (dateFilter?.mode === 'range' && dateFilter.startDate && dateFilter.endDate) {
-      const start = parseDate(dateFilter.startDate)
-      const end = parseDate(dateFilter.endDate)
-      if (start && end) {
-        cyStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0)
-        cyEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999)
-      }
-    }
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const cyStart = new Date(selectedRange.start.getFullYear(), selectedRange.start.getMonth(), selectedRange.start.getDate(), 0, 0, 0, 0)
+    const cyEnd = new Date(selectedRange.end.getFullYear(), selectedRange.end.getMonth(), selectedRange.end.getDate(), 23, 59, 59, 999)
 
     const lyStart = new Date(cyStart)
     lyStart.setFullYear(lyStart.getFullYear() - 1)
@@ -3581,7 +7158,7 @@ function ServiceTypePerformance({
 
     const kpis = [
       { label: 'Total RO Load', value: cySummary.load, ly: lySummary.load, growth: growth(cySummary.load, lySummary.load), icon: Activity, accent: 'teal', formatter: (n: number) => Math.round(n).toLocaleString('en-IN') },
-      { label: 'Labour Revenue', value: cySummary.labour, ly: lySummary.labour, growth: growth(cySummary.labour, lySummary.labour), icon: DollarSign, accent: 'blue', formatter: formatCurrency },
+      { label: 'Labour Revenue', value: cySummary.labour, ly: lySummary.labour, growth: growth(cySummary.labour, lySummary.labour), icon: IndianRupee, accent: 'blue', formatter: formatCurrency },
       { label: 'Parts Revenue', value: cySummary.parts, ly: lySummary.parts, growth: growth(cySummary.parts, lySummary.parts), icon: BarChart3, accent: 'violet', formatter: formatCurrency },
       { label: 'Labour / Vehicle', value: cySummary.labPerVehicle, ly: lySummary.labPerVehicle, growth: growth(cySummary.labPerVehicle, lySummary.labPerVehicle), icon: TrendingUp, accent: 'emerald', formatter: formatCurrency },
       { label: 'Parts / Vehicle', value: cySummary.partPerVehicle, ly: lySummary.partPerVehicle, growth: growth(cySummary.partPerVehicle, lySummary.partPerVehicle), icon: TrendingUp, accent: 'amber', formatter: formatCurrency },
@@ -3648,12 +7225,12 @@ function ServiceTypePerformance({
       services,
       insights,
       revenueMix: [
-        { name: 'Labour', value: cySummary.labour, color: '#0F766E' },
+        { name: 'Labour', value: cySummary.labour, color: '#023468' },
         { name: 'Parts', value: cySummary.parts, color: '#D97706' },
       ].filter((item) => item.value > 0),
       operatingMix: [
         { name: 'Avg Billing', value: cySummary.averageBilling, color: '#1D4ED8' },
-        { name: 'Lab / Veh', value: cySummary.labPerVehicle, color: '#0F766E' },
+        { name: 'Lab / Veh', value: cySummary.labPerVehicle, color: '#023468' },
         { name: 'Part / Veh', value: cySummary.partPerVehicle, color: '#D97706' },
       ],
       advisorLeaderboard,
@@ -3662,16 +7239,149 @@ function ServiceTypePerformance({
 
   return (
     <>
+      {showRoCalendarDialog && (
+        <div className="solid-calendar-surface fixed inset-0 z-[9999] bg-white p-3" style={{ backgroundColor: '#ffffff' }}>
+          <div className="solid-calendar-surface flex h-full w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl" style={{ backgroundColor: '#ffffff' }}>
+            <div className="solid-calendar-surface flex flex-col gap-3 border-b border-slate-100 bg-white p-5 lg:flex-row lg:items-center lg:justify-between" style={{ backgroundColor: '#ffffff' }}>
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[#b9ccde] bg-[#edf4fb] text-[#023468]">
+                  <CalendarDays className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#023468]">RO Billing Calendar</p>
+                  <h3 className="text-xl font-black tracking-tight text-slate-950">{roBillingCalendar.monthLabel}</h3>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {[
+                  { id: "Load Trend", label: "Load", icon: Activity },
+                  { id: "Labour Trend", label: "Labour", icon: RefreshCw },
+                  { id: "Parts Trend", label: "Parts", icon: FileSpreadsheet },
+                  { id: "Labour Per Vehicle Trend", label: "Lab/Veh", icon: TrendingUp },
+                  { id: "Parts Per Vehicle Trend", label: "Part/Veh", icon: TrendingUp }
+                ].map((trend) => (
+                  <button
+                    key={trend.id}
+                    type="button"
+                    onClick={() => setActiveTrend(trend.id)}
+                    className={cn(
+                      "flex min-w-[98px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-widest transition-all",
+                      trend.id === activeTrend
+                        ? "app-primary-action"
+                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    )}
+                  >
+                    <trend.icon className="h-3.5 w-3.5" />
+                    {trend.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShowRoCalendarDialog(false)}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:bg-slate-50"
+                >
+                  <X className="h-4 w-4" />
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto bg-white p-4">
+              {isCalendarSummaryPending || (isServerViewLoading && trendData.length === 0) ? (
+                renderChartSkeleton('h-[420px]')
+              ) : trendData.length === 0 ? (
+                <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-lg shadow-slate-200/40">
+                  <p className="text-sm font-black uppercase tracking-widest text-slate-400">No calendar data available</p>
+                </div>
+              ) : (
+                <div className="min-h-full">
+                  <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        {activeTrend.replace(' Trend', '')} daily CY / LY
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-widest">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[#b9ccde] bg-white px-3 py-1.5 text-[#023468]">
+                          <span className="h-2 w-2 rounded-full bg-[#023468]" /> CY
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-amber-700">
+                          <span className="h-2 w-2 rounded-full bg-amber-500" /> LY
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-white px-3 py-1.5 text-blue-700">
+                          <span className="h-2 w-2 rounded-full bg-blue-500" /> Target
+                        </span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-900 text-white">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                        <div key={day} className="border-r border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest last:border-r-0">
+                          {day}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 bg-white">
+                      {roBillingCalendar.days.map((day) => {
+                        const isSelected = day.key === activeRoCalendarDate
+                        const isAhead = day.growth !== 'N/A' && Number(day.growth) >= 0
+                        return (
+                          <button
+                            key={day.key}
+                            type="button"
+                            onClick={() => setSelectedRoCalendarDate(day.key)}
+                            className={cn(
+                              'min-h-[118px] border-r border-b border-slate-200 p-2 text-left transition last:border-r-0 hover:bg-[#edf4fb]',
+                              !day.inMonth && 'bg-slate-50 text-slate-300',
+                              isSelected && 'bg-[#edf4fb] ring-2 ring-inset ring-[#023468]'
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-300')}>
+                                {day.date.getDate().toString().padStart(2, '0')}
+                              </span>
+                              {day.point && (
+                                <span className={cn(
+                                  'rounded-full border bg-white px-2 py-0.5 text-[9px] font-black',
+                                  day.growth === 'N/A' ? 'border-slate-200 text-slate-400' : isAhead ? 'border-emerald-200 text-emerald-700' : 'border-rose-200 text-rose-700'
+                                )}>
+                                  {formatSignedGrowth(day.growth)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-3 space-y-1">
+                              <div className="flex items-center justify-between rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-700">
+                                <span>CY</span>
+                                <span>{formatValue(day.cy)}</span>
+                              </div>
+                              <div className="flex items-center justify-between rounded-md bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">
+                                <span>LY</span>
+                                <span>{formatValue(day.ly)}</span>
+                              </div>
+                              <div className="flex items-center justify-between rounded-md bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">
+                                <span>Target</span>
+                                <span>{formatValue(day.target)}</span>
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <Card className="mb-6 mt-3 overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm">
         <CardHeader className="border-b border-slate-100 bg-white p-2">
-          <div className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4 xl:grid-cols-7">
+          <div className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4 xl:grid-cols-8">
               <button
                 onClick={() => setViewMode('table')}
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'table'
-                    ? "bg-teal-700 text-white shadow-md shadow-teal-100"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "app-primary-action"
+                    : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <TableIcon className="h-3.5 w-3.5" /> Table
@@ -3681,19 +7391,30 @@ function ServiceTypePerformance({
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'trend'
-                    ? "bg-teal-700 text-white shadow-md shadow-teal-100"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "app-primary-action"
+                    : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <TrendingUp className="h-3.5 w-3.5" /> Trend
+              </button>
+              <button
+                onClick={() => setShowRoCalendarDialog(true)}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  showRoCalendarDialog
+                    ? "app-primary-action"
+                    : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <CalendarDays className="h-3.5 w-3.5" /> Calendar
               </button>
               <button
                 onClick={() => setViewMode('fy')}
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'fy'
-                    ? "bg-teal-700 text-white shadow-md shadow-teal-100"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "app-primary-action"
+                    : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <BarChart3 className="h-3.5 w-3.5" /> FY Trends
@@ -3703,8 +7424,8 @@ function ServiceTypePerformance({
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'analytics'
-                    ? "bg-teal-700 text-white shadow-md shadow-teal-100"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "app-primary-action"
+                    : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <Activity className="h-3.5 w-3.5" /> Analytics
@@ -3714,8 +7435,8 @@ function ServiceTypePerformance({
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'revenue'
-                    ? "bg-teal-700 text-white shadow-md shadow-teal-100"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "app-primary-action"
+                    : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <TrendingUp className="h-3.5 w-3.5" /> Revenue
@@ -3725,8 +7446,8 @@ function ServiceTypePerformance({
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'leaderboard'
-                    ? "bg-teal-700 text-white shadow-md shadow-teal-100"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "app-primary-action"
+                    : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <Users className="h-3.5 w-3.5" /> Leaderboard
@@ -3736,11 +7457,11 @@ function ServiceTypePerformance({
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
                   viewMode === 'intelligence'
-                    ? "bg-teal-700 text-white shadow-md shadow-teal-100"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "app-primary-action"
+                    : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
-                <ShieldAlert className="h-3.5 w-3.5" /> Intelligence
+                <Sparkles className="h-3.5 w-3.5" /> Intelligence
               </button>
           </div>
 
@@ -3777,7 +7498,7 @@ function ServiceTypePerformance({
           )}
         </CardHeader>
         <CardContent className="p-0">
-          <AccessControlOverlay isLocked={!isAdmin}>
+          <>
             {viewMode === 'table' ? (
               <div className="p-6 pb-0">
                 <div className="overflow-x-auto">
@@ -3808,7 +7529,7 @@ function ServiceTypePerformance({
                       {isServerTableLoading && !activeServerTableRows ? (
                         Array.from({ length: 8 }).map((_, index) => (
                           <tr key={`ro-table-skeleton-${index}`} className="border-b border-slate-100">
-                            {Array.from({ length: 11 }).map((__, cellIndex) => (
+                            {Array.from({ length: hasCustomComparison ? 4 : 11 }).map((__, cellIndex) => (
                               <td key={cellIndex} className="px-4 py-4">
                                 <div className="mx-auto h-3 w-16 animate-pulse rounded-full bg-slate-200" />
                               </td>
@@ -3826,10 +7547,11 @@ function ServiceTypePerformance({
                               <tr className={cn(
                                 "group transition-all duration-300",
                                 isGrandTotal
-                                  ? "bg-gradient-to-r from-teal-700 via-teal-600 to-emerald-600 text-white shadow-[inset_4px_0_0_#0f766e]"
+                                  ? "bg-slate-100 text-slate-950 shadow-[inset_4px_0_0_#023468]"
                                   : isTotal
-                                    ? "bg-slate-100 text-slate-950 shadow-[inset_4px_0_0_#2f8f83]"
-                                    : "hover:bg-slate-50/80 bg-white"
+                                    ? "bg-slate-100 text-slate-950 shadow-[inset_4px_0_0_#034b82]"
+                                    : "hover:bg-slate-50/80 bg-white",
+                                getManagementTotalRowClass(row.name)
                               )}>
                                 <td className="px-6 py-4 text-[13px] font-bold">
                                   <div className="flex items-center gap-3">
@@ -3848,9 +7570,11 @@ function ServiceTypePerformance({
                                     {row.name}
                                   </div>
                                 </td>
-                                <td className={cn("px-6 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.td)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-black", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-900")}>{formatValue(row.cy)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly)}</td>
+                                {!hasCustomComparison && (
+                                  <td className={cn("px-6 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.td)}</td>
+                                )}
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-black", isTotal ? "text-slate-900" : "text-slate-900")}>{formatValue(row.cy)}</td>
+                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ly)}</td>
                                 <td className="px-4 py-4 text-center">
                                   <span className={cn(
                                     "px-2.5 py-1 rounded-full text-[10px] font-black border shadow-sm",
@@ -3859,40 +7583,46 @@ function ServiceTypePerformance({
                                     {formatSignedGrowth(row.growth)}
                                   </span>
                                 </td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.qtdCY)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.qtdLY)}</td>
-                                <td className="px-4 py-4 text-center">
-                                  <span className={cn(
-                                    "text-[10px] font-black px-2 py-0.5 rounded-full border",
-                                    getGrowthBadgeClass(row.qtdGrowth)
-                                  )}>
-                                    {formatSignedGrowth(row.qtdGrowth)}
-                                  </span>
-                                </td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.ytdCY)}</td>
-                                <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isGrandTotal ? "text-white" : isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ytdLY)}</td>
-                                <td className="px-4 py-4 text-center">
-                                  <span className={cn(
-                                    "text-[10px] font-black px-2 py-0.5 rounded-full border",
-                                    getGrowthBadgeClass(row.ytdGrowth)
-                                  )}>
-                                    {formatSignedGrowth(row.ytdGrowth)}
-                                  </span>
-                                </td>
+                                {!hasCustomComparison && (
+                                  <>
+                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.qtdCY)}</td>
+                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.qtdLY)}</td>
+                                    <td className="px-4 py-4 text-center">
+                                      <span className={cn(
+                                        "text-[10px] font-black px-2 py-0.5 rounded-full border",
+                                        getGrowthBadgeClass(row.qtdGrowth)
+                                      )}>
+                                        {formatSignedGrowth(row.qtdGrowth)}
+                                      </span>
+                                    </td>
+                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-900" : "text-slate-600")}>{formatValue(row.ytdCY)}</td>
+                                    <td className={cn("px-4 py-4 text-[13px] text-center font-mono font-bold", isTotal ? "text-slate-800" : "text-slate-400")}>{formatValue(row.ytdLY)}</td>
+                                    <td className="px-4 py-4 text-center">
+                                      <span className={cn(
+                                        "text-[10px] font-black px-2 py-0.5 rounded-full border",
+                                        getGrowthBadgeClass(row.ytdGrowth)
+                                      )}>
+                                        {formatSignedGrowth(row.ytdGrowth)}
+                                      </span>
+                                    </td>
+                                  </>
+                                )}
                               </tr>
 
                               {isExpanded && row.subRows.map((sub: StatRow, subIdx: number) => (
                                 <tr key={`${idx}-${subIdx}`} className="bg-slate-50/20 hover:bg-slate-50 transition-colors animate-in fade-in slide-in-from-top-1 duration-200">
-                                  <td className="px-16 py-3.5 text-[12px] font-bold text-slate-500">
+                                  <td className="border border-slate-200 px-16 py-3.5 text-[12px] font-bold text-slate-500">
                                     <div className="flex items-center gap-2">
                                       <div className="w-1.5 h-[1px] bg-slate-200" />
                                       {sub.name}
                                     </div>
                                   </td>
-                                  <td className="px-6 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold">{formatValue(sub.td)}</td>
-                                  <td className="px-4 py-3.5 text-[12px] text-slate-700 text-center font-mono font-black border-l border-slate-100/50">{formatValue(sub.cy)}</td>
-                                  <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold">{formatValue(sub.ly)}</td>
-                                  <td className="px-4 py-3.5 text-center">
+                                  {!hasCustomComparison && (
+                                    <td className="border border-slate-200 px-6 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.td)}</td>
+                                  )}
+                                  <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-black text-slate-700">{formatValue(sub.cy)}</td>
+                                  <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.ly)}</td>
+                                  <td className="border border-slate-200 px-4 py-3.5 text-center">
                                     <span className={cn(
                                       "px-2 py-0.5 rounded-full text-[9px] font-bold border",
                                       sub.growth === 'N/A' ? "text-slate-400 bg-white border-slate-200" : getGrowthBadgeClass(sub.growth)
@@ -3900,26 +7630,30 @@ function ServiceTypePerformance({
                                       {formatSignedGrowth(sub.growth)}
                                     </span>
                                   </td>
-                                  <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold border-l border-slate-100/50">{formatValue(sub.qtdCY)}</td>
-                                  <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold">{formatValue(sub.qtdLY)}</td>
-                                  <td className="px-4 py-3.5 text-center">
-                                    <span className={cn(
-                                      "px-2 py-0.5 rounded-full text-[9px] font-bold border",
-                                      sub.qtdGrowth === 'N/A' ? "text-slate-400 bg-white border-slate-200" : getGrowthBadgeClass(sub.qtdGrowth)
-                                    )}>
-                                      {formatSignedGrowth(sub.qtdGrowth)}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold border-l border-slate-100/50">{formatValue(sub.ytdCY)}</td>
-                                  <td className="px-4 py-3.5 text-[12px] text-slate-400 text-center font-mono font-bold">{formatValue(sub.ytdLY)}</td>
-                                  <td className="px-4 py-3.5 text-center">
-                                    <span className={cn(
-                                      "px-2 py-0.5 rounded-full text-[9px] font-bold border",
-                                      sub.ytdGrowth === 'N/A' ? "text-slate-400 bg-white border-slate-200" : getGrowthBadgeClass(sub.ytdGrowth)
-                                    )}>
-                                      {formatSignedGrowth(sub.ytdGrowth)}
-                                    </span>
-                                  </td>
+                                  {!hasCustomComparison && (
+                                    <>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.qtdCY)}</td>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.qtdLY)}</td>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center">
+                                        <span className={cn(
+                                          "px-2 py-0.5 rounded-full text-[9px] font-bold border",
+                                          sub.qtdGrowth === 'N/A' ? "text-slate-400 bg-white border-slate-200" : getGrowthBadgeClass(sub.qtdGrowth)
+                                        )}>
+                                          {formatSignedGrowth(sub.qtdGrowth)}
+                                        </span>
+                                      </td>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.ytdCY)}</td>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center font-mono text-[12px] font-bold text-slate-400">{formatValue(sub.ytdLY)}</td>
+                                      <td className="border border-slate-200 px-4 py-3.5 text-center">
+                                        <span className={cn(
+                                          "px-2 py-0.5 rounded-full text-[9px] font-bold border",
+                                          sub.ytdGrowth === 'N/A' ? "text-slate-400 bg-white border-slate-200" : getGrowthBadgeClass(sub.ytdGrowth)
+                                        )}>
+                                          {formatSignedGrowth(sub.ytdGrowth)}
+                                        </span>
+                                      </td>
+                                    </>
+                                  )}
                                 </tr>
                               ))}
                             </React.Fragment>
@@ -3927,6 +7661,71 @@ function ServiceTypePerformance({
                         })}
                     </tbody>
                   </table>
+                </div>
+                <div className="mt-5 overflow-hidden rounded-[1.25rem] border border-rose-200 bg-rose-50/60 shadow-sm">
+                  <div className="flex flex-col gap-3 border-b border-rose-200 bg-white/75 p-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Cancelled Billing</p>
+                      <h3 className="text-lg font-black tracking-tight text-slate-950">Cancelled bills excluded from main RO Billing metrics</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Bills</p>
+                        <p className="mt-1 font-mono text-sm font-black text-slate-950">{formatValue(cancelledSummary?.count || 0)}</p>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Labour</p>
+                        <p className="mt-1 font-mono text-sm font-black text-slate-950">{formatCurrency(cancelledSummary?.labour || 0)}</p>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Parts</p>
+                        <p className="mt-1 font-mono text-sm font-black text-slate-950">{formatCurrency(cancelledSummary?.parts || 0)}</p>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">Total</p>
+                        <p className="mt-1 font-mono text-sm font-black text-slate-950">{formatCurrency(cancelledSummary?.total || 0)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {cancelledSummary?.rows?.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[980px] border-collapse text-left">
+                        <thead>
+                          <tr className="bg-rose-700 text-white">
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Bill / RO</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Bill Date</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Work Type</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Service Type</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Advisor</th>
+                            <th className="border border-rose-600 px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Total</th>
+                            <th className="border border-rose-600 px-4 py-3 text-[10px] font-black uppercase tracking-widest">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cancelledSummary.rows.map((row) => (
+                            <tr key={row.billKey} className="bg-white hover:bg-rose-50">
+                              <td className="border border-rose-100 px-4 py-3 text-xs font-black text-slate-900">
+                                <span className="block">{row.billNo || '-'}</span>
+                                <span className="mt-1 block font-bold text-slate-500">RO {row.roNo || '-'}</span>
+                              </td>
+                              <td className="border border-rose-100 px-4 py-3 font-mono text-xs font-bold text-slate-700">{row.billDate ? row.billDate.slice(0, 10) : '-'}</td>
+                              <td className="border border-rose-100 px-4 py-3 text-xs font-bold text-slate-700">{row.workType}</td>
+                              <td className="border border-rose-100 px-4 py-3 text-xs font-bold text-slate-700">{row.serviceType}</td>
+                              <td className="border border-rose-100 px-4 py-3 text-xs font-bold text-slate-700">{row.advisor}</td>
+                              <td className="border border-rose-100 px-4 py-3 text-right font-mono text-xs font-black text-slate-950">{formatCurrency(row.total)}</td>
+                              <td className="border border-rose-100 px-4 py-3">
+                                <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-rose-700">{row.billStatus}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="bg-white/70 p-5 text-center text-xs font-black uppercase tracking-widest text-slate-500">
+                      No cancelled bills in the selected Bill Date range.
+                    </div>
+                  )}
                 </div>
               </div>
             ) : viewMode === 'trend' ? (
@@ -4016,6 +7815,83 @@ function ServiceTypePerformance({
                   ))}
                 </div>
               </div>
+              )
+            ) : false ? (
+              isCalendarSummaryPending || (isServerViewLoading && trendData.length === 0) ? (
+                renderChartSkeleton('h-[420px]')
+              ) : trendData.length === 0 ? (
+                <div className="p-8">
+                  <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-lg shadow-slate-200/40">
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-400">No calendar data available</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6">
+                  <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-[#023468]">RO Billing Calendar</p>
+                        <h3 className="text-lg font-black tracking-tight text-slate-950">{roBillingCalendar.monthLabel}</h3>
+                      </div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        {activeTrend.replace(' Trend', '')} daily CY / LY
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-900 text-white">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                        <div key={day} className="border-r border-slate-700 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest last:border-r-0">
+                          {day}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 bg-white">
+                      {roBillingCalendar.days.map((day) => {
+                        const isSelected = day.key === activeRoCalendarDate
+                        const isAhead = day.growth !== 'N/A' && Number(day.growth) >= 0
+                        return (
+                          <button
+                            key={day.key}
+                            type="button"
+                            onClick={() => setSelectedRoCalendarDate(day.key)}
+                            className={cn(
+                              'min-h-[112px] border-r border-b border-slate-200 p-2 text-left transition last:border-r-0 hover:bg-[#edf4fb]',
+                              !day.inMonth && 'bg-slate-50 text-slate-300',
+                              isSelected && 'bg-[#edf4fb] ring-2 ring-inset ring-[#023468]'
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className={cn('text-xs font-black', day.inMonth ? 'text-slate-900' : 'text-slate-300')}>
+                                {day.date.getDate().toString().padStart(2, '0')}
+                              </span>
+                              {day.point && (
+                                <span className={cn(
+                                  'rounded-full border bg-white px-2 py-0.5 text-[9px] font-black',
+                                  day.growth === 'N/A' ? 'border-slate-200 text-slate-400' : isAhead ? 'border-emerald-200 text-emerald-700' : 'border-rose-200 text-rose-700'
+                                )}>
+                                  {formatSignedGrowth(day.growth)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-3 space-y-1">
+                              <div className="flex items-center justify-between rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-700">
+                                <span>CY</span>
+                                <span>{formatValue(day.cy)}</span>
+                              </div>
+                              <div className="flex items-center justify-between rounded-md bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">
+                                <span>LY</span>
+                                <span>{formatValue(day.ly)}</span>
+                              </div>
+                              <div className="flex items-center justify-between rounded-md bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">
+                                <span>Target</span>
+                                <span>{formatValue(day.target)}</span>
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
               )
             ) : viewMode === 'fy' ? (
               isFySummaryPending || (isServerViewLoading && fyTrendsData.length === 0) ? (
@@ -4117,13 +7993,13 @@ function ServiceTypePerformance({
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Sales Team Leaderboard</p>
-                      <h3 className="text-2xl font-black tracking-tight text-slate-950">Salesperson performance by revenue and RO load</h3>
+                      <h3 className="text-2xl font-black tracking-tight text-slate-950">Service advisor performance by revenue and RO load</h3>
                       <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
                         Ranked by selected Bill Date window, using service advisor revenue, labour, parts, and vehicle load.
                       </p>
                     </div>
                     <span className="rounded-full bg-blue-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-blue-700">
-                      {serverLeaderboard.length.toLocaleString('en-IN')} sales persons
+                      {serverLeaderboard.length.toLocaleString('en-IN')} services advisors
                     </span>
                   </div>
                 </div>
@@ -4152,7 +8028,7 @@ function ServiceTypePerformance({
                       <table className="w-full min-w-[1040px] border-collapse text-left">
                         <thead className="sticky top-0 z-10 bg-slate-950 text-white">
                           <tr>
-                            {['Rank', 'Sales Person', 'RO Load', 'Total Revenue', 'Labour', 'Parts', 'Avg Billing', 'Contribution'].map((heading) => (
+                            {['Rank', 'Service Advisor', 'RO Load', 'Total Revenue', 'Labour', 'Parts', 'Avg Billing', 'Contribution'].map((heading) => (
                               <th key={heading} className="px-5 py-4 text-[10px] font-black uppercase tracking-widest">
                                 {heading}
                               </th>
@@ -4273,7 +8149,7 @@ function ServiceTypePerformance({
                           </div>
                           <ResponsiveContainer width="100%" height={34}>
                             <AreaChart data={trendData.slice(0, 12)}>
-                              <Area type="monotone" dataKey="cy" stroke="#0f766e" fill="#ccfbf1" strokeWidth={2} dot={false} />
+                              <Area type="monotone" dataKey="cy" stroke="#023468" fill="#edf4fb" strokeWidth={2} dot={false} />
                             </AreaChart>
                           </ResponsiveContainer>
                         </div>
@@ -4329,20 +8205,28 @@ function ServiceTypePerformance({
                         <XAxis dataKey="day" interval={0} minTickGap={0} tick={<TrendAxisTick />} tickMargin={12} height={58} />
                         <YAxis yAxisId="amount" tick={{ fontSize: 11, fill: '#64748b' }} />
                         <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 11, fill: '#BE123C' }} />
-                        <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }} />
+                        <Tooltip formatter={(value, name) => [formatChartNumber(value), String(name)]} contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }} />
                         <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
-                        <Line yAxisId="amount" type="monotone" dataKey="labour" name="Labour" stroke="#0F766E" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'labour' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#0F766E' }}>
-                          {(activeDailyMetric === 'all' || activeDailyMetric === 'labour') && <LabelList dataKey="labour" position="bottom" formatter={formatChartLabel} fill="#0F766E" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />}
-                        </Line>
-                        <Line yAxisId="amount" type="monotone" dataKey="parts" name="Parts" stroke="#D97706" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 4 : 2.5} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 1 : 0.45} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'parts' ? 4 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#D97706' }}>
-                          {(activeDailyMetric === 'all' || activeDailyMetric === 'parts') && <LabelList dataKey="parts" position="bottom" offset={18} formatter={formatChartLabel} fill="#D97706" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />}
-                        </Line>
-                        <Line yAxisId="amount" type="monotone" dataKey="revenue" name="Total Revenue" stroke="#1D4ED8" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'revenue' ? 4.5 : 2.75} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'revenue' ? 1 : 0.55} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'revenue' ? 4.5 : 2.5, strokeWidth: 2.5, fill: '#fff', stroke: '#1D4ED8' }} activeDot={{ r: 7, strokeWidth: 3, fill: '#fff', stroke: '#1D4ED8' }}>
-                          {(activeDailyMetric === 'all' || activeDailyMetric === 'revenue') && <LabelList dataKey="revenue" position="top" formatter={formatChartLabel} fill="#1D4ED8" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />}
-                        </Line>
-                        <Line yAxisId="load" type="monotone" dataKey="load" name="Load" stroke="#BE123C" strokeWidth={activeDailyMetric === 'all' || activeDailyMetric === 'load' ? 4 : 2.75} opacity={activeDailyMetric === 'all' || activeDailyMetric === 'load' ? 1 : 0.6} dot={{ r: activeDailyMetric === 'all' || activeDailyMetric === 'load' ? 4.5 : 2.5, strokeWidth: 2, fill: '#fff', stroke: '#BE123C' }}>
-                          {(activeDailyMetric === 'all' || activeDailyMetric === 'load') && <LabelList dataKey="load" position="top" offset={14} formatter={formatChartLabel} fill="#BE123C" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />}
-                        </Line>
+                        {showDailySeries('labour') && (
+                          <Line yAxisId="amount" type="monotone" dataKey="labour" name="Labour" stroke="#023468" strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#023468' }}>
+                            <LabelList dataKey="labour" position="bottom" formatter={formatChartLabel} fill="#023468" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />
+                          </Line>
+                        )}
+                        {showDailySeries('parts') && (
+                          <Line yAxisId="amount" type="monotone" dataKey="parts" name="Parts" stroke="#D97706" strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#D97706' }}>
+                            <LabelList dataKey="parts" position="bottom" offset={18} formatter={formatChartLabel} fill="#D97706" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />
+                          </Line>
+                        )}
+                        {showDailySeries('revenue') && (
+                          <Line yAxisId="amount" type="monotone" dataKey="revenue" name="Total Revenue" stroke="#1D4ED8" strokeWidth={4.5} dot={{ r: 4.5, strokeWidth: 2.5, fill: '#fff', stroke: '#1D4ED8' }} activeDot={{ r: 7, strokeWidth: 3, fill: '#fff', stroke: '#1D4ED8' }}>
+                            <LabelList dataKey="revenue" position="top" formatter={formatChartLabel} fill="#1D4ED8" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />
+                          </Line>
+                        )}
+                        {showDailySeries('load') && (
+                          <Line yAxisId="load" type="monotone" dataKey="load" name="Load" stroke="#BE123C" strokeWidth={4} dot={{ r: 4.5, strokeWidth: 2, fill: '#fff', stroke: '#BE123C' }}>
+                            <LabelList dataKey="load" position="top" offset={14} formatter={formatChartLabel} fill="#BE123C" fontSize={activeDailyMetric === 'all' ? 8 : 9} fontWeight={900} />
+                          </Line>
+                        )}
                       </LineChart>
                     </ResponsiveContainer>
                     </div>
@@ -4363,9 +8247,15 @@ function ServiceTypePerformance({
                           <CartesianGrid strokeDasharray="4 6" stroke="#e2e8f0" vertical={false} />
                           <XAxis dataKey="name" tick={{ fontSize: 12, fontWeight: 800, fill: '#475569' }} />
                           <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
-                          <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }} />
+                          <Tooltip
+                            formatter={(value, name) => [
+                              formatCurrencyFull(Number(value || 0)),
+                              String(name),
+                            ]}
+                            contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }}
+                          />
                           <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
-                          <Bar dataKey="labour" name="Labour" stackId="revenue" fill="#0F766E" radius={[0, 0, 8, 8]}>
+                          <Bar dataKey="labour" name="Labour" stackId="revenue" fill="#023468" radius={[0, 0, 8, 8]}>
                             <LabelList dataKey="labour" position="insideTop" formatter={formatChartLabel} fill="#fff" fontSize={10} fontWeight={900} />
                           </Bar>
                           <Bar dataKey="parts" name="Parts" stackId="revenue" fill="#D97706" radius={[8, 8, 0, 0]}>
@@ -4508,7 +8398,13 @@ function ServiceTypePerformance({
                         <XAxis dataKey="name" tick={{ fontSize: 12, fontWeight: 800, fill: '#475569' }} />
                         <YAxis yAxisId="amount" tick={{ fontSize: 11, fill: '#64748b' }} />
                         <YAxis yAxisId="load" orientation="right" tick={{ fontSize: 11, fill: '#BE123C' }} />
-                        <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }} />
+                        <Tooltip
+                          formatter={(value, name) => [
+                            String(name).toLowerCase().includes('revenue') ? formatCurrencyFull(Number(value || 0)) : formatChartNumber(value),
+                            String(name),
+                          ]}
+                          contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)' }}
+                        />
                         <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 800 }} />
                         <Bar yAxisId="amount" dataKey="revenue" name="Revenue" fill="#1D4ED8" radius={[12, 12, 0, 0]}>
                           <LabelList dataKey="revenue" position="top" formatter={formatChartLabel} fill="#1D4ED8" fontSize={10} fontWeight={900} />
@@ -4536,12 +8432,13 @@ function ServiceTypePerformance({
                   <ROBillingRevenueSummarySection
                     rowsByMetric={serverTableRowsByMetric}
                     isLoading={isServerTableLoading}
+                    dateFilter={dateFilter}
                   />
                 </div>
               ) : viewMode === 'intelligence' ? (
-                <PerformanceIntelligenceReport dateFilter={dateFilter} />
+                <PerformanceIntelligenceReport dateFilter={dateFilter} dealerCode={dealerCode} />
               ) : null}
-          </AccessControlOverlay>
+          </>
         </CardContent>
       </Card>
       {expandedChart && (
@@ -4576,4 +8473,3 @@ function ServiceTypePerformance({
     </>
   )
 }
-

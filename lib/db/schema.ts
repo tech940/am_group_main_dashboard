@@ -1,14 +1,16 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, index, uniqueIndex } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnum, index, uniqueIndex, bigint, date } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'purchase_manager', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
+export const roleEnum = pgEnum('role', ['admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
 export const inventoryStatusEnum = pgEnum('inventory_status', ['in_stock', 'out_of_stock', 'low_stock', 'discontinued'])
 export const purchaseOrderStageEnum = pgEnum('purchase_order_stage', ['initial_submission', 'vendor_information', 'ea_approval', 'md_approval', 'grn', 'accounts'])
 export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['submitted', 'vendor_info_pending', 'awaiting_ea_approval', 'ea_approved', 'ea_denied', 'awaiting_md_approval', 'md_approved', 'md_denied', 'awaiting_grn', 'awaiting_accounts', 'completed', 'cancelled', 'on_hold', 'ea_on_hold', 'md_on_hold'])
+export const financeOrderStageEnum = pgEnum('finance_order_stage', ['finance_head_submission', 'accounts_verification', 'ea_approval', 'md_approval', 'completed'])
+export const financeOrderStatusEnum = pgEnum('finance_order_status', ['draft', 'awaiting_accounts_verification', 'accounts_verified', 'accounts_denied', 'accounts_on_hold', 'awaiting_ea_approval', 'ea_approved', 'ea_denied', 'ea_on_hold', 'awaiting_md_approval', 'md_approved', 'md_denied', 'md_on_hold', 'completed', 'cancelled'])
 export const paymentModeEnum = pgEnum('payment_mode', ['cash', 'cheque', 'bank_transfer', 'upi', 'credit_card', 'other'])
 
 // Users table (extends Supabase auth.users)
@@ -28,23 +30,81 @@ export const users = pgTable('users', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
+// Permission groups table
+export const permissionGroups = pgTable('permission_groups', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  key: text('key').unique().notNull(),
+  name: text('name').notNull(),
+  parentKey: text('parent_key'),
+  description: text('description'),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  permissionGroupsKeyIdx: uniqueIndex('permission_groups_key_idx').on(table.key),
+  permissionGroupsParentIdx: index('permission_groups_parent_idx').on(table.parentKey),
+}))
+
 // Permissions table
 export const permissions = pgTable('permissions', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').unique().notNull(),
+  groupKey: text('group_key').references(() => permissionGroups.key, { onDelete: 'cascade' }),
+  label: text('label'),
   description: text('description'),
   resource: text('resource').notNull(),
   action: text('action').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+  sortOrder: integer('sort_order').default(0).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  permissionsNameIdx: uniqueIndex('permissions_name_idx').on(table.name),
+  permissionsGroupActionIdx: uniqueIndex('permissions_group_action_idx').on(table.groupKey, table.action),
+  permissionsResourceIdx: index('permissions_resource_idx').on(table.resource),
+}))
 
 // Role permissions junction table
 export const rolePermissions = pgTable('role_permissions', {
   id: uuid('id').primaryKey().defaultRandom(),
   role: roleEnum('role').notNull(),
   permissionId: uuid('permission_id').references(() => permissions.id, { onDelete: 'cascade' }).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+  allowed: boolean('allowed').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  rolePermissionsRolePermissionIdx: uniqueIndex('role_permissions_role_permission_idx').on(table.role, table.permissionId),
+  rolePermissionsRoleIdx: index('role_permissions_role_idx').on(table.role),
+}))
+
+// User-level overrides. Null/no row means inherit from role template.
+export const userPermissions = pgTable('user_permissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  permissionId: uuid('permission_id').references(() => permissions.id, { onDelete: 'cascade' }).notNull(),
+  allowed: boolean('allowed').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  userPermissionsUserPermissionIdx: uniqueIndex('user_permissions_user_permission_idx').on(table.userId, table.permissionId),
+  userPermissionsUserIdx: index('user_permissions_user_idx').on(table.userId),
+}))
+
+export const permissionAuditLogs = pgTable('permission_audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  targetUserId: uuid('target_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  permissionId: uuid('permission_id').references(() => permissions.id, { onDelete: 'cascade' }).notNull(),
+  changedBy: uuid('changed_by').references(() => users.id),
+  oldValue: boolean('old_value'),
+  newValue: boolean('new_value'),
+  source: text('source').default('manual').notNull(),
+  reason: text('reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  permissionAuditTargetIdx: index('permission_audit_target_idx').on(table.targetUserId, table.createdAt),
+  permissionAuditPermissionIdx: index('permission_audit_permission_idx').on(table.permissionId),
+}))
 
 // Vehicles table
 export const vehicles = pgTable('vehicles', {
@@ -328,6 +388,282 @@ export const purchaseOrders = pgTable('purchase_orders', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
+// Finance Orders table
+export const financeOrders = pgTable('finance_orders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderNumber: text('order_number').unique().notNull(),
+  currentStage: financeOrderStageEnum('current_stage').default('finance_head_submission').notNull(),
+  status: financeOrderStatusEnum('status').default('draft').notNull(),
+  totalPayoutReceived: decimal('total_payout_received', { precision: 14, scale: 2 }).notNull(),
+  invoiceNumber: text('invoice_number').notNull(),
+  paymentReceivedDate: timestamp('payment_received_date', { withTimezone: true }).notNull(),
+  dsePayout: decimal('dse_payout', { precision: 14, scale: 2 }).notNull(),
+  hypBankName: text('hyp_bank_name').notNull(),
+  dseName: text('dse_name').notNull(),
+  dealer: text('dealer').notNull(),
+  accountsVerificationStatus: text('accounts_verification_status'),
+  accountsVerifiedBy: uuid('accounts_verified_by').references(() => users.id),
+  accountsVerifiedAt: timestamp('accounts_verified_at', { withTimezone: true }),
+  accountsVerificationRemarks: text('accounts_verification_remarks'),
+  accountsHeldAt: timestamp('accounts_held_at', { withTimezone: true }),
+  accountsHeldBy: uuid('accounts_held_by').references(() => users.id),
+  eaApprovalStatus: text('ea_approval_status'),
+  eaApprovedBy: uuid('ea_approved_by').references(() => users.id),
+  eaApprovedAt: timestamp('ea_approved_at', { withTimezone: true }),
+  eaApprovalRemarks: text('ea_approval_remarks'),
+  eaHeldAt: timestamp('ea_held_at', { withTimezone: true }),
+  eaHeldBy: uuid('ea_held_by').references(() => users.id),
+  mdApprovalStatus: text('md_approval_status'),
+  mdApprovedBy: uuid('md_approved_by').references(() => users.id),
+  mdApprovedAt: timestamp('md_approved_at', { withTimezone: true }),
+  mdApprovalRemarks: text('md_approval_remarks'),
+  mdHeldAt: timestamp('md_held_at', { withTimezone: true }),
+  mdHeldBy: uuid('md_held_by').references(() => users.id),
+  holdRemarks: text('hold_remarks'),
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  financeOrdersStatusIdx: index('finance_orders_status_idx').on(table.status),
+  financeOrdersCreatedByIdx: index('finance_orders_created_by_idx').on(table.createdBy),
+  financeOrdersInvoiceIdx: index('finance_orders_invoice_idx').on(table.invoiceNumber),
+  financeOrdersCreatedAtIdx: index('finance_orders_created_at_idx').on(table.createdAt),
+}))
+
+export const financeOrderWorkflow = pgTable('finance_order_workflow', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  financeOrderId: uuid('finance_order_id').references(() => financeOrders.id, { onDelete: 'cascade' }).notNull(),
+  action: text('action').notNull(),
+  stage: text('stage').notNull(),
+  performedBy: uuid('performed_by').references(() => users.id).notNull(),
+  userRole: text('user_role').notNull(),
+  remarks: text('remarks'),
+  previousStatus: text('previous_status'),
+  newStatus: text('new_status'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  financeOrderWorkflowOrderIdx: index('finance_order_workflow_order_idx').on(table.financeOrderId),
+  financeOrderWorkflowCreatedIdx: index('finance_order_workflow_created_idx').on(table.createdAt),
+}))
+
+export const financeOrderComments = pgTable('finance_order_comments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  financeOrderId: uuid('finance_order_id').references(() => financeOrders.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  comment: text('comment').notNull(),
+  visibility: text('visibility').default('internal').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  financeOrderCommentsOrderIdx: index('finance_order_comments_order_idx').on(table.financeOrderId),
+}))
+
+export const financeSheet = pgTable('finance_sheet', {
+  id: bigint('id', { mode: 'number' }).primaryKey().default(sql`nextval('finance_sheet_id_seq'::regclass)`),
+  rowHash: text('row_hash').notNull(),
+  deliveryDate: date('delivery_date'),
+  customerName: text('customer_name'),
+  mobileNo: text('mobile_no'),
+  model: text('model'),
+  salesExecutive: text('sales_executive'),
+  mainDealer: text('main_dealer'),
+  location: text('location'),
+  tl: text('tl'),
+  hyp: text('hyp'),
+  branch: text('branch'),
+  loanAmount: decimal('loan_amount', { precision: 14, scale: 2 }),
+  panNumber: text('pan_number'),
+  payoutStatus: text('payout_status'),
+  reasonIfOuthouse: text('reason_if_outhouse'),
+  dealerPayoutPercent: text('dealer_payout_percent'),
+  payoutAmount: decimal('payout_amount', { precision: 14, scale: 2 }),
+  status: text('status'),
+  dsePayoutStatus: text('dse_payout_status'),
+  dealerPayoutStatus: text('dealer_payout_status'),
+  paymentReceivedDate: date('payment_received_date'),
+  amountReceived: decimal('amount_received', { precision: 14, scale: 2 }),
+  invoiceNumber: text('invoice_number'),
+  bankVisitScheduled: text('bank_visit_scheduled'),
+  dateOfBankVisit: date('date_of_bank_visit'),
+  visitedBy: text('visited_by'),
+  bankerRemarks: text('banker_remarks'),
+  vehicleRegistrationNumberToSale: text('vehicle_registration_number_to_sale'),
+  hypAsPerRc: text('hyp_as_per_rc'),
+  startTime: text('start_time'),
+  endTime: text('end_time'),
+  loginUser: text('login_user'),
+  bankIntRate: decimal('bank_int_rate', { precision: 8, scale: 2 }),
+  bankLogin: text('bank_login'),
+  bankInProforma: text('bank_in_proforma'),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+}, (table) => ({
+  financeSheetDeliveryDateIdx: index('finance_sheet_delivery_date_idx').on(table.deliveryDate),
+  financeSheetMainDealerIdx: index('finance_sheet_main_dealer_idx').on(table.mainDealer),
+  financeSheetLocationIdx: index('finance_sheet_location_idx').on(table.location),
+  financeSheetStatusIdx: index('finance_sheet_status_idx').on(table.status),
+  financeSheetPayoutStatusIdx: index('finance_sheet_payout_status_idx').on(table.payoutStatus),
+  financeSheetHypIdx: index('finance_sheet_hyp_idx').on(table.hyp),
+  financeSheetTlIdx: index('finance_sheet_tl_idx').on(table.tl),
+  financeSheetSalesExecutiveIdx: index('finance_sheet_sales_executive_idx').on(table.salesExecutive),
+  financeSheetBranchIdx: index('finance_sheet_branch_idx').on(table.branch),
+  financeSheetBankLoginIdx: index('finance_sheet_bank_login_idx').on(table.bankLogin),
+  financeSheetBankInProformaIdx: index('finance_sheet_bank_in_proforma_idx').on(table.bankInProforma),
+}))
+
+export const amFinanceAuditLogs = pgTable('am_finance_audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  financeSheetId: bigint('finance_sheet_id', { mode: 'number' }).references(() => financeSheet.id, { onDelete: 'cascade' }).notNull(),
+  action: text('action').notNull(),
+  fieldName: text('field_name'),
+  oldValue: text('old_value'),
+  newValue: text('new_value'),
+  performedBy: uuid('performed_by').references(() => users.id),
+  performedByName: text('performed_by_name'),
+  userRole: text('user_role').notNull(),
+  module: text('module').default('am_finance').notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  amFinanceAuditFinanceSheetIdx: index('am_finance_audit_finance_sheet_idx').on(table.financeSheetId, table.createdAt),
+  amFinanceAuditActorIdx: index('am_finance_audit_actor_idx').on(table.performedBy, table.createdAt),
+  amFinanceAuditActionIdx: index('am_finance_audit_action_idx').on(table.action),
+}))
+
+export const demoVehicleRemarks = pgTable('demo_vehicle_remarks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  vin: text('vin').notNull(),
+  remark: text('remark').notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  demoVehicleRemarksVinCreatedIdx: index('demo_vehicle_remarks_vin_created_idx').on(table.vin, table.createdAt),
+  demoVehicleRemarksCreatedByIdx: index('demo_vehicle_remarks_created_by_idx').on(table.createdBy),
+}))
+
+export const kiaUserProfiles = pgTable('kia_user_profiles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  authUserId: uuid('auth_user_id').references(() => users.id, { onDelete: 'cascade' }),
+  email: text('email').unique().notNull(),
+  consultantName: text('consultant_name').notNull(),
+  dealerLocation: text('dealer_location'),
+  employeeCode: text('employee_code'),
+  status: text('status').default('NEW USER').notNull(),
+  approver: boolean('approver').default(false).notNull(),
+  settings: jsonb('settings').$type<Record<string, unknown>>().default({}).notNull(),
+  lastActivityAt: timestamp('last_activity_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaUserProfilesEmailIdx: uniqueIndex('kia_user_profiles_email_idx').on(table.email),
+  kiaUserProfilesAuthUserIdx: index('kia_user_profiles_auth_user_idx').on(table.authUserId),
+  kiaUserProfilesApproverIdx: index('kia_user_profiles_approver_idx').on(table.approver),
+  kiaUserProfilesStatusIdx: index('kia_user_profiles_status_idx').on(table.status),
+}))
+
+export const kiaPriceDetails = pgTable('kia_price_details', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  model: text('model').notNull(),
+  trimDescription: text('trim_description').notNull(),
+  hyp: text('hyp'),
+  bankName: text('bank_name'),
+  bankBranch: text('bank_branch'),
+  exShowroomPrice: decimal('ex_showroom_price', { precision: 14, scale: 2 }).default('0').notNull(),
+  tcs: decimal('tcs', { precision: 14, scale: 2 }).default('0').notNull(),
+  registrationCharges: decimal('registration_charges', { precision: 14, scale: 2 }).default('0').notNull(),
+  statutoryCharges: decimal('statutory_charges', { precision: 14, scale: 2 }).default('0').notNull(),
+  insurance: decimal('insurance', { precision: 14, scale: 2 }).default('0').notNull(),
+  fastag: decimal('fastag', { precision: 14, scale: 2 }).default('0').notNull(),
+  accessoriesKit: decimal('accessories_kit', { precision: 14, scale: 2 }).default('0').notNull(),
+  extendedWarranty4thYear: decimal('extended_warranty_4th_year', { precision: 14, scale: 2 }).default('0').notNull(),
+  insuranceCompany: text('insurance_company'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaPriceDetailsModelTrimIdx: index('kia_price_details_model_trim_idx').on(table.model, table.trimDescription),
+  kiaPriceDetailsBankIdx: index('kia_price_details_bank_idx').on(table.bankName, table.bankBranch),
+  kiaPriceDetailsInsuranceIdx: index('kia_price_details_insurance_idx').on(table.insuranceCompany),
+}))
+
+export const kiaProformaLookupOptions = pgTable('kia_proforma_lookup_options', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  category: text('category').notNull(),
+  value: text('value').notNull(),
+  label: text('label'),
+  sourceSheet: text('source_sheet'),
+  sourceRow: integer('source_row'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaProformaLookupOptionsCategoryIdx: index('kia_proforma_lookup_options_category_idx').on(table.category),
+  kiaProformaLookupOptionsValueIdx: index('kia_proforma_lookup_options_value_idx').on(table.value),
+}))
+
+export const kiaProformas = pgTable('kia_proformas', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  entryTime: timestamp('entry_time', { withTimezone: true }).defaultNow().notNull(),
+  proformaDate: timestamp('proforma_date', { withTimezone: true }).notNull(),
+  customerType: text('customer_type').notNull(),
+  customerName: text('customer_name').notNull(),
+  mobileNumber: text('mobile_number').notNull(),
+  customerAddress: text('customer_address').notNull(),
+  customerEmail: text('customer_email').notNull(),
+  modelName: text('model_name').notNull(),
+  trimDescription: text('trim_description').notNull(),
+  fuelType: text('fuel_type').notNull(),
+  vehicleColor: text('vehicle_color').notNull(),
+  bankName: text('bank_name').notNull(),
+  bankBranch: text('bank_branch'),
+  vehicleStatus: text('vehicle_status').notNull(),
+  loanAmount: decimal('loan_amount', { precision: 14, scale: 2 }).default('0').notNull(),
+  insuranceCompany: text('insurance_company'),
+  exShowroom: decimal('ex_showroom', { precision: 14, scale: 2 }).default('0').notNull(),
+  tcsValue: decimal('tcs_value', { precision: 14, scale: 2 }).default('0').notNull(),
+  registrationCharges: decimal('registration_charges', { precision: 14, scale: 2 }).default('0').notNull(),
+  insuranceValue: decimal('insurance_value', { precision: 14, scale: 2 }).default('0').notNull(),
+  fastagValue: decimal('fastag_value', { precision: 14, scale: 2 }).default('0').notNull(),
+  accessoriesKit: decimal('accessories_kit', { precision: 14, scale: 2 }).default('0').notNull(),
+  extWarranty: decimal('ext_warranty', { precision: 14, scale: 2 }).default('0').notNull(),
+  cashDiscount: decimal('cash_discount', { precision: 14, scale: 2 }).default('0').notNull(),
+  exchangeValue: decimal('exchange_value', { precision: 14, scale: 2 }).default('0').notNull(),
+  bookingAmount: decimal('booking_amount', { precision: 14, scale: 2 }).default('0').notNull(),
+  govtEmployeeDiscount: decimal('govt_employee_discount', { precision: 14, scale: 2 }).default('0').notNull(),
+  additionalDiscount: decimal('additional_discount', { precision: 14, scale: 2 }).default('0').notNull(),
+  totalCustomerCost: decimal('total_customer_cost', { precision: 14, scale: 2 }).default('0').notNull(),
+  grandTotalCost: decimal('grand_total_cost', { precision: 14, scale: 2 }).default('0').notNull(),
+  loginEmail: text('login_email').notNull(),
+  consultant: text('consultant').notNull(),
+  location: text('location'),
+  empCode: text('emp_code'),
+  approvalStatus: text('approval_status').default('PENDING').notNull(),
+  approvedBy: text('approved_by'),
+  linkPreview: text('link_preview'),
+  financeStatus: text('finance_status').default('Pending'),
+  financeRemarks: text('finance_remarks'),
+  financeUpdatedTime: timestamp('finance_updated_time', { withTimezone: true }),
+  addDiscApproval: jsonb('add_disc_approval').$type<Record<string, unknown>>().default({}).notNull(),
+  importMetadata: jsonb('import_metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  kiaProformasLoginEmailIdx: index('kia_proformas_login_email_idx').on(table.loginEmail),
+  kiaProformasProformaDateIdx: index('kia_proformas_proforma_date_idx').on(table.proformaDate),
+  kiaProformasApprovalIdx: index('kia_proformas_approval_status_idx').on(table.approvalStatus),
+  kiaProformasFinanceStatusIdx: index('kia_proformas_finance_status_idx').on(table.financeStatus),
+  kiaProformasCustomerIdx: index('kia_proformas_customer_idx').on(table.customerName, table.mobileNumber),
+}))
+
 // User Preferences table
 export const userPreferences = pgTable('user_preferences', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -488,6 +824,61 @@ export const purchaseOrdersRelations = relations(purchaseOrders, ({ one }) => ({
   }),
   mdHolder: one(users, {
     fields: [purchaseOrders.mdHeldBy],
+    references: [users.id],
+  }),
+}))
+
+export const financeOrdersRelations = relations(financeOrders, ({ one, many }) => ({
+  creator: one(users, {
+    fields: [financeOrders.createdBy],
+    references: [users.id],
+  }),
+  accountsVerifier: one(users, {
+    fields: [financeOrders.accountsVerifiedBy],
+    references: [users.id],
+  }),
+  eaApprover: one(users, {
+    fields: [financeOrders.eaApprovedBy],
+    references: [users.id],
+  }),
+  mdApprover: one(users, {
+    fields: [financeOrders.mdApprovedBy],
+    references: [users.id],
+  }),
+  eaHolder: one(users, {
+    fields: [financeOrders.eaHeldBy],
+    references: [users.id],
+  }),
+  mdHolder: one(users, {
+    fields: [financeOrders.mdHeldBy],
+    references: [users.id],
+  }),
+  accountsHolder: one(users, {
+    fields: [financeOrders.accountsHeldBy],
+    references: [users.id],
+  }),
+  workflow: many(financeOrderWorkflow),
+  comments: many(financeOrderComments),
+}))
+
+export const financeOrderWorkflowRelations = relations(financeOrderWorkflow, ({ one }) => ({
+  financeOrder: one(financeOrders, {
+    fields: [financeOrderWorkflow.financeOrderId],
+    references: [financeOrders.id],
+  }),
+  actor: one(users, {
+    fields: [financeOrderWorkflow.performedBy],
+    references: [users.id],
+  }),
+}))
+
+export const financeOrderCommentsRelations = relations(financeOrderComments, ({ one }) => ({
+  financeOrder: one(financeOrders, {
+    fields: [financeOrderComments.financeOrderId],
+    references: [financeOrders.id],
+  }),
+  user: one(users, {
+    fields: [financeOrderComments.userId],
     references: [users.id],
   }),
 }))

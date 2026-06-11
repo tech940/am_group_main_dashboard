@@ -44,12 +44,12 @@ export function Stage3MDApproval({ orderDetails, onSubmit, isLoading }: Stage3MD
   }
 
   return (
-    <Card className="border-none shadow-xl">
-      <CardHeader className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white">
-        <CardTitle className="text-2xl font-black">
+    <Card className="border border-[var(--dashboard-primary-border)] shadow-xl">
+      <CardHeader className="bg-[linear-gradient(135deg,color-mix(in_srgb,var(--dashboard-primary)_10%,white),color-mix(in_srgb,var(--dashboard-primary-light)_18%,white))]">
+        <CardTitle className="text-2xl font-black text-[var(--dashboard-action-bg)]">
           MD Final Approval Required
         </CardTitle>
-        <p className="text-sm text-indigo-50 mt-1">
+        <p className="mt-1 text-sm font-semibold text-slate-600">
           Review and provide final approval/denial for this purchase request
         </p>
       </CardHeader>
@@ -102,7 +102,7 @@ export function Stage3MDApproval({ orderDetails, onSubmit, isLoading }: Stage3MD
               handleSubmit('approve')
             }}
             disabled={isLoading}
-            className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-6 text-lg font-semibold"
+            className="app-primary-action flex-1 py-6 text-lg font-semibold"
           >
             {isLoading && formData.action === 'approve' ? (
               <>
@@ -180,8 +180,8 @@ export function Stage3MDApproval({ orderDetails, onSubmit, isLoading }: Stage3MD
           </div>
         )}
 
-        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-          <p className="text-sm text-indigo-800">
+        <div className="rounded-lg border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] p-4">
+          <p className="text-sm font-semibold text-[var(--dashboard-action-bg)]">
             <strong>Note:</strong> After MD approval, this request will proceed to GRN stage with Purchase Manager. If denied, it will be sent back to the requester.
           </p>
         </div>

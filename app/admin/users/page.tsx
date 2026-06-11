@@ -21,15 +21,24 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter } from 'lucide-react'
+import { UserPlus, Users, Shield, Trash2, Edit, Search, Filter, KeyRound, Eye, EyeOff, ClipboardList, Upload } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { USER_BRANCH_OPTIONS, getUserBranchLabel, type UserBranchValue } from '@/lib/branches'
+import {
+  BRANCH_MODULE_ACCESS_ROLE_EDIT_OPTIONS,
+  BRANCH_MODULE_ACCESS_ROLE_KEEP,
+  BRANCH_MODULE_ACCESS_ROLE_OPTIONS,
+  canUseBranchModuleAccessRole,
+  type BranchModuleAccessRoleEditValue,
+  type BranchModuleAccessRoleValue,
+} from '@/lib/branch-module-access'
+import { USER_BRANCH_OPTIONS, USER_ROLE_OPTIONS, getUserBranchLabel, type UserBranchValue } from '@/lib/dashboard-config'
+import { useUserRole } from '@/lib/hooks/use-user-role'
 
 interface User {
   id: string
   email: string
   fullName: string
-  role: 'admin' | 'purchase_manager' | 'ea' | 'md' | 'accounts' | 'manager' | 'technician' | 'viewer'
+  role: 'admin' | 'ceo' | 'purchase_manager' | 'finance_head' | 'ea' | 'md' | 'accounts' | 'manager' | 'technician' | 'viewer'
   brand?: string
   department?: string
   isActive: boolean
@@ -37,6 +46,25 @@ interface User {
 }
 
 type UserRole = User['role']
+
+type BulkUserDraft = {
+  fullName: string
+  email: string
+  password: string
+  role: UserRole
+  brand: string
+  department: string
+  branchModuleRole: BranchModuleAccessRoleValue
+}
+
+type BulkCreateResult = {
+  index: number
+  email: string
+  fullName: string
+  status: 'created' | 'failed'
+  error?: string
+  permissionWarning?: string | null
+}
 
 interface UsersPagination {
   page: number
@@ -62,7 +90,9 @@ const DEFAULT_PAGINATION: UsersPagination = {
 const ROLE_FILTER_OPTIONS = [
   { value: 'all', label: 'All Roles & Departments' },
   { value: 'role:admin', label: 'Admin' },
+  { value: 'role:ceo', label: 'CEO' },
   { value: 'role:purchase_manager', label: 'Purchase Managers' },
+  { value: 'role:finance_head', label: 'Finance Heads' },
   { value: 'role:ea', label: 'EA' },
   { value: 'role:md', label: 'MD' },
   { value: 'role:accounts', label: 'Accounts Team' },
@@ -72,6 +102,13 @@ const ROLE_FILTER_OPTIONS = [
   { value: 'combo:hr_managers', label: 'HR Managers' },
   { value: 'combo:sales_managers', label: 'Sales Managers' },
 ] as const
+
+const USER_MODAL_SELECT_CONTENT_PROPS = {
+  side: 'bottom',
+  align: 'start',
+  avoidCollisions: false,
+  className: 'z-[200] max-h-[16rem] rounded-xl border border-slate-200 bg-white shadow-xl',
+} as const
 
 function getRoleAndDepartmentFromFilter(filter: string) {
   switch (filter) {
@@ -86,10 +123,124 @@ function getRoleAndDepartmentFromFilter(filter: string) {
   }
 }
 
+function parseDelimitedLine(line: string) {
+  const cells: string[] = []
+  let current = ''
+  let inQuotes = false
+  const delimiter = line.includes('\t') ? '\t' : ','
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index]
+    const nextCharacter = line[index + 1]
+
+    if (character === '"' && inQuotes && nextCharacter === '"') {
+      current += '"'
+      index += 1
+    } else if (character === '"') {
+      inQuotes = !inQuotes
+    } else if (character === delimiter && !inQuotes) {
+      cells.push(current.trim())
+      current = ''
+    } else {
+      current += character
+    }
+  }
+
+  cells.push(current.trim())
+  return cells
+}
+
+function normalizeRole(value: string): UserRole {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '_')
+  return USER_ROLE_OPTIONS.some((role) => role.value === normalized)
+    ? normalized as UserRole
+    : 'viewer'
+}
+
+function normalizeBranchModuleRole(value: string): BranchModuleAccessRoleValue {
+  const normalized = value.trim().toLowerCase()
+  return BRANCH_MODULE_ACCESS_ROLE_OPTIONS.some((role) => role.value === normalized)
+    ? normalized as BranchModuleAccessRoleValue
+    : 'inherit'
+}
+
+function normalizeBranch(value: string) {
+  const normalized = value.trim().toLowerCase()
+  const matchedBranch = USER_BRANCH_OPTIONS.find((branch) => (
+    branch.value.toLowerCase() === normalized
+    || branch.label.toLowerCase() === normalized
+  ))
+  return matchedBranch?.value || ''
+}
+
+function parseBulkUsersInput(raw: string): BulkUserDraft[] {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  if (lines.length === 0) return []
+
+  const firstLine = parseDelimitedLine(lines[0]).map((cell) => cell.toLowerCase().replace(/[\s_-]+/g, ''))
+  const hasHeader = firstLine.includes('email') || firstLine.includes('fullname') || firstLine.includes('name')
+  const dataLines = hasHeader ? lines.slice(1) : lines
+  const headerIndex = (aliases: string[], fallback: number) => {
+    if (!hasHeader) return fallback
+    const foundIndex = firstLine.findIndex((cell) => aliases.includes(cell))
+    return foundIndex >= 0 ? foundIndex : fallback
+  }
+
+  const fullNameIndex = headerIndex(['fullname', 'name', 'user'], 0)
+  const emailIndex = headerIndex(['email', 'emailid', 'mail'], 1)
+  const passwordIndex = headerIndex(['password', 'pass'], 2)
+  const roleIndex = headerIndex(['role', 'approle'], 3)
+  const branchIndex = headerIndex(['branch', 'brand', 'assignedbranchaccess'], 4)
+  const departmentIndex = headerIndex(['department', 'dept'], 5)
+  const branchRoleIndex = headerIndex(['branchmodulerole', 'branchrole', 'modulerole'], 6)
+
+  return dataLines.map((line) => {
+    const cells = parseDelimitedLine(line)
+    const brand = normalizeBranch(cells[branchIndex] || '')
+    const branchModuleRole = normalizeBranchModuleRole(cells[branchRoleIndex] || '')
+
+    return {
+      fullName: cells[fullNameIndex] || '',
+      email: (cells[emailIndex] || '').trim().toLowerCase(),
+      password: cells[passwordIndex] || '',
+      role: normalizeRole(cells[roleIndex] || ''),
+      brand,
+      department: cells[departmentIndex] || '',
+      branchModuleRole: canUseBranchModuleAccessRole(brand) ? branchModuleRole : 'inherit',
+    }
+  })
+}
+
+function worksheetRowsToDelimitedText(rows: unknown[][]) {
+  return rows
+    .map((row) => row
+      .map((cell) => {
+        const value = String(cell ?? '').trim()
+        return value.includes('\t') || value.includes('"') || value.includes(',')
+          ? `"${value.replace(/"/g, '""')}"`
+          : value
+      })
+      .join('\t'))
+    .join('\n')
+}
+
+const BULK_USER_SAMPLE = `fullName,email,password,role,branch,department,branchModuleRole
+Rupali Sharma,rupali@example.com,User@123456,manager,kia,Sales,branch_sales
+Ankit Kumar,ankit@example.com,User@123456,viewer,kia,Service,branch_service`
+
 export default function AdminUsersPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [isBulkCreateDialogOpen, setIsBulkCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkInput, setBulkInput] = useState('')
+  const [bulkImportFileName, setBulkImportFileName] = useState('')
+  const [bulkResults, setBulkResults] = useState<BulkCreateResult[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('all')
   const [departmentFilter, setDepartmentFilter] = useState<string>('all')
@@ -98,6 +249,7 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [fetchingUsers, setFetchingUsers] = useState(true)
   const [pagination, setPagination] = useState<UsersPagination>(DEFAULT_PAGINATION)
+  const [showCreatePassword, setShowCreatePassword] = useState(false)
   const [summary, setSummary] = useState<UsersSummary>({
     totalUsers: 0,
     admins: 0,
@@ -105,6 +257,7 @@ export default function AdminUsersPage() {
     active: 0,
   })
   const [departmentOptions, setDepartmentOptions] = useState<string[]>([])
+  const { userRole } = useUserRole()
 
   const fetchUsers = useCallback(async (page = 1) => {
     try {
@@ -160,7 +313,8 @@ export default function AdminUsersPage() {
     password: '',
     role: 'viewer' as UserRole,
     brand: '',
-    department: ''
+    department: '',
+    branchModuleRole: 'inherit' as BranchModuleAccessRoleValue,
   })
 
   const [editFormData, setEditFormData] = useState({
@@ -170,6 +324,7 @@ export default function AdminUsersPage() {
     role: 'viewer' as UserRole,
     brand: '',
     department: '',
+    branchModuleRole: BRANCH_MODULE_ACCESS_ROLE_KEEP as BranchModuleAccessRoleEditValue,
     isActive: true
   })
 
@@ -179,6 +334,92 @@ export default function AdminUsersPage() {
     const end = Math.min(totalPages, start + 4)
     return Array.from({ length: end - start + 1 }, (_, index) => start + index)
   }, [pagination.page, pagination.totalPages])
+
+  const bulkUsers = useMemo(() => parseBulkUsersInput(bulkInput), [bulkInput])
+
+  const validBulkUsers = useMemo(() => (
+    bulkUsers.filter((user) => user.fullName && user.email && user.password && user.role)
+  ), [bulkUsers])
+
+  const handleBulkCreateUsers = async (event: React.FormEvent) => {
+    event.preventDefault()
+
+    if (validBulkUsers.length === 0) {
+      alert('Paste at least one valid user row before creating.')
+      return
+    }
+
+    if (bulkUsers.length > 50) {
+      alert('Bulk create supports up to 50 users at a time.')
+      return
+    }
+
+    setBulkLoading(true)
+    setBulkResults([])
+
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bulkUsers: validBulkUsers }),
+      })
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok && !payload?.results) {
+        alert(`Error: ${payload?.error || 'Failed to create users in bulk'}`)
+        return
+      }
+
+      setBulkResults(payload?.results || [])
+
+      if ((payload?.created || 0) > 0) {
+        void fetchUsers()
+      }
+    } catch (error) {
+      console.error('Error bulk creating users:', error)
+      alert('Failed to create users in bulk')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  const handleBulkExcelUpload = async (file: File | null) => {
+    if (!file) return
+
+    setBulkResults([])
+    setBulkImportFileName(file.name)
+
+    try {
+      const XLSX = await import('xlsx')
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+      const firstSheetName = workbook.SheetNames[0]
+
+      if (!firstSheetName) {
+        alert('This Excel file does not contain any sheets.')
+        return
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName]
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+        header: 1,
+        defval: '',
+        blankrows: false,
+        raw: false,
+      })
+
+      const usableRows = rows.filter((row) => row.some((cell) => String(cell ?? '').trim()))
+
+      if (usableRows.length === 0) {
+        alert('No user rows found in the uploaded Excel file.')
+        return
+      }
+
+      setBulkInput(worksheetRowsToDelimitedText(usableRows))
+    } catch (error) {
+      console.error('Error reading bulk user Excel file:', error)
+      alert('Could not read this Excel file. Please upload a valid .xlsx, .xls, or .csv file.')
+    }
+  }
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -193,15 +434,18 @@ export default function AdminUsersPage() {
 
       if (response.ok) {
         setIsCreateDialogOpen(false)
+        const payload = await response.json().catch(() => null)
         setFormData({
           email: '',
           fullName: '',
           password: '',
           role: 'viewer',
           brand: '',
-          department: ''
+          department: '',
+          branchModuleRole: 'inherit',
         })
-        alert('User created successfully!')
+        setShowCreatePassword(false)
+        alert(payload?.permissionWarning || 'User created successfully!')
         // Refresh the user list
         void fetchUsers()
       } else {
@@ -224,6 +468,7 @@ export default function AdminUsersPage() {
       role: user.role,
       brand: user.brand || '',
       department: user.department || '',
+      branchModuleRole: BRANCH_MODULE_ACCESS_ROLE_KEEP,
       isActive: user.isActive
     })
     setIsEditDialogOpen(true)
@@ -241,8 +486,9 @@ export default function AdminUsersPage() {
       })
 
       if (response.ok) {
+        const payload = await response.json().catch(() => null)
         setIsEditDialogOpen(false)
-        alert('User updated successfully!')
+        alert(payload?.permissionWarning || 'User updated successfully!')
         void fetchUsers()
       } else {
         const error = await response.json()
@@ -282,9 +528,13 @@ export default function AdminUsersPage() {
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'admin':
-        return 'bg-emerald-500 text-white'
+        return 'bg-[#023468] text-white'
       case 'purchase_manager':
         return 'bg-purple-500 text-white'
+      case 'finance_head':
+        return 'bg-violet-600 text-white'
+      case 'ceo':
+        return 'bg-slate-950 text-white'
       case 'ea':
         return 'bg-indigo-500 text-white'
       case 'md':
@@ -292,7 +542,7 @@ export default function AdminUsersPage() {
       case 'accounts':
         return 'bg-amber-500 text-white'
       case 'manager':
-        return 'bg-teal-500 text-white'
+        return 'bg-[#034b82] text-white'
       case 'technician':
         return 'bg-blue-500 text-white'
       default:
@@ -309,15 +559,194 @@ export default function AdminUsersPage() {
             <h1 className="text-4xl font-black tracking-tight text-slate-800">User Management</h1>
             <p className="text-slate-500 mt-2 font-semibold">Create and manage user accounts</p>
           </div>
-          
-          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+
+          <div className="flex flex-wrap items-center justify-end gap-3">
+          <Dialog
+            open={isBulkCreateDialogOpen}
+            onOpenChange={(open) => {
+              setIsBulkCreateDialogOpen(open)
+              if (!open) setBulkResults([])
+            }}
+          >
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 rounded-xl font-bold">
+              <Button variant="outline" className="rounded-xl border-[#023468] bg-white font-bold text-[#023468] shadow-lg hover:bg-[#edf4fb]">
+                <ClipboardList className="mr-2 h-4 w-4" />
+                Bulk Create Users
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-auto rounded-2xl bg-white sm:max-w-[980px]">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-black text-slate-800">Bulk Create Users</DialogTitle>
+                <DialogDescription className="text-slate-500 font-semibold">
+                  Upload Excel or paste rows. Required columns: fullName, email, password, role, branch, department, branchModuleRole.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleBulkCreateUsers} className="mt-4 space-y-4">
+                <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                  <div className="space-y-2">
+                    <div className="rounded-2xl border border-[#023468]/20 bg-[#edf4fb] p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-[#023468]">Excel Upload</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-600">
+                            First sheet will be used. Header names can match the same CSV fields.
+                          </p>
+                        </div>
+                        <label className="inline-flex cursor-pointer items-center rounded-xl bg-[#023468] px-4 py-2 text-sm font-black text-white shadow-lg hover:bg-[#062b55]">
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload Excel
+                          <input
+                            type="file"
+                            accept=".xlsx,.xls,.csv"
+                            className="hidden"
+                            onChange={(event) => {
+                              void handleBulkExcelUpload(event.target.files?.[0] || null)
+                              event.target.value = ''
+                            }}
+                          />
+                        </label>
+                      </div>
+                      {bulkImportFileName && (
+                        <p className="mt-3 rounded-lg border border-white bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                          Loaded file: <span className="text-[#023468]">{bulkImportFileName}</span>
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="bulk-users" className="text-sm font-bold text-slate-700">User Rows</Label>
+                      <button
+                        type="button"
+                        onClick={() => setBulkInput(BULK_USER_SAMPLE)}
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-[#023468] hover:bg-[#edf4fb]"
+                      >
+                        Use sample
+                      </button>
+                    </div>
+                    <textarea
+                      id="bulk-users"
+                      value={bulkInput}
+                      onChange={(event) => {
+                        setBulkInput(event.target.value)
+                        setBulkResults([])
+                      }}
+                      placeholder={BULK_USER_SAMPLE}
+                      className="min-h-[260px] w-full rounded-2xl border border-slate-200 bg-white p-4 font-mono text-xs font-semibold text-slate-800 outline-none transition focus:border-[#023468] focus:ring-4 focus:ring-[#edf4fb]"
+                    />
+                    <p className="text-xs font-semibold text-slate-500">
+                      Branch role is optional. Valid examples: branch_sales, branch_service, branch_proforma_approver, branch_admin.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-500">Preview</p>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rows Parsed</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900">{bulkUsers.length}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ready</p>
+                        <p className="mt-1 text-2xl font-black text-[#023468]">{validBulkUsers.length}</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 max-h-[260px] overflow-auto rounded-xl border border-slate-200 bg-white">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-white">
+                          <tr>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Name</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Email</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Role</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Branch</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkUsers.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="px-3 py-8 text-center font-bold text-slate-400">Paste rows to preview users.</td>
+                            </tr>
+                          ) : bulkUsers.slice(0, 12).map((user, index) => (
+                            <tr key={`${user.email || index}-${index}`} className="border-b border-slate-100">
+                              <td className="px-3 py-2 font-bold text-slate-800">{user.fullName || '-'}</td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{user.email || '-'}</td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{user.role}</td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{getUserBranchLabel(user.brand)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {bulkUsers.length > 12 && (
+                      <p className="mt-2 text-xs font-bold text-slate-500">Showing first 12 rows in preview.</p>
+                    )}
+                  </div>
+                </div>
+
+                {bulkResults.length > 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-500">Bulk Create Results</p>
+                    <div className="mt-3 max-h-[220px] overflow-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-white">
+                          <tr>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">User</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Email</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Status</th>
+                            <th className="px-3 py-2 font-black uppercase tracking-widest">Message</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkResults.map((result) => (
+                            <tr key={`${result.email}-${result.index}`} className="border-b border-slate-100">
+                              <td className="px-3 py-2 font-bold text-slate-800">{result.fullName || '-'}</td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{result.email || '-'}</td>
+                              <td className="px-3 py-2">
+                                <Badge className={result.status === 'created' ? 'bg-[#edf4fb] text-[#023468]' : 'bg-rose-50 text-rose-700'}>
+                                  {result.status}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2 font-semibold text-slate-600">{result.error || result.permissionWarning || 'Done'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsBulkCreateDialogOpen(false)}
+                    className="flex-1 rounded-xl border-slate-200 bg-white"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={bulkLoading || validBulkUsers.length === 0}
+                    className="app-primary-action flex-1 rounded-xl"
+                  >
+                    {bulkLoading ? 'Creating users...' : `Create ${validBulkUsers.length || ''} Users`}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+          
+          <Dialog
+            open={isCreateDialogOpen}
+            onOpenChange={(open) => {
+              setIsCreateDialogOpen(open)
+              if (!open) setShowCreatePassword(false)
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button className="app-primary-action rounded-xl font-bold shadow-lg">
                 <UserPlus className="mr-2 h-4 w-4" />
                 Create New User
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white">
+            <DialogContent className="sm:max-w-[560px] rounded-2xl bg-white">
               <DialogHeader>
                 <DialogTitle className="text-2xl font-black text-slate-800">Create New User</DialogTitle>
                 <DialogDescription className="text-slate-500 font-semibold">
@@ -351,17 +780,26 @@ export default function AdminUsersPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                  <div className="space-y-2 relative">
                     <Label htmlFor="password" className="text-sm font-bold text-slate-700">Password</Label>
                     <Input
                       id="password"
-                      type="password"
+                      type={showCreatePassword ? 'text' : 'password'}
                       placeholder="••••••••"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                       required
-                      className="rounded-xl border-slate-200"
+                      className="rounded-xl border-slate-200 pr-11"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatePassword((current) => !current)}
+                      className="absolute right-3 top-[2.35rem] rounded-lg p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                      aria-label={showCreatePassword ? 'Hide password' : 'Show password'}
+                      title={showCreatePassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showCreatePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="role" className="text-sm font-bold text-slate-700">Role</Label>
@@ -369,15 +807,12 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
-                        <SelectItem value="admin" className="bg-white hover:bg-slate-50">Admin</SelectItem>
-                        <SelectItem value="purchase_manager" className="bg-white hover:bg-slate-50">Purchase Manager</SelectItem>
-                        <SelectItem value="ea" className="bg-white hover:bg-slate-50">EA (Executive Assistant)</SelectItem>
-                        <SelectItem value="md" className="bg-white hover:bg-slate-50">MD (Managing Director)</SelectItem>
-                        <SelectItem value="accounts" className="bg-white hover:bg-slate-50">Accounts</SelectItem>
-                        <SelectItem value="manager" className="bg-white hover:bg-slate-50">Manager</SelectItem>
-                        <SelectItem value="technician" className="bg-white hover:bg-slate-50">Technician</SelectItem>
-                        <SelectItem value="viewer" className="bg-white hover:bg-slate-50">Viewer</SelectItem>
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
+                        {USER_ROLE_OPTIONS.map((role) => (
+                          <SelectItem key={role.value} value={role.value} className="bg-white hover:bg-slate-50">
+                            {role.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -385,11 +820,18 @@ export default function AdminUsersPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="brand" className="text-sm font-bold text-slate-700">Assigned Branch Access</Label>
-                    <Select value={formData.brand} onValueChange={(value: UserBranchValue) => setFormData({ ...formData, brand: value })}>
+                    <Select
+                      value={formData.brand}
+                      onValueChange={(value: UserBranchValue) => setFormData({
+                        ...formData,
+                        brand: value,
+                        branchModuleRole: canUseBranchModuleAccessRole(value) ? formData.branchModuleRole : 'inherit',
+                      })}
+                    >
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select branch access" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {USER_BRANCH_OPTIONS.map((branch) => (
                           <SelectItem key={branch.value} value={branch.value} className="bg-white hover:bg-slate-50">
                             {branch.label}
@@ -409,6 +851,32 @@ export default function AdminUsersPage() {
                     />
                   </div>
                 </div>
+                {canUseBranchModuleAccessRole(formData.brand) && (
+                  <div className="space-y-2 rounded-2xl border border-[#b9ccde] bg-[#edf4fb]/60 p-3">
+                    <Label htmlFor="branchModuleRole" className="text-sm font-bold text-slate-700">Branch Role</Label>
+                    <Select
+                      value={formData.branchModuleRole}
+                      onValueChange={(value: BranchModuleAccessRoleValue) => setFormData({ ...formData, branchModuleRole: value })}
+                    >
+                      <SelectTrigger className="rounded-xl border-[#b9ccde] bg-white">
+                      <SelectValue placeholder="Select role inside this branch" />
+                      </SelectTrigger>
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
+                        {BRANCH_MODULE_ACCESS_ROLE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value} className="bg-white hover:bg-slate-50">
+                            <div className="flex flex-col">
+                              <span>{option.label}</span>
+                              <span className="text-[10px] font-semibold text-slate-400">{option.description}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs font-semibold text-slate-500">
+                      Applies this role only inside the selected branch. Global roles like MD, CEO, and EA still keep their global access.
+                    </p>
+                  </div>
+                )}
                 <div className="flex gap-3 pt-4">
                   <Button
                     type="button"
@@ -421,7 +889,7 @@ export default function AdminUsersPage() {
                   <Button
                     type="submit"
                     disabled={loading}
-                    className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-xl"
+                    className="flex-1 bg-gradient-to-r from-[#023468] to-[#034b82] text-white hover:from-[#012348] hover:to-[#023468] rounded-xl"
                   >
                     {loading ? 'Creating...' : 'Create User'}
                   </Button>
@@ -432,7 +900,7 @@ export default function AdminUsersPage() {
 
           {/* Edit User Dialog */}
           <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-            <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white">
+            <DialogContent className="sm:max-w-[560px] rounded-2xl bg-white">
               <DialogHeader>
                 <DialogTitle className="text-2xl font-black text-slate-800">Edit User</DialogTitle>
                 <DialogDescription className="text-slate-500 font-semibold">
@@ -472,25 +940,31 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
-                        <SelectItem value="admin" className="bg-white hover:bg-slate-50">Admin</SelectItem>
-                        <SelectItem value="purchase_manager" className="bg-white hover:bg-slate-50">Purchase Manager</SelectItem>
-                        <SelectItem value="ea" className="bg-white hover:bg-slate-50">EA (Executive Assistant)</SelectItem>
-                        <SelectItem value="md" className="bg-white hover:bg-slate-50">MD (Managing Director)</SelectItem>
-                        <SelectItem value="accounts" className="bg-white hover:bg-slate-50">Accounts</SelectItem>
-                        <SelectItem value="manager" className="bg-white hover:bg-slate-50">Manager</SelectItem>
-                        <SelectItem value="technician" className="bg-white hover:bg-slate-50">Technician</SelectItem>
-                        <SelectItem value="viewer" className="bg-white hover:bg-slate-50">Viewer</SelectItem>
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
+                        {USER_ROLE_OPTIONS.map((role) => (
+                          <SelectItem key={role.value} value={role.value} className="bg-white hover:bg-slate-50">
+                            {role.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-brand" className="text-sm font-bold text-slate-700">Assigned Branch Access</Label>
-                    <Select value={editFormData.brand} onValueChange={(value: UserBranchValue) => setEditFormData({ ...editFormData, brand: value })}>
+                    <Select
+                      value={editFormData.brand}
+                      onValueChange={(value: UserBranchValue) => setEditFormData({
+                        ...editFormData,
+                        brand: value,
+                        branchModuleRole: canUseBranchModuleAccessRole(value)
+                          ? editFormData.branchModuleRole
+                          : BRANCH_MODULE_ACCESS_ROLE_KEEP,
+                      })}
+                    >
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select branch access" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         {USER_BRANCH_OPTIONS.map((branch) => (
                           <SelectItem key={branch.value} value={branch.value} className="bg-white hover:bg-slate-50">
                             {branch.label}
@@ -500,6 +974,32 @@ export default function AdminUsersPage() {
                     </Select>
                   </div>
                 </div>
+                {canUseBranchModuleAccessRole(editFormData.brand) && (
+                  <div className="space-y-2 rounded-2xl border border-[#b9ccde] bg-[#edf4fb]/60 p-3">
+                    <Label htmlFor="edit-branchModuleRole" className="text-sm font-bold text-slate-700">Branch Role</Label>
+                    <Select
+                      value={editFormData.branchModuleRole}
+                      onValueChange={(value: BranchModuleAccessRoleEditValue) => setEditFormData({ ...editFormData, branchModuleRole: value })}
+                    >
+                      <SelectTrigger className="rounded-xl border-[#b9ccde] bg-white">
+                      <SelectValue placeholder="Select role inside this branch" />
+                      </SelectTrigger>
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
+                        {BRANCH_MODULE_ACCESS_ROLE_EDIT_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value} className="bg-white hover:bg-slate-50">
+                            <div className="flex flex-col">
+                              <span>{option.label}</span>
+                              <span className="text-[10px] font-semibold text-slate-400">{option.description}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs font-semibold text-slate-500">
+                      Choose a branch-only role preset, or keep current overrides unchanged.
+                    </p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-department" className="text-sm font-bold text-slate-700">Department (Optional)</Label>
@@ -517,7 +1017,7 @@ export default function AdminUsersPage() {
                       <SelectTrigger className="rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="Select status" />
                       </SelectTrigger>
-                      <SelectContent className="rounded-xl z-[200] bg-white border border-slate-200 shadow-xl">
+                      <SelectContent {...USER_MODAL_SELECT_CONTENT_PROPS}>
                         <SelectItem value="active" className="bg-white hover:bg-slate-50">Active</SelectItem>
                         <SelectItem value="inactive" className="bg-white hover:bg-slate-50">Inactive</SelectItem>
                       </SelectContent>
@@ -544,6 +1044,7 @@ export default function AdminUsersPage() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -555,8 +1056,8 @@ export default function AdminUsersPage() {
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Users</p>
                   <p className="text-3xl font-black text-slate-800 mt-2">{summary.totalUsers}</p>
                 </div>
-                <div className="h-12 w-12 rounded-xl bg-teal-50 flex items-center justify-center">
-                  <Users className="h-6 w-6 text-teal-600" />
+                <div className="h-12 w-12 rounded-xl bg-[#edf4fb] flex items-center justify-center">
+                  <Users className="h-6 w-6 text-[#023468]" />
                 </div>
               </div>
             </CardContent>
@@ -569,8 +1070,8 @@ export default function AdminUsersPage() {
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Admins</p>
                   <p className="text-3xl font-black text-slate-800 mt-2">{summary.admins}</p>
                 </div>
-                <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                  <Shield className="h-6 w-6 text-emerald-600" />
+                <div className="h-12 w-12 rounded-xl bg-[#edf4fb] flex items-center justify-center">
+                  <Shield className="h-6 w-6 text-[#023468]" />
                 </div>
               </div>
             </CardContent>
@@ -597,8 +1098,8 @@ export default function AdminUsersPage() {
                   <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Active</p>
                   <p className="text-3xl font-black text-slate-800 mt-2">{summary.active}</p>
                 </div>
-                <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                  <Users className="h-6 w-6 text-emerald-600" />
+                <div className="h-12 w-12 rounded-xl bg-[#edf4fb] flex items-center justify-center">
+                  <Users className="h-6 w-6 text-[#023468]" />
                 </div>
               </div>
             </CardContent>
@@ -681,7 +1182,7 @@ export default function AdminUsersPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-teal-600">
+                  <tr className="bg-[#023468]">
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">User</th>
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Email</th>
                     <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-white">Role</th>
@@ -697,7 +1198,7 @@ export default function AdminUsersPage() {
                     <tr>
                       <td colSpan={8} className="px-6 py-20 text-center">
                         <div className="flex flex-col items-center gap-3">
-                          <div className="h-8 w-8 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin"></div>
+                          <div className="h-8 w-8 border-4 border-[#b9ccde] border-t-[#023468] rounded-full animate-spin"></div>
                           <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">Loading users...</p>
                         </div>
                       </td>
@@ -713,8 +1214,8 @@ export default function AdminUsersPage() {
                     <tr key={user.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center text-white font-bold">
-                            {user.fullName.charAt(0)}
+                          <div className="admin-user-avatar">
+                            {(user.fullName || user.email || '?').charAt(0).toUpperCase()}
                           </div>
                           <span className="font-bold text-slate-800">{user.fullName}</span>
                         </div>
@@ -728,7 +1229,7 @@ export default function AdminUsersPage() {
                       <td className="px-6 py-4 text-sm text-slate-600 font-semibold">{getUserBranchLabel(user.brand)}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 font-semibold">{user.department || '—'}</td>
                       <td className="px-6 py-4">
-                        <Badge className={user.isActive ? 'bg-emerald-100 text-emerald-700 rounded-lg font-bold' : 'bg-slate-100 text-slate-700 rounded-lg font-bold'}>
+                        <Badge className={user.isActive ? 'bg-[#edf4fb] text-[#023468] rounded-lg font-bold' : 'bg-slate-100 text-slate-700 rounded-lg font-bold'}>
                           {user.isActive ? 'Active' : 'Inactive'}
                         </Badge>
                       </td>
@@ -741,6 +1242,17 @@ export default function AdminUsersPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-center gap-2">
+                          {userRole === 'admin' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => window.open(`/admin/permissions?user=${user.id}`, '_blank', 'noopener,noreferrer')}
+                              className="h-8 w-8 p-0 hover:bg-[#edf4fb] hover:text-[#023468] rounded-lg"
+                              title="Manage permissions"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -789,7 +1301,7 @@ export default function AdminUsersPage() {
                     onClick={() => goToPage(pageNumber)}
                     disabled={fetchingUsers}
                     className={pageNumber === pagination.page
-                      ? 'rounded-xl bg-teal-600 text-white hover:bg-teal-700'
+                      ? 'rounded-xl bg-[#023468] text-white hover:bg-[#012348]'
                       : 'rounded-xl border-slate-200 bg-white'}
                   >
                     {pageNumber}

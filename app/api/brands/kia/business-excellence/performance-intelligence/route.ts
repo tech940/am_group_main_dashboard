@@ -6,6 +6,7 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -133,7 +134,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `ro_billing:performance-intelligence:v5:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:performance-intelligence:v8:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
@@ -150,7 +151,7 @@ function buildPerformanceWhere(startDate: Date, endDate: Date, filters: Performa
   }
 
   if (filters.serviceType !== 'all') {
-    clauses.push(sql`COALESCE(NULLIF(service_type, ''), NULLIF(work_type, ''), 'Unspecified') = ${filters.serviceType}`)
+    clauses.push(sql`COALESCE(NULLIF(work_type, ''), 'Unspecified') = ${filters.serviceType}`)
   }
 
   if (filters.advisor !== 'all') {
@@ -174,7 +175,7 @@ function buildScoredPerformanceSql(startDate: Date, endDate: Date, filters: Perf
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
         bill_date::date AS bill_date,
         COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'Unspecified') AS branch,
-        COALESCE(NULLIF(service_type, ''), NULLIF(work_type, ''), 'Unspecified') AS type,
+        COALESCE(NULLIF(work_type, ''), 'Unspecified') AS type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
         COALESCE(NULLIF(service_type, ''), 'Unspecified') AS service_type,
         COALESCE(NULLIF(model, ''), 'Unspecified') AS model,
@@ -396,11 +397,13 @@ export async function GET(request: Request) {
     const cacheParams = new URLSearchParams(searchParams)
     cacheParams.set('startDate', toDateInputValue(startDate))
     cacheParams.set('endDate', toDateInputValue(endDate))
+    const dealerCode = normalizeKiaDealerCode(searchParams.get('dealer_code'))
+    if (dealerCode) cacheParams.set('branch', dealerCode)
     const cacheKey = createCacheKey(cacheParams)
 
     const buildReport = async () => {
       const searchReg = (searchParams.get('searchReg') || '').trim().toLowerCase()
-      const branch = searchParams.get('branch') || 'all'
+      const branch = dealerCode || searchParams.get('branch') || 'all'
       const serviceType = searchParams.get('serviceType') || 'all'
       const advisor = searchParams.get('advisor') || 'all'
       const alertFilter = searchParams.get('alert') || 'all'
@@ -445,7 +448,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const data = await timer.time(skipCache ? 'report' : 'response-cache', () => skipCache
+    const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
       ? buildReport()
       : getCachedData(cacheKey, buildReport, CACHE_TTL_SECONDS))
 

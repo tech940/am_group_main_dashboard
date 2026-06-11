@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { SidebarProvider } from "@/context/sidebar-context";
 import { DashboardQueryProvider } from "@/components/providers/query-provider";
+import Script from "next/script";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -16,6 +17,24 @@ export const metadata: Metadata = {
 
 import NextTopLoader from 'nextjs-toploader';
 
+const themeInitScript = `
+  try {
+    const storedTheme = window.localStorage.getItem('dashboard-theme');
+    const storedAccent = window.localStorage.getItem('dashboard-accent') || 'corona';
+    const legacyAccents = ['navy', 'indigo', 'blue', 'violet', 'ruby'];
+    const accent = legacyAccents.includes(storedAccent) ? 'corona' : storedAccent;
+    const migrationKey = 'dashboard-midnight-theme-decoupled';
+    const shouldResetOldMidnightDark = accent === 'midnight' && storedTheme === 'dark' && window.localStorage.getItem(migrationKey) !== '1';
+    const theme = shouldResetOldMidnightDark ? 'light' : storedTheme;
+    if (shouldResetOldMidnightDark) {
+      window.localStorage.setItem('dashboard-theme', 'light');
+      window.localStorage.setItem(migrationKey, '1');
+    }
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.setAttribute('data-dashboard-accent', accent);
+  } catch (_) {}
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,8 +47,13 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
+        <Script
+          id="dashboard-theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+        />
         <NextTopLoader 
-          color="#ffffff"
+          color="var(--dashboard-primary)"
           initialPosition={0.08}
           crawlSpeed={200}
           height={3}
@@ -37,7 +61,7 @@ export default function RootLayout({
           showSpinner={false}
           easing="ease"
           speed={200}
-          shadow="0 0 12px rgba(255,255,255,0.85),0 0 6px rgba(255,255,255,0.6)"
+          shadow="0 0 12px color-mix(in srgb, var(--dashboard-primary) 62%, transparent),0 0 6px color-mix(in srgb, var(--dashboard-primary) 42%, transparent)"
         />
         <DashboardQueryProvider>
           <SidebarProvider>

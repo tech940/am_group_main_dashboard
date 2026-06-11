@@ -104,7 +104,8 @@ const subDepartments = [
   'FUEL DEMO',
   'FUEL GENSET',
   'FUEL NEW CAR DELIVERY',
-  'FUEL STOCK TRANSFER'
+  'FUEL STOCK TRANSFER',
+  'Others'
 ]
 
 interface MultiStageFormProps {
@@ -179,9 +180,9 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
                 className={cn(
                   'h-12 w-12 rounded-full flex items-center justify-center border-2 transition-all',
                   currentStage > stage.id
-                    ? 'bg-teal-500 border-teal-500 text-white'
+                    ? 'bg-[#023468] border-[#023468] text-white'
                     : currentStage === stage.id
-                    ? 'bg-white border-teal-500 text-teal-500'
+                    ? 'bg-white border-[#023468] text-[#023468]'
                     : 'bg-white border-slate-300 text-slate-400'
                 )}
               >
@@ -204,7 +205,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
               <div
                 className={cn(
                   'h-0.5 flex-1 mx-2 transition-all',
-                  currentStage > stage.id ? 'bg-teal-500' : 'bg-slate-300'
+                  currentStage > stage.id ? 'bg-[#023468]' : 'bg-slate-300'
                 )}
               />
             )}
@@ -370,7 +371,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
                         {!file ? (
                           <label
                             htmlFor={field}
-                            className="flex items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-teal-500 transition-colors"
+                            className="flex items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-[#023468] transition-colors"
                           >
                             <div className="text-center">
                               <Upload className="h-8 w-8 mx-auto text-slate-400 mb-2" />
@@ -388,7 +389,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
                         ) : (
                           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
                             <div className="flex items-center gap-2">
-                              <Upload className="h-5 w-5 text-teal-500" />
+                              <Upload className="h-5 w-5 text-[#023468]" />
                               <span className="text-sm text-slate-700">{file.name}</span>
                             </div>
                             <button
@@ -478,7 +479,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
                         {!file ? (
                           <label
                             htmlFor={field}
-                            className="flex items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-teal-500 transition-colors"
+                            className="flex items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-[#023468] transition-colors"
                           >
                             <div className="text-center">
                               <Upload className="h-6 w-6 mx-auto text-slate-400 mb-1" />
@@ -495,7 +496,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
                         ) : (
                           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
                             <div className="flex items-center gap-2">
-                              <Upload className="h-5 w-5 text-teal-500" />
+                              <Upload className="h-5 w-5 text-[#023468]" />
                               <span className="text-sm text-slate-700">{file.name}</span>
                             </div>
                             <button
@@ -574,7 +575,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
                   {!formData.paymentScreenshot ? (
                     <label
                       htmlFor="paymentScreenshot"
-                      className="flex items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-teal-500 transition-colors"
+                      className="flex items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-[#023468] transition-colors"
                     >
                       <div className="text-center">
                         <Upload className="h-8 w-8 mx-auto text-slate-400 mb-2" />
@@ -592,7 +593,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
                   ) : (
                     <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
                       <div className="flex items-center gap-2">
-                        <Upload className="h-5 w-5 text-teal-500" />
+                        <Upload className="h-5 w-5 text-[#023468]" />
                         <span className="text-sm text-slate-700">{formData.paymentScreenshot.name}</span>
                       </div>
                       <button
@@ -626,7 +627,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
           <Button
             onClick={handleNext}
             disabled={isLoading}
-            className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600"
+            className="gap-2 bg-gradient-to-r from-[#023468] to-[#034b82]"
           >
             Next
             <ChevronRight className="h-4 w-4" />
@@ -635,7 +636,7 @@ export function MultiStageForm({ onSubmit, initialData, isLoading }: MultiStageF
           <Button
             onClick={handleSubmit}
             disabled={isLoading}
-            className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600"
+            className="gap-2 bg-gradient-to-r from-[#023468] to-[#034b82]"
           >
             {isLoading ? 'Submitting...' : 'Submit for Approval'}
             <Check className="h-4 w-4" />

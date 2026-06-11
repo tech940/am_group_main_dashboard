@@ -1,0 +1,39 @@
+
+> main_dashboard@0.1.0 start
+> next start
+
+▲ Next.js 16.2.6
+- Local:         http://localhost:3000
+- Network:       http://10.129.179.163:3000
+✓ Ready in 136ms
+[api:am-finance-analytics] total=1103ms auth=4ms data=1098ms
+[api:am-finance] total=2681ms auth=2ms data=2288ms options=391ms
+✅ Redis client initialized
+[api:am-finance-analytics] total=1606ms auth=4ms data=1602ms
+[api:am-finance-analytics] total=3928ms auth=684ms data=3244ms
+[api:am-finance-analytics] total=1249ms auth=3ms data=1246ms
+[api:am-finance-analytics] total=3014ms auth=1ms data=3013ms
+[api:am-finance-analytics] total=1062ms auth=3ms data=1059ms
+[api:am-finance-analytics] total=1380ms auth=1ms data=1378ms
+[api:am-finance-analytics] total=3971ms auth=775ms data=3196ms
+[api:am-finance] total=2631ms auth=2ms data=2223ms options=405ms
+[api:am-finance-analytics] total=1064ms auth=1ms data=1063ms
+[api:am-finance] total=13873884ms auth=3ms data=13873863ms
+Error in GET /api/am-finance: Error: Failed query: select "hyp", count(*), coalesce(sum("loan_amount"), 0), coalesce(sum("payout_amount"), 0), coalesce(sum("amount_received"), 0) from "finance_sheet" group by "finance_sheet"."hyp" order by count(*) desc limit $1
+params: 12
+    at e_.queryWithCache (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_026o_1c._.js:28:38808)
+    at async (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_026o_1c._.js:28:41470)
+    at async Object.e [as time] (C:\Users\HP\Downloads\Main_Dashboard\.next\server\chunks\_026o_1c._.js:28:44835) {
+  query: 'select "hyp", count(*), coalesce(sum("loan_amount"), 0), coalesce(sum("payout_amount"), 0), coalesce(sum("amount_received"), 0) from "finance_sheet" group by "finance_sheet"."hyp" order by count(*) desc limit $1',
+  params: [ 12 ],
+  [cause]: Error: read ECONNRESET
+      at ignore-listed frames {
+    errno: -4077,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+}
+⨯ Error: Element type is invalid: expected a string (for built-in components) or a class/function (for composite components) but got: undefined.
+    at ignore-listed frames {
+  digest: '1798625376'
+}
