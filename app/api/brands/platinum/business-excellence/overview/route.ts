@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
-import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumWorkshopVasAmount } from '@/lib/platinum/business-excellence-vas'
 import {
@@ -14,6 +14,7 @@ import {
   fetchPlatinumRoBillingCoverage,
 } from '@/lib/platinum/business-excellence-coverage'
 import type { PlatinumDealerCoverage } from '@/lib/platinum/business-excellence-coverage'
+import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 import {
   emptyPlatinumRoBillingAudit,
   fetchPlatinumRoBillingAudit,
@@ -22,7 +23,7 @@ import {
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
+const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 const tableExistsCache = new Map<string, boolean>()
 
 type NumericRow = Record<string, unknown>
@@ -112,7 +113,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:overview:v36:${chunk}:${createHash('sha1')
+  return `platinum:business-excellence:overview:v37:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -141,9 +142,7 @@ function roBillingDealerKeySql() {
 }
 
 function complaintsDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}`
-    : sql``
+  return platinumSourceDealerFilter(dealerCode)
 }
 
 function openRoDealerFilter(dealerCode: DealerFilter) {
@@ -296,7 +295,7 @@ function ewDedupCountSql(startDate: string, endDate: string, dealerCode: DealerF
       WHERE reg_date >= ${startDate}::date
         AND reg_date < (${endDate}::date + INTERVAL '1 day')
         AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
-        ${dealerCode ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}` : sql``}
+        ${platinumSourceDealerFilter(dealerCode)}
       ORDER BY
         COALESCE(
           NULLIF(TRIM(certi_no), ''),
@@ -570,24 +569,14 @@ function complaintsBaseSql(startDate: string, endDate: string, dealerCode: Deale
 }
 
 async function fetchAddonKpis(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  const [hasEw, hasMcp, hasRsa] = await Promise.all([
+  const [hasEw, hasRsa] = await Promise.all([
     tableExists('am_platinum_ew_report'),
-    tableExists('am_platinum_mcp_report'),
     tableExists('am_platinum_rsa_report'),
   ])
 
-  const [ew, mcp, rsa] = await Promise.all([
+  const [ew, rsa] = await Promise.all([
     hasEw
       ? db.execute(ewDedupCountSql(startDate, endDate, dealerCode))
-      : Promise.resolve([{ count: 0 }] as NumericRow[]),
-    hasMcp
-      ? db.execute(sql`
-          SELECT COUNT(*)::int AS count
-          FROM am_platinum_mcp_report
-          WHERE package_purchase_date >= ${startDate}::date
-            AND package_purchase_date < (${endDate}::date + INTERVAL '1 day')
-            AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
-        `)
       : Promise.resolve([{ count: 0 }] as NumericRow[]),
     hasRsa
       ? db.execute(rsaDedupKpiSql(startDate, endDate))
@@ -596,7 +585,6 @@ async function fetchAddonKpis(startDate: string, endDate: string, dealerCode: De
 
   return {
     ewCount: numberValue(resultRows(ew)[0]?.count),
-    mcpCount: numberValue(resultRows(mcp)[0]?.count),
     rsaCount: numberValue(resultRows(rsa)[0]?.count),
     rsaAmount: numberValue(resultRows(rsa)[0]?.amount),
   }
@@ -756,7 +744,6 @@ function emptyAddonKpisValue() {
   return {
     ewCount: 0,
     rsaCount: 0,
-    mcpCount: 0,
     rsaAmount: 0,
   }
 }
@@ -838,6 +825,22 @@ async function safeOptional<T>(
   }
 }
 
+async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit = 3) {
+  const results = new Array<T>(tasks.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < tasks.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await tasks[index]()
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, () => worker()))
+  return results
+}
+
 async function buildOverviewPayload(
   startDate: string,
   endDate: string,
@@ -851,6 +854,7 @@ async function buildOverviewPayload(
   dealerCode: DealerFilter = null
 ) {
   const includeSecondary = chunk === 'secondary' || chunk === 'full'
+  const includePrimaryCharts = chunk === 'summary' || includeSecondary
   const includeComparison = true
   const roSql = roBillingBaseSql(startDate, endDate, dealerCode)
   const openSql = openRoBaseSql(startDate, endDate, dealerCode)
@@ -876,19 +880,19 @@ async function buildOverviewPayload(
     complaintAreaRows,
     complaintStatusRows,
     complaintMonthRows,
-    addonKpis,
-    workshopSnapshot,
+    addonKpisResult,
+    workshopSnapshotResult,
     lyRoKpiRows,
     lyOpenKpiRows,
     lyComplaintKpiRows,
-    lyAddonKpis,
-    lyWorkshopSnapshot,
-    roBillingAudit,
-    roBillingCoverage,
-    openRoCoverage,
-    complaintsCoverage,
-  ] = await Promise.all([
-    db.execute(sql`
+    lyAddonKpisResult,
+    lyWorkshopSnapshotResult,
+    roBillingAuditResult,
+    roBillingCoverageResult,
+    openRoCoverageResult,
+    complaintsCoverageResult,
+  ] = await runWithConcurrency<unknown>([
+    () => db.execute(sql`
       ${roSql}
       SELECT
         COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -900,7 +904,7 @@ async function buildOverviewPayload(
         COALESCE(AVG(revenue), 0)::float AS avg_line_value
       FROM enriched
     `),
-    includeSecondary ? db.execute(sql`
+    () => includePrimaryCharts ? db.execute(sql`
       ${roSql}
       SELECT
         report_date::text AS date,
@@ -911,7 +915,7 @@ async function buildOverviewPayload(
       ORDER BY report_date ASC
       LIMIT 45
     `) : emptyRows(),
-    includeSecondary ? db.execute(sql`
+    () => includePrimaryCharts ? db.execute(sql`
       ${roSql}
       SELECT
         service_category,
@@ -922,7 +926,7 @@ async function buildOverviewPayload(
       ORDER BY total_jc DESC, revenue DESC
       LIMIT 6
     `) : emptyRows(),
-    includeSecondary ? db.execute(sql`
+    () => includeSecondary ? db.execute(sql`
       ${roSql}
       SELECT
         advisor,
@@ -933,7 +937,7 @@ async function buildOverviewPayload(
       ORDER BY revenue DESC, total_jc DESC
       LIMIT 8
     `) : emptyRows(),
-    db.execute(sql`
+    () => db.execute(sql`
       ${openSql}
       SELECT
         COUNT(*)::int AS total_open_ro,
@@ -945,13 +949,13 @@ async function buildOverviewPayload(
         COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS accident_jobs
       FROM enriched
     `),
-    includeSecondary ? db.execute(sql`
+    () => includeSecondary ? db.execute(sql`
       ${openSql}
       SELECT aging_bucket AS bucket, COUNT(*)::int AS count
       FROM enriched
       GROUP BY aging_bucket
     `) : emptyRows(),
-    includeSecondary ? db.execute(sql`
+    () => includeSecondary ? db.execute(sql`
       ${openSql}
       SELECT
         COALESCE(NULLIF(service_adv, ''), 'Unspecified') AS advisor,
@@ -962,14 +966,14 @@ async function buildOverviewPayload(
       ORDER BY open_ro DESC, avg_aging DESC
       LIMIT 8
     `) : emptyRows(),
-    includeSecondary ? db.execute(sql`
+    () => includeSecondary ? db.execute(sql`
       ${openSql}
       SELECT service_category, COUNT(*)::int AS count
       FROM enriched
       GROUP BY service_category
       ORDER BY count DESC
     `) : emptyRows(),
-    db.execute(sql`
+    () => db.execute(sql`
       ${complaintSql}
       SELECT
         COUNT(*)::int AS total,
@@ -981,7 +985,7 @@ async function buildOverviewPayload(
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
       FROM enriched
     `),
-    includeSecondary ? db.execute(sql`
+    () => includeSecondary ? db.execute(sql`
       ${complaintSql}
       SELECT
         signal_area AS name,
@@ -993,14 +997,14 @@ async function buildOverviewPayload(
       ORDER BY total DESC, open DESC
       LIMIT 8
     `) : emptyRows(),
-    includeSecondary ? db.execute(sql`
+    () => includeSecondary ? db.execute(sql`
       ${complaintSql}
       SELECT status_group AS status, COUNT(*)::int AS count
       FROM enriched
       GROUP BY status_group
       ORDER BY count DESC
     `) : emptyRows(),
-    includeSecondary ? db.execute(sql`
+    () => includePrimaryCharts ? db.execute(sql`
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
           complaint_no,
@@ -1044,14 +1048,14 @@ async function buildOverviewPayload(
         ) > 0
       ORDER BY EXTRACT(MONTH FROM complaint_date)::int ASC
     `) : emptyRows(),
-    safeOptional('add-on KPIs', fetchAddonKpis(startDate, endDate, dealerCode), emptyAddonKpisValue(), optionalWarnings),
-    safeOptional(
+    () => safeOptional('add-on KPIs', fetchAddonKpis(startDate, endDate, dealerCode), emptyAddonKpisValue(), optionalWarnings),
+    () => safeOptional(
       'workshop snapshot',
       fetchWorkshopSnapshot(startDate, endDate, dealerCode),
       emptyWorkshopSnapshotValue('Workshop snapshot source is unavailable'),
       optionalWarnings
     ),
-    includeComparison ? db.execute(sql`
+    () => includeComparison ? db.execute(sql`
       ${lyRoSql}
       SELECT
         COUNT(DISTINCT jc_key)::int AS total_jc,
@@ -1060,7 +1064,7 @@ async function buildOverviewPayload(
         COALESCE(SUM(revenue), 0)::float AS revenue
       FROM enriched
     `) : emptyRows(),
-    includeComparison ? db.execute(sql`
+    () => includeComparison && includeSecondary ? db.execute(sql`
       ${lyOpenSql}
       SELECT
         COUNT(*)::int AS total_open_ro,
@@ -1068,7 +1072,7 @@ async function buildOverviewPayload(
         COUNT(*) FILTER (WHERE delay_status = 'Delayed')::int AS delayed
       FROM enriched
     `) : emptyRows(),
-    includeComparison ? db.execute(sql`
+    () => includeComparison ? db.execute(sql`
       ${lyComplaintSql}
       SELECT
         COUNT(*)::int AS total,
@@ -1078,10 +1082,10 @@ async function buildOverviewPayload(
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
       FROM enriched
     `) : emptyRows(),
-    includeComparison
+    () => includeComparison
       ? safeOptional('LY add-on KPIs', fetchAddonKpis(lyStartDate, lyEndDate, dealerCode), emptyAddonKpisValue(), optionalWarnings)
       : emptyAddonKpis(),
-    includeComparison
+    () => includeComparison
       ? safeOptional(
         'LY workshop snapshot',
         fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode),
@@ -1089,31 +1093,40 @@ async function buildOverviewPayload(
         optionalWarnings
       )
       : emptyWorkshopSnapshot(),
-    safeOptional(
+    () => includeSecondary ? safeOptional(
       'RO Billing audit',
       fetchPlatinumRoBillingAudit(startDate, endDate, dealerCode),
       emptyPlatinumRoBillingAudit(startDate, endDate, dealerCode),
       optionalWarnings
-    ),
-    safeOptional(
+    ) : Promise.resolve(emptyPlatinumRoBillingAudit(startDate, endDate, dealerCode)),
+    () => includeSecondary ? safeOptional(
       'RO Billing coverage',
       fetchPlatinumRoBillingCoverage(startDate, endDate, dealerCode),
       emptyCoverageValue(dealerCode, 'RO Billing', 'bill_date'),
       optionalWarnings
-    ),
-    safeOptional(
+    ) : Promise.resolve(emptyCoverageValue(dealerCode, 'RO Billing', 'bill_date')),
+    () => includeSecondary ? safeOptional(
       'Open RO coverage',
       fetchPlatinumOpenRoCoverage(startDate, endDate, dealerCode),
       emptyCoverageValue(dealerCode, 'Open RO', 'r_o_date'),
       optionalWarnings
-    ),
-    safeOptional(
+    ) : Promise.resolve(emptyCoverageValue(dealerCode, 'Open RO', 'r_o_date')),
+    () => includeSecondary ? safeOptional(
       'Complaints coverage',
       fetchPlatinumComplaintsCoverage(startDate, endDate, dealerCode),
       emptyCoverageValue(dealerCode, 'Complaints', 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)'),
       optionalWarnings
-    ),
-  ])
+    ) : Promise.resolve(emptyCoverageValue(dealerCode, 'Complaints', 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)')),
+  ], 3)
+
+  const addonKpis = addonKpisResult as Awaited<ReturnType<typeof fetchAddonKpis>>
+  const workshopSnapshot = workshopSnapshotResult as Awaited<ReturnType<typeof fetchWorkshopSnapshot>>
+  const lyAddonKpis = lyAddonKpisResult as Awaited<ReturnType<typeof fetchAddonKpis>>
+  const lyWorkshopSnapshot = lyWorkshopSnapshotResult as Awaited<ReturnType<typeof fetchWorkshopSnapshot>>
+  const roBillingAudit = roBillingAuditResult as Awaited<ReturnType<typeof fetchPlatinumRoBillingAudit>>
+  const roBillingCoverage = roBillingCoverageResult as PlatinumDealerCoverage
+  const openRoCoverage = openRoCoverageResult as PlatinumDealerCoverage
+  const complaintsCoverage = complaintsCoverageResult as PlatinumDealerCoverage
 
   const roKpis = resultRows(roKpiRows)[0] || {}
   const openKpis = resultRows(openKpiRows)[0] || {}
@@ -1145,7 +1158,7 @@ async function buildOverviewPayload(
   const complaintsOver15 = numberValue(complaintKpis.over_15)
   const bucketOrder = ['0-4D', '5-7D', '8-15D', '>15D']
   const bucketMap = new Map(resultRows(agingRows).map((row) => [String(row.bucket), numberValue(row.count)]))
-  const addOnTotal = addonKpis.ewCount + addonKpis.rsaCount + addonKpis.mcpCount
+  const addOnTotal = addonKpis.ewCount + addonKpis.rsaCount
   const lyTotalJc = useRoAudit ? roBillingAudit.ly.dedupedJc : numberValue(lyRoKpis.total_jc)
   const lyRevenue = useRoAudit ? roBillingAudit.ly.revenue : numberValue(lyRoKpis.revenue)
   const lyLabour = useRoAudit ? roBillingAudit.ly.labour : numberValue(lyRoKpis.labour)
@@ -1160,7 +1173,7 @@ async function buildOverviewPayload(
   const lyComplaintsTotal = numberValue(lyComplaintKpis.total)
   const lyComplaintsOpen = numberValue(lyComplaintKpis.open)
   const lyComplaintsOver15 = numberValue(lyComplaintKpis.over_15)
-  const lyAddOnTotal = lyAddonKpis.ewCount + lyAddonKpis.rsaCount + lyAddonKpis.mcpCount
+  const lyAddOnTotal = lyAddonKpis.ewCount + lyAddonKpis.rsaCount
   const hasWorkshopVasLy = Boolean(
     workshopSnapshot.vasAvailable
     && lyWorkshopSnapshot.vasAvailable
@@ -1195,7 +1208,6 @@ async function buildOverviewPayload(
       avgComplaintDays: numberValue(complaintKpis.avg_days),
       ewCount: addonKpis.ewCount,
       rsaCount: addonKpis.rsaCount,
-      mcpCount: addonKpis.mcpCount,
       rsaAmount: addonKpis.rsaAmount,
       delayedRoPct: percent(delayedRo, totalOpenRo),
       agedRoPct: percent(openOver15, totalOpenRo),
@@ -1330,12 +1342,6 @@ async function buildOverviewPayload(
         deltaPct: growth(addonKpis.rsaCount, lyAddonKpis.rsaCount),
         comparisonStatus: comparisonStatus(lyAddonKpis.rsaCount),
       },
-      mcpCount: {
-        cy: addonKpis.mcpCount,
-        ly: lyAddonKpis.mcpCount,
-        deltaPct: growth(addonKpis.mcpCount, lyAddonKpis.mcpCount),
-        comparisonStatus: comparisonStatus(lyAddonKpis.mcpCount),
-      },
       workshopRevenue: {
         cy: workshopSnapshot.totalRevenue,
         ly: lyWorkshopSnapshot.totalRevenue,
@@ -1446,7 +1452,6 @@ async function buildOverviewPayload(
       addOnMix: [
         { name: 'EW', value: addonKpis.ewCount },
         { name: 'RSA', value: addonKpis.rsaCount },
-        { name: 'MCP', value: addonKpis.mcpCount },
       ],
     },
     insights: [
@@ -1471,7 +1476,7 @@ async function buildOverviewPayload(
       {
         label: 'Add-on Attachment',
         value: `${addOnTotal.toLocaleString('en-IN')} sold`,
-        context: `${addonKpis.ewCount.toLocaleString('en-IN')} EW, ${addonKpis.rsaCount.toLocaleString('en-IN')} RSA and ${addonKpis.mcpCount.toLocaleString('en-IN')} MCP in the selected period.`,
+        context: `${addonKpis.ewCount.toLocaleString('en-IN')} EW and ${addonKpis.rsaCount.toLocaleString('en-IN')} RSA in the selected period.`,
         tone: addOnTotal > 0 ? 'good' : 'watch',
       },
     ],
@@ -1552,7 +1557,6 @@ async function buildOverviewPayload(
         complaints: 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)',
         ew: 'reg_date',
         rsa: 'invoice_date',
-        mcp: 'package_purchase_date',
         vas: 'am_platinum_operation_wise_analysis_report report_period_start/report_period_end; prefers the latest covered period and falls back to the smallest containing period when the source has no partial-period snapshot.',
       },
       roBillingAudit,
@@ -1585,7 +1589,10 @@ export async function GET(request: Request) {
       ))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(data), timing.serverTiming)
+    return withApiDiagnostics(NextResponse.json({
+      ...data,
+      lastUpdatedAt: new Date().toISOString(),
+    }), timing.serverTiming, data)
   } catch (error) {
     timer.finish()
     console.error('Failed to build Business Excellence overview:', error)

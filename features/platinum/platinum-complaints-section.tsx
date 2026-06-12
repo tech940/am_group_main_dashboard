@@ -326,6 +326,7 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
   const [data, setData] = useState<ComplaintResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
+  const [detailsLoaded, setDetailsLoaded] = useState(false)
   const [filters, setFilters] = useState<ComplaintFilters>(EMPTY_FILTERS)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set())
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
@@ -339,47 +340,33 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
     try {
       setIsLoading(true)
       setIsDetailLoading(false)
-      setData(null)
+      setDetailsLoaded(false)
 
-      const fetchChunk = async (chunk: 'summary' | 'secondary' | 'details', timingLabel: string) => {
-        const chunkQueryString = withChunk(queryString, chunk)
-        const suffix = chunkQueryString ? `?${chunkQueryString}` : ''
-        const response = await fetch(`/api/brands/platinum/business-excellence/complaints${suffix}`, {
-          cache: 'no-store',
-        })
-        logApiTimings(response, timingLabel)
-        return await readPlatinumJson<ComplaintResponse>(response, `Platinum Complaints ${chunk} data`)
-      }
-
-      const result = await fetchChunk('summary', 'platinum-complaints')
+      const summaryQueryString = withChunk(queryString, 'summary')
+      const suffix = summaryQueryString ? `?${summaryQueryString}` : ''
+      const response = await fetch(`/api/brands/platinum/business-excellence/complaints${suffix}`)
+      logApiTimings(response, 'platinum-complaints')
+      const result = await readPlatinumJson<ComplaintResponse>(response, 'Platinum Complaints data')
       setData(result)
-      setIsLoading(false)
 
-      setIsDetailLoading(true)
-      const secondaryPromise = fetchChunk('secondary', 'platinum-complaints-secondary')
-        .then((secondaryResult) => {
-          setData((current) => current ? {
-            ...current,
-            comparison: secondaryResult.comparison || current.comparison,
-            charts: {
-              ...current.charts,
-              monthlyTrend: secondaryResult.charts?.monthlyTrend?.length ? secondaryResult.charts.monthlyTrend : current.charts.monthlyTrend,
-              subAreaBreakdown: secondaryResult.charts?.subAreaBreakdown?.length ? secondaryResult.charts.subAreaBreakdown : current.charts.subAreaBreakdown,
-            },
-          } : current)
-          return secondaryResult
-        })
-
-      const detailsPromise = fetchChunk('details', 'platinum-complaints-details')
-        .then((detailsResult) => {
-          setData((current) => current ? {
-            ...current,
-            rows: detailsResult.rows || current.rows,
-          } : current)
-          return detailsResult
-        })
-
-      await Promise.allSettled([secondaryPromise, detailsPromise])
+      try {
+        const secondaryQueryString = withChunk(queryString, 'secondary')
+        const secondarySuffix = secondaryQueryString ? `?${secondaryQueryString}` : ''
+        const secondaryResponse = await fetch(`/api/brands/platinum/business-excellence/complaints${secondarySuffix}`)
+        logApiTimings(secondaryResponse, 'platinum-complaints-secondary')
+        const secondaryResult = await readPlatinumJson<ComplaintResponse>(secondaryResponse, 'Platinum Complaints secondary data')
+        setData((current) => current ? {
+          ...current,
+          comparison: secondaryResult.comparison || current.comparison,
+          charts: {
+            ...current.charts,
+            monthlyTrend: secondaryResult.charts?.monthlyTrend?.length ? secondaryResult.charts.monthlyTrend : current.charts.monthlyTrend,
+            subAreaBreakdown: secondaryResult.charts?.subAreaBreakdown?.length ? secondaryResult.charts.subAreaBreakdown : current.charts.subAreaBreakdown,
+          },
+        } : current)
+      } catch (secondaryError) {
+        console.error('Failed to load Platinum Complaints secondary data:', secondaryError)
+      }
     } catch (error) {
       console.error('Failed to load Platinum Complaints dashboard:', error)
     } finally {
@@ -387,6 +374,25 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
       setIsDetailLoading(false)
     }
   }, [queryString])
+
+  const fetchComplaintDetails = useCallback(async () => {
+    if (detailsLoaded || isDetailLoading) return
+    try {
+      setIsDetailLoading(true)
+      const params = new URLSearchParams(withChunk(queryString, 'details'))
+      params.set('page', '1')
+      params.set('pageSize', '100')
+      const response = await fetch(`/api/brands/platinum/business-excellence/complaints?${params.toString()}`)
+      logApiTimings(response, 'platinum-complaints-details')
+      const result = await readPlatinumJson<ComplaintResponse>(response, 'Platinum Complaints details')
+      setData((current) => current ? { ...current, rows: result.rows || [] } : current)
+      setDetailsLoaded(true)
+    } catch (error) {
+      console.error('Failed to load Platinum complaint rows:', error)
+    } finally {
+      setIsDetailLoading(false)
+    }
+  }, [detailsLoaded, isDetailLoading, queryString])
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -699,7 +705,10 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
             type="button"
             variant={showCalendarView ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setShowCalendarView((current) => !current)}
+            onClick={() => {
+              if (!showCalendarView) void fetchComplaintDetails()
+              setShowCalendarView((current) => !current)
+            }}
             className={cn(
               'h-9 rounded-xl px-3 text-xs font-black',
               showCalendarView
@@ -1098,6 +1107,11 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
               <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
                 Loading rows
               </span>
+            )}
+            {!detailsLoaded && !isDetailLoading && (
+              <Button type="button" size="sm" variant="outline" onClick={() => void fetchComplaintDetails()} className="h-9 rounded-xl text-xs font-black">
+                Load complaint register
+              </Button>
             )}
           </div>
         </div>

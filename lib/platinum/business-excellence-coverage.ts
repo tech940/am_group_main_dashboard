@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getPlatinumBranchLabel, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
+import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 
 export type PlatinumDealerCoverage = {
   dealerCode: string | null
@@ -107,9 +108,7 @@ export async function fetchPlatinumOpenRoCoverage(startDate: string, endDate: st
 }
 
 export async function fetchPlatinumComplaintsCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
-  const dealerFilter = dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}`
-    : sql``
+  const dealerFilter = platinumSourceDealerFilter(dealerCode)
   const businessDate = sql`COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date`
 
   const rows = await db.execute(sql`
@@ -128,9 +127,7 @@ export async function fetchPlatinumComplaintsCoverage(startDate: string, endDate
 }
 
 export async function fetchPlatinumEwCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
-  const dealerFilter = dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}`
-    : sql``
+  const dealerFilter = platinumSourceDealerFilter(dealerCode)
 
   const rows = await db.execute(sql`
     SELECT
@@ -148,9 +145,7 @@ export async function fetchPlatinumEwCoverage(startDate: string, endDate: string
 }
 
 export async function fetchPlatinumSotCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
-  const dealerFilter = dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}`
-    : sql``
+  const dealerFilter = platinumSourceDealerFilter(dealerCode)
 
   const rows = await db.execute(sql`
     SELECT

@@ -64,6 +64,14 @@ const HYUNDAI_MODULES: Record<string, HyundaiModuleDefinition> = {
     title: 'Demo Cars List',
     permission: 'hyundai.demo_cars_list.view',
   },
+  'warranty-list': {
+    title: 'Warranty List',
+    permission: 'hyundai.warranty_list.view',
+  },
+  'warranty-claim-list': {
+    title: 'Warranty Claim List',
+    permission: 'hyundai.warranty_claim_list.view',
+  },
   proforma: {
     title: 'Hyundai Proforma',
     permission: 'hyundai.proforma.view',

@@ -6,6 +6,9 @@ dotenv.config({ quiet: true })
 const views = [
   'workshop_performance_jc_summary_v1',
   'workshop_operation_addon_summary_v1',
+  'am_platinum_ro_billing_daily_summary_v1',
+  'am_platinum_open_ro_daily_summary_v1',
+  'am_platinum_complaints_daily_summary_v1',
 ]
 
 async function main() {

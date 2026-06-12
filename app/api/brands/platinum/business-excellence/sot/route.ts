@@ -3,16 +3,17 @@ import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 import { fetchPlatinumSotCoverage } from '@/lib/platinum/business-excellence-coverage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 45
 
-const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
+const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 
 type SotFilters = {
   startDate: string
@@ -23,7 +24,11 @@ type SotFilters = {
   scheme: string | null
   department: string | null
   dealerCode: string | null
+  page: number
+  pageSize: number
 }
+
+type SotChunk = 'summary' | 'details' | 'full'
 
 function toInputDate(date: Date) {
   const year = date.getFullYear()
@@ -82,11 +87,13 @@ function readFilters(searchParams: URLSearchParams): SotFilters {
     scheme: stringFilter(searchParams.get('scheme')),
     department: stringFilter(searchParams.get('department')),
     dealerCode: normalizePlatinumDealerCode(searchParams.get('dealer_code')),
+    page: Math.max(1, Number(searchParams.get('page')) || 1),
+    pageSize: Math.min(100, Math.max(1, Number(searchParams.get('pageSize')) || 100)),
   }
 }
 
-function cacheKey(filters: SotFilters) {
-  return `platinum:business-excellence:sot:v4:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+function cacheKey(filters: SotFilters, chunk: SotChunk) {
+  return `platinum:business-excellence:sot:v6:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function numberValue(value: unknown) {
@@ -124,9 +131,7 @@ function comparisonMetric(current: number, previous: number) {
 }
 
 function sotDealerFilterSql(filters: SotFilters) {
-  return filters.dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${filters.dealerCode}`
-    : sql``
+  return platinumSourceDealerFilter(filters.dealerCode)
 }
 
 function filterSql(filters: SotFilters, startDate: string, endDate: string) {
@@ -214,17 +219,13 @@ async function fetchMetadata(filters: SotFilters) {
   `) as Array<Record<string, unknown>>
 
   const row = rows[0] || {}
-  const sourceWarnings = filters.dealerCode
-    ? ['SOT uses source_dealer_code for branch filtering; ACTIVE rows are excluded from dealer-specific views.']
-    : []
-
   return {
     totalRows: numberValue(row.total_rows),
     minDate: dateValue(row.min_date),
     maxDate: dateValue(row.max_date),
     uploadedAt: row.uploaded_at ? new Date(String(row.uploaded_at)).toISOString() : null,
     dealerScoped: Boolean(filters.dealerCode),
-    sourceWarnings,
+    sourceWarnings: [],
   }
 }
 
@@ -297,7 +298,8 @@ async function fetchRows(filters: SotFilters) {
       uploaded_at
     FROM base
     ORDER BY reg_date DESC NULLS LAST, uploaded_at DESC NULLS LAST, id DESC
-    LIMIT 150
+    LIMIT ${filters.pageSize}
+    OFFSET ${(filters.page - 1) * filters.pageSize}
   `) as Array<Record<string, unknown>>
 
   return rows.map((row) => ({
@@ -340,21 +342,36 @@ async function fetchOptions(filters: SotFilters) {
   }
 }
 
-async function buildPayload(filters: SotFilters) {
+async function buildPayload(filters: SotFilters, chunk: SotChunk) {
+  const includeSummary = chunk !== 'details'
+  const includeDetails = chunk !== 'summary'
   const comparisonEnabled = Boolean(filters.comparisonStartDate && filters.comparisonEndDate)
   const [kpis, comparisonKpis, metadata, dailyTrend, modelMix, schemeMix, departmentMix, rows, options, dealerCoverage] = await Promise.all([
-    fetchKpis(filters, filters.startDate, filters.endDate),
-    comparisonEnabled
+    includeSummary ? fetchKpis(filters, filters.startDate, filters.endDate) : Promise.resolve({
+      certificates: 0, totalValue: 0, avgValue: 0, models: 0, schemes: 0, departments: 0, minDate: null, maxDate: null,
+    }),
+    includeSummary && comparisonEnabled
       ? fetchKpis(filters, filters.comparisonStartDate!, filters.comparisonEndDate!)
       : Promise.resolve(null),
-    fetchMetadata(filters),
-    fetchDailyTrend(filters),
-    fetchBreakdown(filters, 'model'),
-    fetchBreakdown(filters, 'scheme_no'),
-    fetchBreakdown(filters, 'department'),
-    fetchRows(filters),
-    fetchOptions(filters),
-    fetchPlatinumSotCoverage(filters.startDate, filters.endDate, filters.dealerCode),
+    includeSummary ? fetchMetadata(filters) : Promise.resolve({ totalRows: 0, minDate: null, maxDate: null, uploadedAt: null, dealerScoped: Boolean(filters.dealerCode), sourceWarnings: [] }),
+    includeSummary ? fetchDailyTrend(filters) : Promise.resolve([]),
+    includeSummary ? fetchBreakdown(filters, 'model') : Promise.resolve([]),
+    includeSummary ? fetchBreakdown(filters, 'scheme_no') : Promise.resolve([]),
+    includeSummary ? fetchBreakdown(filters, 'department') : Promise.resolve([]),
+    includeDetails ? fetchRows(filters) : Promise.resolve([]),
+    includeSummary ? fetchOptions(filters) : Promise.resolve({ models: [], schemes: [], departments: [] }),
+    includeSummary
+      ? fetchPlatinumSotCoverage(filters.startDate, filters.endDate, filters.dealerCode)
+      : Promise.resolve({
+        dealerCode: filters.dealerCode,
+        isAllLocations: !filters.dealerCode,
+        hasDataInRange: false,
+        rowCountInRange: 0,
+        latestAvailableDate: null,
+        dateBasis: 'reg_date',
+        sourceLabel: 'SOT',
+        emptyReason: null,
+      }),
   ])
 
   return {
@@ -398,6 +415,10 @@ async function buildPayload(filters: SotFilters) {
     rows,
     metadata: {
       ...metadata,
+      page: filters.page,
+      pageSize: filters.pageSize,
+      totalPages: Math.max(1, Math.ceil(metadata.totalRows / filters.pageSize)),
+      chunk,
       dealerCoverage: {
         dealerCode: dealerCoverage.dealerCode,
         isAllLocations: dealerCoverage.isAllLocations,
@@ -416,14 +437,17 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const filters = readFilters(searchParams)
+    const requestedChunk = searchParams.get('chunk')
+    const chunk: SotChunk = requestedChunk === 'details' || requestedChunk === 'full' ? requestedChunk : 'summary'
     const payload = await timer.time('response-cache', () => getCachedData(
-      cacheKey(filters),
-      () => buildPayload(filters),
+      cacheKey(filters, chunk),
+      () => buildPayload(filters, chunk),
       CACHE_TTL_SECONDS
     ))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(payload), timing.serverTiming)
+    const responseData = { ...payload, lastUpdatedAt: new Date().toISOString() }
+    return withApiDiagnostics(NextResponse.json(responseData), timing.serverTiming, responseData)
   } catch (error) {
     timer.finish()
     console.error('Failed to build Platinum SOT analysis:', error)

@@ -1,15 +1,19 @@
+import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
+import { normalizePlatinumDealerCode, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumComplaintsCoverage } from '@/lib/platinum/business-excellence-coverage'
+import { platinumSourceDealerFilter, platinumSourceDealerSql } from '@/lib/platinum/dealer-filter'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const CACHE_TTL_SECONDS = 0
+const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 
 type ComplaintFilters = {
   startDate: string | null
@@ -24,6 +28,8 @@ type ComplaintFilters = {
   comparisonStartDate: string | null
   comparisonEndDate: string | null
   dealerCode: string | null
+  page: number
+  pageSize: number
 }
 
 type ComplaintChunk = 'summary' | 'secondary' | 'details' | 'full'
@@ -34,6 +40,12 @@ type ComparisonScopeDates = {
   currentEndDate: string
   previousStartDate: string
   previousEndDate: string
+}
+
+function complaintsCacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
+  return `platinum:business-excellence:complaints:v8:${chunk}:${createHash('sha1')
+    .update(JSON.stringify(filters))
+    .digest('hex')}`
 }
 
 function parseDateInput(value: string | null) {
@@ -70,6 +82,10 @@ function resultRows(result: unknown): NumericRow[] {
   return Array.isArray(result) ? (result as NumericRow[]) : []
 }
 
+function jsonRows(value: unknown): NumericRow[] {
+  return Array.isArray(value) ? value as NumericRow[] : []
+}
+
 function numericText(column: ReturnType<typeof sql.raw>) {
   return sql`COALESCE(NULLIF(regexp_replace(${column}::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)`
 }
@@ -86,7 +102,7 @@ function complaintAttributeFilters(filters: ComplaintFilters) {
   return sql`
     AND (${filters.status}::text IS NULL OR status_group = ${filters.status})
     AND (${filters.dealer}::text IS NULL OR dealer_name = ${filters.dealer})
-    AND (${filters.dealerCode}::text IS NULL OR UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${filters.dealerCode})
+    ${platinumSourceDealerFilter(filters.dealerCode)}
     AND (${filters.area}::text IS NULL OR COALESCE(NULLIF(sr_area, ''), 'Unspecified') = ${filters.area})
     AND (${filters.model}::text IS NULL OR COALESCE(NULLIF(vehicle_model, ''), 'Unspecified') = ${filters.model})
     AND (${filters.source}::text IS NULL OR COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') = ${filters.source})
@@ -228,8 +244,326 @@ function inputDate(date: Date) {
   return `${year}-${month}-${day}`
 }
 
+async function buildComplaintsSummaryPayload(filters: ComplaintFilters) {
+  const trendYear = currentYearFromFilters(filters)
+  const today = new Date()
+  const comparisonEndDate = trendYear === today.getFullYear()
+    ? inputDate(today)
+    : `${trendYear}-12-31`
+  const customComparisonActive = Boolean(filters.comparisonStartDate && filters.comparisonEndDate)
+  const currentComparisonStartDate = customComparisonActive
+    ? (filters.startDate || `${trendYear}-01-01`)
+    : `${trendYear}-01-01`
+  const currentComparisonEndDate = customComparisonActive
+    ? (filters.endDate || comparisonEndDate)
+    : comparisonEndDate
+  const previousComparisonStartDate = customComparisonActive
+    ? filters.comparisonStartDate!
+    : `${trendYear - 1}-01-01`
+  const previousComparisonEndDate = customComparisonActive
+    ? filters.comparisonEndDate!
+    : `${trendYear - 1}-${comparisonEndDate.slice(5)}`
+  const baseSql = complaintBaseSql(filters)
+  const normalizedDealer = platinumSourceDealerSql()
+
+  const [summaryResult, comparisonResult] = await Promise.all([
+    db.execute(sql`
+      ${baseSql}
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE status_group <> 'Closed')::int AS open,
+        COUNT(*) FILTER (WHERE status_group = 'Closed')::int AS closed,
+        COUNT(*) FILTER (WHERE resolution_days > 15)::int AS over_15,
+        COUNT(*) FILTER (WHERE signal_area IN ('Delay / Delivery', 'Parts Delay'))::int AS delay_related,
+        COALESCE(AVG(resolution_days), 0)::float AS avg_resolution_days,
+        COALESCE(MAX(resolution_days), 0)::int AS max_resolution_days,
+        MIN(complaint_date)::text AS min_date,
+        MAX(complaint_date)::text AS max_date,
+        MAX(uploaded_at) AS uploaded_at,
+        COALESCE((
+          SELECT jsonb_agg(to_jsonb(area_row) ORDER BY area_row.total DESC, area_row.avg_days DESC)
+          FROM (
+            SELECT
+              COALESCE(NULLIF(sr_area, ''), 'Unspecified') AS name,
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status_group <> 'Closed')::int AS open,
+              COALESCE(AVG(resolution_days), 0)::float AS avg_days
+            FROM filtered
+            GROUP BY 1
+            ORDER BY total DESC, avg_days DESC
+            LIMIT 8
+          ) area_row
+        ), '[]'::jsonb) AS area_rows,
+        COALESCE((
+          SELECT jsonb_agg(to_jsonb(dealer_row) ORDER BY dealer_row.total DESC, dealer_row.open DESC)
+          FROM (
+            SELECT
+              COALESCE(${normalizedDealer}, 'UNMAPPED') AS dealer,
+              COALESCE(${normalizedDealer}, 'UNMAPPED') AS dealer_code,
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status_group <> 'Closed')::int AS open,
+              COALESCE(AVG(resolution_days), 0)::float AS avg_days,
+              COUNT(*) FILTER (WHERE resolution_days > 15)::int AS over_15
+            FROM filtered
+            GROUP BY 1, 2
+            ORDER BY total DESC, open DESC
+            LIMIT 8
+          ) dealer_row
+        ), '[]'::jsonb) AS dealer_rows,
+        COALESCE((
+          SELECT jsonb_agg(to_jsonb(model_row) ORDER BY model_row.total DESC, model_row.avg_days DESC)
+          FROM (
+            SELECT
+              COALESCE(NULLIF(vehicle_model, ''), 'Unspecified') AS model,
+              COUNT(*)::int AS total,
+              COALESCE(AVG(resolution_days), 0)::float AS avg_days
+            FROM filtered
+            GROUP BY 1
+            ORDER BY total DESC, avg_days DESC
+            LIMIT 8
+          ) model_row
+        ), '[]'::jsonb) AS model_rows,
+        COALESCE((
+          SELECT jsonb_agg(to_jsonb(source_row) ORDER BY source_row.total DESC)
+          FROM (
+            SELECT
+              COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') AS source,
+              COUNT(*)::int AS total
+            FROM filtered
+            GROUP BY 1
+            ORDER BY total DESC
+            LIMIT 8
+          ) source_row
+        ), '[]'::jsonb) AS source_rows,
+        jsonb_build_object(
+          'statuses', COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT status_group AS value FROM filtered) option_values), '[]'::jsonb),
+          'dealers', COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT COALESCE(NULLIF(dealer_name, ''), 'Unspecified') AS value FROM filtered) option_values), '[]'::jsonb),
+          'areas', COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT COALESCE(NULLIF(sr_area, ''), 'Unspecified') AS value FROM filtered) option_values), '[]'::jsonb),
+          'models', COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT COALESCE(NULLIF(vehicle_model, ''), 'Unspecified') AS value FROM filtered) option_values), '[]'::jsonb),
+          'sources', COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT COALESCE(NULLIF(complaint_sub_source, ''), 'Unspecified') AS value FROM filtered) option_values), '[]'::jsonb)
+        ) AS options
+      FROM filtered
+    `),
+    db.execute(sql`
+      WITH months AS (
+        SELECT generate_series(1, 12)::int AS month_no
+      ),
+      latest AS (
+        SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
+          *
+        FROM am_platinum_call_center_complaints
+        WHERE ${complaintBusinessDateSql()} IS NOT NULL
+          AND ${complaintBusinessDateSql()} >= LEAST(${currentComparisonStartDate}::date, ${previousComparisonStartDate}::date)
+          AND ${complaintBusinessDateSql()} < (GREATEST(${currentComparisonEndDate}::date, ${previousComparisonEndDate}::date) + INTERVAL '1 day')
+        ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+      ),
+      enriched AS (
+        SELECT
+          ${complaintBusinessDateSql()} AS complaint_date,
+          dealer_name,
+          source_dealer_code,
+          sr_area,
+          vehicle_model,
+          complaint_sub_source,
+          CASE
+            WHEN LOWER(COALESCE(status, '')) IN ('close', 'closed', 'resolved') THEN 'Closed'
+            WHEN LOWER(COALESCE(status, '')) LIKE '%hold%' THEN 'Hold'
+            WHEN LOWER(COALESCE(status, '')) LIKE '%pending%' THEN 'Pending'
+            ELSE 'Open'
+          END AS status_group,
+          COALESCE(
+            CASE
+              WHEN ${complaintResolutionEndSql()} IS NOT NULL
+                THEN GREATEST((${complaintResolutionEndSql()} - ${complaintBusinessDateSql()})::int, 0)
+              ELSE NULL
+            END,
+            ${numericText(sql.raw('pending_days'))}::int,
+            GREATEST((CURRENT_DATE - ${complaintBusinessDateSql()})::int, 0)
+          ) AS resolution_days
+        FROM latest
+      ),
+      scoped AS (
+        SELECT *
+        FROM enriched
+        WHERE TRUE
+          ${complaintAttributeFilters(filters)}
+      ),
+      monthly AS (
+        SELECT
+          EXTRACT(YEAR FROM complaint_date)::int AS year_no,
+          EXTRACT(MONTH FROM complaint_date)::int AS month_no,
+          COUNT(*)::int AS count,
+          COUNT(*) FILTER (WHERE status_group <> 'Closed')::int AS open_count,
+          COUNT(*) FILTER (WHERE status_group = 'Closed')::int AS closed_count,
+          COALESCE(AVG(resolution_days), 0)::float AS avg_days
+        FROM scoped
+        GROUP BY 1, 2
+      )
+      SELECT
+        COUNT(*) FILTER (WHERE complaint_date BETWEEN ${currentComparisonStartDate}::date AND ${currentComparisonEndDate}::date)::int AS cy_count,
+        COUNT(*) FILTER (WHERE complaint_date BETWEEN ${previousComparisonStartDate}::date AND ${previousComparisonEndDate}::date)::int AS ly_count,
+        COUNT(*) FILTER (WHERE complaint_date BETWEEN ${currentComparisonStartDate}::date AND ${currentComparisonEndDate}::date AND status_group <> 'Closed')::int AS cy_open,
+        COUNT(*) FILTER (WHERE complaint_date BETWEEN ${previousComparisonStartDate}::date AND ${previousComparisonEndDate}::date AND status_group <> 'Closed')::int AS ly_open,
+        COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date BETWEEN ${currentComparisonStartDate}::date AND ${currentComparisonEndDate}::date), 0)::float AS cy_avg_days,
+        COALESCE(AVG(resolution_days) FILTER (WHERE complaint_date BETWEEN ${previousComparisonStartDate}::date AND ${previousComparisonEndDate}::date), 0)::float AS ly_avg_days,
+        COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'month', to_char(make_date(${trendYear}, months.month_no, 1), 'Mon'),
+            'cy_count', COALESCE(cy.count, 0),
+            'ly_count', COALESCE(ly.count, 0),
+            'cy_open', COALESCE(cy.open_count, 0),
+            'ly_open', COALESCE(ly.open_count, 0),
+            'cy_closed', COALESCE(cy.closed_count, 0),
+            'ly_closed', COALESCE(ly.closed_count, 0),
+            'cy_avg_days', COALESCE(cy.avg_days, 0),
+            'ly_avg_days', COALESCE(ly.avg_days, 0)
+          ) ORDER BY months.month_no)
+          FROM months
+          LEFT JOIN monthly cy ON cy.year_no = ${trendYear} AND cy.month_no = months.month_no
+          LEFT JOIN monthly ly ON ly.year_no = ${trendYear - 1} AND ly.month_no = months.month_no
+        ), '[]'::jsonb) AS monthly_rows
+      FROM scoped
+    `),
+  ])
+
+  const summary = resultRows(summaryResult)[0] || {}
+  const comparison = resultRows(comparisonResult)[0] || {}
+  const options = (summary.options || {}) as Record<string, string[]>
+  const total = numberValue(summary.total)
+  const latestAvailableDate = dateValue(summary.max_date)
+  const dealerCode = filters.dealerCode || PLATINUM_ALL_LOCATIONS_CODE
+  const dealerCoverage = {
+    dealerCode,
+    isAllLocations: !filters.dealerCode,
+    hasDataInRange: total > 0,
+    rowCountInRange: total,
+    latestAvailableDate,
+    dateBasis: 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)',
+    sourceLabel: 'Complaints',
+    emptyReason: total > 0 ? null : 'No complaints data found for the selected dealer and date range.',
+  }
+
+  return {
+    asOfDate: new Date().toISOString().slice(0, 10),
+    dateRange: { startDate: filters.startDate, endDate: filters.endDate },
+    trendYear,
+    metadata: {
+      totalRows: total,
+      minDate: dateValue(summary.min_date),
+      maxDate: latestAvailableDate,
+      uploadedAt: summary.uploaded_at ? String(summary.uploaded_at) : null,
+    },
+    kpis: {
+      total,
+      open: numberValue(summary.open),
+      closed: numberValue(summary.closed),
+      over15: numberValue(summary.over_15),
+      delayRelated: numberValue(summary.delay_related),
+      avgResolutionDays: numberValue(summary.avg_resolution_days),
+      maxResolutionDays: numberValue(summary.max_resolution_days),
+    },
+    comparison: {
+      selectedYear: trendYear,
+      previousYear: trendYear - 1,
+      currentPeriod: {
+        startDate: currentComparisonStartDate,
+        endDate: currentComparisonEndDate,
+        count: numberValue(comparison.cy_count),
+        open: numberValue(comparison.cy_open),
+        avgDays: numberValue(comparison.cy_avg_days),
+      },
+      previousPeriod: {
+        startDate: previousComparisonStartDate,
+        endDate: previousComparisonEndDate,
+        count: numberValue(comparison.ly_count),
+        open: numberValue(comparison.ly_open),
+        avgDays: numberValue(comparison.ly_avg_days),
+      },
+      yearly: [],
+    },
+    charts: {
+      monthlyTrend: jsonRows(comparison.monthly_rows).map((row) => {
+        const cyCount = numberValue(row.cy_count)
+        const lyCount = numberValue(row.ly_count)
+        return {
+          month: stringValue(row.month, ''),
+          cyCount,
+          lyCount,
+          cyOpen: numberValue(row.cy_open),
+          lyOpen: numberValue(row.ly_open),
+          cyClosed: numberValue(row.cy_closed),
+          lyClosed: numberValue(row.ly_closed),
+          cyAvgDays: numberValue(row.cy_avg_days),
+          lyAvgDays: numberValue(row.ly_avg_days),
+          growthPct: lyCount > 0 ? ((cyCount - lyCount) / lyCount) * 100 : cyCount > 0 ? 100 : 0,
+        }
+      }),
+      areaBreakdown: jsonRows(summary.area_rows).map((row) => ({
+        name: stringValue(row.name),
+        total: numberValue(row.total),
+        open: numberValue(row.open),
+        avgDays: numberValue(row.avg_days),
+      })),
+      subAreaBreakdown: [],
+      dealerPerformance: jsonRows(summary.dealer_rows).map((row) => ({
+        dealer: stringValue(row.dealer),
+        dealerCode: stringValue(row.dealer_code, '-'),
+        total: numberValue(row.total),
+        open: numberValue(row.open),
+        avgDays: numberValue(row.avg_days),
+        over15: numberValue(row.over_15),
+      })),
+      modelBreakdown: jsonRows(summary.model_rows).map((row) => ({
+        model: stringValue(row.model),
+        total: numberValue(row.total),
+        avgDays: numberValue(row.avg_days),
+      })),
+      sourceBreakdown: jsonRows(summary.source_rows).map((row) => ({
+        source: stringValue(row.source),
+        total: numberValue(row.total),
+      })),
+    },
+    rows: [],
+    filterOptions: {
+      statuses: options.statuses || [],
+      dealers: options.dealers || [],
+      areas: options.areas || [],
+      models: options.models || [],
+      sources: options.sources || [],
+    },
+    meta: {
+      rowCount: total,
+      page: filters.page,
+      pageSize: filters.pageSize,
+      totalRows: total,
+      totalPages: Math.max(1, Math.ceil(total / filters.pageSize)),
+      detailLimit: filters.pageSize,
+      chunk: 'summary',
+      cacheTtlSeconds: CACHE_TTL_SECONDS,
+      dateBasis: 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)',
+      dealerCode: filters.dealerCode,
+      dealerCoverage: {
+        dealerCode: dealerCoverage.dealerCode,
+        isAllLocations: dealerCoverage.isAllLocations,
+        primary: dealerCoverage,
+        complaints: dealerCoverage,
+      },
+      comparison: {
+        preset: filters.periodPreset,
+        comparisonMode: filters.comparisonMode || 'none',
+        comparisonStartDate: filters.comparisonStartDate,
+        comparisonEndDate: filters.comparisonEndDate,
+      },
+    },
+  }
+}
+
 async function buildComplaintsPayload(filters: ComplaintFilters, chunk: ComplaintChunk = 'summary') {
-  const includeSummary = chunk === 'summary' || chunk === 'full'
+  if (chunk === 'summary') {
+    return buildComplaintsSummaryPayload(filters)
+  }
+
+  const includeSummary = chunk === 'full'
   const includeSecondary = chunk === 'secondary' || chunk === 'full'
   const includeDetails = chunk === 'details' || chunk === 'full'
   const trendYear = currentYearFromFilters(filters)
@@ -294,6 +628,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM am_platinum_call_center_complaints
         WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
+          AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date >= make_date(${trendYear - 1}, 1, 1)
+          AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date < make_date(${trendYear + 1}, 1, 1)
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
@@ -351,6 +687,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM am_platinum_call_center_complaints
         WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
+          AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date >= make_date(${trendYear - 1}, 1, 1)
+          AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date < make_date(${trendYear + 1}, 1, 1)
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
@@ -394,6 +732,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM am_platinum_call_center_complaints
         WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
+          AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date >= make_date(${trendYear - 5}, 1, 1)
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
@@ -529,13 +868,15 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         CASE WHEN status_group <> 'Closed' THEN 0 ELSE 1 END,
         resolution_days DESC,
         complaint_date DESC
-      LIMIT 150
+      LIMIT ${filters.pageSize}
+      OFFSET ${(filters.page - 1) * filters.pageSize}
     `) : Promise.resolve([]),
     includeSummary ? db.execute(sql`
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
         FROM am_platinum_call_center_complaints
         WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
+          AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date >= make_date(${trendYear - 1}, 1, 1)
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
       SELECT jsonb_build_object(
@@ -568,6 +909,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         MAX(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date) AS max_date,
         MAX(uploaded_at) AS uploaded_at
       FROM am_platinum_call_center_complaints
+      WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date >= make_date(${trendYear - 1}, 1, 1)
     `) : Promise.resolve([]),
     fetchPlatinumComplaintsCoverage(filters.startDate || currentComparisonStartDate, filters.endDate || currentComparisonEndDate, filters.dealerCode),
   ])
@@ -714,7 +1056,11 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     },
     meta: {
       rowCount: numberValue(kpis.total),
-      detailLimit: 150,
+      page: filters.page,
+      pageSize: filters.pageSize,
+      totalRows: numberValue(kpis.total),
+      totalPages: Math.max(1, Math.ceil(numberValue(kpis.total) / filters.pageSize)),
+      detailLimit: filters.pageSize,
       chunk,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       dateBasis: 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)',
@@ -757,16 +1103,23 @@ export async function GET(request: Request) {
     comparisonStartDate,
     comparisonEndDate,
     dealerCode: normalizePlatinumDealerCode(searchParams.get('dealer_code')) || null,
+    page: Math.max(1, Number(searchParams.get('page')) || 1),
+    pageSize: Math.min(100, Math.max(1, Number(searchParams.get('pageSize')) || 100)),
   }
     const requestedChunk = searchParams.get('chunk')
     const chunk: ComplaintChunk = requestedChunk === 'secondary' || requestedChunk === 'details' || requestedChunk === 'full'
       ? requestedChunk
       : 'summary'
 
-    const data = await timer.time('db', () => buildComplaintsPayload(filters, chunk))
+    const data = await timer.time('response-cache', () => getCachedData(
+      complaintsCacheKey(filters, chunk),
+      () => buildComplaintsPayload(filters, chunk),
+      CACHE_TTL_SECONDS
+    ))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(data), timing.serverTiming)
+    const responseData = { ...data, lastUpdatedAt: new Date().toISOString() }
+    return withApiDiagnostics(NextResponse.json(responseData), timing.serverTiming, responseData)
   } catch (error) {
     timer.finish()
     console.error('Failed to build Platinum complaints dashboard:', error)

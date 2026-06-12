@@ -380,6 +380,8 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
   const [data, setData] = useState<SotResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isRegisterLoading, setIsRegisterLoading] = useState(false)
+  const [registerLoaded, setRegisterLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dateRange = useMemo(() => getSotDateRange(dateFilter), [dateFilter])
   const queryString = useMemo(() => buildQueryString(filters, dateRange, dateFilter, dealerCode), [dateFilter, dateRange, dealerCode, filters])
@@ -389,9 +391,12 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
       setError(null)
       setIsRefreshing(true)
       setIsLoading(true)
-      const response = await fetch(`/api/brands/platinum/business-excellence/sot?${queryString}`)
+      const params = new URLSearchParams(queryString)
+      params.set('chunk', 'summary')
+      const response = await fetch(`/api/brands/platinum/business-excellence/sot?${params.toString()}`)
       logApiTimings(response, 'business-excellence-sot')
       setData(await readPlatinumJson<SotResponse>(response, 'SOT analysis'))
+      setRegisterLoaded(false)
     } catch (err) {
       console.error(err)
       setError('SOT analysis could not be loaded.')
@@ -400,6 +405,27 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
       setIsRefreshing(false)
     }
   }, [queryString])
+
+  const fetchRegister = useCallback(async () => {
+    if (registerLoaded || isRegisterLoading) return
+    try {
+      setIsRegisterLoading(true)
+      const params = new URLSearchParams(queryString)
+      params.set('chunk', 'details')
+      params.set('page', '1')
+      params.set('pageSize', '100')
+      const response = await fetch(`/api/brands/platinum/business-excellence/sot?${params.toString()}`)
+      logApiTimings(response, 'business-excellence-sot-details')
+      const result = await readPlatinumJson<SotResponse>(response, 'SOT register')
+      setData((current) => current ? { ...current, rows: result.rows || [] } : current)
+      setRegisterLoaded(true)
+    } catch (err) {
+      console.error(err)
+      setError('SOT register could not be loaded.')
+    } finally {
+      setIsRegisterLoading(false)
+    }
+  }, [isRegisterLoading, queryString, registerLoaded])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -642,7 +668,11 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
             <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">Certificate level view</h3>
           </div>
           <div className="text-xs font-black text-slate-500">
-            {formatNumber(data?.rows.length || 0)} shown
+            {registerLoaded ? `${formatNumber(data?.rows.length || 0)} shown` : (
+              <Button type="button" size="sm" variant="outline" onClick={() => void fetchRegister()} className="h-9 rounded-xl text-xs font-black">
+                {isRegisterLoading ? 'Loading register...' : 'Load SOT register'}
+              </Button>
+            )}
           </div>
         </div>
         <div className="overflow-x-auto">

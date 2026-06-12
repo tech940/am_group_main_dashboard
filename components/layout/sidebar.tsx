@@ -81,6 +81,8 @@ const brandNavigation = [
           { name: 'Business Excellence', href: '/brands/hyundai/business-excellence/overview' },
           { name: 'Service Appointment', href: '/brands/hyundai/service-appointment' },
           { name: 'Hyundai Proforma', href: '/brands/hyundai/proforma' },
+          { name: 'Warranty List', href: '/brands/hyundai/warranty-list' },
+          { name: 'Warranty Claim List', href: '/brands/hyundai/warranty-claim-list' },
         ],
       },
       {
@@ -152,6 +154,8 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/hyundai/demo-job-cards': 'hyundai.demo_job_cards.view',
   '/brands/hyundai/demo-cars-list': 'hyundai.demo_cars_list.view',
   '/brands/hyundai/proforma': 'hyundai.proforma.view',
+  '/brands/hyundai/warranty-list': 'hyundai.warranty_list.view',
+  '/brands/hyundai/warranty-claim-list': 'hyundai.warranty_claim_list.view',
   '/brands/platinum/business-excellence/overview': 'platinum.business_excellence.view',
   '/brands/platinum/service-appointment': 'platinum.service_appointment.view',
   '/brands/platinum/demo-job-cards': 'platinum.demo_job_cards.view',

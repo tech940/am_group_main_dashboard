@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 
 type DealerFilter = string | null
 type ResultRow = Record<string, unknown>
@@ -67,9 +68,7 @@ function hasColumns(columns: Set<string>, required: string[]) {
 }
 
 function operationDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}`
-    : sql``
+  return platinumSourceDealerFilter(dealerCode)
 }
 
 function reportTypeFilter(columns: Set<string>) {

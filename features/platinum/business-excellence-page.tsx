@@ -3991,6 +3991,7 @@ function BusinessExecutiveDashboard({
         })),
       }
     },
+    enabled: Boolean(expandedExecutiveTable),
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
 
@@ -4013,6 +4014,8 @@ function BusinessExecutiveDashboard({
   const partsMtd = executivePeriod(partsTotal, 'mtd')
   const revenueMtd = combineExecutiveMetricValues(labourMtd, partsMtd)
 
+  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (item.dealerCode === PLATINUM_ALL_LOCATIONS_CODE && selectedLocation === 'all'))?.label || 'All Locations'
+
   const locationRows = useMemo(() => {
     const buildRow = (label: string, response?: ROAnalysisResponse) => {
       const row = getExecutiveTotalRow(response, 'load')
@@ -4024,11 +4027,16 @@ function BusinessExecutiveDashboard({
         ytd: executivePeriod(row, 'ytd'),
       }
     }
+    if (branchTableQuery.data) {
+      return [
+        ...branchTableQuery.data.branches.map((branch) => buildRow(branch.label, branch.response)),
+        buildRow('Total', branchTableQuery.data.all),
+      ]
+    }
     return [
-      ...(branchTableQuery.data?.branches || []).map((branch) => buildRow(branch.label, branch.response)),
-      buildRow('Total', branchTableQuery.data?.all),
+      buildRow(selectedLocationLabel, selectedTable),
     ]
-  }, [branchTableQuery.data])
+  }, [branchTableQuery.data, selectedLocationLabel, selectedTable])
 
   const serviceTypeRows = useMemo(() => {
     return getExecutiveDisplayMetricRows(selectedTable, activeExecutiveTableMetric)
@@ -4181,9 +4189,10 @@ function BusinessExecutiveDashboard({
     return Array.from(byFy.values()).sort((a, b) => b.fy.localeCompare(a.fy)).slice(0, 4)
   }, [fyQuery.data])
 
-  const isLoading = tableQuery.isLoading || branchTableQuery.isLoading || trendQuery.isLoading || fyQuery.isLoading
-  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (item.dealerCode === PLATINUM_ALL_LOCATIONS_CODE && selectedLocation === 'all'))?.label || 'All Locations'
-
+  const isLoading = tableQuery.isLoading
+    || trendQuery.isLoading
+    || fyQuery.isLoading
+    || (Boolean(expandedExecutiveTable) && branchTableQuery.isLoading)
   return (
     <div className="space-y-4">
 
@@ -4489,7 +4498,6 @@ type WorkshopPerformanceRow = {
   wbPerRoPercent: number
   ewCount: number
   rsaCount: number
-  mcpCount: number
   subRows?: WorkshopPerformanceRow[]
 }
 
@@ -4586,7 +4594,6 @@ function zeroWorkshopRow(serviceType: string): WorkshopPerformanceRow {
     wbPerRoPercent: 0,
     ewCount: 0,
     rsaCount: 0,
-    mcpCount: 0,
   }
 }
 
@@ -4604,7 +4611,6 @@ function aggregateWorkshopRows(serviceType: string, sourceRows: WorkshopPerforma
     acc.wbAmount += Number(row.wbAmount || 0)
     acc.ewCount += Number(row.ewCount || 0)
     acc.rsaCount += Number(row.rsaCount || 0)
-    acc.mcpCount += Number(row.mcpCount || 0)
     return acc
   }, zeroWorkshopRow(serviceType))
 
@@ -4650,7 +4656,7 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
   const paidRows = rows.filter((row) => hasAny(categoryLabel(row), ['paid service', 'service package']) || /(^|\s)(20|30|40|50|60|70|80|90|100|110|120|130|140|150|160|170)k(\s|$)/.test(normalized(categoryLabel(row))))
   const freeRows = rows.filter((row) => hasAny(categoryLabel(row), ['free service', 'free services', 'tma first', 'tma second', 'tma third', 'sixth free']))
   const runningRows = rows.filter((row) => hasAny(categoryLabel(row), ['running repair', 'running repairs']))
-  const accidentRows = rows.filter((row) => hasAny(categoryLabel(row), ['accident', 'accidental repair', 'bodyshop']))
+  const accidentRows = rows.filter((row) => hasAny(categoryLabel(row), ['accident', 'accidental repair', 'bodyshop', 'body shop', 'insurance', 'crash', 'accident repair', 'body repair', 'paint']))
   const assigned = new Set([...paidRows, ...freeRows, ...runningRows, ...accidentRows])
   const otherRows = rows.filter((row) => !assigned.has(row))
 
@@ -4683,7 +4689,6 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
     grandTotal.wbPerRoPercent = grandTotal.totalJc > 0 ? (grandTotal.wbCount / grandTotal.totalJc) * 100 : 0
     grandTotal.ewCount = Number(serverGrandTotal.ewCount || 0)
     grandTotal.rsaCount = Number(serverGrandTotal.rsaCount || 0)
-    grandTotal.mcpCount = Number(serverGrandTotal.mcpCount || 0)
   }
 
   return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
@@ -4720,7 +4725,7 @@ function WorkshopPerformanceSection({
         if (selectedWorkshopAdvisor !== 'all') {
           params.set('advisor', selectedWorkshopAdvisor)
         }
-        params.set('version', 'v17')
+        params.set('version', 'v18')
         const queryString = params.toString()
         const result = await queryClient.fetchQuery({
           queryKey: ['business-excellence', 'workshop-performance', queryString],
@@ -4778,7 +4783,7 @@ function WorkshopPerformanceSection({
     { label: 'VAS Revenue', metric: data.kpis.vasAmount, formatter: vasUnavailable ? () => 'Unavailable' : formatCurrency, tone: 'emerald', helper: vasSnapshotMeta },
     { label: 'Labour / RO', metric: data.kpis.labourPerRo, formatter: formatCurrency, tone: 'slate' },
     { label: 'EW Count', metric: data.kpis.ewCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'cyan' },
-    { label: 'MCP Count', metric: data.kpis.mcpCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'rose' },
+    { label: 'RSA Count', metric: data.kpis.rsaCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'rose' },
   ] : []
 
   const formatPercent = (value: number) => `${value.toFixed(1)}%`
@@ -4915,7 +4920,6 @@ function WorkshopPerformanceSection({
           'Less VAS',
           'EW Count',
           'RSA Count',
-          'MCP Count',
         ]
 
     return (
@@ -5010,9 +5014,6 @@ function WorkshopPerformanceSection({
                       </td>
                       <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
                         {isGrandTotal ? item.rsaCount.toLocaleString('en-IN') : '-'}
-                      </td>
-                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
-                        {isGrandTotal ? item.mcpCount.toLocaleString('en-IN') : '-'}
                       </td>
                     </>
                   )}
@@ -5586,7 +5587,7 @@ function ServiceTypePerformance({
     const paidNames = ['Paid Service']
     const freeNames = ['Free Service', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA-First Free Service', 'TMA-Second Free Service', 'TMA-Third Free Service', 'Sixth Free Service']
     const runningNames = ['Running Repair', 'Running Repairs']
-    const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop']
+  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop', 'Body Shop', 'Insurance', 'CRASH', 'Accident Repair', 'Body Repair', 'Paint & Body', 'Paint and Body']
     const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
     const paidRows = topRows.filter((row) => nameMatches(row, paidNames))
     const freeRows = topRows.filter((row) => nameMatches(row, freeNames))
@@ -5823,8 +5824,15 @@ function ServiceTypePerformance({
     })
   }, [dateFilter, dealerCode, queryClient])
 
-  const fetchAnalysisBundle = useCallback(async (view: 'trend' | 'fy') => {
-    const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
+  const fetchAnalysisBundle = useCallback(async (view: 'trend' | 'fy', calendarMode = false) => {
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const calendarStart = new Date(selectedRange.end.getFullYear(), selectedRange.end.getMonth(), 1)
+    const calendarEnd = new Date(selectedRange.end.getFullYear(), selectedRange.end.getMonth() + 1, 0)
+    const range = calendarMode
+      ? { startDate: getInputDate(calendarStart), endDate: getInputDate(calendarEnd) }
+      : view === 'trend'
+        ? getROTrendDateRange(dateFilter)
+        : getDefaultRODateRange(dateFilter)
     const params = new URLSearchParams({
       brand: 'platinum',
       sheet: 'am_platinum_ro_billing_report',
@@ -5836,6 +5844,11 @@ function ServiceTypePerformance({
       endDate: range.endDate,
     })
     appendBusinessComparisonParams(params, dateFilter)
+    if (calendarMode) {
+      params.set('comparisonMode', 'custom')
+      params.set('comparisonStartDate', getInputDate(new Date(calendarStart.getFullYear() - 1, calendarStart.getMonth(), 1)))
+      params.set('comparisonEndDate', getInputDate(new Date(calendarEnd.getFullYear() - 1, calendarEnd.getMonth() + 1, 0)))
+    }
     appendKiaDealerCodeParam(params, dealerCode)
     const queryString = params.toString()
     return queryClient.fetchQuery({
@@ -5856,7 +5869,7 @@ function ServiceTypePerformance({
       try {
         setIsServerViewLoading(true)
         if (viewMode === 'trend' || showRoCalendarDialog) {
-          const result = await fetchAnalysisBundle('trend')
+          const result = await fetchAnalysisBundle('trend', showRoCalendarDialog)
           if (isActive) {
             setServerTrendByMetric((prev) => ({
               ...prev,

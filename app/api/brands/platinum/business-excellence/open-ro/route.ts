@@ -5,14 +5,14 @@ import { db } from '@/lib/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
-import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumOpenRoCoverage } from '@/lib/platinum/business-excellence-coverage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
+const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 
 type NumericRow = Record<string, unknown>
 
@@ -28,6 +28,8 @@ type OpenRoFilters = {
   comparisonStartDate: string | null
   comparisonEndDate: string | null
   dealerCode: string | null
+  page: number
+  pageSize: number
 }
 
 type OpenRoChunk = 'summary' | 'details' | 'full'
@@ -359,7 +361,8 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       SELECT *
       FROM filtered
       ORDER BY aging_days DESC, promise_date ASC NULLS LAST, service_category ASC
-      LIMIT 1000
+      LIMIT ${filters.pageSize}
+      OFFSET ${(filters.page - 1) * filters.pageSize}
     `) : Promise.resolve([]),
     includeSummary ? db.execute(sql`
       WITH active AS (
@@ -494,7 +497,11 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
     },
     meta: {
       rowCount: details.length,
-      detailLimit: 1000,
+      page: filters.page,
+      pageSize: filters.pageSize,
+      totalRows: numberValue(kpis.total_open_ro),
+      totalPages: Math.max(1, Math.ceil(numberValue(kpis.total_open_ro) / filters.pageSize)),
+      detailLimit: filters.pageSize,
       chunk,
       dateRange: { startDate: filters.startDate, endDate: filters.endDate },
       dealerCode: filters.dealerCode,
@@ -544,6 +551,8 @@ export async function GET(request: Request) {
     comparisonStartDate,
     comparisonEndDate,
     dealerCode: normalizePlatinumDealerCode(searchParams.get('dealer_code')) || null,
+    page: Math.max(1, Number(searchParams.get('page')) || 1),
+    pageSize: Math.min(100, Math.max(1, Number(searchParams.get('pageSize')) || 100)),
   }
 
   try {
@@ -552,7 +561,8 @@ export async function GET(request: Request) {
       : getCachedData(cacheKey(filters, chunk), () => buildOpenRoPayload(filters, chunk), CACHE_TTL_SECONDS))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(data), timing.serverTiming)
+    const responseData = { ...data, lastUpdatedAt: new Date().toISOString() }
+    return withApiDiagnostics(NextResponse.json(responseData), timing.serverTiming, responseData)
   } catch (error) {
     timer.finish()
     console.error('Failed to build Open RO dashboard:', error)

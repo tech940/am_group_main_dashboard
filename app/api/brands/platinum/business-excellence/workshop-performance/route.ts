@@ -9,6 +9,7 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumWorkshopVasAmount } from '@/lib/platinum/business-excellence-vas'
+import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
 import {
   emptyPlatinumRoBillingAudit,
@@ -18,7 +19,7 @@ import {
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
+const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 const tableExistsCache = new Map<string, boolean>()
 const tableColumnsCache = new Map<string, Set<string>>()
 
@@ -130,7 +131,7 @@ async function optionalSource<T>(
 }
 
 function emptyAuxiliaryKpis() {
-  return { ewCount: 0, rsaCount: 0, mcpCount: 0, rsaAmount: 0 }
+  return { ewCount: 0, rsaCount: 0, rsaAmount: 0 }
 }
 
 function emptyVasMeta(reason: string): PlatinumWorkshopVasMeta {
@@ -171,7 +172,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:workshop-performance:v38:${createHash('sha1')
+  return `platinum:business-excellence:workshop-performance:v39:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -200,9 +201,7 @@ function activeBillStatusSql() {
 }
 
 function operationDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}`
-    : sql``
+  return platinumSourceDealerFilter(dealerCode)
 }
 
 function accidentAdvisorSqlList() {
@@ -727,13 +726,12 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
 }
 
 async function fetchAuxiliaryKpis(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  const [hasEw, hasMcp, hasRsa] = await Promise.all([
+  const [hasEw, hasRsa] = await Promise.all([
     tableExists('am_platinum_ew_report'),
-    tableExists('am_platinum_mcp_report'),
     tableExists('am_platinum_rsa_report'),
   ])
 
-  const [ew, mcp, rsa] = await Promise.all([
+  const [ew, rsa] = await Promise.all([
     hasEw
       ? db.execute(sql`
           WITH dedup AS (
@@ -768,7 +766,7 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string, dealerCode
             WHERE reg_date >= ${startDate}::date
               AND reg_date < (${endDate}::date + INTERVAL '1 day')
               AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
-              ${dealerCode ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) = ${dealerCode}` : sql``}
+              ${platinumSourceDealerFilter(dealerCode)}
             ORDER BY
               COALESCE(
                 NULLIF(TRIM(certi_no), ''),
@@ -786,15 +784,6 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string, dealerCode
           )
           SELECT COUNT(*)::int AS count
           FROM dedup
-        `)
-      : Promise.resolve([{ count: 0 }] as NumericRow[]),
-    hasMcp
-      ? db.execute(sql`
-          SELECT COUNT(*)::int AS count
-          FROM am_platinum_mcp_report
-          WHERE package_purchase_date >= ${startDate}::date
-            AND package_purchase_date < (${endDate}::date + INTERVAL '1 day')
-            AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
         `)
       : Promise.resolve([{ count: 0 }] as NumericRow[]),
     hasRsa
@@ -856,18 +845,16 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string, dealerCode
 
   return {
     ewCount: numberValue(resultRows(ew)[0]?.count),
-    mcpCount: numberValue(resultRows(mcp)[0]?.count),
     rsaCount: numberValue(resultRows(rsa)[0]?.count),
     rsaAmount: numberValue(resultRows(rsa)[0]?.amount),
   }
 }
 
 async function fetchSourceStatus() {
-  const [hasOperation, hasAdvisorOperation, hasEw, hasMcp, hasRsa] = await Promise.all([
+  const [hasOperation, hasAdvisorOperation, hasEw, hasRsa] = await Promise.all([
     tableExists('am_platinum_operation_wise_analysis_report'),
     tableExists('am_platinum_operation_wise_analysis_advisor_report'),
     tableExists('am_platinum_ew_report'),
-    tableExists('am_platinum_mcp_report'),
     tableExists('am_platinum_rsa_report'),
   ])
 
@@ -915,7 +902,6 @@ async function fetchSourceStatus() {
     },
     auxiliaryAddons: {
       ewAvailable: hasEw,
-      mcpAvailable: hasMcp,
       rsaAvailable: hasRsa,
     },
   }
@@ -967,7 +953,6 @@ function buildRows(serviceRows: ServiceAggregate[], addonRows: AddonAggregate[] 
       wbPerRoPercent: percent(wbCount, row.totalJc),
       ewCount: 0,
       rsaCount: 0,
-      mcpCount: 0,
     }
   })
 
@@ -998,7 +983,6 @@ function buildRows(serviceRows: ServiceAggregate[], addonRows: AddonAggregate[] 
       wbPerRoPercent: 0,
       ewCount: 0,
       rsaCount: 0,
-      mcpCount: 0,
     })
   })
 
@@ -1040,7 +1024,7 @@ function summarizeAddons(addonRows: AddonAggregate[]) {
   })
 }
 
-function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summarizeAddons([]), auxiliaryCounts = { ewCount: 0, rsaCount: 0, mcpCount: 0 }) {
+function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summarizeAddons([]), auxiliaryCounts = { ewCount: 0, rsaCount: 0 }) {
   const totalJc = rows.reduce((total, row) => total + row.totalJc, 0)
   const labourAmount = rows.reduce((total, row) => total + row.labourAmount, 0)
   const lessVas = addonTotals.vasAmount
@@ -1074,7 +1058,6 @@ function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summari
     wbPerRoPercent: percent(wbCount, totalJc),
     ewCount: auxiliaryCounts.ewCount,
     rsaCount: auxiliaryCounts.rsaCount,
-    mcpCount: auxiliaryCounts.mcpCount,
   }
 }
 
@@ -1165,29 +1148,26 @@ async function buildWorkshopPayload(
   const addonTotals = summarizeAddons(effectiveAddonRows)
   const lyAddonTotals = summarizeAddons(lyAddonRows)
   const auxiliaryCounts = advisor
-    ? { ewCount: 0, rsaCount: 0, mcpCount: 0, rsaAmount: 0 }
+    ? { ewCount: 0, rsaCount: 0, rsaAmount: 0 }
     : auxiliary
   const lyAuxiliaryCounts = advisor
-    ? { ewCount: 0, rsaCount: 0, mcpCount: 0, rsaAmount: 0 }
+    ? { ewCount: 0, rsaCount: 0, rsaAmount: 0 }
     : lyAuxiliary
   const rows = buildManagementRows(serviceRows, effectiveAddonRows)
   const totalRow = buildTotalRow(rows, addonTotals, {
     ewCount: auxiliaryCounts.ewCount,
     rsaCount: auxiliaryCounts.rsaCount,
-    mcpCount: auxiliaryCounts.mcpCount,
   })
   const lyRows = buildManagementRows(lyServiceRows, lyAddonRows)
   const lyTotal = buildTotalRow(lyRows, lyAddonTotals, {
     ewCount: lyAuxiliaryCounts.ewCount,
     rsaCount: lyAuxiliaryCounts.rsaCount,
-    mcpCount: lyAuxiliaryCounts.mcpCount,
   })
   const coreAddonTotals = summarizeAddons(coreAddonRows)
   const coreRows = buildRows(coreServiceRows, coreAddonRows)
   const coreTotalRow = buildTotalRow(coreRows, coreAddonTotals, {
     ewCount: auxiliaryCounts.ewCount,
     rsaCount: auxiliaryCounts.rsaCount,
-    mcpCount: auxiliaryCounts.mcpCount,
   })
 
   const totalRevenue = totalRow.labourAmount + totalRow.spareSale
@@ -1230,7 +1210,6 @@ async function buildWorkshopPayload(
       labourPerRo: { value: totalRow.labourPerRo, ly: lyTotal.labourPerRo, growth: growth(totalRow.labourPerRo, lyTotal.labourPerRo) },
       sparePerRo: { value: totalRow.sparePerRo, ly: lyTotal.sparePerRo, growth: growth(totalRow.sparePerRo, lyTotal.sparePerRo) },
       ewCount: { value: auxiliaryCounts.ewCount, growth: null },
-      mcpCount: { value: auxiliaryCounts.mcpCount, growth: null },
       rsaCount: { value: auxiliaryCounts.rsaCount, ly: lyAuxiliaryCounts.rsaCount, growth: growth(auxiliaryCounts.rsaCount, lyAuxiliaryCounts.rsaCount), amount: auxiliaryCounts.rsaAmount },
     },
     rows: [...rows, totalRow],
@@ -1255,7 +1234,6 @@ async function buildWorkshopPayload(
           ? null
           : workshopVasMeta.unavailableReason,
         am_platinum_operation_wise_analysis_advisor_report: 'Advisor-level WA/WB/VAS source is unavailable for Platinum.',
-        am_platinum_mcp_report: 'MCP source is unavailable for Platinum.',
         am_platinum_rsa_report: 'RSA source is unavailable for Platinum.',
       },
       sourceStatus: {
@@ -1272,7 +1250,6 @@ async function buildWorkshopPayload(
           },
           auxiliaryAddons: {
             ewAvailable: false,
-            mcpAvailable: false,
             rsaAvailable: false,
           },
         }),

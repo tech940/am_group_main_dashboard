@@ -13,7 +13,7 @@ import { fetchPlatinumRoBillingAudit } from '@/lib/platinum/ro-billing-audit'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
+const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 const FILTER_COLUMNS = {
   workType: 'work_type',
   serviceType: 'work_type',

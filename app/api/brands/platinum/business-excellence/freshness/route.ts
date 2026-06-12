@@ -4,9 +4,13 @@ import { db } from '@/lib/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
+import { platinumSourceDealerSql } from '@/lib/platinum/dealer-filter'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
+const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 
 type FreshnessSource = {
   table: string
@@ -29,7 +33,6 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
     { table: 'am_platinum_operation_wise_analysis_advisor_report', label: 'Advisor Operation Analysis' },
     { table: 'am_platinum_rsa_report', label: 'RSA' },
     { table: 'am_platinum_ew_report', label: 'EW' },
-    { table: 'am_platinum_mcp_report', label: 'MCP' },
   ],
   open_ro_repair_orders: [{ table: 'am_platinum_repair_order_list', label: 'Open RO' }],
   Platinum_complaints: [{ table: 'am_platinum_call_center_complaints', label: 'Complaints' }],
@@ -78,13 +81,19 @@ async function readSourceFreshness(source: FreshnessSource, dealerCode: string |
 
   const dealerColumn = dealerCode ? resolveDealerColumn(source.table, columns) : null
   const dealerWhere = dealerCode && dealerColumn
-    ? sql`WHERE UPPER(TRIM(COALESCE(${sql.raw(`"${dealerColumn}"`)}::text, ''))) = ${dealerCode}`
+    ? dealerColumn === 'source_dealer_code'
+      ? sql`WHERE ${platinumSourceDealerSql(sql.raw(`"${dealerColumn}"`))} = ${dealerCode}`
+      : sql`WHERE UPPER(TRIM(COALESCE(${sql.raw(`"${dealerColumn}"`)}::text, ''))) = ${dealerCode}`
     : sql``
 
   const rows = await db.execute(sql`
     SELECT
       MAX(uploaded_at) AS "sourceUpdatedAt",
-      COUNT(*)::int AS "rowCount"
+      COALESCE((
+        SELECT n_live_tup::bigint
+        FROM pg_stat_user_tables
+        WHERE schemaname = 'public' AND relname = ${source.table}
+      ), 0)::bigint AS "rowCount"
     FROM ${sql.raw(`"${source.table}"`)}
     ${dealerWhere}
   `) as Array<{ sourceUpdatedAt: string | Date | null; rowCount: number | string | null }>
@@ -110,25 +119,31 @@ export async function GET(request: Request) {
     const dealerCode = normalizePlatinumDealerCode(searchParams.get('dealer_code'))
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
-    const sourceFreshness = (await timer.time('freshness-db', async () => {
-      const settled = await Promise.allSettled(sources.map((source) => readSourceFreshness(source, dealerCode)))
-      return settled
-        .map((result) => result.status === 'fulfilled' ? result.value : null)
-        .filter((item): item is NonNullable<typeof item> => Boolean(item))
-    }))
+    const data = await timer.time('response-cache', () => getCachedData(
+      `platinum:business-excellence:freshness:v2:${reportKey}:${dealerCode || 'all'}`,
+      async () => {
+        const settled = await Promise.allSettled(sources.map((source) => readSourceFreshness(source, dealerCode)))
+        const sourceFreshness = settled
+          .map((result) => result.status === 'fulfilled' ? result.value : null)
+          .filter((item): item is NonNullable<typeof item> => Boolean(item))
+        const sourceUpdatedAt = sourceFreshness
+          .map((source) => source.sourceUpdatedAt)
+          .filter((value): value is string => Boolean(value))
+          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null
 
-    const sourceUpdatedAt = sourceFreshness
-      .map((source) => source.sourceUpdatedAt)
-      .filter((value): value is string => Boolean(value))
-      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null
+        return {
+          report: reportKey,
+          dealerCode,
+          sourceUpdatedAt,
+          sources: sourceFreshness,
+          lastUpdatedAt: new Date().toISOString(),
+        }
+      },
+      CACHE_TTL_SECONDS
+    ))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json({
-      report: reportKey,
-      dealerCode,
-      sourceUpdatedAt,
-      sources: sourceFreshness,
-    }), timing.serverTiming)
+    return withServerTiming(NextResponse.json(data), timing.serverTiming)
   } catch (error) {
     timer.finish()
     console.error('Failed to read Platinum Business Excellence freshness:', error)
