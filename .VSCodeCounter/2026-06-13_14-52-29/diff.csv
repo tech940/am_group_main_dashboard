@@ -1,0 +1,219 @@
+"filename", "language", "Markdown", "JSON with Comments", "PowerShell", "TypeScript", "log", "JavaScript", "MS SQL", "XML", "JSON", "TypeScript JSX", "comment", "blank", "total"
+"c:\Users\sahil\Downloads\am_group_main_dashboard\AGENTS.md", "Markdown", 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 6
+"c:\Users\sahil\Downloads\am_group_main_dashboard\BRAND_ACCESS_SETUP.md", "Markdown", 116, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 34, 150
+"c:\Users\sahil\Downloads\am_group_main_dashboard\CLAUDE.md", "Markdown", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2
+"c:\Users\sahil\Downloads\am_group_main_dashboard\PROJECT_CONTEXT.md", "Markdown", 604, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 145, 749
+"c:\Users\sahil\Downloads\am_group_main_dashboard\PROJECT_DEEP_ANALYSIS.md", "Markdown", 436, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 189, 625
+"c:\Users\sahil\Downloads\am_group_main_dashboard\PROJECT_KT_HANDOVER.md", "Markdown", 456, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 199, 655
+"c:\Users\sahil\Downloads\am_group_main_dashboard\PURCHASE_ORDERS_COMPLETE.md", "Markdown", 265, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 327
+"c:\Users\sahil\Downloads\am_group_main_dashboard\PURCHASE_ORDERS_ENHANCEMENTS_GUIDE.md", "Markdown", 258, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 71, 329
+"c:\Users\sahil\Downloads\am_group_main_dashboard\PURCHASE_ORDERS_SETUP.md", "Markdown", 146, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 51, 197
+"c:\Users\sahil\Downloads\am_group_main_dashboard\QUICK_START.md", "Markdown", 91, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 26, 117
+"c:\Users\sahil\Downloads\am_group_main_dashboard\README.md", "Markdown", 23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 37
+"c:\Users\sahil\Downloads\am_group_main_dashboard\REDIS_SETUP.md", "Markdown", 134, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 54, 188
+"c:\Users\sahil\Downloads\am_group_main_dashboard\SETTINGS_SETUP.md", "Markdown", 172, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 210
+"c:\Users\sahil\Downloads\am_group_main_dashboard\SETUP_ADMIN_USER.md", "Markdown", 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 33, 153
+"c:\Users\sahil\Downloads\am_group_main_dashboard\WORKFLOW_REDESIGN_SUMMARY.md", "Markdown", 117, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 29, 146
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 1, 21
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\activity-card.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 50, 0, 5, 55
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\integration-list.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 65, 0, 4, 69
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\kpi-card.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 55, 0, 7, 62
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\sales-distribution.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 66, 0, 4, 70
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\sales-overview.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 95, 0, 4, 99
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\subscriber-chart.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 4, 68
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\layout\header.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 280, 3, 33, 316
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\layout\main-layout.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 27, 0, 3, 30
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\layout\notification-bell.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 830, 0, 116, 946
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\layout\sidebar.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 689, 35, 35, 759
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\providers\query-provider.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 139, 2, 29, 170
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\approval-card.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 151, 1, 15, 167
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\image-gallery.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 135, 1, 20, 156
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\md-grid-view.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 439, 1, 27, 467
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\md-table-view.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 544, 1, 47, 592
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\multi-stage-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 600, 13, 38, 651
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\multiple-image-upload.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 339, 1, 43, 383
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\order-image-preview-button.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 339, 1, 30, 370
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\po-table-view.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 279, 4, 25, 308
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\remarks-dialog.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, 1, 10, 111
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage1-initial-submission.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 361, 6, 26, 393
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage2-vendor-information.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 263, 0, 31, 294
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage3-ea-approval.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 169, 4, 12, 185
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage3-md-approval.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 176, 5, 13, 194
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage4-grn.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 244, 7, 20, 271
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage5-accounts.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 305, 3, 26, 334
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\workflow-card-theme.ts", "TypeScript", 0, 0, 0, 31, 0, 0, 0, 0, 0, 0, 0, 6, 37
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\workflow-status-card.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 287, 0, 19, 306
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\workflow-timeline.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 196, 7, 17, 220
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\shared\access-control-overlay.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 41, 3, 7, 51
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\shared\data-table.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 186, 0, 9, 195
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\shared\dynamic-row-form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 320, 16, 36, 372
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\shared\form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 1, 7, 104
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\badge.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 35, 0, 6, 41
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\button.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 51, 0, 6, 57
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\card.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 71, 0, 9, 80
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\checkbox.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 26, 1, 6, 33
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\dialog.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 108, 0, 13, 121
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\dropdown-menu.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 181, 0, 18, 199
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\form.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 145, 0, 24, 169
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\input.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 22, 1, 5, 28
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\label.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 0, 5, 25
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\select.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 145, 0, 14, 159
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\table.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 107, 0, 11, 118
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\tabs.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 47, 0, 7, 54
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\textarea.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 1, 6, 27
+"c:\Users\sahil\Downloads\am_group_main_dashboard\config\env-config.ts", "TypeScript", 0, 0, 0, 25, 0, 0, 0, 0, 0, 0, 12, 5, 42
+"c:\Users\sahil\Downloads\am_group_main_dashboard\context\sidebar-context.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 22, 0, 7, 29
+"c:\Users\sahil\Downloads\am_group_main_dashboard\docs\BUSINESS_EXCELLENCE_SQL_QUERIES.md", "Markdown", 1213, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 144, 1357
+"c:\Users\sahil\Downloads\am_group_main_dashboard\drizzle.config.ts", "TypeScript", 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 2, 13
+"c:\Users\sahil\Downloads\am_group_main_dashboard\eslint.config.mjs", "JavaScript", 0, 0, 0, 0, 0, 17, 0, 0, 0, 0, 2, 3, 22
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\admin\admin-console.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 694, 0, 33, 727
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\am-finance\am-finance-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 2683, 0, 212, 2895
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\business-excellence\executive-table-shell.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 81, 0, 6, 87
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\business-excellence\shared-ui.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 415, 0, 20, 435
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\dashboard\dashboard-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 116, 4, 6, 126
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\finance-orders\finance-orders-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1219, 0, 70, 1289
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\business-excellence-overview.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1732, 0, 110, 1842
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\business-excellence-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 7941, 18, 500, 8459
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\hyundai-complaints-section.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1131, 2, 72, 1205
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\hyundai-module-placeholder.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 29, 0, 3, 32
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\open-ro-section.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1254, 2, 79, 1335
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\repair-orders-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 410, 0, 33, 443
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\warranty-claims-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 578, 0, 32, 610
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\business-excellence-overview.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1767, 0, 112, 1879
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\business-excellence-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 7959, 19, 498, 8476
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\demo-cars-list-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 540, 0, 36, 576
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\demo-job-cards-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 852, 0, 51, 903
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\kia-complaints-section.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1143, 2, 75, 1220
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\kia-proforma-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1284, 1, 68, 1353
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\open-ro-section.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1254, 2, 79, 1335
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\performance-diagnostics-panel.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 246, 0, 18, 264
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\service-appointment-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 339, 0, 31, 370
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\service-dashboard-preview-section.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 185, 0, 11, 196
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\api-client.ts", "TypeScript", 0, 0, 0, 34, 0, 0, 0, 0, 0, 0, 0, 7, 41
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\business-excellence-overview.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1992, 0, 126, 2118
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\business-excellence-page.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 8038, 18, 507, 8563
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\open-ro-section.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1299, 2, 82, 1383
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\platinum-complaints-section.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1156, 2, 77, 1235
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\platinum-module-placeholder.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 29, 0, 3, 32
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\sot-analysis-section.tsx", "TypeScript JSX", 0, 0, 0, 0, 0, 0, 0, 0, 0, 698, 0, 57, 755
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\admin\authorization.ts", "TypeScript", 0, 0, 0, 199, 0, 0, 0, 0, 0, 0, 0, 23, 222
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\am-finance\access.ts", "TypeScript", 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 7, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\api\client-timing.ts", "TypeScript", 0, 0, 0, 94, 0, 0, 0, 0, 0, 0, 0, 15, 109
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\api\timing.ts", "TypeScript", 0, 0, 0, 106, 0, 0, 0, 0, 0, 0, 0, 17, 123
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\app-user.ts", "TypeScript", 0, 0, 0, 155, 0, 0, 0, 0, 0, 0, 1, 29, 185
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\auth-helpers.ts", "TypeScript", 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 2, 10, 36
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\brand-access.ts", "TypeScript", 0, 0, 0, 30, 0, 0, 0, 0, 0, 0, 0, 9, 39
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\roles.ts", "TypeScript", 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 4, 15
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\branch-module-access.ts", "TypeScript", 0, 0, 0, 183, 0, 0, 0, 0, 0, 0, 0, 21, 204
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\branches.ts", "TypeScript", 0, 0, 0, 36, 0, 0, 0, 0, 0, 0, 0, 10, 46
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\business-excellence\comparison.ts", "TypeScript", 0, 0, 0, 207, 0, 0, 0, 0, 0, 0, 0, 27, 234
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\business-excellence\executive-targets.ts", "TypeScript", 0, 0, 0, 36, 0, 0, 0, 0, 0, 0, 0, 2, 38
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\business-excellence\workshop-classification.ts", "TypeScript", 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 4, 12
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\dashboard-config.ts", "TypeScript", 0, 0, 0, 66, 0, 0, 0, 0, 0, 0, 0, 5, 71
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\date-time.ts", "TypeScript", 0, 0, 0, 114, 0, 0, 0, 0, 0, 0, 0, 33, 147
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\db\index.ts", "TypeScript", 0, 0, 0, 67, 0, 0, 0, 0, 0, 0, 3, 13, 83
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\db\schema.ts", "TypeScript", 0, 0, 0, 858, 0, 0, 0, 0, 0, 0, 32, 64, 954
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\finance-orders\access.ts", "TypeScript", 0, 0, 0, 120, 0, 0, 0, 0, 0, 0, 0, 24, 144
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hooks\use-user-preferences.ts", "TypeScript", 0, 0, 0, 111, 0, 0, 0, 0, 0, 0, 5, 20, 136
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hooks\use-user-role.ts", "TypeScript", 0, 0, 0, 29, 0, 0, 0, 0, 0, 0, 1, 6, 36
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\business-excellence.ts", "TypeScript", 0, 0, 0, 721, 0, 0, 0, 0, 0, 0, 0, 74, 795
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\dealer-branch.ts", "TypeScript", 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 8, 40
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\warranty-claims.ts", "TypeScript", 0, 0, 0, 104, 0, 0, 0, 0, 0, 0, 0, 15, 119
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\warranty-storage.ts", "TypeScript", 0, 0, 0, 39, 0, 0, 0, 0, 0, 0, 0, 6, 45
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia-proforma\access.ts", "TypeScript", 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 9, 42
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia-proforma\invoice.ts", "TypeScript", 0, 0, 0, 529, 0, 0, 0, 0, 0, 0, 0, 34, 563
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia-proforma\pricing.ts", "TypeScript", 0, 0, 0, 164, 0, 0, 0, 0, 0, 0, 0, 19, 183
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia-proforma\server.ts", "TypeScript", 0, 0, 0, 37, 0, 0, 0, 0, 0, 0, 0, 8, 45
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\dealer-branch.ts", "TypeScript", 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 6, 26
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\service-dashboard-export.ts", "TypeScript", 0, 0, 0, 968, 0, 0, 0, 0, 0, 0, 0, 103, 1071
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\notifications\finance-workflow.ts", "TypeScript", 0, 0, 0, 268, 0, 0, 0, 0, 0, 0, 0, 29, 297
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\notifications\types.ts", "TypeScript", 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 2, 18
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\notifications\workflow.ts", "TypeScript", 0, 0, 0, 310, 0, 0, 0, 0, 0, 0, 0, 37, 347
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\permissions\registry.ts", "TypeScript", 0, 0, 0, 707, 0, 0, 0, 0, 0, 0, 0, 14, 721
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\permissions\service.ts", "TypeScript", 0, 0, 0, 394, 0, 0, 0, 0, 0, 0, 0, 56, 450
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-calculations.ts", "TypeScript", 0, 0, 0, 61, 0, 0, 0, 0, 0, 0, 0, 12, 73
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-coverage.ts", "TypeScript", 0, 0, 0, 239, 0, 0, 0, 0, 0, 0, 0, 19, 258
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-vas.ts", "TypeScript", 0, 0, 0, 268, 0, 0, 0, 0, 0, 0, 0, 28, 296
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\dealer-branch.ts", "TypeScript", 0, 0, 0, 35, 0, 0, 0, 0, 0, 0, 0, 8, 43
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\dealer-filter.ts", "TypeScript", 0, 0, 0, 27, 0, 0, 0, 0, 0, 0, 0, 6, 33
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\ro-billing-audit.ts", "TypeScript", 0, 0, 0, 572, 0, 0, 0, 0, 0, 0, 0, 32, 604
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\purchase-orders\access.ts", "TypeScript", 0, 0, 0, 213, 0, 0, 0, 0, 0, 0, 0, 28, 241
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\redis\cache-utils.ts", "TypeScript", 0, 0, 0, 216, 0, 0, 0, 0, 0, 0, 3, 35, 254
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\redis\client.ts", "TypeScript", 0, 0, 0, 28, 0, 0, 0, 0, 0, 0, 7, 9, 44
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\reports\service-dashboard-email.ts", "TypeScript", 0, 0, 0, 144, 0, 0, 0, 0, 0, 0, 0, 23, 167
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\admin.ts", "TypeScript", 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 4, 2, 18
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\client.ts", "TypeScript", 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 2, 2, 19
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\middleware.ts", "TypeScript", 0, 0, 0, 54, 0, 0, 0, 0, 0, 0, 8, 9, 71
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\server.ts", "TypeScript", 0, 0, 0, 25, 0, 0, 0, 0, 0, 0, 3, 3, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\storage.ts", "TypeScript", 0, 0, 0, 90, 0, 0, 0, 0, 0, 0, 24, 20, 134
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\utils.ts", "TypeScript", 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 2, 7
+"c:\Users\sahil\Downloads\am_group_main_dashboard\next.config.ts", "TypeScript", 0, 0, 0, 26, 0, 0, 0, 0, 0, 0, 0, 3, 29
+"c:\Users\sahil\Downloads\am_group_main_dashboard\package-lock.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 11167, 0, 0, 1, 11168
+"c:\Users\sahil\Downloads\am_group_main_dashboard\package.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 78, 0, 0, 1, 79
+"c:\Users\sahil\Downloads\am_group_main_dashboard\postcss.config.mjs", "JavaScript", 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 2, 8
+"c:\Users\sahil\Downloads\am_group_main_dashboard\proxy.ts", "TypeScript", 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 8, 4, 22
+"c:\Users\sahil\Downloads\am_group_main_dashboard\public\file.svg", "XML", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\public\globe.svg", "XML", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\public\next.svg", "XML", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\public\sw.js", "JavaScript", 0, 0, 0, 0, 0, 52, 0, 0, 0, 0, 0, 11, 63
+"c:\Users\sahil\Downloads\am_group_main_dashboard\public\vercel.svg", "XML", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\public\window.svg", "XML", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\init-db.ts", "TypeScript", 0, 0, 0, 29, 0, 0, 0, 0, 0, 0, 0, 4, 33
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-actual-amount-column.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 3, 9
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-brand-column.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 5, 4, 11
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-purchase-order-bill-images.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 1, 3, 10
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-purchase-order-enhancements.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 114, 0, 0, 0, 24, 21, 159
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-purchase-order-notifications.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 110, 0, 0, 0, 6, 19, 135
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-purchase-order-vendor-details.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 2, 4, 16
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\am-finance-performance-indexes.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 2, 10, 44
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\backfill-purchase-order-stage-notifications.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 56, 0, 0, 0, 2, 2, 60
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\backup-database-scheduler.js", "JavaScript", 0, 0, 0, 0, 0, 73, 0, 0, 0, 0, 0, 13, 86
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\backup-database.js", "JavaScript", 0, 0, 0, 0, 0, 115, 0, 0, 0, 0, 0, 29, 144
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\business-excellence-relational-indexes.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 77, 0, 0, 0, 2, 39, 118
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-admin-user.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 22, 0, 0, 0, 10, 6, 38
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-admin-user.ts", "TypeScript", 0, 0, 0, 76, 0, 0, 0, 0, 0, 0, 10, 17, 103
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-am-finance-v2.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 29, 0, 0, 0, 0, 8, 37
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-demo-vehicle-details.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 30, 0, 0, 0, 2, 8, 40
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-demo-vehicle-remarks.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 31, 0, 0, 0, 3, 9, 43
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-finance-orders.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 126, 0, 0, 0, 0, 13, 139
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-kia-proforma.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 170, 0, 0, 0, 0, 18, 188
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-permissions-manager.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 150, 0, 0, 0, 2, 12, 164
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-purchase-orders-table.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 156, 0, 0, 0, 24, 29, 209
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-settings-table.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 4, 3, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\dashboard-performance-optimization.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 365, 0, 0, 0, 25, 60, 450
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\fix-notification-timestamps.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 7, 5, 24
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\fix-purchase-order-access-policies.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 195, 0, 0, 0, 1, 12, 208
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\fix-purchase-order-denial-status-enum.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 19, 0, 0, 0, 2, 3, 24
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\fix-purchase-order-timezones.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 90, 0, 0, 0, 10, 25, 125
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\import-kia-price-details-csv.js", "JavaScript", 0, 0, 0, 0, 0, 287, 0, 0, 0, 0, 1, 21, 309
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\import-kia-proforma-xlsx.js", "JavaScript", 0, 0, 0, 0, 0, 562, 0, 0, 0, 0, 1, 34, 597
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\platinum-business-excellence-performance.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 415, 0, 0, 0, 2, 26, 443
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\pre-live-check.js", "JavaScript", 0, 0, 0, 0, 0, 75, 0, 0, 0, 0, 0, 17, 92
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\refresh-dashboard-materialized-views-scheduler.js", "JavaScript", 0, 0, 0, 0, 0, 85, 0, 0, 0, 0, 0, 16, 101
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\refresh-dashboard-materialized-views.js", "JavaScript", 0, 0, 0, 0, 0, 72, 0, 0, 0, 0, 0, 9, 81
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\send-service-dashboard-email-scheduler.js", "JavaScript", 0, 0, 0, 0, 0, 122, 0, 0, 0, 0, 0, 18, 140
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\send-service-dashboard-email.ts", "TypeScript", 0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 0, 6, 29
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-am-finance-v2.js", "JavaScript", 0, 0, 0, 0, 0, 30, 0, 0, 0, 0, 0, 6, 36
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-finance-orders.js", "JavaScript", 0, 0, 0, 0, 0, 43, 0, 0, 0, 0, 0, 10, 53
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hierarchical-admin.js", "JavaScript", 0, 0, 0, 0, 0, 27, 0, 0, 0, 0, 0, 4, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hierarchical-admin.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 28, 0, 0, 0, 3, 6, 37
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hyundai-warranty-claims.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 46, 0, 0, 0, 0, 7, 53
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-permissions-manager.js", "JavaScript", 0, 0, 0, 0, 0, 29, 0, 0, 0, 0, 0, 6, 35
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-platinum-business-excellence.js", "JavaScript", 0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 7, 47
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-purchase-orders-user.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 31, 5, 39
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-storage-policies.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 23, 0, 0, 0, 9, 7, 39
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\update-admin-user.ts", "TypeScript", 0, 0, 0, 90, 0, 0, 0, 0, 0, 0, 11, 22, 123
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\update-purchase-order-status-enum.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 66, 0, 0, 0, 4, 11, 81
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\update-purchase-orders-workflow.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 370, 0, 0, 0, 71, 60, 501
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-platinum-business-excellence.js", "JavaScript", 0, 0, 0, 0, 0, 258, 0, 0, 0, 0, 0, 26, 284
+"c:\Users\sahil\Downloads\am_group_main_dashboard\tailwind.config.ts", "TypeScript", 0, 0, 0, 180, 0, 0, 0, 0, 0, 0, 9, 3, 192
+"c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-refinement-dev.err.log", "log", 0, 0, 0, 0, 180, 0, 0, 0, 0, 0, 0, 1, 181
+"c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-refinement-dev.out.log", "log", 0, 0, 0, 0, 142, 0, 0, 0, 0, 0, 0, 4, 146
+"c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-refinement-start.err.log", "log", 0, 0, 0, 0, 274, 0, 0, 0, 0, 0, 0, 3, 277
+"c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-refinement-start.out.log", "log", 0, 0, 0, 0, 35, 0, 0, 0, 0, 0, 0, 3, 38
+"c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-start.log", "log", 0, 0, 0, 0, 37, 0, 0, 0, 0, 0, 0, 3, 40
+"c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-platinum-dev.err.log", "log", 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 3, 9
+"c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-platinum-dev.out.log", "log", 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 3, 11
+"c:\Users\sahil\Downloads\am_group_main_dashboard\tsconfig.json", "JSON with Comments", 0, 34, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 35
+"c:\Users\sahil\Downloads\am_group_main_dashboard\validate.ps1", "PowerShell", 0, 0, 30, 0, 0, 0, 0, 0, 0, 0, 5, 7, 42
+"Total", "-", 4154, 34, 30, 9359, 682, 1893, 2780, 5, 11265, 55994, 604, 6739, 93539

@@ -1,6 +1,6 @@
 # Project Context
 
-Last updated: 2026-06-10
+Last updated: 2026-06-03
 
 ## Project Overview
 
@@ -20,15 +20,6 @@ The application is designed for operational users across Admin, CEO, Purchase Ma
   - Redis for server-side dashboard/API caching.
   - Optional PostgreSQL materialized summary view for RO Billing daily aggregates.
 - Storage: Supabase Storage for purchase-order images/PDFs.
-
-## MG Proforma Workbook Alignment
-
-- MG Proforma follows `C:\Users\HP\Downloads\MG PROFORMA (Responses).xlsx`, not the copied KIA Proforma field set. The MG form and management tables must not display `Customer Type`, `Vehicle Status`, or `Loan Amount`; those database columns remain only with safe defaults for backward compatibility.
-- `scripts/import-mg-proforma-xlsx.js` is the MG-specific importer. It dry-runs by default, supports `--file`, `--setup`, `--apply`, and `--replace`, reads `PRICE DETAILS`, `Form Responses 1`, and `MAIL DETAILS`, and must not create auth users.
-- `PRICE DETAILS` maps `MODEL` + `Trim Description` + `Colour` into `mg_price_details`; `Metalic` is normalized to `Metallic`. Pricing lookup uses model + trim first, and only uses price colour to disambiguate multiple rows. Customer-facing vehicle colour remains `mg_proformas.vehicle_color` from old `Form Responses 1.Color` or user input.
-- MG totals use the workbook formula: customer total = ex-showroom + TCS + registration/RTO + insurance + fastag + accessories + warranty. Grand total subtracts cash discount, exchange, booking amount, govt employee discount, and additional discount. Historical `Form Responses 1` imports preserve workbook total/grand total and set `fastag_value = 0` because that sheet has no Fastag column.
-- Historical MG rows preserve dealer location, `CHECKED BY`, `EMAIL SEND STATUS`, and `APPROVAL STATUS` using `location`, `checked_by`, `email_send_status`, and `approval_status`. Customer email is optional; validate it only when a value is entered.
-- Sidebar brand logos use white AM Group assets for AM MG (`https://amgroupind.com/wp-content/uploads/2024/10/mg-am-1.png`) and AM Hyundai/AM Platinum (`https://amgroupind.com/wp-content/uploads/2024/10/hyundai.png`). Keep their logo chip dark or transparent enough that white logo art stays visible.
 
 ## Business Excellence Date & Comparison Rules
 
@@ -713,6 +704,20 @@ Finance Order bank options come from `FINANCE_BANK_OPTIONS` in `lib/dashboard-co
 - Dashboard theme selector includes `Executive Navy`, a premium dark-navy palette centered on `#031430` with coordinated navy hover, soft card, border, support, and chart colors.
 
 ## Features In Progress
+
+### Platinum Business Excellence audit - 11 Jun 2026
+
+- `proxy.ts` excludes `/api` because every protected API route already performs route-level authorization. Proxy uses `getClaims()` only as a fast check and falls back to auth-cookie presence, never a network-backed `getUser()` refresh; definitive checks stay in the page/API data-access guards. This matters when a workstation clock is ahead of Supabase and a valid JWT looks locally expired. Route auth uses a hashed-cookie cached and in-flight-deduped `getUser()` fallback. Browser timer-driven auto-refresh is disabled; the fetch wrapper performs one shared `refreshSession()` only after a real API 401 and retries once, preventing section navigation from producing refresh races or `over_request_rate_limit`.
+- Platinum Rajouri's canonical dealer code is `N6250`. Historical source rows can still contain `N6824` in raw dealer fields, but Business Excellence filters and selectors must use `source_dealer_code = N6250`. The shared Platinum dealer registry now exposes `N6250`.
+- Platinum source-only tables normalize the legacy `source_dealer_code = ACTIVE` marker to Jammu `N5211`; current canonical codes `N5211`, `N6250`, and `N6828` pass through unchanged. SOT, complaints, EW, operation/VAS, coverage, overview, Workshop, and freshness must use the shared Platinum source-dealer SQL helper.
+- MCP is intentionally not part of AM Platinum Business Excellence. Platinum APIs and UI must not query `am_platinum_mcp_report` or expose MCP cards, comparison metrics, chart slices, freshness sources, warnings, or Workshop table columns.
+- Platinum VAS uses `am_platinum_operation_wise_analysis_report.report_period_start/report_period_end` and dedupes by latest `row_hash`. It prefers the latest period ending on or before the requested end; if no partial period exists, it returns the smallest period containing the requested end. For 01-11 Jun 2026 CY resolves to 01-10 Jun 2026 at Rs 368,062.43 and LY resolves to the available 01-30 Jun 2025 snapshot at Rs 4,296. Because those source periods differ, the UI shows the LY value with `period_mismatch` and suppresses the growth percentage instead of saying "No comparable LY" or presenting a false like-for-like rate.
+- Platinum RO Billing dedupe identity is `(canonical dealer code, trimmed bill_no/r_o_no)`, never bill number alone. Bill numbers are reused across branches, so all-location reporting must include dealer code in every dedupe partition. Revenue is the labour-plus-parts amount from one ranked source row per job card, ordered by largest absolute combined value and then latest bill/upload row. Overview, daily/fiscal trends, work-type tables, Workshop Performance, Performance Intelligence, cancelled details, Open RO, and the shared audit use the normalized identity.
+- Live 01-11 Jun 2026 RO Billing validation after canonical dedupe: Jammu `N5211` 228 JC / Rs 1,850,680.48; Rajouri `N6250` 139 JC / Rs 890,636.77; Poonch `N6828` 63 JC / Rs 270,544.30; all locations 430 JC / Rs 3,011,861.55.
+- Protected production-build validation for 01-11 Jun 2026 returned Overview 430 JC / Rs 1,522,014.33 labour / Rs 1,489,847.22 parts / Rs 3,011,861.55 revenue; Workshop returned the same totals, 3 management rows, 9 daily points, 13 advisors, and no source warnings. Overview secondary returned 9 revenue-trend points, 5 service-mix groups, and 8 advisor groups. RO Billing table batch mode returned all five metric families with 7 work-type rows.
+- The >500% example is Jammu revenue growth and is not a formula error after canonical dedupe: 01-11 Jun 2026 is Rs 1,850,680.48 versus Rs 292,349.77 for 01-11 Jun 2025, about +533%. All-location comparison is 430 JC / Rs 3,011,861.55 versus 189 JC / Rs 907,422.81. The unusually high branch percentage is a low-base data result and must not be clamped.
+- Live Platinum schema contains 10 `am_platinum_%` tables: adv-wise lubricants/VAS, call-center complaints, demo cars, EW, operation-wise analysis, PSF, repair orders, RO billing, service appointments, and trust package. `am_platinum_rsa_report`, `am_platinum_operation_wise_analysis_advisor_report`, and `am_platinum_workshop_performance_jc_summary_v1` are not currently present; their metrics must remain unavailable rather than fabricated.
+- Cache namespaces after this audit: Platinum Overview `v37`, RO Billing `v28` with base rows `v9`, Workshop Performance `v39`, SOT `v5`, Complaints `v7`, Open RO `v13`, and Performance Intelligence `v12`.
 
 - Continued API speed tuning for RO Billing, Performance Intelligence, Open RO, KIA Complaints, and the overview API.
 - Ensuring every Business Excellence chart/table uses server-ready payloads and does not trigger duplicated calls.

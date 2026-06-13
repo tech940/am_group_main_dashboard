@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { permissionAuditLogs, permissionGroups, permissions, rolePermissions, userPermissions, users } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
+import { isSuperAdminRole } from '@/lib/auth/roles'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { getCachedData, invalidateCache } from '@/lib/redis/cache-utils'
 import {
@@ -30,7 +31,7 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-const PERMISSION_CACHE_VERSION = 'v2'
+const PERMISSION_CACHE_VERSION = 'v3'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 export function isMissingPermissionTableError(error: unknown) {
@@ -53,24 +54,64 @@ function getBranchPermissionPrefixes(branchAccess: string | null | undefined) {
     : []
 }
 
-function applyBranchViewDefaults(roleDefaults: Record<string, boolean>, branchAccess: string | null | undefined) {
+function applyBranchRoleDefaults(
+  roleDefaults: Record<string, boolean>,
+  role: PermissionRole,
+  branchAccess: string | null | undefined
+) {
   const prefixes = getBranchPermissionPrefixes(branchAccess)
   if (prefixes.length === 0) return
+  const availableKeys = new Set(PERMISSIONS.map((permission) => permission.key))
+
+  if (role === 'manager' || role === 'technician' || role === 'viewer') {
+    const kiaTemplateKeys = ROLE_PERMISSION_TEMPLATES[role].filter((key) =>
+      key === 'kia.view' || key.startsWith('kia.')
+    )
+    for (const prefix of prefixes) {
+      for (const key of kiaTemplateKeys) {
+        const mappedKey = `${prefix}${key.slice('kia'.length)}`
+        if (availableKeys.has(mappedKey)) roleDefaults[mappedKey] = true
+      }
+    }
+  }
 
   for (const permission of PERMISSIONS) {
-    if (
-      permission.action === 'view'
-      && prefixes.some((prefix) => permission.groupKey === prefix || permission.groupKey.startsWith(`${prefix}.`))
-    ) {
+    const isInBranch = prefixes.some((prefix) =>
+      permission.groupKey === prefix || permission.groupKey.startsWith(`${prefix}.`)
+    )
+    if (!isInBranch) continue
+
+    if (role === 'branch_admin') {
       roleDefaults[permission.key] = true
     }
   }
 }
 
+function constrainSnapshotToBranch(
+  values: Record<string, boolean>,
+  role: PermissionRole,
+  branchAccess: string | null | undefined
+) {
+  if (isSuperAdminRole(role) || hasAllBranchAccess(branchAccess)) return
+  const prefixes = getBranchPermissionPrefixes(branchAccess)
+
+  for (const permission of PERMISSIONS) {
+    const belongsToKnownBranch = BRANCH_PERMISSION_PREFIXES.some((prefix) =>
+      permission.groupKey === prefix || permission.groupKey.startsWith(`${prefix}.`)
+    )
+    if (!belongsToKnownBranch) continue
+    const isAssignedBranch = prefixes.some((prefix) =>
+      permission.groupKey === prefix || permission.groupKey.startsWith(`${prefix}.`)
+    )
+    if (!isAssignedBranch) values[permission.key] = false
+  }
+}
+
 function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string | null): PermissionSnapshot {
-  const roleKeys = new Set(role === 'admin' ? PERMISSIONS.map((permission) => permission.key) : (ROLE_PERMISSION_TEMPLATES[role] || []))
+  const roleKeys = new Set(isSuperAdminRole(role) ? PERMISSIONS.map((permission) => permission.key) : (ROLE_PERMISSION_TEMPLATES[role] || []))
   const roleDefaults = Object.fromEntries(PERMISSIONS.map((permission) => [permission.key, roleKeys.has(permission.key)]))
-  applyBranchViewDefaults(roleDefaults, branchAccess)
+  applyBranchRoleDefaults(roleDefaults, role, branchAccess)
+  constrainSnapshotToBranch(roleDefaults, role, branchAccess)
   return {
     effective: { ...roleDefaults },
     roleDefaults,
@@ -279,7 +320,8 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
     if (key) roleDefaults[key] = row.allowed
   }
 
-  applyBranchViewDefaults(roleDefaults, targetUser.brand)
+  applyBranchRoleDefaults(roleDefaults, targetUser.role, targetUser.brand)
+  constrainSnapshotToBranch(roleDefaults, targetUser.role, targetUser.brand)
 
   const overrides: Record<string, boolean> = {}
   for (const row of overrideRows) {
@@ -288,7 +330,8 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
   }
 
   const effective = { ...roleDefaults, ...overrides }
-  if (targetUser.role === 'admin') {
+  constrainSnapshotToBranch(effective, targetUser.role, targetUser.brand)
+  if (isSuperAdminRole(targetUser.role)) {
     for (const key of Object.keys(effective)) effective[key] = true
   }
 
@@ -305,7 +348,7 @@ export async function getUserPermissionSnapshot(userId: string) {
 
 export async function canUserAccessPermission(appUser: AppUser | null, permissionKey: string): Promise<boolean> {
   if (!appUser || !appUser.isActive) return false
-  if (appUser.role === 'admin') return true
+  if (isSuperAdminRole(appUser.role)) return true
 
   const snapshot = await getUserPermissionSnapshot(appUser.id)
   return snapshot.effective[permissionKey] === true

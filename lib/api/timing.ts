@@ -12,7 +12,12 @@ type SqlTimingEntry = {
   ok: boolean
 }
 
-const sqlTimingStorage = new AsyncLocalStorage<{ entries: SqlTimingEntry[] }>()
+type ApiTimingContext = {
+  entries: SqlTimingEntry[]
+  cacheStatus: string | null
+}
+
+const sqlTimingStorage = new AsyncLocalStorage<ApiTimingContext>()
 
 export function recordSqlTiming(entry: SqlTimingEntry) {
   sqlTimingStorage.getStore()?.entries.push(entry)
@@ -20,6 +25,11 @@ export function recordSqlTiming(entry: SqlTimingEntry) {
 
 export function getSqlTimingEntries() {
   return sqlTimingStorage.getStore()?.entries || []
+}
+
+export function recordCacheStatus(status: string) {
+  const store = sqlTimingStorage.getStore()
+  if (store) store.cacheStatus = status
 }
 
 function formatSqlTimingHeader(entries: SqlTimingEntry[]) {
@@ -37,7 +47,7 @@ function formatSqlTimingHeader(entries: SqlTimingEntry[]) {
 }
 
 export function createApiTimer(label: string) {
-  sqlTimingStorage.enterWith({ entries: [] })
+  sqlTimingStorage.enterWith({ entries: [], cacheStatus: null })
   const startedAt = performance.now()
   const entries: TimingEntry[] = []
 
@@ -70,6 +80,7 @@ export function createApiTimer(label: string) {
     return {
       totalMs,
       sqlTimings: sqlEntries,
+      cacheStatus: sqlTimingStorage.getStore()?.cacheStatus || 'BYPASS',
       sqlTimingHeader: formatSqlTimingHeader(sqlEntries),
       serverTiming: [
         `total;dur=${Math.round(totalMs)}`,
@@ -84,9 +95,28 @@ export function createApiTimer(label: string) {
 
 export function withServerTiming<T extends Response>(response: T, serverTiming: string) {
   response.headers.set('Server-Timing', serverTiming)
-  const sqlTimingHeader = formatSqlTimingHeader(getSqlTimingEntries())
+  const sqlEntries = getSqlTimingEntries()
+  const sqlTimingHeader = formatSqlTimingHeader(sqlEntries)
   if (sqlTimingHeader) {
     response.headers.set('X-SQL-Timings', sqlTimingHeader)
+  }
+  response.headers.set('X-SQL-Query-Count', String(sqlEntries.length))
+  response.headers.set('X-Cache-Status', sqlTimingStorage.getStore()?.cacheStatus || 'BYPASS')
+  return response
+}
+
+export function withApiDiagnostics<T extends Response>(
+  response: T,
+  serverTiming: string,
+  payload?: unknown
+) {
+  withServerTiming(response, serverTiming)
+  if (payload !== undefined) {
+    try {
+      response.headers.set('X-Response-Bytes', String(Buffer.byteLength(JSON.stringify(payload))))
+    } catch {
+      response.headers.set('X-Response-Bytes', 'unknown')
+    }
   }
   return response
 }

@@ -5,14 +5,14 @@ import { db } from '@/lib/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
-import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumOpenRoCoverage } from '@/lib/platinum/business-excellence-coverage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
+const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 
 type NumericRow = Record<string, unknown>
 
@@ -28,6 +28,8 @@ type OpenRoFilters = {
   comparisonStartDate: string | null
   comparisonEndDate: string | null
   dealerCode: string | null
+  page: number
+  pageSize: number
 }
 
 type OpenRoChunk = 'summary' | 'details' | 'full'
@@ -41,12 +43,21 @@ function openRoDealerFilter(filters: OpenRoFilters) {
   ) = ${filters.dealerCode}`
 }
 
+function openRoDealerKeySql() {
+  return sql`COALESCE(
+    NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+    NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), ''),
+    'UNMAPPED'
+  )`
+}
+
 function openRoBaseSql(filters: OpenRoFilters) {
   return sql`
     WITH active AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
+      SELECT DISTINCT ON (${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text))
         id,
-        COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
+        ${openRoDealerKeySql()} AS dealer_key,
+        COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text) AS ro_key,
         r_o_no,
         r_o_date::date AS ro_date,
         reg_no,
@@ -80,7 +91,7 @@ function openRoBaseSql(filters: OpenRoFilters) {
         AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
         AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}
-      ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+      ORDER BY ${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
       SELECT
@@ -193,7 +204,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `platinum:business-excellence:open-ro:v12:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:open-ro:v14:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -350,11 +361,13 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       SELECT *
       FROM filtered
       ORDER BY aging_days DESC, promise_date ASC NULLS LAST, service_category ASC
-      LIMIT 1000
+      LIMIT ${filters.pageSize}
+      OFFSET ${(filters.page - 1) * filters.pageSize}
     `) : Promise.resolve([]),
     includeSummary ? db.execute(sql`
       WITH active AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
+        SELECT DISTINCT ON (${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text))
+        ${openRoDealerKeySql()} AS dealer_key,
         svc_adv AS service_adv,
         work_type,
         work_type AS service_type,
@@ -365,7 +378,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
           AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
           AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
           ${openRoDealerFilter(filters)}
-        ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+        ORDER BY ${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
         SELECT
@@ -484,7 +497,11 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
     },
     meta: {
       rowCount: details.length,
-      detailLimit: 1000,
+      page: filters.page,
+      pageSize: filters.pageSize,
+      totalRows: numberValue(kpis.total_open_ro),
+      totalPages: Math.max(1, Math.ceil(numberValue(kpis.total_open_ro) / filters.pageSize)),
+      detailLimit: filters.pageSize,
       chunk,
       dateRange: { startDate: filters.startDate, endDate: filters.endDate },
       dealerCode: filters.dealerCode,
@@ -534,6 +551,8 @@ export async function GET(request: Request) {
     comparisonStartDate,
     comparisonEndDate,
     dealerCode: normalizePlatinumDealerCode(searchParams.get('dealer_code')) || null,
+    page: Math.max(1, Number(searchParams.get('page')) || 1),
+    pageSize: Math.min(100, Math.max(1, Number(searchParams.get('pageSize')) || 100)),
   }
 
   try {
@@ -542,7 +561,8 @@ export async function GET(request: Request) {
       : getCachedData(cacheKey(filters, chunk), () => buildOpenRoPayload(filters, chunk), CACHE_TTL_SECONDS))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(data), timing.serverTiming)
+    const responseData = { ...data, lastUpdatedAt: new Date().toISOString() }
+    return withApiDiagnostics(NextResponse.json(responseData), timing.serverTiming, responseData)
   } catch (error) {
     timer.finish()
     console.error('Failed to build Open RO dashboard:', error)

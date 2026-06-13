@@ -847,7 +847,7 @@ function FinanceFormDialog({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [duplicates, setDuplicates] = useState<DuplicateRow[]>([])
   const [duplicateLoading, setDuplicateLoading] = useState(false)
-  const isAdmin = currentUser.role === 'admin'
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'super_admin'
 
   useEffect(() => {
     if (!open) return

@@ -3,13 +3,12 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser, type AppUser } from '@/lib/auth/app-user'
 import { hasAllBranchAccess, isBranchValue, type BranchValue } from '@/lib/branches'
-
-const CROSS_BRAND_ACCESS_ROLES = new Set<AppUser['role']>(['admin', 'ceo', 'md'])
+import { isSuperAdminRole } from '@/lib/auth/roles'
 
 export function canAccessBrand(appUser: AppUser | null, brand: BranchValue) {
   if (!appUser) return false
-  if (CROSS_BRAND_ACCESS_ROLES.has(appUser.role)) return true
-  if (appUser.brand && hasAllBranchAccess(appUser.brand)) return true
+  if (isSuperAdminRole(appUser.role)) return true
+  if (hasAllBranchAccess(appUser.brand)) return true
   return appUser.brand === brand
 }
 

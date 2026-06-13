@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
+export const roleEnum = pgEnum('role', ['admin', 'super_admin', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -24,11 +24,30 @@ export const users = pgTable('users', {
   department: text('department'),
   phoneNumber: text('phone_number'),
   avatarUrl: text('avatar_url'),
+  createdBy: uuid('created_by'),
+  updatedBy: uuid('updated_by'),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
+
+export const adminAuditLogs = pgTable('admin_audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  actorUserId: uuid('actor_user_id').references(() => users.id),
+  targetUserId: uuid('target_user_id').references(() => users.id),
+  action: text('action').notNull(),
+  branch: text('branch'),
+  beforeValue: jsonb('before_value'),
+  afterValue: jsonb('after_value'),
+  reason: text('reason'),
+  requestMetadata: jsonb('request_metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  adminAuditActorIdx: index('admin_audit_logs_actor_idx').on(table.actorUserId, table.createdAt),
+  adminAuditTargetIdx: index('admin_audit_logs_target_idx').on(table.targetUserId, table.createdAt),
+  adminAuditBranchIdx: index('admin_audit_logs_branch_idx').on(table.branch, table.createdAt),
+}))
 
 // Permission groups table
 export const permissionGroups = pgTable('permission_groups', {
@@ -548,6 +567,49 @@ export const demoVehicleRemarks = pgTable('demo_vehicle_remarks', {
   demoVehicleRemarksCreatedByIdx: index('demo_vehicle_remarks_created_by_idx').on(table.createdBy),
 }))
 
+export const hyundaiWarrantyClaimActions = pgTable('hyundai_warranty_claim_actions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sourceType: text('source_type').notNull(),
+  recordKey: text('record_key').notNull(),
+  requirementCode: text('requirement_code').notNull(),
+  statusSnapshot: text('status_snapshot'),
+  businessDateSnapshot: date('business_date_snapshot'),
+  remark: text('remark').notNull(),
+  docketNumber: text('docket_number'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdByEmail: text('created_by_email').notNull(),
+  createdByRole: text('created_by_role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  warrantyClaimActionsRecordIdx: index('hyundai_warranty_claim_actions_record_idx').on(table.sourceType, table.recordKey, table.createdAt),
+  warrantyClaimActionsRequirementIdx: index('hyundai_warranty_claim_actions_requirement_idx').on(table.sourceType, table.recordKey, table.requirementCode, table.statusSnapshot),
+  warrantyClaimActionsActorIdx: index('hyundai_warranty_claim_actions_actor_idx').on(table.createdBy, table.createdAt),
+}))
+
+export const hyundaiWarrantyClaimEvidence = pgTable('hyundai_warranty_claim_evidence', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  actionId: uuid('action_id').references(() => hyundaiWarrantyClaimActions.id, { onDelete: 'cascade' }).notNull(),
+  storagePath: text('storage_path').notNull(),
+  originalName: text('original_name').notNull(),
+  contentType: text('content_type').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  uploadedBy: uuid('uploaded_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  warrantyClaimEvidenceActionIdx: index('hyundai_warranty_claim_evidence_action_idx').on(table.actionId, table.createdAt),
+}))
+
+export const hyundaiWarrantyDealerMappings = pgTable('hyundai_warranty_dealer_mappings', {
+  dealerCode: text('dealer_code').primaryKey(),
+  dealerName: text('dealer_name').notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  warrantyDealerMappingsNameIdx: index('hyundai_warranty_dealer_mappings_name_idx').on(table.dealerName),
+}))
+
 export const kiaUserProfiles = pgTable('kia_user_profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
   authUserId: uuid('auth_user_id').references(() => users.id, { onDelete: 'cascade' }),
@@ -662,125 +724,6 @@ export const kiaProformas = pgTable('kia_proformas', {
   kiaProformasApprovalIdx: index('kia_proformas_approval_status_idx').on(table.approvalStatus),
   kiaProformasFinanceStatusIdx: index('kia_proformas_finance_status_idx').on(table.financeStatus),
   kiaProformasCustomerIdx: index('kia_proformas_customer_idx').on(table.customerName, table.mobileNumber),
-}))
-
-export const mgUserProfiles = pgTable('mg_user_profiles', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  authUserId: uuid('auth_user_id').references(() => users.id, { onDelete: 'cascade' }),
-  email: text('email').unique().notNull(),
-  consultantName: text('consultant_name').notNull(),
-  dealerLocation: text('dealer_location'),
-  employeeCode: text('employee_code'),
-  status: text('status').default('NEW USER').notNull(),
-  approver: boolean('approver').default(false).notNull(),
-  settings: jsonb('settings').$type<Record<string, unknown>>().default({}).notNull(),
-  lastActivityAt: timestamp('last_activity_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => ({
-  mgUserProfilesEmailIdx: uniqueIndex('mg_user_profiles_email_idx').on(table.email),
-  mgUserProfilesAuthUserIdx: index('mg_user_profiles_auth_user_idx').on(table.authUserId),
-  mgUserProfilesApproverIdx: index('mg_user_profiles_approver_idx').on(table.approver),
-  mgUserProfilesStatusIdx: index('mg_user_profiles_status_idx').on(table.status),
-}))
-
-export const mgPriceDetails = pgTable('mg_price_details', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  model: text('model').notNull(),
-  trimDescription: text('trim_description').notNull(),
-  colour: text('colour'),
-  hyp: text('hyp'),
-  bankName: text('bank_name'),
-  bankBranch: text('bank_branch'),
-  exShowroomPrice: decimal('ex_showroom_price', { precision: 14, scale: 2 }).default('0').notNull(),
-  tcs: decimal('tcs', { precision: 14, scale: 2 }).default('0').notNull(),
-  registrationCharges: decimal('registration_charges', { precision: 14, scale: 2 }).default('0').notNull(),
-  statutoryCharges: decimal('statutory_charges', { precision: 14, scale: 2 }).default('0').notNull(),
-  insurance: decimal('insurance', { precision: 14, scale: 2 }).default('0').notNull(),
-  fastag: decimal('fastag', { precision: 14, scale: 2 }).default('0').notNull(),
-  accessoriesKit: decimal('accessories_kit', { precision: 14, scale: 2 }).default('0').notNull(),
-  extendedWarranty4thYear: decimal('extended_warranty_4th_year', { precision: 14, scale: 2 }).default('0').notNull(),
-  insuranceCompany: text('insurance_company'),
-  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => ({
-  mgPriceDetailsModelTrimIdx: index('mg_price_details_model_trim_idx').on(table.model, table.trimDescription, table.colour),
-  mgPriceDetailsBankIdx: index('mg_price_details_bank_idx').on(table.bankName, table.bankBranch),
-  mgPriceDetailsInsuranceIdx: index('mg_price_details_insurance_idx').on(table.insuranceCompany),
-}))
-
-export const mgProformaLookupOptions = pgTable('mg_proforma_lookup_options', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  category: text('category').notNull(),
-  value: text('value').notNull(),
-  label: text('label'),
-  sourceSheet: text('source_sheet'),
-  sourceRow: integer('source_row'),
-  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => ({
-  mgProformaLookupOptionsCategoryIdx: index('mg_proforma_lookup_options_category_idx').on(table.category),
-  mgProformaLookupOptionsValueIdx: index('mg_proforma_lookup_options_value_idx').on(table.value),
-}))
-
-export const mgProformas = pgTable('mg_proformas', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  entryTime: timestamp('entry_time', { withTimezone: true }).defaultNow().notNull(),
-  proformaDate: timestamp('proforma_date', { withTimezone: true }).notNull(),
-  customerType: text('customer_type').default('Customer').notNull(),
-  customerName: text('customer_name').notNull(),
-  mobileNumber: text('mobile_number').notNull(),
-  customerAddress: text('customer_address').notNull(),
-  customerEmail: text('customer_email').default('').notNull(),
-  modelName: text('model_name').notNull(),
-  trimDescription: text('trim_description').notNull(),
-  fuelType: text('fuel_type').notNull(),
-  vehicleColor: text('vehicle_color').notNull(),
-  bankName: text('bank_name').notNull(),
-  bankBranch: text('bank_branch'),
-  vehicleStatus: text('vehicle_status').default('UNKNOWN').notNull(),
-  loanAmount: decimal('loan_amount', { precision: 14, scale: 2 }).default('0').notNull(),
-  insuranceCompany: text('insurance_company'),
-  exShowroom: decimal('ex_showroom', { precision: 14, scale: 2 }).default('0').notNull(),
-  tcsValue: decimal('tcs_value', { precision: 14, scale: 2 }).default('0').notNull(),
-  registrationCharges: decimal('registration_charges', { precision: 14, scale: 2 }).default('0').notNull(),
-  insuranceValue: decimal('insurance_value', { precision: 14, scale: 2 }).default('0').notNull(),
-  fastagValue: decimal('fastag_value', { precision: 14, scale: 2 }).default('0').notNull(),
-  accessoriesKit: decimal('accessories_kit', { precision: 14, scale: 2 }).default('0').notNull(),
-  extWarranty: decimal('ext_warranty', { precision: 14, scale: 2 }).default('0').notNull(),
-  cashDiscount: decimal('cash_discount', { precision: 14, scale: 2 }).default('0').notNull(),
-  exchangeValue: decimal('exchange_value', { precision: 14, scale: 2 }).default('0').notNull(),
-  bookingAmount: decimal('booking_amount', { precision: 14, scale: 2 }).default('0').notNull(),
-  govtEmployeeDiscount: decimal('govt_employee_discount', { precision: 14, scale: 2 }).default('0').notNull(),
-  additionalDiscount: decimal('additional_discount', { precision: 14, scale: 2 }).default('0').notNull(),
-  totalCustomerCost: decimal('total_customer_cost', { precision: 14, scale: 2 }).default('0').notNull(),
-  grandTotalCost: decimal('grand_total_cost', { precision: 14, scale: 2 }).default('0').notNull(),
-  loginEmail: text('login_email').notNull(),
-  consultant: text('consultant').notNull(),
-  location: text('location'),
-  empCode: text('emp_code'),
-  approvalStatus: text('approval_status').default('PENDING').notNull(),
-  approvedBy: text('approved_by'),
-  checkedBy: text('checked_by'),
-  emailSendStatus: text('email_send_status'),
-  linkPreview: text('link_preview'),
-  financeStatus: text('finance_status').default('Pending'),
-  financeRemarks: text('finance_remarks'),
-  financeUpdatedTime: timestamp('finance_updated_time', { withTimezone: true }),
-  addDiscApproval: jsonb('add_disc_approval').$type<Record<string, unknown>>().default({}).notNull(),
-  importMetadata: jsonb('import_metadata').$type<Record<string, unknown>>().default({}).notNull(),
-  createdBy: uuid('created_by').references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
-}, (table) => ({
-  mgProformasLoginEmailIdx: index('mg_proformas_login_email_idx').on(table.loginEmail),
-  mgProformasProformaDateIdx: index('mg_proformas_proforma_date_idx').on(table.proformaDate),
-  mgProformasApprovalIdx: index('mg_proformas_approval_status_idx').on(table.approvalStatus),
-  mgProformasFinanceStatusIdx: index('mg_proformas_finance_status_idx').on(table.financeStatus),
-  mgProformasCustomerIdx: index('mg_proformas_customer_idx').on(table.customerName, table.mobileNumber),
 }))
 
 // User Preferences table

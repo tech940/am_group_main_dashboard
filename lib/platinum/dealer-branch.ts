@@ -1,6 +1,6 @@
 export const PLATINUM_BRANCH_DEALERS = [
   { label: 'Platinum Jammu', dealerCode: 'N5211' },
-  { label: 'Platinum Rajouri', dealerCode: 'N6824' },
+  { label: 'Platinum Rajouri', dealerCode: 'N6250' },
   { label: 'Platinum Poonch', dealerCode: 'N6828' },
 ] as const
 

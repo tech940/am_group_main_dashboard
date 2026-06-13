@@ -1,6 +1,8 @@
 import 'server-only'
 
+import { createHash } from 'node:crypto'
 import { and, eq, isNull } from 'drizzle-orm'
+import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { createClient } from '@/lib/supabase/server'
@@ -17,8 +19,24 @@ export type AppUser = {
 }
 
 const APP_USER_CACHE_TTL_MS = 60_000
+const AUTH_USER_CACHE_TTL_MS = 30_000
 const appUserCache = new Map<string, { expiresAt: number; user: AppUser | null }>()
 const appUserLookupPromises = new Map<string, Promise<AppUser | null>>()
+const authUserCache = new Map<string, { expiresAt: number; supabaseId: string | null }>()
+const authUserLookupPromises = new Map<string, Promise<string | null>>()
+
+export function clearAppUserCache(supabaseId?: string | null) {
+  if (supabaseId) {
+    appUserCache.delete(supabaseId)
+    appUserLookupPromises.delete(supabaseId)
+    return
+  }
+
+  appUserCache.clear()
+  appUserLookupPromises.clear()
+  authUserCache.clear()
+  authUserLookupPromises.clear()
+}
 
 function isTransientDbConnectionError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
@@ -63,21 +81,54 @@ async function findAppUserBySupabaseId(supabaseId: string) {
 
 async function getSupabaseUserId() {
   const supabase = await createClient()
-  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims()
-  const claims = claimsData?.claims as { sub?: unknown } | undefined
-  const claimUserId = typeof claims?.sub === 'string' ? claims.sub : null
+  try {
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims()
+    const claims = claimsData?.claims as { sub?: unknown } | undefined
+    const claimUserId = typeof claims?.sub === 'string' ? claims.sub : null
 
-  if (!claimsError && claimUserId) {
-    return claimUserId
+    if (!claimsError && claimUserId) {
+      return claimUserId
+    }
+  } catch {
+    // Expired access tokens can still have a valid refresh token.
   }
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const cookieStore = await cookies()
+  const authCookieValue = cookieStore.getAll()
+    .filter(({ name }) => name.startsWith('sb-') && name.includes('auth-token'))
+    .map(({ name, value }) => `${name}=${value}`)
+    .sort()
+    .join(';')
 
-  if (authError || !user) {
-    return null
+  if (!authCookieValue) return null
+
+  const cacheKey = createHash('sha256').update(authCookieValue).digest('hex')
+  const cached = authUserCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.supabaseId
+
+  const pending = authUserLookupPromises.get(cacheKey)
+  if (pending) return await pending
+
+  const lookup = (async () => {
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      const supabaseId = error || !user ? null : user.id
+      authUserCache.set(cacheKey, {
+        expiresAt: Date.now() + AUTH_USER_CACHE_TTL_MS,
+        supabaseId,
+      })
+      return supabaseId
+    } catch {
+      return null
+    }
+  })()
+
+  authUserLookupPromises.set(cacheKey, lookup)
+  try {
+    return await lookup
+  } finally {
+    authUserLookupPromises.delete(cacheKey)
   }
-
-  return user.id
 }
 
 async function getCachedAppUserBySupabaseId(supabaseId: string) {

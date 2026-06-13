@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { isSuperAdminRole } from '@/lib/auth/roles'
+import { writeAdminAudit } from '@/lib/admin/authorization'
 import { db } from '@/lib/db'
 import { dashboardSettings } from '@/lib/db/schema'
-
-function canAccessAdminPanel(role: string | null | undefined) {
-  return role === 'admin' || role === 'md'
-}
 
 export async function GET() {
   try {
     const appUser = await getAuthenticatedAppUser()
 
-    if (!appUser || !canAccessAdminPanel(appUser.role)) {
+    if (!appUser || !isSuperAdminRole(appUser.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -33,7 +31,7 @@ export async function PUT(request: NextRequest) {
   try {
     const appUser = await getAuthenticatedAppUser()
 
-    if (!appUser || !canAccessAdminPanel(appUser.role)) {
+    if (!appUser || !isSuperAdminRole(appUser.role)) {
       return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 })
     }
 
@@ -43,6 +41,9 @@ export async function PUT(request: NextRequest) {
     if (!newSettings || typeof newSettings !== 'object') {
       return NextResponse.json({ error: 'Invalid settings data' }, { status: 400 })
     }
+
+    const previousRows = await db.select().from(dashboardSettings)
+    const previousSettings = Object.fromEntries(previousRows.map((setting) => [setting.key, setting.value]))
 
     for (const [key, value] of Object.entries(newSettings)) {
       const existing = await db
@@ -69,6 +70,14 @@ export async function PUT(request: NextRequest) {
         })
       }
     }
+
+    await writeAdminAudit({
+      actor: appUser,
+      action: 'settings.updated',
+      before: previousSettings,
+      after: newSettings,
+      request,
+    })
 
     return NextResponse.json({ message: 'Settings updated successfully' })
   } catch (error) {

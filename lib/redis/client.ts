@@ -33,6 +33,7 @@ export const CACHE_KEYS = {
 // Cache TTL (Time To Live) in seconds
 export const CACHE_TTL = {
   SHORT: 5 * 60,        // 5 minutes
+  PLATINUM: 15 * 60,    // 15 minutes
   MEDIUM: 30 * 60,      // 30 minutes
   DASHBOARD: 30 * 60,   // 30 minutes
   LONG: 2 * 60 * 60,    // 2 hours

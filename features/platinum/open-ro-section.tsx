@@ -327,6 +327,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
   const [data, setData] = useState<OpenRoResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
+  const [detailsLoaded, setDetailsLoaded] = useState(false)
   const [filters, setFilters] = useState<OpenRoFilters>(EMPTY_FILTERS)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set())
   const [expandedDelayStatuses, setExpandedDelayStatuses] = useState<Set<string>>(() => new Set())
@@ -342,7 +343,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
     try {
       setIsLoading(true)
       setIsDetailLoading(false)
-      setData(null)
+      setDetailsLoaded(false)
       setSelectedVehicle(null)
       const summaryQueryString = withChunk(queryString, 'summary')
       const result = await queryClient.fetchQuery({
@@ -357,13 +358,25 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
       })
       setData(result)
       setIsLoading(false)
+    } catch (error) {
+      console.error('Failed to load Open RO dashboard:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [queryClient, queryString])
 
+  const fetchOpenRoDetails = useCallback(async () => {
+    if (detailsLoaded || isDetailLoading) return
+    try {
       setIsDetailLoading(true)
       const detailsQueryString = withChunk(queryString, 'details')
+      const params = new URLSearchParams(detailsQueryString)
+      params.set('page', '1')
+      params.set('pageSize', '100')
       const detailsResult = await queryClient.fetchQuery({
-        queryKey: ['business-excellence', 'open-ro', detailsQueryString],
+        queryKey: ['business-excellence', 'open-ro', params.toString()],
         queryFn: async () => {
-          const suffix = detailsQueryString ? `?${detailsQueryString}` : ''
+          const suffix = `?${params.toString()}`
           const response = await fetch(`/api/brands/platinum/business-excellence/open-ro${suffix}`)
           logApiTimings(response, 'open-ro-details')
           return await readPlatinumJson<OpenRoResponse>(response, 'Open RO details')
@@ -383,13 +396,13 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
           rowCount: detailsResult.details?.length ?? current.meta.rowCount,
         },
       } : current)
+      setDetailsLoaded(true)
     } catch (error) {
-      console.error('Failed to load Open RO dashboard:', error)
+      console.error('Failed to load Open RO details:', error)
     } finally {
-      setIsLoading(false)
       setIsDetailLoading(false)
     }
-  }, [queryClient, queryString])
+  }, [detailsLoaded, isDetailLoading, queryClient, queryString])
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -473,6 +486,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
   }
 
   const toggleRow = (serviceType: string) => {
+    if (!detailsLoaded) void fetchOpenRoDetails()
     setExpandedRows((current) => {
       const next = new Set(current)
       if (next.has(serviceType)) {
@@ -485,6 +499,7 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
   }
 
   const toggleDelayStatus = (status: string) => {
+    if (!detailsLoaded) void fetchOpenRoDetails()
     setExpandedDelayStatuses((current) => {
       const next = new Set(current)
       if (next.has(status)) {
@@ -788,7 +803,10 @@ export function OpenRoSection({ dateFilter, dealerCode }: { dateFilter: OpenRoDa
             type="button"
             variant={showCalendarView ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setShowCalendarView((current) => !current)}
+            onClick={() => {
+              if (!showCalendarView) void fetchOpenRoDetails()
+              setShowCalendarView((current) => !current)
+            }}
             className={cn(
               'h-9 rounded-xl px-3 text-xs font-black',
               showCalendarView

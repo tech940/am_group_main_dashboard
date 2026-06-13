@@ -7,10 +7,10 @@ import { purchaseOrders } from '@/lib/db/schema'
 type PurchaseOrderRecord = typeof purchaseOrders.$inferSelect
 type PurchaseOrderRole = AppUser['role']
 
-const CREATOR_ROLES: PurchaseOrderRole[] = ['admin', 'purchase_manager']
-const EA_ROLES: PurchaseOrderRole[] = ['admin', 'ea']
-const MD_ROLES: PurchaseOrderRole[] = ['admin', 'md']
-const ACCOUNTS_ROLES: PurchaseOrderRole[] = ['admin', 'accounts']
+const CREATOR_ROLES: PurchaseOrderRole[] = ['admin', 'super_admin', 'purchase_manager']
+const EA_ROLES: PurchaseOrderRole[] = ['admin', 'super_admin', 'ea']
+const MD_ROLES: PurchaseOrderRole[] = ['admin', 'super_admin', 'md']
+const ACCOUNTS_ROLES: PurchaseOrderRole[] = ['admin', 'super_admin', 'accounts']
 
 export const PURCHASE_ORDER_STATUSES = [
   'submitted',
@@ -48,7 +48,7 @@ export function isPurchaseOrderStage(value: string): value is typeof PURCHASE_OR
 }
 
 export function canCreatePurchaseOrders(role: PurchaseOrderRole | null | undefined) {
-  return role === 'admin' || role === 'purchase_manager'
+  return role === 'admin' || role === 'super_admin' || role === 'purchase_manager'
 }
 
 export function canViewPurchaseOrderTable(role: PurchaseOrderRole | null | undefined) {
@@ -56,23 +56,23 @@ export function canViewPurchaseOrderTable(role: PurchaseOrderRole | null | undef
 }
 
 export function canSubmitVendorInformation(role: PurchaseOrderRole | null | undefined) {
-  return role === 'admin' || role === 'purchase_manager'
+  return role === 'admin' || role === 'super_admin' || role === 'purchase_manager'
 }
 
 export function canApproveEa(role: PurchaseOrderRole | null | undefined) {
-  return role === 'admin' || role === 'ea'
+  return role === 'admin' || role === 'super_admin' || role === 'ea'
 }
 
 export function canApproveMd(role: PurchaseOrderRole | null | undefined) {
-  return role === 'admin' || role === 'md'
+  return role === 'admin' || role === 'super_admin' || role === 'md'
 }
 
 export function canSubmitGrn(role: PurchaseOrderRole | null | undefined) {
-  return role === 'admin' || role === 'purchase_manager'
+  return role === 'admin' || role === 'super_admin' || role === 'purchase_manager'
 }
 
 export function canProcessAccounts(role: PurchaseOrderRole | null | undefined) {
-  return role === 'admin' || role === 'accounts'
+  return role === 'admin' || role === 'super_admin' || role === 'accounts'
 }
 
 export function canManagePurchaseOrderUploads(role: PurchaseOrderRole | null | undefined, folder: string) {
@@ -81,9 +81,9 @@ export function canManagePurchaseOrderUploads(role: PurchaseOrderRole | null | u
     case 'vendor-images':
     case 'bill-images':
     case 'grn-images':
-      return role === 'admin' || role === 'purchase_manager'
+      return role === 'admin' || role === 'super_admin' || role === 'purchase_manager'
     case 'accounts-images':
-      return role === 'admin' || role === 'accounts'
+      return role === 'admin' || role === 'super_admin' || role === 'accounts'
     default:
       return false
   }
@@ -101,11 +101,13 @@ export function getPurchaseOrderListVisibilityFilter(appUser: AppUser): SQL<unkn
 
   switch (appUser.role) {
     case 'admin':
-    case 'purchase_manager':
+    case 'super_admin':
       return and(...baseFilters)!
+    case 'purchase_manager':
     case 'md':
       return and(
-        ...baseFilters
+        ...baseFilters,
+        ...(branchFilter ? [branchFilter] : [])
       )!
     case 'ea':
       return and(
@@ -137,7 +139,7 @@ export function getPurchaseOrderListVisibilityFilter(appUser: AppUser): SQL<unkn
 export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrderRecord,
   'brand' | 'createdBy' | 'assignedTo' | 'requestedBy' | 'status' | 'eaApprovedBy'
 >) {
-  if (appUser.role === 'admin' || appUser.role === 'purchase_manager') {
+  if (appUser.role === 'admin' || appUser.role === 'super_admin') {
     return true
   }
 
@@ -149,7 +151,8 @@ export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrder
 
     switch (appUser.role) {
     case 'md':
-      return true
+    case 'purchase_manager':
+      return branchMatches
     case 'ea':
       return branchMatches
     case 'accounts':
@@ -162,7 +165,7 @@ export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrder
 }
 
 export function canMutatePurchaseOrderStage(appUser: AppUser, stage: string) {
-  if (appUser.role === 'admin') {
+  if (appUser.role === 'admin' || appUser.role === 'super_admin') {
     return true
   }
 
@@ -188,6 +191,8 @@ export function getPurchaseOrderRoleLabel(role: PurchaseOrderRole | null | undef
   switch (role) {
     case 'admin':
       return 'Admin'
+    case 'super_admin':
+      return 'Super Admin'
     case 'purchase_manager':
       return 'Purchase Manager'
     case 'ea':

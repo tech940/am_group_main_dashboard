@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
@@ -112,7 +112,6 @@ type OverviewData = {
     avgComplaintDays: number
     ewCount: number
     rsaCount: number
-    mcpCount: number
     rsaAmount: number
     delayedRoPct: number
     agedRoPct: number
@@ -137,7 +136,6 @@ type OverviewData = {
     addOnTotal: ComparisonMetric
     ewCount: ComparisonMetric
     rsaCount: ComparisonMetric
-    mcpCount: ComparisonMetric
     workshopRevenue: ComparisonMetric
     workshopTotalJc: ComparisonMetric
     workshopLabourPerRo: ComparisonMetric
@@ -199,7 +197,7 @@ type ComparisonMetric = {
   unavailableReason?: string | null
 }
 
-type ComparisonStatus = 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+type ComparisonStatus = 'available' | 'exact_zero' | 'not_comparable' | 'source_missing' | 'period_mismatch'
 
 type DealerCoverage = {
   dealerCode: string | null
@@ -436,6 +434,7 @@ function comparisonText(metric?: ComparisonMetric | NullableComparisonMetric, fo
   if (!metric) return 'LY loading'
   if (metric.comparisonStatus === 'not_comparable') return metric.comparisonLabel || 'No comparable LY'
   if (metric.comparisonStatus === 'source_missing') return 'Source missing'
+  if (metric.comparisonStatus === 'period_mismatch') return metric.comparisonLabel || 'LY period differs'
   if (metric.ly === null) return metric.comparisonLabel || 'No comparable LY'
   if ('available' in metric && metric.available === false) return metric.unavailableReason ? 'Source missing' : 'No comparable LY'
   return `LY ${formatter(metric.ly)}`
@@ -445,6 +444,7 @@ function deltaText(metric?: ComparisonMetric | NullableComparisonMetric) {
   if (!metric) return 'vs LY'
   if (metric.comparisonStatus === 'not_comparable') return metric.comparisonLabel || 'No comparable LY'
   if (metric.comparisonStatus === 'source_missing') return 'Source missing'
+  if (metric.comparisonStatus === 'period_mismatch') return metric.comparisonLabel || 'LY period differs'
   if (metric.ly === null || metric.deltaPct === null || ('available' in metric && metric.available === false)) return metric.comparisonLabel || 'No comparable LY'
   if (metric.ly <= 0 && metric.cy > 0) return 'New vs LY'
   if (metric.ly <= 0 && metric.cy <= 0) return 'Flat vs LY'
@@ -748,7 +748,8 @@ function buildDetailedRoRows(response: ROAnalysisResponse | undefined) {
 }
 
 function namesMatch(row: ROAnalysisRow, names: string[]) {
-  return names.some((name) => row.name.toLowerCase() === name.toLowerCase())
+  const rowName = row.name.trim().toLowerCase()
+  return names.some((name) => rowName === name.toLowerCase())
 }
 
 function combineAnalysisRows(rows: ROAnalysisRow[]) {
@@ -780,7 +781,7 @@ function buildServiceTypeAmountRows(rows: ROAnalysisRow[] = []): ServiceTypeDisp
   const paidNames = ['Paid Service']
   const freeNames = ['Free Service', 'Free Services', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA-First Free Service', 'TMA-Second Free Service', 'TMA-Third Free Service', 'Sixth Free Service']
   const runningNames = ['Running Repair', 'Running Repairs']
-  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop']
+  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop', 'Body Shop', 'Insurance', 'CRASH', 'Accident Repair', 'Body Repair', 'Paint & Body', 'Paint and Body']
   const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
 
   const paidRows = topRows.filter((row) => namesMatch(row, paidNames))
@@ -1405,6 +1406,8 @@ function preferChartRows<T>(secondaryRows: T[] | undefined, summaryRows: T[] | u
 }
 
 export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFilter: BusinessDateFilter; dealerCode?: string | null }) {
+  const detailedAnalysisRef = useRef<HTMLDivElement | null>(null)
+  const [loadDetailedAnalysis, setLoadDetailedAnalysis] = useState(false)
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
   const [billingTrendMetric, setBillingTrendMetric] = useState<ROAnalysisType>('load')
   const [serviceTypeMetric, setServiceTypeMetric] = useState<ROAnalysisType>('load')
@@ -1429,6 +1432,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
       return await readPlatinumJson<OverviewData>(response, 'Business Excellence overview')
     },
     staleTime: DASHBOARD_STALE_TIME_MS,
+    placeholderData: (previous) => previous,
   })
 
   const { data: secondaryData } = useQuery<OverviewData, Error>({
@@ -1438,8 +1442,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
       logApiTimings(response, 'business-excellence-overview-secondary')
       return await readPlatinumJson<OverviewData>(response, 'Business Excellence overview details')
     },
-    enabled: Boolean(summaryData),
+    enabled: Boolean(summaryData) && loadDetailedAnalysis,
     staleTime: DASHBOARD_STALE_TIME_MS,
+    placeholderData: (previous) => previous,
   })
 
   const { data: roAnalysisTableData, isLoading: isRoAnalysisTableLoading } = useQuery<ROAnalysisResponse, Error>({
@@ -1449,8 +1454,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
       logApiTimings(response, 'overview-ro-billing-analysis-table')
       return await readPlatinumJson<ROAnalysisResponse>(response, 'Overview RO Billing matrix')
     },
-    enabled: Boolean(summaryData),
+    enabled: Boolean(summaryData) && loadDetailedAnalysis,
     staleTime: DASHBOARD_STALE_TIME_MS,
+    placeholderData: (previous) => previous,
   })
 
   const { data: roAnalysisTrendData, isLoading: isRoAnalysisTrendLoading } = useQuery<ROAnalysisResponse, Error>({
@@ -1460,9 +1466,24 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
       logApiTimings(response, 'overview-ro-billing-analysis-trend')
       return await readPlatinumJson<ROAnalysisResponse>(response, 'Overview RO Billing trend')
     },
-    enabled: Boolean(summaryData),
+    enabled: Boolean(summaryData) && loadDetailedAnalysis,
     staleTime: DASHBOARD_STALE_TIME_MS,
+    placeholderData: (previous) => previous,
   })
+
+  useEffect(() => {
+    const target = detailedAnalysisRef.current
+    if (!target || loadDetailedAnalysis) return
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return
+      setLoadDetailedAnalysis(true)
+      observer.disconnect()
+    }, { rootMargin: '500px 0px' })
+
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [loadDetailedAnalysis, summaryData])
 
   const data = useMemo<OverviewData | undefined>(() => {
     if (!summaryData) return undefined
@@ -1646,7 +1667,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     : formatCurrency(data.workshopSnapshot.vasAmount)
   const vasTileMeta = data.workshopSnapshot.vasAvailable === false
     ? 'No KIA-style period source'
-    : 'Value added services'
+    : data.workshopSnapshot.vasPeriodEnd
+      ? `Source through ${formatDisplayDate(data.workshopSnapshot.vasPeriodEnd)}`
+      : 'Value added services'
   const periodLabel = `${formatDisplayDate(range.startDate)} - ${formatDisplayDate(range.endDate)}`
   const lyPeriodLabel = data.comparison
     ? `${formatDisplayDate(data.comparison.lyRange.startDate)} - ${formatDisplayDate(data.comparison.lyRange.endDate)}`
@@ -1666,9 +1689,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   const complaintClosureRate = hasComplaintClosureData ? (data.kpis.complaintsClosed / data.kpis.complaintsTotal) * 100 : null
   const lyComplaintClosed = Math.max(0, (data.comparison?.complaintsTotal.ly || 0) - (data.comparison?.complaintsOpen.ly || 0))
   const lyComplaintClosureRate = (data.comparison?.complaintsTotal.ly || 0) > 0 ? (lyComplaintClosed / (data.comparison?.complaintsTotal.ly || 1)) * 100 : 0
-  const addOnTotal = data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount
+  const addOnTotal = data.kpis.ewCount + data.kpis.rsaCount
   const addOnPer100Jc = data.kpis.addOnPerJc * 100
-  const lyAddOnTotal = data.comparison ? data.comparison.ewCount.ly + data.comparison.rsaCount.ly + data.comparison.mcpCount.ly : 0
+  const lyAddOnTotal = data.comparison ? data.comparison.ewCount.ly + data.comparison.rsaCount.ly : 0
   const lyAddOnPer100Jc = safeDivide(lyAddOnTotal, lyJc) * 100
   const accidentOpenShare = data.kpis.openRo > 0 ? (data.kpis.accidentOpenJobs / data.kpis.openRo) * 100 : 0
   const roBillingRows = [
@@ -1724,11 +1747,11 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     },
     {
       title: 'Add-ons',
-      cy: formatNumber(data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount),
-      ly: data.comparison ? formatNumber(data.comparison.ewCount.ly + data.comparison.rsaCount.ly + data.comparison.mcpCount.ly) : 'Loading',
+      cy: formatNumber(data.kpis.ewCount + data.kpis.rsaCount),
+      ly: data.comparison ? formatNumber(data.comparison.ewCount.ly + data.comparison.rsaCount.ly) : 'Loading',
       growth: data.comparison ? growthFromValues(
-        data.kpis.ewCount + data.kpis.rsaCount + data.kpis.mcpCount,
-        data.comparison.ewCount.ly + data.comparison.rsaCount.ly + data.comparison.mcpCount.ly
+        data.kpis.ewCount + data.kpis.rsaCount,
+        data.comparison.ewCount.ly + data.comparison.rsaCount.ly
       ) : null,
       status: 'TRACK',
     },
@@ -2020,15 +2043,17 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
         </DialogContent>
       </Dialog>
 
-      <RoBillingPerformanceTable rows={roBillingRows} />
+      <div ref={detailedAnalysisRef}>
+        <RoBillingPerformanceTable rows={roBillingRows} />
+      </div>
 
-      {isRoAnalysisTableLoading ? (
+      {!loadDetailedAnalysis || isRoAnalysisTableLoading ? (
         <div className="h-64 animate-pulse rounded-2xl bg-slate-100" />
       ) : (
         <DetailedRoBillingMatrix rows={detailedRoRows} />
       )}
 
-      {isRoAnalysisTableLoading ? (
+      {!loadDetailedAnalysis || isRoAnalysisTableLoading ? (
         <div className="h-80 animate-pulse rounded-2xl bg-slate-100" />
       ) : (
         <ServiceTypeRoBillingTable
@@ -2038,7 +2063,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
         />
       )}
 
-      {isRoAnalysisTrendLoading ? (
+      {!loadDetailedAnalysis || isRoAnalysisTrendLoading ? (
         <div className="h-[460px] animate-pulse rounded-2xl bg-slate-100" />
       ) : (
         <RoBillingOverviewTrend

@@ -731,7 +731,7 @@ function WorkshopTrendValueLabel({
 }
 
 function canAccessExecutiveDashboard(role?: string | null) {
-  return ['admin', 'ceo', 'md'].includes(String(role || '').trim().toLowerCase())
+  return ['admin', 'super_admin', 'ceo', 'md'].includes(String(role || '').trim().toLowerCase())
 }
 
 function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[], role?: string | null) {
@@ -3991,6 +3991,7 @@ function BusinessExecutiveDashboard({
         })),
       }
     },
+    enabled: Boolean(expandedExecutiveTable),
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
 
@@ -4013,6 +4014,8 @@ function BusinessExecutiveDashboard({
   const partsMtd = executivePeriod(partsTotal, 'mtd')
   const revenueMtd = combineExecutiveMetricValues(labourMtd, partsMtd)
 
+  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (item.dealerCode === PLATINUM_ALL_LOCATIONS_CODE && selectedLocation === 'all'))?.label || 'All Locations'
+
   const locationRows = useMemo(() => {
     const buildRow = (label: string, response?: ROAnalysisResponse) => {
       const row = getExecutiveTotalRow(response, 'load')
@@ -4024,11 +4027,16 @@ function BusinessExecutiveDashboard({
         ytd: executivePeriod(row, 'ytd'),
       }
     }
+    if (branchTableQuery.data) {
+      return [
+        ...branchTableQuery.data.branches.map((branch) => buildRow(branch.label, branch.response)),
+        buildRow('Total', branchTableQuery.data.all),
+      ]
+    }
     return [
-      ...(branchTableQuery.data?.branches || []).map((branch) => buildRow(branch.label, branch.response)),
-      buildRow('Total', branchTableQuery.data?.all),
+      buildRow(selectedLocationLabel, selectedTable),
     ]
-  }, [branchTableQuery.data])
+  }, [branchTableQuery.data, selectedLocationLabel, selectedTable])
 
   const serviceTypeRows = useMemo(() => {
     return getExecutiveDisplayMetricRows(selectedTable, activeExecutiveTableMetric)
@@ -4181,9 +4189,10 @@ function BusinessExecutiveDashboard({
     return Array.from(byFy.values()).sort((a, b) => b.fy.localeCompare(a.fy)).slice(0, 4)
   }, [fyQuery.data])
 
-  const isLoading = tableQuery.isLoading || branchTableQuery.isLoading || trendQuery.isLoading || fyQuery.isLoading
-  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (item.dealerCode === PLATINUM_ALL_LOCATIONS_CODE && selectedLocation === 'all'))?.label || 'All Locations'
-
+  const isLoading = tableQuery.isLoading
+    || trendQuery.isLoading
+    || fyQuery.isLoading
+    || (Boolean(expandedExecutiveTable) && branchTableQuery.isLoading)
   return (
     <div className="space-y-4">
 
@@ -4462,7 +4471,7 @@ type WorkshopMetric = {
   ly?: number
   growth?: number | null
   amount?: number
-  comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+  comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing' | 'period_mismatch'
   comparisonLabel?: string | null
 }
 
@@ -4489,7 +4498,6 @@ type WorkshopPerformanceRow = {
   wbPerRoPercent: number
   ewCount: number
   rsaCount: number
-  mcpCount: number
   subRows?: WorkshopPerformanceRow[]
 }
 
@@ -4534,9 +4542,14 @@ type WorkshopPerformanceResponse = {
       sourceRows?: number
       dedupeMode?: string | null
       lyAvailable?: boolean
-      comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing'
+      comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing' | 'period_mismatch'
       comparisonLabel?: string | null
       lyUnavailableReason?: string | null
+      lySource?: string | null
+      lySourceTable?: string | null
+      lyPeriodStart?: string | null
+      lyPeriodEnd?: string | null
+      lySourceRows?: number
     }
   }
 }
@@ -4581,7 +4594,6 @@ function zeroWorkshopRow(serviceType: string): WorkshopPerformanceRow {
     wbPerRoPercent: 0,
     ewCount: 0,
     rsaCount: 0,
-    mcpCount: 0,
   }
 }
 
@@ -4599,7 +4611,6 @@ function aggregateWorkshopRows(serviceType: string, sourceRows: WorkshopPerforma
     acc.wbAmount += Number(row.wbAmount || 0)
     acc.ewCount += Number(row.ewCount || 0)
     acc.rsaCount += Number(row.rsaCount || 0)
-    acc.mcpCount += Number(row.mcpCount || 0)
     return acc
   }, zeroWorkshopRow(serviceType))
 
@@ -4645,7 +4656,7 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
   const paidRows = rows.filter((row) => hasAny(categoryLabel(row), ['paid service', 'service package']) || /(^|\s)(20|30|40|50|60|70|80|90|100|110|120|130|140|150|160|170)k(\s|$)/.test(normalized(categoryLabel(row))))
   const freeRows = rows.filter((row) => hasAny(categoryLabel(row), ['free service', 'free services', 'tma first', 'tma second', 'tma third', 'sixth free']))
   const runningRows = rows.filter((row) => hasAny(categoryLabel(row), ['running repair', 'running repairs']))
-  const accidentRows = rows.filter((row) => hasAny(categoryLabel(row), ['accident', 'accidental repair', 'bodyshop']))
+  const accidentRows = rows.filter((row) => hasAny(categoryLabel(row), ['accident', 'accidental repair', 'bodyshop', 'body shop', 'insurance', 'crash', 'accident repair', 'body repair', 'paint']))
   const assigned = new Set([...paidRows, ...freeRows, ...runningRows, ...accidentRows])
   const otherRows = rows.filter((row) => !assigned.has(row))
 
@@ -4678,7 +4689,6 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
     grandTotal.wbPerRoPercent = grandTotal.totalJc > 0 ? (grandTotal.wbCount / grandTotal.totalJc) * 100 : 0
     grandTotal.ewCount = Number(serverGrandTotal.ewCount || 0)
     grandTotal.rsaCount = Number(serverGrandTotal.rsaCount || 0)
-    grandTotal.mcpCount = Number(serverGrandTotal.mcpCount || 0)
   }
 
   return [paid, free, running, mech, others, mechTotal, accident, grandTotal]
@@ -4715,7 +4725,7 @@ function WorkshopPerformanceSection({
         if (selectedWorkshopAdvisor !== 'all') {
           params.set('advisor', selectedWorkshopAdvisor)
         }
-        params.set('version', 'v17')
+        params.set('version', 'v18')
         const queryString = params.toString()
         const result = await queryClient.fetchQuery({
           queryKey: ['business-excellence', 'workshop-performance', queryString],
@@ -4759,10 +4769,11 @@ function WorkshopPerformanceSection({
 
   const vasUnavailable = data?.meta.vas?.available === false
   const vasSnapshotMeta = vasUnavailable
-    ? 'No KIA-style period source'
-    : data?.meta.vas?.source === 'operation_latest_snapshot'
-      ? `Snapshot as of ${formatCompactBusinessDate(data.meta.vas.periodEnd)} / ${data.meta.vas.comparisonLabel || 'No comparable LY'}`
-      : undefined
+    ? data?.meta.vas?.unavailableReason || 'VAS source unavailable'
+    : data?.meta.vas?.comparisonLabel
+      || (data?.meta.vas?.periodEnd
+        ? `Source period ends ${formatCompactBusinessDate(data.meta.vas.periodEnd)}`
+        : undefined)
 
   const kpiCards = data ? [
     { label: 'Total JC', metric: data.kpis.totalJc, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'teal' },
@@ -4772,7 +4783,7 @@ function WorkshopPerformanceSection({
     { label: 'VAS Revenue', metric: data.kpis.vasAmount, formatter: vasUnavailable ? () => 'Unavailable' : formatCurrency, tone: 'emerald', helper: vasSnapshotMeta },
     { label: 'Labour / RO', metric: data.kpis.labourPerRo, formatter: formatCurrency, tone: 'slate' },
     { label: 'EW Count', metric: data.kpis.ewCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'cyan' },
-    { label: 'MCP Count', metric: data.kpis.mcpCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'rose' },
+    { label: 'RSA Count', metric: data.kpis.rsaCount, formatter: (value: number) => Math.round(value).toLocaleString('en-IN'), tone: 'rose' },
   ] : []
 
   const formatPercent = (value: number) => `${value.toFixed(1)}%`
@@ -4909,7 +4920,6 @@ function WorkshopPerformanceSection({
           'Less VAS',
           'EW Count',
           'RSA Count',
-          'MCP Count',
         ]
 
     return (
@@ -5004,9 +5014,6 @@ function WorkshopPerformanceSection({
                       </td>
                       <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
                         {isGrandTotal ? item.rsaCount.toLocaleString('en-IN') : '-'}
-                      </td>
-                      <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">
-                        {isGrandTotal ? item.mcpCount.toLocaleString('en-IN') : '-'}
                       </td>
                     </>
                   )}
@@ -5580,7 +5587,7 @@ function ServiceTypePerformance({
     const paidNames = ['Paid Service']
     const freeNames = ['Free Service', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA-First Free Service', 'TMA-Second Free Service', 'TMA-Third Free Service', 'Sixth Free Service']
     const runningNames = ['Running Repair', 'Running Repairs']
-    const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop']
+  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop', 'Body Shop', 'Insurance', 'CRASH', 'Accident Repair', 'Body Repair', 'Paint & Body', 'Paint and Body']
     const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
     const paidRows = topRows.filter((row) => nameMatches(row, paidNames))
     const freeRows = topRows.filter((row) => nameMatches(row, freeNames))
@@ -5817,8 +5824,15 @@ function ServiceTypePerformance({
     })
   }, [dateFilter, dealerCode, queryClient])
 
-  const fetchAnalysisBundle = useCallback(async (view: 'trend' | 'fy') => {
-    const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
+  const fetchAnalysisBundle = useCallback(async (view: 'trend' | 'fy', calendarMode = false) => {
+    const selectedRange = getSelectedBusinessDateRange(dateFilter)
+    const calendarStart = new Date(selectedRange.end.getFullYear(), selectedRange.end.getMonth(), 1)
+    const calendarEnd = new Date(selectedRange.end.getFullYear(), selectedRange.end.getMonth() + 1, 0)
+    const range = calendarMode
+      ? { startDate: getInputDate(calendarStart), endDate: getInputDate(calendarEnd) }
+      : view === 'trend'
+        ? getROTrendDateRange(dateFilter)
+        : getDefaultRODateRange(dateFilter)
     const params = new URLSearchParams({
       brand: 'platinum',
       sheet: 'am_platinum_ro_billing_report',
@@ -5830,6 +5844,11 @@ function ServiceTypePerformance({
       endDate: range.endDate,
     })
     appendBusinessComparisonParams(params, dateFilter)
+    if (calendarMode) {
+      params.set('comparisonMode', 'custom')
+      params.set('comparisonStartDate', getInputDate(new Date(calendarStart.getFullYear() - 1, calendarStart.getMonth(), 1)))
+      params.set('comparisonEndDate', getInputDate(new Date(calendarEnd.getFullYear() - 1, calendarEnd.getMonth() + 1, 0)))
+    }
     appendKiaDealerCodeParam(params, dealerCode)
     const queryString = params.toString()
     return queryClient.fetchQuery({
@@ -5850,7 +5869,7 @@ function ServiceTypePerformance({
       try {
         setIsServerViewLoading(true)
         if (viewMode === 'trend' || showRoCalendarDialog) {
-          const result = await fetchAnalysisBundle('trend')
+          const result = await fetchAnalysisBundle('trend', showRoCalendarDialog)
           if (isActive) {
             setServerTrendByMetric((prev) => ({
               ...prev,
@@ -5914,6 +5933,18 @@ function ServiceTypePerformance({
       ? String(billNo).trim()
       : roNo !== null && roNo !== undefined && String(roNo).trim() !== ''
         ? String(roNo).trim()
+        : null
+
+    return primary || `row-${fallbackIndex}`
+  }
+
+  const getUniqueRoKey = (row: Record<string, unknown>, fallbackIndex: number) => {
+    const roNo = getRecordValue(row, 'ro_no', 'RO No')
+    const billNo = getRecordValue(row, 'bill_no', 'Bill No')
+    const primary = roNo !== null && roNo !== undefined && String(roNo).trim() !== ''
+      ? String(roNo).trim()
+      : billNo !== null && billNo !== undefined && String(billNo).trim() !== ''
+        ? String(billNo).trim()
         : null
 
     return primary || `row-${fallbackIndex}`
@@ -6308,43 +6339,44 @@ function ServiceTypePerformance({
 
           if (shouldCount) {
             const billKey = getUniqueBillKey(d, index)
+            const roKey = getUniqueRoKey(d, index)
             // MTD checks
             if (date >= cyMtdStart && date <= cyMtdEnd) {
-              cyMtdKeys.add(billKey)
+              cyMtdKeys.add(roKey)
               addBillAmount(cyMtdAmounts, billKey, metricAmount)
             }
             if (date >= lyMtdStart && date <= lyMtdEnd) {
-              lyMtdKeys.add(billKey)
+              lyMtdKeys.add(roKey)
               addBillAmount(lyMtdAmounts, billKey, metricAmount)
             }
 
             // QTD checks
             if (date >= cyQtdStart && date <= cyQtdEnd) {
-              cyQtdKeys.add(billKey)
+              cyQtdKeys.add(roKey)
               addBillAmount(cyQtdAmounts, billKey, metricAmount)
             }
             if (date >= lyQtdStart && date <= lyQtdEnd) {
-              lyQtdKeys.add(billKey)
+              lyQtdKeys.add(roKey)
               addBillAmount(lyQtdAmounts, billKey, metricAmount)
             }
 
             // YTD checks
             if (date >= cyYtdStart && date <= cyYtdEnd) {
-              cyYtdKeys.add(billKey)
+              cyYtdKeys.add(roKey)
               addBillAmount(cyYtdAmounts, billKey, metricAmount)
             }
             if (date >= lyYtdStart && date <= lyYtdEnd) {
-              lyYtdKeys.add(billKey)
+              lyYtdKeys.add(roKey)
               addBillAmount(lyYtdAmounts, billKey, metricAmount)
             }
 
             // TD checks the selected/current Bill Date only.
             if (date >= cyTdStart && date <= cyTdEnd) {
-              cyTdKeys.add(billKey)
+              cyTdKeys.add(roKey)
               addBillAmount(cyTdAmounts, billKey, metricAmount)
             }
             if (date >= lyTdStart && date <= lyTdEnd) {
-              lyTdKeys.add(billKey)
+              lyTdKeys.add(roKey)
               addBillAmount(lyTdAmounts, billKey, metricAmount)
             }
           }
@@ -6653,11 +6685,12 @@ function ServiceTypePerformance({
 
           if (shouldCount) {
             const billKey = getUniqueBillKey(row, index)
+            const roKey = getUniqueRoKey(row, index)
             if (year === targetYear) {
-              dayData[day].cy.add(billKey)
+              dayData[day].cy.add(roKey)
               addBillAmount(dayData[day].cyAmounts, billKey, metricAmount)
             } else if (year === targetYear - 1) {
-              dayData[day].ly.add(billKey)
+              dayData[day].ly.add(roKey)
               addBillAmount(dayData[day].lyAmounts, billKey, metricAmount)
             }
           }
@@ -6758,7 +6791,7 @@ function ServiceTypePerformance({
       const isPartsAmount = activeTrend === 'Parts Trend'
       const isLabPerVehicle = activeTrend === 'Labour Per Vehicle Trend'
       const isPartPerVehicle = activeTrend === 'Parts Per Vehicle Trend'
-      const billKeys = new Set<string>()
+      const roKeys = new Set<string>()
       const amountBucket = new Map<string, number>()
 
       data.forEach((row, index) => {
@@ -6774,14 +6807,14 @@ function ServiceTypePerformance({
         if (!shouldCount) return
 
         const billKey = getUniqueBillKey(row, index)
-        billKeys.add(billKey)
+        roKeys.add(getUniqueRoKey(row, index))
         addBillAmount(amountBucket, billKey, amount)
       })
 
       const amount = sumBillAmounts(amountBucket)
       if (isLabourAmount || isPartsAmount) return amount
-      if (isLabPerVehicle || isPartPerVehicle) return billKeys.size > 0 ? amount / billKeys.size : 0
-      return billKeys.size
+      if (isLabPerVehicle || isPartPerVehicle) return roKeys.size > 0 ? amount / roKeys.size : 0
+      return roKeys.size
     }
 
     const achTillDate = measureMonth(targetYear, currentDay)
@@ -6914,7 +6947,7 @@ function ServiceTypePerformance({
       }
 
       const billKey = getUniqueBillKey(row, index)
-      fyData[fy].load.add(billKey)
+      fyData[fy].load.add(getUniqueRoKey(row, index))
       addBillAmount(fyData[fy].labour, billKey, parseAmount(getRecordValue(row, 'labour_amt', 'Labour Amt')))
       addBillAmount(fyData[fy].parts, billKey, parseAmount(getRecordValue(row, 'part_amt', 'Part Amt')))
     })
@@ -7113,7 +7146,6 @@ function ServiceTypePerformance({
       load: Set<string>
       labour: Map<string, number>
       parts: Map<string, number>
-      total: Map<string, number>
       ratingTotal: number
       ratingCount: number
       pickDropCount: number
@@ -7124,7 +7156,6 @@ function ServiceTypePerformance({
       load: new Set<string>(),
       labour: new Map<string, number>(),
       parts: new Map<string, number>(),
-      total: new Map<string, number>(),
       ratingTotal: 0,
       ratingCount: 0,
       pickDropCount: 0,
@@ -7148,10 +7179,9 @@ function ServiceTypePerformance({
 
     const addToBucket = (bucket: AggregateBucket, row: Record<string, unknown>, index: number) => {
       const billKey = getUniqueBillKey(row, index)
-      bucket.load.add(billKey)
+      bucket.load.add(getUniqueRoKey(row, index))
       addBillAmount(bucket.labour, billKey, parseAmount(getRecordValue(row, 'labour_amt', 'Labour Amt')))
       addBillAmount(bucket.parts, billKey, parseAmount(getRecordValue(row, 'part_amt', 'Part Amt')))
-      addBillAmount(bucket.total, billKey, parseAmount(getRecordValue(row, 'total_amt', 'Total Amt')))
       const rating = parseAmount(getRecordValue(row, 'avg_rating', 'Avg Rating'))
       if (rating > 0) {
         bucket.ratingTotal += rating
@@ -7192,8 +7222,7 @@ function ServiceTypePerformance({
       const load = bucket.load.size
       const labour = sumBillAmounts(bucket.labour)
       const parts = sumBillAmounts(bucket.parts)
-      const total = sumBillAmounts(bucket.total)
-      const revenue = total > 0 ? total : labour + parts
+      const revenue = labour + parts
       return {
         load,
         labour,

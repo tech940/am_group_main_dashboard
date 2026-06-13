@@ -8,7 +8,7 @@ import { canUserAccessPermission } from '@/lib/permissions/service'
 
 type KiaProformaRole = AppUser['role']
 
-export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'ceo', 'md', 'ea', 'manager'] as const
+export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'manager'] as const
 
 export function canAccessKiaProforma(role: KiaProformaRole | null | undefined) {
   return Boolean(role)

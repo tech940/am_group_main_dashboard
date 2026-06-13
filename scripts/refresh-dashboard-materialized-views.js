@@ -6,6 +6,12 @@ dotenv.config({ quiet: true })
 const views = [
   'workshop_performance_jc_summary_v1',
   'workshop_operation_addon_summary_v1',
+  'am_platinum_workshop_performance_jc_summary_v2',
+  'am_platinum_ro_billing_daily_summary_v2',
+  'am_platinum_vas_period_summary_v1',
+  'am_platinum_ro_billing_daily_summary_v1',
+  'am_platinum_open_ro_daily_summary_v1',
+  'am_platinum_complaints_daily_summary_v1',
 ]
 
 async function main() {
@@ -41,6 +47,24 @@ async function main() {
              MAX(report_month)::text AS max_date,
              COUNT(*)::int AS rows
       FROM workshop_operation_addon_summary_v1
+      UNION ALL
+      SELECT 'am_platinum_workshop_performance_jc_summary_v2' AS view_name,
+             MIN(report_date)::text AS min_date,
+             MAX(report_date)::text AS max_date,
+             COUNT(*)::int AS rows
+      FROM am_platinum_workshop_performance_jc_summary_v2
+      UNION ALL
+      SELECT 'am_platinum_ro_billing_daily_summary_v2' AS view_name,
+             MIN(bill_date)::text AS min_date,
+             MAX(bill_date)::text AS max_date,
+             COUNT(*)::int AS rows
+      FROM am_platinum_ro_billing_daily_summary_v2
+      UNION ALL
+      SELECT 'am_platinum_vas_period_summary_v1' AS view_name,
+             MIN(period_start)::text AS min_date,
+             MAX(period_end)::text AS max_date,
+             COUNT(*)::int AS rows
+      FROM am_platinum_vas_period_summary_v1
       ORDER BY view_name
     `
 

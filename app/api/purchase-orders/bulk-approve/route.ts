@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     const expectedStatuses = bulkStage === 'ea_approval'
-      ? ['awaiting_ea_approval', 'ea_denied', 'ea_on_hold']
+      ? ['awaiting_ea_approval', 'awaiting_md_approval', 'ea_denied', 'ea_on_hold', 'md_denied', 'md_on_hold']
       : ['awaiting_md_approval', 'md_denied', 'md_on_hold']
     const eligibleOrders = visibleOrders.filter((order) => expectedStatuses.includes(order.status))
 
@@ -94,7 +94,11 @@ export async function POST(request: NextRequest) {
         eaApprovalStatus: action === 'approve' ? 'approved' : action === 'deny' ? 'denied' : 'pending',
         eaApprovedBy: action === 'hold' ? null : appUser.id,
         eaApprovedAt: action === 'hold' ? null : now,
-        eaApprovalRemarks: action === 'hold' ? null : remarks || null,
+        eaApprovalRemarks: remarks || null,
+        mdApprovalStatus: action === 'approve' ? 'pending' : null,
+        mdApprovedBy: null,
+        mdApprovedAt: null,
+        mdApprovalRemarks: null,
         rejectedAt: action === 'deny' ? now : null,
         eaHeldAt: action === 'hold' ? now : null,
         eaHeldBy: action === 'hold' ? appUser.id : null,

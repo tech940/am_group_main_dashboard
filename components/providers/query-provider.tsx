@@ -2,13 +2,16 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
-export const DASHBOARD_STALE_TIME_MS = Number.POSITIVE_INFINITY
+export const DASHBOARD_STALE_TIME_MS = 15 * 60 * 1000
 export const DASHBOARD_GC_TIME_MS = Number.POSITIVE_INFINITY
 
-const SESSION_API_CACHE = new Map<string, Response>()
+const SESSION_API_CACHE = new Map<string, { response: Response; expiresAt: number }>()
 const SESSION_API_PENDING = new Map<string, Promise<Response>>()
+const SESSION_API_CACHE_TTL_MS = 15 * 60 * 1000
 const ORIGINAL_FETCH_SYMBOL = Symbol.for('dashboard.originalFetch')
+let sessionRefreshPromise: Promise<boolean> | null = null
 
 type FetchWithOriginal = typeof window.fetch & {
   [ORIGINAL_FETCH_SYMBOL]?: typeof window.fetch
@@ -61,6 +64,19 @@ function clearSessionApiCacheForMutation(input: RequestInfo | URL) {
   }
 }
 
+async function refreshSessionOnce() {
+  if (sessionRefreshPromise) return sessionRefreshPromise
+
+  sessionRefreshPromise = createClient().auth.refreshSession()
+    .then(({ data, error }) => !error && Boolean(data.session))
+    .catch(() => false)
+    .finally(() => {
+      sessionRefreshPromise = null
+    })
+
+  return sessionRefreshPromise
+}
+
 function installSessionApiCache() {
   const currentFetch = window.fetch as FetchWithOriginal
   if (currentFetch[ORIGINAL_FETCH_SYMBOL]) return
@@ -79,7 +95,8 @@ function installSessionApiCache() {
 
     const cacheKey = createFetchCacheKey(input, init)
     const cached = SESSION_API_CACHE.get(cacheKey)
-    if (cached) return cached.clone()
+    if (cached && cached.expiresAt > Date.now()) return cached.response.clone()
+    if (cached) SESSION_API_CACHE.delete(cacheKey)
 
     const pending = SESSION_API_PENDING.get(cacheKey)
     if (pending) {
@@ -87,9 +104,25 @@ function installSessionApiCache() {
       return response.clone()
     }
 
-    const request = originalFetch(input, init).then((response) => {
+    const request = originalFetch(input, init).then(async (response) => {
+      if (response.status === 401 && await refreshSessionOnce()) {
+        SESSION_API_CACHE.clear()
+        const retriedResponse = await originalFetch(input, init)
+        if (retriedResponse.ok) {
+          SESSION_API_CACHE.set(cacheKey, {
+            response: retriedResponse.clone(),
+            expiresAt: Date.now() + SESSION_API_CACHE_TTL_MS,
+          })
+        }
+        SESSION_API_PENDING.delete(cacheKey)
+        return retriedResponse
+      }
+
       if (response.ok) {
-        SESSION_API_CACHE.set(cacheKey, response.clone())
+        SESSION_API_CACHE.set(cacheKey, {
+          response: response.clone(),
+          expiresAt: Date.now() + SESSION_API_CACHE_TTL_MS,
+        })
       }
       SESSION_API_PENDING.delete(cacheKey)
       return response

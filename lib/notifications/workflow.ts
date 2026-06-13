@@ -162,14 +162,16 @@ async function resolveRecipients(event: WorkflowNotificationEvent, order: Purcha
     case 'grn_submitted':
       return addAssignedRecipientForRoles(await getActiveUsersByRole('accounts'), order, ['accounts'])
     case 'ea_held': {
-      const [admins, purchaseManagers, originalSubmitter] = await Promise.all([
+      const [admins, branchMdUsers, purchaseManagers, originalSubmitter] = await Promise.all([
         getActiveUsersByRole('admin'),
+        getActiveUsersByRole('md', order.brand),
         getRelevantPurchaseManagers(order),
         getUserById(order.createdBy),
       ])
 
       return dedupeRecipients([
         ...admins,
+        ...branchMdUsers,
         ...purchaseManagers,
         ...(originalSubmitter ? [originalSubmitter] : []),
       ])
@@ -191,14 +193,16 @@ async function resolveRecipients(event: WorkflowNotificationEvent, order: Purcha
       ])
     }
     case 'ea_denied': {
-      const [admins, purchaseManagers, originalSubmitter] = await Promise.all([
+      const [admins, branchMdUsers, purchaseManagers, originalSubmitter] = await Promise.all([
         getActiveUsersByRole('admin'),
+        getActiveUsersByRole('md', order.brand),
         getRelevantPurchaseManagers(order),
         getUserById(order.createdBy),
       ])
 
       return dedupeRecipients([
         ...admins,
+        ...branchMdUsers,
         ...purchaseManagers,
         ...(originalSubmitter ? [originalSubmitter] : []),
       ])
@@ -243,15 +247,15 @@ function buildNotificationContent(
       }
     case 'ea_denied':
       return {
-        title: 'Purchase order denied at EA approval',
-        message: `EA denied ${referenceNumber}. Remarks: ${denialRemarks}`,
+        title: 'Purchase order revoked by EA',
+        message: `EA revoked or denied ${referenceNumber}. It has been removed from active MD approval. Remarks: ${denialRemarks}`,
         type: 'error' as const,
         workflowStage: 'initial_submission',
       }
     case 'ea_held':
       return {
         title: 'Purchase order placed on hold by EA',
-        message: `EA placed ${referenceNumber} on hold. Remarks: ${holdRemarks}`,
+        message: `EA placed ${referenceNumber} on hold. It has been removed from active MD approval. Remarks: ${holdRemarks}`,
         type: 'warning' as const,
         workflowStage: 'ea_approval',
       }

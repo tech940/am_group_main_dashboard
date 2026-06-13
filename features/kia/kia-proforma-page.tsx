@@ -35,6 +35,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { calculateKiaProformaPricing, getKiaBankOptions } from '@/lib/kia-proforma/pricing'
@@ -282,6 +283,20 @@ function dateKey(value?: string | null) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value).slice(0, 10)
   return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+}
+
+function monthKey(value?: string | null) {
+  const key = dateKey(value)
+  return key ? key.slice(0, 7) : ''
+}
+
+function monthLabel(value: string) {
+  const date = new Date(`${value}-01T00:00:00+05:30`)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+}
+
+function yearKey(value?: string | null) {
+  return dateKey(value).slice(0, 4)
 }
 
 function proformaColumnValue(row: KiaProformaRow, column: string) {
@@ -721,15 +736,18 @@ function FilterBar({
   setSelectedColumn,
   selectedValues,
   setSelectedValues,
-  dateStart,
-  setDateStart,
-  dateEnd,
-  setDateEnd,
+  selectedDates,
+  setSelectedDates,
+  selectedMonths,
+  setSelectedMonths,
+  selectedYears,
+  setSelectedYears,
+  financeDate,
+  setFinanceDate,
   bankFilter,
   setBankFilter,
   financeStatus,
   onClear,
-  onApply,
 }: {
   rows: KiaProformaRow[]
   search: string
@@ -739,66 +757,79 @@ function FilterBar({
   setSelectedColumn: (value: string) => void
   selectedValues: Set<string>
   setSelectedValues: (value: Set<string>) => void
-  dateStart: string
-  setDateStart: (value: string) => void
-  dateEnd: string
-  setDateEnd: (value: string) => void
+  selectedDates: Set<string>
+  setSelectedDates: (value: Set<string>) => void
+  selectedMonths: Set<string>
+  setSelectedMonths: (value: Set<string>) => void
+  selectedYears: Set<string>
+  setSelectedYears: (value: Set<string>) => void
+  financeDate?: string
+  setFinanceDate?: (value: string) => void
   bankFilter?: string
   setBankFilter?: (value: string) => void
   financeStatus?: string
   onClear: () => void
-  onApply: () => void
 }) {
   const values = useMemo(() => {
     if (!selectedColumn) return []
     return Array.from(new Set(rows.map((row) => proformaColumnValue(row, selectedColumn) || '-'))).sort()
   }, [rows, selectedColumn])
+  const dates = useMemo(() => Array.from(new Set(rows.map((row) => dateKey(row.proformaDate)).filter(Boolean))).sort().reverse(), [rows])
+  const months = useMemo(() => Array.from(new Set(rows.map((row) => monthKey(row.proformaDate)).filter(Boolean))).sort().reverse(), [rows])
+  const years = useMemo(() => Array.from(new Set(rows.map((row) => yearKey(row.proformaDate)).filter(Boolean))).sort().reverse(), [rows])
   const banks = useMemo(() => Array.from(new Set(rows.map((row) => row.bankName).filter(Boolean))).sort(), [rows])
-  const selectedValue = Array.from(selectedValues)[0] || 'all'
-  const activeFilters = [
-    search ? { key: 'search', label: `Search: ${search}`, clear: () => setSearch('') } : null,
-    dateStart ? { key: 'dateStart', label: `From ${formatDate(dateStart)}`, clear: () => setDateStart('') } : null,
-    dateEnd ? { key: 'dateEnd', label: `To ${formatDate(dateEnd)}`, clear: () => setDateEnd('') } : null,
-    selectedColumn && selectedValue !== 'all' ? { key: 'column', label: `${TABLE_COLUMNS.find((col) => col.key === selectedColumn)?.label || selectedColumn}: ${selectedValue}`, clear: () => setSelectedValues(new Set()) } : null,
-    bankFilter ? { key: 'bank', label: `Bank: ${bankFilter}`, clear: () => setBankFilter?.('') } : null,
-  ].filter(Boolean) as { key: string; label: string; clear: () => void }[]
+  const toggleSet = (set: Set<string>, value: string, setter: (value: Set<string>) => void) => {
+    const next = new Set(set)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    setter(next)
+  }
   return (
-    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
-      <div className="grid gap-3 xl:grid-cols-[minmax(260px,1.3fr)_repeat(2,170px)_220px_220px_auto]">
-        <div className="relative">
+    <div className="space-y-3 rounded-3xl border border-slate-200 bg-white/82 p-3 shadow-sm">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[260px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={mode === 'pending-approval' ? 'Search customer or mobile...' : 'Search customer, bank, model, email...'} className="h-11 rounded-xl border-slate-200 bg-white pl-10 font-semibold" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={mode === 'pending-approval' ? 'Search customer name or mobile number...' : 'Search customer, bank, insurance, mobile, branch, model, email...'} className="h-11 rounded-2xl border-slate-200 bg-white/80 pl-10 font-semibold" />
         </div>
-        <Input type="date" value={dateStart} onChange={(event) => setDateStart(event.target.value)} className="h-11 rounded-xl border-slate-200 bg-white font-bold" />
-        <Input type="date" value={dateEnd} onChange={(event) => setDateEnd(event.target.value)} className="h-11 rounded-xl border-slate-200 bg-white font-bold" />
+        {mode === 'finance-remarks' && setFinanceDate && (
+          <Input type="date" value={financeDate || ''} onChange={(event) => setFinanceDate(event.target.value)} className="h-11 w-44 rounded-2xl border-slate-200 bg-white/80 font-bold" />
+        )}
         <Select value={selectedColumn || 'none'} onValueChange={(value) => { setSelectedColumn(value === 'none' ? '' : value); setSelectedValues(new Set()) }}>
-          <SelectTrigger className={cn('h-11 rounded-xl', proformaOutlineButton)}><Filter className="mr-2 h-4 w-4" /><SelectValue placeholder="Column" /></SelectTrigger>
-          <SelectContent>{[{ key: 'none', label: 'All columns' }, ...TABLE_COLUMNS.filter((col) => col.key !== 'index')].map((col) => <SelectItem key={String(col.key)} value={String(col.key)}>{col.label}</SelectItem>)}</SelectContent>
+          <SelectTrigger className={cn('h-11 w-56 rounded-2xl', proformaOutlineButton)}><Filter className="mr-2 h-4 w-4" /><SelectValue placeholder="Filter By Column" /></SelectTrigger>
+          <SelectContent>{[{ key: 'none', label: 'Filter By Column' }, ...TABLE_COLUMNS.filter((col) => col.key !== 'index')].map((col) => <SelectItem key={String(col.key)} value={String(col.key)}>{col.label}</SelectItem>)}</SelectContent>
         </Select>
-        <Select value={selectedValue} disabled={!selectedColumn} onValueChange={(value) => setSelectedValues(value === 'all' ? new Set() : new Set([value]))}>
-          <SelectTrigger className={cn('h-11 rounded-xl', proformaOutlineButton)}><SelectValue placeholder="Value" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">All values</SelectItem>{values.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
-        </Select>
-        <div className="flex gap-2">
-          <Button className={cn('h-11 rounded-xl', proformaPrimaryButton)} onClick={onApply}>Apply</Button>
-          <Button variant="outline" className={cn('h-11 rounded-xl', proformaOutlineButton)} onClick={onClear}><RotateCcw className="h-4 w-4" /></Button>
+        {mode === 'finance-remarks' && financeStatus === 'Current month' && setBankFilter && (
+          <Select value={bankFilter || 'all'} onValueChange={(value) => setBankFilter(value === 'all' ? '' : value)}>
+            <SelectTrigger className={cn('h-11 w-52 rounded-2xl', proformaOutlineButton)}><SelectValue placeholder="Bank Name" /></SelectTrigger>
+            <SelectContent><SelectItem value="all">All Banks</SelectItem>{banks.map((bank) => <SelectItem key={bank} value={bank}>{bank}</SelectItem>)}</SelectContent>
+          </Select>
+        )}
+        <Button variant="outline" className={cn('h-11 rounded-2xl', proformaOutlineButton)} onClick={onClear}>
+          <RotateCcw className="mr-2 h-4 w-4" />Clear All
+        </Button>
+      </div>
+      {mode !== 'pending-approval' && (
+        <div className="grid gap-3 lg:grid-cols-3">
+          {mode === 'all' && <ChecklistPanel title="Proforma Date" items={dates.map((value) => ({ value, label: formatDate(value) }))} selected={selectedDates} onToggle={(value) => toggleSet(selectedDates, value, setSelectedDates)} />}
+          <ChecklistPanel title="Month" items={months.map((value) => ({ value, label: monthLabel(value) }))} selected={selectedMonths} onToggle={(value) => toggleSet(selectedMonths, value, setSelectedMonths)} />
+          <ChecklistPanel title="Year" items={years.map((value) => ({ value, label: value }))} selected={selectedYears} onToggle={(value) => toggleSet(selectedYears, value, setSelectedYears)} />
         </div>
-      </div>
-      {mode === 'finance-remarks' && financeStatus === 'Current month' && setBankFilter && (
-        <Select value={bankFilter || 'all'} onValueChange={(value) => setBankFilter(value === 'all' ? '' : value)}>
-          <SelectTrigger className={cn('h-10 max-w-sm rounded-xl', proformaOutlineButton)}><SelectValue placeholder="Bank Name" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">All Banks</SelectItem>{banks.map((bank) => <SelectItem key={bank} value={bank}>{bank}</SelectItem>)}</SelectContent>
-        </Select>
       )}
-      <div className="flex flex-wrap gap-2">
-        {activeFilters.length === 0 ? (
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-500">No active filters</span>
-        ) : activeFilters.map((chip) => (
-          <button key={chip.key} type="button" onClick={chip.clear} className="rounded-full border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] px-3 py-1 text-[11px] font-black text-[var(--dashboard-action-bg)]">
-            {chip.label} x
-          </button>
-        ))}
-      </div>
+      {selectedColumn && <ChecklistPanel title="Column values" items={values.map((value) => ({ value, label: value }))} selected={selectedValues} onToggle={(value) => toggleSet(selectedValues, value, setSelectedValues)} />}
+    </div>
+  )
+}
+
+function ChecklistPanel({ title, items, selected, onToggle }: { title: string; items: { value: string; label: string }[]; selected: Set<string>; onToggle: (value: string) => void }) {
+  return (
+    <div className="max-h-32 overflow-auto rounded-2xl border border-slate-200 bg-white p-2">
+      <p className="px-2 pb-1 text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">{title}</p>
+      {items.length === 0 ? <p className="px-2 py-1 text-xs font-bold text-slate-400">No values</p> : items.map((item) => (
+        <label key={item.value} className="flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50">
+          <Checkbox checked={selected.has(item.value)} onCheckedChange={() => onToggle(item.value)} />
+          {item.label}
+        </label>
+      ))}
     </div>
   )
 }
@@ -819,7 +850,6 @@ function ProformaTable({
   hideEmptyColumns?: boolean
 }) {
   const [showColumnManager, setShowColumnManager] = useState(false)
-  const [columnSearch, setColumnSearch] = useState('')
   const visibleColumns = TABLE_COLUMNS.filter((column) => {
     if (hiddenColumns.has(String(column.key))) return false
     if (!hideEmptyColumns || column.key === 'index' || column.key === 'customerName') return true
@@ -833,52 +863,41 @@ function ProformaTable({
     if (key === 'customerName') return cn('sticky left-12 z-20 min-w-[190px]', header ? 'bg-slate-950' : 'bg-white shadow-[8px_0_14px_rgba(15,23,42,0.04)]')
     return ''
   }
-  const columnOptions = TABLE_COLUMNS.filter((column) => column.key !== 'index' && column.label.toLowerCase().includes(columnSearch.toLowerCase()))
   return (
     <div className="rounded-[1.75rem] border border-slate-200 bg-white/88 shadow-xl shadow-slate-900/5">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Proforma Register</p>
-          <p className="mt-1 text-xs font-bold text-slate-500">{visibleColumns.length - 1} visible columns</p>
-        </div>
+        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Proforma Register</p>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className={cn('h-9 rounded-xl', proformaOutlineButton)} onClick={() => setShowColumnManager((value) => !value)}>
             <Columns3 className="mr-2 h-4 w-4" />Manage Columns
           </Button>
+          <Select onValueChange={(value) => {
+            const next = new Set(hiddenColumns)
+            next.add(value)
+            setHiddenColumns(next)
+          }}>
+            <SelectTrigger className={cn('h-9 w-44 rounded-xl', proformaOutlineButton)}><Columns3 className="mr-2 h-4 w-4" /><SelectValue placeholder="Hide column" /></SelectTrigger>
+            <SelectContent>{visibleColumns.filter((col) => col.key !== 'index').map((column) => <SelectItem key={String(column.key)} value={String(column.key)}>{column.label}</SelectItem>)}</SelectContent>
+          </Select>
           <Button variant="outline" className={cn('h-9 rounded-xl', proformaOutlineButton)} onClick={() => setHiddenColumns(new Set())}><RotateCcw className="mr-2 h-4 w-4" />Restore</Button>
         </div>
       </div>
       {showColumnManager && (
-        <div className="space-y-3 border-b border-slate-200 bg-slate-50/80 p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input value={columnSearch} onChange={(event) => setColumnSearch(event.target.value)} placeholder="Search columns..." className="h-9 max-w-xs rounded-xl bg-white text-xs font-semibold" />
-            <Button variant="outline" className={cn('h-9 rounded-xl text-xs', proformaOutlineButton)} onClick={() => setHiddenColumns(new Set())}>Show all</Button>
-            <Button variant="outline" className={cn('h-9 rounded-xl text-xs', proformaOutlineButton)} onClick={() => setHiddenColumns(new Set(TABLE_COLUMNS.filter((column) => column.numeric).map((column) => String(column.key))))}>Hide amounts</Button>
-          </div>
-          <div className="flex max-h-36 flex-wrap gap-2 overflow-auto">
-            {columnOptions.map((column) => {
-              const key = String(column.key)
-              const visible = !hiddenColumns.has(key)
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => {
-                    const next = new Set(hiddenColumns)
-                    if (visible) next.add(key)
-                    else next.delete(key)
-                    setHiddenColumns(next)
-                  }}
-                  className={cn(
-                    'rounded-full border px-3 py-1.5 text-xs font-black transition',
-                    visible ? 'border-[var(--dashboard-primary-border)] bg-white text-[var(--dashboard-action-bg)]' : 'border-slate-200 bg-slate-100 text-slate-500'
-                  )}
-                >
-                  {column.label}
-                </button>
-              )
-            })}
-          </div>
+        <div className="grid max-h-48 gap-2 overflow-auto border-b border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2 lg:grid-cols-4">
+          {TABLE_COLUMNS.filter((column) => column.key !== 'index').map((column) => {
+            const key = String(column.key)
+            return (
+              <label key={key} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                <Checkbox checked={!hiddenColumns.has(key)} onCheckedChange={(checked) => {
+                  const next = new Set(hiddenColumns)
+                  if (checked) next.delete(key)
+                  else next.add(key)
+                  setHiddenColumns(next)
+                }} />
+                {column.label}
+              </label>
+            )
+          })}
         </div>
       )}
       <div className="max-h-[620px] overflow-auto">
@@ -936,8 +955,10 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const { rows, loading, error, search, setSearch, page, setPage, financeStatus, setFinanceStatus, reload } = useProformas(queryMode, true)
   const [selectedColumn, setSelectedColumn] = useState('')
   const [selectedValues, setSelectedValues] = useState<Set<string>>(new Set())
-  const [dateStart, setDateStart] = useState('')
-  const [dateEnd, setDateEnd] = useState('')
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
+  const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set())
+  const [selectedYears, setSelectedYears] = useState<Set<string>>(new Set())
+  const [financeDate, setFinanceDate] = useState('')
   const [bankFilter, setBankFilter] = useState('')
   const columnStorageKey = `kia-proforma:hidden-columns:${options.currentUser.id}:${mode}`
   const [hiddenColumns, setHiddenColumnsState] = useState<Set<string>>(() => {
@@ -958,12 +979,14 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     return rows.filter((row) => {
       if (selectedColumn && selectedValues.size > 0 && !selectedValues.has(proformaColumnValue(row, selectedColumn) || '-')) return false
       const rowDate = dateKey(row.proformaDate)
-      if (dateStart && rowDate < dateStart) return false
-      if (dateEnd && rowDate > dateEnd) return false
+      if (mode === 'all' && selectedDates.size > 0 && !selectedDates.has(rowDate)) return false
+      if (isFinance && financeDate && rowDate !== financeDate) return false
+      if (selectedMonths.size > 0 && !selectedMonths.has(monthKey(row.proformaDate))) return false
+      if (selectedYears.size > 0 && !selectedYears.has(yearKey(row.proformaDate))) return false
       if (isFinance && financeStatus === 'Current month' && bankFilter && row.bankName !== bankFilter) return false
       return true
     })
-  }, [bankFilter, dateEnd, dateStart, financeStatus, isFinance, rows, selectedColumn, selectedValues])
+  }, [bankFilter, financeDate, financeStatus, isFinance, mode, rows, selectedColumn, selectedDates, selectedMonths, selectedValues, selectedYears])
   const totalClientPages = Math.max(1, Math.ceil(filteredRows.length / PROFORMA_TABLE_PAGE_SIZE))
   const currentClientPage = Math.min(page, totalClientPages)
   const pagedRows = filteredRows.slice((currentClientPage - 1) * PROFORMA_TABLE_PAGE_SIZE, currentClientPage * PROFORMA_TABLE_PAGE_SIZE)
@@ -972,8 +995,10 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     setSearch('')
     setSelectedColumn('')
     setSelectedValues(new Set())
-    setDateStart('')
-    setDateEnd('')
+    setSelectedDates(new Set())
+    setSelectedMonths(new Set())
+    setSelectedYears(new Set())
+    setFinanceDate('')
     setBankFilter('')
     if (isFinance) setFinanceStatus('all')
     setPage(1)
@@ -1047,15 +1072,18 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
         setSelectedColumn={setSelectedColumn}
         selectedValues={selectedValues}
         setSelectedValues={setSelectedValues}
-        dateStart={dateStart}
-        setDateStart={(value) => { setDateStart(value); setPage(1) }}
-        dateEnd={dateEnd}
-        setDateEnd={(value) => { setDateEnd(value); setPage(1) }}
+        selectedDates={selectedDates}
+        setSelectedDates={setSelectedDates}
+        selectedMonths={selectedMonths}
+        setSelectedMonths={setSelectedMonths}
+        selectedYears={selectedYears}
+        setSelectedYears={setSelectedYears}
+        financeDate={financeDate}
+        setFinanceDate={setFinanceDate}
         bankFilter={bankFilter}
         setBankFilter={setBankFilter}
         financeStatus={financeStatus}
         onClear={clearFilters}
-        onApply={() => setPage(1)}
       />
       {error && !loading ? (
         <div className="rounded-[2rem] border border-rose-200 bg-white p-5 font-bold text-rose-700 shadow-sm">
@@ -1072,7 +1100,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
           action={(row) => (
             <div className="flex gap-2">
               {mode === 'pending-approval' && <Button className={cn('rounded-xl', proformaPrimaryButton)} onClick={() => setVerifying(row)}>VERIFY</Button>}
-              <Button variant="outline" className={cn('rounded-xl', proformaOutlineButton)} onClick={() => window.open(`/api/brands/kia/proforma/${row.id}/preview`, '_blank')}>Open</Button>
+              {row.approvalStatus === 'APPROVED' && row.linkPreview && <Button variant="outline" className={cn('rounded-xl', proformaOutlineButton)} onClick={() => window.open(row.linkPreview!, '_blank')}>Open</Button>}
             </div>
           )}
         />
@@ -1134,9 +1162,6 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
   const [grouping, setGrouping] = useState<'daily' | 'monthly' | 'yearly'>('monthly')
   const [status, setStatus] = useState('all')
   const [top, setTop] = useState<'all' | '5'>('all')
-  const [dateStart, setDateStart] = useState('')
-  const [dateEnd, setDateEnd] = useState('')
-  const [periodSearch, setPeriodSearch] = useState('')
   const [selectedConsultants, setSelectedConsultants] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
   const columnStorageKey = `kia-proforma:hidden-columns:${userId}:${insights ? 'business-insights' : 'hyp-ins-analytics'}`
@@ -1164,8 +1189,6 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
     setLoading(true)
     try {
       const params = new URLSearchParams({ type, grouping, status, top })
-      if (dateStart) params.set('startDate', dateStart)
-      if (dateEnd) params.set('endDate', dateEnd)
       if (selectedConsultants.size > 0) params.set('consultants', Array.from(selectedConsultants).join(','))
       const response = await fetch(`/api/brands/kia/proforma/analytics?${params}`)
       if (!response.ok) throw new Error('Failed to load analytics')
@@ -1173,7 +1196,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
     } finally {
       setLoading(false)
     }
-  }, [dateEnd, dateStart, grouping, selectedConsultants, status, top, type])
+  }, [grouping, selectedConsultants, status, top, type])
   useEffect(() => { reload() }, [reload])
 
   const periods = Array.from(new Set(payload.pivot.map((row) => String(row.period)))).sort()
@@ -1185,7 +1208,6 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
     return record
   })
   const visiblePeriods = periods.filter((period) => !hiddenPeriods.has(period))
-  const periodOptions = periods.filter((period) => period.toLowerCase().includes(periodSearch.trim().toLowerCase()))
   const totalPivotPages = Math.max(1, Math.ceil(pivotRows.length / PROFORMA_TABLE_PAGE_SIZE))
   const currentPivotPage = Math.min(page, totalPivotPages)
   const pagedPivotRows = pivotRows.slice((currentPivotPage - 1) * PROFORMA_TABLE_PAGE_SIZE, currentPivotPage * PROFORMA_TABLE_PAGE_SIZE)
@@ -1213,25 +1235,6 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
   }, {})
   const statusDist = Object.entries(statusTotals).map(([name, value]) => ({ name, value: Number(value) }))
   const consultants = payload.consultants.map((row) => String(row.consultant || '')).filter(Boolean)
-  const activeFilters = [
-    type !== 'bank' ? { key: 'type', label: type === 'insurance' ? 'Metric: Insurance' : 'Metric: Status', clear: () => setType('bank') } : null,
-    grouping !== 'monthly' ? { key: 'grouping', label: `Period: ${grouping}`, clear: () => setGrouping('monthly') } : null,
-    status !== 'all' ? { key: 'status', label: `Status: ${status}`, clear: () => setStatus('all') } : null,
-    top !== 'all' ? { key: 'top', label: 'Top 5', clear: () => setTop('all') } : null,
-    dateStart ? { key: 'dateStart', label: `From ${formatDate(dateStart)}`, clear: () => setDateStart('') } : null,
-    dateEnd ? { key: 'dateEnd', label: `To ${formatDate(dateEnd)}`, clear: () => setDateEnd('') } : null,
-    selectedConsultants.size > 0 ? { key: 'consultants', label: `Consultants: ${selectedConsultants.size}`, clear: () => setSelectedConsultants(new Set()) } : null,
-  ].filter((item): item is { key: string; label: string; clear: () => void } => Boolean(item))
-  const resetAnalyticsFilters = () => {
-    setType('bank')
-    setGrouping('monthly')
-    setStatus('all')
-    setTop('all')
-    setDateStart('')
-    setDateEnd('')
-    setSelectedConsultants(new Set())
-    setPage(1)
-  }
   const toggleConsultant = (consultant: string) => {
     const next = new Set(selectedConsultants)
     if (next.has(consultant)) next.delete(consultant)
@@ -1241,63 +1244,22 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
 
   return (
     <div className="space-y-4">
-      <div className="rounded-[1.75rem] border border-slate-200 bg-white/90 p-4 shadow-sm">
-        <div className="grid gap-3 lg:grid-cols-[1.1fr_0.8fr_0.8fr_0.8fr_0.8fr]">
-          <Select value={type} onValueChange={(value: 'bank' | 'insurance' | 'status') => { setType(value); setPage(1) }}>
-            <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white font-bold"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="bank">By Bank Name</SelectItem><SelectItem value="insurance">By Insurance Company</SelectItem>{!insights && <SelectItem value="status">By Vehicle Status</SelectItem>}</SelectContent>
-          </Select>
-          <Select value={grouping} onValueChange={(value: 'daily' | 'monthly' | 'yearly') => { setGrouping(value); setPage(1) }}>
-            <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white font-bold"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="daily">Daily</SelectItem><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="yearly">Yearly</SelectItem></SelectContent>
-          </Select>
-          <Input type="date" value={dateStart} onChange={(event) => { setDateStart(event.target.value); setPage(1) }} className="h-11 rounded-xl border-slate-200 bg-white font-bold" />
-          <Input type="date" value={dateEnd} onChange={(event) => { setDateEnd(event.target.value); setPage(1) }} className="h-11 rounded-xl border-slate-200 bg-white font-bold" />
-          {!insights ? (
-            <Select value={status} onValueChange={(value) => { setStatus(value); setPage(1) }}>
-              <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white font-bold"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="IN HOUSE">In House</SelectItem><SelectItem value="OUT HOUSE">Out House</SelectItem></SelectContent>
-            </Select>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" className={cn('h-11 rounded-xl', top === 'all' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('all')}>All</Button>
-              <Button variant="outline" className={cn('h-11 rounded-xl', top === '5' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('5')}>Top 5</Button>
-            </div>
-          )}
-        </div>
-        {!insights && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button variant="outline" className={cn('h-9 rounded-xl', top === 'all' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('all')}>All</Button>
-            <Button variant="outline" className={cn('h-9 rounded-xl', top === '5' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('5')}>Top 5</Button>
-            <Button className={cn('h-9 rounded-xl', proformaPrimaryButton)} onClick={() => { setPage(1); reload() }}><Filter className="mr-2 h-4 w-4" />Apply Filters</Button>
-            <Button variant="outline" className={cn('h-9 rounded-xl', proformaOutlineButton)} onClick={resetAnalyticsFilters}><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>
-          </div>
-        )}
-        {activeFilters.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {activeFilters.map((filter) => (
-              <button key={filter.key} type="button" onClick={filter.clear} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700">
-                {filter.label} x
-              </button>
-            ))}
-          </div>
-        )}
-        {!insights && consultants.length > 0 && (
-          <div className="mt-4 border-t border-slate-200 pt-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Consultants</span>
-              <Button variant="outline" className={cn('h-8 rounded-xl text-xs', proformaOutlineButton)} onClick={() => setSelectedConsultants(new Set())}>Clear</Button>
-            </div>
-            <div className="flex max-h-28 flex-wrap gap-2 overflow-auto pr-1">
-              {consultants.map((consultant) => (
-                <button key={consultant} type="button" onClick={() => toggleConsultant(consultant)} className={cn('rounded-full border px-3 py-1.5 text-xs font-black transition', selectedConsultants.has(consultant) ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400')}>
-                  {consultant}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+      <div className="flex flex-wrap gap-3 rounded-3xl border border-slate-200 bg-white/85 p-3">
+        <Select value={type} onValueChange={(value: 'bank' | 'insurance' | 'status') => setType(value)}><SelectTrigger className="w-56 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="bank">By Bank Name</SelectItem><SelectItem value="insurance">By Insurance Company</SelectItem>{!insights && <SelectItem value="status">By Status</SelectItem>}</SelectContent></Select>
+        <Select value={grouping} onValueChange={(value: 'daily' | 'monthly' | 'yearly') => setGrouping(value)}><SelectTrigger className="w-44 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="daily">Daily</SelectItem><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="yearly">Yearly</SelectItem></SelectContent></Select>
+        {!insights && <Select value={status} onValueChange={setStatus}><SelectTrigger className="w-44 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="IN HOUSE">In House</SelectItem><SelectItem value="OUT HOUSE">Out House</SelectItem></SelectContent></Select>}
+        <Button variant="outline" className={cn('rounded-xl', top === 'all' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('all')}>All</Button>
+        <Button variant="outline" className={cn('rounded-xl', top === '5' ? proformaPrimaryButton : proformaOutlineButton)} onClick={() => setTop('5')}>TOP 5</Button>
+        {!insights && <Button variant="outline" className={cn('rounded-xl', proformaOutlineButton)} onClick={() => { setStatus('all'); setTop('all'); setSelectedConsultants(new Set()); setPage(1) }}>Clear All</Button>}
       </div>
+      {!insights && consultants.length > 0 && (
+        <ChecklistPanel
+          title="Consultants"
+          items={consultants.map((consultant) => ({ value: consultant, label: consultant }))}
+          selected={selectedConsultants}
+          onToggle={toggleConsultant}
+        />
+      )}
       {loading ? <div className="h-80 animate-pulse rounded-[2rem] bg-white/70" /> : insights ? (
         <div className="grid gap-4 xl:grid-cols-2">
           <ChartCard title="Category trend">
@@ -1313,31 +1275,17 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white/90 p-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Period columns</span>
-                <p className="text-xs font-bold text-slate-500">{visiblePeriods.length} of {periods.length} visible</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input value={periodSearch} onChange={(event) => setPeriodSearch(event.target.value)} placeholder="Search periods" className="h-9 w-48 rounded-xl border-slate-200 bg-white pl-9 text-xs font-bold" />
-                </div>
-                <Button variant="outline" className={cn('h-9 rounded-xl text-xs', proformaOutlineButton)} onClick={() => setStoredHiddenPeriods(new Set())}>Show all</Button>
-                <Button variant="outline" className={cn('h-9 rounded-xl text-xs', proformaOutlineButton)} onClick={() => setStoredHiddenPeriods(new Set(periods))}>Hide all</Button>
-              </div>
-            </div>
-            <div className="mt-3 flex max-h-24 flex-wrap gap-2 overflow-auto pr-1">
-              {periodOptions.map((period) => (
-                <button key={period} type="button" className={cn('rounded-full border px-3 py-1.5 text-xs font-black transition', hiddenPeriods.has(period) ? 'border-slate-200 bg-white text-slate-500' : 'border-slate-950 bg-slate-950 text-white')} onClick={() => {
-                  const next = new Set(hiddenPeriods)
-                  if (next.has(period)) next.delete(period)
-                  else next.add(period)
-                  setStoredHiddenPeriods(next)
-                }}>{period}</button>
-              ))}
-            </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white/85 p-3">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Column Visibility</span>
+            {periods.map((period) => (
+              <Button key={period} variant="outline" className={cn('h-8 rounded-xl text-xs', hiddenPeriods.has(period) ? proformaOutlineButton : proformaPrimaryButton)} onClick={() => {
+                const next = new Set(hiddenPeriods)
+                if (next.has(period)) next.delete(period)
+                else next.add(period)
+                setStoredHiddenPeriods(next)
+              }}>{period}</Button>
+            ))}
+            <Button variant="outline" className={cn('h-8 rounded-xl text-xs', proformaOutlineButton)} onClick={() => setStoredHiddenPeriods(new Set())}>Reset</Button>
           </div>
           <div className="overflow-auto rounded-[1.75rem] border border-slate-200 bg-white/88">
             <table className="w-max min-w-full table-auto text-xs">
