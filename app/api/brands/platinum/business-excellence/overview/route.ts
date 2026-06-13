@@ -1589,7 +1589,7 @@ async function buildOverviewPayload(
         complaints: 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)',
         ew: 'reg_date',
         rsa: 'invoice_date',
-        vas: 'am_platinum_operation_wise_analysis_report report_period_start/report_period_end; prefers the latest covered period and falls back to the smallest containing period when the source has no partial-period snapshot.',
+        vas: 'report_period_start/report_period_end from am_platinum_operation_wise_analysis_report. Falls back to latest snapshot when no rows match the selected period.',
       },
       roBillingAudit,
     },

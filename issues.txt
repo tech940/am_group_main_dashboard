@@ -1,0 +1,242 @@
+proforma/server.ts:6:1)
+ am_group_main_dashboard  npm run build
+
+> main_dashboard@0.1.0 build
+> next build
+
+▲ Next.js 16.2.6 (Turbopack)
+- Environments: .env
+- Experiments (use with caution):
+  ✓ authInterrupts
+
+  Creating an optimized production build ...
+Found 2 warnings while optimizing generated CSS:
+
+Issue #1:
+│     backdrop-filter: none !important;
+│   }
+│   <<<<<<< HEAD
+┆   ^-- Invalid empty selector
+┆
+│ =======
+│   .mg-proforma-primary-action {
+
+Issue #2:
+│     backdrop-filter: none !important;
+│   }
+│   >>>>>>> f4a0928c6a14f7f178f7ea7afb363f552aae1e03
+┆   ^-- Invalid empty selector
+┆
+│   .finance-primary-action {
+│     background: linear-gradient(135deg, var(--dashboard-action-bg), var(--dashboard-action-hover)) !important;
+
+
+> Build error occurred
+Error: Turbopack build failed with 13 errors:
+./app/api/brands/platinum/business-excellence/overview/route.ts:1592:1
+Merge conflict marker encountered.
+  1590 |         ew: 'reg_date',
+  1591 |         rsa: 'invoice_date',
+> 1592 | <<<<<<< HEAD
+       | ^^^^^^^
+  1593 |         vas: 'am_platinum_operation_wise_analysis_report report_period_start/report_period_end; prefers the latest covered period...
+  1594 | =======
+  1595 |         mcp: 'package_purchase_date',
+
+Parsing ecmascript source code failed
+
+
+./app/api/brands/platinum/business-excellence/overview/route.ts:1594:1
+Merge conflict marker encountered.
+  1592 | <<<<<<< HEAD
+  1593 |         vas: 'am_platinum_operation_wise_analysis_report report_period_start/report_period_end; prefers the latest covered period...
+> 1594 | =======
+       | ^^^^^^^
+  1595 |         mcp: 'package_purchase_date',
+  1596 |         vas: 'report_period_start/report_period_end from am_platinum_operation_wise_analysis_report. Falls back to latest snapsho...
+  1597 | >>>>>>> f4a0928c6a14f7f178f7ea7afb363f552aae1e03
+
+Parsing ecmascript source code failed
+
+
+./app/api/brands/platinum/business-excellence/overview/route.ts:1597:1
+Merge conflict marker encountered.
+  1595 |         mcp: 'package_purchase_date',
+  1596 |         vas: 'report_period_start/report_period_end from am_platinum_operation_wise_analysis_report. Falls back to latest snapsho...
+> 1597 | >>>>>>> f4a0928c6a14f7f178f7ea7afb363f552aae1e03
+       | ^^^^^^^
+  1598 |       },
+  1599 |       roBillingAudit,
+  1600 |     },
+
+Parsing ecmascript source code failed
+
+
+./app/api/brands/platinum/business-excellence/workshop-performance/route.ts:1265:1
+Merge conflict marker encountered.
+  1263 |       },
+  1264 |       comparison,
+> 1265 | <<<<<<< HEAD
+       | ^^^^^^^
+  1266 |       unsupportedComparisonSources: {
+  1267 |         am_platinum_operation_wise_analysis_report: workshopVasMeta.available
+  1268 |           ? null
+
+Parsing ecmascript source code failed
+
+
+./app/api/brands/platinum/business-excellence/workshop-performance/route.ts:1273:1
+Merge conflict marker encountered.
+  1271 |         am_platinum_rsa_report: 'RSA source is unavailable for Platinum.',
+  1272 |       },
+> 1273 | =======
+       | ^^^^^^^
+  1274 |       unsupportedComparisonSources: {},
+  1275 | >>>>>>> f4a0928c6a14f7f178f7ea7afb363f552aae1e03
+  1276 |       sourceStatus: {
+
+Parsing ecmascript source code failed
+
+
+./app/api/brands/platinum/business-excellence/workshop-performance/route.ts:1275:1
+Merge conflict marker encountered.
+  1273 | =======
+  1274 |       unsupportedComparisonSources: {},
+> 1275 | >>>>>>> f4a0928c6a14f7f178f7ea7afb363f552aae1e03
+       | ^^^^^^^
+  1276 |       sourceStatus: {
+  1277 |         ...(sourceStatus || {
+  1278 |           operationAnalysis: {
+
+Parsing ecmascript source code failed
+
+
+./app/api/brands/mg/proforma/options/route.ts:6:1
+Export mgPriceDetails doesn't exist in target module
+  4 | import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+  5 | import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+> 6 | import { mgPriceDetails } from '@/lib/db/schema'
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 | import { canApproveMgProformaForUser } from '@/lib/mg-proforma/access'
+  8 | import { ensureMgUserProfile } from '@/lib/mg-proforma/server'
+  9 | import { requirePermission } from '@/lib/permissions/service'
+
+The export mgPriceDetails was not found in module [project]/lib/db/schema.ts [app-route] (ecmascript).
+Did you mean to import kiaPriceDetails?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+
+./app/api/brands/mg/proforma/[id]/preview/route.ts:6:1
+Export mgProformas doesn't exist in target module
+  4 | import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+  5 | import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+> 6 | import { mgProformas } from '@/lib/db/schema'
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 | import { canApproveMgProformaForUser } from '@/lib/mg-proforma/access'
+  8 | import { ensureMgUserProfile } from '@/lib/mg-proforma/server'
+  9 | import { buildMgProformaPdf } from '@/lib/mg-proforma/invoice'
+
+The export mgProformas was not found in module [project]/lib/db/schema.ts [app-route] (ecmascript).
+Did you mean to import kiaProformas?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+
+./app/api/brands/mg/proforma/[id]/route.ts:6:1
+Export mgProformas doesn't exist in target module
+  4 | import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+  5 | import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+> 6 | import { mgProformas } from '@/lib/db/schema'
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 | import { canApproveMgProformaForUser } from '@/lib/mg-proforma/access'
+  8 | import { ensureMgUserProfile } from '@/lib/mg-proforma/server'
+  9 | import { serializeUtcTimestampFields } from '@/lib/date-time'
+
+The export mgProformas was not found in module [project]/lib/db/schema.ts [app-route] (ecmascript).
+Did you mean to import kiaProformas?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+
+./app/api/brands/mg/proforma/route.ts:6:1
+Export mgProformas doesn't exist in target module
+  4 | import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+  5 | import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+> 6 | import { mgProformas } from '@/lib/db/schema'
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 | import { canApproveMgProformaForUser, getMgProformaVisibilityFilter } from '@/lib/mg-proforma/access'
+  8 | import { ensureMgUserProfile, touchMgUserProfile } from '@/lib/mg-proforma/server'
+  9 | import { createApiTimer, withServerTiming } from '@/lib/api/timing'
+
+The export mgProformas was not found in module [project]/lib/db/schema.ts [app-route] (ecmascript).
+Did you mean to import kiaProformas?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+
+./lib/mg-proforma/access.ts:6:1
+Export mgProformas doesn't exist in target module
+  4 | import type { SQL } from 'drizzle-orm'
+  5 | import type { AppUser } from '@/lib/auth/app-user'
+> 6 | import { mgProformas } from '@/lib/db/schema'
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 | import { canUserAccessPermission } from '@/lib/permissions/service'
+  8 |
+  9 | type MgProformaRole = AppUser['role']
+
+The export mgProformas was not found in module [project]/lib/db/schema.ts [app-route] (ecmascript).
+Did you mean to import kiaProformas?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  App Route:
+    ./lib/mg-proforma/access.ts
+    ./app/api/brands/mg/proforma/analytics/route.ts
+
+
+./app/api/brands/mg/proforma/settings/route.ts:6:1
+Export mgUserProfiles doesn't exist in target module
+  4 | import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+  5 | import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+> 6 | import { mgUserProfiles } from '@/lib/db/schema'
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 | import { ensureMgUserProfile } from '@/lib/mg-proforma/server'
+  8 |
+  9 | export const dynamic = 'force-dynamic'
+
+The export mgUserProfiles was not found in module [project]/lib/db/schema.ts [app-route] (ecmascript).
+Did you mean to import kiaUserProfiles?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+
+./lib/mg-proforma/server.ts:6:1
+Export mgUserProfiles doesn't exist in target module
+  4 | import { db } from '@/lib/db'
+  5 | import { getAuthenticatedAppUser, type AppUser } from '@/lib/auth/app-user'
+> 6 | import { mgUserProfiles } from '@/lib/db/schema'
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  7 | import { canApproveMgProforma } from '@/lib/mg-proforma/access'
+  8 |
+  9 | export async function ensureMgUserProfile(appUser?: AppUser | null) {
+
+The export mgUserProfiles was not found in module [project]/lib/db/schema.ts [app-route] (ecmascript).
+Did you mean to import kiaUserProfiles?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  App Route:
+    ./lib/mg-proforma/server.ts
+    ./app/api/brands/mg/proforma/settings/route.ts
+
+
+    at <unknown> (./app/api/brands/platinum/business-excellence/overview/route.ts:1592:1)
+    at <unknown> (./app/api/brands/platinum/business-excellence/overview/route.ts:1594:1)
+    at <unknown> (./app/api/brands/platinum/business-excellence/overview/route.ts:1597:1)
+    at <unknown> (./app/api/brands/platinum/business-excellence/workshop-performance/route.ts:1265:1)
+    at <unknown> (./app/api/brands/platinum/business-excellence/workshop-performance/route.ts:1273:1)
+    at <unknown> (./app/api/brands/platinum/business-excellence/workshop-performance/route.ts:1275:1)
+    at <unknown> (./app/api/brands/mg/proforma/options/route.ts:6:1)
+    at <unknown> (./app/api/brands/mg/proforma/[id]/preview/route.ts:6:1)
+    at <unknown> (./app/api/brands/mg/proforma/[id]/route.ts:6:1)
+    at <unknown> (./app/api/brands/mg/proforma/route.ts:6:1)
+    at <unknown> (./lib/mg-proforma/access.ts:6:1)
+    at <unknown> (./app/api/brands/mg/proforma/settings/route.ts:6:1)
+    at <unknown> (./lib/mg-proforma/server.ts:6:1)
+ sahil   am_group_main_dashboard    am_hyundai_4june into am_hyundai_4june ↑21 ↓2  x4  +2 ~3 x4   

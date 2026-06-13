@@ -1262,13 +1262,7 @@ async function buildWorkshopPayload(
         roBilling: dealerCoverage,
       },
       comparison,
-      unsupportedComparisonSources: {
-        am_platinum_operation_wise_analysis_report: workshopVasMeta.available
-          ? null
-          : workshopVasMeta.unavailableReason,
-        am_platinum_operation_wise_analysis_advisor_report: 'Advisor-level WA/WB/VAS source is unavailable for Platinum.',
-        am_platinum_rsa_report: 'RSA source is unavailable for Platinum.',
-      },
+      unsupportedComparisonSources: {},
       sourceStatus: {
         ...(sourceStatus || {
           operationAnalysis: {

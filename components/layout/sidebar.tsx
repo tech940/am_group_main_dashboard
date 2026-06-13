@@ -136,6 +136,41 @@ const brandNavigation = [
       },
     ],
   },
+  {
+    name: 'AM MG',
+    key: 'mg',
+    href: '/brands/mg',
+    logo: '',
+    logoClassName: '',
+    logoContainerClassName: '',
+    color: 'text-blue-100',
+    icon: Activity,
+    comingSoon: false,
+    sections: [
+      {
+        name: 'Service',
+        key: 'service',
+        submenus: [
+          { name: 'Business Excellence', href: '/brands/mg/business-excellence/overview' },
+          { name: 'Service Appointment', href: '/brands/mg/service-appointment' },
+          { name: 'MG Proforma', href: '/brands/mg/proforma' },
+        ],
+      },
+      {
+        name: 'Sales',
+        key: 'sales',
+        submenus: [
+          { name: 'Demo Job Cards', href: '/brands/mg/demo-job-cards' },
+          { name: 'Demo Cars List', href: '/brands/mg/demo-cars-list' },
+        ],
+      },
+      {
+        name: 'H Promise',
+        key: 'h-promise',
+        submenus: [],
+      },
+    ],
+  },
 ]
 
 const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
@@ -162,6 +197,11 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/platinum/demo-job-cards': 'platinum.demo_job_cards.view',
   '/brands/platinum/demo-cars-list': 'platinum.demo_cars_list.view',
   '/brands/platinum/proforma': 'platinum.proforma.view',
+  '/brands/mg/business-excellence/overview': 'mg.business_excellence.view',
+  '/brands/mg/service-appointment': 'mg.service_appointment.view',
+  '/brands/mg/demo-job-cards': 'mg.demo_job_cards.view',
+  '/brands/mg/demo-cars-list': 'mg.demo_cars_list.view',
+  '/brands/mg/proforma': 'mg.proforma.view',
   '/admin': 'user_management.view',
 
 }

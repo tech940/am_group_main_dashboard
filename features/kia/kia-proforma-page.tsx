@@ -654,7 +654,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
       </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-2">
-        <FormSection title="Customer Details" subtitle="Customer identity and contact information for the proforma.">
+        <FormSection title="Customer Details" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Customer Type"><Select value={form.customerType} onValueChange={(value) => update('customerType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['Customer', 'CSD', 'Bharat Series'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Proforma Date"><TextInput type="date" value={form.proformaDate} onChange={(event) => update('proformaDate', event.target.value)} /></Field>
@@ -667,7 +667,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
           </div>
         </FormSection>
 
-        <FormSection title="Vehicle & Bank Insurance" subtitle="Vehicle selection, finance/bank details, insurance, and registration context.">
+        <FormSection title="Vehicle & Bank Insurance" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Model" error={errors.modelName}><DataListInput listId="kia-models" value={form.modelName} onChange={(value) => { update('modelName', value); update('trimDescription', '') }} options={options.models} /></Field>
             <Field label="Variant / Trim" error={errors.trimDescription}><DataListInput listId="kia-trims" value={form.trimDescription} onChange={(value) => update('trimDescription', value)} onBlur={canonicalizeTrim} options={filteredTrims} /></Field>
@@ -681,7 +681,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
           </div>
         </FormSection>
 
-        <FormSection title="Price Details" subtitle={editablePrices ? 'Editable because the customer type allows manual pricing.' : 'Auto-filled from the selected model, trim, bank, and branch.'}>
+        <FormSection title="Price Details" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
             {[
               ['exShowroom', 'Ex-Showroom'],
@@ -699,7 +699,7 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
           </div>
         </FormSection>
 
-        <FormSection title="Discounts & Deductions" subtitle="Offers, exchange, booking and final adjustment deductions.">
+        <FormSection title="Discounts & Deductions" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
             {[
               ['cashDiscount', 'Consumer / Cash Offer'],

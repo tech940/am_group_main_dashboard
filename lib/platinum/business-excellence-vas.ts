@@ -237,8 +237,8 @@ export async function fetchPlatinumWorkshopVasAmount(
           ${descriptionSql} AS description
         FROM am_platinum_operation_wise_analysis_report
         CROSS JOIN candidate_period
-        WHERE report_period_start = candidate_period.period_start
-          AND report_period_end = candidate_period.period_end
+        WHERE report_period_start::date = candidate_period.period_start
+          AND report_period_end::date = candidate_period.period_end
           ${reportTypeFilter(columns)}
           ${operationDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
