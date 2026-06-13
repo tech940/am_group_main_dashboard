@@ -24,6 +24,7 @@ import { createClient } from '@/lib/supabase/client'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
 import { useUserRole } from '@/lib/hooks/use-user-role'
+import { isSuperAdminRole } from '@/lib/auth/roles'
 
 const HYUNDAI_LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/4/44/Hyundai_Motor_Company_logo.svg'
 
@@ -81,7 +82,7 @@ const brandNavigation = [
           { name: 'Business Excellence', href: '/brands/hyundai/business-excellence/overview' },
           { name: 'Service Appointment', href: '/brands/hyundai/service-appointment' },
           { name: 'Hyundai Proforma', href: '/brands/hyundai/proforma' },
-          { name: 'Warranty List', href: '/brands/hyundai/warranty-list' },
+          { name: 'Claim YTP', href: '/brands/hyundai/warranty-list' },
           { name: 'Warranty Claim List', href: '/brands/hyundai/warranty-claim-list' },
         ],
       },
@@ -138,7 +139,7 @@ const brandNavigation = [
 ]
 
 const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
-const alwaysVisibleBrandKeys = new Set(['hyundai', 'platinum'])
+const alwaysVisibleBrandKeys = new Set<string>()
 
 const sidebarPermissionByHref: Record<string, string> = {
   '/purchase-orders': 'purchase_orders.view',
@@ -161,8 +162,8 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/platinum/demo-job-cards': 'platinum.demo_job_cards.view',
   '/brands/platinum/demo-cars-list': 'platinum.demo_cars_list.view',
   '/brands/platinum/proforma': 'platinum.proforma.view',
-  '/admin/users': 'user_management.view',
-  '/admin/settings': 'dashboard_settings.view',
+  '/admin': 'user_management.view',
+
 }
 
 function isSidebarHrefActive(href: string, pathname: string | null) {
@@ -190,8 +191,8 @@ export function Sidebar() {
   const [openAdmin, setOpenAdmin] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
-  const { userRole, canAccessAdmin, userBrand, loading } = useUserRole()
-  const canAccessFinanceOrders = ['admin', 'ceo', 'md', 'ea', 'accounts', 'finance_head'].includes(userRole || '')
+  const { userRole, canAccessAdmin, isSuperAdmin, userBrand, loading } = useUserRole()
+  const canAccessFinanceOrders = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'accounts', 'finance_head'].includes(userRole || '')
   const canAccessAmFinance = Boolean(userRole)
 
   useEffect(() => {
@@ -213,7 +214,7 @@ export function Sidebar() {
   }, [loading, userRole])
 
   const hasPermission = (permissionKey: string) => {
-    if (userRole === 'admin') return true
+    if (isSuperAdminRole(userRole)) return true
     if (!permissionMap) return true
     return permissionMap[permissionKey] === true
   }
@@ -224,7 +225,7 @@ export function Sidebar() {
 
   const canAccessBrand = (brandKey: string) => {
     if (alwaysVisibleBrandKeys.has(brandKey)) return true
-    if (userRole === 'admin') return true
+    if (isSuperAdminRole(userRole)) return true
     if (!userBrand) return false
     if (hasAllBranchAccess(userBrand)) return true
     return brandKey === userBrand
@@ -234,7 +235,7 @@ export function Sidebar() {
     return availableBrands
       .filter((brand) => {
         if (alwaysVisibleBrandKeys.has(brand.key)) return true
-        if (userRole === 'admin') return true
+        if (isSuperAdminRole(userRole)) return true
         if (!userBrand) return false
         if (hasAllBranchAccess(userBrand)) return true
         return brand.key === userBrand
@@ -519,14 +520,12 @@ export function Sidebar() {
                   {!collapsed && openAdmin && (
                     <div className="ml-4 space-y-1.5 border-l-2 border-white/20 pl-4 animate-in slide-in-from-top-2 duration-200">
                       <Link
-                        href="/admin/users"
-                        target="_blank"
-                        rel="noreferrer"
+                        href="/admin?tab=users"
                         prefetch={false}
                         onClick={handleSidebarLinkClick}
                         className={cn(
                           'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
-                          pathname === '/admin/users'
+                          pathname?.startsWith('/admin')
                             ? 'border-l-2 border-emerald-100 text-white font-semibold'
                             : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
                         )}
@@ -534,40 +533,42 @@ export function Sidebar() {
                         <Users className="h-3.5 w-3.5" />
                         User Management
                       </Link>
-                      {userRole === 'admin' && (
+                      <Link
+                        href="/admin?tab=access"
+                        prefetch={false}
+                        onClick={handleSidebarLinkClick}
+                        className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2.5 text-xs font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
+                      >
+                        <KeyRound className="h-3.5 w-3.5" />
+                        Access Control
+                      </Link>
+                      {isSuperAdmin && (
                         <Link
-                          href="/admin/permissions"
-                          target="_blank"
-                          rel="noreferrer"
+                          href="/admin?tab=branch-admins"
                           prefetch={false}
                           onClick={handleSidebarLinkClick}
                           className={cn(
                             'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
-                            pathname === '/admin/permissions'
+                            pathname?.startsWith('/admin')
                               ? 'border-l-2 border-emerald-100 text-white font-semibold'
                               : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
                           )}
                         >
                           <KeyRound className="h-3.5 w-3.5" />
-                          Access Control
+                          Branch Admins
                         </Link>
                       )}
-                      <Link
-                        href="/admin/settings"
-                        target="_blank"
-                        rel="noreferrer"
-                        prefetch={false}
-                        onClick={handleSidebarLinkClick}
-                        className={cn(
-                          'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
-                          pathname === '/admin/settings'
-                            ? 'border-l-2 border-emerald-100 text-white font-semibold'
-                            : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
-                        )}
-                      >
-                        <Settings className="h-3.5 w-3.5" />
-                        Dashboard Settings
-                      </Link>
+                      {isSuperAdmin && (
+                        <Link
+                          href="/admin?tab=settings"
+                          prefetch={false}
+                          onClick={handleSidebarLinkClick}
+                          className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2.5 text-xs font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
+                        >
+                          <Settings className="h-3.5 w-3.5" />
+                          Dashboard Settings
+                        </Link>
+                      )}
                     </div>
                   )}
                 </div>

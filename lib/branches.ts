@@ -29,7 +29,7 @@ export function isUserBranchValue(value: unknown): value is UserBranchValue {
 }
 
 export function hasAllBranchAccess(value: string | null | undefined) {
-  return !value || value === ALL_BRANCH_OPTION.value
+  return value === ALL_BRANCH_OPTION.value
 }
 
 export function getBranchLabel(value: string | null | undefined) {

@@ -15,6 +15,15 @@ import {
   emptyPlatinumRoBillingAudit,
   fetchPlatinumRoBillingAudit,
 } from '@/lib/platinum/ro-billing-audit'
+import {
+  PLATINUM_BE_CALCULATION_META,
+  platinumActiveBillSql,
+  platinumRoBillingDealerFilter,
+  platinumRoBillingDealerSql,
+  platinumRoBillingInvoiceKeySql,
+  platinumRoBillingRoKeySql,
+  platinumVasPeriodsAlign,
+} from '@/lib/platinum/business-excellence-calculations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -155,10 +164,14 @@ function emptyDealerCoverage(startDate: string, endDate: string, dealerCode: Dea
     isAllLocations: !dealerCode,
     hasDataInRange: false,
     rowCountInRange: 0,
+    earliestAvailableDate: null,
     latestAvailableDate: null,
     dateBasis: 'bill_date',
     sourceLabel: 'RO Billing',
     emptyReason: `RO Billing coverage could not be checked for ${startDate} to ${endDate}.`,
+    comparisonStatus: 'source_missing' as const,
+    unmappedRowCount: 0,
+    lastUpdatedAt: null,
   }
 }
 
@@ -172,32 +185,21 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:workshop-performance:v39:${createHash('sha1')
+  return `platinum:business-excellence:workshop-performance:v41:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
 
 function roBillingDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND COALESCE(
-        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-        NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
-        NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
-      ) = ${dealerCode}`
-    : sql``
+  return platinumRoBillingDealerFilter(dealerCode)
 }
 
 function roBillingDealerKeySql() {
-  return sql`COALESCE(
-    NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-    NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
-    NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
-    'UNMAPPED'
-  )`
+  return sql`COALESCE(${platinumRoBillingDealerSql()}, 'UNMAPPED')`
 }
 
 function activeBillStatusSql() {
-  return sql`LOWER(TRIM(COALESCE(bill_type::text, ''))) NOT LIKE '%cancel%'`
+  return platinumActiveBillSql()
 }
 
 function operationDealerFilter(dealerCode: DealerFilter) {
@@ -277,17 +279,31 @@ function operationCountExpression(columns: Set<string>) {
 }
 
 async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  if (dealerCode) return false
-  if (!(await tableExists('am_platinum_workshop_performance_jc_summary_v1'))) return false
+  if (!(await tableExists('am_platinum_workshop_performance_jc_summary_v2'))) return false
 
   const result = await db.execute(sql`
     SELECT
-      MIN(report_date)::date <= ${startDate}::date
-      AND MAX(report_date)::date >= ${endDate}::date AS usable
-    FROM am_platinum_workshop_performance_jc_summary_v1
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'am_platinum_workshop_performance_jc_summary_v2'
+          AND column_name = 'ro_key'
+      )
+      AND (
+        SELECT MIN(report_date)::date <= ${startDate}::date
+          AND MAX(report_date)::date >= ${endDate}::date
+        FROM am_platinum_workshop_performance_jc_summary_v2
+        WHERE 1 = 1
+          ${workshopSummaryDealerWhere(dealerCode)}
+      ) AS usable
   `)
 
   return Boolean(resultRows(result)[0]?.usable)
+}
+
+function workshopSummaryDealerWhere(dealerCode: DealerFilter) {
+  return dealerCode ? sql`AND dealer_code = ${dealerCode}` : sql``
 }
 
 async function fetchServiceSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<ServiceAggregate[]> {
@@ -295,20 +311,21 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
     WITH classified AS (
       SELECT
         ${workshopCategoryExpression('service_advisor')} AS workshop_category,
-        jc_key,
+        ro_key,
         labour_amount,
         part_amount,
         total_amount,
         discount_amount
-      FROM am_platinum_workshop_performance_jc_summary_v1
+      FROM am_platinum_workshop_performance_jc_summary_v2
       WHERE report_date >= ${startDate}::date
         AND report_date < (${endDate}::date + INTERVAL '1 day')
+        ${workshopSummaryDealerWhere(dealerCode)}
         ${advisorWhereClause(advisor)}
     )
     SELECT
       workshop_category AS group_type,
       workshop_category AS service_type,
-      COUNT(DISTINCT jc_key)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amount), 0)::float AS labour_amount,
       COALESCE(SUM(part_amount), 0)::float AS part_amount,
       COALESCE(SUM(labour_amount + part_amount), 0)::float AS total_amount,
@@ -322,7 +339,8 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
         id,
         ${roBillingDealerKeySql()} AS dealer_key,
         ${workshopCategoryExpression('service_advisor')} AS workshop_category,
-        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
+        ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
+        ${platinumRoBillingRoKeySql()} AS ro_key,
         bill_date::date AS bill_date,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
@@ -345,26 +363,27 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
       SELECT
         dealer_key,
         workshop_category,
-        jc_key,
+        invoice_key,
+        ro_key,
         labour_amt,
         part_amt,
         total_amt,
         discount_amount,
         ROW_NUMBER() OVER (
-          PARTITION BY dealer_key, jc_key
-          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+          PARTITION BY dealer_key, invoice_key
+          ORDER BY uploaded_at DESC NULLS LAST, id DESC
         ) AS row_rank
       FROM base
     ),
     dedup AS (
-      SELECT workshop_category, dealer_key, jc_key, labour_amt, part_amt, total_amt, discount_amount
+      SELECT workshop_category, dealer_key, invoice_key, ro_key, labour_amt, part_amt, total_amt, discount_amount
       FROM ranked
       WHERE row_rank = 1
     )
     SELECT
       workshop_category AS group_type,
       workshop_category AS service_type,
-      COUNT(*)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount,
       COALESCE(SUM(labour_amt + part_amt), 0)::float AS total_amount,
@@ -390,14 +409,15 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
     SELECT
       group_type,
       service_type,
-      COUNT(DISTINCT jc_key)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amount), 0)::float AS labour_amount,
       COALESCE(SUM(part_amount), 0)::float AS part_amount,
       COALESCE(SUM(labour_amount + part_amount), 0)::float AS total_amount,
       COALESCE(SUM(discount_amount), 0)::float AS discount_amount
-    FROM am_platinum_workshop_performance_jc_summary_v1
+    FROM am_platinum_workshop_performance_jc_summary_v2
     WHERE report_date >= ${startDate}::date
       AND report_date < (${endDate}::date + INTERVAL '1 day')
+      ${workshopSummaryDealerWhere(dealerCode)}
       ${advisorWhereClause(advisor)}
     GROUP BY group_type, service_type
     ORDER BY group_type ASC, total_jc DESC, service_type ASC
@@ -408,7 +428,8 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
         ${roBillingDealerKeySql()} AS dealer_key,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS group_type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
-        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
+        ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
+        ${platinumRoBillingRoKeySql()} AS ro_key,
         bill_date::date AS bill_date,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
@@ -432,26 +453,27 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
         dealer_key,
         group_type,
         service_type,
-        jc_key,
+        invoice_key,
+        ro_key,
         labour_amt,
         part_amt,
         total_amt,
         discount_amount,
         ROW_NUMBER() OVER (
-          PARTITION BY dealer_key, jc_key
-          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+          PARTITION BY dealer_key, invoice_key
+          ORDER BY uploaded_at DESC NULLS LAST, id DESC
         ) AS row_rank
       FROM base
     ),
     dedup AS (
-      SELECT group_type, service_type, dealer_key, jc_key, labour_amt, part_amt, total_amt, discount_amount
+      SELECT group_type, service_type, dealer_key, invoice_key, ro_key, labour_amt, part_amt, total_amt, discount_amount
       FROM ranked
       WHERE row_rank = 1
     )
     SELECT
       group_type,
       service_type,
-      COUNT(*)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount,
       COALESCE(SUM(labour_amt + part_amt), 0)::float AS total_amount,
@@ -590,12 +612,13 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
   const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode) ? sql`
     SELECT
       report_date AS bill_date,
-      COUNT(DISTINCT jc_key)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amount), 0)::float AS labour_amount,
       COALESCE(SUM(part_amount), 0)::float AS part_amount
-    FROM am_platinum_workshop_performance_jc_summary_v1
+    FROM am_platinum_workshop_performance_jc_summary_v2
     WHERE report_date >= ${startDate}::date
       AND report_date < (${endDate}::date + INTERVAL '1 day')
+      ${workshopSummaryDealerWhere(dealerCode)}
       ${advisorWhereClause(advisor)}
     GROUP BY report_date
     ORDER BY report_date ASC
@@ -605,7 +628,8 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
         id,
         ${roBillingDealerKeySql()} AS dealer_key,
         bill_date::date AS bill_date,
-        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
+        ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
+        ${platinumRoBillingRoKeySql()} AS ro_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
         uploaded_at
@@ -620,23 +644,24 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
       SELECT
         dealer_key,
         bill_date,
-        jc_key,
+        invoice_key,
+        ro_key,
         labour_amt,
         part_amt,
         ROW_NUMBER() OVER (
-          PARTITION BY dealer_key, jc_key
-          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+          PARTITION BY dealer_key, invoice_key
+          ORDER BY uploaded_at DESC NULLS LAST, id DESC
         ) AS row_rank
       FROM base
     ),
     dedup AS (
-      SELECT bill_date, dealer_key, jc_key, labour_amt, part_amt
+      SELECT bill_date, dealer_key, invoice_key, ro_key, labour_amt, part_amt
       FROM ranked
       WHERE row_rank = 1
     )
     SELECT
       bill_date,
-      COUNT(*)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount
     FROM dedup
@@ -657,12 +682,13 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
   const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode) ? sql`
     SELECT
       service_advisor AS advisor,
-      COUNT(DISTINCT jc_key)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amount), 0)::float AS labour_amount,
       COALESCE(SUM(part_amount), 0)::float AS part_amount
-    FROM am_platinum_workshop_performance_jc_summary_v1
+    FROM am_platinum_workshop_performance_jc_summary_v2
     WHERE report_date >= ${startDate}::date
       AND report_date < (${endDate}::date + INTERVAL '1 day')
+      ${workshopSummaryDealerWhere(dealerCode)}
     GROUP BY service_advisor
     ORDER BY (COALESCE(SUM(labour_amount), 0) + COALESCE(SUM(part_amount), 0)) DESC
   ` : sql`
@@ -671,7 +697,8 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
         id,
         ${roBillingDealerKeySql()} AS dealer_key,
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
-        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
+        ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
+        ${platinumRoBillingRoKeySql()} AS ro_key,
         bill_date::date AS bill_date,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
@@ -686,23 +713,24 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
       SELECT
         dealer_key,
         advisor,
-        jc_key,
+        invoice_key,
+        ro_key,
         labour_amt,
         part_amt,
         ROW_NUMBER() OVER (
-          PARTITION BY dealer_key, jc_key
-          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC, uploaded_at DESC NULLS LAST, id DESC
+          PARTITION BY dealer_key, invoice_key
+          ORDER BY uploaded_at DESC NULLS LAST, id DESC
         ) AS row_rank
       FROM base
     ),
     dedup AS (
-      SELECT advisor, dealer_key, jc_key, labour_amt, part_amt
+      SELECT advisor, dealer_key, invoice_key, ro_key, labour_amt, part_amt
       FROM ranked
       WHERE row_rank = 1
     )
     SELECT
       advisor,
-      COUNT(*)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount
     FROM dedup
@@ -1024,11 +1052,17 @@ function summarizeAddons(addonRows: AddonAggregate[]) {
   })
 }
 
-function buildTotalRow(rows: ReturnType<typeof buildRows>, addonTotals = summarizeAddons([]), auxiliaryCounts = { ewCount: 0, rsaCount: 0 }) {
-  const totalJc = rows.reduce((total, row) => total + row.totalJc, 0)
+function buildTotalRow(
+  rows: ReturnType<typeof buildRows>,
+  addonTotals = summarizeAddons([]),
+  auxiliaryCounts = { ewCount: 0, rsaCount: 0 },
+  exactTotalJc?: number
+) {
+  const rolledUpJc = rows.reduce((total, row) => total + row.totalJc, 0)
+  const totalJc = exactTotalJc === undefined ? rolledUpJc : exactTotalJc
   const labourAmount = rows.reduce((total, row) => total + row.labourAmount, 0)
   const lessVas = addonTotals.vasAmount
-  const labMinusVas = rows.reduce((total, row) => total + row.labMinusVas, 0)
+  const labMinusVas = Math.max(labourAmount - lessVas, 0)
   const spareSale = rows.reduce((total, row) => total + row.spareSale, 0)
   const discount = rows.reduce((total, row) => total + row.discount, 0)
   const waCount = addonTotals.waCount
@@ -1134,19 +1168,11 @@ async function buildWorkshopPayload(
     ),
   ])
 
-  const effectiveAddonRows = !advisor && addonRows.length === 0 && workshopVasMeta.available
-    ? [{
-      serviceType: 'Others',
-      vasAmount: workshopVasMeta.amount,
-      waCount: 0,
-      waAmount: 0,
-      wbCount: 0,
-      wbAmount: 0,
-    }]
-    : addonRows
-
+  const effectiveAddonRows = addonRows
   const addonTotals = summarizeAddons(effectiveAddonRows)
+  if (!advisor && workshopVasMeta.available) addonTotals.vasAmount = workshopVasMeta.amount
   const lyAddonTotals = summarizeAddons(lyAddonRows)
+  if (!advisor && lyWorkshopVasMeta.available) lyAddonTotals.vasAmount = lyWorkshopVasMeta.amount
   const auxiliaryCounts = advisor
     ? { ewCount: 0, rsaCount: 0, rsaAmount: 0 }
     : auxiliary
@@ -1157,26 +1183,32 @@ async function buildWorkshopPayload(
   const totalRow = buildTotalRow(rows, addonTotals, {
     ewCount: auxiliaryCounts.ewCount,
     rsaCount: auxiliaryCounts.rsaCount,
-  })
+  }, roBillingAudit.dedupedJc)
   const lyRows = buildManagementRows(lyServiceRows, lyAddonRows)
   const lyTotal = buildTotalRow(lyRows, lyAddonTotals, {
     ewCount: lyAuxiliaryCounts.ewCount,
     rsaCount: lyAuxiliaryCounts.rsaCount,
-  })
-  const coreAddonTotals = summarizeAddons(coreAddonRows)
-  const coreRows = buildRows(coreServiceRows, coreAddonRows)
+  }, roBillingAudit.ly.dedupedJc)
+  const effectiveCoreAddonRows = advisor ? coreAddonRows : []
+  const coreAddonTotals = summarizeAddons(effectiveCoreAddonRows)
+  if (!advisor && workshopVasMeta.available) coreAddonTotals.vasAmount = workshopVasMeta.amount
+  const coreRows = buildRows(coreServiceRows, effectiveCoreAddonRows)
   const coreTotalRow = buildTotalRow(coreRows, coreAddonTotals, {
     ewCount: auxiliaryCounts.ewCount,
     rsaCount: auxiliaryCounts.rsaCount,
-  })
+  }, roBillingAudit.dedupedJc)
 
   const totalRevenue = totalRow.labourAmount + totalRow.spareSale
   const lyRevenue = lyTotal.labourAmount + lyTotal.spareSale
   const hasVasLy = lyWorkshopVasMeta.available
   const vasPeriodsAlign = workshopVasMeta.available
     && hasVasLy
-    && workshopVasMeta.periodStart?.slice(5) === lyWorkshopVasMeta.periodStart?.slice(5)
-    && workshopVasMeta.periodEnd?.slice(5) === lyWorkshopVasMeta.periodEnd?.slice(5)
+    && platinumVasPeriodsAlign(
+      workshopVasMeta.periodStart,
+      workshopVasMeta.periodEnd,
+      lyWorkshopVasMeta.periodStart,
+      lyWorkshopVasMeta.periodEnd
+    )
   const vasLy = hasVasLy ? lyWorkshopVasMeta.amount : undefined
   const vasComparisonStatus = !workshopVasMeta.available
     ? 'source_missing'
@@ -1218,7 +1250,8 @@ async function buildWorkshopPayload(
     advisors,
     meta: {
       rowCount: rows.length,
-      jcDefinition: 'COUNT(DISTINCT COALESCE(bill_no, r_o_no, id))',
+      calculation: PLATINUM_BE_CALCULATION_META,
+      jcDefinition: PLATINUM_BE_CALCULATION_META.loadDefinition,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       advisor,
       dealerCode,

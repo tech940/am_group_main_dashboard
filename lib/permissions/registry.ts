@@ -323,19 +323,19 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
   },
   {
     key: 'hyundai.warranty_list',
-    name: 'Warranty List',
+    name: 'Claim YTP',
     parentKey: 'hyundai.service',
-    description: 'AM Hyundai warranty list for tracking warranty-covered vehicles.',
+    description: 'AM Hyundai Claim YTP tracking, SLA remarks, and audit history.',
     sortOrder: 134,
-    actions: ['view'],
+    actions: ['view', 'edit', 'audit'],
   },
   {
     key: 'hyundai.warranty_claim_list',
     name: 'Warranty Claim List',
     parentKey: 'hyundai.service',
-    description: 'AM Hyundai warranty claim tracking and management.',
+    description: 'AM Hyundai warranty claim tracking, evidence, and management insights.',
     sortOrder: 135,
-    actions: ['view'],
+    actions: ['view', 'edit', 'audit'],
   },
   {
     key: 'hyundai.proforma',
@@ -530,6 +530,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'edit'],
   },
   {
+    key: 'admin_audit',
+    name: 'Admin Audit',
+    parentKey: null,
+    description: 'Scoped user lifecycle and permission administration history.',
+    sortOrder: 85,
+    actions: ['view'],
+  },
+  {
     key: 'dashboard_settings',
     name: 'Dashboard Settings',
     parentKey: null,
@@ -568,7 +576,9 @@ function keysForGroups(groups: string[], actions?: PermissionAction[]) {
 const allPermissionKeys = PERMISSIONS.map((permission) => permission.key)
 
 export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
-  admin: 'Admin',
+  admin: 'Legacy Admin',
+  super_admin: 'Super Admin',
+  branch_admin: 'Branch Admin',
   ceo: 'CEO',
   md: 'MD',
   ea: 'EA',
@@ -620,6 +630,11 @@ const hyundaiPlatinumExecutiveGroups = [
 
 export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   admin: allPermissionKeys,
+  super_admin: allPermissionKeys,
+  branch_admin: keysForGroups(
+    ['user_management', 'access_control', 'admin_audit'],
+    ['view', 'create', 'edit']
+  ),
   ceo: keysForGroups([
     'kia',
     'kia.service',

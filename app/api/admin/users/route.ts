@@ -1,213 +1,225 @@
 import { NextResponse } from 'next/server'
 import { and, count, desc, eq, ilike, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { isUserBranchValue } from '@/lib/branches'
+import { clearAppUserCache, getAuthenticatedAppUser, type AppUser } from '@/lib/auth/app-user'
+import {
+  canAssignRole,
+  canManageAdminTarget,
+  canSeeAdminTarget,
+  getAdminCapabilities,
+  resolveManagedBranch,
+  writeAdminAudit,
+} from '@/lib/admin/authorization'
 import {
   BRANCH_MODULE_ACCESS_ROLE_KEEP,
   buildBranchModuleAccessPermissionChanges,
   canUseBranchModuleAccessRole,
   isBranchModuleAccessRoleEditValue,
   isBranchModuleAccessRoleValue,
-  type BranchModuleAccessRoleEditValue,
   type BranchModuleAccessRoleValue,
 } from '@/lib/branch-module-access'
+import { isUserBranchValue } from '@/lib/branches'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
-import { isMissingPermissionTableError, updateUserPermissionOverrides } from '@/lib/permissions/service'
+import {
+  clearUserPermissionCache,
+  isMissingPermissionTableError,
+  updateUserPermissionOverrides,
+} from '@/lib/permissions/service'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
-function canAccessAdminPanel(role: string | null | undefined) {
-  return role === 'admin' || role === 'md'
-}
-
-function normalizeUserBranchAccess(value: unknown) {
-  if (value === null || value === undefined || value === '') {
-    return null
-  }
-
-  return isUserBranchValue(value) ? value : undefined
-}
-
-function normalizeCreateBranchModuleRole(value: unknown): BranchModuleAccessRoleValue {
-  return isBranchModuleAccessRoleValue(value) ? value : 'inherit'
-}
-
-function normalizeEditBranchModuleRole(value: unknown): BranchModuleAccessRoleEditValue {
-  return isBranchModuleAccessRoleEditValue(value) ? value : BRANCH_MODULE_ACCESS_ROLE_KEEP
-}
-
-const VALID_USER_ROLES = users.role.enumValues
 const BULK_CREATE_LIMIT = 50
+const VALID_ROLES = users.role.enumValues
 
 type CreateUserInput = {
-  email: unknown
-  fullName: unknown
-  password: unknown
-  role: unknown
+  email?: unknown
+  fullName?: unknown
+  password?: unknown
+  role?: unknown
   brand?: unknown
   department?: unknown
+  phoneNumber?: unknown
   branchModuleRole?: unknown
 }
 
-function normalizeCreateUserInput(input: CreateUserInput) {
-  const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : ''
-  const fullName = typeof input.fullName === 'string' ? input.fullName.trim() : ''
-  const password = typeof input.password === 'string' ? input.password : ''
-  const role = typeof input.role === 'string' ? input.role.trim() : ''
-  const department = typeof input.department === 'string' && input.department.trim()
-    ? input.department.trim()
-    : null
-
-  if (!email || !fullName || !password || !role) {
-    return { error: 'Missing required fields: email, fullName, password, role' } as const
-  }
-
-  if (!VALID_USER_ROLES.includes(role as typeof users.role.enumValues[number])) {
-    return { error: `Invalid role: ${role}` } as const
-  }
-
-  const normalizedBrand = normalizeUserBranchAccess(input.brand)
-
-  if (normalizedBrand === undefined) {
-    return { error: 'Invalid branch access selected' } as const
-  }
-
-  if (input.branchModuleRole !== undefined && !isBranchModuleAccessRoleValue(input.branchModuleRole)) {
-    return { error: 'Invalid branch module role selected' } as const
-  }
-
-  const normalizedBranchModuleRole = normalizeCreateBranchModuleRole(input.branchModuleRole)
-
-  if (
-    normalizedBranchModuleRole !== 'inherit'
-    && !canUseBranchModuleAccessRole(normalizedBrand)
-  ) {
-    return { error: 'Select a branch before applying branch module access' } as const
-  }
-
-  return {
-    email,
-    fullName,
-    password,
-    role: role as typeof users.role.enumValues[number],
-    brand: normalizedBrand,
-    department,
-    branchModuleRole: normalizedBranchModuleRole,
-  } as const
+function normalizeOptionalString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-async function applyBranchModuleRolePreset(params: {
+function normalizeRequestedBranch(value: unknown) {
+  if (value === null || value === undefined || value === '') return null
+  return isUserBranchValue(value) ? value : undefined
+}
+
+function publicUser(user: typeof users.$inferSelect, actor: AppUser) {
+  return {
+    id: user.id,
+    email: user.email,
+    fullName: user.fullName,
+    role: user.role,
+    brand: user.brand,
+    department: user.department,
+    phoneNumber: user.phoneNumber,
+    isActive: user.isActive,
+    createdBy: user.createdBy,
+    updatedBy: user.updatedBy,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    capabilities: {
+      canManage: canManageAdminTarget(actor, user),
+      canChangePermissions: canManageAdminTarget(actor, user),
+      managedBySuperAdmin: canSeeAdminTarget(actor, user) && !canManageAdminTarget(actor, user),
+    },
+  }
+}
+
+async function applyBranchModulePreset(params: {
   targetUserId: string
-  changedByUserId: string
-  branchAccess: string | null | undefined
-  role: BranchModuleAccessRoleValue
+  actor: AppUser
+  branch: string | null
+  preset: BranchModuleAccessRoleValue
 }) {
-  const changes = buildBranchModuleAccessPermissionChanges(params.branchAccess, params.role)
+  const changes = buildBranchModuleAccessPermissionChanges(params.branch, params.preset)
   if (Object.keys(changes).length === 0) return null
 
   try {
     await updateUserPermissionOverrides({
       targetUserId: params.targetUserId,
-      changedByUserId: params.changedByUserId,
+      changedByUserId: params.actor.id,
       changes,
-      reason: `Applied branch module role preset: ${params.role}`,
+      reason: `Applied branch module role preset: ${params.preset}`,
     })
     return null
   } catch (error) {
     if (isMissingPermissionTableError(error)) {
-      return 'Branch module role was not applied because permission tables are not installed. Run npm run db:setup-permissions-manager.'
+      return 'Permission tables are not installed; the user was created without optional overrides.'
     }
     throw error
   }
 }
 
-async function createUserWithProfile(input: CreateUserInput, changedByUserId: string) {
-  const normalized = normalizeCreateUserInput(input)
+function normalizeCreateInput(input: CreateUserInput, actor: AppUser) {
+  const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : ''
+  const fullName = typeof input.fullName === 'string' ? input.fullName.trim() : ''
+  const password = typeof input.password === 'string' ? input.password : ''
+  const role = typeof input.role === 'string' ? input.role.trim() : ''
+  const requestedBranch = normalizeRequestedBranch(input.brand)
 
-  if ('error' in normalized) {
-    return { ok: false, error: normalized.error } as const
+  if (!email || !fullName || !password || !role) {
+    return { error: 'Email, full name, password, and role are required.' } as const
+  }
+  if (!VALID_ROLES.includes(role as AppUser['role']) || role === 'admin') {
+    return { error: 'The selected role is invalid or deprecated.' } as const
+  }
+  if (!canAssignRole(actor, role as AppUser['role'])) {
+    return { error: 'You are not authorized to assign this role.' } as const
+  }
+  if (requestedBranch === undefined) {
+    return { error: 'Invalid branch assignment.' } as const
   }
 
-  const existingUser = await db.select({ id: users.id })
+  const branch = resolveManagedBranch(actor, requestedBranch)
+  if (branch === undefined) return { error: 'Invalid branch assignment.' } as const
+  if (role === 'branch_admin' && (!branch || branch === 'all')) {
+    return { error: 'Branch Admin must be assigned to exactly one branch.' } as const
+  }
+  if (getAdminCapabilities(actor)?.authority === 'branch_admin' && (!branch || branch === 'all')) {
+    return { error: 'Branch users must remain assigned to your branch.' } as const
+  }
+
+  const branchModuleRole = isBranchModuleAccessRoleValue(input.branchModuleRole)
+    ? input.branchModuleRole
+    : 'inherit'
+
+  return {
+    email,
+    fullName,
+    password,
+    role: role as AppUser['role'],
+    branch,
+    department: normalizeOptionalString(input.department),
+    phoneNumber: normalizeOptionalString(input.phoneNumber),
+    branchModuleRole,
+  } as const
+}
+
+async function createUser(input: CreateUserInput, actor: AppUser, request: Request) {
+  const normalized = normalizeCreateInput(input, actor)
+  if ('error' in normalized) return { ok: false, error: normalized.error } as const
+
+  const duplicate = await db.select({ id: users.id })
     .from(users)
-    .where(eq(users.email, normalized.email))
+    .where(and(eq(users.email, normalized.email), isNull(users.deletedAt)))
     .limit(1)
+  if (duplicate.length > 0) return { ok: false, error: 'User with this email already exists.' } as const
 
-  if (existingUser.length > 0) {
-    return { ok: false, error: 'User with this email already exists' } as const
-  }
-
-  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email: normalized.email,
     password: normalized.password,
     email_confirm: true,
-    user_metadata: {
-      full_name: normalized.fullName,
-    },
+    user_metadata: { full_name: normalized.fullName },
   })
-
-  if (authError || !authData.user) {
-    return { ok: false, error: authError?.message || 'Failed to create auth user' } as const
-  }
+  if (error || !data.user) return { ok: false, error: error?.message || 'Failed to create authentication user.' } as const
 
   try {
-    const [newUser] = await db.insert(users).values({
-      supabaseId: authData.user.id,
+    const [created] = await db.insert(users).values({
+      supabaseId: data.user.id,
       email: normalized.email,
       fullName: normalized.fullName,
       role: normalized.role,
-      brand: normalized.brand,
+      brand: normalized.branch,
       department: normalized.department,
+      phoneNumber: normalized.phoneNumber,
+      createdBy: actor.id,
+      updatedBy: actor.id,
       isActive: true,
-    }).returning({
-      id: users.id,
-      email: users.email,
-      fullName: users.fullName,
-      role: users.role,
-      brand: users.brand,
-      department: users.department,
-      isActive: users.isActive,
-      createdAt: users.createdAt,
-    })
+    }).returning()
 
-    const permissionWarning = normalized.branchModuleRole !== 'inherit' && canUseBranchModuleAccessRole(normalized.brand)
-      ? await applyBranchModuleRolePreset({
-        targetUserId: newUser.id,
-        changedByUserId,
-        branchAccess: normalized.brand,
-        role: normalized.branchModuleRole,
+    const warning = normalized.branchModuleRole !== 'inherit' && canUseBranchModuleAccessRole(created.brand)
+      ? await applyBranchModulePreset({
+        targetUserId: created.id,
+        actor,
+        branch: created.brand,
+        preset: normalized.branchModuleRole,
       })
       : null
 
-    return { ok: true, user: newUser, permissionWarning } as const
-  } catch (error) {
-    await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => null)
-    throw error
+    await writeAdminAudit({
+      actor,
+      action: 'user.created',
+      targetUserId: created.id,
+      branch: created.brand,
+      after: publicUser(created, actor),
+      request,
+    })
+
+    return { ok: true, user: created, warning } as const
+  } catch (insertError) {
+    await supabaseAdmin.auth.admin.deleteUser(data.user.id).catch(() => null)
+    throw insertError
   }
 }
 
-// GET - Fetch paginated users
 export async function GET(request: Request) {
   try {
-    const appUser = await getAuthenticatedAppUser()
-
-    if (!appUser || !canAccessAdminPanel(appUser.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const actor = await getAuthenticatedAppUser()
+    const actorCapabilities = actor ? getAdminCapabilities(actor) : null
+    if (!actor || !actorCapabilities) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { searchParams } = new URL(request.url)
     const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
-    const pageSize = Math.min(10, Math.max(1, Number.parseInt(searchParams.get('pageSize') || '10', 10) || 10))
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(searchParams.get('pageSize') || '20', 10) || 20))
     const search = (searchParams.get('search') || '').trim()
     const role = searchParams.get('role') || 'all'
     const department = searchParams.get('department') || 'all'
     const branch = searchParams.get('branch') || 'any'
     const status = searchParams.get('status') || 'all'
-
     const conditions = [isNull(users.deletedAt)]
 
+    if (actorCapabilities.authority === 'branch_admin') {
+      conditions.push(eq(users.brand, actorCapabilities.branch!))
+    }
     if (search) {
       conditions.push(or(
         ilike(users.fullName, `%${search}%`),
@@ -215,342 +227,251 @@ export async function GET(request: Request) {
         ilike(users.department, `%${search}%`)
       )!)
     }
-
-    if (role !== 'all') {
-      conditions.push(eq(users.role, role as typeof users.role.enumValues[number]))
+    if (role !== 'all' && VALID_ROLES.includes(role as AppUser['role'])) {
+      conditions.push(eq(users.role, role as AppUser['role']))
     }
+    if (department !== 'all') conditions.push(ilike(users.department, department))
+    if (branch !== 'any' && actorCapabilities.authority === 'super_admin') conditions.push(eq(users.brand, branch))
+    if (status !== 'all') conditions.push(eq(users.isActive, status === 'active'))
 
-    if (department !== 'all') {
-      conditions.push(ilike(users.department, department))
-    }
+    const where = and(...conditions)
+    const scope = actorCapabilities.authority === 'branch_admin'
+      ? and(isNull(users.deletedAt), eq(users.brand, actorCapabilities.branch!))
+      : isNull(users.deletedAt)
 
-    if (branch !== 'any') {
-      conditions.push(eq(users.brand, branch))
-    }
+    const [[totalRow], [summary], departmentRows, rows] = await Promise.all([
+      db.select({ total: count() }).from(users).where(where),
+      db.select({
+        totalUsers: count(),
+        administrators: sql<number>`count(*) filter (where ${users.role} in ('admin', 'super_admin', 'branch_admin'))`,
+        managers: sql<number>`count(*) filter (where ${users.role} = 'manager')`,
+        active: sql<number>`count(*) filter (where ${users.isActive} = true)`,
+        inactive: sql<number>`count(*) filter (where ${users.isActive} = false)`,
+      }).from(users).where(scope),
+      db.selectDistinct({ department: users.department })
+        .from(users)
+        .where(and(scope, isNotNull(users.department)))
+        .orderBy(users.department),
+      db.select().from(users)
+        .where(where)
+        .orderBy(desc(users.updatedAt), desc(users.createdAt))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+    ])
 
-    if (status !== 'all') {
-      conditions.push(eq(users.isActive, status === 'active'))
-    }
-
-    const whereClause = and(...conditions)
-    const offset = (page - 1) * pageSize
-
-    const [totalResult] = await db.select({ total: count() })
-      .from(users)
-      .where(whereClause)
-
-    const [summaryResult] = await db.select({
-      totalUsers: count(),
-      admins: sql<number>`count(*) filter (where ${users.role} = 'admin')`,
-      managers: sql<number>`count(*) filter (where ${users.role} in ('manager', 'purchase_manager'))`,
-      active: sql<number>`count(*) filter (where ${users.isActive} = true)`,
-    })
-      .from(users)
-      .where(isNull(users.deletedAt))
-
-    const departmentRows = await db.selectDistinct({ department: users.department })
-      .from(users)
-      .where(and(isNull(users.deletedAt), isNotNull(users.department)))
-      .orderBy(users.department)
-
-    const allUsers = await db.select({
-      id: users.id,
-      email: users.email,
-      fullName: users.fullName,
-      role: users.role,
-      brand: users.brand,
-      department: users.department,
-      phoneNumber: users.phoneNumber,
-      isActive: users.isActive,
-      createdAt: users.createdAt,
-    }).from(users)
-      .where(whereClause)
-      .orderBy(desc(users.createdAt))
-      .limit(pageSize)
-      .offset(offset)
-
-    const total = Number(totalResult?.total || 0)
-
+    const total = Number(totalRow?.total || 0)
     return NextResponse.json({
-      users: allUsers,
-      pagination: {
-        page,
-        pageSize,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / pageSize)),
-      },
+      users: rows.map((user) => publicUser(user, actor)),
+      actorCapabilities,
+      pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
       summary: {
-        totalUsers: Number(summaryResult?.totalUsers || 0),
-        admins: Number(summaryResult?.admins || 0),
-        managers: Number(summaryResult?.managers || 0),
-        active: Number(summaryResult?.active || 0),
+        totalUsers: Number(summary?.totalUsers || 0),
+        administrators: Number(summary?.administrators || 0),
+        managers: Number(summary?.managers || 0),
+        active: Number(summary?.active || 0),
+        inactive: Number(summary?.inactive || 0),
       },
       filterOptions: {
-        departments: departmentRows
-          .map((row) => row.department)
-          .filter((value): value is string => Boolean(value?.trim())),
+        departments: departmentRows.map((row) => row.department).filter((value): value is string => Boolean(value)),
+        roles: actorCapabilities.assignableRoles,
       },
     })
   } catch (error) {
-    console.error('Error fetching users:', error)
-    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
+    console.error('GET /api/admin/users failed:', error)
+    return NextResponse.json({ error: 'Failed to load users.' }, { status: 500 })
   }
 }
 
-// POST - Create new user
 export async function POST(request: Request) {
   try {
-    const appUser = await getAuthenticatedAppUser()
-
-    if (!appUser || !canAccessAdminPanel(appUser.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
+    const actor = await getAuthenticatedAppUser()
+    if (!actor || !getAdminCapabilities(actor)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const body = await request.json()
 
     if (Array.isArray(body.bulkUsers)) {
-      const bulkUsers = body.bulkUsers.slice(0, BULK_CREATE_LIMIT) as CreateUserInput[]
-
-      if (bulkUsers.length === 0) {
-        return NextResponse.json({ error: 'No users provided for bulk creation' }, { status: 400 })
+      if (body.bulkUsers.length === 0 || body.bulkUsers.length > BULK_CREATE_LIMIT) {
+        return NextResponse.json({ error: `Bulk creation requires 1-${BULK_CREATE_LIMIT} users.` }, { status: 400 })
       }
-
-      if (body.bulkUsers.length > BULK_CREATE_LIMIT) {
-        return NextResponse.json({ error: `Bulk create supports up to ${BULK_CREATE_LIMIT} users at a time` }, { status: 400 })
-      }
-
       const results = []
-
-      for (const [index, candidate] of bulkUsers.entries()) {
+      for (const [index, input] of (body.bulkUsers as CreateUserInput[]).entries()) {
         try {
-          const result = await createUserWithProfile(candidate, appUser.id)
-          const email = typeof candidate.email === 'string' ? candidate.email.trim().toLowerCase() : ''
-          const fullName = typeof candidate.fullName === 'string' ? candidate.fullName.trim() : ''
+          const result = await createUser(input, actor, request)
           results.push(result.ok
-            ? {
-              index,
-              email: result.user.email,
-              fullName: result.user.fullName,
-              status: 'created',
-              user: result.user,
-              permissionWarning: result.permissionWarning,
-            }
-            : {
-              index,
-              email,
-              fullName,
-              status: 'failed',
-              error: result.error,
-            })
+            ? { index, status: 'created', user: publicUser(result.user, actor), permissionWarning: result.warning }
+            : { index, status: 'failed', error: result.error })
         } catch (error) {
-          console.error('Bulk user create row failed:', error)
-          results.push({
-            index,
-            email: typeof candidate.email === 'string' ? candidate.email.trim().toLowerCase() : '',
-            fullName: typeof candidate.fullName === 'string' ? candidate.fullName.trim() : '',
-            status: 'failed',
-            error: 'Failed to create user',
-          })
+          console.error('Bulk user creation failed:', error)
+          results.push({ index, status: 'failed', error: 'Failed to create user.' })
         }
       }
-
       const created = results.filter((result) => result.status === 'created').length
-      const failed = results.length - created
-
-      return NextResponse.json({ created, failed, results }, { status: created > 0 ? 201 : 400 })
+      return NextResponse.json({ created, failed: results.length - created, results }, { status: created ? 201 : 400 })
     }
 
-    const result = await createUserWithProfile(body, appUser.id)
-
+    const result = await createUser(body, actor, request)
     if (!result.ok) {
-      const errorMessage = result.error || 'Failed to create user'
-      return NextResponse.json({ error: errorMessage }, { status: errorMessage.includes('already exists') ? 409 : 400 })
+      const message = result.error || 'Failed to create user.'
+      return NextResponse.json({ error: message }, { status: message.includes('already exists') ? 409 : 400 })
     }
-
-    return NextResponse.json({ ...result.user, permissionWarning: result.permissionWarning }, { status: 201 })
+    return NextResponse.json({
+      ...publicUser(result.user, actor),
+      permissionWarning: result.warning,
+    }, { status: 201 })
   } catch (error) {
-    console.error('Error creating user:', error)
-    return NextResponse.json(
-      { error: 'Failed to create user' },
-      { status: 500 }
-    )
+    console.error('POST /api/admin/users failed:', error)
+    return NextResponse.json({ error: 'Failed to create user.' }, { status: 500 })
   }
 }
 
-// PUT - Update user
 export async function PUT(request: Request) {
   try {
-    const appUser = await getAuthenticatedAppUser()
-
-    if (!appUser || !canAccessAdminPanel(appUser.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
+    const actor = await getAuthenticatedAppUser()
+    if (!actor || !getAdminCapabilities(actor)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const body = await request.json()
-    const { id, branchModuleRole, ...updateData } = body
+    const id = typeof body.id === 'string' ? body.id : ''
+    if (!id) return NextResponse.json({ error: 'User ID is required.' }, { status: 400 })
 
-    if (!id) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
-    }
-
-    if (branchModuleRole !== undefined && !isBranchModuleAccessRoleEditValue(branchModuleRole)) {
-      return NextResponse.json(
-        { error: 'Invalid branch module role selected' },
-        { status: 400 }
-      )
-    }
-
-    const [existingUser] = await db.select({
-      id: users.id,
-      email: users.email,
-      supabaseId: users.supabaseId,
-      fullName: users.fullName,
-    })
-      .from(users)
+    const [existing] = await db.select().from(users)
       .where(and(eq(users.id, id), isNull(users.deletedAt)))
       .limit(1)
-
-    if (!existingUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (!existing) return NextResponse.json({ error: 'User not found.' }, { status: 404 })
+    if (!canManageAdminTarget(actor, existing)) {
+      return NextResponse.json({ error: 'This user is managed by Super Admin.' }, { status: 403 })
     }
 
-    if ('brand' in updateData) {
-      const normalizedBrand = normalizeUserBranchAccess(updateData.brand)
-
-      if (normalizedBrand === undefined) {
-        return NextResponse.json(
-          { error: 'Invalid branch access selected' },
-          { status: 400 }
-        )
-      }
-
-      updateData.brand = normalizedBrand
+    if (typeof body.expectedUpdatedAt === 'string' && existing.updatedAt.toISOString() !== body.expectedUpdatedAt) {
+      return NextResponse.json({ error: 'This user changed since it was opened. Refresh and try again.' }, { status: 409 })
     }
 
-    if (typeof updateData.email === 'string') {
-      updateData.email = updateData.email.trim().toLowerCase()
+    const actorCapabilities = getAdminCapabilities(actor)!
+    const updates: Partial<typeof users.$inferInsert> = {
+      updatedBy: actor.id,
+      updatedAt: new Date(),
+    }
 
-      if (!updateData.email) {
-        return NextResponse.json({ error: 'Email is required' }, { status: 400 })
-      }
+    if (typeof body.fullName === 'string' && body.fullName.trim()) updates.fullName = body.fullName.trim()
+    if (typeof body.department === 'string' || body.department === null) updates.department = normalizeOptionalString(body.department)
+    if (typeof body.phoneNumber === 'string' || body.phoneNumber === null) updates.phoneNumber = normalizeOptionalString(body.phoneNumber)
+    if (typeof body.isActive === 'boolean') updates.isActive = body.isActive
 
-      if (updateData.email !== existingUser.email) {
-        const duplicateUser = await db.select({ id: users.id })
-          .from(users)
-          .where(and(eq(users.email, updateData.email), ne(users.id, id), isNull(users.deletedAt)))
-          .limit(1)
-
-        if (duplicateUser.length > 0) {
-          return NextResponse.json({ error: 'User with this email already exists' }, { status: 409 })
+    if (actorCapabilities.authority === 'super_admin') {
+      if (typeof body.role === 'string') {
+        if (!VALID_ROLES.includes(body.role as AppUser['role']) || !canAssignRole(actor, body.role as AppUser['role'])) {
+          return NextResponse.json({ error: 'You cannot assign this role.' }, { status: 400 })
         }
+        updates.role = body.role as AppUser['role']
       }
+      if ('brand' in body) {
+        const requestedBranch = normalizeRequestedBranch(body.brand)
+        if (requestedBranch === undefined) return NextResponse.json({ error: 'Invalid branch assignment.' }, { status: 400 })
+        const nextRole = (updates.role || existing.role) as AppUser['role']
+        if (nextRole === 'branch_admin' && (!requestedBranch || requestedBranch === 'all')) {
+          return NextResponse.json({ error: 'Branch Admin must have exactly one branch.' }, { status: 400 })
+        }
+        updates.brand = requestedBranch
+      }
+      if (typeof body.email === 'string' && body.email.trim()) {
+        const email = body.email.trim().toLowerCase()
+        const duplicate = await db.select({ id: users.id }).from(users)
+          .where(and(eq(users.email, email), ne(users.id, id), isNull(users.deletedAt)))
+          .limit(1)
+        if (duplicate.length) return NextResponse.json({ error: 'User with this email already exists.' }, { status: 409 })
+        updates.email = email
+      }
+    } else if ('role' in body || 'brand' in body || 'email' in body) {
+      return NextResponse.json({ error: 'Branch Admin cannot change role, branch, or login email.' }, { status: 403 })
     }
 
     const authUpdates: Record<string, unknown> = {}
-    if (typeof updateData.email === 'string' && updateData.email !== existingUser.email) {
-      authUpdates.email = updateData.email
+    if (updates.email && updates.email !== existing.email) {
+      authUpdates.email = updates.email
       authUpdates.email_confirm = true
     }
-    if (typeof updateData.fullName === 'string' && updateData.fullName !== existingUser.fullName) {
-      authUpdates.user_metadata = { full_name: updateData.fullName }
+    if (updates.fullName && updates.fullName !== existing.fullName) {
+      authUpdates.user_metadata = { full_name: updates.fullName }
+    }
+    if (Object.keys(authUpdates).length) {
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(existing.supabaseId, authUpdates)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    if (Object.keys(authUpdates).length > 0) {
-      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
-        existingUser.supabaseId,
-        authUpdates
-      )
-
-      if (authError) {
-        console.error('Error updating Supabase Auth user:', authError)
-        return NextResponse.json(
-          { error: authError.message || 'Failed to update authentication user' },
-          { status: 500 }
-        )
-      }
-    }
-
-    const [updatedUser] = await db.update(users)
-      .set({
-        ...updateData,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, id))
-      .returning()
-
-    if (!updatedUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    const normalizedBranchModuleRole = normalizeEditBranchModuleRole(branchModuleRole)
-    const permissionWarning = normalizedBranchModuleRole !== BRANCH_MODULE_ACCESS_ROLE_KEEP
-      && canUseBranchModuleAccessRole(updatedUser.brand)
-      ? await applyBranchModuleRolePreset({
-        targetUserId: updatedUser.id,
-        changedByUserId: appUser.id,
-        branchAccess: updatedUser.brand,
-        role: normalizedBranchModuleRole,
+    const [updated] = await db.update(users).set(updates).where(eq(users.id, id)).returning()
+    const preset = isBranchModuleAccessRoleEditValue(body.branchModuleRole)
+      ? body.branchModuleRole
+      : BRANCH_MODULE_ACCESS_ROLE_KEEP
+    const permissionWarning = preset !== BRANCH_MODULE_ACCESS_ROLE_KEEP && canUseBranchModuleAccessRole(updated.brand)
+      ? await applyBranchModulePreset({
+        targetUserId: updated.id,
+        actor,
+        branch: updated.brand,
+        preset,
       })
       : null
 
-    return NextResponse.json({ ...updatedUser, permissionWarning })
+    await Promise.all([
+      clearUserPermissionCache(updated.id),
+      writeAdminAudit({
+        actor,
+        action: existing.isActive !== updated.isActive
+          ? (updated.isActive ? 'user.reactivated' : 'user.deactivated')
+          : 'user.updated',
+        targetUserId: updated.id,
+        branch: updated.brand,
+        before: publicUser(existing, actor),
+        after: publicUser(updated, actor),
+        reason: normalizeOptionalString(body.reason),
+        request,
+      }),
+    ])
+    clearAppUserCache(updated.supabaseId)
+
+    return NextResponse.json({ ...publicUser(updated, actor), permissionWarning })
   } catch (error) {
-    console.error('Error updating user:', error)
-    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 })
+    console.error('PUT /api/admin/users failed:', error)
+    return NextResponse.json({ error: 'Failed to update user.' }, { status: 500 })
   }
 }
 
-// DELETE - Delete user from both Supabase Auth and database
 export async function DELETE(request: Request) {
   try {
-    const appUser = await getAuthenticatedAppUser()
-
-    if (!appUser || !canAccessAdminPanel(appUser.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const actor = await getAuthenticatedAppUser()
+    const actorCapabilities = actor ? getAdminCapabilities(actor) : null
+    if (!actor || actorCapabilities?.authority !== 'super_admin') {
+      return NextResponse.json({ error: 'Only Super Admin can permanently delete users.' }, { status: 403 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-
-    if (!id) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
-    }
-
-    // Get user's supabaseId before deleting
-    const [user] = await db.select({
-      id: users.id,
-      supabaseId: users.supabaseId,
-      email: users.email
-    })
-      .from(users)
-      .where(eq(users.id, id))
+    const id = new URL(request.url).searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'User ID is required.' }, { status: 400 })
+    const [target] = await db.select().from(users)
+      .where(and(eq(users.id, id), isNull(users.deletedAt)))
       .limit(1)
+    if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 })
+    if (!canManageAdminTarget(actor, target)) return NextResponse.json({ error: 'You cannot delete your own account.' }, { status: 403 })
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(target.supabaseId)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    // Delete from Supabase Auth first
-    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(user.supabaseId)
-    
-    if (authError) {
-      console.error('Error deleting from Supabase Auth:', authError)
-      // Continue with database deletion even if auth deletion fails
-    }
+    await db.update(users).set({
+      isActive: false,
+      deletedAt: new Date(),
+      updatedBy: actor.id,
+      updatedAt: new Date(),
+    }).where(eq(users.id, target.id))
+    await writeAdminAudit({
+      actor,
+      action: 'user.permanently_deleted',
+      targetUserId: target.id,
+      branch: target.brand,
+      before: publicUser(target, actor),
+      reason: new URL(request.url).searchParams.get('reason'),
+      request,
+    })
+    clearAppUserCache(target.supabaseId)
+    await clearUserPermissionCache(target.id)
 
-    // Soft delete from database
-    await db.update(users)
-      .set({
-        deletedAt: new Date(),
-        isActive: false
-      })
-      .where(eq(users.id, id))
-
-    return NextResponse.json({ success: true, message: 'User deleted successfully' })
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting user:', error)
-    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 })
+    console.error('DELETE /api/admin/users failed:', error)
+    return NextResponse.json({ error: 'Failed to delete user.' }, { status: 500 })
   }
 }
-
-// Made with Bob

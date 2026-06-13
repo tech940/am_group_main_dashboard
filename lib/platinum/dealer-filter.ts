@@ -1,21 +1,32 @@
 import { sql } from 'drizzle-orm'
-import { DEFAULT_PLATINUM_DEALER_CODE } from '@/lib/platinum/dealer-branch'
 
-export function platinumSourceDealerSql(column = sql.raw('source_dealer_code')) {
+type SqlColumn = ReturnType<typeof sql.raw>
+
+export function platinumSourceDealerSql(
+  column: SqlColumn = sql.raw('source_dealer_code'),
+  fallbackColumns: SqlColumn[] = []
+) {
+  const candidates = [
+    sql`NULLIF(NULLIF(UPPER(TRIM(COALESCE(${column}::text, ''))), ''), 'ACTIVE')`,
+    ...fallbackColumns.map((fallback) => sql`NULLIF(UPPER(TRIM(COALESCE(${fallback}::text, ''))), '')`),
+  ]
+
+  const resolved = sql`COALESCE(${sql.join(candidates, sql`, `)})`
+
   return sql`
     CASE
-      WHEN UPPER(TRIM(COALESCE(${column}::text, ''))) = 'ACTIVE'
-        THEN ${DEFAULT_PLATINUM_DEALER_CODE}
-      ELSE NULLIF(UPPER(TRIM(COALESCE(${column}::text, ''))), '')
+      WHEN ${resolved} = 'N6824' THEN 'N6250'
+      ELSE ${resolved}
     END
   `
 }
 
 export function platinumSourceDealerFilter(
   dealerCode: string | null,
-  column = sql.raw('source_dealer_code')
+  column: SqlColumn = sql.raw('source_dealer_code'),
+  fallbackColumns: SqlColumn[] = []
 ) {
   return dealerCode
-    ? sql`AND ${platinumSourceDealerSql(column)} = ${dealerCode}`
+    ? sql`AND ${platinumSourceDealerSql(column, fallbackColumns)} = ${dealerCode}`
     : sql``
 }

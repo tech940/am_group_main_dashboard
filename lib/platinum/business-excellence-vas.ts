@@ -121,12 +121,74 @@ function vasFilter() {
   `
 }
 
+function vasSourceType(startDate: string, endDate: string, periodStart: string | null, periodEnd: string | null) {
+  if (periodStart === startDate && periodEnd === endDate) return 'operation_period_exact'
+  if (periodStart && periodEnd && periodStart >= startDate && periodEnd <= endDate) return 'operation_period_covered'
+  return 'operation_period_containing'
+}
+
 export async function fetchPlatinumWorkshopVasAmount(
   startDate: string,
   endDate: string,
   dealerCode: DealerFilter = null
 ): Promise<PlatinumVasResult> {
   const sourceTable = 'am_platinum_operation_wise_analysis_report'
+  const summaryTable = 'am_platinum_vas_period_summary_v1'
+  if (await tableExists(summaryTable)) {
+    const dealerWhere = dealerCode ? sql`AND dealer_code = ${dealerCode}` : sql``
+    const result = await db.execute(sql`
+      WITH candidate_period AS (
+        SELECT period_start, period_end
+        FROM am_platinum_vas_period_summary_v1
+        WHERE period_start <= ${endDate}::date
+          AND period_end >= ${startDate}::date
+          ${dealerWhere}
+        GROUP BY period_start, period_end
+        ORDER BY
+          CASE
+            WHEN period_start = ${startDate}::date AND period_end = ${endDate}::date THEN 0
+            WHEN period_start >= ${startDate}::date AND period_end <= ${endDate}::date THEN 1
+            WHEN period_start <= ${startDate}::date AND period_end >= ${endDate}::date THEN 2
+            ELSE 3
+          END,
+          CASE WHEN period_end <= ${endDate}::date THEN period_end END DESC NULLS LAST,
+          (period_end - period_start) ASC,
+          period_start DESC
+        LIMIT 1
+      )
+      SELECT
+        COALESCE(SUM(summary.vas_amount), 0)::float AS vas_amount,
+        COALESCE(SUM(summary.period_rows), 0)::int AS period_rows,
+        COALESCE(SUM(summary.source_rows), 0)::int AS source_rows,
+        MIN(summary.period_start)::text AS period_start,
+        MAX(summary.period_end)::text AS period_end,
+        MAX(summary.uploaded_at)::text AS latest_uploaded_at
+      FROM am_platinum_vas_period_summary_v1 summary
+      JOIN candidate_period candidate
+        ON candidate.period_start = summary.period_start
+       AND candidate.period_end = summary.period_end
+      WHERE 1 = 1
+        ${dealerWhere}
+    `)
+    const row = resultRows(result)[0]
+    if (numberValue(row?.period_rows) > 0) {
+      const periodStart = dateValue(row?.period_start)
+      const periodEnd = dateValue(row?.period_end)
+      return {
+        amount: numberValue(row?.vas_amount),
+        available: true,
+        unavailableReason: null,
+        source: vasSourceType(startDate, endDate, periodStart, periodEnd),
+        sourceTable,
+        periodStart,
+        periodEnd,
+        sourceRows: numberValue(row?.source_rows),
+        dedupeMode: 'materialized_row_hash_latest',
+        latestSnapshotUploadedAt: dateValue(row?.latest_uploaded_at),
+      }
+    }
+  }
+
   if (!await tableExists(sourceTable)) {
     return emptyResult('Platinum operation-wise VAS source table is unavailable')
   }
@@ -143,9 +205,25 @@ export async function fetchPlatinumWorkshopVasAmount(
                report_period_end::date AS period_end
         FROM am_platinum_operation_wise_analysis_report
         WHERE report_period_start <= ${endDate}::date
+          AND report_period_end >= ${startDate}::date
           ${reportTypeFilter(columns)}
           ${operationDealerFilter(dealerCode)}
-        ORDER BY report_period_start DESC
+        GROUP BY report_period_start::date, report_period_end::date
+        ORDER BY
+          CASE
+            WHEN report_period_start::date = ${startDate}::date
+             AND report_period_end::date = ${endDate}::date THEN 0
+            WHEN report_period_start::date >= ${startDate}::date
+             AND report_period_end::date <= ${endDate}::date THEN 1
+            WHEN report_period_start::date <= ${startDate}::date
+             AND report_period_end::date >= ${endDate}::date THEN 2
+            ELSE 3
+          END,
+          CASE
+            WHEN report_period_end::date <= ${endDate}::date THEN report_period_end::date
+          END DESC NULLS LAST,
+          (report_period_end::date - report_period_start::date) ASC,
+          report_period_start::date DESC
         LIMIT 1
       ),
       operation_rows AS (
@@ -183,11 +261,7 @@ export async function fetchPlatinumWorkshopVasAmount(
         amount: numberValue(row?.vas_amount),
         available: true,
         unavailableReason: null,
-        source: periodEnd === endDate
-          ? 'operation_period_exact'
-          : periodEnd && periodEnd < endDate
-            ? 'operation_period_covered'
-            : 'operation_period_containing',
+        source: vasSourceType(startDate, endDate, dateValue(row?.period_start), periodEnd),
         sourceTable,
         periodStart: dateValue(row?.period_start),
         periodEnd,

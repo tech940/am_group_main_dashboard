@@ -434,6 +434,7 @@ function comparisonText(metric?: ComparisonMetric | NullableComparisonMetric, fo
   if (!metric) return 'LY loading'
   if (metric.comparisonStatus === 'not_comparable') return metric.comparisonLabel || 'No comparable LY'
   if (metric.comparisonStatus === 'source_missing') return 'Source missing'
+  if (metric.comparisonStatus === 'period_mismatch') return metric.comparisonLabel || 'LY period differs'
   if (metric.ly === null) return metric.comparisonLabel || 'No comparable LY'
   if ('available' in metric && metric.available === false) return metric.unavailableReason ? 'Source missing' : 'No comparable LY'
   return `LY ${formatter(metric.ly)}`
@@ -1666,7 +1667,9 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     : formatCurrency(data.workshopSnapshot.vasAmount)
   const vasTileMeta = data.workshopSnapshot.vasAvailable === false
     ? 'No KIA-style period source'
-    : 'Value added services'
+    : data.workshopSnapshot.vasPeriodEnd
+      ? `Source through ${formatDisplayDate(data.workshopSnapshot.vasPeriodEnd)}`
+      : 'Value added services'
   const periodLabel = `${formatDisplayDate(range.startDate)} - ${formatDisplayDate(range.endDate)}`
   const lyPeriodLabel = data.comparison
     ? `${formatDisplayDate(data.comparison.lyRange.startDate)} - ${formatDisplayDate(data.comparison.lyRange.endDate)}`

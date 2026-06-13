@@ -8,6 +8,13 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
+import {
+  PLATINUM_BE_CALCULATION_META,
+  platinumActiveBillSql,
+  platinumRoBillingDealerSql,
+  platinumRoBillingInvoiceKeySql,
+  platinumRoBillingRoKeySql,
+} from '@/lib/platinum/business-excellence-calculations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -135,13 +142,13 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `platinum:business-excellence:performance-intelligence:v12:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:performance-intelligence:v14:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
   const clauses = [
     sql`bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date`,
-    sql`LOWER(TRIM(COALESCE(bill_type::text, ''))) NOT LIKE '%cancel%'`,
+    platinumActiveBillSql(),
   ]
 
   if (filters.searchReg) {
@@ -149,11 +156,7 @@ function buildPerformanceWhere(startDate: Date, endDate: Date, filters: Performa
   }
 
   if (filters.branch !== 'all') {
-    clauses.push(sql`COALESCE(
-      NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-      NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
-      NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
-    ) = ${filters.branch}`)
+    clauses.push(sql`${platinumRoBillingDealerSql()} = ${filters.branch}`)
   }
 
   if (filters.serviceType !== 'all') {
@@ -178,14 +181,10 @@ function buildScoredPerformanceSql(startDate: Date, endDate: Date, filters: Perf
     WITH base AS (
       SELECT
         id::text AS id,
-        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS bill_key,
+        ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
+        ${platinumRoBillingRoKeySql()} AS ro_key,
         bill_date::date AS bill_date,
-        COALESCE(
-          NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-          NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
-          NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
-          'Unspecified'
-        ) AS branch,
+        COALESCE(${platinumRoBillingDealerSql()}, 'Unspecified') AS branch,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
@@ -201,15 +200,16 @@ function buildScoredPerformanceSql(startDate: Date, endDate: Date, filters: Perf
           COALESCE(total_disc, 0)::numeric,
           ${numericText(sql.raw('labour_disc'))},
           ${numericText(sql.raw('part_disc'))}
-        ) AS discount
+        ) AS discount,
+        uploaded_at
       FROM am_platinum_ro_billing_report
       WHERE ${whereClause}
     ),
     dedup AS (
-      SELECT DISTINCT ON (branch, bill_key)
+      SELECT DISTINCT ON (branch, invoice_key)
         *
       FROM base
-      ORDER BY branch, bill_key, ABS(labour_amt + part_amt) DESC, id DESC
+      ORDER BY branch, invoice_key, uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
       SELECT
@@ -460,6 +460,7 @@ export async function GET(request: Request) {
           totalPages,
         },
         meta: {
+          calculation: PLATINUM_BE_CALCULATION_META,
           dealerCode: dealerCoverage.dealerCode,
           dealerCoverage: {
             dealerCode: dealerCoverage.dealerCode,

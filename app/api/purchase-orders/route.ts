@@ -273,7 +273,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid branch filter' }, { status: 400 })
       }
 
-      if (appUser.role !== 'md' && appUser.role !== 'admin' && appUser.role !== 'purchase_manager') {
+      if (appUser.role !== 'md' && appUser.role !== 'admin' && appUser.role !== 'super_admin' && appUser.role !== 'purchase_manager') {
         return NextResponse.json({ error: 'Forbidden branch filter' }, { status: 403 })
       }
 

@@ -93,7 +93,7 @@ function readFilters(searchParams: URLSearchParams): SotFilters {
 }
 
 function cacheKey(filters: SotFilters, chunk: SotChunk) {
-  return `platinum:business-excellence:sot:v6:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `platinum:business-excellence:sot:v7:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function numberValue(value: unknown) {

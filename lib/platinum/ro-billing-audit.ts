@@ -1,5 +1,12 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import {
+  platinumActiveBillSql,
+  platinumRoBillingDealerFilter,
+  platinumRoBillingDealerSql,
+  platinumRoBillingInvoiceKeySql,
+  platinumRoBillingRoKeySql,
+} from '@/lib/platinum/business-excellence-calculations'
 
 type DealerFilter = string | null
 type ResultRow = Record<string, unknown>
@@ -14,6 +21,7 @@ export type PlatinumRoBillingAudit = {
   rawRows: number
   activeRawRows: number
   cancelledRows: number
+  dedupedInvoices: number
   dedupedJc: number
   duplicateRowsRemoved: number
   labour: number
@@ -123,13 +131,7 @@ function numericText(column: ReturnType<typeof sql.raw>) {
 }
 
 function dealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND COALESCE(
-        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-        NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
-        NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
-      ) = ${dealerCode}`
-    : sql``
+  return platinumRoBillingDealerFilter(dealerCode)
 }
 
 function addDays(value: string, days: number) {
@@ -162,6 +164,7 @@ type RoPeriodSummary = {
   rawRows: number
   activeRawRows: number
   cancelledRows: number
+  dedupedInvoices: number
   dedupedJc: number
   duplicateRowsRemoved: number
   labour: number
@@ -192,6 +195,7 @@ export function emptyPlatinumRoBillingAudit(
     rawRows: 0,
     activeRawRows: 0,
     cancelledRows: 0,
+    dedupedInvoices: 0,
     dedupedJc: 0,
     duplicateRowsRemoved: 0,
     labour: 0,
@@ -308,17 +312,14 @@ export async function fetchPlatinumRoBillingAudit(
     ),
     scoped AS (
       SELECT
+        id,
         ranges.period_key,
         bill_date::date AS bill_date,
-        COALESCE(NULLIF(TRIM(bill_no::text), ''), NULLIF(TRIM(r_o_no::text), ''), id::text) AS jc_key,
+        ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
+        ${platinumRoBillingRoKeySql()} AS ro_key,
         NULLIF(TRIM(bill_no::text), '') AS bill_no,
         NULLIF(TRIM(r_o_no::text), '') AS r_o_no,
-        COALESCE(
-          NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-          NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
-          NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), ''),
-          'UNMAPPED'
-        ) AS dealer_code,
+        COALESCE(${platinumRoBillingDealerSql()}, 'UNMAPPED') AS dealer_code,
         NULLIF(TRIM(work_type::text), '') AS work_type,
         NULLIF(TRIM(bill_type::text), '') AS bill_type,
         LOWER(TRIM(COALESCE(bill_type::text, ''))) AS bill_type_normalized,
@@ -335,14 +336,14 @@ export async function fetchPlatinumRoBillingAudit(
     active AS (
       SELECT *
       FROM scoped
-      WHERE bill_type_normalized NOT LIKE '%cancel%'
+      WHERE ${platinumActiveBillSql()}
     ),
     ranked AS (
       SELECT
         *,
         ROW_NUMBER() OVER (
-          PARTITION BY period_key, dealer_code, jc_key
-          ORDER BY ABS(labour_amt + part_amt) DESC, bill_date DESC NULLS LAST, uploaded_at DESC NULLS LAST
+          PARTITION BY period_key, dealer_code, invoice_key
+          ORDER BY uploaded_at DESC NULLS LAST, id DESC
         ) AS row_rank
       FROM active
     ),
@@ -364,7 +365,8 @@ export async function fetchPlatinumRoBillingAudit(
     dedup_summary AS (
       SELECT
         period_key,
-        COUNT(*)::int AS deduped_jc,
+        COUNT(*)::int AS deduped_invoices,
+        COUNT(DISTINCT dealer_code || ':' || ro_key)::int AS deduped_jc,
         COALESCE(SUM(labour_amt), 0)::float AS labour,
         COALESCE(SUM(part_amt), 0)::float AS parts,
         COALESCE(SUM(labour_amt + part_amt), 0)::float AS revenue,
@@ -379,8 +381,9 @@ export async function fetchPlatinumRoBillingAudit(
         COALESCE(raw_summary.raw_rows, 0) AS raw_rows,
         COALESCE(raw_summary.active_raw_rows, 0) AS active_raw_rows,
         COALESCE(raw_summary.cancelled_rows, 0) AS cancelled_rows,
+        COALESCE(dedup_summary.deduped_invoices, 0) AS deduped_invoices,
         COALESCE(dedup_summary.deduped_jc, 0) AS deduped_jc,
-        GREATEST(COALESCE(raw_summary.active_raw_rows, 0) - COALESCE(dedup_summary.deduped_jc, 0), 0) AS duplicate_rows_removed,
+        GREATEST(COALESCE(raw_summary.active_raw_rows, 0) - COALESCE(dedup_summary.deduped_invoices, 0), 0) AS duplicate_rows_removed,
         COALESCE(dedup_summary.labour, 0) AS labour,
         COALESCE(dedup_summary.parts, 0) AS parts,
         COALESCE(dedup_summary.revenue, 0) AS revenue,
@@ -395,7 +398,7 @@ export async function fetchPlatinumRoBillingAudit(
       SELECT
         bill_date,
         (SELECT COUNT(*) FROM active source_rows WHERE source_rows.period_key = 'current' AND source_rows.bill_date = dedup.bill_date)::int AS raw_rows,
-        COUNT(*)::int AS deduped_jc,
+        COUNT(DISTINCT dealer_code || ':' || ro_key)::int AS deduped_jc,
         COALESCE(SUM(labour_amt), 0)::float AS labour,
         COALESCE(SUM(part_amt), 0)::float AS parts,
         COALESCE(SUM(labour_amt + part_amt), 0)::float AS revenue
@@ -408,7 +411,7 @@ export async function fetchPlatinumRoBillingAudit(
       SELECT
         dealer_code,
         (SELECT COUNT(*) FROM active source_rows WHERE source_rows.period_key = 'current' AND source_rows.dealer_code = dedup.dealer_code)::int AS raw_rows,
-        COUNT(*)::int AS deduped_jc,
+        COUNT(DISTINCT dealer_code || ':' || ro_key)::int AS deduped_jc,
         COALESCE(SUM(labour_amt), 0)::float AS labour,
         COALESCE(SUM(part_amt), 0)::float AS parts,
         COALESCE(SUM(labour_amt + part_amt), 0)::float AS revenue
@@ -440,6 +443,7 @@ export async function fetchPlatinumRoBillingAudit(
           'rawRows', raw_rows,
           'activeRawRows', active_raw_rows,
           'cancelledRows', cancelled_rows,
+          'dedupedInvoices', deduped_invoices,
           'dedupedJc', deduped_jc,
           'duplicateRowsRemoved', duplicate_rows_removed,
           'labour', labour,
@@ -505,8 +509,9 @@ export async function fetchPlatinumRoBillingAudit(
       rawRows: numberValue(summary.rawRows),
       activeRawRows,
       cancelledRows: numberValue(summary.cancelledRows),
+      dedupedInvoices: numberValue(summary.dedupedInvoices),
       dedupedJc,
-      duplicateRowsRemoved: Math.max(0, numberValue(summary.duplicateRowsRemoved || activeRawRows - dedupedJc)),
+      duplicateRowsRemoved: Math.max(0, numberValue(summary.duplicateRowsRemoved || activeRawRows - numberValue(summary.dedupedInvoices))),
       labour: numberValue(summary.labour),
       parts: numberValue(summary.parts),
       revenue: numberValue(summary.revenue),
@@ -561,6 +566,7 @@ export async function fetchPlatinumRoBillingAudit(
     rawRows: current.rawRows,
     activeRawRows: current.activeRawRows,
     cancelledRows: current.cancelledRows,
+    dedupedInvoices: current.dedupedInvoices,
     dedupedJc: current.dedupedJc,
     duplicateRowsRemoved: current.duplicateRowsRemoved,
     labour: current.labour,

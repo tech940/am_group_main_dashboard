@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     // Check if user has permission to approve
-    if (userData?.role !== 'admin' && userData?.role !== 'manager') {
+    if (userData?.role !== 'admin' && userData?.role !== 'super_admin' && userData?.role !== 'manager') {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 

@@ -25,6 +25,19 @@ const appUserLookupPromises = new Map<string, Promise<AppUser | null>>()
 const authUserCache = new Map<string, { expiresAt: number; supabaseId: string | null }>()
 const authUserLookupPromises = new Map<string, Promise<string | null>>()
 
+export function clearAppUserCache(supabaseId?: string | null) {
+  if (supabaseId) {
+    appUserCache.delete(supabaseId)
+    appUserLookupPromises.delete(supabaseId)
+    return
+  }
+
+  appUserCache.clear()
+  appUserLookupPromises.clear()
+  authUserCache.clear()
+  authUserLookupPromises.clear()
+}
+
 function isTransientDbConnectionError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   const code = typeof error === 'object' && error !== null && 'code' in error

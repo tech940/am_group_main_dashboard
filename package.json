@@ -18,8 +18,11 @@
     "db:setup-finance-orders": "node scripts/setup-finance-orders.js",
     "db:setup-am-finance-v2": "node scripts/setup-am-finance-v2.js",
     "db:setup-permissions-manager": "node scripts/setup-permissions-manager.js",
+    "db:setup-hierarchical-admin": "node scripts/setup-hierarchical-admin.js",
+    "db:setup-platinum-be": "node scripts/setup-platinum-business-excellence.js",
     "db:refresh-dashboard-views": "node scripts/refresh-dashboard-materialized-views.js",
     "db:refresh-dashboard-views:scheduler": "node scripts/refresh-dashboard-materialized-views-scheduler.js",
+    "verify:platinum-be": "node scripts/verify-platinum-business-excellence.js",
     "service-dashboard-email:send": "tsx scripts/send-service-dashboard-email.ts",
     "service-dashboard-email:scheduler": "node scripts/send-service-dashboard-email-scheduler.js"
   },

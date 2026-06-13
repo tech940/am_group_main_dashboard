@@ -3,11 +3,13 @@ import { getBrandAccess } from '@/lib/auth/brand-access'
 import { requirePermission } from '@/lib/permissions/service'
 import { HyundaiModulePlaceholder } from '@/features/hyundai/hyundai-module-placeholder'
 import HyundaiBusinessExcellencePage from '@/features/hyundai/business-excellence-page'
+import { HyundaiWarrantyClaimsPage } from '@/features/hyundai/warranty-claims-page'
 
 type HyundaiModuleDefinition = {
   title: string
   permission: string
-  component?: 'business-excellence'
+  component?: 'business-excellence' | 'warranty-claims'
+  warrantySource?: 'ytp' | 'claim_list'
   report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'open-ro' | 'workshop-performance' | 'hyundai-complaints'
 }
 
@@ -65,12 +67,16 @@ const HYUNDAI_MODULES: Record<string, HyundaiModuleDefinition> = {
     permission: 'hyundai.demo_cars_list.view',
   },
   'warranty-list': {
-    title: 'Warranty List',
+    title: 'Claim YTP',
     permission: 'hyundai.warranty_list.view',
+    component: 'warranty-claims',
+    warrantySource: 'ytp',
   },
   'warranty-claim-list': {
     title: 'Warranty Claim List',
     permission: 'hyundai.warranty_claim_list.view',
+    component: 'warranty-claims',
+    warrantySource: 'claim_list',
   },
   proforma: {
     title: 'Hyundai Proforma',
@@ -138,6 +144,10 @@ export default async function Page({
 
   if (definition.component === 'business-excellence') {
     return <HyundaiBusinessExcellencePage initialReport={definition.report || 'overview'} currentUserRole={access.appUser.role} />
+  }
+
+  if (definition.component === 'warranty-claims') {
+    return <HyundaiWarrantyClaimsPage source={definition.warrantySource || 'claim_list'} />
   }
 
   return <HyundaiModulePlaceholder title={definition.title} />

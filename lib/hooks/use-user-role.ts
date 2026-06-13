@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
+import { isAdminRole, isSuperAdminRole } from '@/lib/auth/roles'
 
 export function useUserRole() {
   const { data: currentUser, isLoading: loading } = useQuery({
@@ -21,8 +22,10 @@ export function useUserRole() {
     userRole,
     userBrand,
     loading,
-    isAdmin: userRole === 'admin' || userRole === 'md',
-    canAccessAdmin: userRole === 'admin' || userRole === 'md',
+    isAdmin: isSuperAdminRole(userRole),
+    isSuperAdmin: isSuperAdminRole(userRole),
+    isBranchAdmin: userRole === 'branch_admin',
+    canAccessAdmin: isAdminRole(userRole),
     isManager: userRole === 'manager',
     isTechnician: userRole === 'technician',
     isViewer: userRole === 'viewer'

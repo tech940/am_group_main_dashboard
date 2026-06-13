@@ -1,8 +1,8 @@
 import type { AppUser } from '@/lib/auth/app-user'
 
-const AM_FINANCE_CREATE_ROLES = new Set<AppUser['role']>(['admin', 'finance_head', 'accounts'])
-const AM_FINANCE_EDIT_ROLES = new Set<AppUser['role']>(['admin', 'finance_head', 'accounts'])
-const AM_FINANCE_AUDIT_ROLES = new Set<AppUser['role']>(['admin', 'ceo', 'md', 'finance_head'])
+const AM_FINANCE_CREATE_ROLES = new Set<AppUser['role']>(['admin', 'super_admin', 'finance_head', 'accounts'])
+const AM_FINANCE_EDIT_ROLES = new Set<AppUser['role']>(['admin', 'super_admin', 'finance_head', 'accounts'])
+const AM_FINANCE_AUDIT_ROLES = new Set<AppUser['role']>(['admin', 'super_admin', 'ceo', 'md', 'finance_head'])
 
 export function canAccessAmFinance(role: AppUser['role'] | null | undefined) {
   return Boolean(role)

@@ -731,7 +731,7 @@ function WorkshopTrendValueLabel({
 }
 
 function canAccessExecutiveDashboard(role?: string | null) {
-  return ['admin', 'ceo', 'md'].includes(String(role || '').trim().toLowerCase())
+  return ['admin', 'super_admin', 'ceo', 'md'].includes(String(role || '').trim().toLowerCase())
 }
 
 function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[], role?: string | null) {
@@ -5938,6 +5938,18 @@ function ServiceTypePerformance({
     return primary || `row-${fallbackIndex}`
   }
 
+  const getUniqueRoKey = (row: Record<string, unknown>, fallbackIndex: number) => {
+    const roNo = getRecordValue(row, 'ro_no', 'RO No')
+    const billNo = getRecordValue(row, 'bill_no', 'Bill No')
+    const primary = roNo !== null && roNo !== undefined && String(roNo).trim() !== ''
+      ? String(roNo).trim()
+      : billNo !== null && billNo !== undefined && String(billNo).trim() !== ''
+        ? String(billNo).trim()
+        : null
+
+    return primary || `row-${fallbackIndex}`
+  }
+
   const parseAmount = (value: unknown) => {
     if (typeof value === 'number') return Number.isFinite(value) ? value : 0
     if (value === null || value === undefined) return 0
@@ -6327,43 +6339,44 @@ function ServiceTypePerformance({
 
           if (shouldCount) {
             const billKey = getUniqueBillKey(d, index)
+            const roKey = getUniqueRoKey(d, index)
             // MTD checks
             if (date >= cyMtdStart && date <= cyMtdEnd) {
-              cyMtdKeys.add(billKey)
+              cyMtdKeys.add(roKey)
               addBillAmount(cyMtdAmounts, billKey, metricAmount)
             }
             if (date >= lyMtdStart && date <= lyMtdEnd) {
-              lyMtdKeys.add(billKey)
+              lyMtdKeys.add(roKey)
               addBillAmount(lyMtdAmounts, billKey, metricAmount)
             }
 
             // QTD checks
             if (date >= cyQtdStart && date <= cyQtdEnd) {
-              cyQtdKeys.add(billKey)
+              cyQtdKeys.add(roKey)
               addBillAmount(cyQtdAmounts, billKey, metricAmount)
             }
             if (date >= lyQtdStart && date <= lyQtdEnd) {
-              lyQtdKeys.add(billKey)
+              lyQtdKeys.add(roKey)
               addBillAmount(lyQtdAmounts, billKey, metricAmount)
             }
 
             // YTD checks
             if (date >= cyYtdStart && date <= cyYtdEnd) {
-              cyYtdKeys.add(billKey)
+              cyYtdKeys.add(roKey)
               addBillAmount(cyYtdAmounts, billKey, metricAmount)
             }
             if (date >= lyYtdStart && date <= lyYtdEnd) {
-              lyYtdKeys.add(billKey)
+              lyYtdKeys.add(roKey)
               addBillAmount(lyYtdAmounts, billKey, metricAmount)
             }
 
             // TD checks the selected/current Bill Date only.
             if (date >= cyTdStart && date <= cyTdEnd) {
-              cyTdKeys.add(billKey)
+              cyTdKeys.add(roKey)
               addBillAmount(cyTdAmounts, billKey, metricAmount)
             }
             if (date >= lyTdStart && date <= lyTdEnd) {
-              lyTdKeys.add(billKey)
+              lyTdKeys.add(roKey)
               addBillAmount(lyTdAmounts, billKey, metricAmount)
             }
           }
@@ -6672,11 +6685,12 @@ function ServiceTypePerformance({
 
           if (shouldCount) {
             const billKey = getUniqueBillKey(row, index)
+            const roKey = getUniqueRoKey(row, index)
             if (year === targetYear) {
-              dayData[day].cy.add(billKey)
+              dayData[day].cy.add(roKey)
               addBillAmount(dayData[day].cyAmounts, billKey, metricAmount)
             } else if (year === targetYear - 1) {
-              dayData[day].ly.add(billKey)
+              dayData[day].ly.add(roKey)
               addBillAmount(dayData[day].lyAmounts, billKey, metricAmount)
             }
           }
@@ -6777,7 +6791,7 @@ function ServiceTypePerformance({
       const isPartsAmount = activeTrend === 'Parts Trend'
       const isLabPerVehicle = activeTrend === 'Labour Per Vehicle Trend'
       const isPartPerVehicle = activeTrend === 'Parts Per Vehicle Trend'
-      const billKeys = new Set<string>()
+      const roKeys = new Set<string>()
       const amountBucket = new Map<string, number>()
 
       data.forEach((row, index) => {
@@ -6793,14 +6807,14 @@ function ServiceTypePerformance({
         if (!shouldCount) return
 
         const billKey = getUniqueBillKey(row, index)
-        billKeys.add(billKey)
+        roKeys.add(getUniqueRoKey(row, index))
         addBillAmount(amountBucket, billKey, amount)
       })
 
       const amount = sumBillAmounts(amountBucket)
       if (isLabourAmount || isPartsAmount) return amount
-      if (isLabPerVehicle || isPartPerVehicle) return billKeys.size > 0 ? amount / billKeys.size : 0
-      return billKeys.size
+      if (isLabPerVehicle || isPartPerVehicle) return roKeys.size > 0 ? amount / roKeys.size : 0
+      return roKeys.size
     }
 
     const achTillDate = measureMonth(targetYear, currentDay)
@@ -6933,7 +6947,7 @@ function ServiceTypePerformance({
       }
 
       const billKey = getUniqueBillKey(row, index)
-      fyData[fy].load.add(billKey)
+      fyData[fy].load.add(getUniqueRoKey(row, index))
       addBillAmount(fyData[fy].labour, billKey, parseAmount(getRecordValue(row, 'labour_amt', 'Labour Amt')))
       addBillAmount(fyData[fy].parts, billKey, parseAmount(getRecordValue(row, 'part_amt', 'Part Amt')))
     })
@@ -7132,7 +7146,6 @@ function ServiceTypePerformance({
       load: Set<string>
       labour: Map<string, number>
       parts: Map<string, number>
-      total: Map<string, number>
       ratingTotal: number
       ratingCount: number
       pickDropCount: number
@@ -7143,7 +7156,6 @@ function ServiceTypePerformance({
       load: new Set<string>(),
       labour: new Map<string, number>(),
       parts: new Map<string, number>(),
-      total: new Map<string, number>(),
       ratingTotal: 0,
       ratingCount: 0,
       pickDropCount: 0,
@@ -7167,10 +7179,9 @@ function ServiceTypePerformance({
 
     const addToBucket = (bucket: AggregateBucket, row: Record<string, unknown>, index: number) => {
       const billKey = getUniqueBillKey(row, index)
-      bucket.load.add(billKey)
+      bucket.load.add(getUniqueRoKey(row, index))
       addBillAmount(bucket.labour, billKey, parseAmount(getRecordValue(row, 'labour_amt', 'Labour Amt')))
       addBillAmount(bucket.parts, billKey, parseAmount(getRecordValue(row, 'part_amt', 'Part Amt')))
-      addBillAmount(bucket.total, billKey, parseAmount(getRecordValue(row, 'total_amt', 'Total Amt')))
       const rating = parseAmount(getRecordValue(row, 'avg_rating', 'Avg Rating'))
       if (rating > 0) {
         bucket.ratingTotal += rating
@@ -7211,8 +7222,7 @@ function ServiceTypePerformance({
       const load = bucket.load.size
       const labour = sumBillAmounts(bucket.labour)
       const parts = sumBillAmounts(bucket.parts)
-      const total = sumBillAmounts(bucket.total)
-      const revenue = total > 0 ? total : labour + parts
+      const revenue = labour + parts
       return {
         load,
         labour,

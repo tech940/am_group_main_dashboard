@@ -120,7 +120,7 @@ export async function GET(request: Request) {
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
     const data = await timer.time('response-cache', () => getCachedData(
-      `platinum:business-excellence:freshness:v2:${reportKey}:${dealerCode || 'all'}`,
+      `platinum:business-excellence:freshness:v3:${reportKey}:${dealerCode || 'all'}`,
       async () => {
         const settled = await Promise.allSettled(sources.map((source) => readSourceFreshness(source, dealerCode)))
         const sourceFreshness = settled

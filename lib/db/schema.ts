@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
+export const roleEnum = pgEnum('role', ['admin', 'super_admin', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -24,11 +24,30 @@ export const users = pgTable('users', {
   department: text('department'),
   phoneNumber: text('phone_number'),
   avatarUrl: text('avatar_url'),
+  createdBy: uuid('created_by'),
+  updatedBy: uuid('updated_by'),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
+
+export const adminAuditLogs = pgTable('admin_audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  actorUserId: uuid('actor_user_id').references(() => users.id),
+  targetUserId: uuid('target_user_id').references(() => users.id),
+  action: text('action').notNull(),
+  branch: text('branch'),
+  beforeValue: jsonb('before_value'),
+  afterValue: jsonb('after_value'),
+  reason: text('reason'),
+  requestMetadata: jsonb('request_metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  adminAuditActorIdx: index('admin_audit_logs_actor_idx').on(table.actorUserId, table.createdAt),
+  adminAuditTargetIdx: index('admin_audit_logs_target_idx').on(table.targetUserId, table.createdAt),
+  adminAuditBranchIdx: index('admin_audit_logs_branch_idx').on(table.branch, table.createdAt),
+}))
 
 // Permission groups table
 export const permissionGroups = pgTable('permission_groups', {
@@ -546,6 +565,49 @@ export const demoVehicleRemarks = pgTable('demo_vehicle_remarks', {
 }, (table) => ({
   demoVehicleRemarksVinCreatedIdx: index('demo_vehicle_remarks_vin_created_idx').on(table.vin, table.createdAt),
   demoVehicleRemarksCreatedByIdx: index('demo_vehicle_remarks_created_by_idx').on(table.createdBy),
+}))
+
+export const hyundaiWarrantyClaimActions = pgTable('hyundai_warranty_claim_actions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sourceType: text('source_type').notNull(),
+  recordKey: text('record_key').notNull(),
+  requirementCode: text('requirement_code').notNull(),
+  statusSnapshot: text('status_snapshot'),
+  businessDateSnapshot: date('business_date_snapshot'),
+  remark: text('remark').notNull(),
+  docketNumber: text('docket_number'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdByEmail: text('created_by_email').notNull(),
+  createdByRole: text('created_by_role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  warrantyClaimActionsRecordIdx: index('hyundai_warranty_claim_actions_record_idx').on(table.sourceType, table.recordKey, table.createdAt),
+  warrantyClaimActionsRequirementIdx: index('hyundai_warranty_claim_actions_requirement_idx').on(table.sourceType, table.recordKey, table.requirementCode, table.statusSnapshot),
+  warrantyClaimActionsActorIdx: index('hyundai_warranty_claim_actions_actor_idx').on(table.createdBy, table.createdAt),
+}))
+
+export const hyundaiWarrantyClaimEvidence = pgTable('hyundai_warranty_claim_evidence', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  actionId: uuid('action_id').references(() => hyundaiWarrantyClaimActions.id, { onDelete: 'cascade' }).notNull(),
+  storagePath: text('storage_path').notNull(),
+  originalName: text('original_name').notNull(),
+  contentType: text('content_type').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  uploadedBy: uuid('uploaded_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  warrantyClaimEvidenceActionIdx: index('hyundai_warranty_claim_evidence_action_idx').on(table.actionId, table.createdAt),
+}))
+
+export const hyundaiWarrantyDealerMappings = pgTable('hyundai_warranty_dealer_mappings', {
+  dealerCode: text('dealer_code').primaryKey(),
+  dealerName: text('dealer_name').notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  warrantyDealerMappingsNameIdx: index('hyundai_warranty_dealer_mappings_name_idx').on(table.dealerName),
 }))
 
 export const kiaUserProfiles = pgTable('kia_user_profiles', {

@@ -261,11 +261,12 @@ export function FinanceOrdersPageContent({ currentUser }: { currentUser: Current
   const [bulkActionLoading, setBulkActionLoading] = useState<'approve' | 'hold' | 'deny' | null>(null)
   const [exportingCompletedPdf, setExportingCompletedPdf] = useState(false)
 
-  const canCreate = currentUser.role === 'admin' || currentUser.role === 'finance_head'
-  const canActAccounts = currentUser.role === 'admin' || currentUser.role === 'accounts'
-  const canActEa = currentUser.role === 'admin' || currentUser.role === 'ea'
-  const canActMd = currentUser.role === 'admin' || currentUser.role === 'md'
-  const canUseApprovalTableActions = currentUser.role === 'admin' || currentUser.role === 'ea' || currentUser.role === 'md'
+  const isGlobalAdmin = currentUser.role === 'admin' || currentUser.role === 'super_admin'
+  const canCreate = isGlobalAdmin || currentUser.role === 'finance_head'
+  const canActAccounts = isGlobalAdmin || currentUser.role === 'accounts'
+  const canActEa = isGlobalAdmin || currentUser.role === 'ea'
+  const canActMd = isGlobalAdmin || currentUser.role === 'md'
+  const canUseApprovalTableActions = isGlobalAdmin || currentUser.role === 'ea' || currentUser.role === 'md'
   const isCompletedView = viewMode === 'all' && (statusGroup === 'completed' || status === 'completed')
 
   const fetchOrders = useCallback(async () => {
@@ -471,7 +472,7 @@ export function FinanceOrdersPageContent({ currentUser }: { currentUser: Current
     if (!canUseApprovalTableActions) return []
 
     return orders.filter((order) => {
-      if (currentUser.role === 'admin') {
+      if (isGlobalAdmin) {
         return ['awaiting_ea_approval', 'ea_on_hold', 'awaiting_md_approval', 'md_on_hold'].includes(order.status)
       }
 
@@ -485,7 +486,7 @@ export function FinanceOrdersPageContent({ currentUser }: { currentUser: Current
 
       return false
     })
-  }, [canUseApprovalTableActions, currentUser.role, orders])
+  }, [canUseApprovalTableActions, currentUser.role, isGlobalAdmin, orders])
 
   const tableActionableIds = useMemo(() => new Set(tableActionableOrders.map((order) => order.id)), [tableActionableOrders])
   const selectedActionableIds = useMemo(
@@ -645,7 +646,7 @@ export function FinanceOrdersPageContent({ currentUser }: { currentUser: Current
 
   const canEditSelected = selectedOrder
     && canCreate
-    && (currentUser.role === 'admin' || selectedOrder.createdBy === currentUser.id)
+    && (isGlobalAdmin || selectedOrder.createdBy === currentUser.id)
     && ['draft', 'accounts_on_hold', 'ea_on_hold', 'md_on_hold'].includes(selectedOrder.status)
   const selectedIsAccountsQueue = selectedOrder && ['awaiting_accounts_verification', 'accounts_on_hold'].includes(selectedOrder.status)
   const selectedIsEaQueue = selectedOrder && ['awaiting_ea_approval', 'ea_on_hold'].includes(selectedOrder.status)

@@ -311,19 +311,20 @@ function validateFinanceMutation(body: Record<string, unknown>, mode: 'create' |
 
   const loanAmount = values.loanAmount === null || values.loanAmount === undefined ? null : Number(values.loanAmount)
   const existingPayoutPercent = existingRow?.dealerPayoutPercent || null
-  const effectivePayoutPercent = mode === 'update' && role !== 'admin'
+  const isGlobalAdmin = role === 'admin' || role === 'super_admin'
+  const effectivePayoutPercent = mode === 'update' && !isGlobalAdmin
     ? existingPayoutPercent
     : values.dealerPayoutPercent
   const calculatedPayout = calculatePayoutAmount(loanAmount, effectivePayoutPercent)
   const manualPayout = readBodyNumber(body, 'payoutAmount', errors)
 
-  if (role === 'admin' && manualPayout !== null) {
+  if (isGlobalAdmin && manualPayout !== null) {
     values.payoutAmount = toDecimalString(manualPayout)
   } else {
     values.payoutAmount = toDecimalString(calculatedPayout)
   }
 
-  if (mode === 'update' && role !== 'admin' && existingRow) {
+  if (mode === 'update' && !isGlobalAdmin && existingRow) {
     values.dealerPayoutPercent = existingRow.dealerPayoutPercent
     values.bankIntRate = existingRow.bankIntRate
     values.bankLogin = existingRow.bankLogin

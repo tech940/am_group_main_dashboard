@@ -204,7 +204,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `platinum:business-excellence:open-ro:v13:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:open-ro:v14:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
