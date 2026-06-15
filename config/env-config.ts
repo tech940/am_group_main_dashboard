@@ -24,6 +24,11 @@ export const env = {
     url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
     name: process.env.NEXT_PUBLIC_APP_NAME || 'Internal Operations Platform',
   },
+  analytics: {
+    readSource: (process.env.ANALYTICS_READ_SOURCE || 'postgres') as 'postgres' | 'dual' | 'bigquery',
+    gcpProjectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '',
+    bigQueryLocation: process.env.BIGQUERY_LOCATION || 'asia-south1',
+  },
 } as const;
 
 export function validateEnv() {

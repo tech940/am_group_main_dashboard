@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
-import { db } from '@/lib/db'
+import { analyticsDb as db } from '@/lib/analytics/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'

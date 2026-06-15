@@ -89,10 +89,12 @@ type Payload = {
     monthly: Array<{ month: string; monthNumber: number; count: number; amount: number }>
   }
   matrix: null | {
+    breakdownYear: string
     statuses: string[]
     rows: Array<{
       dealerCode: string
       dealerName: string
+      breakdownYear: string
       amounts: Record<string, number>
       total: number
       currentYearAmounts: Record<string, number>
@@ -118,8 +120,8 @@ type Payload = {
 type Filters = {
   page: number
   search: string
-  dealer: string
-  status: string
+  dealers: string[]
+  statuses: string[]
   claimType: string
   sla: string
   startDate: string
@@ -127,6 +129,28 @@ type Filters = {
   sort: string
   statusBucket: string
 }
+
+const DEFAULT_FILTERS: Filters = {
+  page: 1,
+  search: '',
+  dealers: [],
+  statuses: [],
+  claimType: '',
+  sla: '',
+  startDate: '',
+  endDate: '',
+  sort: 'date_desc',
+  statusBucket: '',
+}
+
+const warrantyTableClass = 'min-w-full text-xs'
+const warrantyThClass = 'px-3 py-2 text-center'
+const warrantyTdClass = 'px-3 py-2 text-center'
+const warrantyFooterClass = 'border-t-2 border-[var(--dashboard-primary-border)] bg-[var(--dashboard-action-bg)] px-3 py-2.5 text-center font-black text-[var(--dashboard-action-fg)]'
+const warrantyNestedTableClass = 'min-w-full text-[10px]'
+const warrantyNestedCellClass = 'px-2 py-1.5 text-center'
+const warrantyRecordThClass = 'whitespace-nowrap px-3 py-2 text-center text-[10px] font-black uppercase tracking-wider'
+const warrantyRecordTdClass = 'whitespace-nowrap px-3 py-2 text-center'
 
 type HistoryPayload = {
   actions: Array<{
@@ -179,9 +203,14 @@ function buildQuery(source: Source, filters: Filters) {
     sort: filters.sort,
     contract: 'warranty-ui-v2',
   })
-  Object.entries(filters).forEach(([key, value]) => {
-    if (key !== 'page' && key !== 'sort' && value) params.set(key, String(value))
-  })
+  if (filters.search) params.set('search', filters.search)
+  if (filters.dealers.length) params.set('dealers', filters.dealers.join(','))
+  if (filters.statuses.length) params.set('statuses', filters.statuses.join(','))
+  if (filters.claimType) params.set('claimType', filters.claimType)
+  if (filters.sla) params.set('sla', filters.sla)
+  if (filters.startDate) params.set('startDate', filters.startDate)
+  if (filters.endDate) params.set('endDate', filters.endDate)
+  if (filters.statusBucket) params.set('statusBucket', filters.statusBucket)
   return params.toString()
 }
 
@@ -210,6 +239,52 @@ function KpiCard({ label, value, helper, icon: Icon, warning = false }: {
         </div>
       </div>
       <p className="mt-2 text-xs font-semibold text-slate-500">{helper}</p>
+    </div>
+  )
+}
+
+function MultiSelectFilter({ label, options, selected, onChange }: {
+  label: string
+  options: string[]
+  selected: string[]
+  onChange: (value: string[]) => void
+}) {
+  const toggle = (value: string) => {
+    onChange(selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value])
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</span>
+        {selected.length > 0 && (
+          <button
+            type="button"
+            className="text-[10px] font-bold text-blue-700 hover:underline"
+            onClick={() => onChange([])}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2">
+        {options.length === 0 ? (
+          <p className="px-2 py-1 text-xs font-semibold text-slate-400">No options</p>
+        ) : options.map((item) => (
+          <label key={item} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+            <input
+              type="checkbox"
+              checked={selected.includes(item)}
+              onChange={() => toggle(item)}
+              className="rounded border-slate-300"
+            />
+            <span>{item}</span>
+          </label>
+        ))}
+      </div>
+      <p className="text-[10px] font-bold text-slate-500">
+        {selected.length === 0 ? 'All selected' : `${selected.length} selected`}
+      </p>
     </div>
   )
 }
@@ -249,9 +324,8 @@ const activeActionButtonClass = 'bg-[var(--dashboard-action-hover)]'
 export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   const queryClient = useQueryClient()
   const isYtp = source === 'ytp'
-  const [filters, setFilters] = useState<Filters>({
-    page: 1, search: '', dealer: '', status: '', claimType: '', sla: '', startDate: '', endDate: '', sort: 'date_desc', statusBucket: '',
-  })
+  const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS)
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [showFilters, setShowFilters] = useState(false)
   const [showKpis, setShowKpis] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
@@ -262,7 +336,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   const [docketNumber, setDocketNumber] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [expandedDealer, setExpandedDealer] = useState<string | null>(null)
-  const queryString = useMemo(() => buildQuery(source, filters), [filters, source])
+  const queryString = useMemo(() => buildQuery(source, appliedFilters), [appliedFilters, source])
 
   const { data, isLoading, error } = useQuery<Payload>({
     queryKey: ['hyundai-warranty-claims', queryString],
@@ -298,7 +372,26 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
     },
   })
 
-  const updateFilter = (key: keyof Filters, value: string) => setFilters((current) => ({ ...current, [key]: value, page: 1 }))
+  const updateDraftFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
+    setDraftFilters((current) => ({ ...current, [key]: value }))
+  }
+
+  const applyFilters = () => {
+    setAppliedFilters({ ...draftFilters, page: 1 })
+  }
+
+  const clearFilters = () => {
+    setDraftFilters(DEFAULT_FILTERS)
+    setAppliedFilters(DEFAULT_FILTERS)
+  }
+
+  const updateAppliedStatusBucket = (statusBucket: string) => {
+    setAppliedFilters((current) => ({ ...current, statusBucket, page: 1 }))
+  }
+
+  const updateAppliedPage = (page: number) => {
+    setAppliedFilters((current) => ({ ...current, page }))
+  }
   const columns = isYtp
     ? ['Dealer', 'RO No', 'RO Date', 'VIN', 'Claim Type', 'RO Status', 'Campaign', 'Category', 'SLA', 'Latest Remark', 'Actions']
     : ['Dealer', 'Claim No', 'Claim Date', 'VIN', 'RO No', 'Claim Type', 'Status', 'Total Amount', 'Approved', 'SLA', 'Latest Remark', 'Actions']
@@ -352,35 +445,43 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Search</span>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <Input value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} placeholder="Claim, RO, VIN, dealer or part..." className="pl-9" />
+                <Input value={draftFilters.search} onChange={(event) => updateDraftFilter('search', event.target.value)} placeholder="Claim, RO, VIN, dealer or part..." className="pl-9" />
               </div>
             </label>
-            <SelectFilter label="Dealer" value={filters.dealer} onChange={(value) => updateFilter('dealer', value)}>
-              <option value="">All dealers</option>
-              {data?.options.dealers.map((item) => <option key={item} value={item}>{item}</option>)}
-            </SelectFilter>
-            <SelectFilter label="SLA" value={filters.sla} onChange={(value) => updateFilter('sla', value)}>
+            <MultiSelectFilter
+              label="Dealers"
+              options={data?.options.dealers || []}
+              selected={draftFilters.dealers}
+              onChange={(value) => updateDraftFilter('dealers', value)}
+            />
+            <MultiSelectFilter
+              label="Statuses"
+              options={data?.options.statuses || []}
+              selected={draftFilters.statuses}
+              onChange={(value) => updateDraftFilter('statuses', value)}
+            />
+            <SelectFilter label="SLA" value={draftFilters.sla} onChange={(value) => updateDraftFilter('sla', value)}>
               <option value="">All SLA states</option>
               <option value="action_required">Action required</option>
               <option value="complete">Remark completed</option>
               <option value="within_sla">Within SLA</option>
             </SelectFilter>
-            <SelectFilter label="Status" value={filters.status} onChange={(value) => updateFilter('status', value)}>
-              <option value="">All statuses</option>
-              {data?.options.statuses.map((item) => <option key={item} value={item}>{item}</option>)}
-            </SelectFilter>
-            <SelectFilter label="Claim Type" value={filters.claimType} onChange={(value) => updateFilter('claimType', value)}>
+            <SelectFilter label="Claim Type" value={draftFilters.claimType} onChange={(value) => updateDraftFilter('claimType', value)}>
               <option value="">All claim types</option>
               {data?.options.claimTypes.map((item) => <option key={item} value={item}>{item}</option>)}
             </SelectFilter>
             <label className="space-y-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">From</span>
-              <Input type="date" value={filters.startDate} onChange={(event) => updateFilter('startDate', event.target.value)} />
+              <Input type="date" value={draftFilters.startDate} onChange={(event) => updateDraftFilter('startDate', event.target.value)} />
             </label>
             <label className="space-y-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">To</span>
-              <Input type="date" value={filters.endDate} onChange={(event) => updateFilter('endDate', event.target.value)} />
+              <Input type="date" value={draftFilters.endDate} onChange={(event) => updateDraftFilter('endDate', event.target.value)} />
             </label>
+          </div>
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <Button className={actionButtonClass} onClick={clearFilters}>Clear</Button>
+            <Button className={cn(actionButtonClass, activeActionButtonClass)} onClick={applyFilters}>Apply</Button>
           </div>
         </section>}
 
@@ -400,26 +501,26 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
               </div>
             ) : (
               <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+              <table className={warrantyTableClass}>
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    <th className="px-4 py-3 text-center">Month</th>
-                    {data.ytpMonthlySummary.dealers.map((code) => <th key={code} className="px-4 py-3 text-center">{code}</th>)}
-                    <th className="px-4 py-3 text-center">Grand Total</th>
+                    <th className={warrantyThClass}>Month</th>
+                    {data.ytpMonthlySummary.dealers.map((code) => <th key={code} className={warrantyThClass}>{code}</th>)}
+                    <th className={warrantyThClass}>Grand Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.ytpMonthlySummary.rows.map((row) => (
                     <tr key={row.monthNumber} className="border-b border-slate-100">
-                      <td className="px-4 py-3 text-center font-black text-slate-900">{row.month}</td>
-                      {data.ytpMonthlySummary!.dealers.map((code) => <td key={code} className="px-4 py-3 text-center font-mono">{number(row.counts[code])}</td>)}
-                      <td className="px-4 py-3 text-center font-mono font-black">{number(row.total)}</td>
+                      <td className={cn(warrantyTdClass, 'font-black text-slate-900')}>{row.month}</td>
+                      {data.ytpMonthlySummary!.dealers.map((code) => <td key={code} className={cn(warrantyTdClass, 'font-mono')}>{number(row.counts[code])}</td>)}
+                      <td className={cn(warrantyTdClass, 'font-mono font-black')}>{number(row.total)}</td>
                     </tr>
                   ))}
                   <tr className="bg-slate-100 text-slate-950">
-                    <td className="px-4 py-3 text-center font-black">Grand Total</td>
-                    {data.ytpMonthlySummary.dealers.map((code) => <td key={code} className="px-4 py-3 text-center font-mono font-black">{number(data.ytpMonthlySummary!.dealerTotals[code])}</td>)}
-                    <td className="px-4 py-3 text-center font-mono font-black">{number(data.ytpMonthlySummary.grandTotal)}</td>
+                    <td className={cn(warrantyTdClass, 'font-black')}>Grand Total</td>
+                    {data.ytpMonthlySummary.dealers.map((code) => <td key={code} className={cn(warrantyTdClass, 'font-mono font-black')}>{number(data.ytpMonthlySummary!.dealerTotals[code])}</td>)}
+                    <td className={cn(warrantyTdClass, 'font-mono font-black')}>{number(data.ytpMonthlySummary.grandTotal)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -465,28 +566,28 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <h2 className="text-lg font-black text-slate-950">Total Claim Amount</h2>
-                <p className="text-xs font-semibold text-slate-500">Select a status to filter records, or expand a dealer for the current-year monthly breakdown.</p>
+                <p className="text-xs font-semibold text-slate-500">Select a status to filter records, or expand a dealer for the monthly breakdown by claim date year.</p>
               </div>
               <CalendarDays className="h-5 w-5 text-blue-700" />
             </div>
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+              <table className={warrantyTableClass}>
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    <th className="px-4 py-3 text-center">Dealer</th>
+                    <th className={warrantyThClass}>Dealer</th>
                     {data.matrix.statuses.map((item) => (
-                      <th key={item} className="px-2 py-2 text-center">
+                      <th key={item} className="px-2 py-1.5 text-center">
                         <Button
                           size="sm"
-                          className={cn(actionButtonClass, 'w-full justify-center', filters.statusBucket === item && activeActionButtonClass)}
-                          onClick={() => updateFilter('statusBucket', filters.statusBucket === item ? '' : item)}
+                          className={cn(actionButtonClass, 'w-full justify-center text-xs', appliedFilters.statusBucket === item && activeActionButtonClass)}
+                          onClick={() => updateAppliedStatusBucket(appliedFilters.statusBucket === item ? '' : item)}
                         >
                           {item}
                         </Button>
                       </th>
                     ))}
-                    <th className="px-2 py-2 text-center">
-                      <Button size="sm" className={cn(actionButtonClass, 'w-full justify-center', !filters.statusBucket && activeActionButtonClass)} onClick={() => updateFilter('statusBucket', '')}>Grand Total</Button>
+                    <th className="px-2 py-1.5 text-center">
+                      <Button size="sm" className={cn(actionButtonClass, 'w-full justify-center text-xs', !appliedFilters.statusBucket && activeActionButtonClass)} onClick={() => updateAppliedStatusBucket('')}>Grand Total</Button>
                     </th>
                   </tr>
                 </thead>
@@ -496,10 +597,10 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                     return (
                       <Fragment key={row.dealerCode}>
                         <tr className="border-b border-slate-100">
-                          <td className="px-4 py-3 text-center">
+                          <td className={warrantyTdClass}>
                             <Button
                               size="sm"
-                              className={cn(actionButtonClass, 'mx-auto', expanded && activeActionButtonClass)}
+                              className={cn(actionButtonClass, 'mx-auto text-xs', expanded && activeActionButtonClass)}
                               onClick={() => setExpandedDealer(expanded ? null : row.dealerCode)}
                             >
                               {expanded ? <ChevronDown /> : <ChevronRight />}
@@ -507,36 +608,37 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                             </Button>
                           </td>
                           {data.matrix!.statuses.map((item, index) => (
-                            <td key={item} className={cn('px-4 py-3 text-center font-mono font-black', index === 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700')}>
+                            <td key={item} className={cn(warrantyTdClass, 'font-mono font-black', index === 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700')}>
                               {money(row.amounts[item])}
                             </td>
                           ))}
-                          <td className="px-4 py-3 text-center font-mono font-black text-slate-950">{money(row.total)}</td>
+                          <td className={cn(warrantyTdClass, 'font-mono font-black text-slate-950')}>{money(row.total)}</td>
                         </tr>
                         {expanded && (
                           <tr className="border-b border-slate-200 bg-slate-50">
-                            <td colSpan={data.matrix!.statuses.length + 2} className="p-4">
+                            <td colSpan={data.matrix!.statuses.length + 2} className="p-3">
+                              <p className="mb-2 text-[10px] font-bold text-slate-500">Monthly breakdown for {row.breakdownYear}</p>
                               <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                                <table className="min-w-full text-xs">
+                                <table className={warrantyNestedTableClass}>
                                   <thead className="bg-slate-800 text-white">
                                     <tr>
-                                      <th className="px-3 py-2 text-center">Month</th>
-                                      {data.matrix!.statuses.map((item) => <th key={item} className="px-3 py-2 text-center">{item}</th>)}
-                                      <th className="px-3 py-2 text-center">Total</th>
+                                      <th className={warrantyNestedCellClass}>Month</th>
+                                      {data.matrix!.statuses.map((item) => <th key={item} className={warrantyNestedCellClass}>{item}</th>)}
+                                      <th className={warrantyNestedCellClass}>Total</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {row.monthly.map((month) => (
                                       <tr key={month.monthNumber} className="border-b border-slate-100">
-                                        <td className="px-3 py-2 text-center font-black">{month.month}</td>
-                                        {data.matrix!.statuses.map((item) => <td key={item} className="px-3 py-2 text-center font-mono">{money(month.amounts[item])}</td>)}
-                                        <td className="px-3 py-2 text-center font-mono font-black">{money(month.total)}</td>
+                                        <td className={cn(warrantyNestedCellClass, 'font-black')}>{month.month}</td>
+                                        {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(month.amounts[item])}</td>)}
+                                        <td className={cn(warrantyNestedCellClass, 'font-mono font-black')}>{money(month.total)}</td>
                                       </tr>
                                     ))}
                                     <tr className="bg-slate-100 font-black">
-                                      <td className="px-3 py-2 text-center">Year Total</td>
-                                      {data.matrix!.statuses.map((item) => <td key={item} className="px-3 py-2 text-center font-mono">{money(row.currentYearAmounts[item])}</td>)}
-                                      <td className="px-3 py-2 text-center font-mono">{money(row.currentYearTotal)}</td>
+                                      <td className={warrantyNestedCellClass}>{row.breakdownYear} Total</td>
+                                      {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.currentYearAmounts[item])}</td>)}
+                                      <td className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.currentYearTotal)}</td>
                                     </tr>
                                   </tbody>
                                 </table>
@@ -550,18 +652,18 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td className="border-t-2 border-[var(--dashboard-primary-border)] bg-[var(--dashboard-action-bg)] px-4 py-4 text-center font-black text-[var(--dashboard-action-fg)]">
+                    <td className={warrantyFooterClass}>
                       Grand Total
                     </td>
                     {data.matrix.statuses.map((item) => (
                       <td
                         key={item}
-                        className="border-t-2 border-[var(--dashboard-primary-border)] bg-[var(--dashboard-action-bg)] px-4 py-4 text-center font-mono font-black text-[var(--dashboard-action-fg)]"
+                        className={cn(warrantyFooterClass, 'font-mono')}
                       >
                         {money(data.matrix!.rows.reduce((sum, row) => sum + Number(row.amounts[item] || 0), 0))}
                       </td>
                     ))}
-                    <td className="border-t-2 border-[var(--dashboard-primary-border)] bg-[var(--dashboard-action-hover)] px-4 py-4 text-center font-mono font-black text-[var(--dashboard-action-fg)]">
+                    <td className="border-t-2 border-[var(--dashboard-primary-border)] bg-[var(--dashboard-action-hover)] px-3 py-2.5 text-center font-mono font-black text-[var(--dashboard-action-fg)]">
                       {money(data.matrix.rows.reduce((sum, row) => sum + Number(row.total || 0), 0))}
                     </td>
                   </tr>
@@ -573,60 +675,60 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+            <table className={warrantyTableClass}>
               <thead className="bg-slate-900 text-white">
-                <tr>{columns.map((item) => <th key={item} className="whitespace-nowrap px-4 py-3 text-center text-[11px] font-black uppercase tracking-wider">{item}</th>)}</tr>
+                <tr>{columns.map((item) => <th key={item} className={warrantyRecordThClass}>{item}</th>)}</tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={columns.length} className="p-12 text-center font-bold text-slate-500">Loading warranty records...</td></tr>
+                  <tr><td colSpan={columns.length} className="p-10 text-center text-xs font-bold text-slate-500">Loading warranty records...</td></tr>
                 ) : error ? (
-                  <tr><td colSpan={columns.length} className="p-12 text-center font-bold text-rose-600">{error.message}</td></tr>
+                  <tr><td colSpan={columns.length} className="p-10 text-center text-xs font-bold text-rose-600">{error.message}</td></tr>
                 ) : data?.rows.length === 0 ? (
-                  <tr><td colSpan={columns.length} className="p-12 text-center font-bold text-slate-500">No records match these filters.</td></tr>
+                  <tr><td colSpan={columns.length} className="p-10 text-center text-xs font-bold text-slate-500">No records match these filters.</td></tr>
                 ) : data?.rows.map((row) => (
                   <tr key={row.recordKey} className={cn('border-b border-slate-100 align-top', row.compliance === 'action_required' && 'bg-rose-50/70')}>
-                    <td className="whitespace-nowrap px-4 py-3 text-center font-black text-slate-900">{row.dealerName}<div className="text-[10px] text-slate-400">{row.dealerCode}</div></td>
+                    <td className={cn(warrantyRecordTdClass, 'font-black text-slate-900')}>{row.dealerName}<div className="text-[10px] text-slate-400">{row.dealerCode}</div></td>
                     {isYtp ? (
                       <>
-                        <td className="whitespace-nowrap px-4 py-3 text-center font-mono">{String(row.r_o_no || '-')}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-center">{formatDate(row.r_o_date)}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-center font-mono text-xs">{String(row.vin || '-')}</td>
-                        <td className="px-4 py-3 text-center">{String(row.claim_type || '-')}</td>
-                        <td className="px-4 py-3 text-center">{row.status}</td>
-                        <td className="px-4 py-3 text-center">{String(row.campaign_no || '-')}</td>
-                        <td className="px-4 py-3 text-center">{String(row.category || '-')}</td>
+                        <td className={cn(warrantyRecordTdClass, 'font-mono')}>{String(row.r_o_no || '-')}</td>
+                        <td className={warrantyRecordTdClass}>{formatDate(row.r_o_date)}</td>
+                        <td className={cn(warrantyRecordTdClass, 'font-mono text-[10px]')}>{String(row.vin || '-')}</td>
+                        <td className={warrantyRecordTdClass}>{String(row.claim_type || '-')}</td>
+                        <td className={warrantyRecordTdClass}>{row.status}</td>
+                        <td className={warrantyRecordTdClass}>{String(row.campaign_no || '-')}</td>
+                        <td className={warrantyRecordTdClass}>{String(row.category || '-')}</td>
                       </>
                     ) : (
                       <>
-                        <td className="whitespace-nowrap px-4 py-3 text-center font-mono">{String(row.claim_no || '-')}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-center">{formatDate(row.claim_date)}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-center font-mono text-xs">{String(row.vin || '-')}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-center font-mono">{String(row.r_o_no || '-')}</td>
-                        <td className="px-4 py-3 text-center">{String(row.claim_type || '-')}</td>
-                        <td className="px-4 py-3 text-center font-black">{row.status}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-center font-mono font-black">{money(row.total_amt)}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-center font-mono">{money(row.approve_amount_by_hmi)}</td>
+                        <td className={cn(warrantyRecordTdClass, 'font-mono')}>{String(row.claim_no || '-')}</td>
+                        <td className={warrantyRecordTdClass}>{formatDate(row.claim_date)}</td>
+                        <td className={cn(warrantyRecordTdClass, 'font-mono text-[10px]')}>{String(row.vin || '-')}</td>
+                        <td className={cn(warrantyRecordTdClass, 'font-mono')}>{String(row.r_o_no || '-')}</td>
+                        <td className={warrantyRecordTdClass}>{String(row.claim_type || '-')}</td>
+                        <td className={cn(warrantyRecordTdClass, 'font-black')}>{row.status}</td>
+                        <td className={cn(warrantyRecordTdClass, 'font-mono font-black')}>{money(row.total_amt)}</td>
+                        <td className={cn(warrantyRecordTdClass, 'font-mono')}>{money(row.approve_amount_by_hmi)}</td>
                       </>
                     )}
-                    <td className="min-w-48 px-4 py-3 text-center">
+                    <td className="min-w-48 px-3 py-2 text-center">
                       <span className={cn(
                         'inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide',
                         row.compliance === 'action_required' ? 'bg-rose-100 text-rose-700' : row.compliance === 'complete' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
                       )}>{row.compliance === 'action_required' ? 'Action required' : row.compliance === 'complete' ? 'Completed' : 'Within SLA'}</span>
-                      <div className="mt-1 text-xs font-bold text-slate-600">{row.requirement.label} · {row.requirement.ageDays}D</div>
+                      <div className="mt-1 text-[10px] font-bold text-slate-600">{row.requirement.label} · {row.requirement.ageDays}D</div>
                     </td>
-                    <td className="min-w-64 px-4 py-3 text-center">
+                    <td className="min-w-64 px-3 py-2 text-center">
                       {row.latestRemark ? (
                         <div>
-                          <p className="line-clamp-3 text-sm font-semibold text-slate-800">{row.latestRemark.remark}</p>
+                          <p className="line-clamp-3 text-xs font-semibold text-slate-800">{row.latestRemark.remark}</p>
                           <p className="mt-1 text-[10px] font-bold text-slate-500">
                             {row.latestRemark.createdByName} · {row.latestRemark.createdByRole} · {formatDateTime(row.latestRemark.createdAt)}
                           </p>
                         </div>
                       ) : <span className="text-slate-400">-</span>}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-center">
+                    <td className={warrantyRecordTdClass}>
                       <div className="flex justify-center gap-2">
                         {data.permissions.canEdit && (
                           <Button
@@ -652,11 +754,11 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-2.5">
             <p className="text-xs font-bold text-slate-500">Page {data?.pagination.page || 1} of {data?.pagination.totalPages || 1} · {number(data?.pagination.totalRows)} rows</p>
             <div className="flex gap-2">
-              <Button className={actionButtonClass} size="sm" disabled={filters.page <= 1} onClick={() => setFilters((current) => ({ ...current, page: current.page - 1 }))}>Previous</Button>
-              <Button className={actionButtonClass} size="sm" disabled={filters.page >= (data?.pagination.totalPages || 1)} onClick={() => setFilters((current) => ({ ...current, page: current.page + 1 }))}>Next</Button>
+              <Button className={actionButtonClass} size="sm" disabled={appliedFilters.page <= 1} onClick={() => updateAppliedPage(appliedFilters.page - 1)}>Previous</Button>
+              <Button className={actionButtonClass} size="sm" disabled={appliedFilters.page >= (data?.pagination.totalPages || 1)} onClick={() => updateAppliedPage(appliedFilters.page + 1)}>Next</Button>
             </div>
           </div>
         </section>

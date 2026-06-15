@@ -67,6 +67,7 @@ async function fetchOverview(baseUrl, cookie, query = '') {
 
 async function main() {
   const baseUrl = process.env.PLATINUM_BE_API_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const readSource = process.env.ANALYTICS_READ_SOURCE || 'postgres'
   let devServer = null
   let startedDevServer = false
 
@@ -127,6 +128,7 @@ async function main() {
     assert.ok(warmMs <= warmBudgetMs, `warm overview exceeded budget (${warmMs}ms > ${warmBudgetMs}ms)`)
 
     console.log('[verify-platinum-be-api] passed', {
+      analyticsReadSource: readSource,
       revenue: payload.kpis.revenue,
       lyRevenue: payload.comparison.revenue.ly,
       totalJc: payload.kpis.totalJc,

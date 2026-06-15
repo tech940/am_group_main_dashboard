@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { db } from '@/lib/db'
+import { analyticsDb } from '@/lib/analytics/db'
 import { getPlatinumBranchLabel, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
 import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 
@@ -83,7 +83,7 @@ export async function fetchPlatinumRoBillingCoverage(startDate: string, endDate:
     ? sql`AND dealer_code = ${dealerCode}`
     : sql``
 
-  const rows = await db.execute(sql`
+  const rows = await analyticsDb.execute(sql`
     SELECT
       COALESCE(SUM(invoice_count) FILTER (
         WHERE bill_date >= ${startDate}::date
@@ -117,7 +117,7 @@ export async function fetchPlatinumOpenRoCoverage(startDate: string, endDate: st
     ? sql`AND dealer_code = ${dealerCode}`
     : sql``
 
-  const rows = await db.execute(sql`
+  const rows = await analyticsDb.execute(sql`
     SELECT
       COALESCE(SUM(open_ro) FILTER (
         WHERE report_date >= ${startDate}::date
@@ -152,7 +152,7 @@ export async function fetchPlatinumComplaintsCoverage(startDate: string, endDate
     ? sql`AND dealer_code = ${dealerCode}`
     : sql``
 
-  const rows = await db.execute(sql`
+  const rows = await analyticsDb.execute(sql`
     SELECT
       COALESCE(SUM(complaints) FILTER (
         WHERE report_date >= ${startDate}::date
@@ -184,7 +184,7 @@ export async function fetchPlatinumComplaintsCoverage(startDate: string, endDate
 export async function fetchPlatinumEwCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
   const dealerFilter = platinumSourceDealerFilter(dealerCode)
 
-  const rows = await db.execute(sql`
+  const rows = await analyticsDb.execute(sql`
     SELECT
       COUNT(*) FILTER (
         WHERE reg_date >= ${startDate}::date
@@ -216,7 +216,7 @@ export async function fetchPlatinumEwCoverage(startDate: string, endDate: string
 export async function fetchPlatinumSotCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
   const dealerFilter = platinumSourceDealerFilter(dealerCode)
 
-  const rows = await db.execute(sql`
+  const rows = await analyticsDb.execute(sql`
     SELECT
       COUNT(*) FILTER (
         WHERE reg_date >= ${startDate}::date

@@ -33,8 +33,40 @@ export function istDateKey(date = new Date()) {
   return `${get('year')}-${get('month')}-${get('day')}`
 }
 
+export function normalizeBusinessDate(value: unknown): string | null {
+  if (!value) return null
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10)
+  }
+
+  const raw = String(value).trim()
+  if (!raw) return null
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10)
+
+  const dmy = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
+  }
+
+  const parsed = Date.parse(raw)
+  if (Number.isFinite(parsed)) return new Date(parsed).toISOString().slice(0, 10)
+  return null
+}
+
+export function resolveWarrantyBusinessDate(
+  source: HyundaiWarrantySource,
+  row: Record<string, unknown>,
+): string | null {
+  if (source === 'ytp') {
+    return normalizeBusinessDate(row.r_o_date) ?? normalizeBusinessDate(row.uploaded_at)
+  }
+  return normalizeBusinessDate(row.claim_date)
+    ?? normalizeBusinessDate(row.r_o_date)
+    ?? normalizeBusinessDate(row.uploaded_at)
+}
+
 export function calendarAgeDays(value: unknown, today = istDateKey()) {
-  const date = String(value || '').slice(0, 10)
+  const date = normalizeBusinessDate(value) || String(value || '').slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 0
   const start = Date.parse(`${date}T00:00:00Z`)
   const end = Date.parse(`${today}T00:00:00Z`)

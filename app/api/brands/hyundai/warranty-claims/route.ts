@@ -7,6 +7,7 @@ import {
   actionSatisfiesRequirement,
   getWarrantyRequirement,
   istDateKey,
+  resolveWarrantyBusinessDate,
   type HyundaiWarrantySource,
   warrantyRecordKey,
   WARRANTY_STATUS_ORDER,
@@ -51,10 +52,32 @@ function num(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function date(value: unknown) {
-  if (!value) return null
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
-  return String(value).slice(0, 10)
+function parseCsvParam(value: string | null, legacySingle?: string | null) {
+  const raw = text(value) || text(legacySingle)
+  if (!raw) return [] as string[]
+  return [...new Set(raw.split(',').map((item) => item.trim().toUpperCase()).filter(Boolean))]
+}
+
+function resolveBreakdownYear(
+  dealerRows: EnrichedRow[],
+  startDate: string,
+  endDate: string,
+  fallbackYear: string,
+) {
+  if (startDate && endDate) {
+    const startYear = startDate.slice(0, 4)
+    const endYear = endDate.slice(0, 4)
+    if (startYear === endYear) return startYear
+  }
+
+  const yearCounts = new Map<string, number>()
+  for (const row of dealerRows) {
+    const year = row.businessDate?.slice(0, 4)
+    if (!year) continue
+    yearCounts.set(year, (yearCounts.get(year) || 0) + 1)
+  }
+  if (yearCounts.size === 0) return fallbackYear
+  return [...yearCounts.entries()].sort((left, right) => right[1] - left[1])[0][0]
 }
 
 async function fetchSourceRows(source: HyundaiWarrantySource) {
@@ -140,7 +163,7 @@ export async function GET(request: Request) {
   const enriched: EnrichedRow[] = rawRows.map((row) => {
     const recordKey = warrantyRecordKey(source, row)
     const status = text(source === 'ytp' ? row.r_o_status : row.status)
-    const businessDate = date(source === 'ytp' ? row.r_o_date : row.claim_date)
+    const businessDate = resolveWarrantyBusinessDate(source, row)
     const requirement = getWarrantyRequirement(source, status, businessDate)
     const recordActions = actionsByKey.get(recordKey) || []
     const matchingAction = recordActions.find((action) => actionSatisfiesRequirement(requirement, status, {
@@ -173,8 +196,8 @@ export async function GET(request: Request) {
   })
 
   const search = text(searchParams.get('search')).toLowerCase()
-  const dealer = text(searchParams.get('dealer')).toUpperCase()
-  const status = text(searchParams.get('status')).toUpperCase()
+  const dealerSet = parseCsvParam(searchParams.get('dealers'), searchParams.get('dealer'))
+  const statusSet = parseCsvParam(searchParams.get('statuses'), searchParams.get('status'))
   const requestedStatusBucket = text(searchParams.get('statusBucket'))
   const claimType = text(searchParams.get('claimType')).toUpperCase()
   const sla = text(searchParams.get('sla'))
@@ -186,8 +209,8 @@ export async function GET(request: Request) {
       row.r_o_no, row.vin, row.claim_no, row.campaign_no, row.part_desc,
     ].map(text).join(' ').toLowerCase()
     if (search && !haystack.includes(search)) return false
-    if (dealer && row.dealerCode !== dealer) return false
-    if (status && row.status.toUpperCase() !== status) return false
+    if (dealerSet.length && !dealerSet.includes(row.dealerCode)) return false
+    if (statusSet.length && !statusSet.includes(row.status.toUpperCase())) return false
     if (claimType && text(row.claim_type).toUpperCase() !== claimType) return false
     if (sla === 'action_required' && row.compliance !== 'action_required') return false
     if (sla === 'complete' && row.compliance !== 'complete') return false
@@ -227,9 +250,6 @@ export async function GET(request: Request) {
 
   const currentIstDate = istDateKey()
   const currentYear = currentIstDate.slice(0, 4)
-  const currentYearBreakdownRows = enriched.filter((row) => (
-    matchesFilters(row, false) && row.businessDate?.slice(0, 4) === currentYear
-  ))
   const charts = source === 'claim_list' ? {
     status: statuses.map((name) => ({
       name,
@@ -266,13 +286,16 @@ export async function GET(request: Request) {
   const relevantStatuses = WARRANTY_STATUS_ORDER.filter((bucket) => baseFiltered.some((row) => row.statusBucket === bucket))
   const matrixDealers = [...new Set(baseFiltered.map((row) => row.dealerCode))].sort()
   const matrix = source === 'claim_list' ? {
+    breakdownYear: currentYear,
     statuses: relevantStatuses,
     rows: matrixDealers.map((code) => {
       const dealerRows = baseFiltered.filter((row) => row.dealerCode === code)
-      const currentYearRows = currentYearBreakdownRows.filter((row) => row.dealerCode === code)
+      const breakdownYear = resolveBreakdownYear(dealerRows, startDate, endDate, currentYear)
+      const breakdownRows = dealerRows.filter((row) => row.businessDate?.slice(0, 4) === breakdownYear)
       return {
         dealerCode: code,
         dealerName: mappings.get(code) || code,
+        breakdownYear,
         amounts: Object.fromEntries(relevantStatuses.map((bucket) => [
           bucket,
           dealerRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
@@ -280,13 +303,13 @@ export async function GET(request: Request) {
         total: dealerRows.reduce((sum, row) => sum + num(row.total_amt), 0),
         currentYearAmounts: Object.fromEntries(relevantStatuses.map((bucket) => [
           bucket,
-          currentYearRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
+          breakdownRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
         ])),
-        currentYearTotal: currentYearRows.reduce((sum, row) => sum + num(row.total_amt), 0),
+        currentYearTotal: breakdownRows.reduce((sum, row) => sum + num(row.total_amt), 0),
         monthly: Array.from({ length: 12 }, (_, index) => {
           const monthNumber = index + 1
-          const monthKey = `${currentYear}-${String(monthNumber).padStart(2, '0')}`
-          const monthRows = currentYearRows.filter((row) => row.businessDate?.slice(0, 7) === monthKey)
+          const monthKey = `${breakdownYear}-${String(monthNumber).padStart(2, '0')}`
+          const monthRows = breakdownRows.filter((row) => row.businessDate?.slice(0, 7) === monthKey)
           return {
             month: monthLabel(monthNumber),
             monthNumber,

@@ -1,7 +1,7 @@
 import path from 'path'
 import ExcelJS from 'exceljs'
 import { sql } from 'drizzle-orm'
-import { db } from '@/lib/db'
+import { analyticsDb as db } from '@/lib/analytics/db'
 
 type DealerFilter = string | null
 type NumericRow = Record<string, unknown>

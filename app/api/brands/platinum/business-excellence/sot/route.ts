@@ -1,7 +1,7 @@
 import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
-import { db } from '@/lib/db'
+import { analyticsDb as db } from '@/lib/analytics/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { getCachedData } from '@/lib/redis/cache-utils'

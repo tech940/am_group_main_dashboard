@@ -1,7 +1,7 @@
 import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
-import { db } from '@/lib/db'
+import { analyticsDb as db } from '@/lib/analytics/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -101,7 +101,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `kia:business-excellence:overview:v29:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v30:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -343,11 +343,12 @@ function rsaDedupKpiSql(startDate: string, endDate: string) {
 }
 
 async function tableExists(tableName: string) {
-  if (tableExistsCache.has(tableName)) return tableExistsCache.get(tableName)!
+  if (tableExistsCache.get(tableName) === true) return true
 
   const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
   const exists = Boolean(resultRows(result)[0]?.exists)
-  tableExistsCache.set(tableName, exists)
+  if (exists) tableExistsCache.set(tableName, true)
+  else tableExistsCache.delete(tableName)
   return exists
 }
 
@@ -1166,6 +1167,8 @@ async function buildOverviewPayload(
   const lyComplaintsOpen = numberValue(lyComplaintKpis.open)
   const lyComplaintsOver15 = numberValue(lyComplaintKpis.over_15)
   const lyAddOnTotal = lyAddonKpis.ewCount + lyAddonKpis.rsaCount + lyAddonKpis.mcpCount
+  const hasComparableWorkshopVasLy = lyWorkshopSnapshot.vasAvailable
+  const workshopVasLyAmount = hasComparableWorkshopVasLy ? lyWorkshopSnapshot.vasAmount : null
 
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
@@ -1293,16 +1296,16 @@ async function buildOverviewPayload(
       },
       workshopVasAmount: {
         cy: workshopSnapshot.vasAmount,
-        ly: lyWorkshopSnapshot.vasAvailable ? lyWorkshopSnapshot.vasAmount : null,
+        ly: workshopVasLyAmount,
         deltaPct: nullableGrowth(
           workshopSnapshot.vasAmount,
-          lyWorkshopSnapshot.vasAvailable ? lyWorkshopSnapshot.vasAmount : null
+          workshopVasLyAmount
         ),
-        available: Boolean(workshopSnapshot.vasAvailable && lyWorkshopSnapshot.vasAvailable),
+        available: hasComparableWorkshopVasLy,
         unavailableReason: !workshopSnapshot.vasAvailable
           ? workshopSnapshot.vasUnavailableReason
-          : !lyWorkshopSnapshot.vasAvailable
-            ? lyWorkshopSnapshot.vasUnavailableReason
+          : !hasComparableWorkshopVasLy
+            ? lyWorkshopSnapshot.vasUnavailableReason || 'No comparable LY period'
             : null,
         source: workshopSnapshot.vasSource,
         sourceTable: workshopSnapshot.vasSourceTable,

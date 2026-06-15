@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { db } from '@/lib/db'
+import { analyticsDb } from '@/lib/analytics/db'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import {
@@ -335,7 +335,7 @@ async function queryPlatinumRoBillingAudit(
   const previousStartDate = addDays(startDate, -days)
   const { lyStartDate, lyEndDate } = resolveLyRange(startDate, endDate, rangeOptions)
 
-  const result = await db.execute(sql`
+  const result = await analyticsDb.execute(sql`
     WITH range_def AS (
       SELECT *
       FROM (

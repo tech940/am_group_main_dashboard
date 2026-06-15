@@ -16,6 +16,11 @@ async function main() {
     throw new Error('DATABASE_URL is not configured')
   }
 
+  const readSource = process.env.ANALYTICS_READ_SOURCE || 'postgres'
+  if (readSource === 'bigquery') {
+    console.warn('[verify-platinum-business-excellence] ANALYTICS_READ_SOURCE=bigquery — this script validates Postgres directly; use bq:validate-parity for BQ checks')
+  }
+
   const db = postgres(process.env.DATABASE_URL, {
     ssl: { rejectUnauthorized: false },
     prepare: false,

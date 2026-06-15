@@ -2,7 +2,7 @@ import 'server-only'
 
 import { createHash } from 'crypto'
 import { sql, type SQL } from 'drizzle-orm'
-import { db } from '@/lib/db'
+import { analyticsDb as db } from '@/lib/analytics/db'
 
 export type HyundaiBranch = 'all' | 'jammu' | 'udhampur'
 export type HyundaiMetric = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'

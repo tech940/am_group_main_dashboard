@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { db } from '@/lib/db'
+import { analyticsDb } from '@/lib/analytics/db'
 import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 
 type DealerFilter = string | null
@@ -43,7 +43,7 @@ function numericText(column: ReturnType<typeof sql.raw>) {
 async function tableExists(tableName: string) {
   if (tableExistsCache.has(tableName)) return tableExistsCache.get(tableName)!
 
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
+  const result = await analyticsDb.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
   const exists = Boolean(resultRows(result)[0]?.exists)
   tableExistsCache.set(tableName, exists)
   return exists
@@ -52,7 +52,7 @@ async function tableExists(tableName: string) {
 async function tableColumns(tableName: string) {
   if (tableColumnsCache.has(tableName)) return tableColumnsCache.get(tableName)!
 
-  const result = await db.execute(sql`
+  const result = await analyticsDb.execute(sql`
     SELECT column_name
     FROM information_schema.columns
     WHERE table_schema = 'public'
@@ -187,7 +187,7 @@ async function fetchExactSummaryVas(
   dealerCode: DealerFilter
 ): Promise<PlatinumVasResult | null> {
   const dealerWhere = dealerCode ? sql`AND dealer_code = ${dealerCode}` : sql``
-  const result = await db.execute(sql`
+  const result = await analyticsDb.execute(sql`
     SELECT
       COALESCE(SUM(vas_amount), 0)::float AS vas_amount,
       COALESCE(SUM(period_rows), 0)::int AS period_rows,
@@ -216,7 +216,7 @@ async function fetchFallbackSummaryVas(
   dealerCode: DealerFilter
 ): Promise<PlatinumVasResult | null> {
   const dealerWhere = dealerCode ? sql`AND dealer_code = ${dealerCode}` : sql``
-  const result = await db.execute(sql`
+  const result = await analyticsDb.execute(sql`
     WITH candidate_period AS (
       SELECT period_start, period_end
       FROM am_platinum_vas_period_summary_v1
@@ -277,7 +277,7 @@ async function fetchOperationVasForPeriod(
     return null
   }
 
-  const result = await db.execute(sql`
+  const result = await analyticsDb.execute(sql`
     WITH operation_rows AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
         COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
@@ -316,7 +316,7 @@ async function fetchBestEffortOperationVas(
   const columns = await tableColumns(sourceTable)
   if (!hasColumns(columns, ['report_period_start', 'report_period_end'])) return null
 
-  const periodResult = await db.execute(sql`
+  const periodResult = await analyticsDb.execute(sql`
     SELECT report_period_start::date AS period_start,
            report_period_end::date AS period_end
     FROM am_platinum_operation_wise_analysis_report
@@ -366,7 +366,7 @@ async function fetchExactSummaryVasBatch(
     periods.map((period) => sql`(period_start = ${period.startDate}::date AND period_end = ${period.endDate}::date)`),
     sql` OR `
   )
-  const result = await db.execute(sql`
+  const result = await analyticsDb.execute(sql`
     SELECT
       period_start::text AS period_start,
       period_end::text AS period_end,
@@ -475,7 +475,7 @@ export async function fetchPlatinumWorkshopVasAmount(
   const fallbackOperation = await fetchBestEffortOperationVas(startDate, endDate, dealerCode)
   if (fallbackOperation) return finalizeVasResult(fallbackOperation, startDate, endDate, requireComparable)
 
-  const snapshotMeta = await db.execute(sql`
+  const snapshotMeta = await analyticsDb.execute(sql`
     SELECT
       MAX(uploaded_at)::text AS latest_uploaded_at
     FROM am_platinum_operation_wise_analysis_report
