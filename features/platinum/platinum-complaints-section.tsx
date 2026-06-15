@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -327,6 +327,8 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
   const [isLoading, setIsLoading] = useState(true)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [detailsLoaded, setDetailsLoaded] = useState(false)
+  const [shouldLoadSecondary, setShouldLoadSecondary] = useState(false)
+  const secondaryTriggerRef = useRef<HTMLDivElement>(null)
   const [filters, setFilters] = useState<ComplaintFilters>(EMPTY_FILTERS)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set())
   const [expandedChart, setExpandedChart] = useState<{ id: string; title: string } | null>(null)
@@ -336,7 +338,7 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
   const dateRange = useMemo(() => getComplaintsDateRange(dateFilter), [dateFilter])
   const queryString = useMemo(() => buildQueryString(filters, dateRange, dateFilter, dealerCode), [dateFilter, dateRange, dealerCode, filters])
 
-  const fetchComplaints = useCallback(async () => {
+  const fetchComplaints = useCallback(async (signal: AbortSignal) => {
     try {
       setIsLoading(true)
       setIsDetailLoading(false)
@@ -344,34 +346,18 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
 
       const summaryQueryString = withChunk(queryString, 'summary')
       const suffix = summaryQueryString ? `?${summaryQueryString}` : ''
-      const response = await fetch(`/api/brands/platinum/business-excellence/complaints${suffix}`)
+      const response = await fetch(`/api/brands/platinum/business-excellence/complaints${suffix}`, { signal })
       logApiTimings(response, 'platinum-complaints')
       const result = await readPlatinumJson<ComplaintResponse>(response, 'Platinum Complaints data')
       setData(result)
-
-      try {
-        const secondaryQueryString = withChunk(queryString, 'secondary')
-        const secondarySuffix = secondaryQueryString ? `?${secondaryQueryString}` : ''
-        const secondaryResponse = await fetch(`/api/brands/platinum/business-excellence/complaints${secondarySuffix}`)
-        logApiTimings(secondaryResponse, 'platinum-complaints-secondary')
-        const secondaryResult = await readPlatinumJson<ComplaintResponse>(secondaryResponse, 'Platinum Complaints secondary data')
-        setData((current) => current ? {
-          ...current,
-          comparison: secondaryResult.comparison || current.comparison,
-          charts: {
-            ...current.charts,
-            monthlyTrend: secondaryResult.charts?.monthlyTrend?.length ? secondaryResult.charts.monthlyTrend : current.charts.monthlyTrend,
-            subAreaBreakdown: secondaryResult.charts?.subAreaBreakdown?.length ? secondaryResult.charts.subAreaBreakdown : current.charts.subAreaBreakdown,
-          },
-        } : current)
-      } catch (secondaryError) {
-        console.error('Failed to load Platinum Complaints secondary data:', secondaryError)
-      }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load Platinum Complaints dashboard:', error)
     } finally {
-      setIsLoading(false)
-      setIsDetailLoading(false)
+      if (!signal.aborted) {
+        setIsLoading(false)
+        setIsDetailLoading(false)
+      }
     }
   }, [queryString])
 
@@ -396,9 +382,59 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    void fetchComplaints()
+    const controller = new AbortController()
+    setShouldLoadSecondary(false)
+    void fetchComplaints(controller.signal)
+    return () => controller.abort()
   }, [fetchComplaints])
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    const target = secondaryTriggerRef.current
+    if (!target || !data) return
+
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      setShouldLoadSecondary(true)
+      observer.disconnect()
+    }, { rootMargin: '600px 0px' })
+
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [data, queryString])
+
+  useEffect(() => {
+    if (!shouldLoadSecondary) return
+
+    const controller = new AbortController()
+    const fetchSecondary = async () => {
+      try {
+        const secondaryQueryString = withChunk(queryString, 'secondary')
+        const secondarySuffix = secondaryQueryString ? `?${secondaryQueryString}` : ''
+        const response = await fetch(
+          `/api/brands/platinum/business-excellence/complaints${secondarySuffix}`,
+          { signal: controller.signal }
+        )
+        logApiTimings(response, 'platinum-complaints-secondary')
+        const result = await readPlatinumJson<ComplaintResponse>(response, 'Platinum Complaints secondary data')
+        setData((current) => current ? {
+          ...current,
+          comparison: result.comparison || current.comparison,
+          charts: {
+            ...current.charts,
+            monthlyTrend: result.charts?.monthlyTrend?.length ? result.charts.monthlyTrend : current.charts.monthlyTrend,
+            subAreaBreakdown: result.charts?.subAreaBreakdown?.length ? result.charts.subAreaBreakdown : current.charts.subAreaBreakdown,
+          },
+        } : current)
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        console.error('Failed to load Platinum Complaints secondary data:', error)
+      }
+    }
+
+    void fetchSecondary()
+    return () => controller.abort()
+  }, [queryString, shouldLoadSecondary])
 
   useEffect(() => {
     if (!showCalendarView) return
@@ -918,7 +954,7 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
+      <div ref={secondaryTriggerRef} className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-2 border-b border-slate-100 p-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-teal-700">Year & Month Comparison</p>

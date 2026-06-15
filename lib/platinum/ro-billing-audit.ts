@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 import {
   platinumActiveBillSql,
   platinumRoBillingDealerFilter,
@@ -175,17 +177,33 @@ type RoPeriodSummary = {
   latestUploadedAt: string | null
 }
 
+export type PlatinumRoBillingAuditRangeOptions = {
+  lyStartDate?: string
+  lyEndDate?: string
+}
+
+function resolveLyRange(
+  startDate: string,
+  endDate: string,
+  options?: PlatinumRoBillingAuditRangeOptions
+) {
+  return {
+    lyStartDate: options?.lyStartDate || sameDateLastYear(startDate),
+    lyEndDate: options?.lyEndDate || sameDateLastYear(endDate),
+  }
+}
+
 export function emptyPlatinumRoBillingAudit(
   startDate: string,
   endDate: string,
   dealerCode: DealerFilter = null,
-  sourceAvailable = false
+  sourceAvailable = false,
+  rangeOptions?: PlatinumRoBillingAuditRangeOptions
 ): PlatinumRoBillingAudit {
   const days = inclusiveDayCount(startDate, endDate)
   const previousEndDate = addDays(startDate, -1)
   const previousStartDate = addDays(startDate, -days)
-  const lyStartDate = sameDateLastYear(startDate)
-  const lyEndDate = sameDateLastYear(endDate)
+  const { lyStartDate, lyEndDate } = resolveLyRange(startDate, endDate, rangeOptions)
 
   return {
     sourceAvailable,
@@ -292,13 +310,30 @@ function buildAnomaly(
 export async function fetchPlatinumRoBillingAudit(
   startDate: string,
   endDate: string,
-  dealerCode: DealerFilter = null
+  dealerCode: DealerFilter = null,
+  rangeOptions?: PlatinumRoBillingAuditRangeOptions
+): Promise<PlatinumRoBillingAudit> {
+  const { lyStartDate, lyEndDate } = resolveLyRange(startDate, endDate, rangeOptions)
+  const dealerKey = dealerCode || 'all'
+  const cacheKey = `platinum:ro-billing-audit:v1:${dealerKey}:${startDate}:${endDate}:${lyStartDate}:${lyEndDate}`
+
+  return getCachedData(
+    cacheKey,
+    () => queryPlatinumRoBillingAudit(startDate, endDate, dealerCode, rangeOptions),
+    CACHE_TTL.PLATINUM
+  )
+}
+
+async function queryPlatinumRoBillingAudit(
+  startDate: string,
+  endDate: string,
+  dealerCode: DealerFilter = null,
+  rangeOptions?: PlatinumRoBillingAuditRangeOptions
 ): Promise<PlatinumRoBillingAudit> {
   const days = inclusiveDayCount(startDate, endDate)
   const previousEndDate = addDays(startDate, -1)
   const previousStartDate = addDays(startDate, -days)
-  const lyStartDate = sameDateLastYear(startDate)
-  const lyEndDate = sameDateLastYear(endDate)
+  const { lyStartDate, lyEndDate } = resolveLyRange(startDate, endDate, rangeOptions)
 
   const result = await db.execute(sql`
     WITH range_def AS (

@@ -4,12 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-export const DASHBOARD_STALE_TIME_MS = 15 * 60 * 1000
-export const DASHBOARD_GC_TIME_MS = Number.POSITIVE_INFINITY
+export const DASHBOARD_STALE_TIME_MS = 30 * 60 * 1000
+export const DASHBOARD_GC_TIME_MS = 60 * 60 * 1000
 
 const SESSION_API_CACHE = new Map<string, { response: Response; expiresAt: number }>()
 const SESSION_API_PENDING = new Map<string, Promise<Response>>()
-const SESSION_API_CACHE_TTL_MS = 15 * 60 * 1000
+const SESSION_API_CACHE_TTL_MS = 30 * 60 * 1000
 const ORIGINAL_FETCH_SYMBOL = Symbol.for('dashboard.originalFetch')
 let sessionRefreshPromise: Promise<boolean> | null = null
 
@@ -53,6 +53,13 @@ function createFetchCacheKey(input: RequestInfo | URL, init?: RequestInit) {
   return `${getRequestMethod(input, init)}:${url.toString()}:credentials=${credentials}`
 }
 
+function pruneExpiredSessionApiCache() {
+  const now = Date.now()
+  for (const [key, cached] of SESSION_API_CACHE) {
+    if (cached.expiresAt <= now) SESSION_API_CACHE.delete(key)
+  }
+}
+
 function clearSessionApiCacheForMutation(input: RequestInfo | URL) {
   const url = new URL(
     input instanceof Request ? input.url : String(input),
@@ -93,6 +100,7 @@ function installSessionApiCache() {
       return response
     }
 
+    pruneExpiredSessionApiCache()
     const cacheKey = createFetchCacheKey(input, init)
     const cached = SESSION_API_CACHE.get(cacheKey)
     if (cached && cached.expiresAt > Date.now()) return cached.response.clone()

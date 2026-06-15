@@ -434,9 +434,11 @@ function comparisonText(metric?: ComparisonMetric | NullableComparisonMetric, fo
   if (!metric) return 'LY loading'
   if (metric.comparisonStatus === 'not_comparable') return metric.comparisonLabel || 'No comparable LY'
   if (metric.comparisonStatus === 'source_missing') return 'Source missing'
-  if (metric.comparisonStatus === 'period_mismatch') return metric.comparisonLabel || 'LY period differs'
   if (metric.ly === null) return metric.comparisonLabel || 'No comparable LY'
   if ('available' in metric && metric.available === false) return metric.unavailableReason ? 'Source missing' : 'No comparable LY'
+  if (metric.comparisonStatus === 'period_mismatch' && metric.ly !== null) {
+    return `LY ${formatter(metric.ly)}`
+  }
   return `LY ${formatter(metric.ly)}`
 }
 
@@ -444,7 +446,7 @@ function deltaText(metric?: ComparisonMetric | NullableComparisonMetric) {
   if (!metric) return 'vs LY'
   if (metric.comparisonStatus === 'not_comparable') return metric.comparisonLabel || 'No comparable LY'
   if (metric.comparisonStatus === 'source_missing') return 'Source missing'
-  if (metric.comparisonStatus === 'period_mismatch') return metric.comparisonLabel || 'LY period differs'
+  if (metric.comparisonStatus === 'period_mismatch') return 'Period differs'
   if (metric.ly === null || metric.deltaPct === null || ('available' in metric && metric.available === false)) return metric.comparisonLabel || 'No comparable LY'
   if (metric.ly <= 0 && metric.cy > 0) return 'New vs LY'
   if (metric.ly <= 0 && metric.cy <= 0) return 'Flat vs LY'
@@ -899,6 +901,7 @@ function SnapshotTile({
               || comparison.deltaText === 'No selected-range data'
               || comparison.deltaText === 'Source missing'
               || comparison.deltaText === 'No complaints'
+              || comparison.deltaText === 'Period differs'
               ? 'bg-slate-100 text-slate-500'
               : deltaClass(comparison.deltaPct || 0, positiveIsGood)
           )}>
@@ -1491,6 +1494,8 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
 
     return {
       ...summaryData,
+      kpis: secondaryData.kpis || summaryData.kpis,
+      workshopSnapshot: secondaryData.workshopSnapshot || summaryData.workshopSnapshot,
       comparison: secondaryData.comparison || summaryData.comparison,
       charts: {
         ...summaryData.charts,
@@ -1665,11 +1670,17 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   const vasTileValue = data.workshopSnapshot.vasAvailable === false
     ? 'Unavailable'
     : formatCurrency(data.workshopSnapshot.vasAmount)
+  const vasMetric = data.comparison?.workshopVasAmount
   const vasTileMeta = data.workshopSnapshot.vasAvailable === false
     ? 'No KIA-style period source'
-    : data.workshopSnapshot.vasPeriodEnd
-      ? `Source through ${formatDisplayDate(data.workshopSnapshot.vasPeriodEnd)}`
-      : 'Value added services'
+    : [
+      data.workshopSnapshot.vasPeriodEnd
+        ? `Source through ${formatDisplayDate(data.workshopSnapshot.vasPeriodEnd)}`
+        : 'Value added services',
+      vasMetric?.comparisonStatus === 'period_mismatch' && vasMetric.lyPeriodStart && vasMetric.lyPeriodEnd
+        ? `LY source: ${formatDisplayDate(vasMetric.lyPeriodStart)} – ${formatDisplayDate(vasMetric.lyPeriodEnd)}`
+        : null,
+    ].filter(Boolean).join(' · ')
   const periodLabel = `${formatDisplayDate(range.startDate)} - ${formatDisplayDate(range.endDate)}`
   const lyPeriodLabel = data.comparison
     ? `${formatDisplayDate(data.comparison.lyRange.startDate)} - ${formatDisplayDate(data.comparison.lyRange.endDate)}`
@@ -1695,13 +1706,13 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   const lyAddOnPer100Jc = safeDivide(lyAddOnTotal, lyJc) * 100
   const accidentOpenShare = data.kpis.openRo > 0 ? (data.kpis.accidentOpenJobs / data.kpis.openRo) * 100 : 0
   const roBillingRows = [
-    { metric: 'Revenue', cy: formatCurrency(data.kpis.revenue), ly: data.comparison ? formatCurrency(data.comparison.revenue.ly) : 'Loading', growth: data.comparison ? data.comparison.revenue.deltaPct : null },
-    { metric: 'Load / JC', cy: formatNumber(data.kpis.totalJc), ly: data.comparison ? formatNumber(data.comparison.totalJc.ly) : 'Loading', growth: data.comparison ? data.comparison.totalJc.deltaPct : null },
-    { metric: 'Labour Revenue', cy: formatCurrency(data.kpis.labour), ly: data.comparison ? formatCurrency(data.comparison.labour.ly) : 'Loading', growth: data.comparison ? data.comparison.labour.deltaPct : null },
-    { metric: 'Parts Revenue', cy: formatCurrency(data.kpis.parts), ly: data.comparison ? formatCurrency(data.comparison.parts.ly) : 'Loading', growth: data.comparison ? data.comparison.parts.deltaPct : null },
-    { metric: 'Average Billing', cy: formatCurrency(data.kpis.avgBilling), ly: data.comparison ? formatCurrency(data.comparison.avgBilling.ly) : 'Loading', growth: data.comparison ? data.comparison.avgBilling.deltaPct : null },
-    { metric: 'Labour / Vehicle', cy: formatCurrency(labourPerVehicle), ly: data.comparison ? formatCurrency(data.comparison.labourPerVehicle.ly) : 'Loading', growth: data.comparison ? data.comparison.labourPerVehicle.deltaPct : null },
-    { metric: 'Parts / Vehicle', cy: formatCurrency(partsPerVehicle), ly: data.comparison ? formatCurrency(data.comparison.partsPerVehicle.ly) : 'Loading', growth: data.comparison ? data.comparison.partsPerVehicle.deltaPct : null },
+    { metric: 'Revenue', cy: formatCurrency(data.comparison?.revenue.cy ?? data.kpis.revenue), ly: data.comparison ? formatCurrency(data.comparison.revenue.ly) : 'Loading', growth: data.comparison ? data.comparison.revenue.deltaPct : null },
+    { metric: 'Load / JC', cy: formatNumber(data.comparison?.totalJc.cy ?? data.kpis.totalJc), ly: data.comparison ? formatNumber(data.comparison.totalJc.ly) : 'Loading', growth: data.comparison ? data.comparison.totalJc.deltaPct : null },
+    { metric: 'Labour Revenue', cy: formatCurrency(data.comparison?.labour.cy ?? data.kpis.labour), ly: data.comparison ? formatCurrency(data.comparison.labour.ly) : 'Loading', growth: data.comparison ? data.comparison.labour.deltaPct : null },
+    { metric: 'Parts Revenue', cy: formatCurrency(data.comparison?.parts.cy ?? data.kpis.parts), ly: data.comparison ? formatCurrency(data.comparison.parts.ly) : 'Loading', growth: data.comparison ? data.comparison.parts.deltaPct : null },
+    { metric: 'Average Billing', cy: formatCurrency(data.comparison?.avgBilling.cy ?? data.kpis.avgBilling), ly: data.comparison ? formatCurrency(data.comparison.avgBilling.ly) : 'Loading', growth: data.comparison ? data.comparison.avgBilling.deltaPct : null },
+    { metric: 'Labour / Vehicle', cy: formatCurrency(data.comparison?.labourPerVehicle.cy ?? labourPerVehicle), ly: data.comparison ? formatCurrency(data.comparison.labourPerVehicle.ly) : 'Loading', growth: data.comparison ? data.comparison.labourPerVehicle.deltaPct : null },
+    { metric: 'Parts / Vehicle', cy: formatCurrency(data.comparison?.partsPerVehicle.cy ?? partsPerVehicle), ly: data.comparison ? formatCurrency(data.comparison.partsPerVehicle.ly) : 'Loading', growth: data.comparison ? data.comparison.partsPerVehicle.deltaPct : null },
     { metric: 'Labour %', cy: `${labourShare.toFixed(1)}%`, ly: data.comparison ? `${lyLabourShare.toFixed(1)}%` : 'Loading', growth: data.comparison ? growthFromValues(labourShare, lyLabourShare) : null },
     { metric: 'Parts %', cy: `${partsShare.toFixed(1)}%`, ly: data.comparison ? `${lyPartsShare.toFixed(1)}%` : 'Loading', growth: data.comparison ? growthFromValues(partsShare, lyPartsShare) : null },
   ]

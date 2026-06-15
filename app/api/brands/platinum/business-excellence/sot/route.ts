@@ -130,6 +130,22 @@ function comparisonMetric(current: number, previous: number) {
   }
 }
 
+async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit = 3) {
+  const results = new Array<T>(tasks.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < tasks.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await tasks[index]()
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, () => worker()))
+  return results
+}
+
 function sotDealerFilterSql(filters: SotFilters) {
   return platinumSourceDealerFilter(filters.dealerCode)
 }
@@ -346,21 +362,32 @@ async function buildPayload(filters: SotFilters, chunk: SotChunk) {
   const includeSummary = chunk !== 'details'
   const includeDetails = chunk !== 'summary'
   const comparisonEnabled = Boolean(filters.comparisonStartDate && filters.comparisonEndDate)
-  const [kpis, comparisonKpis, metadata, dailyTrend, modelMix, schemeMix, departmentMix, rows, options, dealerCoverage] = await Promise.all([
-    includeSummary ? fetchKpis(filters, filters.startDate, filters.endDate) : Promise.resolve({
+  const [
+    kpis,
+    comparisonKpis,
+    metadata,
+    dailyTrend,
+    modelMix,
+    schemeMix,
+    departmentMix,
+    rows,
+    options,
+    dealerCoverage,
+  ] = await runWithConcurrency<unknown>([
+    () => includeSummary ? fetchKpis(filters, filters.startDate, filters.endDate) : Promise.resolve({
       certificates: 0, totalValue: 0, avgValue: 0, models: 0, schemes: 0, departments: 0, minDate: null, maxDate: null,
     }),
-    includeSummary && comparisonEnabled
+    () => includeSummary && comparisonEnabled
       ? fetchKpis(filters, filters.comparisonStartDate!, filters.comparisonEndDate!)
       : Promise.resolve(null),
-    includeSummary ? fetchMetadata(filters) : Promise.resolve({ totalRows: 0, minDate: null, maxDate: null, uploadedAt: null, dealerScoped: Boolean(filters.dealerCode), sourceWarnings: [] }),
-    includeSummary ? fetchDailyTrend(filters) : Promise.resolve([]),
-    includeSummary ? fetchBreakdown(filters, 'model') : Promise.resolve([]),
-    includeSummary ? fetchBreakdown(filters, 'scheme_no') : Promise.resolve([]),
-    includeSummary ? fetchBreakdown(filters, 'department') : Promise.resolve([]),
-    includeDetails ? fetchRows(filters) : Promise.resolve([]),
-    includeSummary ? fetchOptions(filters) : Promise.resolve({ models: [], schemes: [], departments: [] }),
-    includeSummary
+    () => includeSummary ? fetchMetadata(filters) : Promise.resolve({ totalRows: 0, minDate: null, maxDate: null, uploadedAt: null, dealerScoped: Boolean(filters.dealerCode), sourceWarnings: [] }),
+    () => includeSummary ? fetchDailyTrend(filters) : Promise.resolve([]),
+    () => includeSummary ? fetchBreakdown(filters, 'model') : Promise.resolve([]),
+    () => includeSummary ? fetchBreakdown(filters, 'scheme_no') : Promise.resolve([]),
+    () => includeSummary ? fetchBreakdown(filters, 'department') : Promise.resolve([]),
+    () => includeDetails ? fetchRows(filters) : Promise.resolve([]),
+    () => includeSummary ? fetchOptions(filters) : Promise.resolve({ models: [], schemes: [], departments: [] }),
+    () => includeSummary
       ? fetchPlatinumSotCoverage(filters.startDate, filters.endDate, filters.dealerCode)
       : Promise.resolve({
         dealerCode: filters.dealerCode,
@@ -372,7 +399,27 @@ async function buildPayload(filters: SotFilters, chunk: SotChunk) {
         sourceLabel: 'SOT',
         emptyReason: null,
       }),
-  ])
+  ], 3) as [
+    Awaited<ReturnType<typeof fetchKpis>>,
+    Awaited<ReturnType<typeof fetchKpis>> | null,
+    Awaited<ReturnType<typeof fetchMetadata>>,
+    Awaited<ReturnType<typeof fetchDailyTrend>>,
+    Awaited<ReturnType<typeof fetchBreakdown>>,
+    Awaited<ReturnType<typeof fetchBreakdown>>,
+    Awaited<ReturnType<typeof fetchBreakdown>>,
+    Awaited<ReturnType<typeof fetchRows>>,
+    Awaited<ReturnType<typeof fetchOptions>>,
+    Awaited<ReturnType<typeof fetchPlatinumSotCoverage>> | {
+      dealerCode: string | null
+      isAllLocations: boolean
+      hasDataInRange: boolean
+      rowCountInRange: number
+      latestAvailableDate: null
+      dateBasis: string
+      sourceLabel: string
+      emptyReason: null
+    },
+  ]
 
   return {
     asOfDate: filters.endDate,

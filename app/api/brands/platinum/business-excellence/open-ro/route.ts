@@ -53,7 +53,7 @@ function openRoDealerKeySql() {
 
 function openRoBaseSql(filters: OpenRoFilters) {
   return sql`
-    WITH active AS (
+    WITH active AS MATERIALIZED (
       SELECT DISTINCT ON (${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text))
         id,
         ${openRoDealerKeySql()} AS dealer_key,
@@ -93,7 +93,7 @@ function openRoBaseSql(filters: OpenRoFilters) {
         ${openRoDealerFilter(filters)}
       ORDER BY ${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
-    enriched AS (
+    enriched AS MATERIALIZED (
       SELECT
         *,
         CASE
@@ -128,7 +128,7 @@ function openRoBaseSql(filters: OpenRoFilters) {
         END AS delay_status
       FROM active
     ),
-    filtered AS (
+    filtered AS MATERIALIZED (
       SELECT *
       FROM enriched
       WHERE (${filters.advisor}::text IS NULL OR service_adv = ${filters.advisor})
@@ -204,7 +204,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `platinum:business-excellence:open-ro:v14:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `platinum:business-excellence:open-ro:v15:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -272,89 +272,132 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
   const baseSql = openRoBaseSql(filters)
   const includeSummary = chunk !== 'details'
   const includeDetails = chunk !== 'summary'
-  const [kpiRows, summaryRows, delayReasonRows, bucketRows, advisorRows, workTypeRows, trendRows, detailRows, optionRows, dealerCoverage] = await Promise.all([
+  const [summaryResult, detailRows, dealerCoverage] = await Promise.all([
     includeSummary ? db.execute(sql`
       ${baseSql}
+      , kpis AS (
+        SELECT
+          COUNT(*)::int AS total_open_ro,
+          COALESCE(AVG(aging_days), 0)::float AS avg_aging,
+          COUNT(*) FILTER (WHERE aging_days > 15)::int AS over_15_days,
+          COUNT(*) FILTER (WHERE delay_status = 'Delayed')::int AS delayed_ro,
+          COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS accident_jobs,
+          COUNT(*) FILTER (WHERE service_category = 'Running Repair')::int AS running_repairs
+        FROM filtered
+      ),
+      delay_reasons AS (
+        SELECT
+          COALESCE(NULLIF(TRIM(new_r_o_status), ''), '-') AS new_status,
+          COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified') AS delay_reason,
+          COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS acc_count,
+          COUNT(*) FILTER (WHERE service_category <> 'Accidental Repair')::int AS mech_count,
+          COUNT(*) FILTER (WHERE aging_bucket = '0-4D')::int AS bucket_0_4,
+          COUNT(*) FILTER (WHERE aging_bucket = '5-7D')::int AS bucket_5_7,
+          COUNT(*) FILTER (WHERE aging_bucket = '8-15D')::int AS bucket_8_15,
+          COUNT(*) FILTER (WHERE aging_bucket = '>15D')::int AS bucket_over_15,
+          COUNT(*)::int AS total,
+          COALESCE(AVG(aging_days), 0)::float AS avg_days
+        FROM filtered
+        GROUP BY
+          COALESCE(NULLIF(TRIM(new_r_o_status), ''), '-'),
+          COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified')
+        ORDER BY total DESC, avg_days DESC, new_status ASC, delay_reason ASC
+        LIMIT 20
+      ),
+      advisor_load AS (
+        SELECT
+          service_adv AS advisor,
+          COUNT(*)::int AS open_ro,
+          COALESCE(AVG(aging_days), 0)::float AS avg_aging
+        FROM filtered
+        GROUP BY service_adv
+        ORDER BY open_ro DESC, avg_aging DESC
+        LIMIT 12
+      ),
+      aging_trend AS (
+        SELECT
+          ro_date::text AS date,
+          COUNT(*)::int AS open_ro,
+          COALESCE(AVG(aging_days), 0)::float AS avg_aging
+        FROM filtered
+        WHERE ro_date IS NOT NULL
+        GROUP BY ro_date
+        ORDER BY ro_date ASC
+        LIMIT 60
+      )
       SELECT
-        COUNT(*)::int AS total_open_ro,
-        COALESCE(AVG(aging_days), 0)::float AS avg_aging,
-        COUNT(*) FILTER (WHERE aging_days > 15)::int AS over_15_days,
-        COUNT(*) FILTER (WHERE delay_status = 'Delayed')::int AS delayed_ro,
-        COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS accident_jobs,
-        COUNT(*) FILTER (WHERE service_category = 'Running Repair')::int AS running_repairs
-      FROM filtered
-    `) : Promise.resolve([]),
-    includeSummary ? db.execute(sql`
-      ${baseSql}
-      SELECT
-        service_category,
-        COUNT(*)::int AS total_wip,
-        COUNT(*) FILTER (WHERE aging_bucket = '0-4D')::int AS bucket_0_4,
-        COUNT(*) FILTER (WHERE aging_bucket = '5-7D')::int AS bucket_5_7,
-        COUNT(*) FILTER (WHERE aging_bucket = '8-15D')::int AS bucket_8_15,
-        COUNT(*) FILTER (WHERE aging_bucket = '>15D')::int AS bucket_over_15,
-        COALESCE(AVG(aging_days), 0)::float AS avg_days
-      FROM filtered
-      GROUP BY service_category
-      ORDER BY
-        CASE service_category
-          WHEN 'Accidental Repair' THEN 1
-          WHEN 'Running Repair' THEN 2
-          WHEN 'Paid Service' THEN 3
-          WHEN 'Free Service' THEN 4
-          ELSE 5
-        END,
-        total_wip DESC
-    `) : Promise.resolve([]),
-    includeSummary ? db.execute(sql`
-      ${baseSql}
-      SELECT
-        COALESCE(NULLIF(TRIM(new_r_o_status), ''), '-') AS new_status,
-        COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified') AS delay_reason,
-        COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS acc_count,
-        COUNT(*) FILTER (WHERE service_category <> 'Accidental Repair')::int AS mech_count,
-        COUNT(*) FILTER (WHERE aging_bucket = '0-4D')::int AS bucket_0_4,
-        COUNT(*) FILTER (WHERE aging_bucket = '5-7D')::int AS bucket_5_7,
-        COUNT(*) FILTER (WHERE aging_bucket = '8-15D')::int AS bucket_8_15,
-        COUNT(*) FILTER (WHERE aging_bucket = '>15D')::int AS bucket_over_15,
-        COUNT(*)::int AS total,
-        COALESCE(AVG(aging_days), 0)::float AS avg_days
-      FROM filtered
-      GROUP BY
-        COALESCE(NULLIF(TRIM(new_r_o_status), ''), '-'),
-        COALESCE(NULLIF(TRIM(delay_reason), ''), 'No Reason Specified')
-      ORDER BY total DESC, avg_days DESC, new_status ASC, delay_reason ASC
-      LIMIT 20
-    `) : Promise.resolve([]),
-    includeSummary ? db.execute(sql`
-      ${baseSql}
-      SELECT aging_bucket AS bucket, COUNT(*)::int AS count
-      FROM filtered
-      GROUP BY aging_bucket
-    `) : Promise.resolve([]),
-    includeSummary ? db.execute(sql`
-      ${baseSql}
-      SELECT service_adv AS advisor, COUNT(*)::int AS open_ro, COALESCE(AVG(aging_days), 0)::float AS avg_aging
-      FROM filtered
-      GROUP BY service_adv
-      ORDER BY open_ro DESC, avg_aging DESC
-      LIMIT 12
-    `) : Promise.resolve([]),
-    includeSummary ? db.execute(sql`
-      ${baseSql}
-      SELECT service_category, COUNT(*)::int AS count
-      FROM filtered
-      GROUP BY service_category
-      ORDER BY count DESC
-    `) : Promise.resolve([]),
-    includeSummary ? db.execute(sql`
-      ${baseSql}
-      SELECT ro_date::text AS date, COUNT(*)::int AS open_ro, COALESCE(AVG(aging_days), 0)::float AS avg_aging
-      FROM filtered
-      WHERE ro_date IS NOT NULL
-      GROUP BY ro_date
-      ORDER BY ro_date ASC
-      LIMIT 60
+        kpis.*,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'service_category', service_category,
+              'total_wip', total_wip,
+              'bucket_0_4', bucket_0_4,
+              'bucket_5_7', bucket_5_7,
+              'bucket_8_15', bucket_8_15,
+              'bucket_over_15', bucket_over_15,
+              'avg_days', avg_days
+            )
+            ORDER BY sort_order, total_wip DESC
+          )
+          FROM (
+            SELECT
+              service_category,
+              COUNT(*)::int AS total_wip,
+              COUNT(*) FILTER (WHERE aging_bucket = '0-4D')::int AS bucket_0_4,
+              COUNT(*) FILTER (WHERE aging_bucket = '5-7D')::int AS bucket_5_7,
+              COUNT(*) FILTER (WHERE aging_bucket = '8-15D')::int AS bucket_8_15,
+              COUNT(*) FILTER (WHERE aging_bucket = '>15D')::int AS bucket_over_15,
+              COALESCE(AVG(aging_days), 0)::float AS avg_days,
+              CASE service_category
+                WHEN 'Accidental Repair' THEN 1
+                WHEN 'Running Repair' THEN 2
+                WHEN 'Paid Service' THEN 3
+                WHEN 'Free Service' THEN 4
+                ELSE 5
+              END AS sort_order
+            FROM filtered
+            GROUP BY service_category
+          ) service_rows
+        ), '[]'::jsonb) AS summary_rows,
+        COALESCE((SELECT jsonb_agg(to_jsonb(delay_reasons)) FROM delay_reasons), '[]'::jsonb) AS delay_reason_rows,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object('bucket', aging_bucket, 'count', count)
+            ORDER BY CASE aging_bucket WHEN '0-4D' THEN 1 WHEN '5-7D' THEN 2 WHEN '8-15D' THEN 3 ELSE 4 END
+          )
+          FROM (
+            SELECT aging_bucket, COUNT(*)::int AS count
+            FROM filtered
+            GROUP BY aging_bucket
+          ) buckets
+        ), '[]'::jsonb) AS bucket_rows,
+        COALESCE((SELECT jsonb_agg(to_jsonb(advisor_load)) FROM advisor_load), '[]'::jsonb) AS advisor_rows,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object('service_category', service_category, 'count', count)
+            ORDER BY count DESC
+          )
+          FROM (
+            SELECT service_category, COUNT(*)::int AS count
+            FROM filtered
+            GROUP BY service_category
+          ) work_types
+        ), '[]'::jsonb) AS work_type_rows,
+        COALESCE((SELECT jsonb_agg(to_jsonb(aging_trend)) FROM aging_trend), '[]'::jsonb) AS trend_rows,
+        COALESCE((
+          SELECT jsonb_agg(DISTINCT service_adv) FILTER (WHERE NULLIF(service_adv, '') IS NOT NULL)
+          FROM enriched
+        ), '[]'::jsonb) AS advisors,
+        COALESCE((
+          SELECT jsonb_agg(DISTINCT service_category) FILTER (WHERE NULLIF(service_category, '') IS NOT NULL)
+          FROM enriched
+        ), '[]'::jsonb) AS work_types,
+        COALESCE((
+          SELECT jsonb_agg(DISTINCT insurance_company_name) FILTER (WHERE NULLIF(insurance_company_name, '') IS NOT NULL)
+          FROM enriched
+        ), '[]'::jsonb) AS insurance_companies
+      FROM kpis
     `) : Promise.resolve([]),
     includeDetails ? db.execute(sql`
       ${baseSql}
@@ -364,58 +407,18 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       LIMIT ${filters.pageSize}
       OFFSET ${(filters.page - 1) * filters.pageSize}
     `) : Promise.resolve([]),
-    includeSummary ? db.execute(sql`
-      WITH active AS (
-        SELECT DISTINCT ON (${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text))
-        ${openRoDealerKeySql()} AS dealer_key,
-        svc_adv AS service_adv,
-        work_type,
-        work_type AS service_type,
-        '-' AS insurance_company_name,
-        r_o_date::date AS ro_date
-        FROM am_platinum_repair_order_list
-        WHERE LOWER(COALESCE(r_o_status, '')) = 'open'
-          AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
-          AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
-          ${openRoDealerFilter(filters)}
-        ORDER BY ${openRoDealerKeySql()}, COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
-      ),
-      enriched AS (
-        SELECT
-          service_adv,
-          insurance_company_name,
-          CASE
-            WHEN ro_date IS NULL THEN '0-4D'
-            WHEN (CURRENT_DATE - ro_date)::int <= 4 THEN '0-4D'
-            WHEN (CURRENT_DATE - ro_date)::int <= 7 THEN '5-7D'
-            WHEN (CURRENT_DATE - ro_date)::int <= 15 THEN '8-15D'
-            ELSE '>15D'
-          END AS aging_bucket,
-          CASE
-            WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%accident%'
-              OR LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%bodyshop%'
-              THEN 'Accidental Repair'
-            WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%running%'
-              THEN 'Running Repair'
-            WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%free%'
-              THEN 'Free Service'
-            WHEN LOWER(COALESCE(work_type, '') || ' ' || COALESCE(service_type, '')) LIKE '%paid%'
-              OR COALESCE(service_type, '') ~* '^[0-9]+K$'
-              THEN 'Paid Service'
-            ELSE 'Others'
-          END AS service_category
-        FROM active
-      )
-      SELECT
-        COALESCE(jsonb_agg(DISTINCT service_adv) FILTER (WHERE NULLIF(service_adv, '') IS NOT NULL), '[]'::jsonb) AS advisors,
-        COALESCE(jsonb_agg(DISTINCT service_category) FILTER (WHERE NULLIF(service_category, '') IS NOT NULL), '[]'::jsonb) AS work_types,
-        COALESCE(jsonb_agg(DISTINCT insurance_company_name) FILTER (WHERE NULLIF(insurance_company_name, '') IS NOT NULL), '[]'::jsonb) AS insurance_companies
-      FROM enriched
-    `) : Promise.resolve([]),
     fetchPlatinumOpenRoCoverage(filters.startDate || new Date().toISOString().slice(0, 10), filters.endDate || new Date().toISOString().slice(0, 10), filters.dealerCode),
   ])
 
-  const kpis = resultRows(kpiRows)[0] || {}
+  const summary = resultRows(summaryResult)[0] || {}
+  const jsonRows = (value: unknown) => Array.isArray(value) ? value as NumericRow[] : []
+  const kpis = summary
+  const summaryRows = jsonRows(summary.summary_rows)
+  const delayReasonRows = jsonRows(summary.delay_reason_rows)
+  const bucketRows = jsonRows(summary.bucket_rows)
+  const advisorRows = jsonRows(summary.advisor_rows)
+  const workTypeRows = jsonRows(summary.work_type_rows)
+  const trendRows = jsonRows(summary.trend_rows)
   const details = resultRows(detailRows).map(mapDetailRow)
   const alertSummary = details.reduce<Record<string, number>>((summary, detail) => {
     detail.alerts.forEach((alert) => {
@@ -424,7 +427,6 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
     return summary
   }, {})
 
-  const optionRow = resultRows(optionRows)[0] || {}
   const asStringArray = (value: unknown) => Array.isArray(value)
     ? value.map((item) => String(item)).filter(Boolean).sort((a, b) => a.localeCompare(b))
     : []
@@ -490,10 +492,10 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
         .slice(0, 8),
     },
     filterOptions: {
-      advisors: asStringArray(optionRow.advisors),
-      workTypes: asStringArray(optionRow.work_types),
+      advisors: asStringArray(summary.advisors),
+      workTypes: asStringArray(summary.work_types),
       agingBuckets: bucketOrder,
-      insuranceCompanies: asStringArray(optionRow.insurance_companies),
+      insuranceCompanies: asStringArray(summary.insurance_companies),
     },
     meta: {
       rowCount: details.length,

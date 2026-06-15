@@ -127,149 +127,353 @@ function vasSourceType(startDate: string, endDate: string, periodStart: string |
   return 'operation_period_containing'
 }
 
-export async function fetchPlatinumWorkshopVasAmount(
+export function isComparableVasSource(source: string | null | undefined) {
+  return source === 'operation_period_exact' || source === 'operation_period_covered'
+}
+
+function nonComparableResult(startDate: string, endDate: string, resolved: PlatinumVasResult): PlatinumVasResult {
+  return {
+    ...emptyResult(`No operation period matches ${startDate} to ${endDate} for the selected location.`),
+    source: resolved.source,
+    sourceTable: resolved.sourceTable,
+    periodStart: resolved.periodStart,
+    periodEnd: resolved.periodEnd,
+    sourceRows: resolved.sourceRows,
+    dedupeMode: resolved.dedupeMode,
+    latestSnapshotUploadedAt: resolved.latestSnapshotUploadedAt,
+  }
+}
+
+function finalizeVasResult(
+  result: PlatinumVasResult,
   startDate: string,
   endDate: string,
-  dealerCode: DealerFilter = null
-): Promise<PlatinumVasResult> {
-  const sourceTable = 'am_platinum_operation_wise_analysis_report'
-  const summaryTable = 'am_platinum_vas_period_summary_v1'
-  if (await tableExists(summaryTable)) {
-    const dealerWhere = dealerCode ? sql`AND dealer_code = ${dealerCode}` : sql``
-    const result = await db.execute(sql`
-      WITH candidate_period AS (
-        SELECT period_start, period_end
-        FROM am_platinum_vas_period_summary_v1
-        WHERE period_start <= ${endDate}::date
-          AND period_end >= ${startDate}::date
-          ${dealerWhere}
-        GROUP BY period_start, period_end
-        ORDER BY
-          CASE
-            WHEN period_start = ${startDate}::date AND period_end = ${endDate}::date THEN 0
-            WHEN period_start >= ${startDate}::date AND period_end <= ${endDate}::date THEN 1
-            WHEN period_start <= ${startDate}::date AND period_end >= ${endDate}::date THEN 2
-            ELSE 3
-          END,
-          CASE WHEN period_end <= ${endDate}::date THEN period_end END DESC NULLS LAST,
-          (period_end - period_start) ASC,
-          period_start DESC
-        LIMIT 1
-      )
-      SELECT
-        COALESCE(SUM(summary.vas_amount), 0)::float AS vas_amount,
-        COALESCE(SUM(summary.period_rows), 0)::int AS period_rows,
-        COALESCE(SUM(summary.source_rows), 0)::int AS source_rows,
-        MIN(summary.period_start)::text AS period_start,
-        MAX(summary.period_end)::text AS period_end,
-        MAX(summary.uploaded_at)::text AS latest_uploaded_at
-      FROM am_platinum_vas_period_summary_v1 summary
-      JOIN candidate_period candidate
-        ON candidate.period_start = summary.period_start
-       AND candidate.period_end = summary.period_end
-      WHERE 1 = 1
-        ${dealerWhere}
-    `)
-    const row = resultRows(result)[0]
-    if (numberValue(row?.period_rows) > 0) {
-      const periodStart = dateValue(row?.period_start)
-      const periodEnd = dateValue(row?.period_end)
-      return {
-        amount: numberValue(row?.vas_amount),
-        available: true,
-        unavailableReason: null,
-        source: vasSourceType(startDate, endDate, periodStart, periodEnd),
-        sourceTable,
-        periodStart,
-        periodEnd,
-        sourceRows: numberValue(row?.source_rows),
-        dedupeMode: 'materialized_row_hash_latest',
-        latestSnapshotUploadedAt: dateValue(row?.latest_uploaded_at),
-      }
-    }
-  }
+  requireComparable: boolean
+): PlatinumVasResult {
+  if (!result.available) return result
+  if (!requireComparable || isComparableVasSource(result.source)) return result
+  return nonComparableResult(startDate, endDate, result)
+}
 
-  if (!await tableExists(sourceTable)) {
-    return emptyResult('Platinum operation-wise VAS source table is unavailable')
+function buildVasResult(
+  startDate: string,
+  endDate: string,
+  sourceTable: string,
+  row: ResultRow | undefined,
+  dedupeMode: string
+): PlatinumVasResult | null {
+  if (!row || numberValue(row.period_rows) <= 0) return null
+
+  const periodStart = dateValue(row.period_start)
+  const periodEnd = dateValue(row.period_end)
+
+  return {
+    amount: numberValue(row.vas_amount),
+    available: true,
+    unavailableReason: null,
+    source: vasSourceType(startDate, endDate, periodStart, periodEnd),
+    sourceTable,
+    periodStart,
+    periodEnd,
+    sourceRows: numberValue(row.source_rows),
+    dedupeMode,
+    latestSnapshotUploadedAt: dateValue(row.latest_uploaded_at),
   }
+}
+
+async function fetchExactSummaryVas(
+  startDate: string,
+  endDate: string,
+  dealerCode: DealerFilter
+): Promise<PlatinumVasResult | null> {
+  const dealerWhere = dealerCode ? sql`AND dealer_code = ${dealerCode}` : sql``
+  const result = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(vas_amount), 0)::float AS vas_amount,
+      COALESCE(SUM(period_rows), 0)::int AS period_rows,
+      COALESCE(SUM(source_rows), 0)::int AS source_rows,
+      MIN(period_start)::text AS period_start,
+      MAX(period_end)::text AS period_end,
+      MAX(uploaded_at)::text AS latest_uploaded_at
+    FROM am_platinum_vas_period_summary_v1
+    WHERE period_start = ${startDate}::date
+      AND period_end = ${endDate}::date
+      ${dealerWhere}
+  `)
+
+  return buildVasResult(
+    startDate,
+    endDate,
+    'am_platinum_operation_wise_analysis_report',
+    resultRows(result)[0],
+    'materialized_row_hash_latest'
+  )
+}
+
+async function fetchFallbackSummaryVas(
+  startDate: string,
+  endDate: string,
+  dealerCode: DealerFilter
+): Promise<PlatinumVasResult | null> {
+  const dealerWhere = dealerCode ? sql`AND dealer_code = ${dealerCode}` : sql``
+  const result = await db.execute(sql`
+    WITH candidate_period AS (
+      SELECT period_start, period_end
+      FROM am_platinum_vas_period_summary_v1
+      WHERE period_start <= ${endDate}::date
+        AND period_end >= ${startDate}::date
+        ${dealerWhere}
+      GROUP BY period_start, period_end
+      ORDER BY
+        CASE
+          WHEN period_start >= ${startDate}::date AND period_end <= ${endDate}::date THEN 0
+          WHEN period_start <= ${startDate}::date AND period_end >= ${endDate}::date THEN 1
+          ELSE 2
+        END,
+        CASE WHEN period_end <= ${endDate}::date THEN period_end END DESC NULLS LAST,
+        (period_end - period_start) ASC,
+        period_start DESC
+      LIMIT 1
+    )
+    SELECT
+      COALESCE(SUM(summary.vas_amount), 0)::float AS vas_amount,
+      COALESCE(SUM(summary.period_rows), 0)::int AS period_rows,
+      COALESCE(SUM(summary.source_rows), 0)::int AS source_rows,
+      MIN(summary.period_start)::text AS period_start,
+      MAX(summary.period_end)::text AS period_end,
+      MAX(summary.uploaded_at)::text AS latest_uploaded_at
+    FROM am_platinum_vas_period_summary_v1 summary
+    JOIN candidate_period candidate
+      ON candidate.period_start = summary.period_start
+     AND candidate.period_end = summary.period_end
+    WHERE 1 = 1
+      ${dealerWhere}
+  `)
+
+  return buildVasResult(
+    startDate,
+    endDate,
+    'am_platinum_operation_wise_analysis_report',
+    resultRows(result)[0],
+    'materialized_row_hash_latest'
+  )
+}
+
+async function fetchOperationVasForPeriod(
+  startDate: string,
+  endDate: string,
+  dealerCode: DealerFilter,
+  periodStart: string,
+  periodEnd: string
+): Promise<PlatinumVasResult | null> {
+  const sourceTable = 'am_platinum_operation_wise_analysis_report'
+  if (!await tableExists(sourceTable)) return null
 
   const columns = await tableColumns(sourceTable)
   const codeSql = codeExpression(columns)
   const descriptionSql = descriptionExpression(columns)
   const hasDescription = ['op_part_desc', 'labour_desc', 'part_desc'].some((column) => columns.has(column))
-
-  if (hasColumns(columns, ['report_period_start', 'report_period_end', 'total_amt', 'source_dealer_code']) && hasDescription) {
-    const result = await db.execute(sql`
-      WITH candidate_period AS (
-        SELECT report_period_start::date AS period_start,
-               report_period_end::date AS period_end
-        FROM am_platinum_operation_wise_analysis_report
-        WHERE report_period_start <= ${endDate}::date
-          AND report_period_end >= ${startDate}::date
-          ${reportTypeFilter(columns)}
-          ${operationDealerFilter(dealerCode)}
-        GROUP BY report_period_start::date, report_period_end::date
-        ORDER BY
-          CASE
-            WHEN report_period_start::date = ${startDate}::date
-             AND report_period_end::date = ${endDate}::date THEN 0
-            WHEN report_period_start::date >= ${startDate}::date
-             AND report_period_end::date <= ${endDate}::date THEN 1
-            WHEN report_period_start::date <= ${startDate}::date
-             AND report_period_end::date >= ${endDate}::date THEN 2
-            ELSE 3
-          END,
-          CASE
-            WHEN report_period_end::date <= ${endDate}::date THEN report_period_end::date
-          END DESC NULLS LAST,
-          (report_period_end::date - report_period_start::date) ASC,
-          report_period_start::date DESC
-        LIMIT 1
-      ),
-      operation_rows AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
-          COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
-          report_period_start::date AS period_start,
-          report_period_end::date AS period_end,
-          source_dealer_code,
-          ${numericText(sql.raw('total_amt'))} AS amount,
-          ${codeSql} AS code,
-          ${descriptionSql} AS description
-        FROM am_platinum_operation_wise_analysis_report
-        CROSS JOIN candidate_period
-        WHERE report_period_start::date = candidate_period.period_start
-          AND report_period_end::date = candidate_period.period_end
-          ${reportTypeFilter(columns)}
-          ${operationDealerFilter(dealerCode)}
-        ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
-      )
-      SELECT
-        COALESCE(SUM(amount) FILTER (WHERE ${vasFilter()}), 0)::float AS vas_amount,
-        COUNT(*)::int AS period_rows,
-        COUNT(*) FILTER (WHERE ${vasFilter()})::int AS source_rows,
-        MIN(period_start)::text AS period_start,
-        MAX(period_end)::text AS period_end
-      FROM operation_rows
-    `)
-    const row = resultRows(result)[0]
-    const periodRows = numberValue(row?.period_rows)
-    const sourceRows = numberValue(row?.source_rows)
-
-    if (periodRows > 0) {
-      const periodEnd = dateValue(row?.period_end)
-      return {
-        amount: numberValue(row?.vas_amount),
-        available: true,
-        unavailableReason: null,
-        source: vasSourceType(startDate, endDate, dateValue(row?.period_start), periodEnd),
-        sourceTable,
-        periodStart: dateValue(row?.period_start),
-        periodEnd,
-        sourceRows,
-        dedupeMode: 'row_hash_latest',
-      }
-    }
+  if (!hasColumns(columns, ['report_period_start', 'report_period_end', 'total_amt', 'source_dealer_code']) || !hasDescription) {
+    return null
   }
+
+  const result = await db.execute(sql`
+    WITH operation_rows AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
+        COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
+        report_period_start::date AS period_start,
+        report_period_end::date AS period_end,
+        ${numericText(sql.raw('total_amt'))} AS amount,
+        ${codeSql} AS code,
+        ${descriptionSql} AS description
+      FROM am_platinum_operation_wise_analysis_report
+      WHERE report_period_start::date = ${periodStart}::date
+        AND report_period_end::date = ${periodEnd}::date
+        ${reportTypeFilter(columns)}
+        ${operationDealerFilter(dealerCode)}
+      ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+    )
+    SELECT
+      COALESCE(SUM(amount) FILTER (WHERE ${vasFilter()}), 0)::float AS vas_amount,
+      COUNT(*)::int AS period_rows,
+      COUNT(*) FILTER (WHERE ${vasFilter()})::int AS source_rows,
+      MIN(period_start)::text AS period_start,
+      MAX(period_end)::text AS period_end
+    FROM operation_rows
+  `)
+
+  return buildVasResult(startDate, endDate, sourceTable, resultRows(result)[0], 'row_hash_latest')
+}
+
+async function fetchBestEffortOperationVas(
+  startDate: string,
+  endDate: string,
+  dealerCode: DealerFilter
+): Promise<PlatinumVasResult | null> {
+  const sourceTable = 'am_platinum_operation_wise_analysis_report'
+  if (!await tableExists(sourceTable)) return null
+
+  const columns = await tableColumns(sourceTable)
+  if (!hasColumns(columns, ['report_period_start', 'report_period_end'])) return null
+
+  const periodResult = await db.execute(sql`
+    SELECT report_period_start::date AS period_start,
+           report_period_end::date AS period_end
+    FROM am_platinum_operation_wise_analysis_report
+    WHERE report_period_start <= ${endDate}::date
+      AND report_period_end >= ${startDate}::date
+      ${reportTypeFilter(columns)}
+      ${operationDealerFilter(dealerCode)}
+    GROUP BY report_period_start::date, report_period_end::date
+    ORDER BY
+      CASE
+        WHEN report_period_start::date = ${startDate}::date
+         AND report_period_end::date = ${endDate}::date THEN 0
+        WHEN report_period_start::date >= ${startDate}::date
+         AND report_period_end::date <= ${endDate}::date THEN 1
+        WHEN report_period_start::date <= ${startDate}::date
+         AND report_period_end::date >= ${endDate}::date THEN 2
+        ELSE 3
+      END,
+      CASE
+        WHEN report_period_end::date <= ${endDate}::date THEN report_period_end::date
+      END DESC NULLS LAST,
+      (report_period_end::date - report_period_start::date) ASC,
+      report_period_start::date DESC
+    LIMIT 1
+  `)
+
+  const periodRow = resultRows(periodResult)[0]
+  const periodStart = dateValue(periodRow?.period_start)
+  const periodEnd = dateValue(periodRow?.period_end)
+  if (!periodStart || !periodEnd) return null
+
+  return fetchOperationVasForPeriod(startDate, endDate, dealerCode, periodStart, periodEnd)
+}
+
+type VasPeriodRequest = {
+  key: 'cy' | 'ly'
+  startDate: string
+  endDate: string
+}
+
+async function fetchExactSummaryVasBatch(
+  periods: VasPeriodRequest[],
+  dealerCode: DealerFilter
+): Promise<Map<string, PlatinumVasResult>> {
+  const dealerWhere = dealerCode ? sql`AND dealer_code = ${dealerCode}` : sql``
+  const periodFilters = sql.join(
+    periods.map((period) => sql`(period_start = ${period.startDate}::date AND period_end = ${period.endDate}::date)`),
+    sql` OR `
+  )
+  const result = await db.execute(sql`
+    SELECT
+      period_start::text AS period_start,
+      period_end::text AS period_end,
+      COALESCE(SUM(vas_amount), 0)::float AS vas_amount,
+      COALESCE(SUM(period_rows), 0)::int AS period_rows,
+      COALESCE(SUM(source_rows), 0)::int AS source_rows,
+      MAX(uploaded_at)::text AS latest_uploaded_at
+    FROM am_platinum_vas_period_summary_v1
+    WHERE (${periodFilters})
+      ${dealerWhere}
+    GROUP BY period_start, period_end
+  `)
+
+  const resolved = new Map<string, PlatinumVasResult>()
+  for (const row of resultRows(result)) {
+    const periodStart = dateValue(row.period_start)
+    const periodEnd = dateValue(row.period_end)
+    const match = periods.find((period) => period.startDate === periodStart && period.endDate === periodEnd)
+    if (!match) continue
+    const built = buildVasResult(
+      match.startDate,
+      match.endDate,
+      'am_platinum_operation_wise_analysis_report',
+      row,
+      'materialized_row_hash_latest'
+    )
+    if (built) resolved.set(match.key, built)
+  }
+  return resolved
+}
+
+export type PlatinumVasFetchOptions = {
+  requireComparable?: boolean
+}
+
+export async function fetchPlatinumWorkshopVasAmounts(
+  cyStart: string,
+  cyEnd: string,
+  lyStart: string,
+  lyEnd: string,
+  dealerCode: DealerFilter = null
+): Promise<{ cy: PlatinumVasResult; ly: PlatinumVasResult }> {
+  const periods: VasPeriodRequest[] = [
+    { key: 'cy', startDate: cyStart, endDate: cyEnd },
+    { key: 'ly', startDate: lyStart, endDate: lyEnd },
+  ]
+  const summaryTable = 'am_platinum_vas_period_summary_v1'
+  const resolved = new Map<string, PlatinumVasResult>()
+
+  if (await tableExists(summaryTable)) {
+    const exactBatch = await fetchExactSummaryVasBatch(periods, dealerCode)
+    exactBatch.forEach((value, key) => {
+      const period = periods.find((item) => item.key === key)
+      if (!period) return
+      resolved.set(
+        key,
+        key === 'ly'
+          ? finalizeVasResult(value, period.startDate, period.endDate, true)
+          : value
+      )
+    })
+  }
+
+  const pending = periods.filter((period) => !resolved.has(period.key))
+  await Promise.all(pending.map(async (period) => {
+    resolved.set(
+      period.key,
+      await fetchPlatinumWorkshopVasAmount(
+        period.startDate,
+        period.endDate,
+        dealerCode,
+        { requireComparable: period.key === 'ly' }
+      )
+    )
+  }))
+
+  return {
+    cy: resolved.get('cy') || emptyResult(`No Platinum VAS source period covers ${cyStart} to ${cyEnd} for the selected location.`),
+    ly: resolved.get('ly') || emptyResult(`No operation period matches ${lyStart} to ${lyEnd} for the selected location.`),
+  }
+}
+
+export async function fetchPlatinumWorkshopVasAmount(
+  startDate: string,
+  endDate: string,
+  dealerCode: DealerFilter = null,
+  options: PlatinumVasFetchOptions = {}
+): Promise<PlatinumVasResult> {
+  const requireComparable = options.requireComparable === true
+  const sourceTable = 'am_platinum_operation_wise_analysis_report'
+  const summaryTable = 'am_platinum_vas_period_summary_v1'
+
+  if (await tableExists(summaryTable)) {
+    const exactSummary = await fetchExactSummaryVas(startDate, endDate, dealerCode)
+    if (exactSummary) return finalizeVasResult(exactSummary, startDate, endDate, requireComparable)
+  }
+
+  const exactOperation = await fetchOperationVasForPeriod(startDate, endDate, dealerCode, startDate, endDate)
+  if (exactOperation) return finalizeVasResult(exactOperation, startDate, endDate, requireComparable)
+
+  if (await tableExists(summaryTable)) {
+    const fallbackSummary = await fetchFallbackSummaryVas(startDate, endDate, dealerCode)
+    if (fallbackSummary) return finalizeVasResult(fallbackSummary, startDate, endDate, requireComparable)
+  }
+
+  const fallbackOperation = await fetchBestEffortOperationVas(startDate, endDate, dealerCode)
+  if (fallbackOperation) return finalizeVasResult(fallbackOperation, startDate, endDate, requireComparable)
 
   const snapshotMeta = await db.execute(sql`
     SELECT
@@ -286,7 +490,7 @@ export async function fetchPlatinumWorkshopVasAmount(
   const snapshotRow = resultRows(snapshotMeta)[0]
 
   return {
-    ...emptyResult(`No Platinum VAS source period covers ${endDate} for the selected location.`),
+    ...emptyResult(`No Platinum VAS source period covers ${startDate} to ${endDate} for the selected location.`),
     source: 'operation_period_unavailable',
     sourceTable,
     sourceRows: 0,

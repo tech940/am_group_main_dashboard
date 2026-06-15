@@ -15,28 +15,136 @@ const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 type FreshnessSource = {
   table: string
   label: string
+  dealerColumn?: string
+  fallbackDealerColumns?: string[]
+  hasUploadedAt?: boolean
 }
 
 const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
-  executive_dashboard: [{ table: 'am_platinum_ro_billing_report', label: 'RO Billing' }],
+  executive_dashboard: [{
+    table: 'am_platinum_ro_billing_report',
+    label: 'RO Billing',
+    dealerColumn: 'source_dealer_code',
+    fallbackDealerColumns: ['dealer_code', 'main_dealer_code'],
+  }],
   business_excellence_overview: [
-    { table: 'am_platinum_ro_billing_report', label: 'RO Billing' },
-    { table: 'am_platinum_repair_order_list', label: 'Open RO' },
-    { table: 'am_platinum_call_center_complaints', label: 'Complaints' },
-    { table: 'am_platinum_operation_wise_analysis_report', label: 'Operation Analysis' },
-    { table: 'am_platinum_operation_wise_analysis_advisor_report', label: 'Advisor Operation Analysis' },
+    {
+      table: 'am_platinum_ro_billing_report',
+      label: 'RO Billing',
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dealer_code', 'main_dealer_code'],
+    },
+    {
+      table: 'am_platinum_repair_order_list',
+      label: 'Open RO',
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dealer', 'dealer_code'],
+    },
+    { table: 'am_platinum_call_center_complaints', label: 'Complaints', dealerColumn: 'source_dealer_code' },
+    { table: 'am_platinum_operation_wise_analysis_report', label: 'Operation Analysis', dealerColumn: 'source_dealer_code' },
+    {
+      table: 'am_platinum_operation_wise_analysis_advisor_report',
+      label: 'Advisor Operation Analysis',
+      hasUploadedAt: false,
+    },
   ],
-  am_platinum_ro_billing_report: [{ table: 'am_platinum_ro_billing_report', label: 'RO Billing' }],
+  am_platinum_ro_billing_report: [{
+    table: 'am_platinum_ro_billing_report',
+    label: 'RO Billing',
+    dealerColumn: 'source_dealer_code',
+    fallbackDealerColumns: ['dealer_code', 'main_dealer_code'],
+  }],
   workshop_performance: [
-    { table: 'am_platinum_ro_billing_report', label: 'RO Billing' },
-    { table: 'am_platinum_operation_wise_analysis_report', label: 'Operation Analysis' },
-    { table: 'am_platinum_operation_wise_analysis_advisor_report', label: 'Advisor Operation Analysis' },
-    { table: 'am_platinum_rsa_report', label: 'RSA' },
-    { table: 'am_platinum_ew_report', label: 'EW' },
+    {
+      table: 'am_platinum_ro_billing_report',
+      label: 'RO Billing',
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dealer_code', 'main_dealer_code'],
+    },
+    { table: 'am_platinum_operation_wise_analysis_report', label: 'Operation Analysis', dealerColumn: 'source_dealer_code' },
+    {
+      table: 'am_platinum_operation_wise_analysis_advisor_report',
+      label: 'Advisor Operation Analysis',
+      hasUploadedAt: false,
+    },
+    { table: 'am_platinum_rsa_report', label: 'RSA', hasUploadedAt: false },
+    {
+      table: 'am_platinum_ew_report',
+      label: 'EW',
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dlr_no'],
+    },
   ],
-  open_ro_repair_orders: [{ table: 'am_platinum_repair_order_list', label: 'Open RO' }],
-  Platinum_complaints: [{ table: 'am_platinum_call_center_complaints', label: 'Complaints' }],
-  sot_analysis: [{ table: 'am_platinum_trust_package', label: 'SOT Package' }],
+  open_ro_repair_orders: [{
+    table: 'am_platinum_repair_order_list',
+    label: 'Open RO',
+    dealerColumn: 'source_dealer_code',
+    fallbackDealerColumns: ['dealer', 'dealer_code'],
+  }],
+  Platinum_complaints: [{
+    table: 'am_platinum_call_center_complaints',
+    label: 'Complaints',
+    dealerColumn: 'source_dealer_code',
+  }],
+  sot_analysis: [{
+    table: 'am_platinum_trust_package',
+    label: 'SOT Package',
+    dealerColumn: 'source_dealer_code',
+  }],
+}
+
+type FreshnessRow = {
+  table: string
+  label: string
+  sourceUpdatedAt: string | Date | null
+  rowCount: number | string | null
+  dealerScoped: boolean
+}
+
+function buildFreshnessSelect(source: FreshnessSource, dealerCode: string | null) {
+  const dealerExpression = source.dealerColumn
+    ? platinumSourceDealerSql(
+        sql.raw(`"${source.dealerColumn}"`),
+        (source.fallbackDealerColumns || []).map((column) => sql.raw(`"${column}"`))
+      )
+    : null
+  const dealerWhere = dealerCode && dealerExpression
+    ? sql`WHERE ${dealerExpression} = ${dealerCode}`
+    : sql``
+
+  return sql`
+    SELECT
+      ${source.table}::text AS "table",
+      ${source.label}::text AS "label",
+      MAX(uploaded_at) AS "sourceUpdatedAt",
+      COALESCE((
+        SELECT n_live_tup::bigint
+        FROM pg_stat_user_tables
+        WHERE schemaname = 'public' AND relname = ${source.table}
+      ), 0)::bigint AS "rowCount",
+      ${Boolean(dealerCode && dealerExpression)}::boolean AS "dealerScoped"
+    FROM ${sql.raw(`"${source.table}"`)}
+    ${dealerWhere}
+  `
+}
+
+async function readSourceFreshness(sources: FreshnessSource[], dealerCode: string | null) {
+  const queryableSources = sources.filter((source) => source.hasUploadedAt !== false)
+  if (queryableSources.length === 0) return []
+
+  const query = sql.join(
+    queryableSources.map((source) => buildFreshnessSelect(source, dealerCode)),
+    sql` UNION ALL `
+  )
+  const result = await db.execute(query) as FreshnessRow[]
+
+  return result.map((row) => ({
+    table: row.table,
+    label: row.label,
+    sourceUpdatedAt: row.sourceUpdatedAt ? new Date(row.sourceUpdatedAt).toISOString() : null,
+    rowCount: Number(row.rowCount || 0),
+    dealerScoped: Boolean(row.dealerScoped),
+  }))
 }
 
 function normalizeReportKey(value: string | null) {
@@ -46,66 +154,6 @@ function normalizeReportKey(value: string | null) {
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
-}
-
-async function readColumns(table: string) {
-  const rows = await db.execute(sql`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = ${table}
-  `) as Array<{ column_name: string }>
-
-  return new Set(rows.map((row) => row.column_name))
-}
-
-function resolveDealerColumn(table: string, columns: Set<string>) {
-  if (table === 'am_platinum_call_center_complaints' && columns.has('source_dealer_code')) return 'source_dealer_code'
-  if (table === 'am_platinum_repair_order_list' && columns.has('source_dealer_code')) return 'source_dealer_code'
-  if (table === 'am_platinum_repair_order_list' && columns.has('dealer')) return 'dealer'
-  if (table === 'am_platinum_ew_report' && columns.has('source_dealer_code')) return 'source_dealer_code'
-  if (table === 'am_platinum_ew_report' && columns.has('dlr_no')) return 'dlr_no'
-  if (table === 'am_platinum_trust_package' && columns.has('source_dealer_code')) return 'source_dealer_code'
-  if (table.startsWith('am_platinum_operation_wise_analysis') && columns.has('source_dealer_code')) return 'source_dealer_code'
-  if (columns.has('dealer_code')) return 'dealer_code'
-  if (columns.has('main_dealer_code')) return 'main_dealer_code'
-  if (columns.has('billing_dealer_code')) return 'billing_dealer_code'
-  if (columns.has('main_dealer')) return 'main_dealer'
-  if (columns.has('source_dealer_code')) return 'source_dealer_code'
-  return null
-}
-
-async function readSourceFreshness(source: FreshnessSource, dealerCode: string | null) {
-  const columns = await readColumns(source.table)
-  if (!columns.has('uploaded_at')) return null
-
-  const dealerColumn = dealerCode ? resolveDealerColumn(source.table, columns) : null
-  const dealerWhere = dealerCode && dealerColumn
-    ? dealerColumn === 'source_dealer_code'
-      ? sql`WHERE ${platinumSourceDealerSql(sql.raw(`"${dealerColumn}"`))} = ${dealerCode}`
-      : sql`WHERE UPPER(TRIM(COALESCE(${sql.raw(`"${dealerColumn}"`)}::text, ''))) = ${dealerCode}`
-    : sql``
-
-  const rows = await db.execute(sql`
-    SELECT
-      MAX(uploaded_at) AS "sourceUpdatedAt",
-      COALESCE((
-        SELECT n_live_tup::bigint
-        FROM pg_stat_user_tables
-        WHERE schemaname = 'public' AND relname = ${source.table}
-      ), 0)::bigint AS "rowCount"
-    FROM ${sql.raw(`"${source.table}"`)}
-    ${dealerWhere}
-  `) as Array<{ sourceUpdatedAt: string | Date | null; rowCount: number | string | null }>
-
-  const row = rows[0]
-  return {
-    table: source.table,
-    label: source.label,
-    sourceUpdatedAt: row?.sourceUpdatedAt ? new Date(row.sourceUpdatedAt).toISOString() : null,
-    rowCount: Number(row?.rowCount || 0),
-    dealerScoped: Boolean(dealerColumn && dealerCode),
-  }
 }
 
 export async function GET(request: Request) {
@@ -120,12 +168,9 @@ export async function GET(request: Request) {
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
     const data = await timer.time('response-cache', () => getCachedData(
-      `platinum:business-excellence:freshness:v3:${reportKey}:${dealerCode || 'all'}`,
+      `platinum:business-excellence:freshness:v4:${reportKey}:${dealerCode || 'all'}`,
       async () => {
-        const settled = await Promise.allSettled(sources.map((source) => readSourceFreshness(source, dealerCode)))
-        const sourceFreshness = settled
-          .map((result) => result.status === 'fulfilled' ? result.value : null)
-          .filter((item): item is NonNullable<typeof item> => Boolean(item))
+        const sourceFreshness = await readSourceFreshness(sources, dealerCode)
         const sourceUpdatedAt = sourceFreshness
           .map((source) => source.sourceUpdatedAt)
           .filter((value): value is string => Boolean(value))

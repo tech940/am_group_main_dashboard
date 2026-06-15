@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { platinumSourceDealerFilter, platinumSourceDealerSql } from '@/lib/platinum/dealer-filter'
 
-export const PLATINUM_BE_CALCULATION_VERSION = '2026-06-cy-ly-correction-v2'
+export const PLATINUM_BE_CALCULATION_VERSION = '2026-06-cy-ly-correction-v3'
 
 export const PLATINUM_BE_CALCULATION_META = {
   calculationVersion: PLATINUM_BE_CALCULATION_VERSION,

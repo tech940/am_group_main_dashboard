@@ -2,11 +2,6 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getPlatinumBranchLabel, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
 import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
-import {
-  platinumActiveBillSql,
-  platinumRoBillingDealerFilter,
-  platinumRoBillingDealerSql,
-} from '@/lib/platinum/business-excellence-calculations'
 
 export type PlatinumDealerCoverage = {
   dealerCode: string | null
@@ -84,22 +79,24 @@ function timestampValue(value: unknown) {
 }
 
 export async function fetchPlatinumRoBillingCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
-  const dealerFilter = platinumRoBillingDealerFilter(dealerCode)
+  const dealerFilter = dealerCode
+    ? sql`AND dealer_code = ${dealerCode}`
+    : sql``
 
   const rows = await db.execute(sql`
     SELECT
-      COUNT(*) FILTER (
+      COALESCE(SUM(invoice_count) FILTER (
         WHERE bill_date >= ${startDate}::date
           AND bill_date < (${endDate}::date + INTERVAL '1 day')
-      )::int AS row_count,
+      ), 0)::int AS row_count,
       MIN(bill_date)::text AS earliest_date,
       MAX(bill_date)::text AS latest_date,
-      COUNT(*) FILTER (
-        WHERE ${platinumRoBillingDealerSql()} IS NULL
-      )::int AS unmapped_rows,
+      COALESCE(SUM(invoice_count) FILTER (
+        WHERE dealer_code = 'UNMAPPED'
+      ), 0)::int AS unmapped_rows,
       MAX(uploaded_at)::text AS last_updated_at
-    FROM am_platinum_ro_billing_report
-    WHERE ${platinumActiveBillSql()}
+    FROM am_platinum_ro_billing_daily_summary_v2
+    WHERE TRUE
       ${dealerFilter}
   `)
   const row = resultRows(rows)[0]
@@ -117,28 +114,22 @@ export async function fetchPlatinumRoBillingCoverage(startDate: string, endDate:
 
 export async function fetchPlatinumOpenRoCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
   const dealerFilter = dealerCode
-    ? sql`AND COALESCE(
-        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-        NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), '')
-      ) = ${dealerCode}`
+    ? sql`AND dealer_code = ${dealerCode}`
     : sql``
 
   const rows = await db.execute(sql`
     SELECT
-      COUNT(*) FILTER (
-        WHERE r_o_date >= ${startDate}::date
-          AND r_o_date < (${endDate}::date + INTERVAL '1 day')
-      )::int AS row_count,
-      MIN(r_o_date)::text AS earliest_date,
-      MAX(r_o_date)::text AS latest_date,
-      COUNT(*) FILTER (
-        WHERE COALESCE(
-          NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-          NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), '')
-        ) IS NULL
-      )::int AS unmapped_rows,
+      COALESCE(SUM(open_ro) FILTER (
+        WHERE report_date >= ${startDate}::date
+          AND report_date < (${endDate}::date + INTERVAL '1 day')
+      ), 0)::int AS row_count,
+      MIN(report_date)::text AS earliest_date,
+      MAX(report_date)::text AS latest_date,
+      COALESCE(SUM(open_ro) FILTER (
+        WHERE dealer_code = 'UNMAPPED'
+      ), 0)::int AS unmapped_rows,
       MAX(uploaded_at)::text AS last_updated_at
-    FROM am_platinum_repair_order_list
+    FROM am_platinum_open_ro_daily_summary_v1
     WHERE TRUE
       ${dealerFilter}
   `)
@@ -157,26 +148,24 @@ export async function fetchPlatinumOpenRoCoverage(startDate: string, endDate: st
 }
 
 export async function fetchPlatinumComplaintsCoverage(startDate: string, endDate: string, dealerCode: string | null = null) {
-  const dealerFilter = platinumSourceDealerFilter(
-    dealerCode,
-    sql.raw('source_dealer_code')
-  )
-  const businessDate = sql`COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date`
+  const dealerFilter = dealerCode
+    ? sql`AND dealer_code = ${dealerCode}`
+    : sql``
 
   const rows = await db.execute(sql`
     SELECT
-      COUNT(*) FILTER (
-        WHERE ${businessDate} >= ${startDate}::date
-          AND ${businessDate} < (${endDate}::date + INTERVAL '1 day')
-      )::int AS row_count,
-      MIN(${businessDate})::text AS earliest_date,
-      MAX(${businessDate})::text AS latest_date,
-      COUNT(*) FILTER (
-        WHERE NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE') IS NULL
-      )::int AS unmapped_rows,
+      COALESCE(SUM(complaints) FILTER (
+        WHERE report_date >= ${startDate}::date
+          AND report_date < (${endDate}::date + INTERVAL '1 day')
+      ), 0)::int AS row_count,
+      MIN(report_date)::text AS earliest_date,
+      MAX(report_date)::text AS latest_date,
+      COALESCE(SUM(complaints) FILTER (
+        WHERE dealer_code = 'UNMAPPED'
+      ), 0)::int AS unmapped_rows,
       MAX(uploaded_at)::text AS last_updated_at
-    FROM am_platinum_call_center_complaints
-    WHERE ${businessDate} IS NOT NULL
+    FROM am_platinum_complaints_daily_summary_v1
+    WHERE TRUE
       ${dealerFilter}
   `)
   const row = resultRows(rows)[0]

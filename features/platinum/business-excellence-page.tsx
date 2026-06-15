@@ -1530,8 +1530,14 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   const [aiSummary, setAiSummary] = useState<BusinessAiSummary | null>(null)
   const [aiSummaryError, setAiSummaryError] = useState('')
   const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false)
+  const [freshnessReady, setFreshnessReady] = useState(false)
   const itemsPerPage = 10
   const queryDateFilterKey = searchParams.toString()
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setFreshnessReady(true))
+    return () => window.cancelAnimationFrame(frame)
+  }, [])
 
   useEffect(() => {
     const params = new URLSearchParams(queryDateFilterKey)
@@ -1591,11 +1597,11 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
   const freshnessQueryString = useMemo(() => {
     const params = new URLSearchParams({
-      report: activeTab || initialReportName,
+      report: 'business_excellence_overview',
     })
     appendKiaDealerCodeParam(params, selectedDealerCode)
     return params.toString()
-  }, [activeTab, initialReportName, selectedDealerCode])
+  }, [selectedDealerCode])
 
   const freshnessQuery = useQuery<BusinessFreshnessResponse>({
     queryKey: ['business-excellence', 'freshness', freshnessQueryString],
@@ -1604,7 +1610,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
       logApiTimings(response, 'business-excellence-freshness')
       return await readPlatinumJson<BusinessFreshnessResponse>(response, 'Business Excellence freshness')
     },
-    enabled: Boolean(activeTab || initialReportName),
+    enabled: freshnessReady,
     staleTime: DASHBOARD_STALE_TIME_MS,
     retry: 1,
   })
@@ -3505,6 +3511,26 @@ const EXECUTIVE_LOCATION_OPTIONS = [
   })),
 ]
 
+function executiveBatchQueryString(dateFilter: BusinessDateFilter, dealerCode?: string | null) {
+  const tableRange = getDefaultRODateRange(dateFilter)
+  const trendRange = getROTrendDateRange(dateFilter)
+  const params = new URLSearchParams({
+    brand: 'platinum',
+    sheet: 'am_platinum_ro_billing_report',
+    analysisType: 'load',
+    views: 'all',
+    groupBy: 'work_type',
+    metrics: 'all',
+    startDate: tableRange.startDate,
+    endDate: tableRange.endDate,
+    trendStartDate: trendRange.startDate,
+    trendEndDate: trendRange.endDate,
+  })
+  appendBusinessComparisonParams(params, dateFilter)
+  appendKiaDealerCodeParam(params, dealerCode)
+  return params.toString()
+}
+
 function executiveQueryString(view: 'table' | 'trend' | 'fy', dateFilter: BusinessDateFilter, dealerCode?: string | null) {
   const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
   const params = new URLSearchParams({
@@ -3661,9 +3687,10 @@ function executivePeriod(row: ROAnalysisRow | null | undefined, period: PeriodKe
 
 function combineExecutiveMetricValues(primary: ROAnalysisMetric, secondary: ROAnalysisMetric) {
   const cy = Number(primary.cy || 0) + Number(secondary.cy || 0)
-  const primaryLy = primary.ly === 'N/A' ? 0 : Number(primary.ly || 0)
-  const secondaryLy = secondary.ly === 'N/A' ? 0 : Number(secondary.ly || 0)
-  const ly = primaryLy + secondaryLy
+  if (primary.ly === 'N/A' || secondary.ly === 'N/A') {
+    return { cy, ly: 'N/A' as const, growth: 'N/A' as const }
+  }
+  const ly = Number(primary.ly || 0) + Number(secondary.ly || 0)
   const growth = ly > 0 ? ((cy - ly) / ly) * 100 : 'N/A'
   return { cy, ly, growth }
 }
@@ -3970,11 +3997,43 @@ function BusinessExecutiveDashboard({
     })
   }, [dateFilter, queryClient])
 
-  const tableQuery = useQuery({
-    queryKey: ['business-excellence', 'executive-dashboard', 'table', selectedLocation, dateFilter],
-    queryFn: () => fetchExecutiveSummary('table', selectedDealer),
+  const executiveBatchQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'batch', selectedLocation, dateFilter],
+    queryFn: async () => {
+      const queryString = executiveBatchQueryString(dateFilter, selectedDealer)
+      const response = await fetch(`/api/brands/platinum/business-excellence/ro-billing-analysis?${queryString}`)
+      logApiTimings(response, 'executive-dashboard-batch')
+      const data = await readPlatinumJson<{
+        byView?: {
+          table?: ROAnalysisResponse
+          trend?: ROAnalysisResponse
+          fy?: ROAnalysisResponse
+        }
+      }>(response, 'Executive dashboard batch')
+      return {
+        table: data.byView?.table,
+        trend: data.byView?.trend,
+        fy: data.byView?.fy,
+      }
+    },
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
+
+  const tableQuery = {
+    data: executiveBatchQuery.data?.table,
+    isLoading: executiveBatchQuery.isLoading,
+    isError: executiveBatchQuery.isError,
+  }
+  const trendQuery = {
+    data: executiveBatchQuery.data?.trend,
+    isLoading: executiveBatchQuery.isLoading,
+    isError: executiveBatchQuery.isError,
+  }
+  const fyQuery = {
+    data: executiveBatchQuery.data?.fy,
+    isLoading: executiveBatchQuery.isLoading,
+    isError: executiveBatchQuery.isError,
+  }
 
   const branchTableQuery = useQuery({
     queryKey: ['business-excellence', 'executive-dashboard', 'branch-table', dateFilter],
@@ -3992,18 +4051,6 @@ function BusinessExecutiveDashboard({
       }
     },
     enabled: Boolean(expandedExecutiveTable),
-    staleTime: DASHBOARD_STALE_TIME_MS,
-  })
-
-  const trendQuery = useQuery({
-    queryKey: ['business-excellence', 'executive-dashboard', 'trend', selectedLocation, dateFilter],
-    queryFn: () => fetchExecutiveSummary('trend', selectedDealer),
-    staleTime: DASHBOARD_STALE_TIME_MS,
-  })
-
-  const fyQuery = useQuery({
-    queryKey: ['business-excellence', 'executive-dashboard', 'fy', selectedLocation, dateFilter],
-    queryFn: () => fetchExecutiveSummary('fy', selectedDealer),
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
 
@@ -4204,7 +4251,7 @@ function BusinessExecutiveDashboard({
             <ExecutiveMetricCard
               label="Total Revenue"
               value={formatCurrency(revenueMtd.cy)}
-              previous={formatCurrency(revenueMtd.ly)}
+              previous={revenueMtd.ly === 'N/A' ? 'N/A' : formatCurrency(revenueMtd.ly)}
               growth={revenueMtd.growth}
               helper="Labour + Parts revenue in selected MTD window"
             />

@@ -8,13 +8,17 @@ import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
-import { fetchPlatinumWorkshopVasAmount } from '@/lib/platinum/business-excellence-vas'
+import { fetchPlatinumWorkshopVasAmount, fetchPlatinumWorkshopVasAmounts } from '@/lib/platinum/business-excellence-vas'
 import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
 import {
   emptyPlatinumRoBillingAudit,
   fetchPlatinumRoBillingAudit,
 } from '@/lib/platinum/ro-billing-audit'
+import {
+  resolvePlatinumComparisonRange,
+  type PlatinumComparisonParams,
+} from '@/lib/platinum/business-excellence-metrics'
 import {
   PLATINUM_BE_CALCULATION_META,
   platinumActiveBillSql,
@@ -33,12 +37,7 @@ const tableExistsCache = new Map<string, boolean>()
 const tableColumnsCache = new Map<string, Set<string>>()
 
 type NumericRow = Record<string, unknown>
-type ComparisonParams = {
-  preset: string | null
-  comparisonMode: string | null
-  comparisonStartDate: string | null
-  comparisonEndDate: string | null
-}
+type ComparisonParams = PlatinumComparisonParams
 
 type DealerFilter = string | null
 
@@ -156,6 +155,22 @@ function emptyVasMeta(reason: string): PlatinumWorkshopVasMeta {
     dedupeMode: null,
     latestSnapshotUploadedAt: null,
   }
+}
+
+async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit = 3) {
+  const results = new Array<T>(tasks.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < tasks.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await tasks[index]()
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, () => worker()))
+  return results
 }
 
 function emptyDealerCoverage(startDate: string, endDate: string, dealerCode: DealerFilter) {
@@ -1109,8 +1124,9 @@ async function buildWorkshopPayload(
 ) {
   const parsedStart = parseDateInput(startDate)
   const parsedEnd = parseDateInput(endDate)
-  const lyStart = comparison.comparisonStartDate || (parsedStart ? toDateInputValue(sameDateLastYear(parsedStart)) : startDate)
-  const lyEnd = comparison.comparisonEndDate || (parsedEnd ? toDateInputValue(sameDateLastYear(parsedEnd)) : endDate)
+  const lyRange = resolvePlatinumComparisonRange(startDate, endDate, comparison)
+  const lyStart = lyRange.startDate
+  const lyEnd = lyRange.endDate
   const sourceWarnings: SourceWarning[] = []
   const emptyAuxiliary = emptyAuxiliaryKpis()
 
@@ -1126,47 +1142,64 @@ async function buildWorkshopPayload(
     coreServiceRows,
     coreAddonRows,
     sourceStatus,
-    workshopVasMeta,
-    lyWorkshopVasMeta,
+    vasBatch,
     dealerCoverage,
     roBillingAudit,
-  ] = await Promise.all([
-    optionalSource('service summary', fetchServiceSummary(startDate, endDate, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
-    optionalSource('add-on summary', fetchAddonSummary(startDate, endDate, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
-    optionalSource('daily trend', fetchDailyTrend(startDate, endDate, advisor, dealerCode), [] as Awaited<ReturnType<typeof fetchDailyTrend>>, sourceWarnings),
-    optionalSource('advisor summary', fetchAdvisorSummary(startDate, endDate, dealerCode), [] as Awaited<ReturnType<typeof fetchAdvisorSummary>>, sourceWarnings),
-    optionalSource('auxiliary KPIs', fetchAuxiliaryKpis(startDate, endDate, dealerCode), emptyAuxiliary, sourceWarnings),
-    optionalSource('LY auxiliary KPIs', fetchAuxiliaryKpis(lyStart, lyEnd, dealerCode), emptyAuxiliary, sourceWarnings),
-    optionalSource('LY service summary', fetchServiceSummary(lyStart, lyEnd, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
-    optionalSource('LY add-on summary', fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
-    optionalSource('core service summary', fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
-    optionalSource('core add-on summary', fetchCoreAddonSummary(startDate, endDate, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
-    optionalSource('source status', fetchSourceStatus(), null, sourceWarnings),
-    optionalSource(
-      'workshop VAS snapshot',
-      fetchPlatinumWorkshopVasAmount(startDate, endDate, dealerCode),
-      emptyVasMeta('Platinum VAS source could not be read.'),
+  ] = await runWithConcurrency<unknown>([
+    () => optionalSource('service summary', fetchServiceSummary(startDate, endDate, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
+    () => optionalSource('add-on summary', fetchAddonSummary(startDate, endDate, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
+    () => optionalSource('daily trend', fetchDailyTrend(startDate, endDate, advisor, dealerCode), [] as Awaited<ReturnType<typeof fetchDailyTrend>>, sourceWarnings),
+    () => optionalSource('advisor summary', fetchAdvisorSummary(startDate, endDate, dealerCode), [] as Awaited<ReturnType<typeof fetchAdvisorSummary>>, sourceWarnings),
+    () => optionalSource('auxiliary KPIs', fetchAuxiliaryKpis(startDate, endDate, dealerCode), emptyAuxiliary, sourceWarnings),
+    () => optionalSource('LY auxiliary KPIs', fetchAuxiliaryKpis(lyStart, lyEnd, dealerCode), emptyAuxiliary, sourceWarnings),
+    () => optionalSource('LY service summary', fetchServiceSummary(lyStart, lyEnd, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
+    () => optionalSource('LY add-on summary', fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
+    () => optionalSource('core service summary', fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
+    () => optionalSource('core add-on summary', fetchCoreAddonSummary(startDate, endDate, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
+    () => optionalSource('source status', fetchSourceStatus(), null, sourceWarnings),
+    () => optionalSource(
+      'workshop VAS amounts',
+      fetchPlatinumWorkshopVasAmounts(startDate, endDate, lyStart, lyEnd, dealerCode),
+      { cy: emptyVasMeta('Platinum VAS source could not be read.'), ly: emptyVasMeta('Platinum LY VAS source could not be read.') },
       sourceWarnings
     ),
-    optionalSource(
-      'LY workshop VAS snapshot',
-      fetchPlatinumWorkshopVasAmount(lyStart, lyEnd, dealerCode),
-      emptyVasMeta('Platinum LY VAS source could not be read.'),
-      sourceWarnings
-    ),
-    optionalSource(
+    () => optionalSource(
       'dealer coverage',
       fetchPlatinumRoBillingCoverage(startDate, endDate, dealerCode),
       emptyDealerCoverage(startDate, endDate, dealerCode),
       sourceWarnings
     ),
-    optionalSource(
+    () => optionalSource(
       'RO Billing audit',
-      fetchPlatinumRoBillingAudit(startDate, endDate, dealerCode),
-      emptyPlatinumRoBillingAudit(startDate, endDate, dealerCode),
+      fetchPlatinumRoBillingAudit(startDate, endDate, dealerCode, {
+        lyStartDate: lyStart,
+        lyEndDate: lyEnd,
+      }),
+      emptyPlatinumRoBillingAudit(startDate, endDate, dealerCode, false, {
+        lyStartDate: lyStart,
+        lyEndDate: lyEnd,
+      }),
       sourceWarnings
     ),
-  ])
+  ], 3) as [
+    ServiceAggregate[],
+    AddonAggregate[],
+    Awaited<ReturnType<typeof fetchDailyTrend>>,
+    Awaited<ReturnType<typeof fetchAdvisorSummary>>,
+    Awaited<ReturnType<typeof fetchAuxiliaryKpis>>,
+    Awaited<ReturnType<typeof fetchAuxiliaryKpis>>,
+    ServiceAggregate[],
+    AddonAggregate[],
+    ServiceAggregate[],
+    AddonAggregate[],
+    Awaited<ReturnType<typeof fetchSourceStatus>>,
+    Awaited<ReturnType<typeof fetchPlatinumWorkshopVasAmounts>>,
+    Awaited<ReturnType<typeof fetchPlatinumRoBillingCoverage>>,
+    Awaited<ReturnType<typeof fetchPlatinumRoBillingAudit>>,
+  ]
+
+  const workshopVasMeta = vasBatch.cy
+  const lyWorkshopVasMeta = vasBatch.ly
 
   const effectiveAddonRows = addonRows
   const addonTotals = summarizeAddons(effectiveAddonRows)
@@ -1200,30 +1233,30 @@ async function buildWorkshopPayload(
 
   const totalRevenue = totalRow.labourAmount + totalRow.spareSale
   const lyRevenue = lyTotal.labourAmount + lyTotal.spareSale
-  const hasVasLy = lyWorkshopVasMeta.available
+  const hasComparableVasLy = lyWorkshopVasMeta.available
   const vasPeriodsAlign = workshopVasMeta.available
-    && hasVasLy
+    && hasComparableVasLy
     && platinumVasPeriodsAlign(
       workshopVasMeta.periodStart,
       workshopVasMeta.periodEnd,
       lyWorkshopVasMeta.periodStart,
       lyWorkshopVasMeta.periodEnd
     )
-  const vasLy = hasVasLy ? lyWorkshopVasMeta.amount : undefined
+  const vasLy = hasComparableVasLy ? lyWorkshopVasMeta.amount : undefined
   const vasComparisonStatus = !workshopVasMeta.available
     ? 'source_missing'
-    : !hasVasLy
+    : !hasComparableVasLy
       ? 'not_comparable'
       : vasPeriodsAlign
-      ? (Number(vasLy || 0) === 0 ? 'exact_zero' : 'available')
-      : 'period_mismatch'
+        ? (Number(vasLy || 0) === 0 ? 'exact_zero' : 'available')
+        : 'period_mismatch'
   const vasComparisonLabel = !workshopVasMeta.available
     ? 'Source missing'
-    : !hasVasLy
-      ? 'No comparable LY'
+    : !hasComparableVasLy
+      ? 'No comparable LY period'
       : vasPeriodsAlign
-      ? null
-      : `LY source covers ${lyWorkshopVasMeta.periodStart} to ${lyWorkshopVasMeta.periodEnd}`
+        ? null
+        : `LY covers ${lyWorkshopVasMeta.periodStart} to ${lyWorkshopVasMeta.periodEnd}`
 
   return {
     dateRange: { startDate, endDate, lyStartDate: lyStart, lyEndDate: lyEnd },
@@ -1300,10 +1333,10 @@ async function buildWorkshopPayload(
         sourceRows: workshopVasMeta.sourceRows,
         dedupeMode: workshopVasMeta.dedupeMode,
         latestSnapshotUploadedAt: workshopVasMeta.latestSnapshotUploadedAt,
-        lyAvailable: hasVasLy,
+        lyAvailable: hasComparableVasLy,
         comparisonStatus: vasComparisonStatus,
         comparisonLabel: vasComparisonLabel,
-        lyUnavailableReason: hasVasLy ? null : lyWorkshopVasMeta.unavailableReason,
+        lyUnavailableReason: hasComparableVasLy ? null : lyWorkshopVasMeta.unavailableReason,
         lySource: lyWorkshopVasMeta.source,
         lySourceTable: lyWorkshopVasMeta.sourceTable,
         lyPeriodStart: lyWorkshopVasMeta.periodStart,

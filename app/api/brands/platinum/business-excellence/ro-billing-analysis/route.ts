@@ -9,6 +9,7 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
 import { fetchPlatinumRoBillingAudit } from '@/lib/platinum/ro-billing-audit'
+import { resolvePlatinumComparisonRange } from '@/lib/platinum/business-excellence-metrics'
 import {
   PLATINUM_BE_CALCULATION_META,
   platinumActiveBillSql,
@@ -227,6 +228,10 @@ function createRawAggregate(): RawAggregate {
     labourByBill: new Map<string, number>(),
     partsByBill: new Map<string, number>(),
   }
+}
+
+function numericText(column: ReturnType<typeof sql.raw>) {
+  return sql`COALESCE(NULLIF(regexp_replace(${column}::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)`
 }
 
 function getBillKey(row: DataRow) {
@@ -762,8 +767,8 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date, compariso
           ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
           ${platinumRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
-          COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt,
+          ${numericText(sql.raw('labour_amt'))} AS labour_amt,
+          ${numericText(sql.raw('part_amt'))} AS part_amt,
           uploaded_at
         FROM am_platinum_ro_billing_report
         JOIN range_def ranges
@@ -850,8 +855,8 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
           ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
           ${platinumRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
-          COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt,
+          ${numericText(sql.raw('labour_amt'))} AS labour_amt,
+          ${numericText(sql.raw('part_amt'))} AS part_amt,
           uploaded_at
         FROM am_platinum_ro_billing_report
         WHERE bill_date IS NOT NULL
@@ -962,8 +967,8 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
           ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
           ${platinumRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
-          COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt,
+          ${numericText(sql.raw('labour_amt'))} AS labour_amt,
+          ${numericText(sql.raw('part_amt'))} AS part_amt,
           uploaded_at
         FROM am_platinum_ro_billing_report
         WHERE bill_date >= ${toDateInputValue(startDate)}::date
@@ -1073,8 +1078,8 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
           ${platinumRoBillingInvoiceKeySql()} AS invoice_key,
           ${platinumRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
-          COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt,
+          ${numericText(sql.raw('labour_amt'))} AS labour_amt,
+          ${numericText(sql.raw('part_amt'))} AS part_amt,
           uploaded_at
         FROM am_platinum_ro_billing_report
         JOIN range_def ranges
@@ -1262,9 +1267,9 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
         COALESCE(NULLIF(bill_type, ''), 'Cancel') AS bill_status,
-        COALESCE(labour_amt, 0)::numeric AS labour_amt,
-        COALESCE(part_amt, 0)::numeric AS part_amt,
-        COALESCE(total_amt, 0)::numeric AS total_amt,
+        ${numericText(sql.raw('labour_amt'))} AS labour_amt,
+        ${numericText(sql.raw('part_amt'))} AS part_amt,
+        ${numericText(sql.raw('total_amt'))} AS total_amt,
         uploaded_at
       FROM am_platinum_ro_billing_report
       WHERE bill_date >= ${toDateInputValue(startDate)}::date
@@ -1378,14 +1383,19 @@ export async function GET(request: Request) {
     const groupBy = normalizeGroupBy(searchParams.get('groupBy') || 'work_type')
     const skipCache = searchParams.get('skipCache') === 'true'
     const batchMetrics = searchParams.get('metrics') === 'all'
+    const viewsAll = searchParams.get('views') === 'all'
     const dealerCode = normalizePlatinumDealerCode(searchParams.get('dealer_code')) || null
 
     if (!RO_ANALYSIS_TYPES.includes(analysisType)) {
       return NextResponse.json({ error: 'Invalid analysis type' }, { status: 400 })
     }
 
-    if (!['table', 'trend', 'fy', 'analytics', 'revenue', 'leaderboard'].includes(view)) {
+    if (!viewsAll && !['table', 'trend', 'fy', 'analytics', 'revenue', 'leaderboard'].includes(view)) {
       return NextResponse.json({ error: 'Invalid analysis view' }, { status: 400 })
+    }
+
+    if (viewsAll && groupBy !== 'work_type') {
+      return NextResponse.json({ error: 'views=all requires work_type groupBy' }, { status: 400 })
     }
 
     if (brand !== 'platinum' || sheet !== 'am_platinum_ro_billing_report') {
@@ -1423,12 +1433,37 @@ export async function GET(request: Request) {
       cacheParams.delete('comparisonEndDate')
     }
     if (batchMetrics) cacheParams.set('metrics', 'all')
+    if (viewsAll) {
+      cacheParams.set('views', 'all')
+      const trendStartDate = searchParams.get('trendStartDate')
+      const trendEndDate = searchParams.get('trendEndDate')
+      if (trendStartDate) cacheParams.set('trendStartDate', trendStartDate)
+      else cacheParams.delete('trendStartDate')
+      if (trendEndDate) cacheParams.set('trendEndDate', trendEndDate)
+      else cacheParams.delete('trendEndDate')
+    } else {
+      cacheParams.delete('views')
+      cacheParams.delete('trendStartDate')
+      cacheParams.delete('trendEndDate')
+    }
     const cacheKey = createCacheKey(cacheParams)
 
     const analyze = async () => {
+      const cyStart = toDateInputValue(startDate)
+      const cyEnd = toDateInputValue(endDate)
+      const comparisonParams = {
+        preset: searchParams.get('periodPreset'),
+        comparisonMode: searchParams.get('comparisonMode'),
+        comparisonStartDate: parsedComparisonStartDate ? toDateInputValue(parsedComparisonStartDate) : null,
+        comparisonEndDate: parsedComparisonEndDate ? toDateInputValue(parsedComparisonEndDate) : null,
+      }
+      const lyRange = resolvePlatinumComparisonRange(cyStart, cyEnd, comparisonParams)
       const windows = buildPeriodWindows(startDate, endDate, comparisonRange)
-      const dealerCoverage = await timer.time('dealer-coverage', () => fetchPlatinumRoBillingCoverage(toDateInputValue(startDate), toDateInputValue(endDate), dealerCode))
-      const roBillingAudit = await timer.time('ro-billing-audit', () => fetchPlatinumRoBillingAudit(toDateInputValue(startDate), toDateInputValue(endDate), dealerCode))
+      const dealerCoverage = await timer.time('dealer-coverage', () => fetchPlatinumRoBillingCoverage(cyStart, cyEnd, dealerCode))
+      const roBillingAudit = await timer.time('ro-billing-audit', () => fetchPlatinumRoBillingAudit(cyStart, cyEnd, dealerCode, {
+        lyStartDate: lyRange.startDate,
+        lyEndDate: lyRange.endDate,
+      }))
       const hasFilters = Array.from(searchParams.entries()).some(([key, value]) => {
         return key in FILTER_COLUMNS && value && value !== 'all'
       })
@@ -1459,6 +1494,108 @@ export async function GET(request: Request) {
           },
           roBillingAudit,
         },
+      }
+      if (viewsAll && groupBy === 'work_type' && !hasFilters) {
+        const trendStartDate = startOfDay(parseDateInput(searchParams.get('trendStartDate')) || startDate)
+        const trendEndDate = endOfDay(parseDateInput(searchParams.get('trendEndDate')) || endDate)
+        const [cancelledSummary, aggregateRows, trendAggregateRows, fyAggregateRows] = await Promise.all([
+          timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode)),
+          timer.time('work-type-sql-summary', () => fetchWorkTypeAggregateRows(windows, dealerCode)),
+          timer.time('daily-trend-sql-summary', () => fetchDailyAggregateRows(trendStartDate, trendEndDate, comparisonRange, dealerCode)),
+          timer.time('fy-trend-sql-summary', () => fetchFiscalAggregateRows(dealerCode)),
+        ])
+
+        const tableByMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
+          const rows = aggregateRowsToStats(aggregateRows, type)
+          return [type, {
+            ...baseFastResponse,
+            analysisType: type,
+            rowCounts: {
+              totalRows: 0,
+              rowsWithBillDate: 0,
+              filteredRows: rows.length,
+            },
+            rows,
+          }]
+        }))
+        const trendByMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
+          const trend = buildDailyTrendRows(trendAggregateRows, type, trendStartDate, trendEndDate, comparisonRange)
+          return [type, {
+            ...baseFastResponse,
+            analysisType: type,
+            dateRange: {
+              startDate: toDateInputValue(trendStartDate),
+              endDate: toDateInputValue(trendEndDate),
+              comparisonStartDate: comparisonRange ? toDateInputValue(comparisonRange.startDate) : null,
+              comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
+            },
+            rowCounts: {
+              totalRows: 0,
+              rowsWithBillDate: 0,
+              filteredRows: trend.length,
+            },
+            trend,
+          }]
+        }))
+        const fyByMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
+          const fyTrends = buildFiscalTrendRows(fyAggregateRows, type)
+          return [type, {
+            ...baseFastResponse,
+            analysisType: type,
+            rowCounts: {
+              totalRows: 0,
+              rowsWithBillDate: 0,
+              filteredRows: fyTrends.length,
+            },
+            fyTrends,
+          }]
+        }))
+
+        return {
+          ...baseFastResponse,
+          views: 'all',
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: aggregateRows.length,
+          },
+          byView: {
+            table: {
+              ...baseFastResponse,
+              cancelledSummary,
+              rowCounts: {
+                totalRows: 0,
+                rowsWithBillDate: 0,
+                filteredRows: aggregateRows.length,
+              },
+              byMetric: tableByMetric,
+            },
+            trend: {
+              ...baseFastResponse,
+              dateRange: {
+                startDate: toDateInputValue(trendStartDate),
+                endDate: toDateInputValue(trendEndDate),
+                comparisonStartDate: comparisonRange ? toDateInputValue(comparisonRange.startDate) : null,
+                comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
+              },
+              rowCounts: {
+                totalRows: 0,
+                rowsWithBillDate: 0,
+                filteredRows: trendAggregateRows.length,
+              },
+              byMetric: trendByMetric,
+            },
+            fy: {
+              ...baseFastResponse,
+              rowCounts: {
+                totalRows: 0,
+                rowsWithBillDate: 0,
+                filteredRows: fyAggregateRows.length,
+              },
+              byMetric: fyByMetric,
+            },
+          },
+        }
       }
       if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
         const cancelledSummary = await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode))

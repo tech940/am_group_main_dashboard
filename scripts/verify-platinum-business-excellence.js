@@ -200,7 +200,12 @@ async function main() {
           SELECT COUNT(*)::int
           FROM am_platinum_operation_wise_analysis_report
           WHERE UPPER(TRIM(COALESCE(source_dealer_code, ''))) = 'N6824'
-        ) AS source_rows,
+        ) AS legacy_source_rows,
+        (
+          SELECT COUNT(*)::int
+          FROM am_platinum_operation_wise_analysis_report
+          WHERE UPPER(TRIM(COALESCE(source_dealer_code, ''))) = 'N6250'
+        ) AS resolved_source_rows,
         (
           SELECT COUNT(*)::int
           FROM am_platinum_vas_period_summary_v1
@@ -209,8 +214,11 @@ async function main() {
         ) AS mapped_summary_rows
     `
 
-    assert.ok(legacyRajouri.source_rows > 0)
     assert.ok(legacyRajouri.mapped_summary_rows > 0)
+    assert.ok(
+      legacyRajouri.legacy_source_rows > 0 || legacyRajouri.resolved_source_rows > 0,
+      'Rajouri operation history must exist under legacy N6824 or resolved N6250 source codes'
+    )
 
     const [appointments] = await db`
       SELECT COUNT(*)::int AS resolved_rows
@@ -245,6 +253,162 @@ async function main() {
       'VAS periods must remain non-comparable when their coverage offsets differ'
     )
 
+    const [exactJammuLyVasPeriod] = await db`
+      SELECT COUNT(*)::int AS count
+      FROM am_platinum_vas_period_summary_v1
+      WHERE dealer_code = 'N5211'
+        AND period_start = DATE '2025-06-01'
+        AND period_end = DATE '2025-06-14'
+    `
+    assert.equal(
+      Number(exactJammuLyVasPeriod.count),
+      0,
+      'Jammu LY VAS must not have an exact Jun 1-14 2025 operation period'
+    )
+
+    const canonicalPeriodSql = (startDate, endDate, dealerCode = null) => db`
+      WITH scoped AS (
+        SELECT
+          id,
+          bill_date::date AS bill_date,
+          COALESCE(
+            CASE
+              WHEN COALESCE(
+                NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+                NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+                NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+              ) = 'N6824' THEN 'N6250'
+              ELSE COALESCE(
+                NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+                NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+                NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+              )
+            END,
+            'UNMAPPED'
+          ) AS dealer_code,
+          COALESCE(
+            CASE
+              WHEN COALESCE(
+                NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+                NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+                NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+              ) = 'N6824' THEN 'N6250'
+              ELSE COALESCE(
+                NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+                NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+                NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+              )
+            END,
+            'UNMAPPED'
+          ) || ':' || bill_date::date::text || ':' || COALESCE(
+            NULLIF(TRIM(bill_no::text), ''),
+            NULLIF(TRIM(r_o_no::text), ''),
+            id::text
+          ) AS invoice_key,
+          COALESCE(
+            CASE
+              WHEN COALESCE(
+                NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+                NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+                NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+              ) = 'N6824' THEN 'N6250'
+              ELSE COALESCE(
+                NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
+                NULLIF(UPPER(TRIM(COALESCE(dealer_code, ''))), ''),
+                NULLIF(UPPER(TRIM(COALESCE(main_dealer_code, ''))), '')
+              )
+            END,
+            'UNMAPPED'
+          ) || ':' || COALESCE(
+            NULLIF(TRIM(r_o_no::text), ''),
+            NULLIF(TRIM(bill_no::text), ''),
+            id::text
+          ) AS ro_key,
+          COALESCE(NULLIF(regexp_replace(labour_amt::text, '[^0-9.-]', '', 'g'), '')::numeric, 0) AS labour_amt,
+          COALESCE(NULLIF(regexp_replace(part_amt::text, '[^0-9.-]', '', 'g'), '')::numeric, 0) AS part_amt,
+          uploaded_at
+        FROM am_platinum_ro_billing_report
+        WHERE bill_date >= ${startDate}::date
+          AND bill_date < (${endDate}::date + INTERVAL '1 day')
+          AND LOWER(TRIM(COALESCE(bill_type::text, ''))) NOT LIKE '%cancel%'
+      ),
+      ranked AS (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (
+            PARTITION BY dealer_code, invoice_key
+            ORDER BY uploaded_at DESC NULLS LAST, id DESC
+          ) AS row_rank
+        FROM scoped
+      ),
+      dedup AS (
+        SELECT *
+        FROM ranked
+        WHERE row_rank = 1
+          ${dealerCode ? db`AND dealer_code = ${dealerCode}` : db``}
+      )
+      SELECT
+        COUNT(DISTINCT dealer_code || ':' || ro_key)::int AS deduped_jc,
+        COALESCE(SUM(labour_amt), 0)::float AS labour,
+        COALESCE(SUM(part_amt), 0)::float AS parts,
+        COALESCE(SUM(labour_amt + part_amt), 0)::float AS revenue
+      FROM dedup
+    `
+
+    const [allLocationsCy] = await canonicalPeriodSql('2026-06-01', '2026-06-13')
+    const [allLocationsLy] = await canonicalPeriodSql('2025-06-01', '2025-06-13')
+
+    assert.ok(allLocationsCy.deduped_jc > 0, 'All-locations CY Jun 1-13 must have JC data')
+    assert.ok(allLocationsLy.deduped_jc > 0, 'All-locations LY Jun 1-13 must have JC data')
+    assert.ok(allLocationsCy.revenue > 0, 'All-locations CY Jun 1-13 must have revenue')
+    assert.ok(allLocationsLy.revenue > 0, 'All-locations LY Jun 1-13 must have revenue')
+
+    const growthPct = ((allLocationsCy.revenue - allLocationsLy.revenue) / allLocationsLy.revenue) * 100
+    assert.ok(Number.isFinite(growthPct), 'All-locations revenue growth must be finite')
+
+    const jun14Start = '2026-06-01'
+    const jun14End = '2026-06-14'
+    const jun14LyStart = '2025-06-01'
+    const jun14LyEnd = '2025-06-14'
+    const dealerFixtures = [
+      { label: 'Jammu', dealerCode: 'N5211' },
+      { label: 'Rajouri', dealerCode: 'N6250' },
+      { label: 'Poonch', dealerCode: 'N6828' },
+    ]
+
+    for (const fixture of dealerFixtures) {
+      const [cy] = await canonicalPeriodSql(jun14Start, jun14End, fixture.dealerCode)
+      const [ly] = await canonicalPeriodSql(jun14LyStart, jun14LyEnd, fixture.dealerCode)
+      closeTo(cy.revenue, cy.labour + cy.parts)
+      closeTo(ly.revenue, ly.labour + ly.parts)
+      if (ly.revenue > 0) {
+        const dealerGrowth = ((cy.revenue - ly.revenue) / ly.revenue) * 100
+        assert.ok(Number.isFinite(dealerGrowth), `${fixture.label} revenue growth must be finite`)
+      }
+      assert.ok(cy.deduped_jc >= 0, `${fixture.label} CY JC must be non-negative`)
+    }
+
+    const [allLocationsJun14Cy] = await canonicalPeriodSql(jun14Start, jun14End)
+    const [allLocationsJun14Ly] = await canonicalPeriodSql(jun14LyStart, jun14LyEnd)
+    closeTo(allLocationsJun14Cy.revenue, allLocationsJun14Cy.labour + allLocationsJun14Cy.parts)
+    closeTo(allLocationsJun14Ly.revenue, allLocationsJun14Ly.labour + allLocationsJun14Ly.parts)
+
+    const [allLocationsVasLy] = await db`
+      SELECT COALESCE(SUM(vas_amount), 0)::float AS vas_amount
+      FROM am_platinum_vas_period_summary_v1
+      WHERE period_start = DATE '2025-06-01'
+        AND period_end = DATE '2025-06-13'
+    `
+    if (Number(allLocationsVasLy.vas_amount) <= 0) {
+      const [fallbackVasLy] = await db`
+        SELECT COALESCE(SUM(vas_amount), 0)::float AS vas_amount
+        FROM am_platinum_vas_period_summary_v1
+        WHERE period_start <= DATE '2025-06-13'
+          AND period_end >= DATE '2025-06-01'
+      `
+      assert.ok(Number(fallbackVasLy.vas_amount) > 0, 'All-locations LY VAS must be available from historical summary')
+    }
+
     console.table({
       currentJammu: {
         invoices: current.invoices,
@@ -265,6 +429,21 @@ async function main() {
         invoices: '-',
         roCount: '-',
         revenue: vasPeriods[0].vas_amount,
+      },
+      allLocationsCy: {
+        invoices: '-',
+        roCount: allLocationsCy.deduped_jc,
+        revenue: allLocationsCy.revenue,
+      },
+      allLocationsLy: {
+        invoices: '-',
+        roCount: allLocationsLy.deduped_jc,
+        revenue: allLocationsLy.revenue,
+      },
+      allLocationsGrowthPct: {
+        invoices: '-',
+        roCount: '-',
+        revenue: `${growthPct.toFixed(2)}%`,
       },
       rajouriHistory: {
         invoices: rajouriHistory.materialized_invoices,
