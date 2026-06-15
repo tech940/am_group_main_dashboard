@@ -12,6 +12,10 @@ import {
   warrantyRecordKey,
   WARRANTY_STATUS_ORDER,
 } from '@/lib/hyundai/warranty-claims'
+import {
+  HYUNDAI_WARRANTY_DEALER_GROUPS,
+  isAllowedHyundaiWarrantyDealer,
+} from '@/lib/hyundai/warranty-dealers'
 
 export const dynamic = 'force-dynamic'
 
@@ -137,6 +141,58 @@ function monthLabel(monthNumber: number) {
   return new Date(2026, monthNumber - 1, 1).toLocaleString('en-IN', { month: 'long' })
 }
 
+function buildMatrixDealerRow(
+  code: string,
+  baseFiltered: EnrichedRow[],
+  relevantStatuses: string[],
+  mappings: Map<string, string>,
+  startDate: string,
+  endDate: string,
+  currentYear: string,
+) {
+  const dealerRows = baseFiltered.filter((row) => row.dealerCode === code)
+  if (dealerRows.length === 0) return null
+
+  const breakdownYear = resolveBreakdownYear(dealerRows, startDate, endDate, currentYear)
+  const breakdownRows = dealerRows.filter((row) => row.businessDate?.slice(0, 4) === breakdownYear)
+  return {
+    dealerCode: code,
+    dealerName: mappings.get(code) || code,
+    breakdownYear,
+    amounts: Object.fromEntries(relevantStatuses.map((bucket) => [
+      bucket,
+      dealerRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
+    ])),
+    total: dealerRows.reduce((sum, row) => sum + num(row.total_amt), 0),
+    currentYearAmounts: Object.fromEntries(relevantStatuses.map((bucket) => [
+      bucket,
+      breakdownRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
+    ])),
+    currentYearTotal: breakdownRows.reduce((sum, row) => sum + num(row.total_amt), 0),
+    monthly: Array.from({ length: 12 }, (_, index) => {
+      const monthNumber = index + 1
+      const monthKey = `${breakdownYear}-${String(monthNumber).padStart(2, '0')}`
+      const monthRows = breakdownRows.filter((row) => row.businessDate?.slice(0, 7) === monthKey)
+      return {
+        month: monthLabel(monthNumber),
+        monthNumber,
+        amounts: Object.fromEntries(relevantStatuses.map((bucket) => [
+          bucket,
+          monthRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
+        ])),
+        total: monthRows.reduce((sum, row) => sum + num(row.total_amt), 0),
+      }
+    }),
+  }
+}
+
+function sumAmountMaps(rows: Array<Record<string, number>>, statuses: string[]) {
+  return Object.fromEntries(statuses.map((bucket) => [
+    bucket,
+    rows.reduce((sum, row) => sum + num(row[bucket]), 0),
+  ]))
+}
+
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -195,6 +251,8 @@ export async function GET(request: Request) {
     }
   })
 
+  const scoped = enriched.filter((row) => isAllowedHyundaiWarrantyDealer(row.dealerCode))
+
   const search = text(searchParams.get('search')).toLowerCase()
   const dealerSet = parseCsvParam(searchParams.get('dealers'), searchParams.get('dealer'))
   const statusSet = parseCsvParam(searchParams.get('statuses'), searchParams.get('status'))
@@ -219,7 +277,7 @@ export async function GET(request: Request) {
     if (includeDateRange && endDate && (!row.businessDate || row.businessDate > endDate)) return false
     return true
   }
-  const baseFiltered = enriched.filter((row) => matchesFilters(row, true))
+  const baseFiltered = scoped.filter((row) => matchesFilters(row, true))
   const filtered = requestedStatusBucket
     ? baseFiltered.filter((row) => row.statusBucket.toUpperCase() === requestedStatusBucket.toUpperCase())
     : baseFiltered
@@ -235,9 +293,9 @@ export async function GET(request: Request) {
   const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize')) || 25))
   const page = Math.max(1, Number(searchParams.get('page')) || 1)
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize)
-  const dealers = [...new Set(enriched.map((row) => row.dealerCode))].sort()
-  const statuses = [...new Set(enriched.map((row) => row.status).filter(Boolean))].sort()
-  const claimTypes = [...new Set(enriched.map((row) => text(row.claim_type)).filter(Boolean))].sort()
+  const dealers = [...new Set(scoped.map((row) => row.dealerCode))].sort()
+  const statuses = [...new Set(scoped.map((row) => row.status).filter(Boolean))].sort()
+  const claimTypes = [...new Set(scoped.map((row) => text(row.claim_type)).filter(Boolean))].sort()
 
   const summary = {
     total: filtered.length,
@@ -284,44 +342,26 @@ export async function GET(request: Request) {
   } : null
 
   const relevantStatuses = WARRANTY_STATUS_ORDER.filter((bucket) => baseFiltered.some((row) => row.statusBucket === bucket))
-  const matrixDealers = [...new Set(baseFiltered.map((row) => row.dealerCode))].sort()
   const matrix = source === 'claim_list' ? {
     breakdownYear: currentYear,
     statuses: relevantStatuses,
-    rows: matrixDealers.map((code) => {
-      const dealerRows = baseFiltered.filter((row) => row.dealerCode === code)
-      const breakdownYear = resolveBreakdownYear(dealerRows, startDate, endDate, currentYear)
-      const breakdownRows = dealerRows.filter((row) => row.businessDate?.slice(0, 4) === breakdownYear)
+    groups: HYUNDAI_WARRANTY_DEALER_GROUPS.map((group) => {
+      const dealersInGroup = group.dealerCodes
+        .map((code) => buildMatrixDealerRow(code, baseFiltered, relevantStatuses, mappings, startDate, endDate, currentYear))
+        .filter((row): row is NonNullable<typeof row> => Boolean(row))
+
+      if (dealersInGroup.length === 0) return null
+
+      const groupAmountRows = dealersInGroup.map((dealer) => dealer.amounts)
       return {
-        dealerCode: code,
-        dealerName: mappings.get(code) || code,
-        breakdownYear,
-        amounts: Object.fromEntries(relevantStatuses.map((bucket) => [
-          bucket,
-          dealerRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
-        ])),
-        total: dealerRows.reduce((sum, row) => sum + num(row.total_amt), 0),
-        currentYearAmounts: Object.fromEntries(relevantStatuses.map((bucket) => [
-          bucket,
-          breakdownRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
-        ])),
-        currentYearTotal: breakdownRows.reduce((sum, row) => sum + num(row.total_amt), 0),
-        monthly: Array.from({ length: 12 }, (_, index) => {
-          const monthNumber = index + 1
-          const monthKey = `${breakdownYear}-${String(monthNumber).padStart(2, '0')}`
-          const monthRows = breakdownRows.filter((row) => row.businessDate?.slice(0, 7) === monthKey)
-          return {
-            month: monthLabel(monthNumber),
-            monthNumber,
-            amounts: Object.fromEntries(relevantStatuses.map((bucket) => [
-              bucket,
-              monthRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
-            ])),
-            total: monthRows.reduce((sum, row) => sum + num(row.total_amt), 0),
-          }
-        }),
+        key: group.key,
+        label: group.label,
+        dealerCodes: dealersInGroup.map((dealer) => dealer.dealerCode),
+        amounts: sumAmountMaps(groupAmountRows, relevantStatuses),
+        total: dealersInGroup.reduce((sum, dealer) => sum + dealer.total, 0),
+        dealers: dealersInGroup,
       }
-    }),
+    }).filter((group): group is NonNullable<typeof group> => Boolean(group)),
   } : null
 
   const ytpSummaryDealers = [...new Set(baseFiltered.map((row) => row.dealerCode))].sort()

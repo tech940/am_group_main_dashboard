@@ -91,19 +91,26 @@ type Payload = {
   matrix: null | {
     breakdownYear: string
     statuses: string[]
-    rows: Array<{
-      dealerCode: string
-      dealerName: string
-      breakdownYear: string
+    groups: Array<{
+      key: string
+      label: string
+      dealerCodes: string[]
       amounts: Record<string, number>
       total: number
-      currentYearAmounts: Record<string, number>
-      currentYearTotal: number
-      monthly: Array<{
-        month: string
-        monthNumber: number
+      dealers: Array<{
+        dealerCode: string
+        dealerName: string
+        breakdownYear: string
         amounts: Record<string, number>
         total: number
+        currentYearAmounts: Record<string, number>
+        currentYearTotal: number
+        monthly: Array<{
+          month: string
+          monthNumber: number
+          amounts: Record<string, number>
+          total: number
+        }>
       }>
     }>
   }
@@ -335,6 +342,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   const [remark, setRemark] = useState('')
   const [docketNumber, setDocketNumber] = useState('')
   const [files, setFiles] = useState<File[]>([])
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
   const [expandedDealer, setExpandedDealer] = useState<string | null>(null)
   const queryString = useMemo(() => buildQuery(source, appliedFilters), [appliedFilters, source])
 
@@ -566,7 +574,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <h2 className="text-lg font-black text-slate-950">Total Claim Amount</h2>
-                <p className="text-xs font-semibold text-slate-500">Select a status to filter records, or expand a dealer for the monthly breakdown by claim date year.</p>
+                <p className="text-xs font-semibold text-slate-500">Expand a location to see dealer codes, then expand a dealer for monthly breakdown. Select a status to filter records.</p>
               </div>
               <CalendarDays className="h-5 w-5 text-blue-700" />
             </div>
@@ -574,7 +582,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
               <table className={warrantyTableClass}>
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    <th className={warrantyThClass}>Dealer</th>
+                    <th className={warrantyThClass}>Location</th>
                     {data.matrix.statuses.map((item) => (
                       <th key={item} className="px-2 py-1.5 text-center">
                         <Button
@@ -592,60 +600,93 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.matrix.rows.map((row) => {
-                    const expanded = expandedDealer === row.dealerCode
+                  {data.matrix.groups.map((group) => {
+                    const groupExpanded = expandedGroup === group.key
                     return (
-                      <Fragment key={row.dealerCode}>
-                        <tr className="border-b border-slate-100">
+                      <Fragment key={group.key}>
+                        <tr className="border-b border-slate-100 bg-slate-50/60">
                           <td className={warrantyTdClass}>
                             <Button
                               size="sm"
-                              className={cn(actionButtonClass, 'mx-auto text-xs', expanded && activeActionButtonClass)}
-                              onClick={() => setExpandedDealer(expanded ? null : row.dealerCode)}
+                              className={cn(actionButtonClass, 'mx-auto text-xs', groupExpanded && activeActionButtonClass)}
+                              onClick={() => {
+                                if (groupExpanded) {
+                                  setExpandedGroup(null)
+                                  setExpandedDealer(null)
+                                } else {
+                                  setExpandedGroup(group.key)
+                                  setExpandedDealer(null)
+                                }
+                              }}
                             >
-                              {expanded ? <ChevronDown /> : <ChevronRight />}
-                              {row.dealerName} ({row.dealerCode})
+                              {groupExpanded ? <ChevronDown /> : <ChevronRight />}
+                              {group.label}
                             </Button>
                           </td>
                           {data.matrix!.statuses.map((item, index) => (
                             <td key={item} className={cn(warrantyTdClass, 'font-mono font-black', index === 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700')}>
-                              {money(row.amounts[item])}
+                              {money(group.amounts[item])}
                             </td>
                           ))}
-                          <td className={cn(warrantyTdClass, 'font-mono font-black text-slate-950')}>{money(row.total)}</td>
+                          <td className={cn(warrantyTdClass, 'font-mono font-black text-slate-950')}>{money(group.total)}</td>
                         </tr>
-                        {expanded && (
-                          <tr className="border-b border-slate-200 bg-slate-50">
-                            <td colSpan={data.matrix!.statuses.length + 2} className="p-3">
-                              <p className="mb-2 text-[10px] font-bold text-slate-500">Monthly breakdown for {row.breakdownYear}</p>
-                              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                                <table className={warrantyNestedTableClass}>
-                                  <thead className="bg-slate-800 text-white">
-                                    <tr>
-                                      <th className={warrantyNestedCellClass}>Month</th>
-                                      {data.matrix!.statuses.map((item) => <th key={item} className={warrantyNestedCellClass}>{item}</th>)}
-                                      <th className={warrantyNestedCellClass}>Total</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {row.monthly.map((month) => (
-                                      <tr key={month.monthNumber} className="border-b border-slate-100">
-                                        <td className={cn(warrantyNestedCellClass, 'font-black')}>{month.month}</td>
-                                        {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(month.amounts[item])}</td>)}
-                                        <td className={cn(warrantyNestedCellClass, 'font-mono font-black')}>{money(month.total)}</td>
-                                      </tr>
-                                    ))}
-                                    <tr className="bg-slate-100 font-black">
-                                      <td className={warrantyNestedCellClass}>{row.breakdownYear} Total</td>
-                                      {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.currentYearAmounts[item])}</td>)}
-                                      <td className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.currentYearTotal)}</td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
+                        {groupExpanded && group.dealers.map((row) => {
+                          const dealerExpanded = expandedDealer === row.dealerCode
+                          return (
+                            <Fragment key={row.dealerCode}>
+                              <tr className="border-b border-slate-100">
+                                <td className={cn(warrantyTdClass, 'pl-8')}>
+                                  <Button
+                                    size="sm"
+                                    className={cn(actionButtonClass, 'mx-auto text-xs', dealerExpanded && activeActionButtonClass)}
+                                    onClick={() => setExpandedDealer(dealerExpanded ? null : row.dealerCode)}
+                                  >
+                                    {dealerExpanded ? <ChevronDown /> : <ChevronRight />}
+                                    {row.dealerName} ({row.dealerCode})
+                                  </Button>
+                                </td>
+                                {data.matrix!.statuses.map((item, index) => (
+                                  <td key={item} className={cn(warrantyTdClass, 'font-mono font-black', index === 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700')}>
+                                    {money(row.amounts[item])}
+                                  </td>
+                                ))}
+                                <td className={cn(warrantyTdClass, 'font-mono font-black text-slate-950')}>{money(row.total)}</td>
+                              </tr>
+                              {dealerExpanded && (
+                                <tr className="border-b border-slate-200 bg-slate-50">
+                                  <td colSpan={data.matrix!.statuses.length + 2} className="p-3">
+                                    <p className="mb-2 text-[10px] font-bold text-slate-500">Monthly breakdown for {row.breakdownYear}</p>
+                                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                                      <table className={warrantyNestedTableClass}>
+                                        <thead className="bg-slate-800 text-white">
+                                          <tr>
+                                            <th className={warrantyNestedCellClass}>Month</th>
+                                            {data.matrix!.statuses.map((item) => <th key={item} className={warrantyNestedCellClass}>{item}</th>)}
+                                            <th className={warrantyNestedCellClass}>Total</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {row.monthly.map((month) => (
+                                            <tr key={month.monthNumber} className="border-b border-slate-100">
+                                              <td className={cn(warrantyNestedCellClass, 'font-black')}>{month.month}</td>
+                                              {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(month.amounts[item])}</td>)}
+                                              <td className={cn(warrantyNestedCellClass, 'font-mono font-black')}>{money(month.total)}</td>
+                                            </tr>
+                                          ))}
+                                          <tr className="bg-slate-100 font-black">
+                                            <td className={warrantyNestedCellClass}>{row.breakdownYear} Total</td>
+                                            {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.currentYearAmounts[item])}</td>)}
+                                            <td className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.currentYearTotal)}</td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          )
+                        })}
                       </Fragment>
                     )
                   })}
@@ -660,11 +701,11 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                         key={item}
                         className={cn(warrantyFooterClass, 'font-mono')}
                       >
-                        {money(data.matrix!.rows.reduce((sum, row) => sum + Number(row.amounts[item] || 0), 0))}
+                        {money(data.matrix!.groups.reduce((sum, group) => sum + Number(group.amounts[item] || 0), 0))}
                       </td>
                     ))}
                     <td className="border-t-2 border-[var(--dashboard-primary-border)] bg-[var(--dashboard-action-hover)] px-3 py-2.5 text-center font-mono font-black text-[var(--dashboard-action-fg)]">
-                      {money(data.matrix.rows.reduce((sum, row) => sum + Number(row.total || 0), 0))}
+                      {money(data.matrix.groups.reduce((sum, group) => sum + Number(group.total || 0), 0))}
                     </td>
                   </tr>
                 </tfoot>

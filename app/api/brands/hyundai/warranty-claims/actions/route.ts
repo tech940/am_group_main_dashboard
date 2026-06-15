@@ -10,6 +10,7 @@ import {
   type HyundaiWarrantySource,
   warrantyRecordKey,
 } from '@/lib/hyundai/warranty-claims'
+import { isAllowedHyundaiWarrantyDealer } from '@/lib/hyundai/warranty-dealers'
 import {
   deleteWarrantyEvidence,
   uploadWarrantyEvidence,
@@ -60,6 +61,13 @@ export async function GET(request: Request) {
   const permission = await requirePermission(appUser, permissionKey(source, 'view'))
   if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
   if (!recordKey) return NextResponse.json({ error: 'recordKey is required' }, { status: 400 })
+
+  const record = await findRecord(source, recordKey)
+  if (!record) return NextResponse.json({ error: 'Source record was not found or has changed' }, { status: 404 })
+  const dealerCode = String(record.source_dealer_code || '').trim().toUpperCase()
+  if (!isAllowedHyundaiWarrantyDealer(dealerCode)) {
+    return NextResponse.json({ error: 'This dealer is not available in Hyundai warranty' }, { status: 403 })
+  }
 
   const actions = resultRows(await db.execute(sql`
     SELECT id, requirement_code, status_snapshot, business_date_snapshot, remark,
@@ -115,6 +123,10 @@ export async function POST(request: Request) {
 
   const record = await findRecord(source, recordKey)
   if (!record) return NextResponse.json({ error: 'Source record was not found or has changed' }, { status: 404 })
+  const dealerCode = String(record.source_dealer_code || '').trim().toUpperCase()
+  if (!isAllowedHyundaiWarrantyDealer(dealerCode)) {
+    return NextResponse.json({ error: 'This dealer is not available in Hyundai warranty' }, { status: 403 })
+  }
   const status = String(source === 'ytp' ? record.r_o_status || '' : record.status || '').trim()
   const businessDate = dateKey(source === 'ytp' ? record.r_o_date : record.claim_date)
   const requirement = getWarrantyRequirement(source, status, businessDate)
