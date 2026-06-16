@@ -6,8 +6,11 @@ import { hyundaiWarrantyClaimActions, hyundaiWarrantyClaimEvidence } from '@/lib
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requirePermission } from '@/lib/permissions/service'
 import {
+  findWarrantySourceRecord,
   getWarrantyRequirement,
   hyundaiWarrantyBaseCacheKey,
+  claimListActionJoinSql,
+  ytpActionJoinSql,
   type HyundaiWarrantySource,
 } from '@/lib/hyundai/warranty-claims'
 import { isAllowedHyundaiWarrantyDealer } from '@/lib/hyundai/warranty-dealers'
@@ -40,59 +43,44 @@ function dateKey(value: unknown) {
   return String(value).slice(0, 10)
 }
 
-async function findRecord(source: HyundaiWarrantySource, recordKey: string) {
-  if (source === 'claim_list') {
-    const claimNo = recordKey.replace(/^CLAIM\|/i, '').trim()
-    if (!claimNo) return null
-    const result = await db.execute(sql`
-      SELECT claim_no, claim_date, status, source_dealer_code
-      FROM hyundai_warranty_claim_list
-      WHERE UPPER(TRIM(claim_no)) = ${claimNo.toUpperCase()}
-      LIMIT 1
-    `)
-    return resultRows(result)[0] || null
-  }
-
-  const parts = recordKey.split('|')
-  if (parts.length < 6 || parts[0] !== 'YTP') return null
-  const [, dealerCode, roNo, vin, claimType, campaignNo] = parts
-  const result = await db.execute(sql`
-    SELECT source_dealer_code, r_o_no, r_o_date, claim_type, r_o_status, vin, campaign_no
-    FROM hyundai_warranty_claim_ytp
-    WHERE UPPER(TRIM(source_dealer_code)) = ${dealerCode}
-      AND UPPER(TRIM(r_o_no)) = ${roNo}
-      AND UPPER(TRIM(vin)) = ${vin}
-      AND UPPER(TRIM(claim_type)) = ${claimType}
-      AND UPPER(TRIM(campaign_no)) = ${campaignNo}
-    LIMIT 1
-  `)
-  return resultRows(result)[0] || null
-}
-
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { searchParams } = new URL(request.url)
   const source = sourceFrom(searchParams.get('source'))
   const recordKey = String(searchParams.get('recordKey') || '').trim()
+  const sourceRowId = String(searchParams.get('sourceRowId') || '').trim()
   const permission = await requirePermission(appUser, permissionKey(source, 'view'))
   if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
-  if (!recordKey) return NextResponse.json({ error: 'recordKey is required' }, { status: 400 })
+  if (!recordKey && !sourceRowId) {
+    return NextResponse.json({ error: 'recordKey or sourceRowId is required' }, { status: 400 })
+  }
 
-  const record = await findRecord(source, recordKey)
+  const record = await findWarrantySourceRecord(source, { sourceRowId, recordKey })
   if (!record) return NextResponse.json({ error: 'Source record was not found or has changed' }, { status: 404 })
   const dealerCode = String(record.source_dealer_code || '').trim().toUpperCase()
   if (!isAllowedHyundaiWarrantyDealer(dealerCode)) {
     return NextResponse.json({ error: 'This dealer is not available in Hyundai warranty' }, { status: 403 })
   }
 
-  const actions = resultRows(await db.execute(sql`
-    SELECT id, requirement_code, status_snapshot, business_date_snapshot, remark,
-      docket_number, created_by_name, created_by_email, created_by_role, created_at
-    FROM hyundai_warranty_claim_actions
-    WHERE source_type = ${source} AND record_key = ${recordKey}
-    ORDER BY created_at DESC
-  `))
+  const resolvedRowId = String(record.id)
+  const actions = source === 'claim_list'
+    ? resultRows(await db.execute(sql`
+        SELECT a.id, a.requirement_code, a.status_snapshot, a.business_date_snapshot, a.remark,
+          a.docket_number, a.created_by_name, a.created_by_email, a.created_by_role, a.created_at
+        FROM hyundai_warranty_claim_actions a
+        INNER JOIN hyundai_warranty_claim_list l ON ${claimListActionJoinSql}
+        WHERE l.id::text = ${resolvedRowId}
+        ORDER BY a.created_at DESC
+      `))
+    : resultRows(await db.execute(sql`
+        SELECT a.id, a.requirement_code, a.status_snapshot, a.business_date_snapshot, a.remark,
+          a.docket_number, a.created_by_name, a.created_by_email, a.created_by_role, a.created_at
+        FROM hyundai_warranty_claim_actions a
+        INNER JOIN hyundai_warranty_claim_ytp y ON ${ytpActionJoinSql}
+        WHERE y.id::text = ${resolvedRowId}
+        ORDER BY a.created_at DESC
+      `))
   const actionIds = actions.map((action) => String(action.id))
   const evidence = actionIds.length > 0 ? resultRows(await db.execute(sql`
     SELECT id, action_id, original_name, content_type, size_bytes, created_at
@@ -126,10 +114,13 @@ export async function POST(request: Request) {
   if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
 
   const recordKey = String(formData.get('recordKey') || '').trim()
+  const sourceRowId = String(formData.get('sourceRowId') || '').trim()
   const remark = String(formData.get('remark') || '').trim()
   const docketNumber = String(formData.get('docketNumber') || '').trim()
   const files = formData.getAll('files').filter((value): value is File => value instanceof File && value.size > 0)
-  if (!recordKey || !remark) return NextResponse.json({ error: 'Record and remarks are required' }, { status: 400 })
+  if ((!recordKey && !sourceRowId) || !remark) {
+    return NextResponse.json({ error: 'Record and remarks are required' }, { status: 400 })
+  }
   if (files.length > WARRANTY_MAX_FILES) return NextResponse.json({ error: `Maximum ${WARRANTY_MAX_FILES} images allowed` }, { status: 400 })
   if (files.some((file) => !WARRANTY_ALLOWED_IMAGE_TYPES.has(file.type))) {
     return NextResponse.json({ error: 'Only JPEG, PNG, and WebP images are allowed' }, { status: 400 })
@@ -138,12 +129,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Each image must be 10MB or smaller' }, { status: 400 })
   }
 
-  const record = await findRecord(source, recordKey)
+  const record = await findWarrantySourceRecord(source, { sourceRowId, recordKey })
   if (!record) return NextResponse.json({ error: 'Source record was not found or has changed' }, { status: 404 })
   const dealerCode = String(record.source_dealer_code || '').trim().toUpperCase()
   if (!isAllowedHyundaiWarrantyDealer(dealerCode)) {
     return NextResponse.json({ error: 'This dealer is not available in Hyundai warranty' }, { status: 403 })
   }
+  const canonicalRecordKey = record.recordKey
   const status = String(source === 'ytp' ? record.r_o_status || '' : record.status || '').trim()
   const businessDate = dateKey(source === 'ytp' ? record.r_o_date : record.claim_date)
   const requirement = getWarrantyRequirement(source, status, businessDate)
@@ -164,7 +156,7 @@ export async function POST(request: Request) {
       await tx.insert(hyundaiWarrantyClaimActions).values({
         id: actionId,
         sourceType: source,
-        recordKey,
+        recordKey: canonicalRecordKey,
         requirementCode: requirement.code || 'general_remark',
         statusSnapshot: status,
         businessDateSnapshot: businessDate || null,
@@ -187,7 +179,19 @@ export async function POST(request: Request) {
       }
     })
     await invalidateCache(hyundaiWarrantyBaseCacheKey(source))
-    return NextResponse.json({ id: actionId, message: 'Remarks saved successfully' }, { status: 201 })
+    return NextResponse.json({
+      id: actionId,
+      message: 'Remarks saved successfully',
+      sourceRowId: String(record.id),
+      remarkCount: null,
+      latestRemark: {
+        remark,
+        docketNumber: docketNumber || null,
+        createdByName: appUser.fullName,
+        createdByRole: appUser.role,
+        createdAt: new Date().toISOString(),
+      },
+    }, { status: 201 })
   } catch (error) {
     await deleteWarrantyEvidence(uploadedPaths)
     console.error('Failed to save Hyundai warranty action:', error)

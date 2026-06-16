@@ -103,17 +103,23 @@ type Payload = {
       label: string
       dealerCodes: string[]
       amounts: Record<string, number>
+      counts: Record<string, number>
       total: number
+      countTotal: number
       dealers: Array<{
         dealerCode: string
         dealerName: string
         amounts: Record<string, number>
+        counts: Record<string, number>
         total: number
+        countTotal: number
         monthly: Array<{
           month: string
           monthNumber: number
           amounts: Record<string, number>
+          counts: Record<string, number>
           total: number
+          countTotal: number
         }>
       }>
     }>
@@ -198,6 +204,21 @@ function money(value: unknown) {
 
 function number(value: unknown) {
   return new Intl.NumberFormat('en-IN').format(Number(value || 0))
+}
+
+type MatrixViewMode = 'amount' | 'count'
+
+function formatMatrixValue(
+  mode: MatrixViewMode,
+  amounts: Record<string, number>,
+  counts: Record<string, number>,
+  status: string,
+) {
+  return mode === 'amount' ? money(amounts[status]) : number(counts[status])
+}
+
+function formatMatrixTotal(mode: MatrixViewMode, total: number, countTotal: number) {
+  return mode === 'amount' ? money(total) : number(countTotal)
 }
 
 function formatDate(value: unknown) {
@@ -465,6 +486,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   const [files, setFiles] = useState<File[]>([])
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
   const [expandedDealer, setExpandedDealer] = useState<string | null>(null)
+  const [matrixViewMode, setMatrixViewMode] = useState<MatrixViewMode>('amount')
   const queryString = useMemo(() => buildQuery(source, appliedFilters), [appliedFilters, source])
 
   const { data, isPending, isFetching, error } = useQuery<Payload>({
@@ -487,8 +509,10 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   }, [isFetching, isPending])
 
   const historyQuery = useQuery<HistoryPayload>({
-    queryKey: ['hyundai-warranty-history', source, historyRow?.recordKey],
-    queryFn: () => fetch(`/api/brands/hyundai/warranty-claims/actions?source=${source}&recordKey=${encodeURIComponent(historyRow!.recordKey)}`).then(readJson<HistoryPayload>),
+    queryKey: ['hyundai-warranty-history', source, historyRow?.recordKey, historyRow?.id],
+    queryFn: () => fetch(
+      `/api/brands/hyundai/warranty-claims/actions?source=${source}&recordKey=${encodeURIComponent(historyRow!.recordKey)}&sourceRowId=${encodeURIComponent(String(historyRow!.id))}`,
+    ).then(readJson<HistoryPayload>),
     enabled: Boolean(historyRow),
   })
 
@@ -498,16 +522,53 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
       const form = new FormData()
       form.set('source', source)
       form.set('recordKey', actionRow.recordKey)
+      form.set('sourceRowId', String(actionRow.id))
       form.set('remark', remark)
       form.set('docketNumber', docketNumber)
       files.forEach((file) => form.append('files', file))
-      return fetch('/api/brands/hyundai/warranty-claims/actions', { method: 'POST', body: form }).then(readJson)
+      return fetch('/api/brands/hyundai/warranty-claims/actions', { method: 'POST', body: form }).then(readJson<{
+        id: string
+        message: string
+        sourceRowId?: string
+        latestRemark?: WarrantyRow['latestRemark']
+      }>)
     },
-    onSuccess: async () => {
+    onSuccess: async (response) => {
+      const savedRow = actionRow
+      const savedRowId = String(response.sourceRowId || savedRow?.id || '')
+      const savedRemark = response.latestRemark
+
       setActionRow(null)
       setRemark('')
       setDocketNumber('')
       setFiles([])
+
+      if (savedRowId && savedRemark) {
+        queryClient.setQueryData<Payload>(['hyundai-warranty-claims', queryString], (current) => {
+          if (!current) return current
+          return {
+            ...current,
+            rows: current.rows.map((row) => {
+              if (String(row.id) !== savedRowId) return row
+              const nextRemarkCount = row.remarkCount + 1
+              const compliance = row.requirement.required ? 'complete' as const : row.compliance
+              return {
+                ...row,
+                remarkCount: nextRemarkCount,
+                latestRemark: savedRemark,
+                compliance,
+              }
+            }),
+            summary: {
+              ...current.summary,
+              overdueActions: savedRow?.compliance === 'action_required'
+                ? Math.max(0, current.summary.overdueActions - 1)
+                : current.summary.overdueActions,
+            },
+          }
+        })
+      }
+
       await queryClient.invalidateQueries({ queryKey: ['hyundai-warranty-claims'] })
       await queryClient.invalidateQueries({ queryKey: ['hyundai-warranty-history'] })
     },
@@ -748,12 +809,28 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
 
         {!isYtp && (
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
               <div>
                 <h2 className="text-lg font-black text-slate-950">Total Claim Amount</h2>
                 <p className="text-xs font-semibold text-slate-500">All years by default. Use the date filter to narrow the matrix. Expand a location for dealer codes, then expand a dealer for monthly breakdown.</p>
               </div>
-              <CalendarDays className="h-5 w-5 text-blue-700" />
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  className={cn(actionButtonClass, matrixViewMode === 'amount' && activeActionButtonClass)}
+                  onClick={() => setMatrixViewMode('amount')}
+                >
+                  <IndianRupee className="mr-1 h-3.5 w-3.5 shrink-0" /> Amount
+                </Button>
+                <Button
+                  size="sm"
+                  className={cn(actionButtonClass, matrixViewMode === 'count' && activeActionButtonClass)}
+                  onClick={() => setMatrixViewMode('count')}
+                >
+                  <BarChart3 className="mr-1 h-3.5 w-3.5 shrink-0" /> Count
+                </Button>
+                <CalendarDays className="h-5 w-5 text-blue-700" />
+              </div>
             </div>
             {showContentLoading ? (
               <WarrantyBlockSkeleton lines={8} />
@@ -807,10 +884,12 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                           </td>
                           {data.matrix!.statuses.map((item, index) => (
                             <td key={item} className={cn(warrantyTdClass, 'font-mono font-black', index === 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700')}>
-                              {money(group.amounts[item])}
+                              {formatMatrixValue(matrixViewMode, group.amounts, group.counts, item)}
                             </td>
                           ))}
-                          <td className={cn(warrantyTdClass, 'font-mono font-black text-slate-950')}>{money(group.total)}</td>
+                          <td className={cn(warrantyTdClass, 'font-mono font-black text-slate-950')}>
+                            {formatMatrixTotal(matrixViewMode, group.total, group.countTotal)}
+                          </td>
                         </tr>
                         {groupExpanded && group.dealers.map((row) => {
                           const dealerExpanded = expandedDealer === row.dealerCode
@@ -829,10 +908,12 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                                 </td>
                                 {data.matrix!.statuses.map((item, index) => (
                                   <td key={item} className={cn(warrantyTdClass, 'font-mono font-black', index === 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700')}>
-                                    {money(row.amounts[item])}
+                                    {formatMatrixValue(matrixViewMode, row.amounts, row.counts, item)}
                                   </td>
                                 ))}
-                                <td className={cn(warrantyTdClass, 'font-mono font-black text-slate-950')}>{money(row.total)}</td>
+                                <td className={cn(warrantyTdClass, 'font-mono font-black text-slate-950')}>
+                                  {formatMatrixTotal(matrixViewMode, row.total, row.countTotal)}
+                                </td>
                               </tr>
                               {dealerExpanded && (
                                 <tr className="border-b border-slate-200 bg-slate-50">
@@ -851,14 +932,26 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                                           {row.monthly.map((month) => (
                                             <tr key={month.monthNumber} className="border-b border-slate-100">
                                               <td className={cn(warrantyNestedCellClass, 'font-black')}>{month.month}</td>
-                                              {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(month.amounts[item])}</td>)}
-                                              <td className={cn(warrantyNestedCellClass, 'font-mono font-black')}>{money(month.total)}</td>
+                                              {data.matrix!.statuses.map((item) => (
+                                                <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>
+                                                  {formatMatrixValue(matrixViewMode, month.amounts, month.counts, item)}
+                                                </td>
+                                              ))}
+                                              <td className={cn(warrantyNestedCellClass, 'font-mono font-black')}>
+                                                {formatMatrixTotal(matrixViewMode, month.total, month.countTotal)}
+                                              </td>
                                             </tr>
                                           ))}
                                           <tr className="bg-slate-100 font-black">
                                             <td className={warrantyNestedCellClass}>All Years Total</td>
-                                            {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.amounts[item])}</td>)}
-                                            <td className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.total)}</td>
+                                            {data.matrix!.statuses.map((item) => (
+                                              <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>
+                                                {formatMatrixValue(matrixViewMode, row.amounts, row.counts, item)}
+                                              </td>
+                                            ))}
+                                            <td className={cn(warrantyNestedCellClass, 'font-mono')}>
+                                              {formatMatrixTotal(matrixViewMode, row.total, row.countTotal)}
+                                            </td>
                                           </tr>
                                         </tbody>
                                       </table>
@@ -883,11 +976,17 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                         key={item}
                         className={cn(warrantyFooterClass, 'font-mono')}
                       >
-                        {money(data.matrix!.groups.reduce((sum, group) => sum + Number(group.amounts[item] || 0), 0))}
+                        {matrixViewMode === 'amount'
+                          ? money(data.matrix!.groups.reduce((sum, group) => sum + Number(group.amounts[item] || 0), 0))
+                          : number(data.matrix!.groups.reduce((sum, group) => sum + Number(group.counts[item] || 0), 0))}
                       </td>
                     ))}
                     <td className="border-t-2 border-[var(--dashboard-primary-border)] bg-[var(--dashboard-action-hover)] px-3 py-2.5 text-center font-mono font-black text-[var(--dashboard-action-fg)]">
-                      {money(data.matrix.groups.reduce((sum, group) => sum + Number(group.total || 0), 0))}
+                      {formatMatrixTotal(
+                        matrixViewMode,
+                        data.matrix.groups.reduce((sum, group) => sum + Number(group.total || 0), 0),
+                        data.matrix.groups.reduce((sum, group) => sum + Number(group.countTotal || 0), 0),
+                      )}
                     </td>
                   </tr>
                 </tfoot>

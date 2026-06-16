@@ -12,6 +12,8 @@ import {
   warrantyRecordKey,
   WARRANTY_STATUS_ORDER,
   hyundaiWarrantyBaseCacheKey,
+  claimListActionJoinSql,
+  ytpActionJoinSql,
 } from '@/lib/hyundai/warranty-claims'
 import {
   HYUNDAI_WARRANTY_ALLOWED_DEALERS,
@@ -118,127 +120,186 @@ async function fetchMappings() {
 }
 
 type ActionSummaries = {
-  remarkCounts: Map<string, number>
-  latestByKey: Map<string, RawRow>
-  satisfactionKeys: Set<string>
+  remarkCountsByRowId: Map<string, number>
+  latestByRowId: Map<string, RawRow>
+  satisfactionKeysByRowId: Set<string>
 }
 
-function satisfactionKey(recordKey: string, requirementCode: unknown, statusSnapshot: unknown) {
-  return `${recordKey}|${normalizedText(requirementCode)}|${normalizedText(statusSnapshot)}`
+function rowSatisfactionKey(rowId: string, requirementCode: unknown, statusSnapshot: unknown) {
+  return `${rowId}|${normalizedText(requirementCode)}|${normalizedText(statusSnapshot)}`
 }
 
 async function fetchActionSummaries(source: HyundaiWarrantySource): Promise<ActionSummaries> {
+  if (source === 'claim_list') {
+    const [countRows, latestRows, satisfactionRows] = await Promise.all([
+      db.execute(sql`
+        SELECT l.id::text AS source_row_id, COUNT(a.id)::int AS remark_count
+        FROM hyundai_warranty_claim_actions a
+        INNER JOIN hyundai_warranty_claim_list l ON ${claimListActionJoinSql}
+        GROUP BY l.id
+      `),
+      db.execute(sql`
+        SELECT DISTINCT ON (l.id)
+          l.id::text AS source_row_id, a.remark, a.docket_number,
+          a.created_by_name, a.created_by_role, a.created_at
+        FROM hyundai_warranty_claim_actions a
+        INNER JOIN hyundai_warranty_claim_list l ON ${claimListActionJoinSql}
+        ORDER BY l.id, a.created_at DESC
+      `),
+      db.execute(sql`
+        SELECT l.id::text AS source_row_id, a.requirement_code, a.status_snapshot
+        FROM hyundai_warranty_claim_actions a
+        INNER JOIN hyundai_warranty_claim_list l ON ${claimListActionJoinSql}
+        GROUP BY l.id, a.requirement_code, a.status_snapshot
+      `),
+    ])
+
+    const remarkCountsByRowId = new Map<string, number>()
+    rows(countRows).forEach((row) => {
+      remarkCountsByRowId.set(text(row.source_row_id), num(row.remark_count))
+    })
+
+    const latestByRowId = new Map<string, RawRow>()
+    rows(latestRows).forEach((row) => {
+      latestByRowId.set(text(row.source_row_id), row)
+    })
+
+    const satisfactionKeysByRowId = new Set<string>()
+    rows(satisfactionRows).forEach((row) => {
+      satisfactionKeysByRowId.add(rowSatisfactionKey(
+        text(row.source_row_id),
+        row.requirement_code,
+        row.status_snapshot,
+      ))
+    })
+
+    return { remarkCountsByRowId, latestByRowId, satisfactionKeysByRowId }
+  }
+
   const [countRows, latestRows, satisfactionRows] = await Promise.all([
     db.execute(sql`
-      SELECT record_key, COUNT(*)::int AS remark_count
-      FROM hyundai_warranty_claim_actions
-      WHERE source_type = ${source}
-      GROUP BY record_key
+      SELECT y.id::text AS source_row_id, COUNT(a.id)::int AS remark_count
+      FROM hyundai_warranty_claim_actions a
+      INNER JOIN hyundai_warranty_claim_ytp y ON ${ytpActionJoinSql}
+      GROUP BY y.id
     `),
     db.execute(sql`
-      SELECT DISTINCT ON (record_key)
-        record_key, requirement_code, status_snapshot, remark, docket_number,
-        created_by_name, created_by_role, created_at
-      FROM hyundai_warranty_claim_actions
-      WHERE source_type = ${source}
-      ORDER BY record_key, created_at DESC
+      SELECT DISTINCT ON (y.id)
+        y.id::text AS source_row_id, a.remark, a.docket_number,
+        a.created_by_name, a.created_by_role, a.created_at
+      FROM hyundai_warranty_claim_actions a
+      INNER JOIN hyundai_warranty_claim_ytp y ON ${ytpActionJoinSql}
+      ORDER BY y.id, a.created_at DESC
     `),
     db.execute(sql`
-      SELECT record_key, requirement_code, status_snapshot
-      FROM hyundai_warranty_claim_actions
-      WHERE source_type = ${source}
-      GROUP BY record_key, requirement_code, status_snapshot
+      SELECT y.id::text AS source_row_id, a.requirement_code, a.status_snapshot
+      FROM hyundai_warranty_claim_actions a
+      INNER JOIN hyundai_warranty_claim_ytp y ON ${ytpActionJoinSql}
+      GROUP BY y.id, a.requirement_code, a.status_snapshot
     `),
   ])
 
-  const remarkCounts = new Map<string, number>()
+  const remarkCountsByRowId = new Map<string, number>()
   rows(countRows).forEach((row) => {
-    remarkCounts.set(text(row.record_key), num(row.remark_count))
+    remarkCountsByRowId.set(text(row.source_row_id), num(row.remark_count))
   })
 
-  const latestByKey = new Map<string, RawRow>()
+  const latestByRowId = new Map<string, RawRow>()
   rows(latestRows).forEach((row) => {
-    latestByKey.set(text(row.record_key), row)
+    latestByRowId.set(text(row.source_row_id), row)
   })
 
-  const satisfactionKeys = new Set<string>()
+  const satisfactionKeysByRowId = new Set<string>()
   rows(satisfactionRows).forEach((row) => {
-    satisfactionKeys.add(satisfactionKey(
-      text(row.record_key),
+    satisfactionKeysByRowId.add(rowSatisfactionKey(
+      text(row.source_row_id),
       row.requirement_code,
       row.status_snapshot,
     ))
   })
 
-  return { remarkCounts, latestByKey, satisfactionKeys }
+  return { remarkCountsByRowId, latestByRowId, satisfactionKeysByRowId }
 }
 
 type WarrantyBaseCache = {
-  scoped: EnrichedRow[]
+  rawRows: RawRow[]
   dealers: string[]
   statuses: string[]
   claimTypes: string[]
   dealerNames: Record<string, string>
 }
 
+function enrichRows(
+  rawRows: RawRow[],
+  mappings: Map<string, string>,
+  actionSummaries: ActionSummaries,
+  source: HyundaiWarrantySource,
+): EnrichedRow[] {
+  return rawRows.map((row) => {
+    const rowId = String(row.id)
+    const recordKey = warrantyRecordKey(source, row)
+    const status = text(source === 'ytp' ? row.r_o_status : row.status)
+    const businessDate = resolveWarrantyBusinessDate(source, row)
+    const requirement = getWarrantyRequirement(source, status, businessDate)
+    const latestAction = actionSummaries.latestByRowId.get(rowId)
+    const matchingAction = requirement.required && requirement.code
+      ? actionSummaries.satisfactionKeysByRowId.has(rowSatisfactionKey(rowId, requirement.code, status))
+      : true
+    const dealerCode = text(row.source_dealer_code).toUpperCase() || 'UNMAPPED'
+    return {
+      ...row,
+      id: rowId,
+      uploaded_at: row.uploaded_at ? String(row.uploaded_at) : null,
+      recordKey,
+      dealerCode,
+      dealerName: mappings.get(dealerCode) || dealerCode,
+      status,
+      statusBucket: statusBucket(status),
+      businessDate,
+      requirement,
+      compliance: requirement.required
+        ? (matchingAction ? 'complete' as const : 'action_required' as const)
+        : 'not_required' as const,
+      remarkCount: actionSummaries.remarkCountsByRowId.get(rowId) || 0,
+      latestRemark: latestAction ? {
+        remark: text(latestAction.remark),
+        docketNumber: text(latestAction.docket_number) || null,
+        createdByName: text(latestAction.created_by_name),
+        createdByRole: text(latestAction.created_by_role),
+        createdAt: String(latestAction.created_at),
+      } : null,
+    }
+  })
+}
+
 function warrantyCacheKey(source: HyundaiWarrantySource) {
   return hyundaiWarrantyBaseCacheKey(source)
 }
 
-async function loadWarrantyBase(source: HyundaiWarrantySource): Promise<WarrantyBaseCache> {
-  return getCachedData(
+async function loadWarrantyBase(source: HyundaiWarrantySource): Promise<WarrantyBaseCache & { scoped: EnrichedRow[] }> {
+  const cached = await getCachedData(
     warrantyCacheKey(source),
     async () => {
-      const [rawRows, mappings, actionSummaries] = await Promise.all([
+      const [rawRows, mappings] = await Promise.all([
         fetchSourceRows(source),
         fetchMappings(),
-        fetchActionSummaries(source),
       ])
 
-      const scoped: EnrichedRow[] = rawRows.map((row) => {
-        const recordKey = warrantyRecordKey(source, row)
-        const status = text(source === 'ytp' ? row.r_o_status : row.status)
-        const businessDate = resolveWarrantyBusinessDate(source, row)
-        const requirement = getWarrantyRequirement(source, status, businessDate)
-        const latestAction = actionSummaries.latestByKey.get(recordKey)
-        const matchingAction = requirement.required && requirement.code
-          ? actionSummaries.satisfactionKeys.has(satisfactionKey(recordKey, requirement.code, status))
-          : true
-        const dealerCode = text(row.source_dealer_code).toUpperCase() || 'UNMAPPED'
-        return {
-          ...row,
-          id: String(row.id),
-          uploaded_at: row.uploaded_at ? String(row.uploaded_at) : null,
-          recordKey,
-          dealerCode,
-          dealerName: mappings.get(dealerCode) || dealerCode,
-          status,
-          statusBucket: statusBucket(status),
-          businessDate,
-          requirement,
-          compliance: requirement.required
-            ? (matchingAction ? 'complete' as const : 'action_required' as const)
-            : 'not_required' as const,
-          remarkCount: actionSummaries.remarkCounts.get(recordKey) || 0,
-          latestRemark: latestAction ? {
-            remark: text(latestAction.remark),
-            docketNumber: text(latestAction.docket_number) || null,
-            createdByName: text(latestAction.created_by_name),
-            createdByRole: text(latestAction.created_by_role),
-            createdAt: String(latestAction.created_at),
-          } : null,
-        }
-      })
-
-      const dealers = [...new Set(scoped.map((row) => row.dealerCode))].sort()
-      const statuses = [...new Set(scoped.map((row) => row.status).filter(Boolean))].sort()
-      const claimTypes = [...new Set(scoped.map((row) => text(row.claim_type)).filter(Boolean))].sort()
+      const dealers = [...new Set(rawRows.map((row) => text(row.source_dealer_code).toUpperCase()).filter(Boolean))].sort()
+      const statuses = [...new Set(rawRows.map((row) => text(source === 'ytp' ? row.r_o_status : row.status)).filter(Boolean))].sort()
+      const claimTypes = [...new Set(rawRows.map((row) => text(row.claim_type)).filter(Boolean))].sort()
       const dealerNames = Object.fromEntries([...mappings.entries()])
 
-      return { scoped, dealers, statuses, claimTypes, dealerNames }
+      return { rawRows, dealers, statuses, claimTypes, dealerNames }
     },
     WARRANTY_CACHE_TTL_SECONDS,
   )
+
+  const mappings = new Map(Object.entries(cached.dealerNames))
+  const actionSummaries = await fetchActionSummaries(source)
+  const scoped = enrichRows(cached.rawRows, mappings, actionSummaries, source)
+
+  return { ...cached, scoped }
 }
 
 function statusBucket(status: string) {
@@ -280,6 +341,23 @@ function sumStatusAmounts(rows: EnrichedRow[], relevantStatuses: string[]) {
   return { amounts: totals, total }
 }
 
+function sumStatusCounts(rows: EnrichedRow[], relevantStatuses: string[]) {
+  const totals = Object.fromEntries(relevantStatuses.map((bucket) => [bucket, 0]))
+  let total = 0
+  for (const row of rows) {
+    total += 1
+    if (totals[row.statusBucket] != null) totals[row.statusBucket] += 1
+  }
+  return { counts: totals, countTotal: total }
+}
+
+function sumCountMaps(rows: Array<Record<string, number>>, statuses: string[]) {
+  return Object.fromEntries(statuses.map((bucket) => [
+    bucket,
+    rows.reduce((sum, row) => sum + num(row[bucket]), 0),
+  ]))
+}
+
 function buildMatrixDealerRow(
   code: string,
   dealerRows: EnrichedRow[] | undefined,
@@ -289,6 +367,7 @@ function buildMatrixDealerRow(
   if (!dealerRows?.length) return null
 
   const { amounts, total } = sumStatusAmounts(dealerRows, relevantStatuses)
+  const { counts, countTotal } = sumStatusCounts(dealerRows, relevantStatuses)
   const rowsByMonth = Array.from({ length: 12 }, () => [] as EnrichedRow[])
   for (const row of dealerRows) {
     const monthNumber = Number(row.businessDate?.slice(5, 7))
@@ -299,15 +378,20 @@ function buildMatrixDealerRow(
     dealerCode: code,
     dealerName: mappings.get(code) || code,
     amounts,
+    counts,
     total,
+    countTotal,
     monthly: rowsByMonth.map((monthRows, index) => {
       const monthNumber = index + 1
       const monthTotals = sumStatusAmounts(monthRows, relevantStatuses)
+      const monthCounts = sumStatusCounts(monthRows, relevantStatuses)
       return {
         month: monthLabel(monthNumber),
         monthNumber,
         amounts: monthTotals.amounts,
+        counts: monthCounts.counts,
         total: monthTotals.total,
+        countTotal: monthCounts.countTotal,
       }
     }),
   }
@@ -527,12 +611,15 @@ export async function GET(request: Request) {
       if (dealersInGroup.length === 0) return null
 
       const groupAmountRows = dealersInGroup.map((dealer) => dealer.amounts)
+      const groupCountRows = dealersInGroup.map((dealer) => dealer.counts)
       return {
         key: group.key,
         label: group.label,
         dealerCodes: dealersInGroup.map((dealer) => dealer.dealerCode),
         amounts: sumAmountMaps(groupAmountRows, relevantStatuses),
+        counts: sumCountMaps(groupCountRows, relevantStatuses),
         total: dealersInGroup.reduce((sum, dealer) => sum + dealer.total, 0),
+        countTotal: dealersInGroup.reduce((sum, dealer) => sum + dealer.countTotal, 0),
         dealers: dealersInGroup,
       }
     }).filter((group): group is NonNullable<typeof group> => Boolean(group)),
