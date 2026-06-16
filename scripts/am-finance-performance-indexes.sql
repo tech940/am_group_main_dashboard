@@ -19,7 +19,9 @@ create index concurrently if not exists finance_sheet_bank_login_idx
 create index concurrently if not exists finance_sheet_bank_in_proforma_idx
   on public.finance_sheet (bank_in_proforma);
 
-create extension if not exists pg_trgm;
+create schema if not exists extensions;
+create extension if not exists pg_trgm with schema extensions;
+grant usage on schema extensions to postgres, anon, authenticated, service_role;
 
 drop index concurrently if exists public.finance_sheet_search_trgm_idx;
 

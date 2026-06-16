@@ -438,7 +438,10 @@ CREATE OR REPLACE FUNCTION log_workflow_action(
     p_new_status TEXT DEFAULT NULL,
     p_metadata JSONB DEFAULT '{}'::jsonb
 )
-RETURNS UUID AS $$
+RETURNS UUID
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 DECLARE
     v_history_id UUID;
 BEGIN
@@ -466,7 +469,7 @@ BEGIN
     
     RETURN v_history_id;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- Grant permissions
 GRANT EXECUTE ON FUNCTION log_workflow_action TO authenticated;

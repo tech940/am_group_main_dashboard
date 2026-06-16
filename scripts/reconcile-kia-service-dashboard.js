@@ -22,6 +22,8 @@ const EXPECTED = {
   ewMtd: 2,
   alignmentCount: 48,
   balancingCount: 41,
+  alignmentLabour: 30212,
+  balancingLabour: 25417,
   engineOilMtd: 262,
   avgLabourPerRo: 4137,
   labourPerRoWithoutVas: 3719,
@@ -71,6 +73,14 @@ function runBuildMetrics() {
       metrics.alignmentCount = alignment
       metrics.balancingCount = balancing
     }
+    if (line.startsWith('alignment labour:')) {
+      const [alignmentLabour, balancingLabour] = line
+        .replace('alignment labour:', '')
+        .split('balancing labour:')
+        .map((v) => Number(v.trim()))
+      metrics.alignmentLabour = alignmentLabour
+      metrics.balancingLabour = balancingLabour
+    }
     if (line.startsWith('engine oil MTD:')) metrics.engineOilMtd = Number(line.split(':')[1].trim())
     if (line.startsWith('VAS amount:')) metrics.vasAmount = Number(line.split(':')[1].trim())
     if (line.startsWith('average RO:')) metrics.averageRo = Number(line.split(':')[1].trim())
@@ -109,14 +119,16 @@ async function main() {
   ok &= compare('RSA MTD', metrics.rsaMtd || 0, EXPECTED.rsaMtd)
   ok &= compare('MCP MTD', metrics.mcpMtd || 0, EXPECTED.mcpMtd)
   ok &= compare('E/W MTD', metrics.ewMtd || 0, EXPECTED.ewMtd)
-  ok &= compare('Alignment count', Math.round(metrics.alignmentCount || 0), EXPECTED.alignmentCount, 1)
-  ok &= compare('Balancing count', Math.round(metrics.balancingCount || 0), EXPECTED.balancingCount, 1)
+  ok &= compare('Alignment count', Math.round(metrics.alignmentCount || 0), EXPECTED.alignmentCount)
+  ok &= compare('Balancing count', Math.round(metrics.balancingCount || 0), EXPECTED.balancingCount)
+  ok &= compare('Alignment labour', Math.round(metrics.alignmentLabour || 0), EXPECTED.alignmentLabour)
+  ok &= compare('Balancing labour', Math.round(metrics.balancingLabour || 0), EXPECTED.balancingLabour)
 
   console.log('\n-- Derived --')
-  ok &= compare('Engine oil MTD', Math.round(metrics.engineOilMtd || 0), EXPECTED.engineOilMtd, 20)
+  ok &= compare('Engine oil MTD', Math.round(metrics.engineOilMtd || 0), EXPECTED.engineOilMtd)
   ok &= compare('Average RO', Math.round(metrics.averageRo || 0), EXPECTED.averageRo)
   ok &= compare('Avg labour / RO', Math.round(metrics.avgLabourPerRo || 0), EXPECTED.avgLabourPerRo, 5)
-  ok &= compare('Labour / RO w/o VAS', Math.round(metrics.labourPerRoWithoutVas || 0), EXPECTED.labourPerRoWithoutVas, 50)
+  ok &= compare('Labour / RO w/o VAS', Math.round(metrics.labourPerRoWithoutVas || 0), EXPECTED.labourPerRoWithoutVas, 5)
 
   if (metrics.vasAmount != null) {
     const impliedVas = EXPECTED.labourMtd - EXPECTED.labourPerRoWithoutVas * 134

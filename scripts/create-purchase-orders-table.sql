@@ -87,12 +87,15 @@ CREATE INDEX IF NOT EXISTS idx_purchase_orders_created_at ON purchase_orders(cre
 
 -- Create function to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_purchase_orders_updated_at()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- Create trigger to auto-update updated_at (drop if exists first)
 DROP TRIGGER IF EXISTS trigger_update_purchase_orders_updated_at ON purchase_orders;
@@ -103,7 +106,10 @@ CREATE TRIGGER trigger_update_purchase_orders_updated_at
 
 -- Create function to generate order number
 CREATE OR REPLACE FUNCTION generate_order_number()
-RETURNS TEXT AS $$
+RETURNS TEXT
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 DECLARE
   date_part TEXT;
   sequence_part TEXT;
@@ -121,7 +127,7 @@ BEGIN
   
   RETURN 'PO-' || date_part || '-' || sequence_part;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- Enable Row Level Security
 ALTER TABLE purchase_orders ENABLE ROW LEVEL SECURITY;

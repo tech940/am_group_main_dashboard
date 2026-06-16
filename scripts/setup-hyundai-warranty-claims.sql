@@ -50,3 +50,6 @@ INSERT INTO public.hyundai_warranty_dealer_mappings (dealer_code, dealer_name)
 SELECT code, code
 FROM unnest(ARRAY['N5203', 'N5216', 'N5804', 'N6844', 'N6845', 'N6847', 'N6848']) AS code
 ON CONFLICT (dealer_code) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_hyundai_warranty_claim_dealer_norm
+  ON public.hyundai_warranty_claim_list (upper(trim(source_dealer_code)));

@@ -3,7 +3,6 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { SidebarProvider } from "@/context/sidebar-context";
 import { DashboardQueryProvider } from "@/components/providers/query-provider";
-import Script from "next/script";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -46,12 +45,10 @@ export default function RootLayout({
       className={`${inter.variable} h-full antialiased`}
       suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className="min-h-full flex flex-col">
-        <Script
-          id="dashboard-theme-init"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: themeInitScript }}
-        />
         <NextTopLoader 
           color="var(--dashboard-primary)"
           initialPosition={0.08}

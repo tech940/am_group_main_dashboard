@@ -6,7 +6,15 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import { normalizeKiaDealerCode, type KiaDealerCode } from '@/lib/kia/dealer-branch'
+import {
+  activeBillStatusSql,
+  fetchEwRsaMcpCounts,
+  fetchWorkshopVasDetails,
+  openRoDealerFilter,
+  roBillingDealerFilter,
+  serviceCategoryExpression,
+} from '@/lib/kia/service-dashboard-metrics'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -23,7 +31,7 @@ type ComparisonParams = {
   comparisonEndDate: string | null
 }
 
-type DealerFilter = string | null
+type DealerFilter = KiaDealerCode | null
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
@@ -101,19 +109,9 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `kia:business-excellence:overview:v30:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v31:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
-}
-
-function activeBillStatusSql() {
-  return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`
-}
-
-function roBillingDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
-    : sql``
 }
 
 function complaintsDealerFilter(dealerCode: DealerFilter) {
@@ -122,36 +120,12 @@ function complaintsDealerFilter(dealerCode: DealerFilter) {
     : sql``
 }
 
-function openRoDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode ? sql`
-    AND EXISTS (
-      SELECT 1
-      FROM ro_billing_report rb
-      WHERE UPPER(TRIM(COALESCE(NULLIF(rb.dealer_code, ''), NULLIF(rb.main_dealer_code, '')))) = ${dealerCode}
-        AND (
-          (
-            NULLIF(TRIM(open_ro_yearly.vin), '') IS NOT NULL
-            AND UPPER(TRIM(COALESCE(rb.vin, ''))) = UPPER(TRIM(open_ro_yearly.vin))
-          )
-          OR (
-            NULLIF(TRIM(open_ro_yearly.reg_no), '') IS NOT NULL
-            AND UPPER(TRIM(COALESCE(rb.vehicle_reg_no, ''))) = UPPER(TRIM(open_ro_yearly.reg_no))
-          )
-        )
-    )
-  ` : sql``
+function openRoDealerKeysPrefix(_dealerCode: DealerFilter) {
+  return sql`WITH `
 }
 
-function operationDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(dealer_code, ''))) = ${dealerCode}`
-    : sql``
-}
-
-function advWiseVasDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(retail_dealer_code, '')))) = ${dealerCode}`
-    : sql``
+function openRoDealerSemiJoin(dealerCode: DealerFilter) {
+  return openRoDealerFilter(dealerCode)
 }
 
 function sameDateLastYear(value: string) {
@@ -232,114 +206,8 @@ function resolveOverviewComparisonRange(startDate: string, endDate: string, comp
   }
 }
 
-function ewDedupCountSql(startDate: string, endDate: string) {
-  return sql`
-    WITH dedup AS (
-      SELECT DISTINCT ON (
-        COALESCE(
-          NULLIF(TRIM(certi_no), ''),
-          NULLIF(CONCAT_WS(
-            '|',
-            NULLIF(TRIM(vin), ''),
-            NULLIF(TRIM(scheme_desc), ''),
-            reg_date::text,
-            COALESCE(kin_amt, 0)::text
-          ), ''),
-          id::text
-        )
-      )
-        COALESCE(
-          NULLIF(TRIM(certi_no), ''),
-          NULLIF(CONCAT_WS(
-            '|',
-            NULLIF(TRIM(vin), ''),
-            NULLIF(TRIM(scheme_desc), ''),
-            reg_date::text,
-            COALESCE(kin_amt, 0)::text
-          ), ''),
-          id::text
-        ) AS ew_key,
-        reg_date,
-        uploaded_at,
-        id
-      FROM ew_report
-      WHERE reg_date >= ${startDate}::date
-        AND reg_date < (${endDate}::date + INTERVAL '1 day')
-        AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
-      ORDER BY
-        COALESCE(
-          NULLIF(TRIM(certi_no), ''),
-          NULLIF(CONCAT_WS(
-            '|',
-            NULLIF(TRIM(vin), ''),
-            NULLIF(TRIM(scheme_desc), ''),
-            reg_date::text,
-            COALESCE(kin_amt, 0)::text
-          ), ''),
-          id::text
-        ),
-        uploaded_at DESC NULLS LAST,
-        id DESC
-    )
-    SELECT COUNT(*)::int AS count
-    FROM dedup
-  `
-}
-
-function rsaDedupKpiSql(startDate: string, endDate: string) {
-  return sql`
-    WITH dedup AS (
-      SELECT DISTINCT ON (
-        COALESCE(
-          NULLIF(TRIM(invoice_no), ''),
-          CONCAT_WS(
-            '|',
-            NULLIF(TRIM(vin_chasis_no), ''),
-            NULLIF(TRIM(policy_name), ''),
-            invoice_date::text,
-            COALESCE(total_amount, 0)::text
-          ),
-          id::text
-        )
-      )
-        COALESCE(
-          NULLIF(TRIM(invoice_no), ''),
-          CONCAT_WS(
-            '|',
-            NULLIF(TRIM(vin_chasis_no), ''),
-            NULLIF(TRIM(policy_name), ''),
-            invoice_date::text,
-            COALESCE(total_amount, 0)::text
-          ),
-          id::text
-        ) AS rsa_key,
-        invoice_date,
-        ${numericText(sql.raw('total_amount'))} AS total_amount,
-        uploaded_at,
-        id
-      FROM rsa_report
-      WHERE invoice_date::date >= ${startDate}::date
-        AND invoice_date::date < (${endDate}::date + INTERVAL '1 day')
-      ORDER BY
-        COALESCE(
-          NULLIF(TRIM(invoice_no), ''),
-          CONCAT_WS(
-            '|',
-            NULLIF(TRIM(vin_chasis_no), ''),
-            NULLIF(TRIM(policy_name), ''),
-            invoice_date::text,
-            COALESCE(total_amount, 0)::text
-          ),
-          id::text
-        ),
-        uploaded_at DESC NULLS LAST,
-        id DESC
-    )
-    SELECT
-      COUNT(*)::int AS count,
-      COALESCE(SUM(total_amount), 0)::float AS amount
-    FROM dedup
-  `
+async function fetchAddonKpis(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
+  return fetchEwRsaMcpCounts(startDate, endDate, dealerCode)
 }
 
 async function tableExists(tableName: string) {
@@ -373,18 +241,7 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
         bill_date::date AS report_date,
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
-        CASE
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
-            OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
-            THEN 'Accidental Repair'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
-            THEN 'Running Repair'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
-            THEN 'Free Service'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
-            THEN 'Paid Service'
-          ELSE COALESCE(NULLIF(work_type, ''), 'Others')
-        END AS service_category,
+        ${serviceCategoryExpression('work_type', 'service_type')} AS service_category,
         ${numericText(sql.raw('labour_amt'))} AS labour_amt,
         ${numericText(sql.raw('part_amt'))} AS part_amt,
         ${numericText(sql.raw('total_amt'))} AS total_amt
@@ -426,7 +283,8 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
 
 function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
   return sql`
-    WITH active AS (
+    ${openRoDealerKeysPrefix(dealerCode)}
+    active AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
         COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
         ro_date,
@@ -440,7 +298,7 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
       WHERE LOWER(COALESCE(status, '')) = 'open'
         AND ro_date >= ${startDate}::date
         AND ro_date < (${endDate}::date + INTERVAL '1 day')
-        ${openRoDealerFilter(dealerCode)}
+        ${openRoDealerSemiJoin(dealerCode)}
       ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
@@ -453,18 +311,7 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
           WHEN (CURRENT_DATE - ro_date)::int <= 15 THEN '8-15D'
           ELSE '>15D'
         END AS aging_bucket,
-        CASE
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
-            OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
-            THEN 'Accidental Repair'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
-            THEN 'Running Repair'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
-            THEN 'Free Service'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
-            THEN 'Paid Service'
-          ELSE COALESCE(NULLIF(work_type, ''), 'Others')
-        END AS service_category,
+        ${serviceCategoryExpression('work_type', 'service_type')} AS service_category,
         CASE
           WHEN promise_date IS NOT NULL AND CURRENT_DATE > promise_date THEN 'Delayed'
           ELSE 'On Track'
@@ -529,39 +376,6 @@ function complaintsBaseSql(startDate: string, endDate: string, dealerCode: Deale
   `
 }
 
-async function fetchAddonKpis(startDate: string, endDate: string) {
-  const [hasEw, hasMcp, hasRsa] = await Promise.all([
-    tableExists('ew_report'),
-    tableExists('mcp_report'),
-    tableExists('rsa_report'),
-  ])
-
-  const [ew, mcp, rsa] = await Promise.all([
-    hasEw
-      ? db.execute(ewDedupCountSql(startDate, endDate))
-      : Promise.resolve([{ count: 0 }] as NumericRow[]),
-    hasMcp
-      ? db.execute(sql`
-          SELECT COUNT(*)::int AS count
-          FROM mcp_report
-          WHERE package_purchase_date >= ${startDate}::date
-            AND package_purchase_date < (${endDate}::date + INTERVAL '1 day')
-            AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
-        `)
-      : Promise.resolve([{ count: 0 }] as NumericRow[]),
-    hasRsa
-      ? db.execute(rsaDedupKpiSql(startDate, endDate))
-      : Promise.resolve([{ count: 0, amount: 0 }] as NumericRow[]),
-  ])
-
-  return {
-    ewCount: numberValue(resultRows(ew)[0]?.count),
-    mcpCount: numberValue(resultRows(mcp)[0]?.count),
-    rsaCount: numberValue(resultRows(rsa)[0]?.count),
-    rsaAmount: numberValue(resultRows(rsa)[0]?.amount),
-  }
-}
-
 async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   const hasWorkshopSummary = await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode)
   const serviceRows = await db.execute(hasWorkshopSummary ? sql`
@@ -583,18 +397,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
       SELECT
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
         bill_date::date AS report_date,
-        CASE
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
-            OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
-            THEN 'Accidental Repair'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
-            THEN 'Running Repair'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
-            THEN 'Free Service'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
-            THEN 'Paid Service'
-          ELSE COALESCE(NULLIF(work_type, ''), 'Others')
-        END AS service_type,
+        ${serviceCategoryExpression('work_type', 'service_type')} AS service_type,
         ${numericText(sql.raw('labour_amt'))} AS labour_amt,
         ${numericText(sql.raw('part_amt'))} AS part_amt
       FROM ro_billing_report
@@ -637,7 +440,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     }
   })
 
-  const vasPeriod = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
+  const vasPeriod = await fetchWorkshopVasDetails(startDate, endDate, dealerCode)
   const totalJc = rows.reduce((sum, row) => sum + row.totalJc, 0)
   const labourAmount = rows.reduce((sum, row) => sum + row.labourAmount, 0)
   const partsAmount = rows.reduce((sum, row) => sum + row.partsAmount, 0)
@@ -713,195 +516,6 @@ function emptyWorkshopSnapshot() {
       vasAmount: number
     }>,
   })
-}
-
-async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  const hasOperationWise = await tableExists('operation_wise_analysis_report')
-  const hasInvoiceWise = await tableExists('adv_wise_lubricants_vas')
-
-  if (!hasOperationWise && !hasInvoiceWise) {
-    return {
-      amount: 0,
-      available: false,
-      unavailableReason: 'Workshop VAS source tables are unavailable',
-      source: null as string | null,
-      sourceTable: null as string | null,
-      periodStart: null as string | null,
-      periodEnd: null as string | null,
-      sourceRows: 0,
-    }
-  }
-
-  const vasFilter = sql`
-    (
-      description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
-      OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
-      OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
-      OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
-    )
-    AND description !~ '(painting[[:space:]-]*charges[[:space:]-]*s1|removal[[:space:]]*&[[:space:]]*refit[[:space:]-]*work[[:space:]-]*s1)'
-  `
-
-  if (hasOperationWise) {
-    const result = await db.execute(sql`
-      WITH operation_rows AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
-          COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
-          date_trunc('month', report_month::date)::date AS report_month,
-          report_period_start::date AS report_period_start,
-          report_period_end::date AS report_period_end,
-          report_type,
-          op_part_code,
-          op_part_desc,
-          dealer_code,
-          dealer_name,
-          ${numericText(sql.raw('total_amt'))} AS amount,
-          LOWER(COALESCE(op_part_desc, '')) AS description
-        FROM operation_wise_analysis_report
-        WHERE report_period_start = ${startDate}::date
-          AND report_period_end = ${endDate}::date
-          AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
-          ${operationDealerFilter(dealerCode)}
-        ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
-      )
-      SELECT
-        COALESCE(SUM(amount), 0)::float AS vas_amount,
-        COUNT(*)::int AS source_rows,
-        MIN(report_period_start)::text AS period_start,
-        MAX(report_period_end)::text AS period_end
-      FROM operation_rows
-      WHERE ${vasFilter}
-    `)
-
-    const row = resultRows(result)[0]
-    const sourceRows = numberValue(row?.source_rows)
-
-    if (sourceRows > 0) {
-      return {
-        amount: numberValue(row?.vas_amount),
-        available: true,
-        unavailableReason: null,
-        source: 'operation_period_exact',
-        sourceTable: 'operation_wise_analysis_report',
-        periodStart: dateValue(row?.period_start),
-        periodEnd: dateValue(row?.period_end),
-        sourceRows,
-      }
-    }
-
-    const coveredPeriodResult = await db.execute(sql`
-      WITH latest_period AS (
-        SELECT
-          report_period_start::date AS report_period_start,
-          report_period_end::date AS report_period_end
-        FROM operation_wise_analysis_report
-        WHERE report_period_start = ${startDate}::date
-          AND report_period_end <= ${endDate}::date
-          AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
-          ${operationDealerFilter(dealerCode)}
-        GROUP BY report_period_start::date, report_period_end::date
-        ORDER BY report_period_end::date DESC
-        LIMIT 1
-      ),
-      operation_rows AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
-          COALESCE(NULLIF(source.row_hash, ''), source.id::text) AS addon_key,
-          date_trunc('month', source.report_month::date)::date AS report_month,
-          source.report_period_start::date AS report_period_start,
-          source.report_period_end::date AS report_period_end,
-          source.report_type,
-          source.op_part_code,
-          source.op_part_desc,
-          source.dealer_code,
-          source.dealer_name,
-          ${numericText(sql.raw('source.total_amt'))} AS amount,
-          LOWER(COALESCE(source.op_part_desc, '')) AS description
-        FROM operation_wise_analysis_report source
-        INNER JOIN latest_period
-          ON source.report_period_start::date = latest_period.report_period_start
-          AND source.report_period_end::date = latest_period.report_period_end
-        WHERE LOWER(COALESCE(source.report_type, '')) IN ('operation', 'part')
-          ${operationDealerFilter(dealerCode)}
-        ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
-      )
-      SELECT
-        COALESCE(SUM(amount), 0)::float AS vas_amount,
-        COUNT(*)::int AS source_rows,
-        MIN(report_period_start)::text AS period_start,
-        MAX(report_period_end)::text AS period_end
-      FROM operation_rows
-      WHERE ${vasFilter}
-    `)
-
-    const coveredPeriodRow = resultRows(coveredPeriodResult)[0]
-    const coveredPeriodSourceRows = numberValue(coveredPeriodRow?.source_rows)
-
-    if (coveredPeriodSourceRows > 0) {
-      return {
-        amount: numberValue(coveredPeriodRow?.vas_amount),
-        available: true,
-        unavailableReason: null,
-        source: 'operation_period_latest_within_range',
-        sourceTable: 'operation_wise_analysis_report',
-        periodStart: dateValue(coveredPeriodRow?.period_start),
-        periodEnd: dateValue(coveredPeriodRow?.period_end),
-        sourceRows: coveredPeriodSourceRows,
-      }
-    }
-  }
-
-  if (hasInvoiceWise) {
-    const result = await db.execute(sql`
-      WITH invoice_rows AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
-          COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
-          gst_invoice_date::date AS report_date,
-          dealer_code,
-          retail_dealer_code,
-          ${numericText(sql.raw('taxable_amount'))} AS amount,
-          LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc)) AS description
-        FROM adv_wise_lubricants_vas
-        WHERE gst_invoice_date >= ${startDate}::date
-          AND gst_invoice_date < (${endDate}::date + INTERVAL '1 day')
-          ${advWiseVasDealerFilter(dealerCode)}
-        ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
-      )
-      SELECT
-        COALESCE(SUM(amount), 0)::float AS vas_amount,
-        COUNT(*)::int AS source_rows,
-        MIN(report_date)::text AS period_start,
-        MAX(report_date)::text AS period_end
-      FROM invoice_rows
-      WHERE ${vasFilter}
-    `)
-
-    const row = resultRows(result)[0]
-    const sourceRows = numberValue(row?.source_rows)
-
-    if (sourceRows > 0) {
-      return {
-        amount: numberValue(row?.vas_amount),
-        available: true,
-        unavailableReason: null,
-        source: 'invoice_vas_gst_date',
-        sourceTable: 'adv_wise_lubricants_vas',
-        periodStart: dateValue(row?.period_start),
-        periodEnd: dateValue(row?.period_end),
-        sourceRows,
-      }
-    }
-  }
-
-  return {
-    amount: 0,
-    available: false,
-    unavailableReason: `No matching VAS source period for ${startDate} to ${endDate}`,
-    source: null as string | null,
-    sourceTable: null as string | null,
-    periodStart: null as string | null,
-    periodEnd: null as string | null,
-    sourceRows: 0,
-  }
 }
 
 async function buildOverviewPayload(
@@ -1103,7 +717,7 @@ async function buildOverviewPayload(
         ) > 0
       ORDER BY EXTRACT(MONTH FROM complaint_date)::int ASC
     `) : emptyRows(),
-    fetchAddonKpis(startDate, endDate),
+    fetchAddonKpis(startDate, endDate, dealerCode),
     fetchWorkshopSnapshot(startDate, endDate, dealerCode),
     includeComparison ? db.execute(sql`
       ${lyRoSql}
@@ -1132,7 +746,7 @@ async function buildOverviewPayload(
         COALESCE(AVG(resolution_days), 0)::float AS avg_days
       FROM enriched
     `) : emptyRows(),
-    includeComparison ? fetchAddonKpis(lyStartDate, lyEndDate) : emptyAddonKpis(),
+    includeComparison ? fetchAddonKpis(lyStartDate, lyEndDate, dealerCode) : emptyAddonKpis(),
     includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode) : emptyWorkshopSnapshot(),
   ])
 

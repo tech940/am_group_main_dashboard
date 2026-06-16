@@ -3,29 +3,86 @@ import postgres from 'postgres'
 import { env } from '@/config/env-config'
 import { recordSqlTiming } from '@/lib/api/timing'
 
+const STATEMENT_TIMEOUT_MS = 12_000
+
+type PostgresClient = ReturnType<typeof postgres>
+type PostgresTransaction = postgres.TransactionSql
+
+function runInTimedTransaction<T>(
+  baseClient: PostgresClient,
+  action: (tx: PostgresTransaction) => T | Promise<T>,
+) {
+  return baseClient.begin(async (tx) => {
+    await tx.unsafe(`SET LOCAL statement_timeout TO ${STATEMENT_TIMEOUT_MS}`)
+    return action(tx)
+  })
+}
+
+// Drizzle expects client.unsafe() to synchronously return a PendingQuery (Promise + .values()).
+// Wrapping in begin() must preserve that API shape.
+function wrapUnsafe(baseClient: PostgresClient): PostgresClient['unsafe'] {
+  const unsafe = (query: string, parameters?: Parameters<PostgresClient['unsafe']>[1], queryOptions?: Parameters<PostgresClient['unsafe']>[2]) => {
+    const pending = Object.assign(
+      runInTimedTransaction(baseClient, (tx) => tx.unsafe(query, parameters, queryOptions)),
+      {
+        describe: () => runInTimedTransaction(baseClient, (tx) => tx.unsafe(query, parameters, queryOptions).describe()),
+        values: () => {
+          const valuesPending = runInTimedTransaction(
+            baseClient,
+            (tx) => tx.unsafe(query, parameters, queryOptions).values(),
+          )
+          return Object.assign(valuesPending, {
+            describe: () => runInTimedTransaction(
+              baseClient,
+              (tx) => tx.unsafe(query, parameters, queryOptions).values().describe(),
+            ),
+          })
+        },
+        raw: () => runInTimedTransaction(baseClient, (tx) => tx.unsafe(query, parameters, queryOptions).raw()),
+        simple: function (this: Promise<unknown>) {
+          return this
+        },
+        execute: function (this: Promise<unknown>) {
+          return this
+        },
+        cancel: () => {},
+      },
+    )
+
+    return pending
+  }
+
+  return unsafe as PostgresClient['unsafe']
+}
+
 // Singleton pattern to prevent connection pool exhaustion during Next.js HMR
 // Without this, every hot reload creates a NEW postgres client, leaking connections
 const globalForDb = globalThis as unknown as {
-  postgresClient: ReturnType<typeof postgres> | undefined
+  postgresClient: PostgresClient | undefined
 }
 
-const client = globalForDb.postgresClient ?? postgres(env.database.url, {
+const baseClient = globalForDb.postgresClient ?? postgres(env.database.url, {
   prepare: false, // Required for Supabase Transaction Mode pooler (PgBouncer)
   ssl: { rejectUnauthorized: false },
-  max: 10, // Increased for concurrent requests (was 3)
+  max: 20,
   idle_timeout: 45,
   connect_timeout: 15,
   max_lifetime: 60 * 30, // 30 minutes - recycle connections periodically
   onnotice: () => {}, // Ignore notices
   connection: {
     application_name: 'main_dashboard',
-    statement_timeout: 12_000,
   },
 })
 
+const client = Object.assign(
+  (...args: Parameters<PostgresClient>) => baseClient(...args),
+  baseClient,
+  { unsafe: wrapUnsafe(baseClient) },
+) as PostgresClient
+
 // In development, store the client on globalThis so HMR reuses it
 if (process.env.NODE_ENV !== 'production') {
-  globalForDb.postgresClient = client
+  globalForDb.postgresClient = baseClient
 }
 
 function shouldLogSqlTimings() {

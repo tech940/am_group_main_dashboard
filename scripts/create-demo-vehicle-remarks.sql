@@ -27,12 +27,15 @@ CREATE INDEX IF NOT EXISTS ro_billing_report_demo_vehicle_tracker_idx
   WHERE work_type = 'Test Drive/CC Maintenance';
 
 CREATE OR REPLACE FUNCTION public.set_demo_vehicle_remarks_updated_at()
-RETURNS trigger AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 BEGIN
   NEW.updated_at = now();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS demo_vehicle_remarks_updated_at_trigger ON public.demo_vehicle_remarks;
 

@@ -126,6 +126,7 @@ CREATE OR REPLACE FUNCTION public.kia_proforma_is_approver()
 RETURNS boolean
 LANGUAGE sql
 STABLE
+SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1

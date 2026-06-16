@@ -7,7 +7,16 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
-import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import { normalizeKiaDealerCode, type KiaDealerCode } from '@/lib/kia/dealer-branch'
+import {
+  fetchCanonicalOperationMetrics,
+  fetchEwRsaMcpCounts,
+  fetchVasAmount,
+  getMonthStart,
+  operationDealerFilter,
+  roBillingDealerFilter,
+  wheelBalancingLabourMatchSql,
+} from '@/lib/kia/service-dashboard-metrics'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -23,7 +32,7 @@ type ComparisonParams = {
   comparisonEndDate: string | null
 }
 
-type DealerFilter = string | null
+type DealerFilter = KiaDealerCode | null
 
 type ServiceAggregate = {
   serviceType: string
@@ -109,21 +118,9 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `kia:business-excellence:workshop-performance:v32:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:v33:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
-}
-
-function roBillingDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
-    : sql``
-}
-
-function operationDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(dealer_code, ''))) = ${dealerCode}`
-    : sql``
 }
 
 function accidentAdvisorSqlList() {
@@ -324,7 +321,7 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
     if (advisor) return []
     return [{
       serviceType: 'MECH',
-      vasAmount: await fetchWorkshopVasAmount(startDate, endDate, dealerCode),
+      vasAmount: await fetchVasAmount(getMonthStart(endDate), endDate, dealerCode),
       waCount: 0,
       waAmount: 0,
       wbCount: 0,
@@ -394,8 +391,7 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
             OR description ~ '(wheel[[:space:]-]*alignment|alignment|align|(^|[^a-z])wa([^a-z]|$))'
         ) AS is_wa,
         (
-          operation_code ~ '(^|[^a-z])wb([^a-z]|$)'
-            OR description ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
+          ${wheelBalancingLabourMatchSql()}
         ) AS is_wb,
         (
           LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
@@ -431,74 +427,27 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
   }))
 
   if (!advisor) {
-    const periodVasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
+    const canonical = await fetchCanonicalOperationMetrics(endDate, dealerCode)
     const targetRow = rows.find((row) => row.serviceType === 'MECH') || rows[0]
     if (targetRow) {
-      targetRow.vasAmount = periodVasAmount
+      targetRow.vasAmount = canonical.vasAmount
+      targetRow.waCount = canonical.alignmentCount
+      targetRow.waAmount = canonical.alignmentLabour
+      targetRow.wbCount = canonical.balancingCount
+      targetRow.wbAmount = canonical.balancingLabour
     } else {
       rows.push({
         serviceType: 'MECH',
-        vasAmount: periodVasAmount,
-        waCount: 0,
-        waAmount: 0,
-        wbCount: 0,
-        wbAmount: 0,
+        vasAmount: canonical.vasAmount,
+        waCount: canonical.alignmentCount,
+        waAmount: canonical.alignmentLabour,
+        wbCount: canonical.balancingCount,
+        wbAmount: canonical.balancingLabour,
       })
     }
   }
 
   return rows
-}
-
-async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  if (!(await tableExists('operation_wise_analysis_report'))) return 0
-
-  const result = await db.execute(sql`
-    WITH latest_period AS (
-      SELECT
-        report_period_start::date AS report_period_start,
-        report_period_end::date AS report_period_end
-      FROM operation_wise_analysis_report
-      WHERE report_period_start = ${startDate}::date
-        AND report_period_end <= ${endDate}::date
-        AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
-        ${operationDealerFilter(dealerCode)}
-      GROUP BY report_period_start::date, report_period_end::date
-      ORDER BY report_period_end::date DESC
-      LIMIT 1
-    ),
-    operation_rows AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
-        COALESCE(NULLIF(source.row_hash, ''), source.id::text) AS addon_key,
-        source.report_period_start::date AS report_period_start,
-        source.report_period_end::date AS report_period_end,
-        source.report_type,
-        source.op_part_code,
-        source.op_part_desc,
-        source.dealer_code,
-        source.dealer_name,
-        ${numericText(sql.raw('source.total_amt'))} AS amount,
-        LOWER(COALESCE(source.op_part_desc, '')) AS description
-      FROM operation_wise_analysis_report source
-      INNER JOIN latest_period
-        ON source.report_period_start::date = latest_period.report_period_start
-        AND source.report_period_end::date = latest_period.report_period_end
-      WHERE LOWER(COALESCE(source.report_type, '')) IN ('operation', 'part')
-        ${operationDealerFilter(dealerCode)}
-      ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
-    )
-    SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
-    FROM operation_rows
-    WHERE (
-      description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
-      OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
-      OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
-      OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
-    )
-      AND description !~ '(painting[[:space:]-]*charges[[:space:]-]*s1|removal[[:space:]]*&[[:space:]]*refit[[:space:]-]*work[[:space:]-]*s1)'
-  `)
-
-  return numberValue(resultRows(result)[0]?.vas_amount)
 }
 
 async function fetchCoreAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
@@ -511,15 +460,15 @@ async function fetchCoreAddonSummary(startDate: string, endDate: string, advisor
     }]
   }
 
-  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
+  const canonical = await fetchCanonicalOperationMetrics(endDate, dealerCode)
 
   return [{
     serviceType: 'Others',
-    vasAmount,
-    waCount: 0,
-    waAmount: 0,
-    wbCount: 0,
-    wbAmount: 0,
+    vasAmount: canonical.vasAmount,
+    waCount: canonical.alignmentCount,
+    waAmount: canonical.alignmentLabour,
+    wbCount: canonical.balancingCount,
+    wbAmount: canonical.balancingLabour,
   }]
 }
 
@@ -635,139 +584,8 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
   })
 }
 
-async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
-  const [hasEw, hasMcp, hasRsa] = await Promise.all([
-    tableExists('ew_report'),
-    tableExists('mcp_report'),
-    tableExists('rsa_report'),
-  ])
-
-  const [ew, mcp, rsa] = await Promise.all([
-    hasEw
-      ? db.execute(sql`
-          WITH dedup AS (
-            SELECT DISTINCT ON (
-              COALESCE(
-                NULLIF(TRIM(certi_no), ''),
-                NULLIF(CONCAT_WS(
-                  '|',
-                  NULLIF(TRIM(vin), ''),
-                  NULLIF(TRIM(scheme_desc), ''),
-                  reg_date::text,
-                  COALESCE(kin_amt, 0)::text
-                ), ''),
-                id::text
-              )
-            )
-              COALESCE(
-                NULLIF(TRIM(certi_no), ''),
-                NULLIF(CONCAT_WS(
-                  '|',
-                  NULLIF(TRIM(vin), ''),
-                  NULLIF(TRIM(scheme_desc), ''),
-                  reg_date::text,
-                  COALESCE(kin_amt, 0)::text
-                ), ''),
-                id::text
-              ) AS ew_key,
-              reg_date,
-              uploaded_at,
-              id
-            FROM ew_report
-            WHERE reg_date >= ${startDate}::date
-              AND reg_date < (${endDate}::date + INTERVAL '1 day')
-              AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
-            ORDER BY
-              COALESCE(
-                NULLIF(TRIM(certi_no), ''),
-                NULLIF(CONCAT_WS(
-                  '|',
-                  NULLIF(TRIM(vin), ''),
-                  NULLIF(TRIM(scheme_desc), ''),
-                  reg_date::text,
-                  COALESCE(kin_amt, 0)::text
-                ), ''),
-                id::text
-              ),
-              uploaded_at DESC NULLS LAST,
-              id DESC
-          )
-          SELECT COUNT(*)::int AS count
-          FROM dedup
-        `)
-      : Promise.resolve([{ count: 0 }] as NumericRow[]),
-    hasMcp
-      ? db.execute(sql`
-          SELECT COUNT(*)::int AS count
-          FROM mcp_report
-          WHERE package_purchase_date >= ${startDate}::date
-            AND package_purchase_date < (${endDate}::date + INTERVAL '1 day')
-            AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
-        `)
-      : Promise.resolve([{ count: 0 }] as NumericRow[]),
-    hasRsa
-      ? db.execute(sql`
-          WITH dedup AS (
-            SELECT DISTINCT ON (
-              COALESCE(
-                NULLIF(TRIM(invoice_no), ''),
-                CONCAT_WS(
-                  '|',
-                  NULLIF(TRIM(vin_chasis_no), ''),
-                  NULLIF(TRIM(policy_name), ''),
-                  invoice_date::text,
-                  COALESCE(total_amount, 0)::text
-                ),
-                id::text
-              )
-            )
-              COALESCE(
-                NULLIF(TRIM(invoice_no), ''),
-                CONCAT_WS(
-                  '|',
-                  NULLIF(TRIM(vin_chasis_no), ''),
-                  NULLIF(TRIM(policy_name), ''),
-                  invoice_date::text,
-                  COALESCE(total_amount, 0)::text
-                ),
-                id::text
-              ) AS rsa_key,
-              invoice_date,
-              COALESCE(total_amount, 0)::numeric AS total_amount,
-              uploaded_at,
-              id
-            FROM rsa_report
-            WHERE invoice_date::date >= ${startDate}::date
-              AND invoice_date::date < (${endDate}::date + INTERVAL '1 day')
-            ORDER BY
-              COALESCE(
-                NULLIF(TRIM(invoice_no), ''),
-                CONCAT_WS(
-                  '|',
-                  NULLIF(TRIM(vin_chasis_no), ''),
-                  NULLIF(TRIM(policy_name), ''),
-                  invoice_date::text,
-                  COALESCE(total_amount, 0)::text
-                ),
-                id::text
-              ),
-              uploaded_at DESC NULLS LAST,
-              id DESC
-          )
-          SELECT
-            COUNT(*)::int AS count,
-            COALESCE(SUM(total_amount), 0)::float AS amount
-          FROM dedup
-        `)
-      : Promise.resolve([{ count: 0, amount: 0 }] as NumericRow[]),
-  ])
-
-  return {
-    ewCount: numberValue(resultRows(ew)[0]?.count),
-    mcpCount: numberValue(resultRows(mcp)[0]?.count),
-    rsaCount: numberValue(resultRows(rsa)[0]?.count),
-    rsaAmount: numberValue(resultRows(rsa)[0]?.amount),
-  }
+async function fetchAuxiliaryKpis(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
+  return fetchEwRsaMcpCounts(startDate, endDate, dealerCode)
 }
 
 function normalizedServiceKey(value: string) {
@@ -960,8 +778,8 @@ async function buildWorkshopPayload(
     fetchAddonSummary(startDate, endDate, advisor, dealerCode),
     fetchDailyTrend(startDate, endDate, advisor, dealerCode),
     fetchAdvisorSummary(startDate, endDate, dealerCode),
-    fetchAuxiliaryKpis(startDate, endDate),
-    fetchAuxiliaryKpis(lyStart, lyEnd),
+    fetchAuxiliaryKpis(startDate, endDate, dealerCode),
+    fetchAuxiliaryKpis(lyStart, lyEnd, dealerCode),
     fetchServiceSummary(lyStart, lyEnd, advisor, dealerCode),
     fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode),
     fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode),
