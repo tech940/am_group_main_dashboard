@@ -3,11 +3,11 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser, type AppUser } from '@/lib/auth/app-user'
 import { hasAllBranchAccess, isBranchValue, type BranchValue } from '@/lib/branches'
-import { isSuperAdminRole } from '@/lib/auth/roles'
+import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 
 export function canAccessBrand(appUser: AppUser | null, brand: BranchValue) {
   if (!appUser) return false
-  if (isSuperAdminRole(appUser.role)) return true
+  if (isSuperAdminRole(appUser.role) || hasGlobalAccessRole(appUser.role)) return true
   if (hasAllBranchAccess(appUser.brand)) return true
   return appUser.brand === brand
 }

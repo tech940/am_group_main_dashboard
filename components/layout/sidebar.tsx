@@ -24,7 +24,7 @@ import { createClient } from '@/lib/supabase/client'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
 import { useUserRole } from '@/lib/hooks/use-user-role'
-import { isSuperAdminRole } from '@/lib/auth/roles'
+import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 
 const HYUNDAI_LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/4/44/Hyundai_Motor_Company_logo.svg'
 
@@ -254,7 +254,7 @@ export function Sidebar() {
   }, [loading, userRole])
 
   const hasPermission = (permissionKey: string) => {
-    if (isSuperAdminRole(userRole)) return true
+    if (hasGlobalAccessRole(userRole)) return true
     if (!permissionMap) return true
     return permissionMap[permissionKey] === true
   }
@@ -265,7 +265,7 @@ export function Sidebar() {
 
   const canAccessBrand = (brandKey: string) => {
     if (alwaysVisibleBrandKeys.has(brandKey)) return true
-    if (isSuperAdminRole(userRole)) return true
+    if (hasGlobalAccessRole(userRole)) return true
     if (!userBrand) return false
     if (hasAllBranchAccess(userBrand)) return true
     return brandKey === userBrand
@@ -275,7 +275,7 @@ export function Sidebar() {
     return availableBrands
       .filter((brand) => {
         if (alwaysVisibleBrandKeys.has(brand.key)) return true
-        if (isSuperAdminRole(userRole)) return true
+        if (hasGlobalAccessRole(userRole)) return true
         if (!userBrand) return false
         if (hasAllBranchAccess(userBrand)) return true
         return brand.key === userBrand

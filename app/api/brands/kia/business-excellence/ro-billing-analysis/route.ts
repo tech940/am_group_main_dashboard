@@ -159,9 +159,15 @@ function getCalendarYearStart(date: Date) {
   return new Date(date.getFullYear(), 0, 1, 0, 0, 0, 0)
 }
 
-function buildPeriodWindows(startDate: Date, endDate: Date, comparisonRange: ComparisonRange = null): Record<PeriodKey, PeriodWindow> {
+function buildPeriodWindows(
+  startDate: Date,
+  endDate: Date,
+  comparisonRange: ComparisonRange = null,
+  tdAnchorDate: Date | null = null,
+): Record<PeriodKey, PeriodWindow> {
   const cyEnd = endOfDay(endDate)
-  const cyTdStart = startOfDay(endDate)
+  const tdDate = startOfDay(tdAnchorDate || endDate)
+  const cyTdStart = tdDate
   const currentStart = startOfDay(startDate)
   const cyMtdStart = new Date(endDate.getFullYear(), endDate.getMonth(), 1)
   const quarterStartMonth = Math.floor(endDate.getMonth() / 3) * 3
@@ -179,9 +185,9 @@ function buildPeriodWindows(startDate: Date, endDate: Date, comparisonRange: Com
   return {
     td: {
       cyStart: cyTdStart,
-      cyEnd,
+      cyEnd: endOfDay(tdDate),
       lyStart: comparisonRange ? startOfDay(comparisonRange.endDate) : sameDateLastYear(cyTdStart),
-      lyEnd: comparisonRange ? endOfDay(comparisonRange.endDate) : sameDateLastYear(cyEnd),
+      lyEnd: comparisonRange ? endOfDay(comparisonRange.endDate) : sameDateLastYear(endOfDay(tdDate)),
     },
     mtd: customPeriodWindow || {
       cyStart: startOfDay(cyMtdStart),
@@ -472,6 +478,7 @@ type WorkTypeAggregateRow = {
   service_type?: string | null
   technician?: string | null
   td_cy_load: number
+  td_ly_load: number
   mtd_cy_load: number
   mtd_ly_load: number
   qtd_cy_load: number
@@ -479,6 +486,7 @@ type WorkTypeAggregateRow = {
   ytd_cy_load: number
   ytd_ly_load: number
   td_cy_labour: number
+  td_ly_labour: number
   mtd_cy_labour: number
   mtd_ly_labour: number
   qtd_cy_labour: number
@@ -486,6 +494,7 @@ type WorkTypeAggregateRow = {
   ytd_cy_labour: number
   ytd_ly_labour: number
   td_cy_parts: number
+  td_ly_parts: number
   mtd_cy_parts: number
   mtd_ly_parts: number
   qtd_cy_parts: number
@@ -626,9 +635,9 @@ function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: Analys
       service_type: null,
     } as WorkTypeAggregateRow
     const metricKeys = [
-      'td_cy_load', 'mtd_cy_load', 'mtd_ly_load', 'qtd_cy_load', 'qtd_ly_load', 'ytd_cy_load', 'ytd_ly_load',
-      'td_cy_labour', 'mtd_cy_labour', 'mtd_ly_labour', 'qtd_cy_labour', 'qtd_ly_labour', 'ytd_cy_labour', 'ytd_ly_labour',
-      'td_cy_parts', 'mtd_cy_parts', 'mtd_ly_parts', 'qtd_cy_parts', 'qtd_ly_parts', 'ytd_cy_parts', 'ytd_ly_parts',
+      'td_cy_load', 'td_ly_load', 'mtd_cy_load', 'mtd_ly_load', 'qtd_cy_load', 'qtd_ly_load', 'ytd_cy_load', 'ytd_ly_load',
+      'td_cy_labour', 'td_ly_labour', 'mtd_cy_labour', 'mtd_ly_labour', 'qtd_cy_labour', 'qtd_ly_labour', 'ytd_cy_labour', 'ytd_ly_labour',
+      'td_cy_parts', 'td_ly_parts', 'mtd_cy_parts', 'mtd_ly_parts', 'qtd_cy_parts', 'qtd_ly_parts', 'ytd_cy_parts', 'ytd_ly_parts',
     ] as Array<keyof WorkTypeAggregateRow>
 
     metricKeys.forEach((key) => {
@@ -1031,6 +1040,50 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
   }))
 }
 
+async function fetchLatestBillDateOnOrBefore(endDate: Date, dealerCode: DealerFilter = null) {
+  const result = await db.execute(sql`
+    SELECT MAX(bill_date)::text AS max_date
+    FROM ro_billing_report
+    WHERE bill_date <= ${toDateInputValue(endDate)}::date
+      AND ${activeBillStatusSql()}
+      ${roBillingDealerFilter(dealerCode)}
+  `)
+  return parseDateInput(result[0]?.max_date ? String(result[0].max_date) : null)
+}
+
+async function fetchBillRowCountForDate(date: Date, dealerCode: DealerFilter = null) {
+  const result = await db.execute(sql`
+    SELECT COUNT(*)::int AS count
+    FROM ro_billing_report
+    WHERE bill_date = ${toDateInputValue(date)}::date
+      AND ${activeBillStatusSql()}
+      ${roBillingDealerFilter(dealerCode)}
+  `)
+  return numberValue(result[0]?.count)
+}
+
+async function resolveTdAnchorDate(endDate: Date, dealerCode: DealerFilter = null) {
+  const normalizedEndDate = startOfDay(endDate)
+  const billCount = await fetchBillRowCountForDate(normalizedEndDate, dealerCode)
+  if (billCount > 0) return normalizedEndDate
+
+  const latestBillDate = await fetchLatestBillDateOnOrBefore(normalizedEndDate, dealerCode)
+  if (!latestBillDate) return normalizedEndDate
+
+  const latest = startOfDay(latestBillDate)
+  if (latest.getTime() >= normalizedEndDate.getTime()) return normalizedEndDate
+
+  // Upload lag / timezone gap: selected end date has no bills yet, but earlier days in the same month do.
+  const monthStart = startOfDay(new Date(normalizedEndDate.getFullYear(), normalizedEndDate.getMonth(), 1))
+  const today = startOfDay(new Date())
+  const isCurrentPeriodEnd = normalizedEndDate.getTime() >= today.getTime() - 86400000
+  if (isCurrentPeriodEnd && latest >= monthStart) {
+    return latest
+  }
+
+  return normalizedEndDate
+}
+
 async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>, dealerCode: DealerFilter = null) {
   const result = await db.execute(sql`
     WITH base AS (
@@ -1104,6 +1157,7 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
       service_type,
       technician,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date)::int AS td_cy_load,
+      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.lyStart)}::date AND ${toDateInputValue(windows.td.lyEnd)}::date)::int AS td_ly_load,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date)::int AS mtd_cy_load,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date)::int AS mtd_ly_load,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date)::int AS qtd_cy_load,
@@ -1111,6 +1165,7 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date)::int AS ytd_cy_load,
       COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date)::int AS ytd_ly_load,
       COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_labour,
+      COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.lyStart)}::date AND ${toDateInputValue(windows.td.lyEnd)}::date), 0)::float AS td_ly_labour,
       COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_labour,
       COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_labour,
       COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_labour,
@@ -1118,6 +1173,7 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
       COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date), 0)::float AS ytd_cy_labour,
       COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date), 0)::float AS ytd_ly_labour,
       COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_parts,
+      COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.lyStart)}::date AND ${toDateInputValue(windows.td.lyEnd)}::date), 0)::float AS td_ly_parts,
       COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_parts,
       COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_parts,
       COALESCE(SUM(part_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date), 0)::float AS qtd_cy_parts,
@@ -1300,7 +1356,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v25:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:v27:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1380,7 +1436,8 @@ export async function GET(request: Request) {
     const cacheKey = createCacheKey(cacheParams)
 
     const analyze = async () => {
-      const windows = buildPeriodWindows(startDate, endDate, comparisonRange)
+      const tdAnchorDate = await timer.time('td-anchor-date', () => resolveTdAnchorDate(endDate, dealerCode))
+      const windows = buildPeriodWindows(startDate, endDate, comparisonRange, tdAnchorDate)
       const hasFilters = Array.from(searchParams.entries()).some(([key, value]) => {
         return key in FILTER_COLUMNS && value && value !== 'all'
       })
@@ -1396,6 +1453,7 @@ export async function GET(request: Request) {
         dateRange: {
           startDate: toDateInputValue(startDate),
           endDate: toDateInputValue(endDate),
+          tdDate: toDateInputValue(tdAnchorDate),
           comparisonStartDate: comparisonRange ? toDateInputValue(comparisonRange.startDate) : null,
           comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
         },

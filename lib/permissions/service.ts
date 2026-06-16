@@ -4,7 +4,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { permissionAuditLogs, permissionGroups, permissions, rolePermissions, userPermissions, users } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
-import { isSuperAdminRole } from '@/lib/auth/roles'
+import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { getCachedData, invalidateCache } from '@/lib/redis/cache-utils'
 import {
@@ -31,7 +31,7 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-const PERMISSION_CACHE_VERSION = 'v3'
+const PERMISSION_CACHE_VERSION = 'v4'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 export function isMissingPermissionTableError(error: unknown) {
@@ -92,7 +92,7 @@ function constrainSnapshotToBranch(
   role: PermissionRole,
   branchAccess: string | null | undefined
 ) {
-  if (isSuperAdminRole(role) || hasAllBranchAccess(branchAccess)) return
+  if (isSuperAdminRole(role) || hasGlobalAccessRole(role) || hasAllBranchAccess(branchAccess)) return
   const prefixes = getBranchPermissionPrefixes(branchAccess)
 
   for (const permission of PERMISSIONS) {
@@ -108,7 +108,11 @@ function constrainSnapshotToBranch(
 }
 
 function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string | null): PermissionSnapshot {
-  const roleKeys = new Set(isSuperAdminRole(role) ? PERMISSIONS.map((permission) => permission.key) : (ROLE_PERMISSION_TEMPLATES[role] || []))
+  const roleKeys = new Set(
+    isSuperAdminRole(role) || hasGlobalAccessRole(role)
+      ? PERMISSIONS.map((permission) => permission.key)
+      : (ROLE_PERMISSION_TEMPLATES[role] || [])
+  )
   const roleDefaults = Object.fromEntries(PERMISSIONS.map((permission) => [permission.key, roleKeys.has(permission.key)]))
   applyBranchRoleDefaults(roleDefaults, role, branchAccess)
   constrainSnapshotToBranch(roleDefaults, role, branchAccess)
@@ -331,7 +335,7 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
 
   const effective = { ...roleDefaults, ...overrides }
   constrainSnapshotToBranch(effective, targetUser.role, targetUser.brand)
-  if (isSuperAdminRole(targetUser.role)) {
+  if (isSuperAdminRole(targetUser.role) || hasGlobalAccessRole(targetUser.role)) {
     for (const key of Object.keys(effective)) effective[key] = true
   }
 
@@ -348,7 +352,7 @@ export async function getUserPermissionSnapshot(userId: string) {
 
 export async function canUserAccessPermission(appUser: AppUser | null, permissionKey: string): Promise<boolean> {
   if (!appUser || !appUser.isActive) return false
-  if (isSuperAdminRole(appUser.role)) return true
+  if (isSuperAdminRole(appUser.role) || hasGlobalAccessRole(appUser.role)) return true
 
   const snapshot = await getUserPermissionSnapshot(appUser.id)
   return snapshot.effective[permissionKey] === true
