@@ -1,6 +1,18 @@
+import 'server-only'
+
 import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const BUCKET_NAME = 'purchase-orders'
+
+function getStorageAdminClient() {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('SUPABASE_SERVICE_ROLE_KEY is missing; purchase order file previews require the service role key.')
+    return null
+  }
+
+  return supabaseAdmin
+}
 
 export interface UploadResult {
   url: string
@@ -83,7 +95,7 @@ export async function uploadFile(
  */
 export async function deleteFile(filePath: string): Promise<boolean> {
   try {
-    const supabase = await createClient()
+    const supabase = getStorageAdminClient() || await createClient()
 
     const { error } = await supabase.storage
       .from(BUCKET_NAME)
@@ -112,7 +124,10 @@ export async function getSignedUrl(
   expiresIn: number = 3600
 ): Promise<string | null> {
   try {
-    const supabase = await createClient()
+    const supabase = getStorageAdminClient()
+    if (!supabase) {
+      return null
+    }
 
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
