@@ -219,21 +219,177 @@ export function usesForwardGapSnapshot(period: OperationAnalysisPeriod | null, e
   return Boolean(period && period.periodEnd > exportDate)
 }
 
+function forwardGapBlendRatio(
+  exportDate: string,
+  belowPeriod: OperationAnalysisPeriod,
+  forwardPeriod: OperationAnalysisPeriod,
+) {
+  const exportDay = Number(exportDate.slice(8, 10))
+  const belowDay = Number(belowPeriod.periodEnd.slice(8, 10))
+  const forwardDay = Number(forwardPeriod.periodEnd.slice(8, 10))
+  if (!Number.isFinite(exportDay) || !Number.isFinite(belowDay) || !Number.isFinite(forwardDay)) return 1
+  if (forwardDay <= belowDay) return 1
+  return Math.max(0, Math.min(1, (exportDay - belowDay) / (forwardDay - belowDay)))
+}
+
 export function normalizeWheelOperationCounts(
   counts: { alignmentCount: number; balancingCount: number },
   exportDate: string,
   countPeriod: OperationAnalysisPeriod | null,
+  belowCounts: { alignmentCount: number; balancingCount: number } | null = null,
+  belowPeriod: OperationAnalysisPeriod | null = null,
 ) {
-  if (!usesForwardGapSnapshot(countPeriod, exportDate)) {
+  if (!usesForwardGapSnapshot(countPeriod, exportDate) || !belowCounts || !belowPeriod || !countPeriod) {
     return {
       alignmentCount: Math.round(counts.alignmentCount),
       balancingCount: Math.round(counts.balancingCount),
     }
   }
 
+  const ratio = forwardGapBlendRatio(exportDate, belowPeriod, countPeriod)
   return {
-    alignmentCount: Math.max(0, Math.floor(counts.alignmentCount - 1)),
-    balancingCount: Math.max(0, Math.round(counts.balancingCount - 1)),
+    alignmentCount: Math.max(0, Math.floor(
+      belowCounts.alignmentCount + (counts.alignmentCount - belowCounts.alignmentCount) * ratio,
+    )),
+    balancingCount: Math.max(0, Math.round(
+      belowCounts.balancingCount + (counts.balancingCount - belowCounts.balancingCount) * ratio,
+    )),
+  }
+}
+
+async function fetchAdvisorWheelMetrics(period: OperationAnalysisPeriod, dealerCode: KiaServiceDealerFilter) {
+  if (!(await tableExists('operation_wise_analysis_advisor_report'))) return null
+
+  const result = await db.execute(sql`
+    WITH operation_rows AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
+        ${numericText(sql.raw('source.total_count'))} AS operation_count,
+        ${numericText(sql.raw('source.total_amt'))} AS amount,
+        LOWER(CONCAT_WS(' ', source.report_type, source.op_part_code, source.op_part_desc)) AS description,
+        LOWER(COALESCE(source.op_part_code, '')) AS operation_code,
+        LOWER(COALESCE(source.report_type, '')) AS report_type
+      FROM operation_wise_analysis_advisor_report source
+      WHERE source.report_period_start::date = ${period.periodStart}::date
+        AND source.report_period_end::date = ${period.periodEnd}::date
+        ${operationDealerFilter(dealerCode, 'source.')}
+      ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
+    ),
+    classified AS (
+      SELECT
+        *,
+        (
+          operation_code ~ '(^|[^a-z])wa([^a-z]|$)'
+          OR description ~ '(wheel[[:space:]-]*alignment|alignment|align|(^|[^a-z])wa([^a-z]|$))'
+        ) AS is_wa,
+        (
+          report_type = 'operation'
+          AND (
+            operation_code ~ '(^|[^a-z])wb([^a-z]|$)'
+            OR description ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
+          )
+        ) AS is_wb
+      FROM operation_rows
+    )
+    SELECT
+      COALESCE(SUM(operation_count) FILTER (WHERE is_wa), 0)::float AS alignment_count,
+      COALESCE(SUM(operation_count) FILTER (WHERE is_wb), 0)::float AS balancing_count,
+      COALESCE(SUM(amount) FILTER (WHERE is_wa), 0)::float AS alignment_labour,
+      COALESCE(SUM(amount) FILTER (WHERE is_wb), 0)::float AS balancing_labour,
+      COUNT(*)::int AS source_rows
+    FROM classified
+  `)
+
+  const row = resultRows(result)[0] || {}
+  const sourceRows = numberValue(row.source_rows)
+  if (sourceRows <= 0) return null
+
+  return {
+    alignmentCount: numberValue(row.alignment_count),
+    balancingCount: numberValue(row.balancing_count),
+    alignmentLabour: numberValue(row.alignment_labour),
+    balancingLabour: numberValue(row.balancing_labour),
+  }
+}
+
+async function fetchOperationWheelCounts(period: OperationAnalysisPeriod, dealerCode: KiaServiceDealerFilter) {
+  const result = await db.execute(sql`
+    WITH operation_rows AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
+        ${numericText(sql.raw('source.total_count'))} AS operation_count,
+        LOWER(CONCAT_WS(' ', source.report_type, source.op_part_code, source.op_part_desc)) AS description,
+        LOWER(COALESCE(source.op_part_code, '')) AS operation_code,
+        LOWER(COALESCE(source.report_type, '')) AS report_type
+      FROM operation_wise_analysis_report source
+      WHERE source.report_period_start::date = ${period.periodStart}::date
+        AND source.report_period_end::date = ${period.periodEnd}::date
+        ${operationDealerFilter(dealerCode, 'source.')}
+      ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
+    ),
+    classified AS (
+      SELECT
+        *,
+        (
+          operation_code ~ '(^|[^a-z])wa([^a-z]|$)'
+          OR description ~ '(wheel[[:space:]-]*alignment|alignment|align|(^|[^a-z])wa([^a-z]|$))'
+        ) AS is_wa,
+        (
+          report_type = 'operation'
+          AND (
+            operation_code ~ '(^|[^a-z])wb([^a-z]|$)'
+            OR description ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
+          )
+        ) AS is_wb
+      FROM operation_rows
+    )
+    SELECT
+      COALESCE(SUM(operation_count) FILTER (WHERE is_wa), 0)::float AS alignment_count,
+      COALESCE(SUM(operation_count) FILTER (WHERE is_wb), 0)::float AS balancing_count
+    FROM classified
+  `)
+
+  const row = resultRows(result)[0] || {}
+  return {
+    alignmentCount: numberValue(row.alignment_count),
+    balancingCount: numberValue(row.balancing_count),
+  }
+}
+
+function workshopVasDescriptionFilter() {
+  return sql`
+    LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
+    AND (
+      ${vasDescriptionFilter()}
+    )
+  `
+}
+
+async function fetchWorkshopOverviewVasFromOperationReport(
+  period: OperationAnalysisPeriod,
+  dealerCode: KiaServiceDealerFilter,
+) {
+  const result = await db.execute(sql`
+    WITH operation_rows AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
+        ${numericText(sql.raw('source.total_amt'))} AS amount,
+        LOWER(COALESCE(source.op_part_desc, '')) AS description,
+        LOWER(COALESCE(source.report_type, '')) AS report_type
+      FROM operation_wise_analysis_report source
+      WHERE source.report_period_start::date = ${period.periodStart}::date
+        AND source.report_period_end::date = ${period.periodEnd}::date
+        ${operationDealerFilter(dealerCode, 'source.')}
+      ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
+    )
+    SELECT
+      COALESCE(SUM(amount), 0)::float AS vas_amount,
+      COUNT(*)::int AS source_rows
+    FROM operation_rows
+    WHERE ${workshopVasDescriptionFilter()}
+  `)
+
+  const row = resultRows(result)[0] || {}
+  return {
+    amount: numberValue(row.vas_amount),
+    sourceRows: numberValue(row.source_rows),
   }
 }
 
@@ -387,6 +543,28 @@ export async function fetchVasAmount(
   const period = await resolveOperationAnalysisPeriod(monthStart, exportDate, dealerCode, true)
   if (!period) return 0
 
+  if (await tableExists('operation_wise_analysis_advisor_report')) {
+    const advisorResult = await db.execute(sql`
+      WITH operation_rows AS (
+        SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
+          ${numericText(sql.raw('source.total_amt'))} AS amount,
+          LOWER(COALESCE(source.op_part_desc, '')) AS description,
+          LOWER(COALESCE(source.report_type, '')) AS report_type
+        FROM operation_wise_analysis_advisor_report source
+        WHERE source.report_period_start::date = ${period.periodStart}::date
+          AND source.report_period_end::date = ${period.periodEnd}::date
+          ${operationDealerFilter(dealerCode, 'source.')}
+        ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
+      )
+      SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
+      FROM operation_rows
+      WHERE ${workshopVasDescriptionFilter()}
+    `)
+
+    const advisorAmount = numberValue(resultRows(advisorResult)[0]?.vas_amount)
+    if (advisorAmount > 0) return advisorAmount
+  }
+
   const operationResult = await db.execute(sql`
     WITH operation_rows AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
@@ -483,8 +661,8 @@ export async function fetchWorkshopVasAmountDetailed(
     }
   }
 
-  const period = await resolveOperationAnalysisPeriod(monthStart, endDate, normalizedDealer, true)
-  if (!period) {
+  const forwardPeriod = await resolveOperationAnalysisPeriod(monthStart, endDate, normalizedDealer, true)
+  if (!forwardPeriod) {
     return {
       amount: 0,
       available: false,
@@ -497,37 +675,22 @@ export async function fetchWorkshopVasAmountDetailed(
     }
   }
 
-  const operationResult = await db.execute(sql`
-    WITH operation_rows AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
-        ${numericText(sql.raw('source.total_amt'))} AS amount,
-        LOWER(COALESCE(source.op_part_desc, '')) AS description
-      FROM operation_wise_analysis_report source
-      WHERE source.report_period_start::date = ${period.periodStart}::date
-        AND source.report_period_end::date = ${period.periodEnd}::date
-        AND LOWER(COALESCE(source.report_type, '')) = 'operation'
-        ${operationDealerFilter(normalizedDealer, 'source.')}
-      ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
-    )
-    SELECT
-      COALESCE(SUM(amount), 0)::float AS vas_amount,
-      COUNT(*)::int AS source_rows
-    FROM operation_rows
-    WHERE ${vasDescriptionFilter()}
-  `)
+  const vasPeriod = usesForwardGapSnapshot(forwardPeriod, endDate)
+    ? await resolveOperationAnalysisPeriod(monthStart, endDate, normalizedDealer, false) ?? forwardPeriod
+    : forwardPeriod
 
-  const row = resultRows(operationResult)[0]
-  const amount = numberValue(row?.vas_amount)
-  const sourceRows = numberValue(row?.source_rows)
+  const operationResult = await fetchWorkshopOverviewVasFromOperationReport(vasPeriod, normalizedDealer)
+  const amount = operationResult.amount
+  const sourceRows = operationResult.sourceRows
 
   return {
     amount,
     available: sourceRows > 0,
     unavailableReason: sourceRows > 0 ? null : `No matching VAS source period for ${startDate} to ${endDate}`,
-    source: usesForwardGapSnapshot(period, endDate) ? 'operation_period_forward_gap' : 'operation_period_resolved',
+    source: usesForwardGapSnapshot(forwardPeriod, endDate) ? 'operation_workshop_vas_below_period' : 'operation_workshop_vas_resolved',
     sourceTable: 'operation_wise_analysis_report',
-    periodStart: period.periodStart,
-    periodEnd: period.periodEnd,
+    periodStart: vasPeriod.periodStart,
+    periodEnd: vasPeriod.periodEnd,
     sourceRows,
   }
 }
@@ -553,53 +716,38 @@ export async function fetchCanonicalOperationMetrics(
     return { ...empty, vasAmount }
   }
 
-  const [countResult, labour, vasAmount] = await Promise.all([
-    db.execute(sql`
-      WITH operation_rows AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
-          ${numericText(sql.raw('source.total_count'))} AS operation_count,
-          LOWER(CONCAT_WS(' ', source.report_type, source.op_part_code, source.op_part_desc)) AS description,
-          LOWER(COALESCE(source.op_part_code, '')) AS operation_code,
-          LOWER(COALESCE(source.report_type, '')) AS report_type
-        FROM operation_wise_analysis_report source
-        WHERE source.report_period_start::date = ${period.periodStart}::date
-          AND source.report_period_end::date = ${period.periodEnd}::date
-          ${operationDealerFilter(normalizedDealer, 'source.')}
-        ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
-      ),
-      classified AS (
-        SELECT
-          *,
-          (
-            operation_code ~ '(^|[^a-z])wa([^a-z]|$)'
-            OR description ~ '(wheel[[:space:]-]*alignment|alignment|align|(^|[^a-z])wa([^a-z]|$))'
-          ) AS is_wa,
-          (
-            report_type = 'operation'
-            AND (
-              operation_code ~ '(^|[^a-z])wb([^a-z]|$)'
-              OR description ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
-            )
-          ) AS is_wb
-        FROM operation_rows
-      )
-      SELECT
-        COALESCE(SUM(operation_count) FILTER (WHERE is_wa), 0)::float AS alignment_count,
-        COALESCE(SUM(operation_count) FILTER (WHERE is_wb), 0)::float AS balancing_count
-      FROM classified
-    `),
-    fetchWheelLabourAmounts(period, normalizedDealer),
+  const [advisorMetrics, vasAmount] = await Promise.all([
+    fetchAdvisorWheelMetrics(period, normalizedDealer),
     fetchVasAmount(monthStart, endDate, normalizedDealer),
   ])
 
-  const countRow = resultRows(countResult)[0] || {}
+  if (advisorMetrics) {
+    return {
+      vasAmount,
+      alignmentCount: Math.round(advisorMetrics.alignmentCount),
+      balancingCount: Math.round(advisorMetrics.balancingCount),
+      alignmentLabour: Math.round(advisorMetrics.alignmentLabour),
+      balancingLabour: Math.round(advisorMetrics.balancingLabour),
+      period,
+    }
+  }
+
+  const belowPeriod = usesForwardGapSnapshot(period, endDate)
+    ? await resolveOperationAnalysisPeriod(monthStart, endDate, normalizedDealer, false)
+    : null
+
+  const [countResult, labour, belowCounts] = await Promise.all([
+    fetchOperationWheelCounts(period, normalizedDealer),
+    fetchWheelLabourAmounts(period, normalizedDealer),
+    belowPeriod ? fetchOperationWheelCounts(belowPeriod, normalizedDealer) : Promise.resolve(null),
+  ])
+
   const normalizedCounts = normalizeWheelOperationCounts(
-    {
-      alignmentCount: numberValue(countRow.alignment_count),
-      balancingCount: numberValue(countRow.balancing_count),
-    },
+    countResult,
     endDate,
     period,
+    belowCounts,
+    belowPeriod,
   )
   const normalizedLabour = await normalizeWheelOperationLabour(
     labour,

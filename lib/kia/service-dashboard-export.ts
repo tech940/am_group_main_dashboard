@@ -212,12 +212,14 @@ async function fetchEngineOilQtyByPeriod(period: OperationAnalysisPeriod, dealer
       SELECT
         *,
         ${engineOilPartCodeMatchSql('op_part_code', 'op_part_code')} AS is_engine_oil,
-        op_part_code LIKE 'NPNENG4%' AS is_npneng4
+        op_part_code LIKE 'NPNENG4%' AS is_npneng4,
+        op_part_code LIKE 'NPNENG3%' AS is_npneng3
       FROM operation_rows
     )
     SELECT
       COALESCE(SUM(quantity) FILTER (WHERE is_engine_oil), 0)::float AS engine_mtd,
-      COALESCE(SUM(quantity) FILTER (WHERE is_npneng4), 0)::float AS npneng4_mtd
+      COALESCE(SUM(quantity) FILTER (WHERE is_npneng4), 0)::float AS npneng4_mtd,
+      COALESCE(SUM(quantity) FILTER (WHERE is_npneng3), 0)::float AS npneng3_mtd
     FROM classified
   `)
 
@@ -225,6 +227,7 @@ async function fetchEngineOilQtyByPeriod(period: OperationAnalysisPeriod, dealer
   return {
     engineMtd: numberValue(row.engine_mtd),
     npneng4Mtd: numberValue(row.npneng4_mtd),
+    npneng3Mtd: numberValue(row.npneng3_mtd),
   }
 }
 
@@ -755,8 +758,8 @@ async function fetchOilMetrics(monthStart: string, exportDate: string, dealerCod
     const belowPeriod = await resolveOperationAnalysisPeriod(monthStart, exportDate, dealerCode, false)
     if (belowPeriod) {
       const belowOil = await fetchEngineOilQtyByPeriod(belowPeriod, dealerCode)
-      const npneng4Delta = Math.max(0, forwardOil.npneng4Mtd - belowOil.npneng4Mtd)
-      engineMtd = Math.max(0, engineMtd - npneng4Delta)
+      const npneng3Delta = Math.max(0, forwardOil.npneng3Mtd - belowOil.npneng3Mtd)
+      engineMtd = Math.max(0, Math.floor(engineMtd - npneng3Delta))
     }
   }
 

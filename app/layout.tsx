@@ -19,9 +19,9 @@ import NextTopLoader from 'nextjs-toploader';
 const themeInitScript = `
   try {
     const storedTheme = window.localStorage.getItem('dashboard-theme');
-    const storedAccent = window.localStorage.getItem('dashboard-accent') || 'corona';
+    const storedAccent = window.localStorage.getItem('dashboard-accent') || 'executive-navy';
     const legacyAccents = ['navy', 'indigo', 'blue', 'violet', 'ruby'];
-    const accent = legacyAccents.includes(storedAccent) ? 'corona' : storedAccent;
+    const accent = legacyAccents.includes(storedAccent) ? 'executive-navy' : storedAccent;
     const migrationKey = 'dashboard-midnight-theme-decoupled';
     const shouldResetOldMidnightDark = accent === 'midnight' && storedTheme === 'dark' && window.localStorage.getItem(migrationKey) !== '1';
     const theme = shouldResetOldMidnightDark ? 'light' : storedTheme;
@@ -43,6 +43,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${inter.variable} h-full antialiased`}
+      data-dashboard-accent="executive-navy"
       suppressHydrationWarning
     >
       <head>

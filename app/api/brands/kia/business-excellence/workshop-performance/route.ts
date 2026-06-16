@@ -11,8 +11,7 @@ import { normalizeKiaDealerCode, type KiaDealerCode } from '@/lib/kia/dealer-bra
 import {
   fetchCanonicalOperationMetrics,
   fetchEwRsaMcpCounts,
-  fetchVasAmount,
-  getMonthStart,
+  fetchWorkshopVasDetails,
   operationDealerFilter,
   roBillingDealerFilter,
   wheelBalancingLabourMatchSql,
@@ -118,7 +117,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `kia:business-excellence:workshop-performance:v33:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:v35:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -317,16 +316,23 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
 }
 
 async function fetchAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
-  if (!(await tableExists('operation_wise_analysis_advisor_report'))) {
-    if (advisor) return []
+  if (!advisor) {
+    const [canonical, vasPeriod] = await Promise.all([
+      fetchCanonicalOperationMetrics(endDate, dealerCode),
+      fetchWorkshopVasDetails(startDate, endDate, dealerCode),
+    ])
     return [{
       serviceType: 'MECH',
-      vasAmount: await fetchVasAmount(getMonthStart(endDate), endDate, dealerCode),
-      waCount: 0,
-      waAmount: 0,
-      wbCount: 0,
-      wbAmount: 0,
+      vasAmount: vasPeriod.amount,
+      waCount: canonical.alignmentCount,
+      waAmount: canonical.alignmentLabour,
+      wbCount: canonical.balancingCount,
+      wbAmount: canonical.balancingLabour,
     }]
+  }
+
+  if (!(await tableExists('operation_wise_analysis_advisor_report'))) {
+    return []
   }
 
   const result = await db.execute(sql`
@@ -426,27 +432,6 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
     wbAmount: numberValue(row.wb_amount),
   }))
 
-  if (!advisor) {
-    const canonical = await fetchCanonicalOperationMetrics(endDate, dealerCode)
-    const targetRow = rows.find((row) => row.serviceType === 'MECH') || rows[0]
-    if (targetRow) {
-      targetRow.vasAmount = canonical.vasAmount
-      targetRow.waCount = canonical.alignmentCount
-      targetRow.waAmount = canonical.alignmentLabour
-      targetRow.wbCount = canonical.balancingCount
-      targetRow.wbAmount = canonical.balancingLabour
-    } else {
-      rows.push({
-        serviceType: 'MECH',
-        vasAmount: canonical.vasAmount,
-        waCount: canonical.alignmentCount,
-        waAmount: canonical.alignmentLabour,
-        wbCount: canonical.balancingCount,
-        wbAmount: canonical.balancingLabour,
-      })
-    }
-  }
-
   return rows
 }
 
@@ -460,11 +445,14 @@ async function fetchCoreAddonSummary(startDate: string, endDate: string, advisor
     }]
   }
 
-  const canonical = await fetchCanonicalOperationMetrics(endDate, dealerCode)
+  const [canonical, vasPeriod] = await Promise.all([
+    fetchCanonicalOperationMetrics(endDate, dealerCode),
+    fetchWorkshopVasDetails(startDate, endDate, dealerCode),
+  ])
 
   return [{
     serviceType: 'Others',
-    vasAmount: canonical.vasAmount,
+    vasAmount: vasPeriod.amount,
     waCount: canonical.alignmentCount,
     waAmount: canonical.alignmentLabour,
     wbCount: canonical.balancingCount,

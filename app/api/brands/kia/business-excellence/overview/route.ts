@@ -10,6 +10,7 @@ import { normalizeKiaDealerCode, type KiaDealerCode } from '@/lib/kia/dealer-bra
 import {
   activeBillStatusSql,
   fetchEwRsaMcpCounts,
+  fetchCanonicalOperationMetrics,
   fetchWorkshopVasDetails,
   openRoDealerFilter,
   roBillingDealerFilter,
@@ -109,7 +110,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `kia:business-excellence:overview:v31:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v33:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -441,6 +442,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
   })
 
   const vasPeriod = await fetchWorkshopVasDetails(startDate, endDate, dealerCode)
+  const canonicalOperations = await fetchCanonicalOperationMetrics(endDate, dealerCode)
   const totalJc = rows.reduce((sum, row) => sum + row.totalJc, 0)
   const labourAmount = rows.reduce((sum, row) => sum + row.labourAmount, 0)
   const partsAmount = rows.reduce((sum, row) => sum + row.partsAmount, 0)
@@ -459,6 +461,10 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     vasPeriodStart: vasPeriod.periodStart,
     vasPeriodEnd: vasPeriod.periodEnd,
     vasSourceRows: vasPeriod.sourceRows,
+    alignmentCount: canonicalOperations.alignmentCount,
+    balancingCount: canonicalOperations.balancingCount,
+    alignmentLabour: canonicalOperations.alignmentLabour,
+    balancingLabour: canonicalOperations.balancingLabour,
     labourPerRo: perUnit(labourAmount, totalJc),
     minDate: sourceRows.reduce<string | null>((current, row) => {
       const value = dateValue(row.min_date)

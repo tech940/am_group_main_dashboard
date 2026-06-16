@@ -78,15 +78,15 @@ function getThemeServerSnapshot() {
 
 function getAccentSnapshot(): AccentId {
   if (typeof document === 'undefined') {
-    return 'corona'
+    return 'executive-navy'
   }
 
   const accent = document.documentElement.getAttribute('data-dashboard-accent')
-  return ACCENT_OPTIONS.some((option) => option.id === accent) ? accent as AccentId : 'corona'
+  return ACCENT_OPTIONS.some((option) => option.id === accent) ? accent as AccentId : 'executive-navy'
 }
 
 function getAccentServerSnapshot(): AccentId {
-  return 'corona'
+  return 'executive-navy'
 }
 
 interface UserData {
