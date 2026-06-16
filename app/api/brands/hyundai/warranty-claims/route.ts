@@ -4,18 +4,24 @@ import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requirePermission } from '@/lib/permissions/service'
 import {
-  actionSatisfiesRequirement,
   getWarrantyRequirement,
   istDateKey,
+  normalizedText,
   resolveWarrantyBusinessDate,
   type HyundaiWarrantySource,
   warrantyRecordKey,
   WARRANTY_STATUS_ORDER,
+  hyundaiWarrantyBaseCacheKey,
 } from '@/lib/hyundai/warranty-claims'
 import {
+  HYUNDAI_WARRANTY_ALLOWED_DEALERS,
   HYUNDAI_WARRANTY_DEALER_GROUPS,
-  isAllowedHyundaiWarrantyDealer,
+  getHyundaiWarrantyGroupForDealer,
 } from '@/lib/hyundai/warranty-dealers'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
+
+const WARRANTY_CACHE_TTL_SECONDS = CACHE_TTL.SHORT
 
 export const dynamic = 'force-dynamic'
 
@@ -62,34 +68,33 @@ function parseCsvParam(value: string | null, legacySingle?: string | null) {
   return [...new Set(raw.split(',').map((item) => item.trim().toUpperCase()).filter(Boolean))]
 }
 
-function resolveBreakdownYear(
-  dealerRows: EnrichedRow[],
-  startDate: string,
-  endDate: string,
-  fallbackYear: string,
-) {
-  if (startDate && endDate) {
-    const startYear = startDate.slice(0, 4)
-    const endYear = endDate.slice(0, 4)
-    if (startYear === endYear) return startYear
+function dealerCodesForLocationKeys(locationKeys: string[]) {
+  const codes = new Set<string>()
+  for (const key of locationKeys) {
+    const normalized = key.trim().toUpperCase()
+    const group = HYUNDAI_WARRANTY_DEALER_GROUPS.find(
+      (item) => item.key.toUpperCase() === normalized || item.label.toUpperCase() === normalized,
+    )
+    if (group) group.dealerCodes.forEach((code) => codes.add(code))
   }
+  return codes
+}
 
-  const yearCounts = new Map<string, number>()
-  for (const row of dealerRows) {
-    const year = row.businessDate?.slice(0, 4)
-    if (!year) continue
-    yearCounts.set(year, (yearCounts.get(year) || 0) + 1)
-  }
-  if (yearCounts.size === 0) return fallbackYear
-  return [...yearCounts.entries()].sort((left, right) => right[1] - left[1])[0][0]
+function allowedDealerSqlFilter() {
+  return sql`UPPER(TRIM(source_dealer_code)) IN (${sql.join(
+    HYUNDAI_WARRANTY_ALLOWED_DEALERS.map((code) => sql`${code}`),
+    sql`, `,
+  )})`
 }
 
 async function fetchSourceRows(source: HyundaiWarrantySource) {
+  const dealerFilter = allowedDealerSqlFilter()
   if (source === 'ytp') {
     return rows(await db.execute(sql`
       SELECT id, row_hash, source_login_id, no, r_o_no, r_o_date, claim_type,
         r_o_status, vin, campaign_no, category, uploaded_at, source_dealer_code
       FROM hyundai_warranty_claim_ytp
+      WHERE ${dealerFilter}
     `))
   }
   return rows(await db.execute(sql`
@@ -99,6 +104,7 @@ async function fetchSourceRows(source: HyundaiWarrantySource) {
       approve_amount_by_hmi, invoice_no, part_type, pdctn_date, uploaded_at,
       source_dealer_code
     FROM hyundai_warranty_claim_list
+    WHERE ${dealerFilter}
   `))
 }
 
@@ -111,16 +117,128 @@ async function fetchMappings() {
   return new Map(rows(result).map((row) => [text(row.dealer_code).toUpperCase(), text(row.dealer_name)]))
 }
 
-async function fetchActions(source: HyundaiWarrantySource, recordKeys: string[]) {
-  if (recordKeys.length === 0) return []
-  return rows(await db.execute(sql`
-    SELECT id, record_key, requirement_code, status_snapshot, remark, docket_number,
-      created_by_name, created_by_role, created_at
-    FROM hyundai_warranty_claim_actions
-    WHERE source_type = ${source}
-      AND record_key IN (${sql.join(recordKeys.map((key) => sql`${key}`), sql`, `)})
-    ORDER BY created_at DESC
-  `))
+type ActionSummaries = {
+  remarkCounts: Map<string, number>
+  latestByKey: Map<string, RawRow>
+  satisfactionKeys: Set<string>
+}
+
+function satisfactionKey(recordKey: string, requirementCode: unknown, statusSnapshot: unknown) {
+  return `${recordKey}|${normalizedText(requirementCode)}|${normalizedText(statusSnapshot)}`
+}
+
+async function fetchActionSummaries(source: HyundaiWarrantySource): Promise<ActionSummaries> {
+  const [countRows, latestRows, satisfactionRows] = await Promise.all([
+    db.execute(sql`
+      SELECT record_key, COUNT(*)::int AS remark_count
+      FROM hyundai_warranty_claim_actions
+      WHERE source_type = ${source}
+      GROUP BY record_key
+    `),
+    db.execute(sql`
+      SELECT DISTINCT ON (record_key)
+        record_key, requirement_code, status_snapshot, remark, docket_number,
+        created_by_name, created_by_role, created_at
+      FROM hyundai_warranty_claim_actions
+      WHERE source_type = ${source}
+      ORDER BY record_key, created_at DESC
+    `),
+    db.execute(sql`
+      SELECT record_key, requirement_code, status_snapshot
+      FROM hyundai_warranty_claim_actions
+      WHERE source_type = ${source}
+      GROUP BY record_key, requirement_code, status_snapshot
+    `),
+  ])
+
+  const remarkCounts = new Map<string, number>()
+  rows(countRows).forEach((row) => {
+    remarkCounts.set(text(row.record_key), num(row.remark_count))
+  })
+
+  const latestByKey = new Map<string, RawRow>()
+  rows(latestRows).forEach((row) => {
+    latestByKey.set(text(row.record_key), row)
+  })
+
+  const satisfactionKeys = new Set<string>()
+  rows(satisfactionRows).forEach((row) => {
+    satisfactionKeys.add(satisfactionKey(
+      text(row.record_key),
+      row.requirement_code,
+      row.status_snapshot,
+    ))
+  })
+
+  return { remarkCounts, latestByKey, satisfactionKeys }
+}
+
+type WarrantyBaseCache = {
+  scoped: EnrichedRow[]
+  dealers: string[]
+  statuses: string[]
+  claimTypes: string[]
+  dealerNames: Record<string, string>
+}
+
+function warrantyCacheKey(source: HyundaiWarrantySource) {
+  return hyundaiWarrantyBaseCacheKey(source)
+}
+
+async function loadWarrantyBase(source: HyundaiWarrantySource): Promise<WarrantyBaseCache> {
+  return getCachedData(
+    warrantyCacheKey(source),
+    async () => {
+      const [rawRows, mappings, actionSummaries] = await Promise.all([
+        fetchSourceRows(source),
+        fetchMappings(),
+        fetchActionSummaries(source),
+      ])
+
+      const scoped: EnrichedRow[] = rawRows.map((row) => {
+        const recordKey = warrantyRecordKey(source, row)
+        const status = text(source === 'ytp' ? row.r_o_status : row.status)
+        const businessDate = resolveWarrantyBusinessDate(source, row)
+        const requirement = getWarrantyRequirement(source, status, businessDate)
+        const latestAction = actionSummaries.latestByKey.get(recordKey)
+        const matchingAction = requirement.required && requirement.code
+          ? actionSummaries.satisfactionKeys.has(satisfactionKey(recordKey, requirement.code, status))
+          : true
+        const dealerCode = text(row.source_dealer_code).toUpperCase() || 'UNMAPPED'
+        return {
+          ...row,
+          id: String(row.id),
+          uploaded_at: row.uploaded_at ? String(row.uploaded_at) : null,
+          recordKey,
+          dealerCode,
+          dealerName: mappings.get(dealerCode) || dealerCode,
+          status,
+          statusBucket: statusBucket(status),
+          businessDate,
+          requirement,
+          compliance: requirement.required
+            ? (matchingAction ? 'complete' as const : 'action_required' as const)
+            : 'not_required' as const,
+          remarkCount: actionSummaries.remarkCounts.get(recordKey) || 0,
+          latestRemark: latestAction ? {
+            remark: text(latestAction.remark),
+            docketNumber: text(latestAction.docket_number) || null,
+            createdByName: text(latestAction.created_by_name),
+            createdByRole: text(latestAction.created_by_role),
+            createdAt: String(latestAction.created_at),
+          } : null,
+        }
+      })
+
+      const dealers = [...new Set(scoped.map((row) => row.dealerCode))].sort()
+      const statuses = [...new Set(scoped.map((row) => row.status).filter(Boolean))].sort()
+      const claimTypes = [...new Set(scoped.map((row) => text(row.claim_type)).filter(Boolean))].sort()
+      const dealerNames = Object.fromEntries([...mappings.entries()])
+
+      return { scoped, dealers, statuses, claimTypes, dealerNames }
+    },
+    WARRANTY_CACHE_TTL_SECONDS,
+  )
 }
 
 function statusBucket(status: string) {
@@ -141,46 +259,55 @@ function monthLabel(monthNumber: number) {
   return new Date(2026, monthNumber - 1, 1).toLocaleString('en-IN', { month: 'long' })
 }
 
+function indexRowsByDealer(rows: EnrichedRow[]) {
+  const byDealer = new Map<string, EnrichedRow[]>()
+  for (const row of rows) {
+    const list = byDealer.get(row.dealerCode)
+    if (list) list.push(row)
+    else byDealer.set(row.dealerCode, [row])
+  }
+  return byDealer
+}
+
+function sumStatusAmounts(rows: EnrichedRow[], relevantStatuses: string[]) {
+  const totals = Object.fromEntries(relevantStatuses.map((bucket) => [bucket, 0]))
+  let total = 0
+  for (const row of rows) {
+    const amount = num(row.total_amt)
+    total += amount
+    if (totals[row.statusBucket] != null) totals[row.statusBucket] += amount
+  }
+  return { amounts: totals, total }
+}
+
 function buildMatrixDealerRow(
   code: string,
-  baseFiltered: EnrichedRow[],
+  dealerRows: EnrichedRow[] | undefined,
   relevantStatuses: string[],
   mappings: Map<string, string>,
-  startDate: string,
-  endDate: string,
-  currentYear: string,
 ) {
-  const dealerRows = baseFiltered.filter((row) => row.dealerCode === code)
-  if (dealerRows.length === 0) return null
+  if (!dealerRows?.length) return null
 
-  const breakdownYear = resolveBreakdownYear(dealerRows, startDate, endDate, currentYear)
-  const breakdownRows = dealerRows.filter((row) => row.businessDate?.slice(0, 4) === breakdownYear)
+  const { amounts, total } = sumStatusAmounts(dealerRows, relevantStatuses)
+  const rowsByMonth = Array.from({ length: 12 }, () => [] as EnrichedRow[])
+  for (const row of dealerRows) {
+    const monthNumber = Number(row.businessDate?.slice(5, 7))
+    if (monthNumber >= 1 && monthNumber <= 12) rowsByMonth[monthNumber - 1].push(row)
+  }
+
   return {
     dealerCode: code,
     dealerName: mappings.get(code) || code,
-    breakdownYear,
-    amounts: Object.fromEntries(relevantStatuses.map((bucket) => [
-      bucket,
-      dealerRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
-    ])),
-    total: dealerRows.reduce((sum, row) => sum + num(row.total_amt), 0),
-    currentYearAmounts: Object.fromEntries(relevantStatuses.map((bucket) => [
-      bucket,
-      breakdownRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
-    ])),
-    currentYearTotal: breakdownRows.reduce((sum, row) => sum + num(row.total_amt), 0),
-    monthly: Array.from({ length: 12 }, (_, index) => {
+    amounts,
+    total,
+    monthly: rowsByMonth.map((monthRows, index) => {
       const monthNumber = index + 1
-      const monthKey = `${breakdownYear}-${String(monthNumber).padStart(2, '0')}`
-      const monthRows = breakdownRows.filter((row) => row.businessDate?.slice(0, 7) === monthKey)
+      const monthTotals = sumStatusAmounts(monthRows, relevantStatuses)
       return {
         month: monthLabel(monthNumber),
         monthNumber,
-        amounts: Object.fromEntries(relevantStatuses.map((bucket) => [
-          bucket,
-          monthRows.filter((row) => row.statusBucket === bucket).reduce((sum, row) => sum + num(row.total_amt), 0),
-        ])),
-        total: monthRows.reduce((sum, row) => sum + num(row.total_amt), 0),
+        amounts: monthTotals.amounts,
+        total: monthTotals.total,
       }
     }),
   }
@@ -193,6 +320,124 @@ function sumAmountMaps(rows: Array<Record<string, number>>, statuses: string[]) 
   ]))
 }
 
+function buildClaimListCharts(
+  baseFiltered: EnrichedRow[],
+  dealers: string[],
+  statuses: string[],
+  claimTypes: string[],
+  dealerNames: Record<string, string>,
+  currentYear: string,
+  currentIstDate: string,
+) {
+  const statusAgg = new Map<string, { count: number; amount: number }>()
+  const dealerAmounts = new Map<string, number>()
+  const claimTypeCounts = new Map<string, number>()
+  const aging = { '0-2D': 0, '3-7D': 0, '8-15D': 0, '>15D': 0 }
+  const monthlyAgg = new Map<string, { count: number; amount: number }>()
+
+  for (const row of baseFiltered) {
+    const amount = num(row.total_amt)
+    const statusEntry = statusAgg.get(row.status) || { count: 0, amount: 0 }
+    statusEntry.count += 1
+    statusEntry.amount += amount
+    statusAgg.set(row.status, statusEntry)
+
+    dealerAmounts.set(row.dealerCode, (dealerAmounts.get(row.dealerCode) || 0) + amount)
+
+    const claimTypeName = text(row.claim_type)
+    if (claimTypeName) {
+      claimTypeCounts.set(claimTypeName, (claimTypeCounts.get(claimTypeName) || 0) + 1)
+    }
+
+    const ageDays = row.requirement.ageDays
+    if (ageDays <= 2) aging['0-2D'] += 1
+    else if (ageDays <= 7) aging['3-7D'] += 1
+    else if (ageDays <= 15) aging['8-15D'] += 1
+    else aging['>15D'] += 1
+
+    const monthKey = row.businessDate?.slice(0, 7)
+    if (monthKey) {
+      const monthEntry = monthlyAgg.get(monthKey) || { count: 0, amount: 0 }
+      monthEntry.count += 1
+      monthEntry.amount += amount
+      monthlyAgg.set(monthKey, monthEntry)
+    }
+  }
+
+  return {
+    status: statuses.map((name) => ({
+      name,
+      count: statusAgg.get(name)?.count || 0,
+      amount: statusAgg.get(name)?.amount || 0,
+    })),
+    dealers: dealers.map((code) => ({
+      code,
+      name: dealerNames[code] || code,
+      amount: dealerAmounts.get(code) || 0,
+    })),
+    claimTypes: claimTypes.map((name) => ({
+      name,
+      count: claimTypeCounts.get(name) || 0,
+    })),
+    aging: [
+      { name: '0-2D', count: aging['0-2D'] },
+      { name: '3-7D', count: aging['3-7D'] },
+      { name: '8-15D', count: aging['8-15D'] },
+      { name: '>15D', count: aging['>15D'] },
+    ],
+    monthly: Array.from({ length: Number(currentIstDate.slice(5, 7)) }, (_, index) => {
+      const month = String(index + 1).padStart(2, '0')
+      const monthKey = `${currentYear}-${month}`
+      const monthEntry = monthlyAgg.get(monthKey)
+      return {
+        month: new Date(Number(currentYear), index, 1).toLocaleString('en-IN', { month: 'short' }),
+        monthNumber: index + 1,
+        count: monthEntry?.count || 0,
+        amount: monthEntry?.amount || 0,
+      }
+    }),
+  }
+}
+
+function buildYtpMonthlySummary(baseFiltered: EnrichedRow[], ytpSummaryDealers: string[]) {
+  const dealerMonthCounts = new Map<string, Map<number, number>>()
+  const dealerTotals = new Map<string, number>()
+  const monthTotals = new Map<number, number>()
+
+  for (const row of baseFiltered) {
+    const monthNumber = Number(row.businessDate?.slice(5, 7))
+    if (!monthNumber) continue
+
+    dealerTotals.set(row.dealerCode, (dealerTotals.get(row.dealerCode) || 0) + 1)
+    monthTotals.set(monthNumber, (monthTotals.get(monthNumber) || 0) + 1)
+
+    const dealerMonths = dealerMonthCounts.get(row.dealerCode) || new Map<number, number>()
+    dealerMonths.set(monthNumber, (dealerMonths.get(monthNumber) || 0) + 1)
+    dealerMonthCounts.set(row.dealerCode, dealerMonths)
+  }
+
+  return {
+    dealers: ytpSummaryDealers,
+    rows: Array.from({ length: 12 }, (_, index) => {
+      const monthNumber = index + 1
+      return {
+        month: monthLabel(monthNumber),
+        monthNumber,
+        counts: Object.fromEntries(ytpSummaryDealers.map((code) => [
+          code,
+          dealerMonthCounts.get(code)?.get(monthNumber) || 0,
+        ])),
+        total: monthTotals.get(monthNumber) || 0,
+      }
+    }),
+    dealerTotals: Object.fromEntries(ytpSummaryDealers.map((code) => [
+      code,
+      dealerTotals.get(code) || 0,
+    ])),
+    grandTotal: baseFiltered.length,
+  }
+}
+
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -202,58 +447,18 @@ export async function GET(request: Request) {
   const viewPermission = await requirePermission(appUser, permissionKey(source, 'view'))
   if (!viewPermission.allowed) return NextResponse.json({ error: viewPermission.reason }, { status: 403 })
 
-  const [rawRows, mappings, editPermission, auditPermission] = await Promise.all([
-    fetchSourceRows(source),
-    fetchMappings(),
+  const [baseData, editPermission, auditPermission] = await Promise.all([
+    loadWarrantyBase(source),
     requirePermission(appUser, permissionKey(source, 'edit')),
     requirePermission(appUser, permissionKey(source, 'audit')),
   ])
-  const recordKeys = rawRows.map((row) => warrantyRecordKey(source, row))
-  const allActions = await fetchActions(source, recordKeys)
-  const actionsByKey = new Map<string, RawRow[]>()
-  allActions.forEach((action) => {
-    const key = text(action.record_key)
-    actionsByKey.set(key, [...(actionsByKey.get(key) || []), action])
-  })
 
-  const enriched: EnrichedRow[] = rawRows.map((row) => {
-    const recordKey = warrantyRecordKey(source, row)
-    const status = text(source === 'ytp' ? row.r_o_status : row.status)
-    const businessDate = resolveWarrantyBusinessDate(source, row)
-    const requirement = getWarrantyRequirement(source, status, businessDate)
-    const recordActions = actionsByKey.get(recordKey) || []
-    const matchingAction = recordActions.find((action) => actionSatisfiesRequirement(requirement, status, {
-      requirementCode: action.requirement_code,
-      statusSnapshot: action.status_snapshot,
-    }))
-    const latestAction = recordActions[0]
-    const dealerCode = text(row.source_dealer_code).toUpperCase() || 'UNMAPPED'
-    return {
-      ...row,
-      id: String(row.id),
-      uploaded_at: row.uploaded_at ? String(row.uploaded_at) : null,
-      recordKey,
-      dealerCode,
-      dealerName: mappings.get(dealerCode) || dealerCode,
-      status,
-      statusBucket: statusBucket(status),
-      businessDate,
-      requirement,
-      compliance: requirement.required ? (matchingAction ? 'complete' as const : 'action_required' as const) : 'not_required' as const,
-      remarkCount: recordActions.length,
-      latestRemark: latestAction ? {
-        remark: text(latestAction.remark),
-        docketNumber: text(latestAction.docket_number) || null,
-        createdByName: text(latestAction.created_by_name),
-        createdByRole: text(latestAction.created_by_role),
-        createdAt: String(latestAction.created_at),
-      } : null,
-    }
-  })
-
-  const scoped = enriched.filter((row) => isAllowedHyundaiWarrantyDealer(row.dealerCode))
+  const { scoped, dealers, statuses, claimTypes, dealerNames } = baseData
+  const mappings = new Map(Object.entries(dealerNames))
 
   const search = text(searchParams.get('search')).toLowerCase()
+  const locationSet = parseCsvParam(searchParams.get('locations'), null)
+  const locationDealerCodes = locationSet.length ? dealerCodesForLocationKeys(locationSet) : null
   const dealerSet = parseCsvParam(searchParams.get('dealers'), searchParams.get('dealer'))
   const statusSet = parseCsvParam(searchParams.get('statuses'), searchParams.get('status'))
   const requestedStatusBucket = text(searchParams.get('statusBucket'))
@@ -267,6 +472,7 @@ export async function GET(request: Request) {
       row.r_o_no, row.vin, row.claim_no, row.campaign_no, row.part_desc,
     ].map(text).join(' ').toLowerCase()
     if (search && !haystack.includes(search)) return false
+    if (locationDealerCodes?.size && !locationDealerCodes.has(row.dealerCode)) return false
     if (dealerSet.length && !dealerSet.includes(row.dealerCode)) return false
     if (statusSet.length && !statusSet.includes(row.status.toUpperCase())) return false
     if (claimType && text(row.claim_type).toUpperCase() !== claimType) return false
@@ -293,9 +499,6 @@ export async function GET(request: Request) {
   const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize')) || 25))
   const page = Math.max(1, Number(searchParams.get('page')) || 1)
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize)
-  const dealers = [...new Set(scoped.map((row) => row.dealerCode))].sort()
-  const statuses = [...new Set(scoped.map((row) => row.status).filter(Boolean))].sort()
-  const claimTypes = [...new Set(scoped.map((row) => text(row.claim_type)).filter(Boolean))].sort()
 
   const summary = {
     total: filtered.length,
@@ -308,46 +511,17 @@ export async function GET(request: Request) {
 
   const currentIstDate = istDateKey()
   const currentYear = currentIstDate.slice(0, 4)
-  const charts = source === 'claim_list' ? {
-    status: statuses.map((name) => ({
-      name,
-      count: baseFiltered.filter((row) => row.status === name).length,
-      amount: baseFiltered.filter((row) => row.status === name).reduce((sum, row) => sum + num(row.total_amt), 0),
-    })),
-    dealers: dealers.map((code) => ({
-      code,
-      name: mappings.get(code) || code,
-      amount: baseFiltered.filter((row) => row.dealerCode === code).reduce((sum, row) => sum + num(row.total_amt), 0),
-    })),
-    claimTypes: claimTypes.map((name) => ({
-      name,
-      count: baseFiltered.filter((row) => text(row.claim_type) === name).length,
-    })),
-    aging: [
-      { name: '0-2D', count: baseFiltered.filter((row) => row.requirement.ageDays <= 2).length },
-      { name: '3-7D', count: baseFiltered.filter((row) => row.requirement.ageDays >= 3 && row.requirement.ageDays <= 7).length },
-      { name: '8-15D', count: baseFiltered.filter((row) => row.requirement.ageDays >= 8 && row.requirement.ageDays <= 15).length },
-      { name: '>15D', count: baseFiltered.filter((row) => row.requirement.ageDays > 15).length },
-    ],
-    monthly: Array.from({ length: Number(currentIstDate.slice(5, 7)) }, (_, index) => {
-      const month = String(index + 1).padStart(2, '0')
-      const monthRows = baseFiltered.filter((row) => row.businessDate?.slice(0, 7) === `${currentYear}-${month}`)
-      return {
-        month: new Date(Number(currentYear), index, 1).toLocaleString('en-IN', { month: 'short' }),
-        monthNumber: index + 1,
-        count: monthRows.length,
-        amount: monthRows.reduce((sum, row) => sum + num(row.total_amt), 0),
-      }
-    }),
-  } : null
+  const charts = source === 'claim_list'
+    ? buildClaimListCharts(baseFiltered, dealers, statuses, claimTypes, dealerNames, currentYear, currentIstDate)
+    : null
 
   const relevantStatuses = WARRANTY_STATUS_ORDER.filter((bucket) => baseFiltered.some((row) => row.statusBucket === bucket))
+  const rowsByDealer = source === 'claim_list' ? indexRowsByDealer(baseFiltered) : null
   const matrix = source === 'claim_list' ? {
-    breakdownYear: currentYear,
     statuses: relevantStatuses,
     groups: HYUNDAI_WARRANTY_DEALER_GROUPS.map((group) => {
       const dealersInGroup = group.dealerCodes
-        .map((code) => buildMatrixDealerRow(code, baseFiltered, relevantStatuses, mappings, startDate, endDate, currentYear))
+        .map((code) => buildMatrixDealerRow(code, rowsByDealer!.get(code), relevantStatuses, mappings))
         .filter((row): row is NonNullable<typeof row> => Boolean(row))
 
       if (dealersInGroup.length === 0) return null
@@ -365,34 +539,34 @@ export async function GET(request: Request) {
   } : null
 
   const ytpSummaryDealers = [...new Set(baseFiltered.map((row) => row.dealerCode))].sort()
-  const ytpMonthlySummary = source === 'ytp' ? {
-    dealers: ytpSummaryDealers,
-    rows: Array.from({ length: 12 }, (_, index) => {
-      const monthNumber = index + 1
-      const monthRows = baseFiltered.filter((row) => Number(row.businessDate?.slice(5, 7)) === monthNumber)
-      return {
-        month: monthLabel(monthNumber),
-        monthNumber,
-        counts: Object.fromEntries(ytpSummaryDealers.map((code) => [
-          code,
-          monthRows.filter((row) => row.dealerCode === code).length,
-        ])),
-        total: monthRows.length,
-      }
-    }),
-    dealerTotals: Object.fromEntries(ytpSummaryDealers.map((code) => [
-      code,
-      baseFiltered.filter((row) => row.dealerCode === code).length,
-    ])),
-    grandTotal: baseFiltered.length,
-  } : null
+  const ytpMonthlySummary = source === 'ytp'
+    ? buildYtpMonthlySummary(baseFiltered, ytpSummaryDealers)
+    : null
 
   return NextResponse.json({
     source,
     generatedAt: new Date().toISOString(),
     permissions: { canEdit: editPermission.allowed, canAudit: auditPermission.allowed },
     summary,
-    options: { dealers, statuses, claimTypes },
+    options: {
+      dealers,
+      dealerOptions: dealers.map((code) => {
+        const mappedName = dealerNames[code]
+        const location = getHyundaiWarrantyGroupForDealer(code)?.label || null
+        return {
+          code,
+          name: mappedName && mappedName !== code ? mappedName : (location || code),
+          location,
+        }
+      }),
+      locationGroups: HYUNDAI_WARRANTY_DEALER_GROUPS.map((group) => ({
+        key: group.key,
+        label: group.label,
+        dealerCodes: [...group.dealerCodes],
+      })),
+      statuses,
+      claimTypes,
+    },
     charts,
     matrix,
     ytpMonthlySummary,

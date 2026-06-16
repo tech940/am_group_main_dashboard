@@ -7,8 +7,8 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requirePermission } from '@/lib/permissions/service'
 import {
   getWarrantyRequirement,
+  hyundaiWarrantyBaseCacheKey,
   type HyundaiWarrantySource,
-  warrantyRecordKey,
 } from '@/lib/hyundai/warranty-claims'
 import { isAllowedHyundaiWarrantyDealer } from '@/lib/hyundai/warranty-dealers'
 import {
@@ -18,6 +18,7 @@ import {
   WARRANTY_MAX_FILE_BYTES,
   WARRANTY_MAX_FILES,
 } from '@/lib/hyundai/warranty-storage'
+import { invalidateCache } from '@/lib/redis/cache-utils'
 
 type RawRow = Record<string, unknown>
 
@@ -40,16 +41,32 @@ function dateKey(value: unknown) {
 }
 
 async function findRecord(source: HyundaiWarrantySource, recordKey: string) {
-  const result = source === 'ytp'
-    ? await db.execute(sql`
-        SELECT source_dealer_code, r_o_no, r_o_date, claim_type, r_o_status, vin, campaign_no
-        FROM hyundai_warranty_claim_ytp
-      `)
-    : await db.execute(sql`
-        SELECT claim_no, claim_date, status, source_dealer_code
-        FROM hyundai_warranty_claim_list
-      `)
-  return resultRows(result).find((row) => warrantyRecordKey(source, row) === recordKey) || null
+  if (source === 'claim_list') {
+    const claimNo = recordKey.replace(/^CLAIM\|/i, '').trim()
+    if (!claimNo) return null
+    const result = await db.execute(sql`
+      SELECT claim_no, claim_date, status, source_dealer_code
+      FROM hyundai_warranty_claim_list
+      WHERE UPPER(TRIM(claim_no)) = ${claimNo.toUpperCase()}
+      LIMIT 1
+    `)
+    return resultRows(result)[0] || null
+  }
+
+  const parts = recordKey.split('|')
+  if (parts.length < 6 || parts[0] !== 'YTP') return null
+  const [, dealerCode, roNo, vin, claimType, campaignNo] = parts
+  const result = await db.execute(sql`
+    SELECT source_dealer_code, r_o_no, r_o_date, claim_type, r_o_status, vin, campaign_no
+    FROM hyundai_warranty_claim_ytp
+    WHERE UPPER(TRIM(source_dealer_code)) = ${dealerCode}
+      AND UPPER(TRIM(r_o_no)) = ${roNo}
+      AND UPPER(TRIM(vin)) = ${vin}
+      AND UPPER(TRIM(claim_type)) = ${claimType}
+      AND UPPER(TRIM(campaign_no)) = ${campaignNo}
+    LIMIT 1
+  `)
+  return resultRows(result)[0] || null
 }
 
 export async function GET(request: Request) {
@@ -169,6 +186,7 @@ export async function POST(request: Request) {
         })))
       }
     })
+    await invalidateCache(hyundaiWarrantyBaseCacheKey(source))
     return NextResponse.json({ id: actionId, message: 'Remarks saved successfully' }, { status: 201 })
   } catch (error) {
     await deleteWarrantyEvidence(uploadedPaths)

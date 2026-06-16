@@ -737,8 +737,8 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string) {
               uploaded_at,
               id
             FROM rsa_report
-            WHERE invoice_date >= ${startDate}::date
-              AND invoice_date < (${endDate}::date + INTERVAL '1 day')
+            WHERE invoice_date::date >= ${startDate}::date
+              AND invoice_date::date < (${endDate}::date + INTERVAL '1 day')
             ORDER BY
               COALESCE(
                 NULLIF(TRIM(invoice_no), ''),

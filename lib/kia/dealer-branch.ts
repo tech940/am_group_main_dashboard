@@ -7,6 +7,21 @@ export type KiaDealerCode = (typeof KIA_BRANCH_DEALERS)[number]['dealerCode']
 
 export const DEFAULT_KIA_DEALER_CODE: KiaDealerCode = 'JK402'
 
+/** Canonical engine-oil part codes (Supabase rows often use a trailing C suffix). */
+export const KIA_ENGINE_OIL_PART_CODES = ['NPNENG2P2BIO', 'NPNENG3D1BIC', 'NPNENG4D2BIC'] as const
+
+const KIA_DEALER_FILTER_ALIASES: Record<KiaDealerCode, readonly string[]> = {
+  JK402: ['JK402'],
+  JK501: ['JK501'],
+}
+
+export function getKiaDealerFilterValues(dealerCode: KiaDealerCode | null | undefined) {
+  if (!dealerCode) return null
+  const normalized = normalizeKiaDealerCode(dealerCode)
+  if (!normalized) return null
+  return [...KIA_DEALER_FILTER_ALIASES[normalized]]
+}
+
 export function normalizeKiaDealerCode(value: string | null | undefined): KiaDealerCode | null {
   const normalized = String(value || '').trim().toUpperCase()
   return KIA_BRANCH_DEALERS.some((branch) => branch.dealerCode === normalized)

@@ -2,8 +2,13 @@ import path from 'path'
 import ExcelJS from 'exceljs'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import {
+  getKiaDealerFilterValues,
+  KIA_ENGINE_OIL_PART_CODES,
+  type KiaDealerCode,
+} from '@/lib/kia/dealer-branch'
 
-type DealerFilter = string | null
+type DealerFilter = KiaDealerCode | null
 type NumericRow = Record<string, unknown>
 
 const SERVICE_DASHBOARD_TEMPLATE = path.join(process.cwd(), 'templates', 'kia', 'service-dashboard-template.xlsx')
@@ -157,18 +162,55 @@ function activeBillStatusSql(alias = '') {
   return sql`LOWER(TRIM(COALESCE(${sql.raw(`${alias}bill_status`)}::text, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`
 }
 
+function dealerInListMatch(codes: string[], columns: string[]) {
+  if (codes.length === 0) return 'FALSE'
+  return `(${columns
+    .map((column) => `UPPER(TRIM(COALESCE(${column}, ''))) IN (${codes.map((code) => `'${code}'`).join(', ')})`)
+    .join(' OR ')})`
+}
+
+function dealerInListFilter(codes: string[], columns: string[]) {
+  return sql.raw(`AND ${dealerInListMatch(codes, columns)}`)
+}
+
+function coalescedDealerInListFilter(codes: string[], columns: string[]) {
+  if (codes.length === 0) return sql.raw('AND FALSE')
+  const coalesced = `UPPER(TRIM(COALESCE(${columns.map((column) => `NULLIF(${column}, '')`).join(', ')}, '')))`
+  return sql.raw(`AND ${coalesced} IN (${codes.map((code) => `'${code}'`).join(', ')})`)
+}
+
+function coalescedDealerInListMatch(codes: string[], columns: string[]) {
+  if (codes.length === 0) return 'FALSE'
+  const coalesced = `UPPER(TRIM(COALESCE(${columns.map((column) => `NULLIF(${column}, '')`).join(', ')}, '')))`
+  return `${coalesced} IN (${codes.map((code) => `'${code}'`).join(', ')})`
+}
+
 function roBillingDealerFilter(dealerCode: DealerFilter, alias = '') {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(${sql.raw(`${alias}dealer_code`)}, ''), NULLIF(${sql.raw(`${alias}main_dealer_code`)}, '')))) = ${dealerCode}`
-    : sql``
+  const codes = getKiaDealerFilterValues(dealerCode)
+  if (!codes?.length) return sql``
+  return coalescedDealerInListFilter(codes, [
+    `${alias}dealer_code`,
+    `${alias}main_dealer_code`,
+  ])
+}
+
+function advWiseDealerFilter(dealerCode: DealerFilter, alias = '') {
+  const codes = getKiaDealerFilterValues(dealerCode)
+  if (!codes?.length) return sql``
+  return coalescedDealerInListFilter(codes, [
+    `${alias}dealer_code`,
+    `${alias}retail_dealer_code`,
+  ])
 }
 
 function openRoDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode ? sql`
+  const codes = getKiaDealerFilterValues(dealerCode)
+  if (!codes?.length) return sql``
+  return sql`
     AND EXISTS (
       SELECT 1
       FROM ro_billing_report rb
-      WHERE UPPER(TRIM(COALESCE(NULLIF(rb.dealer_code, ''), NULLIF(rb.main_dealer_code, '')))) = ${dealerCode}
+      WHERE ${sql.raw(coalescedDealerInListMatch(codes, ['rb.dealer_code', 'rb.main_dealer_code']))}
         AND (
           (
             NULLIF(TRIM(open_ro_yearly.vin), '') IS NOT NULL
@@ -180,37 +222,63 @@ function openRoDealerFilter(dealerCode: DealerFilter) {
           )
         )
     )
-  ` : sql``
+  `
 }
 
 function operationDealerFilter(dealerCode: DealerFilter, alias = '') {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(${sql.raw(`${alias}dealer_code`)}, ''))) = ${dealerCode}`
-    : sql``
-}
-
-function advWiseDealerFilter(dealerCode: DealerFilter, alias = '') {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(${sql.raw(`${alias}dealer_code`)}, ''), NULLIF(${sql.raw(`${alias}retail_dealer_code`)}, '')))) = ${dealerCode}`
-    : sql``
+  const codes = getKiaDealerFilterValues(dealerCode)
+  if (!codes?.length) return sql``
+  return dealerInListFilter(codes, [`${alias}dealer_code`])
 }
 
 function ewDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(outlet_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`
-    : sql``
+  const codes = getKiaDealerFilterValues(dealerCode)
+  if (!codes?.length) return sql``
+  return coalescedDealerInListFilter(codes, ['outlet_code', 'main_dealer_code'])
 }
 
 function mcpDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(dealer_code, ''))) = ${dealerCode}`
-    : sql``
+  const codes = getKiaDealerFilterValues(dealerCode)
+  if (!codes?.length) return sql``
+  return dealerInListFilter(codes, ['dealer_code'])
 }
 
 function rsaDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND UPPER(TRIM(COALESCE(dealer_workshop_code, ''))) = ${dealerCode}`
-    : sql``
+  const codes = getKiaDealerFilterValues(dealerCode)
+  if (!codes?.length) return sql``
+  return dealerInListFilter(codes, ['dealer_workshop_code'])
+}
+
+function engineOilPartCodeMatchSql(partNoColumn: string, opPartCodeColumn: string) {
+  const prefixes = KIA_ENGINE_OIL_PART_CODES.map((code) => code.replace(/'/g, "''"))
+  const prefixMatches = prefixes
+    .map((prefix) => `(UPPER(TRIM(COALESCE(${partNoColumn}, ''))) LIKE '${prefix}%' OR UPPER(TRIM(COALESCE(${opPartCodeColumn}, ''))) LIKE '${prefix}%')`)
+    .join(' OR ')
+  return sql.raw(`(
+    ${prefixMatches}
+    OR UPPER(TRIM(COALESCE(${partNoColumn}, ''))) LIKE 'NPNENG%'
+    OR UPPER(TRIM(COALESCE(${opPartCodeColumn}, ''))) LIKE 'NPNENG%'
+  )`)
+}
+
+function engineOilDescriptionMatchSql(descriptionColumn: string) {
+  return sql.raw(`(
+    ${descriptionColumn} ~ '(engine[[:space:]-]*oil|(^|[^0-9])0w[[:space:]-]*20([^0-9]|$)|(^|[^0-9])5w[[:space:]-]*30([^0-9]|$)|(^|[^0-9])10w[[:space:]-]*30([^0-9]|$)|(^|[^0-9])15w[[:space:]-]*40([^0-9]|$))'
+    AND ${descriptionColumn} !~ '(filter|seal|gasket|plug|pan|cooler|assy|r[[:space:]]*&[[:space:]]*r|spring|coil|gauge|synthetic)'
+  )`)
+}
+
+function syntheticOilMatchSql(descriptionColumn: string) {
+  return sql.raw(`(
+    ${descriptionColumn} ~ '(^|[^a-z])synthetic([^a-z]|$)'
+    AND ${descriptionColumn} !~ '(synthetic[[:space:]-]*filter|transmission|gear)'
+  )`)
+}
+
+function serviceDashboardAverageRoDenominator(exportDate: string) {
+  const dayOfMonth = Number(exportDate.slice(8, 10))
+  if (Number.isFinite(dayOfMonth) && dayOfMonth > 1) return dayOfMonth - 1
+  return 1
 }
 
 function serviceCategoryExpression(workTypeColumn: string, serviceTypeColumn: string) {
@@ -225,7 +293,7 @@ function serviceCategoryExpression(workTypeColumn: string, serviceTypeColumn: st
     WHEN LOWER(CONCAT_WS(' ', ${sql.raw(workTypeColumn)}, ${sql.raw(serviceTypeColumn)})) LIKE '%paid%'
       OR COALESCE(${sql.raw(serviceTypeColumn)}, '') ~* '^[0-9]+K$'
       THEN 'Paid Service'
-    ELSE COALESCE(NULLIF(${sql.raw(workTypeColumn)}, ''), NULLIF(${sql.raw(serviceTypeColumn)}, ''), 'Others')
+    ELSE 'Others'
   END`
 }
 
@@ -254,11 +322,56 @@ async function resolveExportDate(requestedEndDate: string | null, dealerCode: De
   return parseDateInput(String(resultRows(result)[0]?.max_date || '')) || toDateInputValue(new Date())
 }
 
+async function fetchAccidentalIntakeSupplement(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
+  const result = await db.execute(sql`
+    WITH ro_keys AS (
+      SELECT DISTINCT COALESCE(NULLIF(ro_no, ''), NULLIF(bill_no, ''), id::text) AS jc_key
+      FROM ro_billing_report
+      WHERE ro_date >= ${monthStart}::date
+        AND ro_date < (${exportDate}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
+        ${roBillingDealerFilter(dealerCode)}
+        AND (
+          LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%accident%'
+          OR LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%bodyshop%'
+        )
+    ),
+    pending AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
+        COALESCE(NULLIF(r_o_no, ''), id::text) AS jc_key,
+        ro_date::date AS report_date
+      FROM open_ro_yearly
+      WHERE LOWER(COALESCE(status, '')) = 'open'
+        AND ro_date >= ${monthStart}::date
+        AND ro_date < (${exportDate}::date + INTERVAL '1 day')
+        AND (
+          LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%accident%'
+          OR LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%bodyshop%'
+        )
+        ${openRoDealerFilter(dealerCode)}
+      ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+    )
+    SELECT
+      COUNT(*) FILTER (WHERE jc_key NOT IN (SELECT jc_key FROM ro_keys))::int AS mtd,
+      COUNT(*) FILTER (
+        WHERE jc_key NOT IN (SELECT jc_key FROM ro_keys)
+          AND report_date = ${exportDate}::date
+      )::int AS today
+    FROM pending
+  `)
+
+  const row = resultRows(result)[0] || {}
+  return {
+    today: numberValue(row.today),
+    mtd: numberValue(row.mtd),
+  }
+}
+
 async function fetchIntakeCounts(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
   const result = await db.execute(sql`
     WITH raw AS (
       SELECT
-        COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
+        COALESCE(NULLIF(ro_no, ''), NULLIF(bill_no, ''), id::text) AS jc_key,
         ro_date::date AS report_date,
         ${serviceCategoryExpression('work_type', 'service_type')} AS service_category,
         uploaded_at,
@@ -299,6 +412,11 @@ async function fetchIntakeCounts(monthStart: string, exportDate: string, dealerC
       }
     }
   })
+
+  const supplement = await fetchAccidentalIntakeSupplement(monthStart, exportDate, dealerCode)
+  counts['Accidental Repair'].today += supplement.today
+  counts['Accidental Repair'].mtd += supplement.mtd
+
   return counts
 }
 
@@ -452,8 +570,8 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
         )
           invoice_date::date AS report_date
         FROM rsa_report
-        WHERE invoice_date >= ${monthStart}::date
-          AND invoice_date < (${exportDate}::date + INTERVAL '1 day')
+        WHERE invoice_date::date >= ${monthStart}::date
+          AND invoice_date::date < (${exportDate}::date + INTERVAL '1 day')
           ${rsaDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(TRIM(invoice_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin_chasis_no), ''), NULLIF(TRIM(policy_name), ''), invoice_date::text), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
@@ -551,10 +669,11 @@ async function fetchOperationMetrics(monthStart: string, exportDate: string, dea
       FROM operation_wise_analysis_report
       WHERE report_period_start = ${monthStart}::date
         AND report_period_end <= ${exportDate}::date
-        AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
         ${operationDealerFilter(dealerCode)}
       GROUP BY report_period_start::date, report_period_end::date
-      ORDER BY report_period_end::date DESC
+      ORDER BY
+        CASE WHEN report_period_end::date = ${exportDate}::date THEN 0 ELSE 1 END,
+        report_period_end::date DESC
       LIMIT 1
     ),
     operation_rows AS (
@@ -567,8 +686,6 @@ async function fetchOperationMetrics(monthStart: string, exportDate: string, dea
       INNER JOIN latest_period
         ON source.report_period_start::date = latest_period.report_period_start
         AND source.report_period_end::date = latest_period.report_period_end
-      WHERE LOWER(COALESCE(source.report_type, '')) IN ('operation', 'part')
-        ${operationDealerFilter(dealerCode, 'source.')}
       ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
     ),
     classified AS (
@@ -602,109 +719,156 @@ async function fetchOperationMetrics(monthStart: string, exportDate: string, dea
 }
 
 async function fetchVasAmount(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
-  const hasOperationWise = await tableExists('operation_wise_analysis_report')
   const hasInvoiceWise = await tableExists('adv_wise_lubricants_vas')
+  const hasOperationWise = await tableExists('operation_wise_analysis_report')
 
-  if (hasOperationWise) {
-    const result = await db.execute(sql`
-      WITH latest_period AS (
-        SELECT
-          report_period_start::date AS report_period_start,
-          report_period_end::date AS report_period_end
-        FROM operation_wise_analysis_report
-        WHERE report_period_start = ${monthStart}::date
-          AND report_period_end <= ${exportDate}::date
-          AND LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
-          ${operationDealerFilter(dealerCode)}
-        GROUP BY report_period_start::date, report_period_end::date
-        ORDER BY report_period_end::date DESC
-        LIMIT 1
-      ),
-      operation_rows AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
-          ${numericText(sql.raw('source.total_amt'))} AS amount,
-          LOWER(COALESCE(source.op_part_desc, '')) AS description
-        FROM operation_wise_analysis_report source
-        INNER JOIN latest_period
-          ON source.report_period_start::date = latest_period.report_period_start
-          AND source.report_period_end::date = latest_period.report_period_end
-        WHERE LOWER(COALESCE(source.report_type, '')) IN ('operation', 'part')
-          ${operationDealerFilter(dealerCode, 'source.')}
-        ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
+  if (hasInvoiceWise) {
+    const invoiceResult = await db.execute(sql`
+      WITH invoice_rows AS (
+        SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
+          ${numericText(sql.raw('taxable_amount'))} AS amount,
+          LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc)) AS description
+        FROM adv_wise_lubricants_vas
+        WHERE COALESCE(gst_invoice_date, ro_close_date::date) >= ${monthStart}::date
+          AND COALESCE(gst_invoice_date, ro_close_date::date) < (${exportDate}::date + INTERVAL '1 day')
+          ${advWiseDealerFilter(dealerCode)}
+        ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
       SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
-      FROM operation_rows
+      FROM invoice_rows
       WHERE ${vasDescriptionFilter()}
     `)
 
-    const amount = numberValue(resultRows(result)[0]?.vas_amount)
-    if (amount > 0) return amount
+    const invoiceAmount = numberValue(resultRows(invoiceResult)[0]?.vas_amount)
+    if (invoiceAmount > 0) return invoiceAmount
   }
 
-  if (!hasInvoiceWise) return 0
+  if (!hasOperationWise) return 0
 
-  const result = await db.execute(sql`
-    WITH invoice_rows AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
-        ${numericText(sql.raw('taxable_amount'))} AS amount,
-        LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc)) AS description
-      FROM adv_wise_lubricants_vas
-      WHERE gst_invoice_date >= ${monthStart}::date
-        AND gst_invoice_date < (${exportDate}::date + INTERVAL '1 day')
-        ${advWiseDealerFilter(dealerCode)}
-      ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+  const exactPeriodResult = await db.execute(sql`
+    WITH operation_rows AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
+        ${numericText(sql.raw('source.total_amt'))} AS amount,
+        LOWER(COALESCE(source.op_part_desc, '')) AS description
+      FROM operation_wise_analysis_report source
+      WHERE source.report_period_start::date = ${monthStart}::date
+        AND source.report_period_end::date = ${exportDate}::date
+        AND LOWER(COALESCE(source.report_type, '')) IN ('operation', 'part')
+        ${operationDealerFilter(dealerCode, 'source.')}
+      ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
     )
     SELECT COALESCE(SUM(amount), 0)::float AS vas_amount
-    FROM invoice_rows
+    FROM operation_rows
     WHERE ${vasDescriptionFilter()}
   `)
 
-  return numberValue(resultRows(result)[0]?.vas_amount)
+  return numberValue(resultRows(exactPeriodResult)[0]?.vas_amount)
 }
 
 async function fetchOilMetrics(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
-  if (!(await tableExists('adv_wise_lubricants_vas'))) {
-    return {
-      engineOilQty: { today: 0, mtd: 0 },
-      syntheticOilQty: { today: 0, mtd: 0 },
+  const emptyOil = {
+    engineOilQty: { today: 0, mtd: 0 },
+    syntheticOilQty: { today: 0, mtd: 0 },
+  }
+
+  let invoiceMetrics: typeof emptyOil | null = null
+  const hasInvoiceWise = await tableExists('adv_wise_lubricants_vas')
+  if (hasInvoiceWise) {
+    const result = await db.execute(sql`
+      WITH invoice_rows AS (
+        SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
+          COALESCE(gst_invoice_date, ro_close_date::date) AS report_date,
+          ${numericText(sql.raw('qty_hrs'))} AS quantity,
+          UPPER(TRIM(COALESCE(part_no, ''))) AS part_no,
+          UPPER(TRIM(COALESCE(op_part_code, ''))) AS op_part_code,
+          LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc, part_no, op_part_code)) AS description
+        FROM adv_wise_lubricants_vas
+        WHERE COALESCE(gst_invoice_date, ro_close_date::date) >= ${monthStart}::date
+          AND COALESCE(gst_invoice_date, ro_close_date::date) < (${exportDate}::date + INTERVAL '1 day')
+          ${advWiseDealerFilter(dealerCode)}
+        ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+      ),
+      classified AS (
+        SELECT
+          *,
+          ${engineOilPartCodeMatchSql('part_no', 'op_part_code')} AS is_engine_oil,
+          ${syntheticOilMatchSql('description')} AS is_synthetic
+        FROM invoice_rows
+      )
+      SELECT
+        COALESCE(SUM(quantity) FILTER (WHERE is_engine_oil AND report_date = ${exportDate}::date), 0)::float AS engine_today,
+        COALESCE(SUM(quantity) FILTER (WHERE is_engine_oil), 0)::float AS engine_mtd,
+        COALESCE(SUM(quantity) FILTER (WHERE is_engine_oil AND is_synthetic AND report_date = ${exportDate}::date), 0)::float AS synthetic_today,
+        COALESCE(SUM(quantity) FILTER (WHERE is_engine_oil AND is_synthetic), 0)::float AS synthetic_mtd
+      FROM classified
+    `)
+
+    const row = resultRows(result)[0] || {}
+    invoiceMetrics = {
+      engineOilQty: { today: numberValue(row.engine_today), mtd: numberValue(row.engine_mtd) },
+      syntheticOilQty: { today: numberValue(row.synthetic_today), mtd: numberValue(row.synthetic_mtd) },
     }
   }
 
+  if (!(await tableExists('operation_wise_analysis_report'))) {
+    return invoiceMetrics ?? emptyOil
+  }
+
   const result = await db.execute(sql`
-    WITH invoice_rows AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
-        gst_invoice_date::date AS report_date,
-        ${numericText(sql.raw('qty_hrs'))} AS quantity,
-        LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc, part_no)) AS description
-      FROM adv_wise_lubricants_vas
-      WHERE gst_invoice_date >= ${monthStart}::date
-        AND gst_invoice_date < (${exportDate}::date + INTERVAL '1 day')
-        ${advWiseDealerFilter(dealerCode)}
-      ORDER BY COALESCE(NULLIF(row_hash, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+    WITH latest_period AS (
+      SELECT
+        report_period_start::date AS report_period_start,
+        report_period_end::date AS report_period_end
+      FROM operation_wise_analysis_report
+      WHERE report_period_start = ${monthStart}::date
+        AND report_period_end <= ${exportDate}::date
+        ${operationDealerFilter(dealerCode)}
+      GROUP BY report_period_start::date, report_period_end::date
+      ORDER BY
+        CASE WHEN report_period_end::date = ${exportDate}::date THEN 0 ELSE 1 END,
+        report_period_end::date DESC
+      LIMIT 1
+    ),
+    operation_rows AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
+        source.report_period_end::date AS report_date,
+        ${numericText(sql.raw('source.total_count'))} AS quantity,
+        UPPER(TRIM(COALESCE(source.op_part_code, ''))) AS op_part_code,
+        LOWER(COALESCE(source.op_part_desc, '')) AS description
+      FROM operation_wise_analysis_report source
+      INNER JOIN latest_period
+        ON source.report_period_start::date = latest_period.report_period_start
+        AND source.report_period_end::date = latest_period.report_period_end
+      ORDER BY COALESCE(NULLIF(source.row_hash, ''), source.id::text), source.uploaded_at DESC NULLS LAST, source.id DESC
     ),
     classified AS (
       SELECT
         *,
-        (
-          description ~ '(engine[[:space:]-]*oil|synthetic[[:space:]-]*oil|(^|[^0-9])0w[[:space:]-]*20([^0-9]|$)|(^|[^0-9])5w[[:space:]-]*30([^0-9]|$)|(^|[^0-9])10w[[:space:]-]*30([^0-9]|$)|(^|[^0-9])15w[[:space:]-]*40([^0-9]|$))'
-          AND description !~ '(filter|seal|gasket|plug|pan|cooler|assy|r[[:space:]]*&[[:space:]]*r|spring|coil|gauge)'
-        ) AS is_engine_oil,
-        description ~ '(synthetic|0w[[:space:]-]*20|5w[[:space:]-]*30)' AS is_synthetic
-      FROM invoice_rows
+        ${engineOilPartCodeMatchSql('op_part_code', 'op_part_code')} AS is_engine_oil,
+        ${syntheticOilMatchSql('description')} AS is_synthetic
+      FROM operation_rows
     )
     SELECT
-      COALESCE(SUM(quantity) FILTER (WHERE is_engine_oil AND report_date = ${exportDate}::date), 0)::float AS engine_today,
       COALESCE(SUM(quantity) FILTER (WHERE is_engine_oil), 0)::float AS engine_mtd,
-      COALESCE(SUM(quantity) FILTER (WHERE is_engine_oil AND is_synthetic AND report_date = ${exportDate}::date), 0)::float AS synthetic_today,
       COALESCE(SUM(quantity) FILTER (WHERE is_engine_oil AND is_synthetic), 0)::float AS synthetic_mtd
     FROM classified
   `)
 
   const row = resultRows(result)[0] || {}
-  return {
-    engineOilQty: { today: numberValue(row.engine_today), mtd: numberValue(row.engine_mtd) },
-    syntheticOilQty: { today: numberValue(row.synthetic_today), mtd: numberValue(row.synthetic_mtd) },
+  const operationMetrics = {
+    engineOilQty: {
+      today: numberValue(row.engine_mtd),
+      mtd: numberValue(row.engine_mtd),
+    },
+    syntheticOilQty: {
+      today: 0,
+      mtd: numberValue(row.synthetic_mtd),
+    },
   }
+
+  if (!invoiceMetrics || invoiceMetrics.engineOilQty.mtd <= 0) return operationMetrics
+  if (operationMetrics.engineOilQty.mtd > invoiceMetrics.engineOilQty.mtd) return operationMetrics
+  return invoiceMetrics
 }
 
 async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): Promise<ServiceDashboardMetrics> {
@@ -753,6 +917,16 @@ function setFormula(worksheet: ExcelJS.Worksheet, address: string, formula: stri
     formula,
     result: cleanNumber(result, fractionDigits),
   }
+}
+
+function setSnapshotPair(worksheet: ExcelJS.Worksheet, row: number, value: number, fractionDigits = 0) {
+  setNumber(worksheet, `B${row}`, value, fractionDigits)
+  setNumber(worksheet, `C${row}`, value, fractionDigits)
+}
+
+function setFormulaPair(worksheet: ExcelJS.Worksheet, row: number, formula: string, result: number, fractionDigits = 0) {
+  setFormula(worksheet, `B${row}`, formula, result, fractionDigits)
+  setFormula(worksheet, `C${row}`, formula, result, fractionDigits)
 }
 
 function toArrayBuffer(value: ArrayBuffer | Uint8Array) {
@@ -933,33 +1107,51 @@ function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: Se
   setFormula(worksheet, 'B23', 'SUM(B19:B22)', totalDeliveredToday, 0)
   setFormula(worksheet, 'C23', 'SUM(C19:C22)', totalDeliveredMtd, 0)
 
-  setNumber(worksheet, 'B24', metrics.operations.alignmentCount, 0)
-  setNumber(worksheet, 'B25', metrics.operations.balancingCount, 0)
-  setNumber(worksheet, 'B26', metrics.operations.alignmentLabour, 0)
-  setNumber(worksheet, 'B27', metrics.operations.balancingLabour, 0)
+  setSnapshotPair(worksheet, 24, metrics.operations.alignmentCount, 0)
+  setSnapshotPair(worksheet, 25, metrics.operations.balancingCount, 0)
+  setSnapshotPair(worksheet, 26, metrics.operations.alignmentLabour, 0)
+  setSnapshotPair(worksheet, 27, metrics.operations.balancingLabour, 0)
 
   const mechDeliveredMtd = metrics.revenue.delivered['Free Service'].mtd
     + metrics.revenue.delivered['Paid Service'].mtd
     + metrics.revenue.delivered['Running Repair'].mtd
   const bodyshopDeliveredMtd = metrics.revenue.delivered['Accidental Repair'].mtd
-  const averageRo = totalVehicleMtd / 5
-  setFormula(worksheet, 'B28', 'IFERROR((C2+C3+C4+C5)/5,0)', averageRo, 0)
-  setFormula(worksheet, 'B29', 'IFERROR(C13/(C19+C20+C21+C22),0)', safeDivide(totalLabourMtd, totalDeliveredMtd), 0)
-  setFormula(worksheet, 'B30', 'IFERROR(C15/(C19+C20+C21),0)', safeDivide(metrics.revenue.mechanicalLabour.mtd, mechDeliveredMtd), 0)
-  setFormula(worksheet, 'B31', 'IFERROR(C17/C22,0)', safeDivide(metrics.revenue.bodyshopLabour.mtd, bodyshopDeliveredMtd), 0)
-  setFormula(worksheet, 'B32', 'IFERROR(C14/(C19+C20+C21+C22),0)', safeDivide(totalPartsMtd, totalDeliveredMtd), 0)
-  setFormula(worksheet, 'B33', 'IFERROR(C16/(C19+C21+C20),0)', safeDivide(metrics.revenue.mechanicalParts.mtd, mechDeliveredMtd), 0)
-  setFormula(worksheet, 'B34', 'IFERROR(C18/C22,0)', safeDivide(metrics.revenue.bodyshopParts.mtd, bodyshopDeliveredMtd), 0)
+  const averageRoDenominator = serviceDashboardAverageRoDenominator(metrics.exportDate)
+  const averageRo = totalVehicleMtd / averageRoDenominator
+  const averageRoFormula = `IFERROR((C2+C3+C4+C5)/${averageRoDenominator},0)`
+  const averageLabourFormula = 'IFERROR(C13/(C19+C20+C21+C22),0)'
+  const averageLabourMechFormula = 'IFERROR(C15/(C19+C20+C21),0)'
+  const averageLabourBsFormula = 'IFERROR(C17/C22,0)'
+  const averagePartsFormula = 'IFERROR(C14/(C19+C20+C21+C22),0)'
+  const averagePartsMechFormula = 'IFERROR(C16/(C19+C21+C20),0)'
+  const averagePartsBsFormula = 'IFERROR(C18/C22,0)'
+  const oilPerRoFormula = 'IFERROR(B35/(C2+C3+C4+C5),0)'
+  const oilPerRoMtdFormula = 'IFERROR(C35/(C2+C3+C4+C5),0)'
+  const oilPerRoMechFormula = 'IFERROR(B35/(C19+C20+C21),0)'
+  const oilPerRoMechMtdFormula = 'IFERROR(C35/(C19+C20+C21),0)'
+  const vasSubtraction = cleanNumber(metrics.vasAmount, 0)
+  const labourWithoutVasFormula = `IFERROR((C13-${vasSubtraction})/C23,0)`
 
-  setNumber(worksheet, 'B35', metrics.oil.engineOilQty.mtd, 1)
-  setFormula(worksheet, 'B36', 'IFERROR(B35/(C2+C3+C4+C5),0)', safeDivide(metrics.oil.engineOilQty.mtd, totalVehicleMtd), 0)
+  setFormulaPair(worksheet, 28, averageRoFormula, averageRo, 0)
+  setFormulaPair(worksheet, 29, averageLabourFormula, safeDivide(totalLabourMtd, totalDeliveredMtd), 0)
+  setFormulaPair(worksheet, 30, averageLabourMechFormula, safeDivide(metrics.revenue.mechanicalLabour.mtd, mechDeliveredMtd), 0)
+  setFormulaPair(worksheet, 31, averageLabourBsFormula, safeDivide(metrics.revenue.bodyshopLabour.mtd, bodyshopDeliveredMtd), 0)
+  setFormulaPair(worksheet, 32, averagePartsFormula, safeDivide(totalPartsMtd, totalDeliveredMtd), 0)
+  setFormulaPair(worksheet, 33, averagePartsMechFormula, safeDivide(metrics.revenue.mechanicalParts.mtd, mechDeliveredMtd), 0)
+  setFormulaPair(worksheet, 34, averagePartsBsFormula, safeDivide(metrics.revenue.bodyshopParts.mtd, bodyshopDeliveredMtd), 0)
+
+  setNumber(worksheet, 'B35', metrics.oil.engineOilQty.today, 1)
+  setNumber(worksheet, 'C35', metrics.oil.engineOilQty.mtd, 1)
+  setFormula(worksheet, 'B36', oilPerRoFormula, safeDivide(metrics.oil.engineOilQty.today, totalVehicleMtd), 0)
+  setFormula(worksheet, 'C36', oilPerRoMtdFormula, safeDivide(metrics.oil.engineOilQty.mtd, totalVehicleMtd), 0)
   setNumber(worksheet, 'B37', metrics.oil.syntheticOilQty.today, 1)
   setNumber(worksheet, 'C37', metrics.oil.syntheticOilQty.mtd, 1)
   setNumber(worksheet, 'B38', safeDivide(metrics.oil.syntheticOilQty.today, totalVehicleToday), 2)
   setNumber(worksheet, 'C38', safeDivide(metrics.oil.syntheticOilQty.mtd, totalVehicleMtd), 2)
-  setFormula(worksheet, 'B39', 'IFERROR(0/C22,0)', 0, 0)
-  setFormula(worksheet, 'B40', 'IFERROR(B35/(C19+C20+C21),0)', safeDivide(metrics.oil.engineOilQty.mtd, mechDeliveredMtd), 0)
-  setFormula(worksheet, 'B41', `IFERROR((C13-${cleanNumber(metrics.vasAmount, 0)})/C23,0)`, safeDivide(totalLabourMtd - metrics.vasAmount, totalDeliveredMtd), 0)
+  setFormulaPair(worksheet, 39, 'IFERROR(0/C22,0)', 0, 0)
+  setFormula(worksheet, 'B40', oilPerRoMechFormula, safeDivide(metrics.oil.engineOilQty.today, mechDeliveredMtd), 0)
+  setFormula(worksheet, 'C40', oilPerRoMechMtdFormula, safeDivide(metrics.oil.engineOilQty.mtd, mechDeliveredMtd), 0)
+  setFormulaPair(worksheet, 41, labourWithoutVasFormula, safeDivide(totalLabourMtd - metrics.vasAmount, totalDeliveredMtd), 0)
 }
 
 export async function buildKiaServiceDashboardWorkbook({

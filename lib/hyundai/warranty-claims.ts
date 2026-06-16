@@ -93,6 +93,10 @@ export function warrantyRecordKey(source: HyundaiWarrantySource, row: Record<str
   return source === 'ytp' ? ytpRecordKey(row) : claimRecordKey(row)
 }
 
+export function hyundaiWarrantyBaseCacheKey(source: HyundaiWarrantySource) {
+  return `hyundai:warranty:${source}:base`
+}
+
 export function getWarrantyRequirement(
   source: HyundaiWarrantySource,
   statusValue: unknown,

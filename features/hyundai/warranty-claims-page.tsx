@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -12,6 +12,7 @@ import {
   Clock3,
   Eye,
   FileImage,
+  FileText,
   Filter,
   IndianRupee,
   LayoutDashboard,
@@ -40,6 +41,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { HYUNDAI_WARRANTY_DEALER_GROUPS } from '@/lib/hyundai/warranty-dealers'
 
 type Source = 'ytp' | 'claim_list'
 type WarrantyRow = Record<string, unknown> & {
@@ -80,7 +82,13 @@ type Payload = {
     suspenseProofPending: number
     unresolved: number
   }
-  options: { dealers: string[]; statuses: string[]; claimTypes: string[] }
+  options: {
+    dealers: string[]
+    dealerOptions: Array<{ code: string; name: string; location?: string | null }>
+    locationGroups?: Array<{ key: string; label: string; dealerCodes: string[] }>
+    statuses: string[]
+    claimTypes: string[]
+  }
   charts: null | {
     status: Array<{ name: string; count: number; amount: number }>
     dealers: Array<{ code: string; name: string; amount: number }>
@@ -89,7 +97,6 @@ type Payload = {
     monthly: Array<{ month: string; monthNumber: number; count: number; amount: number }>
   }
   matrix: null | {
-    breakdownYear: string
     statuses: string[]
     groups: Array<{
       key: string
@@ -100,11 +107,8 @@ type Payload = {
       dealers: Array<{
         dealerCode: string
         dealerName: string
-        breakdownYear: string
         amounts: Record<string, number>
         total: number
-        currentYearAmounts: Record<string, number>
-        currentYearTotal: number
         monthly: Array<{
           month: string
           monthNumber: number
@@ -127,6 +131,7 @@ type Payload = {
 type Filters = {
   page: number
   search: string
+  locations: string[]
   dealers: string[]
   statuses: string[]
   claimType: string
@@ -140,6 +145,7 @@ type Filters = {
 const DEFAULT_FILTERS: Filters = {
   page: 1,
   search: '',
+  locations: [],
   dealers: [],
   statuses: [],
   claimType: '',
@@ -149,6 +155,11 @@ const DEFAULT_FILTERS: Filters = {
   sort: 'date_desc',
   statusBucket: '',
 }
+
+const LOCATION_FILTER_OPTIONS = HYUNDAI_WARRANTY_DEALER_GROUPS.map((group) => ({
+  value: group.key,
+  label: group.label,
+}))
 
 const warrantyTableClass = 'min-w-full text-xs'
 const warrantyThClass = 'px-3 py-2 text-center'
@@ -211,6 +222,7 @@ function buildQuery(source: Source, filters: Filters) {
     contract: 'warranty-ui-v2',
   })
   if (filters.search) params.set('search', filters.search)
+  if (filters.locations.length) params.set('locations', filters.locations.join(','))
   if (filters.dealers.length) params.set('dealers', filters.dealers.join(','))
   if (filters.statuses.length) params.set('statuses', filters.statuses.join(','))
   if (filters.claimType) params.set('claimType', filters.claimType)
@@ -250,50 +262,156 @@ function KpiCard({ label, value, helper, icon: Icon, warning = false }: {
   )
 }
 
-function MultiSelectFilter({ label, options, selected, onChange }: {
+function FilterCheckboxList({ label, options, selected, onChange, emptyLabel = 'All' }: {
   label: string
-  options: string[]
+  options: Array<{ value: string; label: string }>
   selected: string[]
   onChange: (value: string[]) => void
+  emptyLabel?: string
 }) {
   const toggle = (value: string) => {
     onChange(selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value])
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</span>
         {selected.length > 0 && (
-          <button
-            type="button"
-            className="text-[10px] font-bold text-blue-700 hover:underline"
-            onClick={() => onChange([])}
-          >
-            Clear
+          <button type="button" className="text-[10px] font-bold text-slate-500 hover:text-slate-900" onClick={() => onChange([])}>
+            Reset
           </button>
         )}
       </div>
-      <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2">
+      <div className="max-h-32 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
         {options.length === 0 ? (
-          <p className="px-2 py-1 text-xs font-semibold text-slate-400">No options</p>
-        ) : options.map((item) => (
-          <label key={item} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-            <input
-              type="checkbox"
-              checked={selected.includes(item)}
-              onChange={() => toggle(item)}
-              className="rounded border-slate-300"
-            />
-            <span>{item}</span>
-          </label>
-        ))}
+          <p className="px-2 py-2 text-xs font-semibold text-slate-400">No options</p>
+        ) : (
+          <div className="space-y-1">
+            {options.map((item) => (
+              <label
+                key={item.value}
+                className={cn(
+                  'flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold transition',
+                  selected.includes(item.value) ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:bg-white/70',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(item.value)}
+                  onChange={() => toggle(item.value)}
+                  className="rounded border-slate-300 text-[var(--dashboard-action-bg)]"
+                />
+                <span className="truncate">{item.label}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </div>
-      <p className="text-[10px] font-bold text-slate-500">
-        {selected.length === 0 ? 'All selected' : `${selected.length} selected`}
+      <p className="text-[10px] font-bold text-slate-400">
+        {selected.length === 0 ? emptyLabel : `${selected.length} selected`}
       </p>
     </div>
   )
+}
+
+function MultiSelectFilter({ label, options, selected, onChange }: {
+  label: string
+  options: string[]
+  selected: string[]
+  onChange: (value: string[]) => void
+}) {
+  return (
+    <FilterCheckboxList
+      label={label}
+      options={options.map((item) => ({ value: item, label: item }))}
+      selected={selected}
+      onChange={onChange}
+    />
+  )
+}
+
+function WarrantyTableSkeleton({ columns, rows = 8 }: { columns: number; rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, index) => (
+        <tr key={`skeleton-${index}`} className="border-b border-slate-100">
+          {Array.from({ length: columns }).map((__, cellIndex) => (
+            <td key={cellIndex} className="px-3 py-3">
+              <div className="mx-auto h-4 w-full max-w-[7rem] animate-pulse rounded bg-slate-200" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  )
+}
+
+function WarrantyBlockSkeleton({ lines = 4 }: { lines?: number }) {
+  return (
+    <div className="space-y-3 p-6">
+      {Array.from({ length: lines }).map((_, index) => (
+        <div key={index} className="h-10 animate-pulse rounded-xl bg-slate-100" />
+      ))}
+    </div>
+  )
+}
+
+function humanizeFieldName(key: string) {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function formatRowDetailValue(key: string, value: unknown) {
+  if (value == null || value === '') return '-'
+  if (typeof value === 'number') return number(value)
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'object') return JSON.stringify(value, null, 2)
+  if (key.toLowerCase().includes('date') || key === 'createdAt') return formatDate(value)
+  if (key.toLowerCase().includes('amt') || key.toLowerCase().includes('amount') || key === 'labour' || key === 'part' || key === 'sublet') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return money(parsed)
+  }
+  return String(value)
+}
+
+const VIEW_ROW_SKIP_KEYS = new Set(['id', 'recordKey', 'row_hash', 'uploaded_at', 'requirement', 'latestRemark'])
+
+function buildRowDetailEntries(row: WarrantyRow) {
+  const entries: Array<{ label: string; value: string }> = [
+    { label: 'Dealer Name', value: formatRowDetailValue('dealerName', row.dealerName) },
+    { label: 'Dealer Code', value: formatRowDetailValue('dealerCode', row.dealerCode) },
+    { label: 'Status', value: formatRowDetailValue('status', row.status) },
+    { label: 'Business Date', value: formatRowDetailValue('businessDate', row.businessDate) },
+    { label: 'Compliance', value: formatRowDetailValue('compliance', row.compliance) },
+    { label: 'SLA Requirement', value: row.requirement?.label || '-' },
+    { label: 'SLA Age (Days)', value: formatRowDetailValue('ageDays', row.requirement?.ageDays) },
+    { label: 'Remark Count', value: formatRowDetailValue('remarkCount', row.remarkCount) },
+  ]
+
+  Object.entries(row).forEach(([key, value]) => {
+    if (VIEW_ROW_SKIP_KEYS.has(key)) return
+    if (['dealerName', 'dealerCode', 'status', 'businessDate', 'compliance', 'remarkCount'].includes(key)) return
+    entries.push({
+      label: humanizeFieldName(key),
+      value: formatRowDetailValue(key, value),
+    })
+  })
+
+  if (row.latestRemark) {
+    entries.push(
+      { label: 'Latest Remark', value: row.latestRemark.remark },
+      { label: 'Latest Remark By', value: `${row.latestRemark.createdByName} · ${row.latestRemark.createdByRole}` },
+      { label: 'Latest Remark At', value: formatDateTime(row.latestRemark.createdAt) },
+    )
+    if (row.latestRemark.docketNumber) {
+      entries.push({ label: 'Docket Number', value: row.latestRemark.docketNumber })
+    }
+  }
+
+  return entries
 }
 
 function SelectFilter({ value, onChange, children, label }: {
@@ -303,12 +421,12 @@ function SelectFilter({ value, onChange, children, label }: {
   label: string
 }) {
   return (
-    <label className="space-y-1">
+    <label className="space-y-2">
       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
+        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 outline-none focus:border-[var(--dashboard-primary-border)] focus:bg-white"
       >
         {children}
       </select>
@@ -326,6 +444,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 }
 
 const actionButtonClass = 'rounded-xl border-[var(--dashboard-primary-border)] bg-[var(--dashboard-action-bg)] font-black text-[var(--dashboard-action-fg)] shadow-sm hover:bg-[var(--dashboard-action-hover)] hover:text-[var(--dashboard-action-fg)] focus-visible:ring-[var(--dashboard-primary)] disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500'
+const tableActionButtonClass = cn(actionButtonClass, 'h-8 shrink-0 whitespace-nowrap px-2.5 text-[10px]')
 const activeActionButtonClass = 'bg-[var(--dashboard-action-hover)]'
 
 export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
@@ -339,6 +458,8 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   const [showYtpSummary, setShowYtpSummary] = useState(false)
   const [actionRow, setActionRow] = useState<WarrantyRow | null>(null)
   const [historyRow, setHistoryRow] = useState<WarrantyRow | null>(null)
+  const [viewRow, setViewRow] = useState<WarrantyRow | null>(null)
+  const [filterFetchPending, setFilterFetchPending] = useState(false)
   const [remark, setRemark] = useState('')
   const [docketNumber, setDocketNumber] = useState('')
   const [files, setFiles] = useState<File[]>([])
@@ -346,12 +467,24 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   const [expandedDealer, setExpandedDealer] = useState<string | null>(null)
   const queryString = useMemo(() => buildQuery(source, appliedFilters), [appliedFilters, source])
 
-  const { data, isLoading, error } = useQuery<Payload>({
+  const { data, isPending, isFetching, error } = useQuery<Payload>({
     queryKey: ['hyundai-warranty-claims', queryString],
     queryFn: () => fetch(`/api/brands/hyundai/warranty-claims?${queryString}`).then(readJson<Payload>),
-    placeholderData: (previous) => previous,
     staleTime: 60_000,
   })
+
+  const showContentLoading = isPending || (filterFetchPending && isFetching)
+  const dealerOptions = data?.options.dealerOptions?.length
+    ? data.options.dealerOptions
+    : (data?.options.dealers || []).map((code) => ({ code, name: code }))
+  const dealerCodeOptions = useMemo(
+    () => [...new Set(dealerOptions.map((item) => item.code))].sort().map((code) => ({ value: code, label: code })),
+    [dealerOptions],
+  )
+
+  useEffect(() => {
+    if (!isFetching && !isPending) setFilterFetchPending(false)
+  }, [isFetching, isPending])
 
   const historyQuery = useQuery<HistoryPayload>({
     queryKey: ['hyundai-warranty-history', source, historyRow?.recordKey],
@@ -385,15 +518,20 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   }
 
   const applyFilters = () => {
+    setShowFilters(false)
+    setFilterFetchPending(true)
     setAppliedFilters({ ...draftFilters, page: 1 })
   }
 
   const clearFilters = () => {
+    setShowFilters(false)
+    setFilterFetchPending(true)
     setDraftFilters(DEFAULT_FILTERS)
     setAppliedFilters(DEFAULT_FILTERS)
   }
 
   const updateAppliedStatusBucket = (statusBucket: string) => {
+    setFilterFetchPending(true)
     setAppliedFilters((current) => ({ ...current, statusBucket, page: 1 }))
   }
 
@@ -437,7 +575,14 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
           </div>
         </section>
 
-        {showKpis && <section className={cn('grid gap-3', isYtp ? 'md:grid-cols-3' : 'md:grid-cols-2 xl:grid-cols-6')}>
+        {showKpis && (showContentLoading ? (
+          <section className={cn('grid gap-3', isYtp ? 'md:grid-cols-3' : 'md:grid-cols-2 xl:grid-cols-6')}>
+            {Array.from({ length: isYtp ? 3 : 6 }).map((_, index) => (
+              <div key={index} className="h-28 animate-pulse rounded-2xl bg-slate-100" />
+            ))}
+          </section>
+        ) : (
+        <section className={cn('grid gap-3', isYtp ? 'md:grid-cols-3' : 'md:grid-cols-2 xl:grid-cols-6')}>
           <KpiCard label="Total Rows" value={number(data?.summary.total)} helper="Filtered records" icon={BarChart3} />
           {!isYtp && <KpiCard label="Claim Amount" value={money(data?.summary.totalClaimAmount)} helper="Sum of total_amt" icon={IndianRupee} />}
           {!isYtp && <KpiCard label="Approved Amount" value={money(data?.summary.approvedAmount)} helper="Approved by HMI" icon={CheckCircle2} />}
@@ -445,53 +590,79 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
           {!isYtp && <KpiCard label="Docket Proof" value={number(data?.summary.suspenseProofPending)} helper="Suspense evidence pending" icon={FileImage} warning={Boolean(data?.summary.suspenseProofPending)} />}
           {!isYtp && <KpiCard label="Unresolved" value={number(data?.summary.unresolved)} helper="Not accepted, denied or cancelled" icon={Clock3} />}
           {isYtp && <KpiCard label="Compliant" value={number((data?.summary.total || 0) - (data?.summary.overdueActions || 0))} helper="Within SLA or remarked" icon={CheckCircle2} />}
-        </section>}
+        </section>
+        ))}
 
-        {showFilters && <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label className="space-y-1 xl:col-span-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Search</span>
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <Input value={draftFilters.search} onChange={(event) => updateDraftFilter('search', event.target.value)} placeholder="Claim, RO, VIN, dealer or part..." className="pl-9" />
+        {showFilters && (
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3">
+              <h2 className="text-sm font-black text-slate-900">Filters</h2>
+              <p className="text-xs font-semibold text-slate-500">Location and dealer code are separate filters.</p>
+            </div>
+            <div className="space-y-4 p-5">
+              <label className="block space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Search</span>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={draftFilters.search}
+                    onChange={(event) => updateDraftFilter('search', event.target.value)}
+                    placeholder="Claim, RO, VIN, dealer or part..."
+                    className="h-10 rounded-xl border-slate-200 bg-slate-50 pl-9 text-sm font-semibold focus:bg-white"
+                  />
+                </div>
+              </label>
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                <FilterCheckboxList
+                  label="Location"
+                  options={LOCATION_FILTER_OPTIONS}
+                  selected={draftFilters.locations}
+                  onChange={(value) => updateDraftFilter('locations', value)}
+                  emptyLabel="All locations"
+                />
+                <FilterCheckboxList
+                  label="Dealer Code"
+                  options={dealerCodeOptions}
+                  selected={draftFilters.dealers}
+                  onChange={(value) => updateDraftFilter('dealers', value)}
+                  emptyLabel="All dealer codes"
+                />
+                <MultiSelectFilter
+                  label="Status"
+                  options={data?.options.statuses || []}
+                  selected={draftFilters.statuses}
+                  onChange={(value) => updateDraftFilter('statuses', value)}
+                />
+                <SelectFilter label="SLA" value={draftFilters.sla} onChange={(value) => updateDraftFilter('sla', value)}>
+                  <option value="">All SLA states</option>
+                  <option value="action_required">Action required</option>
+                  <option value="complete">Remark completed</option>
+                  <option value="within_sla">Within SLA</option>
+                </SelectFilter>
+                <SelectFilter label="Claim Type" value={draftFilters.claimType} onChange={(value) => updateDraftFilter('claimType', value)}>
+                  <option value="">All claim types</option>
+                  {(data?.options?.claimTypes ?? []).map((item) => <option key={item} value={item}>{item}</option>)}
+                </SelectFilter>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">From</span>
+                    <Input type="date" value={draftFilters.startDate} onChange={(event) => updateDraftFilter('startDate', event.target.value)} className="h-10 rounded-xl border-slate-200 bg-slate-50 text-xs font-bold focus:bg-white" />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">To</span>
+                    <Input type="date" value={draftFilters.endDate} onChange={(event) => updateDraftFilter('endDate', event.target.value)} className="h-10 rounded-xl border-slate-200 bg-slate-50 text-xs font-bold focus:bg-white" />
+                  </label>
+                </div>
               </div>
-            </label>
-            <MultiSelectFilter
-              label="Dealers"
-              options={data?.options.dealers || []}
-              selected={draftFilters.dealers}
-              onChange={(value) => updateDraftFilter('dealers', value)}
-            />
-            <MultiSelectFilter
-              label="Statuses"
-              options={data?.options.statuses || []}
-              selected={draftFilters.statuses}
-              onChange={(value) => updateDraftFilter('statuses', value)}
-            />
-            <SelectFilter label="SLA" value={draftFilters.sla} onChange={(value) => updateDraftFilter('sla', value)}>
-              <option value="">All SLA states</option>
-              <option value="action_required">Action required</option>
-              <option value="complete">Remark completed</option>
-              <option value="within_sla">Within SLA</option>
-            </SelectFilter>
-            <SelectFilter label="Claim Type" value={draftFilters.claimType} onChange={(value) => updateDraftFilter('claimType', value)}>
-              <option value="">All claim types</option>
-              {data?.options.claimTypes.map((item) => <option key={item} value={item}>{item}</option>)}
-            </SelectFilter>
-            <label className="space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">From</span>
-              <Input type="date" value={draftFilters.startDate} onChange={(event) => updateDraftFilter('startDate', event.target.value)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">To</span>
-              <Input type="date" value={draftFilters.endDate} onChange={(event) => updateDraftFilter('endDate', event.target.value)} />
-            </label>
-          </div>
-          <div className="mt-4 flex flex-wrap justify-end gap-2">
-            <Button className={actionButtonClass} onClick={clearFilters}>Clear</Button>
-            <Button className={cn(actionButtonClass, activeActionButtonClass)} onClick={applyFilters}>Apply</Button>
-          </div>
-        </section>}
+
+              <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+                <Button className={actionButtonClass} onClick={clearFilters}>Clear</Button>
+                <Button className={cn(actionButtonClass, activeActionButtonClass)} onClick={applyFilters}>Apply</Button>
+              </div>
+            </div>
+          </section>
+        )}
 
         {isYtp && showYtpSummary && (
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -499,8 +670,8 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
               <h2 className="text-lg font-black text-slate-950">Monthly Claim YTP Summary</h2>
               <p className="text-xs font-semibold text-slate-500">Monthly counts across all available years for the active filters.</p>
             </div>
-            {isLoading ? (
-              <div className="p-10 text-center text-sm font-bold text-slate-500">Loading monthly summary...</div>
+            {showContentLoading ? (
+              <WarrantyBlockSkeleton lines={6} />
             ) : error ? (
               <div className="p-10 text-center text-sm font-bold text-rose-600">Unable to load the monthly summary.</div>
             ) : !data?.ytpMonthlySummary ? (
@@ -537,7 +708,13 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
           </section>
         )}
 
-        {!isYtp && showAnalytics && data?.charts && (
+        {!isYtp && showAnalytics && (showContentLoading ? (
+          <section className="grid gap-4 xl:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-72 animate-pulse rounded-2xl bg-slate-100" />
+            ))}
+          </section>
+        ) : data?.charts && (
           <section className="grid gap-4 xl:grid-cols-2">
             <ChartCard title="Status Distribution">
               <ResponsiveContainer width="100%" height="100%">
@@ -567,17 +744,22 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
               </ChartCard>
             </div>
           </section>
-        )}
+        ))}
 
-        {!isYtp && data?.matrix && (
+        {!isYtp && (
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <h2 className="text-lg font-black text-slate-950">Total Claim Amount</h2>
-                <p className="text-xs font-semibold text-slate-500">Expand a location to see dealer codes, then expand a dealer for monthly breakdown. Select a status to filter records.</p>
+                <p className="text-xs font-semibold text-slate-500">All years by default. Use the date filter to narrow the matrix. Expand a location for dealer codes, then expand a dealer for monthly breakdown.</p>
               </div>
               <CalendarDays className="h-5 w-5 text-blue-700" />
             </div>
+            {showContentLoading ? (
+              <WarrantyBlockSkeleton lines={8} />
+            ) : !data?.matrix ? (
+              <div className="p-10 text-center text-sm font-bold text-slate-500">Matrix data is unavailable for the current filters.</div>
+            ) : (
             <div className="overflow-x-auto">
               <table className={warrantyTableClass}>
                 <thead className="bg-slate-900 text-white">
@@ -655,7 +837,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                               {dealerExpanded && (
                                 <tr className="border-b border-slate-200 bg-slate-50">
                                   <td colSpan={data.matrix!.statuses.length + 2} className="p-3">
-                                    <p className="mb-2 text-[10px] font-bold text-slate-500">Monthly breakdown for {row.breakdownYear}</p>
+                                    <p className="mb-2 text-[10px] font-bold text-slate-500">Monthly breakdown (all years)</p>
                                     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                                       <table className={warrantyNestedTableClass}>
                                         <thead className="bg-slate-800 text-white">
@@ -674,9 +856,9 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                                             </tr>
                                           ))}
                                           <tr className="bg-slate-100 font-black">
-                                            <td className={warrantyNestedCellClass}>{row.breakdownYear} Total</td>
-                                            {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.currentYearAmounts[item])}</td>)}
-                                            <td className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.currentYearTotal)}</td>
+                                            <td className={warrantyNestedCellClass}>All Years Total</td>
+                                            {data.matrix!.statuses.map((item) => <td key={item} className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.amounts[item])}</td>)}
+                                            <td className={cn(warrantyNestedCellClass, 'font-mono')}>{money(row.total)}</td>
                                           </tr>
                                         </tbody>
                                       </table>
@@ -711,6 +893,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                 </tfoot>
               </table>
             </div>
+            )}
           </section>
         )}
 
@@ -721,14 +904,16 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                 <tr>{columns.map((item) => <th key={item} className={warrantyRecordThClass}>{item}</th>)}</tr>
               </thead>
               <tbody>
-                {isLoading ? (
-                  <tr><td colSpan={columns.length} className="p-10 text-center text-xs font-bold text-slate-500">Loading warranty records...</td></tr>
+                {showContentLoading ? (
+                  <WarrantyTableSkeleton columns={columns.length} />
                 ) : error ? (
                   <tr><td colSpan={columns.length} className="p-10 text-center text-xs font-bold text-rose-600">{error.message}</td></tr>
-                ) : data?.rows.length === 0 ? (
+                ) : !data?.rows ? (
+                  <tr><td colSpan={columns.length} className="p-10 text-center text-xs font-bold text-slate-500">Unable to load records.</td></tr>
+                ) : data.rows.length === 0 ? (
                   <tr><td colSpan={columns.length} className="p-10 text-center text-xs font-bold text-slate-500">No records match these filters.</td></tr>
-                ) : data?.rows.map((row) => (
-                  <tr key={row.recordKey} className={cn('border-b border-slate-100 align-top', row.compliance === 'action_required' && 'bg-rose-50/70')}>
+                ) : data.rows.map((row) => (
+                  <tr key={row.id} className={cn('border-b border-slate-100 align-top', row.compliance === 'action_required' && 'bg-rose-50/70')}>
                     <td className={cn(warrantyRecordTdClass, 'font-black text-slate-900')}>{row.dealerName}<div className="text-[10px] text-slate-400">{row.dealerCode}</div></td>
                     {isYtp ? (
                       <>
@@ -769,12 +954,15 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                         </div>
                       ) : <span className="text-slate-400">-</span>}
                     </td>
-                    <td className={warrantyRecordTdClass}>
-                      <div className="flex justify-center gap-2">
-                        {data.permissions.canEdit && (
+                    <td className="whitespace-nowrap px-3 py-2 text-center">
+                      <div className="inline-flex flex-nowrap items-center justify-center gap-1.5">
+                        <Button size="sm" className={tableActionButtonClass} onClick={() => setViewRow(row)}>
+                          <FileText className="mr-1 h-3.5 w-3.5 shrink-0" /> View
+                        </Button>
+                        {data?.permissions?.canEdit && (
                           <Button
                             size="sm"
-                            className={actionButtonClass}
+                            className={tableActionButtonClass}
                             onClick={() => {
                               setRemark('')
                               setDocketNumber('')
@@ -782,11 +970,11 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                               setActionRow(row)
                             }}
                           >
-                            <MessageSquarePlus className="mr-1 h-4 w-4" /> Remark
+                            <MessageSquarePlus className="mr-1 h-3.5 w-3.5 shrink-0" /> Remark
                           </Button>
                         )}
-                        <Button size="sm" className={actionButtonClass} onClick={() => setHistoryRow(row)}>
-                          <Eye className="mr-1 h-4 w-4" /> History ({row.remarkCount})
+                        <Button size="sm" className={tableActionButtonClass} onClick={() => setHistoryRow(row)}>
+                          <Eye className="mr-1 h-3.5 w-3.5 shrink-0" /> History ({row.remarkCount})
                         </Button>
                       </div>
                     </td>
@@ -869,6 +1057,22 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
                       ))}
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(viewRow)} onOpenChange={(open) => !open && setViewRow(null)}>
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogHeader><DialogTitle>Record Details</DialogTitle></DialogHeader>
+          {viewRow && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {buildRowDetailEntries(viewRow).map((entry) => (
+                <div key={entry.label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{entry.label}</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm font-semibold text-slate-900">{entry.value}</p>
                 </div>
               ))}
             </div>
