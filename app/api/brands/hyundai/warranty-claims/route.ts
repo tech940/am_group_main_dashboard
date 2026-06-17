@@ -578,6 +578,11 @@ export async function GET(request: Request) {
 
   const sort = text(searchParams.get('sort')) || 'date_desc'
   filtered.sort((a, b) => {
+    // Primary: SLA‑expired rows first
+    const slaA = a.compliance === 'action_required' ? 0 : 1
+    const slaB = b.compliance === 'action_required' ? 0 : 1
+    if (slaA !== slaB) return slaA - slaB
+    // Secondary: existing sort logic
     if (sort === 'date_asc') return text(a.businessDate).localeCompare(text(b.businessDate))
     if (sort === 'amount_desc') return num(b.total_amt) - num(a.total_amt)
     if (sort === 'age_desc') return b.requirement.ageDays - a.requirement.ageDays

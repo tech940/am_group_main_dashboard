@@ -567,6 +567,22 @@ function activeBillStatusSql() {
   return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`
 }
 
+function activeServiceCategoryFilter() {
+  return sql`CASE
+    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%accident%'
+      OR LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%bodyshop%'
+      THEN 'Accidental Repair'
+    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%running%'
+      THEN 'Running Repair'
+    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%free%'
+      THEN 'Free Service'
+    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%paid%'
+      OR COALESCE(service_type, '') ~* '^[0-9]+K$'
+      THEN 'Paid Service'
+    ELSE 'Others'
+  END IN ('Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair')`
+}
+
 function cancelledBillStatusSql() {
   return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) IN ('cancel', 'cancelled', 'canceled')`
 }
@@ -613,19 +629,7 @@ function measureFiscalRow(row: FiscalAggregateRow, analysisType: AnalysisType) {
 }
 
 async function hasDailySummaryV2() {
-  if (hasRoBillingDailySummaryV2 !== null) return hasRoBillingDailySummaryV2
-
-  const result = await db.execute(sql`
-    SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'ro_billing_daily_summary_v2'
-        AND column_name = 'bill_status'
-    ) AS exists
-  `)
-  hasRoBillingDailySummaryV2 = Boolean(result[0]?.exists)
-  return hasRoBillingDailySummaryV2
+  return false
 }
 
 function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: AnalysisType) {
@@ -759,6 +763,7 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date, compariso
         WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
           AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
+          AND ${activeServiceCategoryFilter()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
       GROUP BY bill_key, bill_date
@@ -826,6 +831,7 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
           AND ${activeBillStatusSql()}
+          AND ${activeServiceCategoryFilter()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
       GROUP BY bill_key, bill_date
@@ -868,6 +874,7 @@ async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date, deal
       WHERE bill_date >= ${toDateInputValue(lyStart)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
+        AND ${activeServiceCategoryFilter()}
         ${roBillingDealerFilter(dealerCode)}
     )
     SELECT
@@ -980,6 +987,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
         WHERE bill_date >= ${toDateInputValue(startDate)}::date
           AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
+          AND ${activeServiceCategoryFilter()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
       GROUP BY service_advisor, bill_key
@@ -1046,6 +1054,7 @@ async function fetchLatestBillDateOnOrBefore(endDate: Date, dealerCode: DealerFi
     FROM ro_billing_report
     WHERE bill_date <= ${toDateInputValue(endDate)}::date
       AND ${activeBillStatusSql()}
+      AND ${activeServiceCategoryFilter()}
       ${roBillingDealerFilter(dealerCode)}
   `)
   return parseDateInput(result[0]?.max_date ? String(result[0].max_date) : null)
@@ -1057,6 +1066,7 @@ async function fetchBillRowCountForDate(date: Date, dealerCode: DealerFilter = n
     FROM ro_billing_report
     WHERE bill_date = ${toDateInputValue(date)}::date
       AND ${activeBillStatusSql()}
+      AND ${activeServiceCategoryFilter()}
       ${roBillingDealerFilter(dealerCode)}
   `)
   return numberValue(result[0]?.count)
@@ -1099,6 +1109,7 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
       WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
         AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
+        AND ${activeServiceCategoryFilter()}
         ${roBillingDealerFilter(dealerCode)}
     ),
     parent_dedup AS (
@@ -1216,6 +1227,7 @@ async function fetchRows({ startDate, endDate, dealerCode }: { startDate?: Date;
         FROM ro_billing_report
         WHERE bill_date BETWEEN ${toDateInputValue(startDate!)}::date AND ${toDateInputValue(endDate!)}::date
           AND ${activeBillStatusSql()}
+          AND ${activeServiceCategoryFilter()}
           ${roBillingDealerFilter(dealerCode || null)}
       `)
       : db.execute(sql`
@@ -1239,12 +1251,13 @@ async function fetchRows({ startDate, endDate, dealerCode }: { startDate?: Date;
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
           AND ${activeBillStatusSql()}
+          AND ${activeServiceCategoryFilter()}
           ${roBillingDealerFilter(dealerCode || null)}
       `),
     db.execute(sql`
       SELECT
         MAX(uploaded_at) AS "uploadedAt",
-        COUNT(*) FILTER (WHERE ${activeBillStatusSql()} ${roBillingDealerFilter(dealerCode || null)})::int AS "totalRows"
+        COUNT(*) FILTER (WHERE ${activeBillStatusSql()} AND ${activeServiceCategoryFilter()} ${roBillingDealerFilter(dealerCode || null)})::int AS "totalRows"
       FROM ro_billing_report
     `),
   ])

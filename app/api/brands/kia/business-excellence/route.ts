@@ -69,6 +69,26 @@ function tableSql(table: BusinessExcellenceTable) {
   return sql.raw(`"${table.table}"`)
 }
 
+function activeBillStatusSql() {
+  return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`
+}
+
+function activeServiceCategoryFilter() {
+  return sql`CASE
+    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%accident%'
+      OR LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%bodyshop%'
+      THEN 'Accidental Repair'
+    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%running%'
+      THEN 'Running Repair'
+    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%free%'
+      THEN 'Free Service'
+    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%paid%'
+      OR COALESCE(service_type, '') ~* '^[0-9]+K$'
+      THEN 'Paid Service'
+    ELSE 'Others'
+  END IN ('Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair')`
+}
+
 function roBillingWhereClause(startDate?: string | null, endDate?: string | null, dealerCode?: string | null) {
   const clauses = []
   if (startDate && endDate) {
@@ -77,6 +97,8 @@ function roBillingWhereClause(startDate?: string | null, endDate?: string | null
   if (dealerCode) {
     clauses.push(sql`UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) = ${dealerCode}`)
   }
+  clauses.push(activeBillStatusSql())
+  clauses.push(activeServiceCategoryFilter())
   return clauses.length > 0 ? sql`WHERE ${sql.join(clauses, sql` AND `)}` : sql``
 }
 

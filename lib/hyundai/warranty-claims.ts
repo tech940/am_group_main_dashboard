@@ -187,7 +187,7 @@ function resultRows(result: unknown): RawRow[] {
 async function findClaimListRecordById(sourceRowId: string) {
   const result = await db.execute(sql`
     SELECT id, claim_no, claim_date, status, source_dealer_code,
-      r_o_no, r_o_date, vin, claim_type, campaign_no
+      r_o_no, r_o_date, vin, claim_type
     FROM hyundai_warranty_claim_list
     WHERE id::text = ${sourceRowId}
     LIMIT 1
@@ -200,7 +200,7 @@ async function findClaimListRecordByKey(recordKey: string) {
   if (!claimNo) return null
   const result = await db.execute(sql`
     SELECT id, claim_no, claim_date, status, source_dealer_code,
-      r_o_no, r_o_date, vin, claim_type, campaign_no
+      r_o_no, r_o_date, vin, claim_type
     FROM hyundai_warranty_claim_list
     WHERE COALESCE(UPPER(TRIM(claim_no)), '') = ${normalizedText(claimNo)}
     LIMIT 1

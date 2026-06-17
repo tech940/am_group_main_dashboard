@@ -466,6 +466,22 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'create', 'edit', 'approve'],
   },
   {
+    key: 'platinum.warranty_list',
+    name: 'Claim YTP',
+    parentKey: 'platinum.service',
+    description: 'AM Platinum Claim YTP tracking, SLA remarks, and audit history.',
+    sortOrder: 154,
+    actions: ['view', 'edit', 'audit'],
+  },
+  {
+    key: 'platinum.warranty_claim_list',
+    name: 'Warranty Claim List',
+    parentKey: 'platinum.service',
+    description: 'AM Platinum warranty claim tracking, evidence, and management insights.',
+    sortOrder: 155,
+    actions: ['view', 'edit', 'audit'],
+  },
+  {
     key: 'platinum.sales',
     name: 'Sales',
     parentKey: 'platinum',

@@ -119,6 +119,8 @@ const brandNavigation = [
           { name: 'Business Excellence', href: '/brands/platinum/business-excellence/overview' },
           { name: 'Service Appointment', href: '/brands/platinum/service-appointment' },
           { name: 'Platinum Proforma', href: '/brands/platinum/proforma' },
+          { name: 'Claim YTP', href: '/brands/platinum/warranty-list' },
+          { name: 'Warranty Claim List', href: '/brands/platinum/warranty-claim-list' },
         ],
       },
       {
@@ -197,6 +199,8 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/platinum/demo-job-cards': 'platinum.demo_job_cards.view',
   '/brands/platinum/demo-cars-list': 'platinum.demo_cars_list.view',
   '/brands/platinum/proforma': 'platinum.proforma.view',
+  '/brands/platinum/warranty-list': 'platinum.warranty_list.view',
+  '/brands/platinum/warranty-claim-list': 'platinum.warranty_claim_list.view',
   '/brands/mg/business-excellence/overview': 'mg.business_excellence.view',
   '/brands/mg/service-appointment': 'mg.service_appointment.view',
   '/brands/mg/demo-job-cards': 'mg.demo_job_cards.view',
