@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Script from 'next/script';
 import "./globals.css";
 import { SidebarProvider } from "@/context/sidebar-context";
 import { DashboardQueryProvider } from "@/components/providers/query-provider";
@@ -47,7 +48,11 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+        />
       </head>
       <body className="min-h-full flex flex-col">
         <NextTopLoader 

@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { hyundaiWarrantyClaimActions, hyundaiWarrantyClaimEvidence } from '@/lib/db/schema'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requirePermission } from '@/lib/permissions/service'
+import { canAccessBrand } from '@/lib/auth/brand-access'
 import {
   findWarrantySourceRecord,
   getWarrantyRequirement,
@@ -50,8 +51,11 @@ export async function GET(request: Request) {
   const source = sourceFrom(searchParams.get('source'))
   const recordKey = String(searchParams.get('recordKey') || '').trim()
   const sourceRowId = String(searchParams.get('sourceRowId') || '').trim()
-  const permission = await requirePermission(appUser, permissionKey(source, 'view'))
-  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+  const isBrandUser = canAccessBrand(appUser, 'hyundai')
+  if (!isBrandUser) {
+    const permission = await requirePermission(appUser, permissionKey(source, 'view'))
+    if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+  }
   if (!recordKey && !sourceRowId) {
     return NextResponse.json({ error: 'recordKey or sourceRowId is required' }, { status: 400 })
   }
@@ -110,8 +114,11 @@ export async function POST(request: Request) {
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const formData = await request.formData()
   const source = sourceFrom(formData.get('source'))
-  const permission = await requirePermission(appUser, permissionKey(source, 'edit'))
-  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+  const isBrandUser = canAccessBrand(appUser, 'hyundai')
+  if (!isBrandUser) {
+    const permission = await requirePermission(appUser, permissionKey(source, 'edit'))
+    if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+  }
 
   const recordKey = String(formData.get('recordKey') || '').trim()
   const sourceRowId = String(formData.get('sourceRowId') || '').trim()

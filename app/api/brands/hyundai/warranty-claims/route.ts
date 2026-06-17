@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requirePermission } from '@/lib/permissions/service'
+import { canAccessBrand } from '@/lib/auth/brand-access'
 import {
   getWarrantyRequirement,
   istDateKey,
@@ -528,13 +529,16 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const source = sourceFrom(searchParams.get('source'))
-  const viewPermission = await requirePermission(appUser, permissionKey(source, 'view'))
-  if (!viewPermission.allowed) return NextResponse.json({ error: viewPermission.reason }, { status: 403 })
+  const isBrandUser = canAccessBrand(appUser, 'hyundai')
+  if (!isBrandUser) {
+    const viewPermission = await requirePermission(appUser, permissionKey(source, 'view'))
+    if (!viewPermission.allowed) return NextResponse.json({ error: viewPermission.reason }, { status: 403 })
+  }
 
   const [baseData, editPermission, auditPermission] = await Promise.all([
     loadWarrantyBase(source),
-    requirePermission(appUser, permissionKey(source, 'edit')),
-    requirePermission(appUser, permissionKey(source, 'audit')),
+    isBrandUser ? Promise.resolve({ allowed: true }) : requirePermission(appUser, permissionKey(source, 'edit')),
+    isBrandUser ? Promise.resolve({ allowed: true }) : requirePermission(appUser, permissionKey(source, 'audit')),
   ])
 
   const { scoped, dealers, statuses, claimTypes, dealerNames } = baseData

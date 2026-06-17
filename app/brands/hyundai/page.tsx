@@ -19,10 +19,11 @@ export default async function Page() {
     forbidden()
   }
 
-  const permission = await requirePermission(access.appUser, 'hyundai.view')
-  if (!permission.allowed) {
-    forbidden()
-  }
+  // Bypass role-based permission view check for matching branch users for now
+  // const permission = await requirePermission(access.appUser, 'hyundai.view')
+  // if (!permission.allowed) {
+  //   forbidden()
+  // }
 
   return <HyundaiModulePlaceholder title="AM Hyundai" description="AM Hyundai has been added to the sidebar with the same Service, Sales, and H Promise structure as AM Kia." />
 }

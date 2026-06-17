@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { hyundaiWarrantyClaimActions, hyundaiWarrantyClaimEvidence } from '@/lib/db/schema'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requirePermission } from '@/lib/permissions/service'
+import { canAccessBrand } from '@/lib/auth/brand-access'
 import { getWarrantyEvidenceUrl } from '@/lib/hyundai/warranty-storage'
 
 export async function GET(_request: Request, context: RouteContext<'/api/brands/hyundai/warranty-claims/evidence/[id]'>) {
@@ -20,9 +21,12 @@ export async function GET(_request: Request, context: RouteContext<'/api/brands/
     .where(eq(hyundaiWarrantyClaimEvidence.id, id))
     .limit(1)
   if (!row) return NextResponse.json({ error: 'Evidence not found' }, { status: 404 })
-  const permissionKey = `hyundai.${row.sourceType === 'ytp' ? 'warranty_list' : 'warranty_claim_list'}.view`
-  const permission = await requirePermission(appUser, permissionKey)
-  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+  const isBrandUser = canAccessBrand(appUser, 'hyundai')
+  if (!isBrandUser) {
+    const permissionKey = `hyundai.${row.sourceType === 'ytp' ? 'warranty_list' : 'warranty_claim_list'}.view`
+    const permission = await requirePermission(appUser, permissionKey)
+    if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+  }
   return NextResponse.redirect(await getWarrantyEvidenceUrl(row.storagePath))
 }
 

@@ -1,0 +1,534 @@
+{
+  "timestamp": "2026-06-17T09:37:26.064Z",
+  "columns": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "column_name": "instance_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "column_name": "supabase_id",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "column_name": "email",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "column_name": "aud",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "full_name",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "column_name": "role",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "email",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "role",
+      "data_type": "USER-DEFINED",
+      "is_nullable": "NO",
+      "column_default": "'viewer'::role"
+    },
+    {
+      "column_name": "encrypted_password",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "department",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "phone_number",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "email_confirmed_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "avatar_url",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "invited_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "confirmation_token",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "is_active",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": "true"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "column_name": "confirmation_sent_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "recovery_token",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "column_name": "deleted_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "recovery_sent_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "brand",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "email_change_token_new",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "email_change",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "created_by",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "updated_by",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "email_change_sent_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "last_sign_in_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "raw_app_meta_data",
+      "data_type": "jsonb",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "raw_user_meta_data",
+      "data_type": "jsonb",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "is_super_admin",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "phone",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": "NULL::character varying"
+    },
+    {
+      "column_name": "phone_confirmed_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "phone_change",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": "''::character varying"
+    },
+    {
+      "column_name": "phone_change_token",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "''::character varying"
+    },
+    {
+      "column_name": "phone_change_sent_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "confirmed_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "email_change_token_current",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "''::character varying"
+    },
+    {
+      "column_name": "email_change_confirm_status",
+      "data_type": "smallint",
+      "is_nullable": "YES",
+      "column_default": "0"
+    },
+    {
+      "column_name": "banned_until",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "reauthentication_token",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "''::character varying"
+    },
+    {
+      "column_name": "reauthentication_sent_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "is_sso_user",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": "false"
+    },
+    {
+      "column_name": "deleted_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "is_anonymous",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": "false"
+    }
+  ],
+  "auditColumns": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "column_name": "actor_user_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "target_user_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "action",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "column_name": "branch",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "before_value",
+      "data_type": "jsonb",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "after_value",
+      "data_type": "jsonb",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "reason",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "request_metadata",
+      "data_type": "jsonb",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    }
+  ],
+  "roles": [
+    {
+      "enumlabel": "admin"
+    },
+    {
+      "enumlabel": "super_admin"
+    },
+    {
+      "enumlabel": "branch_admin"
+    },
+    {
+      "enumlabel": "purchase_manager"
+    },
+    {
+      "enumlabel": "ea"
+    },
+    {
+      "enumlabel": "md"
+    },
+    {
+      "enumlabel": "accounts"
+    },
+    {
+      "enumlabel": "manager"
+    },
+    {
+      "enumlabel": "technician"
+    },
+    {
+      "enumlabel": "viewer"
+    },
+    {
+      "enumlabel": "ceo"
+    },
+    {
+      "enumlabel": "finance_head"
+    }
+  ],
+  "triggers": [],
+  "usersList": [
+    {
+      "id": "81874316-ff99-4435-aceb-10f21977d272",
+      "email": "test-user-1781688929444@example.com",
+      "supabase_id": "dummy-88929454",
+      "role": "viewer",
+      "created_at": "2026-06-17 09:35:35.653124",
+      "deleted_at": null
+    },
+    {
+      "id": "9017419f-dd77-452a-9661-19c6a842af95",
+      "email": "bp@servicejammuautomart.com",
+      "supabase_id": "11872320-e20b-4047-b59a-43a7154c0b07",
+      "role": "manager",
+      "created_at": "2026-06-17 09:26:32.466048",
+      "deleted_at": null
+    },
+    {
+      "id": "6fcc0570-96fa-4a26-897b-ee4b80cf09d5",
+      "email": "atulsharma131297@gmail.com",
+      "supabase_id": "6bc49d20-d6f9-4f7e-8039-c83dbe757ec8",
+      "role": "viewer",
+      "created_at": "2026-06-11 05:13:14.277479",
+      "deleted_at": null
+    },
+    {
+      "id": "9cf1a200-614a-4f5b-9401-ee73e9948e78",
+      "email": "lovebhagat808@gmail.com",
+      "supabase_id": "99d0f736-0ad6-4692-9cda-5494b916ae6c",
+      "role": "viewer",
+      "created_at": "2026-06-10 06:12:49.80419",
+      "deleted_at": null
+    },
+    {
+      "id": "3e34b758-8e7f-45b9-9727-a898eae34b40",
+      "email": "archana.pcamgroup@gmail.com",
+      "supabase_id": "0714e525-e63e-4b20-82c0-544311ed6d9f",
+      "role": "viewer",
+      "created_at": "2026-06-03 06:23:12.781207",
+      "deleted_at": null
+    },
+    {
+      "id": "d4545673-d6ae-4387-b152-0c95fe849e1b",
+      "email": "arun.mis@gmail.com",
+      "supabase_id": "a3984321-4a17-4052-9828-58b747f3591d",
+      "role": "super_admin",
+      "created_at": "2026-06-02 05:17:23.806299",
+      "deleted_at": null
+    },
+    {
+      "id": "2f9cf9b8-1aaf-43b6-a1bd-5aa2c758099c",
+      "email": "parts@amkia.in",
+      "supabase_id": "70972358-77cb-4213-b2df-7704bcede200",
+      "role": "manager",
+      "created_at": "2026-06-01 08:36:00.949411",
+      "deleted_at": null
+    },
+    {
+      "id": "b5ad4762-c29e-4496-ab66-5de1c9f621ff",
+      "email": "bodyshop@amkia.in",
+      "supabase_id": "0bca51f2-6dd2-4e90-a819-0968ac07ed33",
+      "role": "manager",
+      "created_at": "2026-06-01 08:34:23.331",
+      "deleted_at": null
+    },
+    {
+      "id": "4590eeeb-bbe1-48b0-90d5-b9964c8545b9",
+      "email": "service@amkia.in",
+      "supabase_id": "d93b8141-f742-419e-9fdc-78edb3cbd4a1",
+      "role": "manager",
+      "created_at": "2026-06-01 08:32:31.855621",
+      "deleted_at": null
+    },
+    {
+      "id": "cb07b2e7-131c-4c0b-b2ac-688ac19668da",
+      "email": "crmservice@amkia.in",
+      "supabase_id": "cddb7030-65eb-4dba-977d-ddb30081e8ab",
+      "role": "manager",
+      "created_at": "2026-06-01 06:55:48.763275",
+      "deleted_at": null
+    }
+  ],
+  "auditLogsList": [
+    {
+      "id": "9755582b-e5c8-4f87-bbe6-0415335d46e4",
+      "actor_user_id": "ce4dd179-7c90-41b7-a5d1-b877606dac2e",
+      "action": "user.created",
+      "created_at": "2026-06-17 09:34:45.304608+00"
+    },
+    {
+      "id": "46a43f8a-1b59-49fa-a444-390b51e44fd6",
+      "actor_user_id": "ce4dd179-7c90-41b7-a5d1-b877606dac2e",
+      "action": "user.created",
+      "created_at": "2026-06-17 09:32:09.319376+00"
+    },
+    {
+      "id": "d8b82de9-f94e-4dd2-945c-a4d16e7d8ce4",
+      "actor_user_id": "ce4dd179-7c90-41b7-a5d1-b877606dac2e",
+      "action": "user.created",
+      "created_at": "2026-06-17 09:31:30.400552+00"
+    },
+    {
+      "id": "512dacf9-33a6-41eb-9355-84564ac430f0",
+      "actor_user_id": "ce4dd179-7c90-41b7-a5d1-b877606dac2e",
+      "action": "user.created",
+      "created_at": "2026-06-17 09:31:30.167864+00"
+    },
+    {
+      "id": "67d91e3f-c02b-4244-8822-9f2a3a97c452",
+      "actor_user_id": "ce4dd179-7c90-41b7-a5d1-b877606dac2e",
+      "action": "test.diagnostics",
+      "created_at": "2026-06-17 09:30:45.656231+00"
+    },
+    {
+      "id": "2731b3f7-dc5c-40bb-bb1d-c3dbf33d92a3",
+      "actor_user_id": "ce4dd179-7c90-41b7-a5d1-b877606dac2e",
+      "action": "test.diagnostics",
+      "created_at": "2026-06-17 09:30:43.956449+00"
+    },
+    {
+      "id": "fde123ae-f803-4257-ab3e-144169b63d81",
+      "actor_user_id": "ce4dd179-7c90-41b7-a5d1-b877606dac2e",
+      "action": "test.diagnostics",
+      "created_at": "2026-06-17 09:30:43.942563+00"
+    }
+  ],
+  "postError": "fetch failed",
+  "postStack": "TypeError: fetch failed"
+}

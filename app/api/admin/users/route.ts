@@ -162,6 +162,7 @@ async function createUser(input: CreateUserInput, actor: AppUser, request: Reque
   })
   if (error || !data.user) return { ok: false, error: error?.message || 'Failed to create authentication user.' } as const
 
+  let createdUser: typeof users.$inferSelect | null = null
   try {
     const [created] = await db.insert(users).values({
       supabaseId: data.user.id,
@@ -175,6 +176,7 @@ async function createUser(input: CreateUserInput, actor: AppUser, request: Reque
       updatedBy: actor.id,
       isActive: true,
     }).returning()
+    createdUser = created
 
     const warning = normalized.branchModuleRole !== 'inherit' && canUseBranchModuleAccessRole(created.brand)
       ? await applyBranchModulePreset({
@@ -197,6 +199,9 @@ async function createUser(input: CreateUserInput, actor: AppUser, request: Reque
     return { ok: true, user: created, warning } as const
   } catch (insertError) {
     await supabaseAdmin.auth.admin.deleteUser(data.user.id).catch(() => null)
+    if (createdUser) {
+      await db.delete(users).where(eq(users.id, createdUser.id)).catch(() => null)
+    }
     throw insertError
   }
 }

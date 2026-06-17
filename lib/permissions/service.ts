@@ -116,6 +116,16 @@ function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string |
   const roleDefaults = Object.fromEntries(PERMISSIONS.map((permission) => [permission.key, roleKeys.has(permission.key)]))
   applyBranchRoleDefaults(roleDefaults, role, branchAccess)
   constrainSnapshotToBranch(roleDefaults, role, branchAccess)
+  if (isSuperAdminRole(role) || hasGlobalAccessRole(role)) {
+    for (const key of Object.keys(roleDefaults)) roleDefaults[key] = true
+  } else if (branchAccess) {
+    for (const key of Object.keys(roleDefaults)) {
+      if (key.startsWith(`${branchAccess}.`)) {
+        roleDefaults[key] = true
+      }
+    }
+  }
+
   return {
     effective: { ...roleDefaults },
     roleDefaults,
@@ -337,6 +347,12 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
   constrainSnapshotToBranch(effective, targetUser.role, targetUser.brand)
   if (isSuperAdminRole(targetUser.role) || hasGlobalAccessRole(targetUser.role)) {
     for (const key of Object.keys(effective)) effective[key] = true
+  } else if (targetUser.brand) {
+    for (const key of Object.keys(effective)) {
+      if (key.startsWith(`${targetUser.brand}.`)) {
+        effective[key] = true
+      }
+    }
   }
 
   return { effective, roleDefaults, overrides }
@@ -353,6 +369,8 @@ export async function getUserPermissionSnapshot(userId: string) {
 export async function canUserAccessPermission(appUser: AppUser | null, permissionKey: string): Promise<boolean> {
   if (!appUser || !appUser.isActive) return false
   if (isSuperAdminRole(appUser.role) || hasGlobalAccessRole(appUser.role)) return true
+
+  if (appUser.brand && permissionKey.startsWith(`${appUser.brand}.`)) return true
 
   const snapshot = await getUserPermissionSnapshot(appUser.id)
   return snapshot.effective[permissionKey] === true

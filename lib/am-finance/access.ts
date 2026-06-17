@@ -1,23 +1,21 @@
 import type { AppUser } from '@/lib/auth/app-user'
 
-const AM_FINANCE_CREATE_ROLES = new Set<AppUser['role']>(['admin', 'super_admin', 'finance_head', 'accounts'])
-const AM_FINANCE_EDIT_ROLES = new Set<AppUser['role']>(['admin', 'super_admin', 'finance_head', 'accounts'])
-const AM_FINANCE_AUDIT_ROLES = new Set<AppUser['role']>(['admin', 'super_admin', 'ceo', 'md', 'finance_head'])
+const AM_FINANCE_ALLOWED_ROLES = new Set<AppUser['role']>(['admin', 'super_admin', 'ceo', 'md', 'ea'])
 
 export function canAccessAmFinance(role: AppUser['role'] | null | undefined) {
-  return Boolean(role)
+  return Boolean(role && AM_FINANCE_ALLOWED_ROLES.has(role))
 }
 
 export function canCreateAmFinance(role: AppUser['role'] | null | undefined) {
-  return Boolean(role && AM_FINANCE_CREATE_ROLES.has(role))
+  return Boolean(role && AM_FINANCE_ALLOWED_ROLES.has(role))
 }
 
 export function canEditAmFinance(role: AppUser['role'] | null | undefined) {
-  return Boolean(role && AM_FINANCE_EDIT_ROLES.has(role))
+  return Boolean(role && AM_FINANCE_ALLOWED_ROLES.has(role))
 }
 
 export function canAuditAmFinance(role: AppUser['role'] | null | undefined) {
-  return Boolean(role && AM_FINANCE_AUDIT_ROLES.has(role))
+  return Boolean(role && AM_FINANCE_ALLOWED_ROLES.has(role))
 }
 
 export function getAmFinancePermissions(role: AppUser['role'] | null | undefined) {

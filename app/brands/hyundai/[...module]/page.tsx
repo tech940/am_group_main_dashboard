@@ -137,10 +137,11 @@ export default async function Page({
     forbidden()
   }
 
-  const permission = await requirePermission(access.appUser, definition.permission)
-  if (!permission.allowed) {
-    forbidden()
-  }
+  // Bypass role-based permission checks for matching branch users for now
+  // const permission = await requirePermission(access.appUser, definition.permission)
+  // if (!permission.allowed) {
+  //   forbidden()
+  // }
 
   if (definition.component === 'business-excellence') {
     return <HyundaiBusinessExcellencePage initialReport={definition.report || 'overview'} currentUserRole={access.appUser.role} />

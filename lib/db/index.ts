@@ -18,43 +18,6 @@ function runInTimedTransaction<T>(
   })
 }
 
-// Drizzle expects client.unsafe() to synchronously return a PendingQuery (Promise + .values()).
-// Wrapping in begin() must preserve that API shape.
-function wrapUnsafe(baseClient: PostgresClient): PostgresClient['unsafe'] {
-  const unsafe = (query: string, parameters?: Parameters<PostgresClient['unsafe']>[1], queryOptions?: Parameters<PostgresClient['unsafe']>[2]) => {
-    const pending = Object.assign(
-      runInTimedTransaction(baseClient, (tx) => tx.unsafe(query, parameters, queryOptions)),
-      {
-        describe: () => runInTimedTransaction(baseClient, (tx) => tx.unsafe(query, parameters, queryOptions).describe()),
-        values: () => {
-          const valuesPending = runInTimedTransaction(
-            baseClient,
-            (tx) => tx.unsafe(query, parameters, queryOptions).values(),
-          )
-          return Object.assign(valuesPending, {
-            describe: () => runInTimedTransaction(
-              baseClient,
-              (tx) => tx.unsafe(query, parameters, queryOptions).values().describe(),
-            ),
-          })
-        },
-        raw: () => runInTimedTransaction(baseClient, (tx) => tx.unsafe(query, parameters, queryOptions).raw()),
-        simple: function (this: Promise<unknown>) {
-          return this
-        },
-        execute: function (this: Promise<unknown>) {
-          return this
-        },
-        cancel: () => {},
-      },
-    )
-
-    return pending
-  }
-
-  return unsafe as PostgresClient['unsafe']
-}
-
 // Singleton pattern to prevent connection pool exhaustion during Next.js HMR
 // Without this, every hot reload creates a NEW postgres client, leaking connections
 const globalForDb = globalThis as unknown as {
@@ -71,13 +34,14 @@ const baseClient = globalForDb.postgresClient ?? postgres(env.database.url, {
   onnotice: () => {}, // Ignore notices
   connection: {
     application_name: 'main_dashboard',
+    options: `-c statement_timeout=${STATEMENT_TIMEOUT_MS}`,
   },
 })
 
 const client = Object.assign(
   (...args: Parameters<PostgresClient>) => baseClient(...args),
   baseClient,
-  { unsafe: wrapUnsafe(baseClient) },
+  { unsafe: baseClient.unsafe.bind(baseClient) },
 ) as PostgresClient
 
 // In development, store the client on globalThis so HMR reuses it

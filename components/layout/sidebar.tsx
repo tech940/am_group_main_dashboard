@@ -233,7 +233,7 @@ export function Sidebar() {
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
   const { userRole, canAccessAdmin, isSuperAdmin, userBrand, loading } = useUserRole()
   const canAccessFinanceOrders = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'accounts', 'finance_head'].includes(userRole || '')
-  const canAccessAmFinance = Boolean(userRole)
+  const canAccessAmFinance = ['admin', 'super_admin', 'ceo', 'md', 'ea'].includes(userRole || '')
 
   useEffect(() => {
     if (loading || !userRole) return
@@ -715,7 +715,8 @@ export function Sidebar() {
                                   <div className="ml-4 space-y-1.5 border-l border-white/15 pl-3">
                                     {section.submenus.map((sub) => {
                                       const permissionKey = sidebarPermissionByHref[sub.href]
-                                      const locked = permissionKey ? !hasPermission(permissionKey) : false
+                                      const isBrandUser = userBrand === brand.key || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
+                                      const locked = isBrandUser ? false : (permissionKey ? !hasPermission(permissionKey) : false)
                                       const active = isSidebarHrefActive(sub.href, pathname)
 
                                       return locked ? (
