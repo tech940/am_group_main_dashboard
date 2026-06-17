@@ -819,10 +819,10 @@ export async function getCachedServiceDashboardMetrics(
   endDate?: string | null,
   dealerCode?: DealerFilter,
 ) {
-  const normalizedEndDate = parseDateInput(endDate || null)
+  const resolvedEndDate = await resolveExportDate(endDate || null, dealerCode || null)
   return getCachedData(
-    serviceDashboardCacheKey('metrics', normalizedEndDate, dealerCode || null),
-    () => buildMetrics(normalizedEndDate, dealerCode || null),
+    serviceDashboardCacheKey('metrics', resolvedEndDate, dealerCode || null),
+    () => buildMetrics(resolvedEndDate, dealerCode || null),
     CACHE_TTL.DASHBOARD,
   )
 }
@@ -1197,10 +1197,10 @@ export async function buildKiaServiceDashboardPreview({
   endDate?: string | null
   dealerCode?: DealerFilter
 }): Promise<KiaServiceDashboardPreview> {
-  const normalizedEndDate = parseDateInput(endDate || null)
+  const resolvedEndDate = await resolveExportDate(endDate || null, dealerCode || null)
   return getCachedData(
-    serviceDashboardCacheKey('preview', normalizedEndDate, dealerCode || null),
-    () => buildKiaServiceDashboardPreviewUncached({ endDate: normalizedEndDate, dealerCode }),
+    serviceDashboardCacheKey('preview', resolvedEndDate, dealerCode || null),
+    () => buildKiaServiceDashboardPreviewUncached({ endDate: resolvedEndDate, dealerCode }),
     CACHE_TTL.DASHBOARD,
   )
 }

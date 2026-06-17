@@ -1048,50 +1048,8 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
   }))
 }
 
-async function fetchLatestBillDateOnOrBefore(endDate: Date, dealerCode: DealerFilter = null) {
-  const result = await db.execute(sql`
-    SELECT MAX(bill_date)::text AS max_date
-    FROM ro_billing_report
-    WHERE bill_date <= ${toDateInputValue(endDate)}::date
-      AND ${activeBillStatusSql()}
-      AND ${activeServiceCategoryFilter()}
-      ${roBillingDealerFilter(dealerCode)}
-  `)
-  return parseDateInput(result[0]?.max_date ? String(result[0].max_date) : null)
-}
-
-async function fetchBillRowCountForDate(date: Date, dealerCode: DealerFilter = null) {
-  const result = await db.execute(sql`
-    SELECT COUNT(*)::int AS count
-    FROM ro_billing_report
-    WHERE bill_date = ${toDateInputValue(date)}::date
-      AND ${activeBillStatusSql()}
-      AND ${activeServiceCategoryFilter()}
-      ${roBillingDealerFilter(dealerCode)}
-  `)
-  return numberValue(result[0]?.count)
-}
-
 async function resolveTdAnchorDate(endDate: Date, dealerCode: DealerFilter = null) {
-  const normalizedEndDate = startOfDay(endDate)
-  const billCount = await fetchBillRowCountForDate(normalizedEndDate, dealerCode)
-  if (billCount > 0) return normalizedEndDate
-
-  const latestBillDate = await fetchLatestBillDateOnOrBefore(normalizedEndDate, dealerCode)
-  if (!latestBillDate) return normalizedEndDate
-
-  const latest = startOfDay(latestBillDate)
-  if (latest.getTime() >= normalizedEndDate.getTime()) return normalizedEndDate
-
-  // Upload lag / timezone gap: selected end date has no bills yet, but earlier days in the same month do.
-  const monthStart = startOfDay(new Date(normalizedEndDate.getFullYear(), normalizedEndDate.getMonth(), 1))
-  const today = startOfDay(new Date())
-  const isCurrentPeriodEnd = normalizedEndDate.getTime() >= today.getTime() - 86400000
-  if (isCurrentPeriodEnd && latest >= monthStart) {
-    return latest
-  }
-
-  return normalizedEndDate
+  return startOfDay(endDate)
 }
 
 async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>, dealerCode: DealerFilter = null) {
