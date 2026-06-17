@@ -7,6 +7,7 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeKiaDealerCode, type KiaDealerCode } from '@/lib/kia/dealer-branch'
+import { fetchDeliveredBillingKpis } from '@/lib/kia/ro-billing-kpis'
 import {
   activeBillStatusSql,
   fetchEwRsaMcpCounts,
@@ -110,7 +111,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `kia:business-excellence:overview:v33:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:v34:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -404,6 +405,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
@@ -441,18 +443,17 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     }
   })
 
-  const vasPeriod = await fetchWorkshopVasDetails(startDate, endDate, dealerCode)
-  const canonicalOperations = await fetchCanonicalOperationMetrics(endDate, dealerCode)
-  const totalJc = rows.reduce((sum, row) => sum + row.totalJc, 0)
-  const labourAmount = rows.reduce((sum, row) => sum + row.labourAmount, 0)
-  const partsAmount = rows.reduce((sum, row) => sum + row.partsAmount, 0)
+  const [vasPeriod, canonicalOperations] = await Promise.all([
+    fetchWorkshopVasDetails(startDate, endDate, dealerCode),
+    fetchCanonicalOperationMetrics(endDate, dealerCode),
+  ])
   const sourceRows = resultRows(serviceRows)
 
   return {
-    totalJc,
-    labourAmount,
-    partsAmount,
-    totalRevenue: labourAmount + partsAmount,
+    totalJc: rows.reduce((sum, row) => sum + row.totalJc, 0),
+    labourAmount: rows.reduce((sum, row) => sum + row.labourAmount, 0),
+    partsAmount: rows.reduce((sum, row) => sum + row.partsAmount, 0),
+    totalRevenue: rows.reduce((sum, row) => sum + row.totalRevenue, 0),
     vasAmount: vasPeriod.amount,
     vasAvailable: vasPeriod.available,
     vasUnavailableReason: vasPeriod.unavailableReason,
@@ -465,7 +466,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     balancingCount: canonicalOperations.balancingCount,
     alignmentLabour: canonicalOperations.alignmentLabour,
     balancingLabour: canonicalOperations.balancingLabour,
-    labourPerRo: perUnit(labourAmount, totalJc),
+    labourPerRo: perUnit(rows.reduce((sum, row) => sum + row.labourAmount, 0), rows.reduce((sum, row) => sum + row.totalJc, 0)),
     minDate: sourceRows.reduce<string | null>((current, row) => {
       const value = dateValue(row.min_date)
       if (!value) return current
@@ -549,7 +550,7 @@ async function buildOverviewPayload(
   const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate, dealerCode)
 
   const [
-    roKpiRows,
+    billingKpis,
     roDailyRows,
     roMixRows,
     advisorRows,
@@ -563,24 +564,13 @@ async function buildOverviewPayload(
     complaintMonthRows,
     addonKpis,
     workshopSnapshot,
-    lyRoKpiRows,
+    lyBillingKpis,
     lyOpenKpiRows,
     lyComplaintKpiRows,
     lyAddonKpis,
     lyWorkshopSnapshot,
   ] = await Promise.all([
-    db.execute(sql`
-      ${roSql}
-      SELECT
-        COUNT(DISTINCT jc_key)::int AS total_jc,
-        MIN(report_date)::text AS min_bill_date,
-        MAX(report_date)::text AS max_bill_date,
-        COALESCE(SUM(labour_amt), 0)::float AS labour,
-        COALESCE(SUM(part_amt), 0)::float AS parts,
-        COALESCE(SUM(revenue), 0)::float AS revenue,
-        COALESCE(AVG(revenue), 0)::float AS avg_line_value
-      FROM enriched
-    `),
+    fetchDeliveredBillingKpis(startDate, endDate, dealerCode),
     includeSecondary ? db.execute(sql`
       ${roSql}
       SELECT
@@ -725,15 +715,7 @@ async function buildOverviewPayload(
     `) : emptyRows(),
     fetchAddonKpis(startDate, endDate, dealerCode),
     fetchWorkshopSnapshot(startDate, endDate, dealerCode),
-    includeComparison ? db.execute(sql`
-      ${lyRoSql}
-      SELECT
-        COUNT(DISTINCT jc_key)::int AS total_jc,
-        COALESCE(SUM(labour_amt), 0)::float AS labour,
-        COALESCE(SUM(part_amt), 0)::float AS parts,
-        COALESCE(SUM(revenue), 0)::float AS revenue
-      FROM enriched
-    `) : emptyRows(),
+    includeComparison ? fetchDeliveredBillingKpis(lyStartDate, lyEndDate, dealerCode) : Promise.resolve(null),
     includeComparison ? db.execute(sql`
       ${lyOpenSql}
       SELECT
@@ -756,17 +738,15 @@ async function buildOverviewPayload(
     includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode) : emptyWorkshopSnapshot(),
   ])
 
-  const roKpis = resultRows(roKpiRows)[0] || {}
   const openKpis = resultRows(openKpiRows)[0] || {}
   const complaintKpis = resultRows(complaintKpiRows)[0] || {}
-  const lyRoKpis = resultRows(lyRoKpiRows)[0] || {}
   const lyOpenKpis = resultRows(lyOpenKpiRows)[0] || {}
   const lyComplaintKpis = resultRows(lyComplaintKpiRows)[0] || {}
 
-  const totalJc = numberValue(roKpis.total_jc)
-  const revenue = numberValue(roKpis.revenue)
-  const labour = numberValue(roKpis.labour)
-  const parts = numberValue(roKpis.parts)
+  const totalJc = billingKpis.deliveredCount
+  const revenue = billingKpis.revenue
+  const labour = billingKpis.labour
+  const parts = billingKpis.parts
   const totalOpenRo = numberValue(openKpis.total_open_ro)
   const delayedRo = numberValue(openKpis.delayed)
   const openOver15 = numberValue(openKpis.over_15)
@@ -776,10 +756,10 @@ async function buildOverviewPayload(
   const bucketOrder = ['0-4D', '5-7D', '8-15D', '>15D']
   const bucketMap = new Map(resultRows(agingRows).map((row) => [String(row.bucket), numberValue(row.count)]))
   const addOnTotal = addonKpis.ewCount + addonKpis.rsaCount + addonKpis.mcpCount
-  const lyTotalJc = numberValue(lyRoKpis.total_jc)
-  const lyRevenue = numberValue(lyRoKpis.revenue)
-  const lyLabour = numberValue(lyRoKpis.labour)
-  const lyParts = numberValue(lyRoKpis.parts)
+  const lyTotalJc = lyBillingKpis?.deliveredCount ?? 0
+  const lyRevenue = lyBillingKpis?.revenue ?? 0
+  const lyLabour = lyBillingKpis?.labour ?? 0
+  const lyParts = lyBillingKpis?.parts ?? 0
   const lyOpenRo = numberValue(lyOpenKpis.total_open_ro)
   const lyDelayedRo = numberValue(lyOpenKpis.delayed)
   const lyOpenOver15 = numberValue(lyOpenKpis.over_15)
@@ -790,6 +770,23 @@ async function buildOverviewPayload(
   const hasComparableWorkshopVasLy = lyWorkshopSnapshot.vasAvailable
   const workshopVasLyAmount = hasComparableWorkshopVasLy ? lyWorkshopSnapshot.vasAmount : null
 
+  const alignedWorkshopSnapshot = {
+    ...workshopSnapshot,
+    totalJc: billingKpis.deliveredCount,
+    labourAmount: billingKpis.labour,
+    partsAmount: billingKpis.parts,
+    totalRevenue: billingKpis.revenue,
+    labourPerRo: billingKpis.labourPerVehicle,
+  }
+  const alignedLyWorkshopSnapshot = lyBillingKpis ? {
+    ...lyWorkshopSnapshot,
+    totalJc: lyBillingKpis.deliveredCount,
+    labourAmount: lyBillingKpis.labour,
+    partsAmount: lyBillingKpis.parts,
+    totalRevenue: lyBillingKpis.revenue,
+    labourPerRo: lyBillingKpis.labourPerVehicle,
+  } : lyWorkshopSnapshot
+
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
     dateRange: { startDate, endDate },
@@ -798,7 +795,10 @@ async function buildOverviewPayload(
       labour,
       parts,
       totalJc,
-      avgBilling: perUnit(revenue, totalJc),
+      deliveredCount: totalJc,
+      avgBilling: billingKpis.avgBilling,
+      labourPerVehicle: billingKpis.labourPerVehicle,
+      partsPerVehicle: billingKpis.partsPerVehicle,
       openRo: totalOpenRo,
       delayedRo,
       openOver15,
@@ -818,7 +818,7 @@ async function buildOverviewPayload(
       complaintOpenPct: percent(complaintsOpen, complaintsTotal),
       addOnPerJc: perUnit(addOnTotal, totalJc),
     },
-    workshopSnapshot,
+    workshopSnapshot: alignedWorkshopSnapshot,
     comparison: includeComparison ? {
       lyRange: {
         startDate: lyStartDate,
@@ -845,9 +845,19 @@ async function buildOverviewPayload(
         deltaPct: growth(totalJc, lyTotalJc),
       },
       avgBilling: {
-        cy: perUnit(revenue, totalJc),
-        ly: perUnit(lyRevenue, lyTotalJc),
-        deltaPct: growth(perUnit(revenue, totalJc), perUnit(lyRevenue, lyTotalJc)),
+        cy: billingKpis.avgBilling,
+        ly: lyBillingKpis?.avgBilling ?? 0,
+        deltaPct: growth(billingKpis.avgBilling, lyBillingKpis?.avgBilling ?? 0),
+      },
+      labourPerVehicle: {
+        cy: billingKpis.labourPerVehicle,
+        ly: lyBillingKpis?.labourPerVehicle ?? 0,
+        deltaPct: growth(billingKpis.labourPerVehicle, lyBillingKpis?.labourPerVehicle ?? 0),
+      },
+      partsPerVehicle: {
+        cy: billingKpis.partsPerVehicle,
+        ly: lyBillingKpis?.partsPerVehicle ?? 0,
+        deltaPct: growth(billingKpis.partsPerVehicle, lyBillingKpis?.partsPerVehicle ?? 0),
       },
       openRo: {
         cy: totalOpenRo,
@@ -900,19 +910,19 @@ async function buildOverviewPayload(
         deltaPct: growth(addonKpis.mcpCount, lyAddonKpis.mcpCount),
       },
       workshopRevenue: {
-        cy: workshopSnapshot.totalRevenue,
-        ly: lyWorkshopSnapshot.totalRevenue,
-        deltaPct: growth(workshopSnapshot.totalRevenue, lyWorkshopSnapshot.totalRevenue),
+        cy: alignedWorkshopSnapshot.totalRevenue,
+        ly: alignedLyWorkshopSnapshot.totalRevenue,
+        deltaPct: growth(alignedWorkshopSnapshot.totalRevenue, alignedLyWorkshopSnapshot.totalRevenue),
       },
       workshopTotalJc: {
-        cy: workshopSnapshot.totalJc,
-        ly: lyWorkshopSnapshot.totalJc,
-        deltaPct: growth(workshopSnapshot.totalJc, lyWorkshopSnapshot.totalJc),
+        cy: alignedWorkshopSnapshot.totalJc,
+        ly: alignedLyWorkshopSnapshot.totalJc,
+        deltaPct: growth(alignedWorkshopSnapshot.totalJc, alignedLyWorkshopSnapshot.totalJc),
       },
       workshopLabourPerRo: {
-        cy: workshopSnapshot.labourPerRo,
-        ly: lyWorkshopSnapshot.labourPerRo,
-        deltaPct: growth(workshopSnapshot.labourPerRo, lyWorkshopSnapshot.labourPerRo),
+        cy: alignedWorkshopSnapshot.labourPerRo,
+        ly: alignedLyWorkshopSnapshot.labourPerRo,
+        deltaPct: growth(alignedWorkshopSnapshot.labourPerRo, alignedLyWorkshopSnapshot.labourPerRo),
       },
       workshopVasAmount: {
         cy: workshopSnapshot.vasAmount,
@@ -1003,7 +1013,7 @@ async function buildOverviewPayload(
       {
         label: 'Billing Velocity',
         value: `${totalJc.toLocaleString('en-IN')} JC`,
-        context: `Average billing is ${Math.round(perUnit(revenue, totalJc)).toLocaleString('en-IN')} per closed RO.`,
+        context: `Average billing is ${Math.round(billingKpis.avgBilling).toLocaleString('en-IN')} per delivered RO.`,
         tone: totalJc > 0 ? 'neutral' : 'watch',
       },
       {
@@ -1032,8 +1042,8 @@ async function buildOverviewPayload(
       comparison,
       sourceCoverage: {
         roBilling: {
-          minDate: dateValue(roKpis.min_bill_date),
-          maxDate: dateValue(roKpis.max_bill_date),
+          minDate: billingKpis.minBillDate,
+          maxDate: billingKpis.maxBillDate,
         },
         openRo: {
           minDate: dateValue(openKpis.min_ro_date),

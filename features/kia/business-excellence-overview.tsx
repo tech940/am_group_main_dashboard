@@ -93,7 +93,10 @@ type OverviewData = {
     labour: number
     parts: number
     totalJc: number
+    deliveredCount: number
     avgBilling: number
+    labourPerVehicle: number
+    partsPerVehicle: number
     openRo: number
     delayedRo: number
     openOver15: number
@@ -120,6 +123,8 @@ type OverviewData = {
     parts: ComparisonMetric
     totalJc: ComparisonMetric
     avgBilling: ComparisonMetric
+    labourPerVehicle: ComparisonMetric
+    partsPerVehicle: ComparisonMetric
     openRo: ComparisonMetric
     delayedRo: ComparisonMetric
     openOver15: ComparisonMetric
@@ -1455,11 +1460,11 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   const lyPeriodLabel = data.comparison
     ? `${formatDisplayDate(data.comparison.lyRange.startDate)} - ${formatDisplayDate(data.comparison.lyRange.endDate)}`
     : 'Loading LY'
-  const labourPerVehicle = safeDivide(data.kpis.labour, data.kpis.totalJc)
-  const partsPerVehicle = safeDivide(data.kpis.parts, data.kpis.totalJc)
+  const labourPerVehicle = data.kpis.labourPerVehicle
+  const partsPerVehicle = data.kpis.partsPerVehicle
+  const lyLabourPerVehicle = comparisonLyValue(data.comparison?.labourPerVehicle)
+  const lyPartsPerVehicle = comparisonLyValue(data.comparison?.partsPerVehicle)
   const lyJc = comparisonLyValue(data.comparison?.totalJc)
-  const lyLabourPerVehicle = safeDivide(comparisonLyValue(data.comparison?.labour), lyJc)
-  const lyPartsPerVehicle = safeDivide(comparisonLyValue(data.comparison?.parts), lyJc)
   const labourShare = data.kpis.revenue > 0 ? (data.kpis.labour / data.kpis.revenue) * 100 : 0
   const partsShare = data.kpis.revenue > 0 ? (data.kpis.parts / data.kpis.revenue) * 100 : 0
   const lyRevenue = comparisonLyValue(data.comparison?.revenue)
@@ -1485,8 +1490,8 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     { metric: 'Labour Revenue', cy: formatCurrency(data.kpis.labour), ly: data.comparison ? formatCurrency(comparisonLyValue(data.comparison.labour)) : 'Loading', growth: comparisonDeltaValue(data.comparison?.labour, null) },
     { metric: 'Parts Revenue', cy: formatCurrency(data.kpis.parts), ly: data.comparison ? formatCurrency(comparisonLyValue(data.comparison.parts)) : 'Loading', growth: comparisonDeltaValue(data.comparison?.parts, null) },
     { metric: 'Average Billing', cy: formatCurrency(data.kpis.avgBilling), ly: data.comparison ? formatCurrency(comparisonLyValue(data.comparison.avgBilling)) : 'Loading', growth: comparisonDeltaValue(data.comparison?.avgBilling, null) },
-    { metric: 'Labour / Vehicle', cy: formatCurrency(labourPerVehicle), ly: data.comparison ? formatCurrency(lyLabourPerVehicle) : 'Loading', growth: data.comparison ? growthFromValues(labourPerVehicle, lyLabourPerVehicle) : null },
-    { metric: 'Parts / Vehicle', cy: formatCurrency(partsPerVehicle), ly: data.comparison ? formatCurrency(lyPartsPerVehicle) : 'Loading', growth: data.comparison ? growthFromValues(partsPerVehicle, lyPartsPerVehicle) : null },
+    { metric: 'Labour / Vehicle', cy: formatCurrency(labourPerVehicle), ly: data.comparison ? formatCurrency(lyLabourPerVehicle) : 'Loading', growth: comparisonDeltaValue(data.comparison?.labourPerVehicle, null) },
+    { metric: 'Parts / Vehicle', cy: formatCurrency(partsPerVehicle), ly: data.comparison ? formatCurrency(lyPartsPerVehicle) : 'Loading', growth: comparisonDeltaValue(data.comparison?.partsPerVehicle, null) },
     { metric: 'Labour %', cy: `${labourShare.toFixed(1)}%`, ly: data.comparison ? `${lyLabourShare.toFixed(1)}%` : 'Loading', growth: data.comparison ? growthFromValues(labourShare, lyLabourShare) : null },
     { metric: 'Parts %', cy: `${partsShare.toFixed(1)}%`, ly: data.comparison ? `${lyPartsShare.toFixed(1)}%` : 'Loading', growth: data.comparison ? growthFromValues(partsShare, lyPartsShare) : null },
   ]
@@ -1611,7 +1616,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               icon={TrendingUp}
               label="Load / JC"
               value={formatNumber(data.kpis.totalJc)}
-              meta="Closed repair orders"
+              meta="Delivered ROs (Service Dashboard)"
               comparison={{
                 lyText: comparisonText(data.comparison?.totalJc),
                 deltaText: deltaText(data.comparison?.totalJc),
@@ -1623,7 +1628,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               icon={ShieldCheck}
               label="Average Billing"
               value={formatCurrency(data.kpis.avgBilling)}
-              meta="Revenue per closed RO"
+              meta="Revenue per delivered RO"
               comparison={{
                 lyText: comparisonText(data.comparison?.avgBilling, formatCurrency),
                 deltaText: deltaText(data.comparison?.avgBilling),
@@ -1635,11 +1640,11 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               icon={Wrench}
               label="Labour / Vehicle"
               value={formatCurrency(labourPerVehicle)}
-              meta="Labour earned per RO"
+              meta="Labour per delivered RO"
               comparison={{
-                lyText: data.comparison ? `LY ${formatCurrency(lyLabourPerVehicle)}` : 'LY loading',
-                deltaText: data.comparison ? (growthFromValues(labourPerVehicle, lyLabourPerVehicle) === null ? 'No LY data' : `${formatDelta(growthFromValues(labourPerVehicle, lyLabourPerVehicle) || 0)} vs LY`) : 'vs LY',
-                deltaPct: growthFromValues(labourPerVehicle, lyLabourPerVehicle) || 0,
+                lyText: comparisonText(data.comparison?.labourPerVehicle, formatCurrency),
+                deltaText: deltaText(data.comparison?.labourPerVehicle),
+                deltaPct: data.comparison?.labourPerVehicle.deltaPct || 0,
               }}
               tone="neutral"
             />
@@ -1647,11 +1652,11 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               icon={Wrench}
               label="Parts / Vehicle"
               value={formatCurrency(partsPerVehicle)}
-              meta="Parts earned per RO"
+              meta="Parts per delivered RO"
               comparison={{
-                lyText: data.comparison ? `LY ${formatCurrency(lyPartsPerVehicle)}` : 'LY loading',
-                deltaText: data.comparison ? (growthFromValues(partsPerVehicle, lyPartsPerVehicle) === null ? 'No LY data' : `${formatDelta(growthFromValues(partsPerVehicle, lyPartsPerVehicle) || 0)} vs LY`) : 'vs LY',
-                deltaPct: growthFromValues(partsPerVehicle, lyPartsPerVehicle) || 0,
+                lyText: comparisonText(data.comparison?.partsPerVehicle, formatCurrency),
+                deltaText: deltaText(data.comparison?.partsPerVehicle),
+                deltaPct: data.comparison?.partsPerVehicle.deltaPct || 0,
               }}
               tone="neutral"
             />

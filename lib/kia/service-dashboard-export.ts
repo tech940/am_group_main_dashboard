@@ -2,6 +2,8 @@ import path from 'path'
 import ExcelJS from 'exceljs'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 import {
   KIA_ENGINE_OIL_PART_CODES,
   type KiaDealerCode,
@@ -412,17 +414,18 @@ async function fetchIntakeCounts(monthStart: string, exportDate: string, dealerC
     }
   })
 
-  const supplement = await fetchAccidentalIntakeSupplement(monthStart, exportDate, dealerCode)
+  const [supplement, billDateSupplement, accidentalToday] = await Promise.all([
+    fetchAccidentalIntakeSupplement(monthStart, exportDate, dealerCode),
+    fetchIntakeBillDateSupplement(monthStart, exportDate, dealerCode),
+    fetchAccidentalIntakeBilledOpenToday(exportDate, dealerCode),
+  ])
   counts['Accidental Repair'].today += supplement.today
   counts['Accidental Repair'].mtd += supplement.mtd
-
-  const billDateSupplement = await fetchIntakeBillDateSupplement(monthStart, exportDate, dealerCode)
   ;(['Paid Service', 'Running Repair', 'Accidental Repair'] as const).forEach((category) => {
     counts[category].today += billDateSupplement[category].today
     counts[category].mtd += billDateSupplement[category].mtd
   })
-
-  counts['Accidental Repair'].today += await fetchAccidentalIntakeBilledOpenToday(exportDate, dealerCode)
+  counts['Accidental Repair'].today += accidentalToday
 
   return counts
 }
@@ -806,6 +809,24 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
   }
 }
 
+export const buildServiceDashboardMetrics = buildMetrics
+
+function serviceDashboardCacheKey(kind: 'metrics' | 'preview', endDate: string | null, dealerCode: DealerFilter) {
+  return `kia:service-dashboard:${kind}:v2:${dealerCode || 'all'}:${endDate || 'latest'}`
+}
+
+export async function getCachedServiceDashboardMetrics(
+  endDate?: string | null,
+  dealerCode?: DealerFilter,
+) {
+  const normalizedEndDate = parseDateInput(endDate || null)
+  return getCachedData(
+    serviceDashboardCacheKey('metrics', normalizedEndDate, dealerCode || null),
+    () => buildMetrics(normalizedEndDate, dealerCode || null),
+    CACHE_TTL.DASHBOARD,
+  )
+}
+
 function cleanNumber(value: number, fractionDigits = 2) {
   if (!Number.isFinite(value)) return 0
   const rounded = Number(value.toFixed(fractionDigits))
@@ -1070,7 +1091,7 @@ export async function buildKiaServiceDashboardWorkbook({
   dealerCode?: DealerFilter
 }) {
   const normalizedEndDate = parseDateInput(endDate || null)
-  const metrics = await buildMetrics(normalizedEndDate, dealerCode || null)
+  const metrics = await getCachedServiceDashboardMetrics(normalizedEndDate, dealerCode || null)
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.readFile(SERVICE_DASHBOARD_TEMPLATE)
 
@@ -1115,7 +1136,7 @@ export async function buildKiaServiceDashboardExport({
   }
 }
 
-export async function buildKiaServiceDashboardPreview({
+async function buildKiaServiceDashboardPreviewUncached({
   endDate,
   dealerCode,
 }: {
@@ -1167,4 +1188,19 @@ export async function buildKiaServiceDashboardPreview({
     rows,
     merges,
   }
+}
+
+export async function buildKiaServiceDashboardPreview({
+  endDate,
+  dealerCode,
+}: {
+  endDate?: string | null
+  dealerCode?: DealerFilter
+}): Promise<KiaServiceDashboardPreview> {
+  const normalizedEndDate = parseDateInput(endDate || null)
+  return getCachedData(
+    serviceDashboardCacheKey('preview', normalizedEndDate, dealerCode || null),
+    () => buildKiaServiceDashboardPreviewUncached({ endDate: normalizedEndDate, dealerCode }),
+    CACHE_TTL.DASHBOARD,
+  )
 }
