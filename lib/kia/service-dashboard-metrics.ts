@@ -5,6 +5,7 @@ import {
   normalizeKiaDealerCode,
   type KiaDealerCode,
 } from '@/lib/kia/dealer-branch'
+import { kiaServiceCategoryExpression } from '@/lib/kia/business-excellence-contract'
 
 export type KiaServiceDealerFilter = KiaDealerCode | null
 export type NumericRow = Record<string, unknown>
@@ -139,19 +140,8 @@ export function rsaDealerFilter(dealerCode: KiaServiceDealerFilter) {
 }
 
 export function serviceCategoryExpression(workTypeColumn: string, serviceTypeColumn: string) {
-  return sql`CASE
-    WHEN LOWER(CONCAT_WS(' ', ${sql.raw(workTypeColumn)}, ${sql.raw(serviceTypeColumn)})) LIKE '%accident%'
-      OR LOWER(CONCAT_WS(' ', ${sql.raw(workTypeColumn)}, ${sql.raw(serviceTypeColumn)})) LIKE '%bodyshop%'
-      THEN 'Accidental Repair'
-    WHEN LOWER(CONCAT_WS(' ', ${sql.raw(workTypeColumn)}, ${sql.raw(serviceTypeColumn)})) LIKE '%running%'
-      THEN 'Running Repair'
-    WHEN LOWER(CONCAT_WS(' ', ${sql.raw(workTypeColumn)}, ${sql.raw(serviceTypeColumn)})) LIKE '%free%'
-      THEN 'Free Service'
-    WHEN LOWER(CONCAT_WS(' ', ${sql.raw(workTypeColumn)}, ${sql.raw(serviceTypeColumn)})) LIKE '%paid%'
-      OR COALESCE(${sql.raw(serviceTypeColumn)}, '') ~* '^[0-9]+K$'
-      THEN 'Paid Service'
-    ELSE 'Others'
-  END`
+  void serviceTypeColumn
+  return kiaServiceCategoryExpression(workTypeColumn)
 }
 
 export function vasDescriptionFilter() {

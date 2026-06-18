@@ -7,6 +7,16 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import {
+  KIA_BUSINESS_EXCELLENCE_CACHE_VERSION,
+  buildKiaSourceMetadata,
+  getKiaWorkingDayContext,
+  kiaActiveBillStatusSql,
+  kiaOpenRoActiveStateSql,
+  kiaOpenRoDealerFilter,
+  kiaRoBillingDealerFilter,
+  kiaServiceCategoryExpression,
+} from '@/lib/kia/business-excellence-contract'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -32,25 +42,7 @@ type OpenRoFilters = {
 type OpenRoChunk = 'summary' | 'details' | 'full'
 
 function openRoDealerFilter(filters: OpenRoFilters) {
-  if (!filters.dealerCode) return sql``
-
-  return sql`
-    AND EXISTS (
-      SELECT 1
-      FROM ro_billing_report rb
-      WHERE UPPER(TRIM(COALESCE(NULLIF(rb.dealer_code, ''), NULLIF(rb.main_dealer_code, '')))) = ${filters.dealerCode}
-        AND (
-          (
-            NULLIF(TRIM(open_ro_yearly.vin), '') IS NOT NULL
-            AND UPPER(TRIM(COALESCE(rb.vin, ''))) = UPPER(TRIM(open_ro_yearly.vin))
-          )
-          OR (
-            NULLIF(TRIM(open_ro_yearly.reg_no), '') IS NOT NULL
-            AND UPPER(TRIM(COALESCE(rb.vehicle_reg_no, ''))) = UPPER(TRIM(open_ro_yearly.reg_no))
-          )
-        )
-    )
-  `
+  return kiaOpenRoDealerFilter(normalizeKiaDealerCode(filters.dealerCode), 'open_ro_yearly.')
 }
 
 function openRoBaseSql(filters: OpenRoFilters) {
@@ -88,10 +80,19 @@ function openRoBaseSql(filters: OpenRoFilters) {
         task_description,
         uploaded_at
       FROM open_ro_yearly
-      WHERE LOWER(COALESCE(status, '')) = 'open'
+      WHERE ${kiaOpenRoActiveStateSql()}
         AND (${filters.startDate}::date IS NULL OR ro_date >= ${filters.startDate}::date)
         AND (${filters.endDate}::date IS NULL OR ro_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ro_billing_report rb
+          WHERE (${filters.endDate}::date IS NULL OR rb.bill_date < (${filters.endDate}::date + INTERVAL '1 day'))
+            AND ${kiaActiveBillStatusSql('rb.')}
+            ${kiaRoBillingDealerFilter(normalizeKiaDealerCode(filters.dealerCode), 'rb.')}
+            AND COALESCE(NULLIF(rb.ro_no, ''), NULLIF(rb.bill_no, ''), rb.id::text)
+              = COALESCE(NULLIF(open_ro_yearly.r_o_no, ''), open_ro_yearly.id::text)
+        )
       ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
@@ -99,30 +100,19 @@ function openRoBaseSql(filters: OpenRoFilters) {
         *,
         CASE
           WHEN ro_date IS NULL THEN 0
-          ELSE GREATEST((CURRENT_DATE - ro_date)::int, 0)
+          ELSE GREATEST((COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int, 0)
         END AS aging_days,
         CASE
           WHEN ro_date IS NULL THEN '0-4D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 4 THEN '0-4D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 7 THEN '5-7D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 15 THEN '8-15D'
+          WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 4 THEN '0-4D'
+          WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 7 THEN '5-7D'
+          WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 15 THEN '8-15D'
           ELSE '>15D'
         END AS aging_bucket,
-        CASE
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
-            OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
-            THEN 'Accidental Repair'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
-            THEN 'Running Repair'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
-            THEN 'Free Service'
-          WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
-            THEN 'Paid Service'
-          ELSE COALESCE(NULLIF(work_type, ''), 'Others')
-        END AS service_category,
+        ${kiaServiceCategoryExpression('work_type')} AS service_category,
         CASE
           WHEN COALESCE(revised_promise_date_time, promise_date_time) IS NOT NULL
-            AND CURRENT_DATE > COALESCE(revised_promise_date_time, promise_date_time)
+            AND COALESCE(${filters.endDate}::date, CURRENT_DATE) > COALESCE(revised_promise_date_time, promise_date_time)
             THEN 'Delayed'
           ELSE 'On Track'
         END AS delay_status
@@ -204,7 +194,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `kia:business-excellence:open-ro:v9:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:open-ro:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -272,7 +262,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
   const baseSql = openRoBaseSql(filters)
   const includeSummary = chunk !== 'details'
   const includeDetails = chunk !== 'summary'
-  const [kpiRows, summaryRows, delayReasonRows, bucketRows, advisorRows, workTypeRows, trendRows, detailRows, optionRows] = await Promise.all([
+  const [kpiRows, summaryRows, delayReasonRows, bucketRows, advisorRows, workTypeRows, trendRows, detailRows, optionRows, workingDays] = await Promise.all([
     includeSummary ? db.execute(sql`
       ${baseSql}
       SELECT
@@ -372,7 +362,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
           insurance_company_name,
           ro_date
         FROM open_ro_yearly
-        WHERE LOWER(COALESCE(status, '')) = 'open'
+        WHERE ${kiaOpenRoActiveStateSql()}
           AND (${filters.startDate}::date IS NULL OR ro_date >= ${filters.startDate}::date)
           AND (${filters.endDate}::date IS NULL OR ro_date < (${filters.endDate}::date + INTERVAL '1 day'))
           ${openRoDealerFilter(filters)}
@@ -384,23 +374,12 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
           insurance_company_name,
           CASE
             WHEN ro_date IS NULL THEN '0-4D'
-            WHEN (CURRENT_DATE - ro_date)::int <= 4 THEN '0-4D'
-            WHEN (CURRENT_DATE - ro_date)::int <= 7 THEN '5-7D'
-            WHEN (CURRENT_DATE - ro_date)::int <= 15 THEN '8-15D'
+            WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 4 THEN '0-4D'
+            WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 7 THEN '5-7D'
+            WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 15 THEN '8-15D'
             ELSE '>15D'
           END AS aging_bucket,
-          CASE
-            WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
-              OR LOWER(COALESCE(work_type, '')) LIKE '%bodyshop%'
-              THEN 'Accidental Repair'
-            WHEN LOWER(COALESCE(work_type, '')) LIKE '%running%'
-              THEN 'Running Repair'
-            WHEN LOWER(COALESCE(work_type, '')) LIKE '%free%'
-              THEN 'Free Service'
-            WHEN LOWER(COALESCE(work_type, '')) LIKE '%paid%'
-              THEN 'Paid Service'
-            ELSE COALESCE(NULLIF(work_type, ''), 'Others')
-          END AS service_category
+          ${kiaServiceCategoryExpression('work_type')} AS service_category
         FROM active
       )
       SELECT
@@ -409,6 +388,9 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
         COALESCE(jsonb_agg(DISTINCT insurance_company_name) FILTER (WHERE NULLIF(insurance_company_name, '') IS NOT NULL), '[]'::jsonb) AS insurance_companies
       FROM enriched
     `) : Promise.resolve([]),
+    filters.startDate && filters.endDate
+      ? getKiaWorkingDayContext(filters.startDate, filters.endDate)
+      : Promise.resolve({ workingDayCount: null, holidayDates: [] }),
   ])
 
   const kpis = resultRows(kpiRows)[0] || {}
@@ -496,10 +478,20 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       detailLimit: 1000,
       chunk,
       dateRange: { startDate: filters.startDate, endDate: filters.endDate },
-      statusDefinition: "LOWER(status) = 'open'",
-      agingDefinition: 'CURRENT_DATE - ro_date',
+      statusDefinition: "open status; excludes closed, final inspection, ready and ready for delivery; excludes billed ROs",
+      agingDefinition: 'selected end date - ro_date',
       promiseDateDefinition: 'COALESCE(revised_promise_date_time, promise_date_time)',
       cacheTtlSeconds: CACHE_TTL_SECONDS,
+      source: buildKiaSourceMetadata({
+        dealerCode: filters.dealerCode,
+        dateBasis: 'ro_date with open status as-of selected end date',
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        rowCount: numberValue(kpis.total_open_ro),
+        latestAvailableDate: filters.endDate,
+        deduplicationMode: 'latest uploaded row per RO; active-state and billed-RO exclusion',
+        ...workingDays,
+      }),
       comparison: {
         supported: false,
         reason: 'open_ro_yearly currently has only Apr 2026 onward coverage, so historical comparisons are disabled.',

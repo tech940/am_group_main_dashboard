@@ -4,6 +4,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { appendKiaDealerCodeParam, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
+import { KIA_BUSINESS_EXCELLENCE_CACHE_VERSION } from '@/lib/kia/business-excellence-contract'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -466,7 +467,7 @@ function buildSummaryText(summary: AiStructuredSummary) {
 }
 
 function createCacheKey(report: string, startDate: string, endDate: string, dataset: unknown, dealerCode?: string | null) {
-  return `kia:business-excellence:ai-summary:v7:${createHash('sha1')
+  return `kia:business-excellence:ai-summary:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${createHash('sha1')
     .update(JSON.stringify({ report, startDate, endDate, dealerCode: normalizeKiaDealerCode(dealerCode), dataset }))
     .digest('hex')}`
 }

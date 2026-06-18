@@ -482,7 +482,6 @@ function isActionableApprovalOrder(order: Pick<PurchaseOrder, 'status'>, role: s
   const statusSet = getApprovalStatusSet(role)
   if (role === 'ea') {
     return order.status === statusSet.pending
-      || order.status === 'awaiting_md_approval'
       || order.status === statusSet.rejected
       || order.status === statusSet.extraRejected
       || order.status === statusSet.hold
@@ -744,7 +743,9 @@ function PurchaseOrdersPageContent() {
       const data = await queryClient.fetchQuery({
         queryKey,
         queryFn: async () => {
-          const response = await fetch(`/api/purchase-orders${query ? `?${query}` : ''}`)
+          const response = await fetch(`/api/purchase-orders${query ? `?${query}` : ''}`, {
+            cache: 'no-store',
+          })
           if (!response.ok) {
             const errorPayload = await response.json().catch(() => null)
             const errorMessage = errorPayload?.error || `Failed to fetch purchase orders (${response.status})`
@@ -1175,9 +1176,23 @@ function PurchaseOrdersPageContent() {
         return
       }
 
+      const workflowResult = await response.json()
+      if (workflowResult.orderId && workflowResult.updatedOrder) {
+        setOrders((currentOrders) => currentOrders.map((order) => (
+          order.id === workflowResult.orderId
+            ? { ...order, ...workflowResult.updatedOrder }
+            : order
+        )))
+        setSelectedOrder((currentOrder) => (
+          currentOrder?.id === workflowResult.orderId
+            ? { ...currentOrder, ...workflowResult.updatedOrder }
+            : currentOrder
+        ))
+      }
+
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders', 'workflow'] })
-      await fetchOrders(true, true)
+      await fetchOrders(stage !== 'ea_approval' && stage !== 'md_approval', true)
       if (isEditingInitialSubmission && orderId) {
         setIsEditingOrder(false)
         setIsEditOrderDirty(false)
@@ -1261,10 +1276,20 @@ function PurchaseOrdersPageContent() {
         return
       }
 
-      await response.json()
+      const result = await response.json()
+      if (Array.isArray(result.data)) {
+        const updatedOrders = new Map<string, PurchaseOrder>(
+          result.data.map((order: PurchaseOrder) => [order.id, order])
+        )
+        setOrders((currentOrders) => currentOrders.map((order) => (
+          updatedOrders.get(order.id)
+            ? { ...order, ...updatedOrders.get(order.id)! }
+            : order
+        )))
+      }
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders', 'workflow'] })
-      await fetchOrders(true, true)
+      await fetchOrders(false, true)
     } catch (error) {
       console.error(`Error in bulk ${action}:`, error)
       alert(`Failed to ${actionLabel} orders`)
@@ -1807,24 +1832,6 @@ function PurchaseOrdersPageContent() {
     }
 
     if (currentStage === 'md_approval') {
-      if (userRole === 'ea' && canApproveEA && order.status === 'awaiting_md_approval') {
-        return (
-          <Stage3EAApproval
-            orderId={order.id}
-            isLoading={isSubmitting}
-            orderDetails={{
-              itemName: normalizeDescription(order),
-              department: order.department,
-              subDepartment: order.subDepartment,
-              quantity: parseInt(normalizeQuantity(order), 10) || 0,
-              estimatedCost: parseFloat(normalizeEstimate(order)) || 0,
-              vendorName: normalizeVendorName(order),
-            }}
-            onSubmit={(data) => handleStageSubmit('ea_approval', data, order.id)}
-          />
-        )
-      }
-
       if (canApproveMD && ['awaiting_md_approval', 'md_denied', 'md_on_hold'].includes(order.status)) {
         return (
           <Stage3MDApproval

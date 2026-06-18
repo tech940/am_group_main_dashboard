@@ -9,6 +9,13 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
 import { normalizeKiaDealerCode, type KiaDealerCode } from '@/lib/kia/dealer-branch'
 import {
+  KIA_BUSINESS_EXCELLENCE_CACHE_VERSION,
+  buildKiaSourceMetadata,
+  fetchKiaBillingSourceMetadata,
+  kiaActiveBillStatusSql,
+  kiaActiveServiceCategoryFilter,
+} from '@/lib/kia/business-excellence-contract'
+import {
   fetchCanonicalOperationMetrics,
   fetchEwRsaMcpCounts,
   fetchWorkshopVasDetails,
@@ -117,7 +124,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `kia:business-excellence:workshop-performance:v35:${createHash('sha1')
+  return `kia:business-excellence:workshop-performance:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -152,10 +159,47 @@ async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, de
   if (!(await tableExists('workshop_performance_jc_summary_v1'))) return false
 
   const result = await db.execute(sql`
+    WITH summary AS (
+      SELECT
+        COUNT(DISTINCT jc_key)::int AS total_jc,
+        COALESCE(SUM(labour_amount), 0)::numeric AS labour,
+        COALESCE(SUM(part_amount), 0)::numeric AS parts
+      FROM workshop_performance_jc_summary_v1
+      WHERE report_date >= ${startDate}::date
+        AND report_date < (${endDate}::date + INTERVAL '1 day')
+    ),
+    raw AS (
+      SELECT
+        COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
+        COALESCE(labour_amt, 0)::numeric AS labour,
+        COALESCE(part_amt, 0)::numeric AS parts
+      FROM ro_billing_report
+      WHERE bill_date >= ${startDate}::date
+        AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${kiaActiveBillStatusSql()}
+        AND ${kiaActiveServiceCategoryFilter()}
+    ),
+    raw_dedup AS (
+      SELECT
+        jc_key,
+        (ARRAY_AGG(labour ORDER BY ABS(labour) DESC))[1] AS labour,
+        (ARRAY_AGG(parts ORDER BY ABS(parts) DESC))[1] AS parts
+      FROM raw
+      GROUP BY jc_key
+    ),
+    raw_totals AS (
+      SELECT
+        COUNT(*)::int AS total_jc,
+        COALESCE(SUM(labour), 0)::numeric AS labour,
+        COALESCE(SUM(parts), 0)::numeric AS parts
+      FROM raw_dedup
+    )
     SELECT
-      MIN(report_date)::date <= ${startDate}::date
-      AND MAX(report_date)::date >= ${endDate}::date AS usable
-    FROM workshop_performance_jc_summary_v1
+      summary.total_jc = raw_totals.total_jc
+      AND ABS(summary.labour - raw_totals.labour) < 0.01
+      AND ABS(summary.parts - raw_totals.parts) < 0.01 AS usable
+    FROM summary
+    CROSS JOIN raw_totals
   `)
 
   return Boolean(resultRows(result)[0]?.usable)
@@ -204,6 +248,8 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${kiaActiveBillStatusSql()}
+        AND ${kiaActiveServiceCategoryFilter()}
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
@@ -276,6 +322,8 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${kiaActiveBillStatusSql()}
+        AND ${kiaActiveServiceCategoryFilter()}
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
@@ -483,6 +531,8 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${kiaActiveBillStatusSql()}
+        AND ${kiaActiveServiceCategoryFilter()}
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
@@ -536,6 +586,8 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
       FROM ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${kiaActiveBillStatusSql()}
+        AND ${kiaActiveServiceCategoryFilter()}
         ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
@@ -749,6 +801,7 @@ async function buildWorkshopPayload(
   const parsedEnd = parseDateInput(endDate)
   const lyStart = comparison.comparisonStartDate || (parsedStart ? toDateInputValue(sameDateLastYear(parsedStart)) : startDate)
   const lyEnd = comparison.comparisonEndDate || (parsedEnd ? toDateInputValue(sameDateLastYear(parsedEnd)) : endDate)
+  const sourceMetadata = await fetchKiaBillingSourceMetadata(startDate, endDate, dealerCode)
 
   const [
     serviceRows,
@@ -830,6 +883,10 @@ async function buildWorkshopPayload(
       advisor,
       dealerCode,
       comparison,
+      source: buildKiaSourceMetadata({
+        ...sourceMetadata,
+        deduplicationMode: 'canonical active billed job card; materialized view only when count and amount parity succeeds',
+      }),
       unsupportedComparisonSources: {
         ew_report: 'EW has only May 2026 data.',
         mcp_report: 'MCP is close to one year but not enough for full LY comparisons yet.',

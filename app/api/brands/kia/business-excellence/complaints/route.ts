@@ -7,6 +7,11 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import {
+  KIA_BUSINESS_EXCELLENCE_CACHE_VERSION,
+  buildKiaSourceMetadata,
+  getKiaWorkingDayContext,
+} from '@/lib/kia/business-excellence-contract'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -203,7 +208,7 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
 }
 
 function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
-  return `kia:business-excellence:complaints:v9:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `kia:business-excellence:complaints:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {
@@ -222,6 +227,9 @@ function inputDate(date: Date) {
 }
 
 async function buildComplaintsPayload(filters: ComplaintFilters, chunk: ComplaintChunk = 'summary') {
+  const workingDays = filters.startDate && filters.endDate
+    ? await getKiaWorkingDayContext(filters.startDate, filters.endDate)
+    : { workingDayCount: null, holidayDates: [] }
   const includeSummary = chunk === 'summary' || chunk === 'full'
   const includeSecondary = chunk === 'secondary' || chunk === 'full'
   const includeDetails = chunk === 'details' || chunk === 'full'
@@ -570,6 +578,16 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       minDate: dateValue(metadata.min_date),
       maxDate: dateValue(metadata.max_date),
       uploadedAt: metadata.uploaded_at ? String(metadata.uploaded_at) : null,
+      source: buildKiaSourceMetadata({
+        dealerCode: filters.dealerCode,
+        dateBasis: 'complaint_date',
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        rowCount: numberValue(kpis.total),
+        latestAvailableDate: dateValue(metadata.max_date),
+        deduplicationMode: 'latest uploaded row per complaint_no; id fallback',
+        ...workingDays,
+      }),
     },
     kpis: {
       total: numberValue(kpis.total),

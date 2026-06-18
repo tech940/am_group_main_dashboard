@@ -7,6 +7,12 @@ import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import {
+  KIA_BUSINESS_EXCELLENCE_CACHE_VERSION,
+  fetchKiaBillingSourceMetadata,
+  kiaActiveBillStatusSql,
+  kiaActiveServiceCategoryFilter,
+} from '@/lib/kia/business-excellence-contract'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -134,12 +140,14 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:performance-intelligence:v8:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:performance-intelligence:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
   const clauses = [
     sql`bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date`,
+    kiaActiveBillStatusSql(),
+    kiaActiveServiceCategoryFilter(),
   ]
 
   if (filters.searchReg) {
@@ -418,6 +426,11 @@ export async function GET(request: Request) {
         limit,
         exportAll,
       }))
+      const sourceMetadata = await timer.time('source-metadata', () => fetchKiaBillingSourceMetadata(
+        toDateInputValue(startDate),
+        toDateInputValue(endDate),
+        dealerCode,
+      ))
 
       const total = report.total
       const totalPages = Math.max(1, Math.ceil(total / limit))
@@ -445,6 +458,7 @@ export async function GET(request: Request) {
           total,
           totalPages,
         },
+        sourceMetadata,
       }
     }
 

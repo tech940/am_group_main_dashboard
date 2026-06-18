@@ -7,6 +7,12 @@ import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import {
+  KIA_BUSINESS_EXCELLENCE_CACHE_VERSION,
+  fetchKiaBillingSourceMetadata,
+  kiaActiveBillStatusSql,
+  kiaActiveServiceCategoryFilter,
+} from '@/lib/kia/business-excellence-contract'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -556,31 +562,17 @@ type CancelledBillingSummary = {
   rows: CancelledBillingRow[]
 }
 
-let hasRoBillingDailySummaryV2: boolean | null = null
-
 function numberValue(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value || 0)
   return Number.isFinite(parsed) ? parsed : 0
 }
 
 function activeBillStatusSql() {
-  return sql`LOWER(TRIM(COALESCE(bill_status::text, ''))) NOT IN ('cancel', 'cancelled', 'canceled')`
+  return kiaActiveBillStatusSql()
 }
 
 function activeServiceCategoryFilter() {
-  return sql`CASE
-    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%accident%'
-      OR LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%bodyshop%'
-      THEN 'Accidental Repair'
-    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%running%'
-      THEN 'Running Repair'
-    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%free%'
-      THEN 'Free Service'
-    WHEN LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%paid%'
-      OR COALESCE(service_type, '') ~* '^[0-9]+K$'
-      THEN 'Paid Service'
-    ELSE 'Others'
-  END IN ('Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair')`
+  return kiaActiveServiceCategoryFilter()
 }
 
 function cancelledBillStatusSql() {
@@ -1048,7 +1040,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
   }))
 }
 
-async function resolveTdAnchorDate(endDate: Date, dealerCode: DealerFilter = null) {
+async function resolveTdAnchorDate(endDate: Date) {
   return startOfDay(endDate)
 }
 
@@ -1319,7 +1311,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
 }
 
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date, dealerCode: DealerFilter = null) {
-  return `kia:business-excellence:ro-billing:base-rows:v7:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
+  return `kia:business-excellence:ro-billing:base-rows:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1327,7 +1319,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `kia:business-excellence:ro-billing:v27:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `kia:business-excellence:ro-billing:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1407,8 +1399,13 @@ export async function GET(request: Request) {
     const cacheKey = createCacheKey(cacheParams)
 
     const analyze = async () => {
-      const tdAnchorDate = await timer.time('td-anchor-date', () => resolveTdAnchorDate(endDate, dealerCode))
+      const tdAnchorDate = await timer.time('td-anchor-date', () => resolveTdAnchorDate(endDate))
       const windows = buildPeriodWindows(startDate, endDate, comparisonRange, tdAnchorDate)
+      const sourceMetadata = await timer.time('source-metadata', () => fetchKiaBillingSourceMetadata(
+        toDateInputValue(startDate),
+        toDateInputValue(endDate),
+        dealerCode,
+      ))
       const hasFilters = Array.from(searchParams.entries()).some(([key, value]) => {
         return key in FILTER_COLUMNS && value && value !== 'all'
       })
@@ -1429,6 +1426,7 @@ export async function GET(request: Request) {
           comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
         },
         filterOptions: {},
+        sourceMetadata,
       }
       if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
         const cancelledSummary = await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode))

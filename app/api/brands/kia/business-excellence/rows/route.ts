@@ -10,6 +10,7 @@ export async function POST() {
   if (accessError) return accessError
 
   await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:*`)
+  await invalidateCachePattern('kia:service-dashboard:*')
 
   return NextResponse.json(
     {

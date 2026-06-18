@@ -9,11 +9,20 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeKiaDealerCode, type KiaDealerCode } from '@/lib/kia/dealer-branch'
 import { fetchDeliveredBillingKpis } from '@/lib/kia/ro-billing-kpis'
 import {
+  KIA_BUSINESS_EXCELLENCE_CACHE_VERSION,
+  buildKiaSourceMetadata,
+  getKiaWorkingDayContext,
+  kiaActiveBillStatusSql,
+  kiaActiveServiceCategoryFilter,
+  kiaOpenRoActiveStateSql,
+  kiaOpenRoDealerFilter,
+  kiaRoBillingDealerFilter,
+} from '@/lib/kia/business-excellence-contract'
+import {
   activeBillStatusSql,
   fetchEwRsaMcpCounts,
   fetchCanonicalOperationMetrics,
   fetchWorkshopVasDetails,
-  openRoDealerFilter,
   roBillingDealerFilter,
   serviceCategoryExpression,
 } from '@/lib/kia/service-dashboard-metrics'
@@ -111,7 +120,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `kia:business-excellence:overview:v34:${chunk}:${createHash('sha1')
+  return `kia:business-excellence:overview:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -122,12 +131,8 @@ function complaintsDealerFilter(dealerCode: DealerFilter) {
     : sql``
 }
 
-function openRoDealerKeysPrefix(_dealerCode: DealerFilter) {
+function openRoDealerKeysPrefix() {
   return sql`WITH `
-}
-
-function openRoDealerSemiJoin(dealerCode: DealerFilter) {
-  return openRoDealerFilter(dealerCode)
 }
 
 function sameDateLastYear(value: string) {
@@ -227,10 +232,23 @@ async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, de
   if (!(await tableExists('workshop_performance_jc_summary_v1'))) return false
 
   const result = await db.execute(sql`
-    SELECT
-      MIN(report_date)::date <= ${startDate}::date
-      AND MAX(report_date)::date >= ${endDate}::date AS usable
-    FROM workshop_performance_jc_summary_v1
+    WITH summary AS (
+      SELECT COUNT(DISTINCT jc_key)::int AS total_jc
+      FROM workshop_performance_jc_summary_v1
+      WHERE report_date >= ${startDate}::date
+        AND report_date < (${endDate}::date + INTERVAL '1 day')
+    ),
+    raw AS (
+      SELECT COUNT(DISTINCT COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text))::int AS total_jc
+      FROM ro_billing_report
+      WHERE bill_date >= ${startDate}::date
+        AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${kiaActiveBillStatusSql()}
+        AND ${kiaActiveServiceCategoryFilter()}
+    )
+    SELECT summary.total_jc = raw.total_jc AS usable
+    FROM summary
+    CROSS JOIN raw
   `)
 
   return Boolean(resultRows(result)[0]?.usable)
@@ -251,6 +269,7 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
+        AND ${kiaActiveServiceCategoryFilter()}
         ${roBillingDealerFilter(dealerCode)}
     ),
     ranked AS (
@@ -285,7 +304,7 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
 
 function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
   return sql`
-    ${openRoDealerKeysPrefix(dealerCode)}
+    ${openRoDealerKeysPrefix()}
     active AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
         COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
@@ -297,25 +316,34 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
         COALESCE(revised_promise_date_time, promise_date_time) AS promise_date,
         uploaded_at
       FROM open_ro_yearly
-      WHERE LOWER(COALESCE(status, '')) = 'open'
+      WHERE ${kiaOpenRoActiveStateSql()}
         AND ro_date >= ${startDate}::date
         AND ro_date < (${endDate}::date + INTERVAL '1 day')
-        ${openRoDealerSemiJoin(dealerCode)}
+        ${kiaOpenRoDealerFilter(dealerCode)}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ro_billing_report rb
+          WHERE rb.bill_date < (${endDate}::date + INTERVAL '1 day')
+            AND ${kiaActiveBillStatusSql('rb.')}
+            ${kiaRoBillingDealerFilter(dealerCode, 'rb.')}
+            AND COALESCE(NULLIF(rb.ro_no, ''), NULLIF(rb.bill_no, ''), rb.id::text)
+              = COALESCE(NULLIF(open_ro_yearly.r_o_no, ''), open_ro_yearly.id::text)
+        )
       ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
       SELECT
         *,
-        GREATEST((CURRENT_DATE - ro_date)::int, 0) AS aging_days,
+        GREATEST((${endDate}::date - ro_date)::int, 0) AS aging_days,
         CASE
-          WHEN (CURRENT_DATE - ro_date)::int <= 4 THEN '0-4D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 7 THEN '5-7D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 15 THEN '8-15D'
+          WHEN (${endDate}::date - ro_date)::int <= 4 THEN '0-4D'
+          WHEN (${endDate}::date - ro_date)::int <= 7 THEN '5-7D'
+          WHEN (${endDate}::date - ro_date)::int <= 15 THEN '8-15D'
           ELSE '>15D'
         END AS aging_bucket,
         ${serviceCategoryExpression('work_type', 'service_type')} AS service_category,
         CASE
-          WHEN promise_date IS NOT NULL AND CURRENT_DATE > promise_date THEN 'Delayed'
+          WHEN promise_date IS NOT NULL AND ${endDate}::date > promise_date THEN 'Delayed'
           ELSE 'On Track'
         END AS delay_status
       FROM active
@@ -356,7 +384,7 @@ function complaintsBaseSql(startDate: string, endDate: string, dealerCode: Deale
             ELSE NULL
           END,
           ${numericText(sql.raw('pending_days'))}::int,
-          GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+          GREATEST((${endDate}::date - complaint_date)::int, 0)
         ) AS resolution_days,
         CASE
           WHEN LOWER(CONCAT_WS(' ', complaint_remarks, sr_area, sr_sub_area, dealer_sr_area, dealer_sr_sub_area, pending_reason)) LIKE '%part%' THEN 'Parts Delay'
@@ -406,6 +434,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
+        AND ${kiaActiveServiceCategoryFilter()}
         ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
@@ -545,9 +574,9 @@ async function buildOverviewPayload(
   const comparisonRange = resolveOverviewComparisonRange(startDate, endDate, comparison)
   const lyStartDate = comparisonRange.startDate
   const lyEndDate = comparisonRange.endDate
-  const lyRoSql = roBillingBaseSql(lyStartDate, lyEndDate, dealerCode)
   const lyOpenSql = openRoBaseSql(lyStartDate, lyEndDate, dealerCode)
   const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate, dealerCode)
+  const workingDays = await getKiaWorkingDayContext(startDate, endDate)
 
   const [
     billingKpis,
@@ -1040,6 +1069,16 @@ async function buildOverviewPayload(
         lySource: comparisonRange.source,
       },
       comparison,
+      source: buildKiaSourceMetadata({
+        dealerCode,
+        dateBasis: 'bill_date for closed ROs; ro_date/open state as-of selected end date; complaint_date for complaints',
+        startDate,
+        endDate,
+        rowCount: totalJc,
+        latestAvailableDate: billingKpis.maxBillDate,
+        deduplicationMode: 'canonical billed job-card key plus latest open-RO state',
+        ...workingDays,
+      }),
       sourceCoverage: {
         roBilling: {
           minDate: billingKpis.minBillDate,

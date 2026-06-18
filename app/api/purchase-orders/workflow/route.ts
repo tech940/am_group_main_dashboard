@@ -305,7 +305,7 @@ export async function POST(request: NextRequest) {
         break
       }
       case 'ea_approval': {
-        if (!['awaiting_ea_approval', 'awaiting_md_approval', 'ea_denied', 'md_denied', 'ea_on_hold', 'md_on_hold'].includes(order.status)) {
+        if (!['awaiting_ea_approval', 'ea_denied', 'md_denied', 'ea_on_hold', 'md_on_hold'].includes(order.status)) {
           return NextResponse.json({ error: 'This order is not awaiting EA approval' }, { status: 409 })
         }
 
@@ -511,8 +511,18 @@ export async function POST(request: NextRequest) {
     const [updatedOrder] = await db
       .update(purchaseOrders)
       .set(updateData)
-      .where(eq(purchaseOrders.id, orderId))
+      .where(and(
+        eq(purchaseOrders.id, orderId),
+        eq(purchaseOrders.status, order.status)
+      ))
       .returning()
+
+    if (!updatedOrder) {
+      return NextResponse.json(
+        { error: 'This order has already moved to another workflow stage. Refresh and try again.' },
+        { status: 409 }
+      )
+    }
 
     const [historyEntry] = await db
       .insert(workflowHistory)
@@ -559,6 +569,7 @@ export async function POST(request: NextRequest) {
       orderId,
       newStage,
       newStatus,
+      updatedOrder: serializeWorkflowOrder(updatedOrder),
     })
   } catch (error) {
     console.error('Workflow error:', error)

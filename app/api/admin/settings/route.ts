@@ -5,6 +5,8 @@ import { isSuperAdminRole } from '@/lib/auth/roles'
 import { writeAdminAudit } from '@/lib/admin/authorization'
 import { db } from '@/lib/db'
 import { dashboardSettings } from '@/lib/db/schema'
+import { invalidateCachePattern } from '@/lib/redis/cache-utils'
+import { KIA_BUSINESS_EXCELLENCE_HOLIDAYS_KEY } from '@/lib/kia/business-excellence-contract'
 
 export async function GET() {
   try {
@@ -78,6 +80,13 @@ export async function PUT(request: NextRequest) {
       after: newSettings,
       request,
     })
+
+    if (Object.prototype.hasOwnProperty.call(newSettings, KIA_BUSINESS_EXCELLENCE_HOLIDAYS_KEY)) {
+      await Promise.all([
+        invalidateCachePattern('kia:business-excellence:*'),
+        invalidateCachePattern('kia:service-dashboard:*'),
+      ])
+    }
 
     return NextResponse.json({ message: 'Settings updated successfully' })
   } catch (error) {

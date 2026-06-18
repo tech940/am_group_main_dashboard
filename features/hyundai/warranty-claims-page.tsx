@@ -42,6 +42,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { HYUNDAI_WARRANTY_DEALER_GROUPS } from '@/lib/hyundai/warranty-dealers'
+import { PLATINUM_WARRANTY_DEALER_GROUPS } from '@/lib/platinum/warranty-dealers'
 
 type Source = 'ytp' | 'claim_list'
 type WarrantyRow = Record<string, unknown> & {
@@ -162,10 +163,7 @@ const DEFAULT_FILTERS: Filters = {
   statusBucket: '',
 }
 
-const LOCATION_FILTER_OPTIONS = HYUNDAI_WARRANTY_DEALER_GROUPS.map((group) => ({
-  value: group.key,
-  label: group.label,
-}))
+// Location filter options are resolved dynamically inside the component based on brand parameter.
 
 const warrantyTableClass = 'min-w-full text-xs'
 const warrantyThClass = 'px-3 py-2 text-center'
@@ -468,9 +466,15 @@ const actionButtonClass = 'rounded-xl border-[var(--dashboard-primary-border)] b
 const tableActionButtonClass = cn(actionButtonClass, 'h-8 shrink-0 whitespace-nowrap px-2.5 text-[10px]')
 const activeActionButtonClass = 'bg-[var(--dashboard-action-hover)]'
 
-export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
+export function HyundaiWarrantyClaimsPage({ source, brand = 'hyundai' }: { source: Source; brand?: 'hyundai' | 'platinum' }) {
   const queryClient = useQueryClient()
   const isYtp = source === 'ytp'
+
+  const dealerGroups = brand === 'platinum' ? PLATINUM_WARRANTY_DEALER_GROUPS : HYUNDAI_WARRANTY_DEALER_GROUPS
+  const locationFilterOptions = useMemo(() => dealerGroups.map((group) => ({
+    value: group.key,
+    label: group.label,
+  })), [dealerGroups])
   const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [appliedFilters, setAppliedFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [showFilters, setShowFilters] = useState(false)
@@ -490,8 +494,8 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   const queryString = useMemo(() => buildQuery(source, appliedFilters), [appliedFilters, source])
 
   const { data, isPending, isFetching, error } = useQuery<Payload>({
-    queryKey: ['hyundai-warranty-claims', queryString],
-    queryFn: () => fetch(`/api/brands/hyundai/warranty-claims?${queryString}`).then(readJson<Payload>),
+    queryKey: [`${brand}-warranty-claims`, queryString],
+    queryFn: () => fetch(`/api/brands/${brand}/warranty-claims?${queryString}`).then(readJson<Payload>),
     staleTime: 60_000,
   })
 
@@ -509,9 +513,9 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
   }, [isFetching, isPending])
 
   const historyQuery = useQuery<HistoryPayload>({
-    queryKey: ['hyundai-warranty-history', source, historyRow?.recordKey, historyRow?.id],
+    queryKey: [`${brand}-warranty-history`, source, historyRow?.recordKey, historyRow?.id],
     queryFn: () => fetch(
-      `/api/brands/hyundai/warranty-claims/actions?source=${source}&recordKey=${encodeURIComponent(historyRow!.recordKey)}&sourceRowId=${encodeURIComponent(String(historyRow!.id))}`,
+      `/api/brands/${brand}/warranty-claims/actions?source=${source}&recordKey=${encodeURIComponent(historyRow!.recordKey)}&sourceRowId=${encodeURIComponent(String(historyRow!.id))}`,
     ).then(readJson<HistoryPayload>),
     enabled: Boolean(historyRow),
   })
@@ -526,7 +530,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
       form.set('remark', remark)
       form.set('docketNumber', docketNumber)
       files.forEach((file) => form.append('files', file))
-      return fetch('/api/brands/hyundai/warranty-claims/actions', { method: 'POST', body: form }).then(readJson<{
+      return fetch(`/api/brands/${brand}/warranty-claims/actions`, { method: 'POST', body: form }).then(readJson<{
         id: string
         message: string
         sourceRowId?: string
@@ -544,7 +548,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
       setFiles([])
 
       if (savedRowId && savedRemark) {
-        queryClient.setQueryData<Payload>(['hyundai-warranty-claims', queryString], (current) => {
+        queryClient.setQueryData<Payload>([`${brand}-warranty-claims`, queryString], (current) => {
           if (!current) return current
           return {
             ...current,
@@ -569,8 +573,8 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
         })
       }
 
-      await queryClient.invalidateQueries({ queryKey: ['hyundai-warranty-claims'] })
-      await queryClient.invalidateQueries({ queryKey: ['hyundai-warranty-history'] })
+      await queryClient.invalidateQueries({ queryKey: [`${brand}-warranty-claims`] })
+      await queryClient.invalidateQueries({ queryKey: [`${brand}-warranty-history`] })
     },
   })
 
@@ -677,7 +681,7 @@ export function HyundaiWarrantyClaimsPage({ source }: { source: Source }) {
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
                 <FilterCheckboxList
                   label="Location"
-                  options={LOCATION_FILTER_OPTIONS}
+                  options={locationFilterOptions}
                   selected={draftFilters.locations}
                   onChange={(value) => updateDraftFilter('locations', value)}
                   emptyLabel="All locations"

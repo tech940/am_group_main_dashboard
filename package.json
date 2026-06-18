@@ -32,7 +32,8 @@
     "bq:validate-parity": "node scripts/bigquery/validate-parity.js",
     "bq:validate-all-brands": "node scripts/bigquery/validate-all-brands.js",
     "service-dashboard-email:send": "tsx scripts/send-service-dashboard-email.ts",
-    "service-dashboard-email:scheduler": "node scripts/send-service-dashboard-email-scheduler.js"
+    "service-dashboard-email:scheduler": "node scripts/send-service-dashboard-email-scheduler.js",
+    "verify:kia-be-parity": "tsx scripts/verify-kia-business-excellence-parity.mjs"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

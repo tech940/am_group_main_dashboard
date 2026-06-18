@@ -9,6 +9,11 @@ import {
   type KiaDealerCode,
 } from '@/lib/kia/dealer-branch'
 import {
+  KIA_BUSINESS_EXCELLENCE_CACHE_VERSION,
+  buildKiaSourceMetadata,
+  getKiaWorkingDayContext,
+} from '@/lib/kia/business-excellence-contract'
+import {
   activeBillStatusSql,
   advWiseDealerFilter,
   ewDealerFilter,
@@ -81,6 +86,8 @@ type ServiceDashboardMetrics = {
     syntheticOilQty: AmountPair
   }
   vasAmount: number
+  bodyshopPnaCases: number
+  sourceMetadata: ReturnType<typeof buildKiaSourceMetadata>
 }
 
 export type KiaServiceDashboardExport = {
@@ -137,13 +144,6 @@ function toDateInputValue(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-function previousDateInput(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-  const date = new Date(year, month - 1, day)
-  date.setDate(date.getDate() - 1)
-  return toDateInputValue(date)
-}
-
 function formatDisplayDate(value: string) {
   const [year, month, day] = value.split('-')
   return `${day}/${month}/${year}`
@@ -154,14 +154,6 @@ function emptyCategoryCounts(): Record<ServiceCategory, CountPair> {
     acc[category] = { today: 0, mtd: 0 }
     return acc
   }, {} as Record<ServiceCategory, CountPair>)
-}
-
-function openRoDealerKeysPrefix(dealerCode: DealerFilter) {
-  return sql`WITH `
-}
-
-function openRoDealerSemiJoin(dealerCode: DealerFilter) {
-  return openRoDealerFilter(dealerCode)
 }
 
 function engineOilPartCodeMatchSql(partNoColumn: string, opPartCodeColumn: string) {
@@ -176,24 +168,11 @@ function engineOilPartCodeMatchSql(partNoColumn: string, opPartCodeColumn: strin
   )`)
 }
 
-function engineOilDescriptionMatchSql(descriptionColumn: string) {
-  return sql.raw(`(
-    ${descriptionColumn} ~ '(engine[[:space:]-]*oil|(^|[^0-9])0w[[:space:]-]*20([^0-9]|$)|(^|[^0-9])5w[[:space:]-]*30([^0-9]|$)|(^|[^0-9])10w[[:space:]-]*30([^0-9]|$)|(^|[^0-9])15w[[:space:]-]*40([^0-9]|$))'
-    AND ${descriptionColumn} !~ '(filter|seal|gasket|plug|pan|cooler|assy|r[[:space:]]*&[[:space:]]*r|spring|coil|gauge|synthetic)'
-  )`)
-}
-
 function syntheticOilMatchSql(descriptionColumn: string) {
   return sql.raw(`(
     ${descriptionColumn} ~ '(^|[^a-z])synthetic([^a-z]|$)'
     AND ${descriptionColumn} !~ '(synthetic[[:space:]-]*filter|transmission|gear)'
   )`)
-}
-
-function serviceDashboardAverageRoDenominator(exportDate: string) {
-  const dayOfMonth = Number(exportDate.slice(8, 10))
-  if (Number.isFinite(dayOfMonth) && dayOfMonth > 1) return dayOfMonth - 1
-  return 1
 }
 
 async function fetchEngineOilQtyByPeriod(period: OperationAnalysisPeriod, dealerCode: DealerFilter) {
@@ -246,166 +225,55 @@ async function resolveExportDate(requestedEndDate: string | null, dealerCode: De
   return parseDateInput(String(resultRows(result)[0]?.max_date || '')) || toDateInputValue(new Date())
 }
 
-async function fetchAccidentalIntakeSupplement(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
-  const result = await db.execute(sql`
-    WITH ro_keys AS (
-      SELECT DISTINCT COALESCE(NULLIF(ro_no, ''), NULLIF(bill_no, ''), id::text) AS jc_key
-      FROM ro_billing_report
-      WHERE ro_date >= ${monthStart}::date
-        AND ro_date < (${exportDate}::date + INTERVAL '1 day')
-        AND ${activeBillStatusSql()}
-        ${roBillingDealerFilter(dealerCode)}
-        AND (
-          LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%accident%'
-          OR LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%bodyshop%'
-        )
-    ),
-    pending AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
-        COALESCE(NULLIF(r_o_no, ''), id::text) AS jc_key,
-        ro_date::date AS report_date
-      FROM open_ro_yearly
-      WHERE LOWER(COALESCE(status, '')) = 'open'
-        AND ro_date >= ${monthStart}::date
-        AND ro_date < (${exportDate}::date + INTERVAL '1 day')
-        AND (
-          LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%accident%'
-          OR LOWER(CONCAT_WS(' ', work_type, service_type)) LIKE '%bodyshop%'
-        )
-        ${openRoDealerFilter(dealerCode)}
-      ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
-    )
-    SELECT
-      COUNT(*) FILTER (WHERE jc_key NOT IN (SELECT jc_key FROM ro_keys))::int AS mtd,
-      COUNT(*) FILTER (
-        WHERE jc_key NOT IN (SELECT jc_key FROM ro_keys)
-          AND report_date = ${exportDate}::date
-      )::int AS today
-    FROM pending
-  `)
-
-  const row = resultRows(result)[0] || {}
-  return {
-    today: numberValue(row.today),
-    mtd: numberValue(row.mtd),
-  }
-}
-
-async function fetchIntakeBillDateSupplement(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
-  const result = await db.execute(sql`
-    WITH supplemental AS (
-      SELECT
-        COALESCE(NULLIF(ro_no, ''), NULLIF(bill_no, ''), id::text) AS jc_key,
-        ${serviceCategoryExpression('work_type', 'service_type')} AS service_category,
-        bill_date::date AS bill_date,
-        ro_date::date AS ro_date
-      FROM ro_billing_report
-      WHERE bill_date >= ${monthStart}::date
-        AND bill_date < (${exportDate}::date + INTERVAL '1 day')
-        AND ${activeBillStatusSql()}
-        ${roBillingDealerFilter(dealerCode)}
-        AND (
-          (
-            bill_date = ${exportDate}::date
-            AND (ro_date IS NULL OR ro_date <> ${exportDate}::date)
-            AND ${serviceCategoryExpression('work_type', 'service_type')} IN ('Paid Service', 'Accidental Repair')
-          )
-          OR (
-            ro_date < ${monthStart}::date
-            AND (
-              (
-                ${serviceCategoryExpression('work_type', 'service_type')} = 'Paid Service'
-                AND bill_date = ${exportDate}::date
-              )
-              OR ${serviceCategoryExpression('work_type', 'service_type')} = 'Running Repair'
-            )
-          )
-        )
-    )
-    SELECT
-      service_category,
-      COUNT(*) FILTER (
-        WHERE bill_date = ${exportDate}::date
-          AND (ro_date IS NULL OR ro_date <> ${exportDate}::date)
-      )::int AS today,
-      COUNT(*) FILTER (WHERE service_category <> 'Accidental Repair')::int AS mtd
-    FROM supplemental
-    WHERE service_category IN ('Paid Service', 'Running Repair', 'Accidental Repair')
-    GROUP BY service_category
-  `)
-
-  const counts = emptyCategoryCounts()
-  resultRows(result).forEach((row) => {
-    const category = String(row.service_category || '') as ServiceCategory
-    if (SERVICE_CATEGORIES.includes(category)) {
-      counts[category] = {
-        today: numberValue(row.today),
-        mtd: numberValue(row.mtd),
-      }
-    }
-  })
-  return counts
-}
-
-async function fetchAccidentalIntakeBilledOpenToday(exportDate: string, dealerCode: DealerFilter) {
-  const result = await db.execute(sql`
-    SELECT COUNT(*)::int AS today
-    FROM open_ro_yearly o
-    INNER JOIN ro_billing_report rb
-      ON COALESCE(NULLIF(rb.ro_no, ''), NULLIF(rb.bill_no, ''), rb.id::text)
-        = COALESCE(NULLIF(o.r_o_no, ''), o.id::text)
-    WHERE LOWER(COALESCE(o.status, '')) = 'open'
-      AND rb.bill_date = ${exportDate}::date
-      AND ${activeBillStatusSql('rb.')}
-      ${roBillingDealerFilter(dealerCode, 'rb.')}
-      ${openRoDealerFilter(dealerCode, 'o')}
-      AND (
-        LOWER(CONCAT_WS(' ', rb.work_type, rb.service_type)) LIKE '%accident%'
-        OR LOWER(CONCAT_WS(' ', rb.work_type, rb.service_type)) LIKE '%bodyshop%'
-      )
-  `)
-
-  return numberValue(resultRows(result)[0]?.today)
-}
-
 async function fetchIntakeCounts(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
   const result = await db.execute(sql`
-    WITH raw AS (
+    WITH combined AS (
+      -- Billed ROs
       SELECT
         COALESCE(NULLIF(ro_no, ''), NULLIF(bill_no, ''), id::text) AS jc_key,
-        ro_date::date AS report_date,
-        ${serviceCategoryExpression('work_type', 'service_type')} AS service_category,
-        uploaded_at,
-        id
+        ro_date::date AS ro_date,
+        ${serviceCategoryExpression('work_type', 'service_type')} AS category
       FROM ro_billing_report
-      WHERE ro_date >= ${monthStart}::date
+      WHERE
+        ro_date >= ${monthStart}::date
         AND ro_date < (${exportDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
-    ),
-    ranked AS (
+
+      UNION
+
+      -- Open ROs
       SELECT
-        *,
-        ROW_NUMBER() OVER (PARTITION BY jc_key ORDER BY report_date DESC, uploaded_at DESC NULLS LAST, id DESC) AS row_rank
-      FROM raw
+        COALESCE(NULLIF(r_o_no, ''), id::text) AS jc_key,
+        ro_date::date AS ro_date,
+        ${serviceCategoryExpression('work_type', 'service_type')} AS category
+      FROM open_ro_yearly
+      WHERE
+        ro_date >= ${monthStart}::date
+        AND ro_date < (${exportDate}::date + INTERVAL '1 day')
+        AND LOWER(COALESCE(status, '')) = 'open'
+        ${openRoDealerFilter(dealerCode)}
     ),
     dedup AS (
-      SELECT *
-      FROM ranked
-      WHERE row_rank = 1
+      SELECT DISTINCT ON (jc_key)
+        jc_key,
+        ro_date,
+        category
+      FROM combined
+      ORDER BY jc_key, ro_date ASC
     )
     SELECT
-      service_category,
-      COUNT(*) FILTER (WHERE report_date = ${exportDate}::date)::int AS today,
+      category,
+      COUNT(*) FILTER (WHERE ro_date = ${exportDate}::date)::int AS today,
       COUNT(*)::int AS mtd
     FROM dedup
-    WHERE service_category IN ('Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair')
-    GROUP BY service_category
+    WHERE category IN ('Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair')
+    GROUP BY category
   `)
 
   const counts = emptyCategoryCounts()
   resultRows(result).forEach((row) => {
-    const category = String(row.service_category || '') as ServiceCategory
+    const category = String(row.category || '') as ServiceCategory
     if (SERVICE_CATEGORIES.includes(category)) {
       counts[category] = {
         today: numberValue(row.today),
@@ -413,19 +281,6 @@ async function fetchIntakeCounts(monthStart: string, exportDate: string, dealerC
       }
     }
   })
-
-  const [supplement, billDateSupplement, accidentalToday] = await Promise.all([
-    fetchAccidentalIntakeSupplement(monthStart, exportDate, dealerCode),
-    fetchIntakeBillDateSupplement(monthStart, exportDate, dealerCode),
-    fetchAccidentalIntakeBilledOpenToday(exportDate, dealerCode),
-  ])
-  counts['Accidental Repair'].today += supplement.today
-  counts['Accidental Repair'].mtd += supplement.mtd
-  ;(['Paid Service', 'Running Repair', 'Accidental Repair'] as const).forEach((category) => {
-    counts[category].today += billDateSupplement[category].today
-    counts[category].mtd += billDateSupplement[category].mtd
-  })
-  counts['Accidental Repair'].today += accidentalToday
 
   return counts
 }
@@ -518,8 +373,6 @@ async function fetchRevenueAndDelivered(monthStart: string, exportDate: string, 
 }
 
 async function fetchPendingCounts(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
-  const pendingTodayDate = previousDateInput(exportDate)
-
   const result = await db.execute(sql`
     WITH pending AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(o.r_o_no, ''), o.id::text))
@@ -529,14 +382,14 @@ async function fetchPendingCounts(monthStart: string, exportDate: string, dealer
         o.id
       FROM open_ro_yearly o
       WHERE LOWER(COALESCE(o.status, '')) = 'open'
-        AND o.ro_date >= ${monthStart}::date
+        AND o.ro_date >= (${exportDate}::date - INTERVAL '30 days')::date
         AND o.ro_date < (${exportDate}::date + INTERVAL '1 day')
+        AND LOWER(COALESCE(o.ro_sub_status, '')) NOT IN ('closed', 'final inspection', 'ready', 'ready for delivery')
         ${openRoDealerFilter(dealerCode, 'o')}
         AND NOT EXISTS (
           SELECT 1
           FROM ro_billing_report rb2
-          WHERE rb2.bill_date >= ${monthStart}::date
-            AND rb2.bill_date < (${exportDate}::date + INTERVAL '1 day')
+          WHERE rb2.bill_date < (${exportDate}::date + INTERVAL '1 day')
             AND ${activeBillStatusSql('rb2.')}
             ${roBillingDealerFilter(dealerCode, 'rb2.')}
             AND COALESCE(NULLIF(rb2.ro_no, ''), NULLIF(rb2.bill_no, ''), rb2.id::text)
@@ -563,12 +416,12 @@ async function fetchPendingCounts(monthStart: string, exportDate: string, dealer
     SELECT
       COUNT(*) FILTER (
         WHERE service_category = 'Accidental Repair'
-          AND report_date = ${pendingTodayDate}::date
+          AND report_date = ${exportDate}::date
       )::int AS accidental_today,
       COUNT(*) FILTER (WHERE service_category = 'Accidental Repair')::int AS accidental_mtd,
       COUNT(*) FILTER (
         WHERE service_category <> 'Accidental Repair'
-          AND report_date = ${pendingTodayDate}::date
+          AND report_date = ${exportDate}::date
       )::int AS mechanical_today,
       COUNT(*) FILTER (WHERE service_category <> 'Accidental Repair')::int AS mechanical_mtd
     FROM pending
@@ -579,6 +432,26 @@ async function fetchPendingCounts(monthStart: string, exportDate: string, dealer
     accidental: { today: numberValue(row.accidental_today), mtd: numberValue(row.accidental_mtd) },
     mechanical: { today: numberValue(row.mechanical_today), mtd: numberValue(row.mechanical_mtd) },
   }
+}
+
+async function fetchBodyshopPnaCases(exportDate: string, dealerCode: DealerFilter) {
+  const result = await db.execute(sql`
+    SELECT COUNT(DISTINCT COALESCE(NULLIF(o.r_o_no, ''), o.id::text))::int AS count
+    FROM open_ro_yearly o
+    WHERE LOWER(COALESCE(o.status, '')) = 'open'
+      AND o.ro_date < (${exportDate}::date + INTERVAL '1 day')
+      AND (
+        o.work_type = 'Accidental Repair'
+        OR LOWER(CONCAT_WS(' ', o.work_type, o.service_type)) LIKE '%accident%'
+        OR LOWER(CONCAT_WS(' ', o.work_type, o.service_type)) LIKE '%bodyshop%'
+      )
+      AND (
+        LOWER(COALESCE(o.delay_reason, '')) LIKE '%parts not available%'
+        OR LOWER(COALESCE(o.delay_reason, '')) LIKE '%pna%'
+      )
+      ${openRoDealerFilter(dealerCode, 'o')}
+  `)
+  return numberValue(resultRows(result)[0]?.count)
 }
 
 async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
@@ -786,7 +659,7 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
   const exportDate = await resolveExportDate(endDate, dealerCode)
   const monthStart = getMonthStart(exportDate)
 
-  const [intake, pending, revenue, addons, operations, oil, vasAmount] = await Promise.all([
+  const [intake, pending, revenue, addons, operations, oil, vasAmount, bodyshopPnaCases, workingDays] = await Promise.all([
     fetchIntakeCounts(monthStart, exportDate, dealerCode),
     fetchPendingCounts(monthStart, exportDate, dealerCode),
     fetchRevenueAndDelivered(monthStart, exportDate, dealerCode),
@@ -794,7 +667,13 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
     fetchOperationMetrics(monthStart, exportDate, dealerCode),
     fetchOilMetrics(monthStart, exportDate, dealerCode),
     fetchVasAmount(monthStart, exportDate, dealerCode),
+    fetchBodyshopPnaCases(exportDate, dealerCode),
+    getKiaWorkingDayContext(monthStart, exportDate),
   ])
+  const deliveredCount = SERVICE_CATEGORIES.reduce(
+    (sum, category) => sum + revenue.delivered[category].mtd,
+    0,
+  )
 
   return {
     exportDate,
@@ -806,13 +685,24 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
     operations,
     oil,
     vasAmount,
+    bodyshopPnaCases,
+    sourceMetadata: buildKiaSourceMetadata({
+      dealerCode,
+      dateBasis: 'ro_date intake; bill_date delivered/revenue; open RO status as-of end date',
+      startDate: monthStart,
+      endDate: exportDate,
+      rowCount: deliveredCount,
+      latestAvailableDate: exportDate,
+      deduplicationMode: 'RO/job-card key; billed and open intake union; active bill value ranking',
+      ...workingDays,
+    }),
   }
 }
 
 export const buildServiceDashboardMetrics = buildMetrics
 
 function serviceDashboardCacheKey(kind: 'metrics' | 'preview', endDate: string | null, dealerCode: DealerFilter) {
-  return `kia:service-dashboard:${kind}:v2:${dealerCode || 'all'}:${endDate || 'latest'}`
+  return `kia:service-dashboard:${kind}:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${dealerCode || 'all'}:${endDate || 'latest'}`
 }
 
 export async function getCachedServiceDashboardMetrics(
@@ -971,7 +861,7 @@ function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: Se
   worksheet.getColumn('A').width = 38.140625
   worksheet.getColumn('B').width = 24.28515625
   worksheet.getColumn('C').width = 13
-  worksheet.pageSetup.printArea = 'A1:C41'
+  worksheet.pageSetup.printArea = 'A1:C42'
 
   worksheet.getCell('A1').value = `DATE |   ${formatDisplayDate(metrics.exportDate)}`
   worksheet.getCell('B1').value = 'Today'
@@ -1004,19 +894,28 @@ function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: Se
   setNumber(worksheet, 'B12', metrics.addons.bodyshopMcp.today, 0)
   setNumber(worksheet, 'C12', metrics.addons.bodyshopMcp.mtd, 0)
 
-  setNumber(worksheet, 'B15', metrics.revenue.mechanicalLabour.today, 0)
-  setNumber(worksheet, 'C15', metrics.revenue.mechanicalLabour.mtd, 0)
-  setNumber(worksheet, 'B16', metrics.revenue.mechanicalParts.today, 0)
-  setNumber(worksheet, 'C16', metrics.revenue.mechanicalParts.mtd, 0)
-  setNumber(worksheet, 'B17', metrics.revenue.bodyshopLabour.today, 0)
-  setNumber(worksheet, 'C17', metrics.revenue.bodyshopLabour.mtd, 0)
-  setNumber(worksheet, 'B18', metrics.revenue.bodyshopParts.today, 0)
-  setNumber(worksheet, 'C18', metrics.revenue.bodyshopParts.mtd, 0)
+  const mechanicalLabourToday = Math.round(metrics.revenue.mechanicalLabour.today)
+  const mechanicalLabourMtd = Math.round(metrics.revenue.mechanicalLabour.mtd)
+  const mechanicalPartsToday = Math.ceil(metrics.revenue.mechanicalParts.today)
+  const mechanicalPartsMtd = Math.ceil(metrics.revenue.mechanicalParts.mtd)
+  const bodyshopLabourToday = Math.round(metrics.revenue.bodyshopLabour.today)
+  const bodyshopLabourMtd = Math.round(metrics.revenue.bodyshopLabour.mtd)
+  const bodyshopPartsToday = Math.round(metrics.revenue.bodyshopParts.today)
+  const bodyshopPartsMtd = Math.round(metrics.revenue.bodyshopParts.mtd)
 
-  const totalLabourToday = metrics.revenue.mechanicalLabour.today + metrics.revenue.bodyshopLabour.today
-  const totalLabourMtd = metrics.revenue.mechanicalLabour.mtd + metrics.revenue.bodyshopLabour.mtd
-  const totalPartsToday = metrics.revenue.mechanicalParts.today + metrics.revenue.bodyshopParts.today
-  const totalPartsMtd = metrics.revenue.mechanicalParts.mtd + metrics.revenue.bodyshopParts.mtd
+  setNumber(worksheet, 'B15', mechanicalLabourToday, 0)
+  setNumber(worksheet, 'C15', mechanicalLabourMtd, 0)
+  setNumber(worksheet, 'B16', mechanicalPartsToday, 0)
+  setNumber(worksheet, 'C16', mechanicalPartsMtd, 0)
+  setNumber(worksheet, 'B17', bodyshopLabourToday, 0)
+  setNumber(worksheet, 'C17', bodyshopLabourMtd, 0)
+  setNumber(worksheet, 'B18', bodyshopPartsToday, 0)
+  setNumber(worksheet, 'C18', bodyshopPartsMtd, 0)
+
+  const totalLabourToday = mechanicalLabourToday + bodyshopLabourToday
+  const totalLabourMtd = mechanicalLabourMtd + bodyshopLabourMtd
+  const totalPartsToday = mechanicalPartsToday + bodyshopPartsToday
+  const totalPartsMtd = mechanicalPartsMtd + bodyshopPartsMtd
   setFormula(worksheet, 'B13', 'B15+B17', totalLabourToday, 0)
   setFormula(worksheet, 'C13', 'C15+C17', totalLabourMtd, 0)
   setFormula(worksheet, 'B14', 'B16+B18', totalPartsToday, 0)
@@ -1045,7 +944,7 @@ function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: Se
     + metrics.revenue.delivered['Paid Service'].mtd
     + metrics.revenue.delivered['Running Repair'].mtd
   const bodyshopDeliveredMtd = metrics.revenue.delivered['Accidental Repair'].mtd
-  const averageRoDenominator = serviceDashboardAverageRoDenominator(metrics.exportDate)
+  const averageRoDenominator = metrics.sourceMetadata.workingDayCount || 1
   const averageRo = totalVehicleMtd / averageRoDenominator
   const averageRoFormula = `IFERROR((C2+C3+C4+C5)/${averageRoDenominator},0)`
   const averageLabourFormula = 'IFERROR(C13/(C19+C20+C21+C22),0)'
@@ -1069,8 +968,8 @@ function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: Se
   setFormulaPair(worksheet, 33, averagePartsMechFormula, safeDivide(metrics.revenue.mechanicalParts.mtd, mechDeliveredMtd), 0)
   setFormulaPair(worksheet, 34, averagePartsBsFormula, safeDivide(metrics.revenue.bodyshopParts.mtd, bodyshopDeliveredMtd), 0)
 
-  setNumber(worksheet, 'B35', metrics.oil.engineOilQty.today, 1)
-  setNumber(worksheet, 'C35', metrics.oil.engineOilQty.mtd, 1)
+  setNumber(worksheet, 'B35', Math.round(metrics.oil.engineOilQty.today), 0)
+  setNumber(worksheet, 'C35', Math.round(metrics.oil.engineOilQty.mtd), 0)
   setFormula(worksheet, 'B36', oilPerRoFormula, safeDivide(metrics.oil.engineOilQty.today, totalVehicleMtd), 0)
   setFormula(worksheet, 'C36', oilPerRoMtdFormula, safeDivide(metrics.oil.engineOilQty.mtd, totalVehicleMtd), 0)
   setNumber(worksheet, 'B37', metrics.oil.syntheticOilQty.today, 1)
@@ -1081,6 +980,25 @@ function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: Se
   setFormula(worksheet, 'B40', oilPerRoMechFormula, safeDivide(metrics.oil.engineOilQty.today, mechDeliveredMtd), 0)
   setFormula(worksheet, 'C40', oilPerRoMechMtdFormula, safeDivide(metrics.oil.engineOilQty.mtd, mechDeliveredMtd), 0)
   setFormulaPair(worksheet, 41, labourWithoutVasFormula, safeDivide(totalLabourMtd - metrics.vasAmount, totalDeliveredMtd), 0)
+
+  // Copy row 41 styling to row 42 for Bodyshop PNA Cases
+  const row41 = worksheet.getRow(41)
+  const row42 = worksheet.getRow(42)
+  row42.height = row41.height
+
+  const cellA42 = row42.getCell(1)
+  cellA42.value = 'Bodyshop PNA Cases'
+  cellA42.style = { ...row41.getCell(1).style }
+
+  const cellB42 = row42.getCell(2)
+  cellB42.value = metrics.bodyshopPnaCases
+  cellB42.style = { ...row41.getCell(2).style }
+
+  const cellC42 = row42.getCell(3)
+  cellC42.value = metrics.bodyshopPnaCases
+  cellC42.style = { ...row41.getCell(3).style }
+
+  worksheet.mergeCells('B42:C42')
 }
 
 export async function buildKiaServiceDashboardWorkbook({
@@ -1148,7 +1066,7 @@ async function buildKiaServiceDashboardPreviewUncached({
   const mergeLookup = buildMergeLookup(merges)
   const rows: KiaServiceDashboardPreview['rows'] = []
 
-  for (let rowIndex = 1; rowIndex <= 41; rowIndex += 1) {
+  for (let rowIndex = 1; rowIndex <= 42; rowIndex += 1) {
     const row = worksheet.getRow(rowIndex)
     const cells: ServiceDashboardPreviewCell[] = []
 
@@ -1178,7 +1096,7 @@ async function buildKiaServiceDashboardPreviewUncached({
 
   return {
     sheetName: worksheet.name,
-    range: 'A1:C41',
+    range: 'A1:C42',
     fileName,
     metrics,
     columns: ['A', 'B', 'C'].map((key) => ({

@@ -3,11 +3,13 @@ import { getBrandAccess } from '@/lib/auth/brand-access'
 import { requirePermission } from '@/lib/permissions/service'
 import { PlatinumModulePlaceholder } from '@/features/platinum/platinum-module-placeholder'
 import PlatinumBusinessExcellencePage from '@/features/platinum/business-excellence-page'
+import { HyundaiWarrantyClaimsPage } from '@/features/hyundai/warranty-claims-page'
 
 type PlatinumModuleDefinition = {
   title: string
   permission: string
-  component?: 'business-excellence'
+  component?: 'business-excellence' | 'warranty-claims'
+  warrantySource?: 'ytp' | 'claim_list'
   report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'workshop-performance' | 'open-ro' | 'platinum-complaints' | 'sot-analysis'
 }
 
@@ -70,6 +72,18 @@ const PLATINUM_MODULES: Record<string, PlatinumModuleDefinition> = {
     title: 'Platinum Proforma',
     permission: 'platinum.proforma.view',
   },
+  'warranty-list': {
+    title: 'Claim YTP',
+    permission: 'platinum.warranty_list.view',
+    component: 'warranty-claims',
+    warrantySource: 'ytp',
+  },
+  'warranty-claim-list': {
+    title: 'Warranty Claim List',
+    permission: 'platinum.warranty_claim_list.view',
+    component: 'warranty-claims',
+    warrantySource: 'claim_list',
+  },
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ module: string[] }> }) {
@@ -112,6 +126,10 @@ export default async function Page({
 
   if (definition.component === 'business-excellence') {
     return <PlatinumBusinessExcellencePage initialReport={definition.report || 'overview'} currentUserRole={access.appUser.role} />
+  }
+
+  if (definition.component === 'warranty-claims') {
+    return <HyundaiWarrantyClaimsPage source={definition.warrantySource || 'claim_list'} brand="platinum" />
   }
 
   return <PlatinumModulePlaceholder title={definition.title} />

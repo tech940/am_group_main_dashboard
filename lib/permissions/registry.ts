@@ -704,6 +704,8 @@ const hyundaiPlatinumExecutiveGroups = [
   'platinum.service_appointment',
   'platinum.demo_cars_list',
   'platinum.proforma',
+  'platinum.warranty_list',
+  'platinum.warranty_claim_list',
   'platinum.sales',
   'platinum.h_promise',
 ]

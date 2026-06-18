@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     const expectedStatuses = bulkStage === 'ea_approval'
-      ? ['awaiting_ea_approval', 'awaiting_md_approval', 'ea_denied', 'ea_on_hold', 'md_denied', 'md_on_hold']
+      ? ['awaiting_ea_approval', 'ea_denied', 'ea_on_hold', 'md_denied', 'md_on_hold']
       : ['awaiting_md_approval', 'md_denied', 'md_on_hold']
     const eligibleOrders = visibleOrders.filter((order) => expectedStatuses.includes(order.status))
 
@@ -125,7 +125,10 @@ export async function POST(request: NextRequest) {
     const updatedOrders = await db
       .update(purchaseOrders)
       .set(updateSet)
-      .where(inArray(purchaseOrders.id, orderIdsToUpdate))
+      .where(and(
+        inArray(purchaseOrders.id, orderIdsToUpdate),
+        inArray(purchaseOrders.status, eligibleOrders.map((order) => order.status))
+      ))
       .returning()
 
     const historyEntries = await db
