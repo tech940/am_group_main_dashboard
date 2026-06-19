@@ -1,0 +1,10 @@
+
+> main_dashboard@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.1.79:3001
+- Environments: .env
+✓ Ready in 1487ms
+[?25h

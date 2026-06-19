@@ -9,7 +9,10 @@ export async function POST() {
   const accessError = await requireBrandApiAccess('platinum')
   if (accessError) return accessError
 
-  await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:*`)
+  await Promise.all([
+    invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:*`),
+    invalidateCachePattern('platinum:service-dashboard:*'),
+  ])
 
   return NextResponse.json(
     {

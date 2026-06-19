@@ -40,6 +40,7 @@ import { ExecutiveTableShell, type ExecutiveDashboardTableId } from '@/features/
 import { OpenRoSection } from '@/features/platinum/open-ro-section'
 import { KiaComplaintsSection } from '@/features/platinum/platinum-complaints-section'
 import { PlatinumSotAnalysisSection } from '@/features/platinum/sot-analysis-section'
+import { ServiceDashboardPreviewSection } from '@/features/kia/service-dashboard-preview-section'
 import { readPlatinumJson } from '@/features/platinum/api-client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -320,6 +321,7 @@ const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const PLATINUM_COMPLAINTS_REPORT = 'Platinum Complaints'
 const PLATINUM_SOT_REPORT = 'SOT Analysis'
+const SERVICE_DASHBOARD_REPORT = 'Service Dashboard'
 const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [BUSINESS_EXCELLENCE_OVERVIEW_REPORT]: 'overview',
   [EXECUTIVE_DASHBOARD_REPORT]: 'executive-dashboard',
@@ -328,6 +330,7 @@ const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [OPEN_RO_REPORT]: 'open-ro',
   [PLATINUM_COMPLAINTS_REPORT]: 'platinum-complaints',
   [PLATINUM_SOT_REPORT]: 'sot-analysis',
+  [SERVICE_DASHBOARD_REPORT]: 'service-dashboard',
 }
 const REPORT_NAMES_BY_SLUG: Record<string, string> = Object.fromEntries(
   Object.entries(REPORT_ROUTE_SLUGS).map(([name, slug]) => [slug, name])
@@ -392,6 +395,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     brand: 'platinum',
     sheetName: PLATINUM_SOT_REPORT,
     tableName: 'am_platinum_trust_package',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'service-dashboard',
+    brand: 'platinum',
+    sheetName: SERVICE_DASHBOARD_REPORT,
+    tableName: 'service_dashboard_export',
     columns: [],
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
@@ -731,7 +743,7 @@ function WorkshopTrendValueLabel({
 }
 
 function canAccessExecutiveDashboard(role?: string | null) {
-  return ['admin', 'super_admin', 'ceo', 'md'].includes(String(role || '').trim().toLowerCase())
+  return ['super_admin', 'ceo', 'md', 'ea'].includes(String(role || '').trim().toLowerCase())
 }
 
 function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[], role?: string | null) {
@@ -1530,6 +1542,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   const [aiSummary, setAiSummary] = useState<BusinessAiSummary | null>(null)
   const [aiSummaryError, setAiSummaryError] = useState('')
   const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false)
+  const [isServiceDashboardDownloading, setIsServiceDashboardDownloading] = useState(false)
   const [freshnessReady, setFreshnessReady] = useState(false)
   const itemsPerPage = 10
   const queryDateFilterKey = searchParams.toString()
@@ -1780,6 +1793,44 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
     }
   }, [appliedDateFilter, selectedDealerCode])
 
+  const downloadServiceDashboard = useCallback(async () => {
+    setIsServiceDashboardDownloading(true)
+    try {
+      const effectiveFilter = getEffectiveBusinessDateFilter(appliedDateFilter)
+      const params = new URLSearchParams({ endDate: effectiveFilter.endDate })
+      appendKiaDealerCodeParam(params, selectedDealerCode)
+      const response = await fetch(
+        `/api/brands/platinum/business-excellence/service-dashboard-export?${params.toString()}`,
+        { cache: 'no-store' },
+      )
+      logApiTimings(response, 'platinum-service-dashboard-export')
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(payload?.error || 'Failed to download Service Dashboard')
+      }
+
+      const disposition = response.headers.get('Content-Disposition') || ''
+      const fileNameMatch = disposition.match(/filename\*=UTF-8''([^;]+)|filename="([^"]+)"/)
+      const fileName = fileNameMatch
+        ? decodeURIComponent(fileNameMatch[1] || fileNameMatch[2])
+        : `AM_PLATINUM_Service_Dashboard_${effectiveFilter.endDate}.xlsx`
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = fileName
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Failed to download Platinum Service Dashboard:', error)
+      alert(error instanceof Error ? error.message : 'Failed to download Service Dashboard')
+    } finally {
+      setIsServiceDashboardDownloading(false)
+    }
+  }, [appliedDateFilter, selectedDealerCode])
+
   const fetchSheetRows = useCallback(async (sheet: SavedSheetMetadata, page: number = 1) => {
     const sheetId = sheet.id
     setFetchingRows(sheetId)
@@ -1834,7 +1885,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === PLATINUM_COMPLAINTS_REPORT || activeTab === PLATINUM_SOT_REPORT) {
+      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === PLATINUM_COMPLAINTS_REPORT || activeTab === PLATINUM_SOT_REPORT || activeTab === SERVICE_DASHBOARD_REPORT) {
         setFetchingRows(null)
         return
       }
@@ -1884,7 +1935,8 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
               const isKiaComplaintsSheet = selectedSheet.sheetName === PLATINUM_COMPLAINTS_REPORT
               const isSotSheet = selectedSheet.sheetName === PLATINUM_SOT_REPORT
               const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
-              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isSotSheet
+              const isServiceDashboardSheet = selectedSheet.sheetName === SERVICE_DASHBOARD_REPORT
+              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isSotSheet || isServiceDashboardSheet
               const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet || isSotSheet
               const supportsHealthPanel = isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
               const branchOptions = [{ label: 'All Locations', dealerCode: PLATINUM_ALL_LOCATIONS_CODE }, ...KIA_BRANCH_DEALERS]
@@ -2362,6 +2414,18 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                             <SheetContentSkeleton />
                           ) : (
                             <PlatinumSotAnalysisSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isServiceDashboardSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <ServiceDashboardPreviewSection
+                              brand="platinum"
+                              dateFilter={appliedDateFilter}
+                              dealerCode={selectedDealerCode}
+                              onDownload={() => void downloadServiceDashboard()}
+                              downloading={isServiceDashboardDownloading}
+                            />
                           )
                         ) : isROBillingSheet ? (
                           isApplyingFilter ? (
@@ -4772,7 +4836,7 @@ function WorkshopPerformanceSection({
         if (selectedWorkshopAdvisor !== 'all') {
           params.set('advisor', selectedWorkshopAdvisor)
         }
-        params.set('version', 'v18')
+        params.set('version', 'v19')
         const queryString = params.toString()
         const result = await queryClient.fetchQuery({
           queryKey: ['business-excellence', 'workshop-performance', queryString],
@@ -4819,7 +4883,7 @@ function WorkshopPerformanceSection({
     ? data?.meta.vas?.unavailableReason || 'VAS source unavailable'
     : data?.meta.vas?.comparisonLabel
       || (data?.meta.vas?.periodEnd
-        ? `Source period ends ${formatCompactBusinessDate(data.meta.vas.periodEnd)}`
+        ? `Source ${new Date(`${data.meta.vas.periodEnd}T00:00:00`).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}`
         : undefined)
 
   const kpiCards = data ? [

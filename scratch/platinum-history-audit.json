@@ -1,0 +1,1831 @@
+[platinum-history-audit] using database endpoint aws-1-ap-northeast-2.pooler.supabase.com:5432
+{
+  "generatedAt": "2026-06-18T17:02:17.847Z",
+  "rules": {
+    "roLowCoverage": "<15 distinct billing dates",
+    "roLowVolume": "<25% dealer median invoices",
+    "roLowRevenue": "<20% dealer median revenue",
+    "repairMismatch": "<50% of billed invoices or <15 covered dates",
+    "operationMismatch": "<25% of billed invoices; heuristic only because operations and invoices are different units"
+  },
+  "audit": {
+    "N5211": {
+      "roCoverage": "2021-01 to 2026-06",
+      "roMonthCount": 66,
+      "medianInvoices": 836,
+      "medianRevenue": 6365651,
+      "repairMissingRanges": [],
+      "operationMissingRanges": [],
+      "flaggedMonths": [
+        {
+          "month": "2021-01",
+          "roInvoices": 653,
+          "roRevenue": 4676834.49,
+          "repairOrders": 758,
+          "operationCount": 2111.4,
+          "reasons": [
+            "3 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2021-02",
+          "roInvoices": 624,
+          "roRevenue": 4731545.59,
+          "repairOrders": 725,
+          "operationCount": 46,
+          "reasons": [
+            "Operation Wise count 46 is only 7% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-03",
+          "roInvoices": 499,
+          "roRevenue": 3927004.63,
+          "repairOrders": 603,
+          "operationCount": 67,
+          "reasons": [
+            "Operation Wise count 67 is only 13% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-04",
+          "roInvoices": 512,
+          "roRevenue": 4560919.26,
+          "repairOrders": 592,
+          "operationCount": 75,
+          "reasons": [
+            "Operation Wise count 75 is only 15% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-05",
+          "roInvoices": 77,
+          "roRevenue": 542562.19,
+          "repairOrders": 82,
+          "operationCount": 5,
+          "reasons": [
+            "RO Billing covers only 7 dates",
+            "RO Billing invoices 77 are below 25% of dealer median 836",
+            "RO Billing revenue ₹542562 is below 20% of dealer median ₹6365651",
+            "Repair Orders cover only 6 dates",
+            "Operation Wise count 5 is only 6% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-06",
+          "roInvoices": 431,
+          "roRevenue": 4052515.23,
+          "repairOrders": 598,
+          "operationCount": 30,
+          "reasons": [
+            "Operation Wise count 30 is only 7% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-07",
+          "roInvoices": 679,
+          "roRevenue": 5982576.14,
+          "repairOrders": 698,
+          "operationCount": 49,
+          "reasons": [
+            "Operation Wise count 49 is only 7% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-08",
+          "roInvoices": 639,
+          "roRevenue": 5604186,
+          "repairOrders": 693,
+          "operationCount": 69,
+          "reasons": [
+            "Operation Wise count 69 is only 11% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-09",
+          "roInvoices": 709,
+          "roRevenue": 5643798.34,
+          "repairOrders": 713,
+          "operationCount": 36,
+          "reasons": [
+            "Operation Wise count 36 is only 5% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-10",
+          "roInvoices": 720,
+          "roRevenue": 5648303.01,
+          "repairOrders": 878,
+          "operationCount": 46,
+          "reasons": [
+            "Operation Wise count 46 is only 6% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-11",
+          "roInvoices": 661,
+          "roRevenue": 5442276.26,
+          "repairOrders": 786,
+          "operationCount": 49,
+          "reasons": [
+            "Operation Wise count 49 is only 7% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-12",
+          "roInvoices": 769,
+          "roRevenue": 6290852.44,
+          "repairOrders": 901,
+          "operationCount": 55,
+          "reasons": [
+            "Operation Wise count 55 is only 7% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-01",
+          "roInvoices": 574,
+          "roRevenue": 4725984.5,
+          "repairOrders": 639,
+          "operationCount": 45,
+          "reasons": [
+            "Operation Wise count 45 is only 8% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-02",
+          "roInvoices": 735,
+          "roRevenue": 6100551.6,
+          "repairOrders": 899,
+          "operationCount": 61,
+          "reasons": [
+            "Operation Wise count 61 is only 8% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-03",
+          "roInvoices": 841,
+          "roRevenue": 5861450.91,
+          "repairOrders": 948,
+          "operationCount": 109,
+          "reasons": [
+            "Operation Wise count 109 is only 13% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-04",
+          "roInvoices": 838,
+          "roRevenue": 6453667.74,
+          "repairOrders": 829,
+          "operationCount": 67,
+          "reasons": [
+            "Operation Wise count 67 is only 8% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-05",
+          "roInvoices": 673,
+          "roRevenue": 5347923.07,
+          "repairOrders": 665,
+          "operationCount": 74,
+          "reasons": [
+            "Operation Wise count 74 is only 11% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-06",
+          "roInvoices": 695,
+          "roRevenue": 5163613.21,
+          "repairOrders": 940,
+          "operationCount": 117,
+          "reasons": [
+            "Operation Wise count 117 is only 17% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-07",
+          "roInvoices": 796,
+          "roRevenue": 5640182.5,
+          "repairOrders": 787,
+          "operationCount": 43,
+          "reasons": [
+            "Operation Wise count 43 is only 5% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-08",
+          "roInvoices": 785,
+          "roRevenue": 6103995.65,
+          "repairOrders": 1036,
+          "operationCount": 105,
+          "reasons": [
+            "Operation Wise count 105 is only 13% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-09",
+          "roInvoices": 768,
+          "roRevenue": 6231171.36,
+          "repairOrders": 744,
+          "operationCount": 106,
+          "reasons": [
+            "Operation Wise count 106 is only 14% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-10",
+          "roInvoices": 768,
+          "roRevenue": 6296437.8,
+          "repairOrders": 760,
+          "operationCount": 136,
+          "reasons": [
+            "Operation Wise count 136 is only 18% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-11",
+          "roInvoices": 834,
+          "roRevenue": 6757987.1,
+          "repairOrders": 1116,
+          "operationCount": 171,
+          "reasons": [
+            "Operation Wise count 171 is only 21% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-12",
+          "roInvoices": 884,
+          "roRevenue": 6852058.26,
+          "repairOrders": 861,
+          "operationCount": 94,
+          "reasons": [
+            "Operation Wise count 94 is only 11% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-01",
+          "roInvoices": 903,
+          "roRevenue": 7272111.02,
+          "repairOrders": 905,
+          "operationCount": 127.5,
+          "reasons": [
+            "Operation Wise count 127.5 is only 14% of billed invoices",
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2023-02",
+          "roInvoices": 854,
+          "roRevenue": 6569918.5,
+          "repairOrders": 841,
+          "operationCount": 132,
+          "reasons": [
+            "Operation Wise count 132 is only 15% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-03",
+          "roInvoices": 783,
+          "roRevenue": 6207789.1,
+          "repairOrders": 874,
+          "operationCount": 188,
+          "reasons": [
+            "Operation Wise count 188 is only 24% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-04",
+          "roInvoices": 761,
+          "roRevenue": 4774163.74,
+          "repairOrders": 1246,
+          "operationCount": 102,
+          "reasons": [
+            "Operation Wise count 102 is only 13% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-05",
+          "roInvoices": 891,
+          "roRevenue": 6112207.17,
+          "repairOrders": 909,
+          "operationCount": 164,
+          "reasons": [
+            "Operation Wise count 164 is only 18% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-06",
+          "roInvoices": 934,
+          "roRevenue": 6202844.49,
+          "repairOrders": 1067,
+          "operationCount": 169,
+          "reasons": [
+            "Operation Wise count 169 is only 18% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-07",
+          "roInvoices": 893,
+          "roRevenue": 5065258.25,
+          "repairOrders": 907,
+          "operationCount": 156,
+          "reasons": [
+            "Operation Wise count 156 is only 17% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-08",
+          "roInvoices": 930,
+          "roRevenue": 6524724.92,
+          "repairOrders": 987,
+          "operationCount": 127,
+          "reasons": [
+            "Operation Wise count 127 is only 14% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-09",
+          "roInvoices": 814,
+          "roRevenue": 6152722.84,
+          "repairOrders": 829,
+          "operationCount": 124,
+          "reasons": [
+            "Operation Wise count 124 is only 15% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-10",
+          "roInvoices": 797,
+          "roRevenue": 5356541.36,
+          "repairOrders": 812,
+          "operationCount": 129,
+          "reasons": [
+            "Operation Wise count 129 is only 16% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-11",
+          "roInvoices": 861,
+          "roRevenue": 6434864.51,
+          "repairOrders": 868,
+          "operationCount": 232.9,
+          "reasons": [
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2023-12",
+          "roInvoices": 948,
+          "roRevenue": 6618867.53,
+          "repairOrders": 935,
+          "operationCount": 133,
+          "reasons": [
+            "Operation Wise count 133 is only 14% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-02",
+          "roInvoices": 865,
+          "roRevenue": 6218573.93,
+          "repairOrders": 873,
+          "operationCount": 159,
+          "reasons": [
+            "Operation Wise count 159 is only 18% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-03",
+          "roInvoices": 933,
+          "roRevenue": 6783990.85,
+          "repairOrders": 200,
+          "operationCount": 141,
+          "reasons": [
+            "Repair Orders 200 are only 21% of billed invoices",
+            "Repair Orders cover only 7 dates",
+            "Operation Wise count 141 is only 15% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-04",
+          "roInvoices": 910,
+          "roRevenue": 6044997.16,
+          "repairOrders": 200,
+          "operationCount": 94,
+          "reasons": [
+            "Repair Orders 200 are only 22% of billed invoices",
+            "Repair Orders cover only 7 dates",
+            "Operation Wise count 94 is only 10% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-05",
+          "roInvoices": 929,
+          "roRevenue": 6516991.33,
+          "repairOrders": 227,
+          "operationCount": 171,
+          "reasons": [
+            "Repair Orders 227 are only 24% of billed invoices",
+            "Repair Orders cover only 8 dates",
+            "Operation Wise count 171 is only 18% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-06",
+          "roInvoices": 905,
+          "roRevenue": 6580600.09,
+          "repairOrders": 200,
+          "operationCount": 112,
+          "reasons": [
+            "Repair Orders 200 are only 22% of billed invoices",
+            "Repair Orders cover only 8 dates",
+            "Operation Wise count 112 is only 12% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-07",
+          "roInvoices": 878,
+          "roRevenue": 6164401.58,
+          "repairOrders": 200,
+          "operationCount": 211,
+          "reasons": [
+            "Repair Orders 200 are only 23% of billed invoices",
+            "Repair Orders cover only 9 dates",
+            "Operation Wise count 211 is only 24% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-08",
+          "roInvoices": 832,
+          "roRevenue": 6525917.1,
+          "repairOrders": 181,
+          "operationCount": 168,
+          "reasons": [
+            "Repair Orders 181 are only 22% of billed invoices",
+            "Repair Orders cover only 7 dates",
+            "Operation Wise count 168 is only 20% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-09",
+          "roInvoices": 846,
+          "roRevenue": 6955991.02,
+          "repairOrders": 150,
+          "operationCount": 163,
+          "reasons": [
+            "Repair Orders 150 are only 18% of billed invoices",
+            "Repair Orders cover only 6 dates",
+            "Operation Wise count 163 is only 19% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-10",
+          "roInvoices": 782,
+          "roRevenue": 6792963.7,
+          "repairOrders": 180,
+          "operationCount": 262,
+          "reasons": [
+            "Repair Orders 180 are only 23% of billed invoices",
+            "Repair Orders cover only 7 dates"
+          ]
+        },
+        {
+          "month": "2024-11",
+          "roInvoices": 866,
+          "roRevenue": 7501259.24,
+          "repairOrders": 150,
+          "operationCount": 180,
+          "reasons": [
+            "Repair Orders 150 are only 17% of billed invoices",
+            "Repair Orders cover only 6 dates",
+            "Operation Wise count 180 is only 21% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-12",
+          "roInvoices": 927,
+          "roRevenue": 8123418.86,
+          "repairOrders": 225,
+          "operationCount": 280,
+          "reasons": [
+            "Repair Orders 225 are only 24% of billed invoices",
+            "Repair Orders cover only 8 dates"
+          ]
+        },
+        {
+          "month": "2025-01",
+          "roInvoices": 914,
+          "roRevenue": 7335121.61,
+          "repairOrders": 78,
+          "operationCount": 212,
+          "reasons": [
+            "Repair Orders 78 are only 9% of billed invoices",
+            "Repair Orders cover only 4 dates",
+            "Operation Wise count 212 is only 23% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-02",
+          "roInvoices": 826,
+          "roRevenue": 6865485.36,
+          "repairOrders": 150,
+          "operationCount": 219,
+          "reasons": [
+            "Repair Orders 150 are only 18% of billed invoices",
+            "Repair Orders cover only 6 dates"
+          ]
+        },
+        {
+          "month": "2025-03",
+          "roInvoices": 904,
+          "roRevenue": 7391320.53,
+          "repairOrders": 138,
+          "operationCount": 215,
+          "reasons": [
+            "Repair Orders 138 are only 15% of billed invoices",
+            "Repair Orders cover only 7 dates",
+            "Operation Wise count 215 is only 24% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-04",
+          "roInvoices": 887,
+          "roRevenue": 7554411.01,
+          "repairOrders": 143,
+          "operationCount": 265.3,
+          "reasons": [
+            "Repair Orders 143 are only 16% of billed invoices",
+            "Repair Orders cover only 5 dates",
+            "2 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2025-05",
+          "roInvoices": 840,
+          "roRevenue": 6711237.18,
+          "repairOrders": 171,
+          "operationCount": 193,
+          "reasons": [
+            "Repair Orders 171 are only 20% of billed invoices",
+            "Repair Orders cover only 7 dates",
+            "Operation Wise count 193 is only 23% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-06",
+          "roInvoices": 880,
+          "roRevenue": 6800639.29,
+          "repairOrders": 150,
+          "operationCount": 908.1,
+          "reasons": [
+            "Repair Orders 150 are only 17% of billed invoices",
+            "Repair Orders cover only 7 dates",
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2025-07",
+          "roInvoices": 868,
+          "roRevenue": 7852726.42,
+          "repairOrders": 196,
+          "operationCount": 261,
+          "reasons": [
+            "Repair Orders 196 are only 23% of billed invoices",
+            "Repair Orders cover only 8 dates"
+          ]
+        },
+        {
+          "month": "2025-08",
+          "roInvoices": 731,
+          "roRevenue": 5584743.92,
+          "repairOrders": 156,
+          "operationCount": 196,
+          "reasons": [
+            "Repair Orders 156 are only 21% of billed invoices",
+            "Repair Orders cover only 8 dates"
+          ]
+        },
+        {
+          "month": "2025-09",
+          "roInvoices": 879,
+          "roRevenue": 7219972.18,
+          "repairOrders": 150,
+          "operationCount": 410,
+          "reasons": [
+            "Repair Orders 150 are only 17% of billed invoices",
+            "Repair Orders cover only 6 dates"
+          ]
+        },
+        {
+          "month": "2025-10",
+          "roInvoices": 841,
+          "roRevenue": 6247906.43,
+          "repairOrders": 173,
+          "operationCount": 251.7,
+          "reasons": [
+            "Repair Orders 173 are only 21% of billed invoices",
+            "Repair Orders cover only 7 dates",
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2025-11",
+          "roInvoices": 803,
+          "roRevenue": 6572781.33,
+          "repairOrders": 150,
+          "operationCount": 271,
+          "reasons": [
+            "Repair Orders 150 are only 19% of billed invoices",
+            "Repair Orders cover only 7 dates"
+          ]
+        },
+        {
+          "month": "2025-12",
+          "roInvoices": 849,
+          "roRevenue": 8128923.03,
+          "repairOrders": 165,
+          "operationCount": 453,
+          "reasons": [
+            "Repair Orders 165 are only 19% of billed invoices",
+            "Repair Orders cover only 7 dates"
+          ]
+        },
+        {
+          "month": "2026-01",
+          "roInvoices": 834,
+          "roRevenue": 7252285.62,
+          "repairOrders": 110,
+          "operationCount": 382,
+          "reasons": [
+            "Repair Orders 110 are only 13% of billed invoices",
+            "Repair Orders cover only 4 dates"
+          ]
+        },
+        {
+          "month": "2026-02",
+          "roInvoices": 866,
+          "roRevenue": 7860177.43,
+          "repairOrders": 150,
+          "operationCount": 453,
+          "reasons": [
+            "Repair Orders 150 are only 17% of billed invoices",
+            "Repair Orders cover only 6 dates"
+          ]
+        },
+        {
+          "month": "2026-03",
+          "roInvoices": 847,
+          "roRevenue": 8036664.87,
+          "repairOrders": 177,
+          "operationCount": 569,
+          "reasons": [
+            "Repair Orders 177 are only 21% of billed invoices",
+            "Repair Orders cover only 7 dates"
+          ]
+        },
+        {
+          "month": "2026-04",
+          "roInvoices": 818,
+          "roRevenue": 7175641.76,
+          "repairOrders": 150,
+          "operationCount": 524.01,
+          "reasons": [
+            "Repair Orders 150 are only 18% of billed invoices",
+            "Repair Orders cover only 6 dates",
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2026-06",
+          "roInvoices": 335,
+          "roRevenue": 2786112.49,
+          "repairOrders": 224,
+          "operationCount": 6308.29,
+          "reasons": [
+            "11 Operation Wise rows have fractional counts"
+          ]
+        }
+      ]
+    },
+    "N6250": {
+      "roCoverage": "2021-01 to 2026-06",
+      "roMonthCount": 66,
+      "medianInvoices": 200,
+      "medianRevenue": 1564900,
+      "repairMissingRanges": [
+        "2021-05"
+      ],
+      "operationMissingRanges": [],
+      "flaggedMonths": [
+        {
+          "month": "2021-01",
+          "roInvoices": 84,
+          "roRevenue": 284054.42,
+          "repairOrders": 84,
+          "operationCount": 24,
+          "reasons": [
+            "RO Billing revenue ₹284054 is below 20% of dealer median ₹1564900"
+          ]
+        },
+        {
+          "month": "2021-02",
+          "roInvoices": 112,
+          "roRevenue": 261800.01,
+          "repairOrders": 115,
+          "operationCount": 63,
+          "reasons": [
+            "RO Billing revenue ₹261800 is below 20% of dealer median ₹1564900"
+          ]
+        },
+        {
+          "month": "2021-04",
+          "roInvoices": 106,
+          "roRevenue": 372196.34,
+          "repairOrders": 16,
+          "operationCount": 172,
+          "reasons": [
+            "Repair Orders 16 are only 15% of billed invoices",
+            "Repair Orders cover only 6 dates"
+          ]
+        },
+        {
+          "month": "2021-05",
+          "roInvoices": 7,
+          "roRevenue": 49043.85,
+          "repairOrders": null,
+          "operationCount": 13,
+          "reasons": [
+            "RO Billing covers only 3 dates",
+            "RO Billing invoices 7 are below 25% of dealer median 200",
+            "RO Billing revenue ₹49044 is below 20% of dealer median ₹1564900",
+            "Repair Order month missing"
+          ]
+        },
+        {
+          "month": "2021-06",
+          "roInvoices": 91,
+          "roRevenue": 375252.98,
+          "repairOrders": 21,
+          "operationCount": 709.5,
+          "reasons": [
+            "Repair Orders 21 are only 23% of billed invoices",
+            "Repair Orders cover only 5 dates",
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2021-07",
+          "roInvoices": 114,
+          "roRevenue": 376760.77,
+          "repairOrders": 9,
+          "operationCount": 6,
+          "reasons": [
+            "Repair Orders 9 are only 8% of billed invoices",
+            "Repair Orders cover only 2 dates",
+            "Operation Wise count 6 is only 5% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-08",
+          "roInvoices": 106,
+          "roRevenue": 324600.21,
+          "repairOrders": 2,
+          "operationCount": 12,
+          "reasons": [
+            "Repair Orders 2 are only 2% of billed invoices",
+            "Repair Orders cover only 2 dates",
+            "Operation Wise count 12 is only 11% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-09",
+          "roInvoices": 122,
+          "roRevenue": 409914.35,
+          "repairOrders": 124,
+          "operationCount": 6,
+          "reasons": [
+            "Operation Wise count 6 is only 5% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-10",
+          "roInvoices": 87,
+          "roRevenue": 274899.87,
+          "repairOrders": 86,
+          "operationCount": 9,
+          "reasons": [
+            "RO Billing revenue ₹274900 is below 20% of dealer median ₹1564900",
+            "Operation Wise count 9 is only 10% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-11",
+          "roInvoices": 113,
+          "roRevenue": 462921.83,
+          "repairOrders": 112,
+          "operationCount": 6,
+          "reasons": [
+            "Operation Wise count 6 is only 5% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-12",
+          "roInvoices": 114,
+          "roRevenue": 419082.01,
+          "repairOrders": 118,
+          "operationCount": 11,
+          "reasons": [
+            "Operation Wise count 11 is only 10% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-01",
+          "roInvoices": 86,
+          "roRevenue": 374714.8,
+          "repairOrders": 23,
+          "operationCount": 9,
+          "reasons": [
+            "Repair Orders 23 are only 27% of billed invoices",
+            "Repair Orders cover only 8 dates",
+            "Operation Wise count 9 is only 10% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-02",
+          "roInvoices": 119,
+          "roRevenue": 432917.94,
+          "repairOrders": 100,
+          "operationCount": 20,
+          "reasons": [
+            "Operation Wise count 20 is only 17% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-03",
+          "roInvoices": 142,
+          "roRevenue": 460594.7,
+          "repairOrders": 38,
+          "operationCount": 20,
+          "reasons": [
+            "Repair Orders 38 are only 27% of billed invoices",
+            "Repair Orders cover only 9 dates",
+            "Operation Wise count 20 is only 14% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-04",
+          "roInvoices": 118,
+          "roRevenue": 411078.6,
+          "repairOrders": 21,
+          "operationCount": 16,
+          "reasons": [
+            "Repair Orders 21 are only 18% of billed invoices",
+            "Repair Orders cover only 6 dates",
+            "Operation Wise count 16 is only 14% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-05",
+          "roInvoices": 127,
+          "roRevenue": 567547.94,
+          "repairOrders": 30,
+          "operationCount": 39,
+          "reasons": [
+            "Repair Orders 30 are only 24% of billed invoices",
+            "Repair Orders cover only 8 dates"
+          ]
+        },
+        {
+          "month": "2022-06",
+          "roInvoices": 135,
+          "roRevenue": 444935.04,
+          "repairOrders": 44,
+          "operationCount": 9,
+          "reasons": [
+            "Repair Orders 44 are only 33% of billed invoices",
+            "Repair Orders cover only 10 dates",
+            "Operation Wise count 9 is only 7% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-07",
+          "roInvoices": 138,
+          "roRevenue": 449408.85,
+          "repairOrders": 42,
+          "operationCount": 23,
+          "reasons": [
+            "Repair Orders 42 are only 30% of billed invoices",
+            "Repair Orders cover only 10 dates",
+            "Operation Wise count 23 is only 17% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-08",
+          "roInvoices": 156,
+          "roRevenue": 510374.07,
+          "repairOrders": 98,
+          "operationCount": 27,
+          "reasons": [
+            "Operation Wise count 27 is only 17% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-09",
+          "roInvoices": 151,
+          "roRevenue": 506017.59,
+          "repairOrders": 154,
+          "operationCount": 31,
+          "reasons": [
+            "Operation Wise count 31 is only 21% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-11",
+          "roInvoices": 151,
+          "roRevenue": 612535.25,
+          "repairOrders": 4,
+          "operationCount": 175,
+          "reasons": [
+            "Repair Orders 4 are only 3% of billed invoices",
+            "Repair Orders cover only 4 dates"
+          ]
+        },
+        {
+          "month": "2022-12",
+          "roInvoices": 160,
+          "roRevenue": 479232.03,
+          "repairOrders": 161,
+          "operationCount": 8,
+          "reasons": [
+            "Operation Wise count 8 is only 5% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-01",
+          "roInvoices": 133,
+          "roRevenue": 392317.57,
+          "repairOrders": 85,
+          "operationCount": 24,
+          "reasons": [
+            "Operation Wise count 24 is only 18% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-02",
+          "roInvoices": 177,
+          "roRevenue": 1391551.75,
+          "repairOrders": 54,
+          "operationCount": 58,
+          "reasons": [
+            "Repair Orders 54 are only 31% of billed invoices",
+            "Repair Orders cover only 13 dates"
+          ]
+        },
+        {
+          "month": "2023-03",
+          "roInvoices": 179,
+          "roRevenue": 1539038.57,
+          "repairOrders": 78,
+          "operationCount": 70,
+          "reasons": [
+            "Repair Orders 78 are only 44% of billed invoices",
+            "Repair Orders cover only 11 dates"
+          ]
+        },
+        {
+          "month": "2023-05",
+          "roInvoices": 191,
+          "roRevenue": 1590760.98,
+          "repairOrders": 34,
+          "operationCount": 66,
+          "reasons": [
+            "Repair Orders 34 are only 18% of billed invoices",
+            "Repair Orders cover only 5 dates"
+          ]
+        },
+        {
+          "month": "2023-06",
+          "roInvoices": 195,
+          "roRevenue": 1312102.01,
+          "repairOrders": 72,
+          "operationCount": 84,
+          "reasons": [
+            "Repair Orders 72 are only 37% of billed invoices",
+            "Repair Orders cover only 14 dates"
+          ]
+        },
+        {
+          "month": "2023-07",
+          "roInvoices": 245,
+          "roRevenue": 1402516.11,
+          "repairOrders": 149,
+          "operationCount": 61,
+          "reasons": [
+            "Operation Wise count 61 is only 25% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-09",
+          "roInvoices": 226,
+          "roRevenue": 1621635.71,
+          "repairOrders": 84,
+          "operationCount": 64,
+          "reasons": [
+            "Repair Orders 84 are only 37% of billed invoices",
+            "Repair Orders cover only 10 dates"
+          ]
+        },
+        {
+          "month": "2024-01",
+          "roInvoices": 24,
+          "roRevenue": 77135.71,
+          "repairOrders": 73,
+          "operationCount": 56,
+          "reasons": [
+            "RO Billing invoices 24 are below 25% of dealer median 200",
+            "RO Billing revenue ₹77136 is below 20% of dealer median ₹1564900"
+          ]
+        },
+        {
+          "month": "2024-02",
+          "roInvoices": 31,
+          "roRevenue": 42750.83,
+          "repairOrders": 155,
+          "operationCount": 91,
+          "reasons": [
+            "RO Billing invoices 31 are below 25% of dealer median 200",
+            "RO Billing revenue ₹42751 is below 20% of dealer median ₹1564900",
+            "Repair Orders cover only 14 dates"
+          ]
+        },
+        {
+          "month": "2024-08",
+          "roInvoices": 304,
+          "roRevenue": 1988501.07,
+          "repairOrders": 294,
+          "operationCount": 59,
+          "reasons": [
+            "Operation Wise count 59 is only 19% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-10",
+          "roInvoices": 303,
+          "roRevenue": 2298897.77,
+          "repairOrders": 306,
+          "operationCount": 65,
+          "reasons": [
+            "Operation Wise count 65 is only 21% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-11",
+          "roInvoices": 291,
+          "roRevenue": 2183431.1,
+          "repairOrders": 293,
+          "operationCount": 70,
+          "reasons": [
+            "Operation Wise count 70 is only 24% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-05",
+          "roInvoices": 262,
+          "roRevenue": 2972140.42,
+          "repairOrders": 255,
+          "operationCount": 178.4,
+          "reasons": [
+            "2 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2025-06",
+          "roInvoices": 291,
+          "roRevenue": 2605436.67,
+          "repairOrders": 285,
+          "operationCount": 296.5,
+          "reasons": [
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2025-08",
+          "roInvoices": 314,
+          "roRevenue": 2327379.45,
+          "repairOrders": 316,
+          "operationCount": 76,
+          "reasons": [
+            "Operation Wise count 76 is only 24% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-11",
+          "roInvoices": 343,
+          "roRevenue": 2497544.51,
+          "repairOrders": 353,
+          "operationCount": 143.6,
+          "reasons": [
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2026-05",
+          "roInvoices": 288,
+          "roRevenue": 2599025.48,
+          "repairOrders": 50,
+          "operationCount": 573,
+          "reasons": [
+            "Repair Orders 50 are only 17% of billed invoices",
+            "Repair Orders cover only 6 dates",
+            "2 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2026-06",
+          "roInvoices": 173,
+          "roRevenue": 1137861.64,
+          "repairOrders": 15,
+          "operationCount": 1721.65,
+          "reasons": [
+            "7 Operation Wise rows have fractional counts"
+          ]
+        }
+      ]
+    },
+    "N6828": {
+      "roCoverage": "2021-02 to 2026-06",
+      "roMonthCount": 65,
+      "medianInvoices": 95,
+      "medianRevenue": 292741,
+      "repairMissingRanges": [],
+      "operationMissingRanges": [],
+      "flaggedMonths": [
+        {
+          "month": "2021-02",
+          "roInvoices": 18,
+          "roRevenue": 8426,
+          "repairOrders": 20,
+          "operationCount": 1,
+          "reasons": [
+            "RO Billing covers only 3 dates",
+            "RO Billing invoices 18 are below 25% of dealer median 95",
+            "RO Billing revenue ₹8426 is below 20% of dealer median ₹292741",
+            "Repair Orders cover only 4 dates",
+            "Operation Wise count 1 is only 6% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-05",
+          "roInvoices": 8,
+          "roRevenue": 17881.78,
+          "repairOrders": 8,
+          "operationCount": 4,
+          "reasons": [
+            "RO Billing covers only 3 dates",
+            "RO Billing invoices 8 are below 25% of dealer median 95",
+            "RO Billing revenue ₹17882 is below 20% of dealer median ₹292741",
+            "Repair Orders cover only 3 dates"
+          ]
+        },
+        {
+          "month": "2021-06",
+          "roInvoices": 48,
+          "roRevenue": 171499.45,
+          "repairOrders": 49,
+          "operationCount": 299.5,
+          "reasons": [
+            "3 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2021-08",
+          "roInvoices": 56,
+          "roRevenue": 159748.07,
+          "repairOrders": 50,
+          "operationCount": 6,
+          "reasons": [
+            "Operation Wise count 6 is only 11% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-09",
+          "roInvoices": 60,
+          "roRevenue": 146667.21,
+          "repairOrders": 50,
+          "operationCount": 11,
+          "reasons": [
+            "Operation Wise count 11 is only 18% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-10",
+          "roInvoices": 57,
+          "roRevenue": 142173.86,
+          "repairOrders": 50,
+          "operationCount": 13,
+          "reasons": [
+            "Operation Wise count 13 is only 23% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-11",
+          "roInvoices": 63,
+          "roRevenue": 181016.66,
+          "repairOrders": 50,
+          "operationCount": 9,
+          "reasons": [
+            "Operation Wise count 9 is only 14% of billed invoices"
+          ]
+        },
+        {
+          "month": "2021-12",
+          "roInvoices": 65,
+          "roRevenue": 181384.59,
+          "repairOrders": 50,
+          "operationCount": 4,
+          "reasons": [
+            "Operation Wise count 4 is only 6% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-01",
+          "roInvoices": 59,
+          "roRevenue": 179925.71,
+          "repairOrders": 50,
+          "operationCount": 5,
+          "reasons": [
+            "Operation Wise count 5 is only 8% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-02",
+          "roInvoices": 61,
+          "roRevenue": 191754.79,
+          "repairOrders": 50,
+          "operationCount": 7,
+          "reasons": [
+            "Operation Wise count 7 is only 11% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-04",
+          "roInvoices": 62,
+          "roRevenue": 190213.58,
+          "repairOrders": 50,
+          "operationCount": 2,
+          "reasons": [
+            "Operation Wise count 2 is only 3% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-05",
+          "roInvoices": 66,
+          "roRevenue": 191447.56,
+          "repairOrders": 50,
+          "operationCount": 12.5,
+          "reasons": [
+            "Operation Wise count 12.5 is only 19% of billed invoices",
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2022-06",
+          "roInvoices": 81,
+          "roRevenue": 229895,
+          "repairOrders": 50,
+          "operationCount": 10,
+          "reasons": [
+            "Operation Wise count 10 is only 12% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-07",
+          "roInvoices": 72,
+          "roRevenue": 193077.76,
+          "repairOrders": 50,
+          "operationCount": 7,
+          "reasons": [
+            "Operation Wise count 7 is only 10% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-08",
+          "roInvoices": 96,
+          "roRevenue": 236345.95,
+          "repairOrders": 50,
+          "operationCount": 8,
+          "reasons": [
+            "Repair Orders cover only 14 dates",
+            "Operation Wise count 8 is only 8% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-10",
+          "roInvoices": 71,
+          "roRevenue": 215903.05,
+          "repairOrders": 50,
+          "operationCount": 19.6,
+          "reasons": [
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2022-11",
+          "roInvoices": 65,
+          "roRevenue": 256641.04,
+          "repairOrders": 50,
+          "operationCount": 14,
+          "reasons": [
+            "Operation Wise count 14 is only 22% of billed invoices"
+          ]
+        },
+        {
+          "month": "2022-12",
+          "roInvoices": 95,
+          "roRevenue": 251218.55,
+          "repairOrders": 50,
+          "operationCount": 19,
+          "reasons": [
+            "Repair Orders cover only 13 dates",
+            "Operation Wise count 19 is only 20% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-01",
+          "roInvoices": 74,
+          "roRevenue": 227613.01,
+          "repairOrders": 50,
+          "operationCount": 12,
+          "reasons": [
+            "Operation Wise count 12 is only 16% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-02",
+          "roInvoices": 86,
+          "roRevenue": 227824.42,
+          "repairOrders": 50,
+          "operationCount": 3,
+          "reasons": [
+            "Operation Wise count 3 is only 3% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-04",
+          "roInvoices": 77,
+          "roRevenue": 274559.93,
+          "repairOrders": 50,
+          "operationCount": 9,
+          "reasons": [
+            "Operation Wise count 9 is only 12% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-05",
+          "roInvoices": 87,
+          "roRevenue": 244015,
+          "repairOrders": 50,
+          "operationCount": 10,
+          "reasons": [
+            "Repair Orders cover only 14 dates",
+            "Operation Wise count 10 is only 11% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-06",
+          "roInvoices": 83,
+          "roRevenue": 250723.41,
+          "repairOrders": 50,
+          "operationCount": 13,
+          "reasons": [
+            "Operation Wise count 13 is only 16% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-07",
+          "roInvoices": 135,
+          "roRevenue": 372214.37,
+          "repairOrders": 50,
+          "operationCount": 21,
+          "reasons": [
+            "Repair Orders 50 are only 37% of billed invoices",
+            "Repair Orders cover only 12 dates",
+            "Operation Wise count 21 is only 16% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-08",
+          "roInvoices": 106,
+          "roRevenue": 302643.71,
+          "repairOrders": 50,
+          "operationCount": 20,
+          "reasons": [
+            "Repair Orders 50 are only 47% of billed invoices",
+            "Repair Orders cover only 13 dates",
+            "Operation Wise count 20 is only 19% of billed invoices"
+          ]
+        },
+        {
+          "month": "2023-09",
+          "roInvoices": 108,
+          "roRevenue": 310373.17,
+          "repairOrders": 50,
+          "operationCount": 32,
+          "reasons": [
+            "Repair Orders 50 are only 46% of billed invoices",
+            "Repair Orders cover only 13 dates"
+          ]
+        },
+        {
+          "month": "2023-10",
+          "roInvoices": 92,
+          "roRevenue": 238803.62,
+          "repairOrders": 50,
+          "operationCount": 32,
+          "reasons": [
+            "Repair Orders cover only 13 dates"
+          ]
+        },
+        {
+          "month": "2023-11",
+          "roInvoices": 96,
+          "roRevenue": 267785.35,
+          "repairOrders": 50,
+          "operationCount": 59,
+          "reasons": [
+            "Repair Orders cover only 13 dates"
+          ]
+        },
+        {
+          "month": "2023-12",
+          "roInvoices": 93,
+          "roRevenue": 343944.88,
+          "repairOrders": 50,
+          "operationCount": 15,
+          "reasons": [
+            "Repair Orders cover only 13 dates",
+            "Operation Wise count 15 is only 16% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-01",
+          "roInvoices": 116,
+          "roRevenue": 358579.68,
+          "repairOrders": 50,
+          "operationCount": 36,
+          "reasons": [
+            "Repair Orders 50 are only 43% of billed invoices",
+            "Repair Orders cover only 12 dates"
+          ]
+        },
+        {
+          "month": "2024-02",
+          "roInvoices": 108,
+          "roRevenue": 331064.59,
+          "repairOrders": 50,
+          "operationCount": 27,
+          "reasons": [
+            "Repair Orders 50 are only 46% of billed invoices",
+            "Repair Orders cover only 14 dates"
+          ]
+        },
+        {
+          "month": "2024-03",
+          "roInvoices": 98,
+          "roRevenue": 286250.48,
+          "repairOrders": 50,
+          "operationCount": 19,
+          "reasons": [
+            "Repair Orders cover only 12 dates",
+            "Operation Wise count 19 is only 19% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-04",
+          "roInvoices": 106,
+          "roRevenue": 329850.66,
+          "repairOrders": 50,
+          "operationCount": 21,
+          "reasons": [
+            "Repair Orders 50 are only 47% of billed invoices",
+            "Operation Wise count 21 is only 20% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-05",
+          "roInvoices": 129,
+          "roRevenue": 353202.9,
+          "repairOrders": 54,
+          "operationCount": 11,
+          "reasons": [
+            "Repair Orders 54 are only 42% of billed invoices",
+            "Repair Orders cover only 13 dates",
+            "Operation Wise count 11 is only 9% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-06",
+          "roInvoices": 119,
+          "roRevenue": 355942.42,
+          "repairOrders": 50,
+          "operationCount": 8,
+          "reasons": [
+            "Repair Orders 50 are only 42% of billed invoices",
+            "Repair Orders cover only 10 dates",
+            "Operation Wise count 8 is only 7% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-07",
+          "roInvoices": 120,
+          "roRevenue": 390641.05,
+          "repairOrders": 50,
+          "operationCount": 35,
+          "reasons": [
+            "Repair Orders 50 are only 42% of billed invoices",
+            "Repair Orders cover only 12 dates"
+          ]
+        },
+        {
+          "month": "2024-08",
+          "roInvoices": 115,
+          "roRevenue": 292830.89,
+          "repairOrders": 53,
+          "operationCount": 33,
+          "reasons": [
+            "Repair Orders 53 are only 46% of billed invoices",
+            "Repair Orders cover only 11 dates"
+          ]
+        },
+        {
+          "month": "2024-09",
+          "roInvoices": 95,
+          "roRevenue": 271450.1,
+          "repairOrders": 50,
+          "operationCount": 13,
+          "reasons": [
+            "Repair Orders cover only 14 dates",
+            "Operation Wise count 13 is only 14% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-10",
+          "roInvoices": 109,
+          "roRevenue": 399894.69,
+          "repairOrders": 50,
+          "operationCount": 50,
+          "reasons": [
+            "Repair Orders 50 are only 46% of billed invoices",
+            "Repair Orders cover only 14 dates"
+          ]
+        },
+        {
+          "month": "2024-11",
+          "roInvoices": 96,
+          "roRevenue": 292650.59,
+          "repairOrders": 50,
+          "operationCount": 12,
+          "reasons": [
+            "Repair Orders cover only 11 dates",
+            "Operation Wise count 12 is only 13% of billed invoices"
+          ]
+        },
+        {
+          "month": "2024-12",
+          "roInvoices": 100,
+          "roRevenue": 246203.85,
+          "repairOrders": 54,
+          "operationCount": 16,
+          "reasons": [
+            "Operation Wise count 16 is only 16% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-01",
+          "roInvoices": 106,
+          "roRevenue": 365648.13,
+          "repairOrders": 51,
+          "operationCount": 33,
+          "reasons": [
+            "Repair Orders 51 are only 48% of billed invoices",
+            "Repair Orders cover only 14 dates"
+          ]
+        },
+        {
+          "month": "2025-02",
+          "roInvoices": 102,
+          "roRevenue": 297422.42,
+          "repairOrders": 50,
+          "operationCount": 30,
+          "reasons": [
+            "Repair Orders 50 are only 49% of billed invoices",
+            "Repair Orders cover only 13 dates"
+          ]
+        },
+        {
+          "month": "2025-03",
+          "roInvoices": 113,
+          "roRevenue": 332402.93,
+          "repairOrders": 53,
+          "operationCount": 63.6,
+          "reasons": [
+            "Repair Orders 53 are only 47% of billed invoices",
+            "Repair Orders cover only 13 dates",
+            "2 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2025-04",
+          "roInvoices": 99,
+          "roRevenue": 370566.85,
+          "repairOrders": 50,
+          "operationCount": 12,
+          "reasons": [
+            "Operation Wise count 12 is only 12% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-05",
+          "roInvoices": 92,
+          "roRevenue": 327214.65,
+          "repairOrders": 54,
+          "operationCount": 6,
+          "reasons": [
+            "Repair Orders cover only 14 dates",
+            "Operation Wise count 6 is only 7% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-06",
+          "roInvoices": 123,
+          "roRevenue": 379739.62,
+          "repairOrders": 50,
+          "operationCount": 213,
+          "reasons": [
+            "Repair Orders 50 are only 41% of billed invoices",
+            "Repair Orders cover only 12 dates"
+          ]
+        },
+        {
+          "month": "2025-07",
+          "roInvoices": 127,
+          "roRevenue": 361395.65,
+          "repairOrders": 59,
+          "operationCount": 15,
+          "reasons": [
+            "Repair Orders 59 are only 46% of billed invoices",
+            "Repair Orders cover only 14 dates",
+            "Operation Wise count 15 is only 12% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-08",
+          "roInvoices": 89,
+          "roRevenue": 323847.47,
+          "repairOrders": 50,
+          "operationCount": 14,
+          "reasons": [
+            "Repair Orders cover only 13 dates",
+            "Operation Wise count 14 is only 16% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-09",
+          "roInvoices": 95,
+          "roRevenue": 302502,
+          "repairOrders": 50,
+          "operationCount": 21,
+          "reasons": [
+            "Repair Orders cover only 13 dates",
+            "Operation Wise count 21 is only 22% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-10",
+          "roInvoices": 102,
+          "roRevenue": 331322.58,
+          "repairOrders": 54,
+          "operationCount": 32.7,
+          "reasons": [
+            "Repair Orders cover only 12 dates",
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2025-11",
+          "roInvoices": 97,
+          "roRevenue": 353254.32,
+          "repairOrders": 50,
+          "operationCount": 11,
+          "reasons": [
+            "Repair Orders cover only 14 dates",
+            "Operation Wise count 11 is only 11% of billed invoices"
+          ]
+        },
+        {
+          "month": "2025-12",
+          "roInvoices": 127,
+          "roRevenue": 382339.28,
+          "repairOrders": 54,
+          "operationCount": 31,
+          "reasons": [
+            "Repair Orders 54 are only 43% of billed invoices",
+            "Repair Orders cover only 13 dates",
+            "Operation Wise count 31 is only 24% of billed invoices"
+          ]
+        },
+        {
+          "month": "2026-01",
+          "roInvoices": 87,
+          "roRevenue": 352597.61,
+          "repairOrders": 52,
+          "operationCount": 27.5,
+          "reasons": [
+            "1 Operation Wise rows have fractional counts"
+          ]
+        },
+        {
+          "month": "2026-02",
+          "roInvoices": 88,
+          "roRevenue": 325353.53,
+          "repairOrders": 50,
+          "operationCount": 75,
+          "reasons": [
+            "Repair Orders cover only 14 dates"
+          ]
+        },
+        {
+          "month": "2026-03",
+          "roInvoices": 130,
+          "roRevenue": 365310.51,
+          "repairOrders": 2,
+          "operationCount": 50,
+          "reasons": [
+            "Repair Orders 2 are only 2% of billed invoices",
+            "Repair Orders cover only 1 dates"
+          ]
+        },
+        {
+          "month": "2026-04",
+          "roInvoices": 130,
+          "roRevenue": 408417.6,
+          "repairOrders": 50,
+          "operationCount": 112,
+          "reasons": [
+            "Repair Orders 50 are only 38% of billed invoices",
+            "Repair Orders cover only 12 dates"
+          ]
+        },
+        {
+          "month": "2026-06",
+          "roInvoices": 63,
+          "roRevenue": 270544.3,
+          "repairOrders": 89,
+          "operationCount": 774,
+          "reasons": [
+            "4 Operation Wise rows have fractional counts"
+          ]
+        }
+      ]
+    }
+  },
+  "advisorLubricants": {
+    "issue": "Table has no date/month/report-period column; historical periods cannot be isolated.",
+    "dealerTotals": [
+      {
+        "dealer": "N5211",
+        "raw_rows": 30422,
+        "distinct_hashes": 30422,
+        "total_count": 677636.65,
+        "total_amount": 597153061.69,
+        "first_upload": "2026-06-05 10:42:24.246+00",
+        "latest_upload": "2026-06-17 05:03:07.792+00"
+      },
+      {
+        "dealer": "N6250",
+        "raw_rows": 6772,
+        "distinct_hashes": 6772,
+        "total_count": 79529,
+        "total_amount": 58831792.41,
+        "first_upload": "2026-06-05 07:50:21.397+00",
+        "latest_upload": "2026-06-17 05:10:31.075+00"
+      },
+      {
+        "dealer": "N6828",
+        "raw_rows": 3706,
+        "distinct_hashes": 3706,
+        "total_count": 51017,
+        "total_amount": 21917026.3,
+        "first_upload": "2026-06-07 15:29:41.34+00",
+        "latest_upload": "2026-06-17 05:18:10.4+00"
+      },
+      {
+        "dealer": null,
+        "raw_rows": 50,
+        "distinct_hashes": 50,
+        "total_count": 171587.63,
+        "total_amount": 184352975.91,
+        "first_upload": "2026-06-09 10:11:03.038+00",
+        "latest_upload": "2026-06-09 10:11:03.038+00"
+      }
+    ]
+  }
+}

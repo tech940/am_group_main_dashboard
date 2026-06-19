@@ -1,0 +1,233 @@
+[n6250-matches] using database endpoint aws-1-ap-northeast-2.pooler.supabase.com:5432
+[
+  {
+    "id": "366220",
+    "report_type": "operation",
+    "code": "A10AATBC000HR",
+    "description": "Throttle Body Cleaner - Petrol Horizon (HR) (Optional)",
+    "total_count": "40",
+    "amount": "19960",
+    "row_hash": "1edfe40b160d302548342a9f76bc06d07937bdc4f51be3f06cb5c15eaad0a611",
+    "category": "vas"
+  },
+  {
+    "id": "366226",
+    "report_type": "operation",
+    "code": "A10AAECMVASHR",
+    "description": "Engine Cleaning/Dressing Medium Horizon (HR) (Optional)",
+    "total_count": "32",
+    "amount": "15968",
+    "row_hash": "a7fcea6d9f90bcd761ddee9ea1b8966f6ace8bfcf630bfbd25a9fcb36bbd6000",
+    "category": "vas"
+  },
+  {
+    "id": "366227",
+    "report_type": "operation",
+    "code": "A10AAATLVASHR",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "total_count": "15",
+    "amount": "15507",
+    "row_hash": "31c09aa565dd9c9ca0758fed2c6c82cdf9615f8e0ac2a400eaf910754e78a507",
+    "category": "vas"
+  },
+  {
+    "id": "366228",
+    "report_type": "operation",
+    "code": "A10AAAWPVASHR",
+    "description": "Alloy Wheel Polish Horizon (HR) (Optional)",
+    "total_count": "25",
+    "amount": "14975",
+    "row_hash": "6c8b2283cfcbb23511c4e836608d8b41b2e323d20e1f98a26a6ac88b9ad570ca",
+    "category": "vas"
+  },
+  {
+    "id": "366230",
+    "report_type": "operation",
+    "code": "A10AAATMVASHR",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "total_count": "12",
+    "amount": "14120",
+    "row_hash": "b7ee5536a1424c78a45264d7a6a3763e794489f02c87c09e52fe903113f9d628",
+    "category": "vas"
+  },
+  {
+    "id": "366244",
+    "report_type": "operation",
+    "code": "A10AASPMVASHR",
+    "description": "Lubrication (Hinge/Joints/Battery) Medium Horizon (HR) (Optional)",
+    "total_count": "11",
+    "amount": "5390",
+    "row_hash": "d7a937ac387e14ba03c99482422afff6873505c7d4eaaa44e237bd785203e93f",
+    "category": "vas"
+  },
+  {
+    "id": "366247",
+    "report_type": "operation",
+    "code": "A10AAACDVASHR",
+    "description": "AC Disinfectant Horizon (HR) (Optional)",
+    "total_count": "7",
+    "amount": "4893",
+    "row_hash": "e8fe5981f4e900e2f9a8b64a397fcaa417a807cc574fa53aafc7ca4e1a4a2909",
+    "category": "vas"
+  },
+  {
+    "id": "366248",
+    "report_type": "operation",
+    "code": "A10AAECLVASHR",
+    "description": "Engine Cleaning/Dressing Large Horizon (HR) (Optional)",
+    "total_count": "11",
+    "amount": "4362",
+    "row_hash": "f147f76d61f196ddd618c29a669c7a31e66233db722e688b95c3a605bec9dbf3",
+    "category": "vas"
+  },
+  {
+    "id": "366253",
+    "report_type": "operation",
+    "code": "A10AAATMVASHRHW",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "total_count": "3",
+    "amount": "3297",
+    "row_hash": "aba972531c9bc95b95d495993ccb882075e570749ac496651412c50a407d5b4b",
+    "category": "vas"
+  },
+  {
+    "id": "366256",
+    "report_type": "operation",
+    "code": "A10AAECSVASHR",
+    "description": "Engine Cleaning/Dressing Small Horizon (HR) (Optional)",
+    "total_count": "6",
+    "amount": "2994",
+    "row_hash": "5ad7aee773133d41ea93bf625573ecb1c113db1aef00f043096068936e064b75",
+    "category": "vas"
+  },
+  {
+    "id": "366261",
+    "report_type": "operation",
+    "code": "A10AAEGRVASHR",
+    "description": "EGR cleaner – Diesel Horizon (HR) (Optional)",
+    "total_count": "2",
+    "amount": "1998",
+    "row_hash": "5431f0126cf74977c3f596d3f1e9b1f57024d262795acad4397c2e4f4981db15",
+    "category": "vas"
+  },
+  {
+    "id": "366275",
+    "report_type": "operation",
+    "code": "A10AAACDVASHRAA",
+    "description": "AC Disinfectant Horizon (HR) (Optional)",
+    "total_count": "2",
+    "amount": "1150",
+    "row_hash": "0d51ef355ab5c8407764572a34aaefe8565a4b5375a7a19bf70dc1f2f07b4594",
+    "category": "vas"
+  },
+  {
+    "id": "366280",
+    "report_type": "operation",
+    "code": "A10AASPSVASHR",
+    "description": "Lubrication (Hinge/Joints/Battery) Small Horizon (HR) (Optional)",
+    "total_count": "2",
+    "amount": "998",
+    "row_hash": "3a60ab96acfc7a60c96b48ae8245ee5ff88fd03990f1b14ccae0650f54f19370",
+    "category": "vas"
+  },
+  {
+    "id": "366282",
+    "report_type": "operation",
+    "code": "A10AAATMVASHRAA",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "total_count": "1",
+    "amount": "931",
+    "row_hash": "33f81278709c129e40a28bab13fb5d53ee012069c41b713296a38df95376eedb",
+    "category": "vas"
+  },
+  {
+    "id": "366284",
+    "report_type": "operation",
+    "code": "A10AASPLVASHR",
+    "description": "Lubrication (Hinge/Joints/Battery) Large Horizon (HR) (Optional)",
+    "total_count": "2",
+    "amount": "874",
+    "row_hash": "56e1d0a0b75196d7b0ec94282f17f2e4e482e1e5e777de07c9447a378ec72f6e",
+    "category": "vas"
+  },
+  {
+    "id": "366287",
+    "report_type": "operation",
+    "code": "A10AAECLVASHRAA",
+    "description": "Engine Cleaning/Dressing Large Horizon (HR) (Optional)",
+    "total_count": "2",
+    "amount": "798",
+    "row_hash": "e597cfacf6df96c56b7ff195c8e6be0c0c079b14859d03efead376406b7a19bf",
+    "category": "vas"
+  },
+  {
+    "id": "366291",
+    "report_type": "operation",
+    "code": "A10AAATLVASHRHW",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "total_count": "1",
+    "amount": "700",
+    "row_hash": "87cb59872311a9f9ca127afc4d2d5c0434162426055587392e55b824ed0356e8",
+    "category": "vas"
+  },
+  {
+    "id": "366295",
+    "report_type": "operation",
+    "code": "A10AAAWPVASHRAA",
+    "description": "Alloy Wheel Polish Horizon (HR) (Optional)",
+    "total_count": "1",
+    "amount": "499",
+    "row_hash": "de10e673b489a37f30976b3aa6411c71b0faae9fd599bb100901f219d2a90f54",
+    "category": "vas"
+  },
+  {
+    "id": "366299",
+    "report_type": "operation",
+    "code": "A10AASPMVASHRAA",
+    "description": "Lubrication (Hinge/Joints/Battery) Medium Horizon (HR) (Optional)",
+    "total_count": "1",
+    "amount": "400",
+    "row_hash": "d9e72af3bc05f18dc52fa883af51e4906aff1f74e0e1dbeeda58a92c4f74bfc4",
+    "category": "vas"
+  },
+  {
+    "id": "366216",
+    "report_type": "operation",
+    "code": "A10AAGM06WHAL",
+    "description": "Wheel alignment",
+    "total_count": "46",
+    "amount": "24688",
+    "row_hash": "018f2def02a6c90226028414714bf9988d9ee79ff2cae585fb58079448d3a778",
+    "category": "wheel_alignment"
+  },
+  {
+    "id": "366232",
+    "report_type": "operation",
+    "code": "A10AAGM07WHBL",
+    "description": "Wheel balancing- Each wheel",
+    "total_count": "96",
+    "amount": "11236",
+    "row_hash": "b302f8a25ac87833fb34ac53e5b66d31e1747ec12321b16f1c65591d25323dc2",
+    "category": "wheel_balancing"
+  },
+  {
+    "id": "366265",
+    "report_type": "operation",
+    "code": "A10AAGM07WHBLHW",
+    "description": "Wheel balancing- Each wheel",
+    "total_count": "16",
+    "amount": "1840",
+    "row_hash": "f51092dffc3b32735ed66860071647c1d8861e1820d85b9f0a9c616d94f02eb2",
+    "category": "wheel_balancing"
+  },
+  {
+    "id": "366281",
+    "report_type": "operation",
+    "code": "A10AAGM07WHBLAA",
+    "description": "Wheel balancing- Each wheel",
+    "total_count": "8",
+    "amount": "968",
+    "row_hash": "dffada26abf94aa40346d470686f53f1aab9b071fc04b2bde33983d4c1c9559f",
+    "category": "wheel_balancing"
+  }
+]

@@ -667,7 +667,7 @@ function WorkshopTrendValueLabel({
 }
 
 function canAccessExecutiveDashboard(role?: string | null) {
-  return ['admin', 'super_admin', 'ceo', 'md'].includes(String(role || '').trim().toLowerCase())
+  return ['super_admin', 'ceo', 'md', 'ea'].includes(String(role || '').trim().toLowerCase())
 }
 
 function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[], role?: string | null) {

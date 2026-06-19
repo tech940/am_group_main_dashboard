@@ -7,6 +7,7 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import { fetchHyundaiMonthlyOperationMetrics } from '@/lib/hyundai/business-excellence-operations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -96,7 +97,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:overview:v24:${chunk}:${createHash('sha1')
+  return `hyundai:business-excellence:overview:v25:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -684,9 +685,7 @@ function emptyWorkshopSnapshot() {
 
 async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   void startDate
-  void endDate
-  void dealerCode
-  return 0
+  return (await fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode)).vasAmount
 }
 
 async function buildOverviewPayload(

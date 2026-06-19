@@ -8,6 +8,7 @@ import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumWorkshopVasAmount, fetchPlatinumWorkshopVasAmounts } from '@/lib/platinum/business-excellence-vas'
+import { PLATINUM_VAS_IDENTIFIER_VERSION } from '@/lib/platinum/vas-identifiers'
 import {
   fetchPlatinumComplaintsCoverage,
   fetchPlatinumOpenRoCoverage,
@@ -123,7 +124,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:overview:v42:${chunk}:${createHash('sha1')
+  return `platinum:business-excellence:overview:v46:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -676,8 +677,14 @@ async function fetchWorkshopSnapshot(
       periodStart: null,
       periodEnd: null,
       sourceRows: 0,
+      matchedRows: 0,
+      unknownCodeRows: 0,
+      identifierVersion: PLATINUM_VAS_IDENTIFIER_VERSION,
       dedupeMode: null,
       latestSnapshotUploadedAt: null,
+      parityStatus: 'not_checked' as const,
+      summaryAmount: null,
+      summarySourceRows: null,
     })
     : options?.vasPeriod
       ? Promise.resolve(options.vasPeriod)
@@ -692,8 +699,14 @@ async function fetchWorkshopSnapshot(
       periodStart: null,
       periodEnd: null,
       sourceRows: 0,
+      matchedRows: 0,
+      unknownCodeRows: 0,
+      identifierVersion: PLATINUM_VAS_IDENTIFIER_VERSION,
       dedupeMode: null,
       latestSnapshotUploadedAt: null,
+      parityStatus: 'not_checked' as const,
+      summaryAmount: null,
+      summarySourceRows: null,
     }
   })
 
@@ -729,8 +742,14 @@ async function fetchWorkshopSnapshot(
     vasPeriodStart: vasPeriod.periodStart,
     vasPeriodEnd: vasPeriod.periodEnd,
     vasSourceRows: vasPeriod.sourceRows,
+    vasMatchedRows: vasPeriod.matchedRows,
+    vasUnknownCodeRows: vasPeriod.unknownCodeRows,
+    vasIdentifierVersion: vasPeriod.identifierVersion,
     vasDedupeMode: vasPeriod.dedupeMode,
     vasLatestSnapshotUploadedAt: vasPeriod.latestSnapshotUploadedAt || null,
+    vasParityStatus: vasPeriod.parityStatus || 'not_checked',
+    vasSummaryAmount: vasPeriod.summaryAmount ?? null,
+    vasSummarySourceRows: vasPeriod.summarySourceRows ?? null,
     labourPerRo: perUnit(labourAmount, totalJc),
     minDate: sourceRows.reduce<string | null>((current, row) => {
       const value = dateValue(row.min_date)
@@ -763,8 +782,14 @@ function applyVasPeriodToWorkshopSnapshot(
     vasPeriodStart: vasPeriod.periodStart,
     vasPeriodEnd: vasPeriod.periodEnd,
     vasSourceRows: vasPeriod.sourceRows,
+    vasMatchedRows: vasPeriod.matchedRows,
+    vasUnknownCodeRows: vasPeriod.unknownCodeRows,
+    vasIdentifierVersion: vasPeriod.identifierVersion,
     vasDedupeMode: vasPeriod.dedupeMode,
     vasLatestSnapshotUploadedAt: vasPeriod.latestSnapshotUploadedAt || null,
+    vasParityStatus: vasPeriod.parityStatus || 'not_checked',
+    vasSummaryAmount: vasPeriod.summaryAmount ?? null,
+    vasSummarySourceRows: vasPeriod.summarySourceRows ?? null,
   }
 }
 
@@ -794,6 +819,9 @@ function emptyVasAmountValue(reason: string) {
     periodStart: null,
     periodEnd: null,
     sourceRows: 0,
+    matchedRows: 0,
+    unknownCodeRows: 0,
+    identifierVersion: PLATINUM_VAS_IDENTIFIER_VERSION,
     dedupeMode: null,
     latestSnapshotUploadedAt: null,
   }
@@ -820,8 +848,14 @@ function emptyWorkshopSnapshotValue(reason = 'Workshop VAS source table is unava
     vasPeriodStart: null as string | null,
     vasPeriodEnd: null as string | null,
     vasSourceRows: 0,
+    vasMatchedRows: 0,
+    vasUnknownCodeRows: 0,
+    vasIdentifierVersion: PLATINUM_VAS_IDENTIFIER_VERSION,
     vasDedupeMode: null as string | null,
     vasLatestSnapshotUploadedAt: null as string | null,
+    vasParityStatus: 'not_checked' as const,
+    vasSummaryAmount: null as number | null,
+    vasSummarySourceRows: null as number | null,
     labourPerRo: 0,
     minDate: null as string | null,
     maxDate: null as string | null,
@@ -1639,10 +1673,16 @@ async function buildOverviewPayload(
           sourceTable: workshopSnapshot.vasSourceTable,
           periodStart: workshopSnapshot.vasPeriodStart,
           periodEnd: workshopSnapshot.vasPeriodEnd,
-        sourceRows: workshopSnapshot.vasSourceRows,
-        dedupeMode: workshopSnapshot.vasDedupeMode,
-        latestSnapshotUploadedAt: workshopSnapshot.vasLatestSnapshotUploadedAt,
-      },
+          sourceRows: workshopSnapshot.vasSourceRows,
+          matchedRows: workshopSnapshot.vasMatchedRows,
+          unknownCodeRows: workshopSnapshot.vasUnknownCodeRows,
+          identifierVersion: workshopSnapshot.vasIdentifierVersion,
+          dedupeMode: workshopSnapshot.vasDedupeMode,
+          latestSnapshotUploadedAt: workshopSnapshot.vasLatestSnapshotUploadedAt,
+          parityStatus: workshopSnapshot.vasParityStatus,
+          summaryAmount: workshopSnapshot.vasSummaryAmount,
+          summarySourceRows: workshopSnapshot.vasSummarySourceRows,
+        },
         openRo: {
           promiseDatesAvailable: false,
           amountFieldsAvailable: false,

@@ -9,6 +9,13 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumWorkshopVasAmount, fetchPlatinumWorkshopVasAmounts } from '@/lib/platinum/business-excellence-vas'
+import {
+  PLATINUM_VAS_IDENTIFIER_VERSION,
+  platinumAdvisorDepartmentSql,
+  platinumVasCodeSql,
+  platinumWheelAlignmentCodeSql,
+  platinumWheelBalancingCodeSql,
+} from '@/lib/platinum/vas-identifiers'
 import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
 import {
@@ -152,6 +159,9 @@ function emptyVasMeta(reason: string): PlatinumWorkshopVasMeta {
     periodStart: null,
     periodEnd: null,
     sourceRows: 0,
+    matchedRows: 0,
+    unknownCodeRows: 0,
+    identifierVersion: PLATINUM_VAS_IDENTIFIER_VERSION,
     dedupeMode: null,
     latestSnapshotUploadedAt: null,
   }
@@ -200,7 +210,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:workshop-performance:v41:${createHash('sha1')
+  return `platinum:business-excellence:workshop-performance:v46:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -226,7 +236,15 @@ function accidentAdvisorSqlList() {
 }
 
 function workshopCategoryExpression(columnName = 'service_advisor') {
-  return sql`CASE WHEN LOWER(TRIM(COALESCE(${sql.raw(columnName)}, ''))) IN (${accidentAdvisorSqlList()}) THEN 'Accident' ELSE 'MECH' END`
+  const department = platinumAdvisorDepartmentSql(sql.raw(columnName))
+  return sql`
+    CASE
+      WHEN ${department} = 'B/S'
+        OR LOWER(TRIM(COALESCE(${sql.raw(columnName)}, ''))) IN (${accidentAdvisorSqlList()})
+      THEN 'Accident'
+      ELSE 'MECH'
+    END
+  `
 }
 
 function advisorWhereClause(advisor: string | null, columnName = 'service_advisor') {
@@ -509,84 +527,7 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
   }))
 }
 
-async function fetchAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
-  if (!(await tableExists('am_platinum_operation_wise_analysis_advisor_report'))) return []
-
-  const columns = await tableColumns('am_platinum_operation_wise_analysis_advisor_report')
-  if (!hasColumns(columns, [
-    'service_advisor',
-    'report_month',
-    'report_type',
-    'op_part_code',
-    'op_part_desc',
-    'total_amt',
-    'source_dealer_code',
-  ])) {
-    return []
-  }
-
-  const operationCountSql = operationCountExpression(columns)
-  const result = await db.execute(sql`
-    WITH operation_rows AS (
-      SELECT DISTINCT
-        COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
-        ${workshopCategoryExpression('service_advisor')} AS workshop_category,
-        report_type,
-        op_part_code,
-        op_part_desc,
-        service_advisor,
-        source_dealer_code,
-        ${numericText(sql.raw('total_amt'))} AS amount,
-        ${operationCountSql} AS operation_count,
-        LOWER(COALESCE(op_part_code, '')) AS operation_code,
-        LOWER(CONCAT_WS(
-          ' ',
-          report_type,
-          op_part_code,
-          op_part_desc
-        )) AS description,
-        LOWER(COALESCE(op_part_desc, '')) AS vas_description
-      FROM am_platinum_operation_wise_analysis_advisor_report
-      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
-        AND report_month <= date_trunc('month', ${endDate}::date)::date
-        ${operationDealerFilter(dealerCode)}
-        ${advisorWhereClause(advisor)}
-    ),
-    classified AS (
-      SELECT
-        *,
-        (
-          operation_code ~ '(^|[^a-z])wa([^a-z]|$)'
-            OR description ~ '(wheel[[:space:]-]*alignment|alignment|align|(^|[^a-z])wa([^a-z]|$))'
-        ) AS is_wa,
-        (
-          operation_code ~ '(^|[^a-z])wb([^a-z]|$)'
-            OR description ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
-        ) AS is_wb,
-        (
-          LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
-            AND (
-              vas_description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
-                OR vas_description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
-                OR vas_description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
-                OR vas_description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
-            )
-            AND vas_description !~ '(painting[[:space:]-]*charges[[:space:]-]*s1|removal[[:space:]]*&[[:space:]]*refit[[:space:]-]*work[[:space:]-]*s1)'
-        ) AS is_vas
-      FROM operation_rows
-    )
-    SELECT
-      workshop_category AS service_type,
-      COALESCE(SUM(amount) FILTER (WHERE is_vas), 0)::float AS vas_amount,
-      COALESCE(SUM(operation_count) FILTER (WHERE is_wa), 0)::int AS wa_count,
-      COALESCE(SUM(amount) FILTER (WHERE is_wa), 0)::float AS wa_amount,
-      COALESCE(SUM(operation_count) FILTER (WHERE is_wb), 0)::int AS wb_count,
-      COALESCE(SUM(amount) FILTER (WHERE is_wb), 0)::float AS wb_amount
-    FROM classified
-    GROUP BY workshop_category
-    ORDER BY CASE WHEN workshop_category = 'MECH' THEN 1 ELSE 2 END
-  `)
-
+function addonRows(result: unknown): AddonAggregate[] {
   return resultRows(result).map((row) => ({
     serviceType: String(row.service_type || 'Unspecified'),
     vasAmount: numberValue(row.vas_amount),
@@ -597,30 +538,174 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
   }))
 }
 
-async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  return (await fetchPlatinumWorkshopVasAmount(startDate, endDate, dealerCode)).amount
+async function fetchAdvisorAddonSummary(
+  startDate: string,
+  endDate: string,
+  advisor: string | null,
+  dealerCode: DealerFilter,
+  columns: Set<string>
+): Promise<AddonAggregate[]> {
+  const operationCountSql = operationCountExpression(columns)
+  const result = await db.execute(sql`
+    WITH operation_rows AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
+        COALESCE(NULLIF(row_hash, ''), id::text) AS addon_key,
+        ${workshopCategoryExpression('service_advisor')} AS workshop_category,
+        report_type,
+        op_part_code,
+        ${numericText(sql.raw('total_amt'))} AS amount,
+        ${operationCountSql} AS operation_count
+      FROM am_platinum_operation_wise_analysis_advisor_report
+      WHERE report_month >= date_trunc('month', ${startDate}::date)::date
+        AND report_month <= date_trunc('month', ${endDate}::date)::date
+        ${operationDealerFilter(dealerCode)}
+        ${advisorWhereClause(advisor)}
+      ORDER BY
+        COALESCE(NULLIF(row_hash, ''), id::text),
+        uploaded_at DESC NULLS LAST,
+        id DESC
+    ),
+    classified AS (
+      SELECT
+        *,
+        ${platinumWheelAlignmentCodeSql(sql.raw('op_part_code'))} AS is_wa,
+        ${platinumWheelBalancingCodeSql(sql.raw('op_part_code'))} AS is_wb,
+        (
+          LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
+          AND ${platinumVasCodeSql(sql.raw('op_part_code'))}
+        ) AS is_vas
+      FROM operation_rows
+    )
+    SELECT
+      workshop_category AS service_type,
+      COALESCE(SUM(amount) FILTER (WHERE is_vas), 0)::float AS vas_amount,
+      COUNT(*) FILTER (WHERE is_wa)::int AS wa_count,
+      COALESCE(SUM(amount) FILTER (WHERE is_wa), 0)::float AS wa_amount,
+      COUNT(*) FILTER (WHERE is_wb)::int AS wb_count,
+      COALESCE(SUM(amount) FILTER (WHERE is_wb), 0)::float AS wb_amount
+    FROM classified
+    GROUP BY workshop_category
+    ORDER BY CASE WHEN workshop_category = 'MECH' THEN 1 ELSE 2 END
+  `)
+
+  return addonRows(result)
 }
 
-async function fetchCoreAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
-  if (advisor) {
-    const addonTotals = summarizeAddons(await fetchAddonSummary(startDate, endDate, advisor, dealerCode))
+async function fetchOperationAddonSummary(
+  startDate: string,
+  endDate: string,
+  advisor: string | null,
+  dealerCode: DealerFilter
+): Promise<AddonAggregate[]> {
+  const table = 'am_platinum_operation_wise_analysis_report'
+  if (!(await tableExists(table))) return []
 
-    return [{
-      serviceType: 'Others',
-      ...addonTotals,
-    }]
+  const columns = await tableColumns(table)
+  if (!hasColumns(columns, [
+    'report_period_start',
+    'report_period_end',
+    'report_type',
+    'op_part_code',
+    'total_amt',
+    'source_dealer_code',
+  ])) {
+    return []
   }
 
-  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
+  const hasAdvisor = columns.has('service_advisor')
+  if (advisor && !hasAdvisor) return []
 
-  return [{
-    serviceType: 'Others',
-    vasAmount,
-    waCount: 0,
-    waAmount: 0,
-    wbCount: 0,
-    wbAmount: 0,
-  }]
+  const operationCountSql = operationCountExpression(columns)
+  const categorySql = hasAdvisor
+    ? workshopCategoryExpression('source.service_advisor')
+    : sql`'MECH'`
+  const selectedAdvisorSql = hasAdvisor
+    ? advisorWhereClause(advisor, 'source.service_advisor')
+    : sql``
+
+  const result = await db.execute(sql`
+    WITH candidate_period AS (
+      SELECT
+        report_period_start::date AS period_start,
+        report_period_end::date AS period_end
+      FROM am_platinum_operation_wise_analysis_report
+      WHERE date_trunc('month', report_period_start)::date = date_trunc('month', ${endDate}::date)::date
+        ${operationDealerFilter(dealerCode)}
+      GROUP BY report_period_start::date, report_period_end::date
+      ORDER BY
+        report_period_end::date DESC,
+        report_period_start::date DESC
+      LIMIT 1
+    ),
+    operation_rows AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
+        COALESCE(NULLIF(source.row_hash, ''), source.id::text) AS addon_key,
+        ${categorySql} AS workshop_category,
+        source.report_type,
+        source.op_part_code,
+        ${numericText(sql.raw('source.total_amt'))} AS amount,
+        ${operationCountSql} AS operation_count
+      FROM am_platinum_operation_wise_analysis_report source
+      JOIN candidate_period period
+        ON source.report_period_start::date = period.period_start
+       AND source.report_period_end::date = period.period_end
+      WHERE 1 = 1
+        ${platinumSourceDealerFilter(dealerCode, sql.raw('source.source_dealer_code'))}
+        ${selectedAdvisorSql}
+      ORDER BY
+        COALESCE(NULLIF(source.row_hash, ''), source.id::text),
+        source.uploaded_at DESC NULLS LAST,
+        source.id DESC
+    ),
+    classified AS (
+      SELECT
+        *,
+        ${platinumWheelAlignmentCodeSql(sql.raw('op_part_code'))} AS is_wa,
+        ${platinumWheelBalancingCodeSql(sql.raw('op_part_code'))} AS is_wb,
+        (
+          LOWER(COALESCE(report_type, '')) IN ('operation', 'part')
+          AND ${platinumVasCodeSql(sql.raw('op_part_code'))}
+        ) AS is_vas
+      FROM operation_rows
+    )
+    SELECT
+      workshop_category AS service_type,
+      COALESCE(SUM(amount) FILTER (WHERE is_vas), 0)::float AS vas_amount,
+      COUNT(*) FILTER (WHERE is_wa)::int AS wa_count,
+      COALESCE(SUM(amount) FILTER (WHERE is_wa), 0)::float AS wa_amount,
+      COUNT(*) FILTER (WHERE is_wb)::int AS wb_count,
+      COALESCE(SUM(amount) FILTER (WHERE is_wb), 0)::float AS wb_amount
+    FROM classified
+    GROUP BY workshop_category
+    ORDER BY CASE WHEN workshop_category = 'MECH' THEN 1 ELSE 2 END
+  `)
+
+  return addonRows(result)
+}
+
+async function fetchAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
+  const advisorTable = 'am_platinum_operation_wise_analysis_advisor_report'
+
+  if (await tableExists(advisorTable)) {
+    const columns = await tableColumns(advisorTable)
+    if (hasColumns(columns, [
+      'service_advisor',
+      'report_month',
+      'report_type',
+      'op_part_code',
+      'total_amt',
+      'source_dealer_code',
+    ])) {
+      try {
+        const rows = await fetchAdvisorAddonSummary(startDate, endDate, advisor, dealerCode, columns)
+        if (rows.length > 0) return rows
+      } catch (error) {
+        console.warn('Platinum advisor add-on source failed; falling back to operation snapshot.', error)
+      }
+    }
+  }
+
+  return fetchOperationAddonSummary(startDate, endDate, advisor, dealerCode)
 }
 
 async function fetchDailyTrend(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null) {
@@ -893,7 +978,7 @@ async function fetchAuxiliaryKpis(startDate: string, endDate: string, dealerCode
   }
 }
 
-async function fetchSourceStatus() {
+async function fetchSourceStatus(startDate: string, endDate: string, dealerCode: DealerFilter) {
   const [hasOperation, hasAdvisorOperation, hasEw, hasRsa] = await Promise.all([
     tableExists('am_platinum_operation_wise_analysis_report'),
     tableExists('am_platinum_operation_wise_analysis_advisor_report'),
@@ -908,10 +993,12 @@ async function fetchSourceStatus() {
     ? await tableColumns('am_platinum_operation_wise_analysis_advisor_report')
     : new Set<string>()
   const operationUsable = hasOperation && hasColumns(operationColumns, [
-    'report_month',
+    'report_period_start',
+    'report_period_end',
     'report_type',
-    'op_part_desc',
+    'op_part_code',
     'total_amt',
+    'total_count',
     'source_dealer_code',
   ])
   const advisorUsable = hasAdvisorOperation && hasColumns(advisorColumns, [
@@ -923,15 +1010,42 @@ async function fetchSourceStatus() {
     'total_amt',
     'source_dealer_code',
   ])
+  const operationCoverage = operationUsable
+    ? resultRows(await db.execute(sql`
+        SELECT
+          report_period_start::date::text AS period_start,
+          report_period_end::date::text AS period_end
+        FROM am_platinum_operation_wise_analysis_report
+        WHERE date_trunc('month', report_period_start)::date = date_trunc('month', ${endDate}::date)::date
+          ${operationDealerFilter(dealerCode)}
+        GROUP BY report_period_start::date, report_period_end::date
+        ORDER BY
+          report_period_end::date DESC,
+          report_period_start::date DESC
+        LIMIT 1
+      `))[0]
+    : undefined
 
   return {
     operationAnalysis: {
       table: 'am_platinum_operation_wise_analysis_report',
       available: operationUsable,
+      periodStart: operationCoverage?.period_start ? String(operationCoverage.period_start).slice(0, 10) : null,
+      periodEnd: operationCoverage?.period_end ? String(operationCoverage.period_end).slice(0, 10) : null,
+      coverageMode: operationCoverage
+        ? (
+            String(operationCoverage.period_start).slice(0, 10) === startDate
+            && String(operationCoverage.period_end).slice(0, 10) === endDate
+              ? 'exact'
+              : 'monthly_snapshot'
+          )
+        : 'unavailable',
       unavailableReason: operationUsable
-        ? null
+        ? operationCoverage
+          ? null
+          : `No operation snapshot exists for the month containing ${endDate}.`
         : hasOperation
-          ? 'Table exists but does not expose KIA report_month/report_type period fields required for date-scoped VAS.'
+          ? 'Table exists but does not expose the period, code, amount, count, and dealer fields required for VAS/WA/WB.'
           : 'Table is unavailable.',
     },
     advisorOperationAnalysis: {
@@ -1140,7 +1254,6 @@ async function buildWorkshopPayload(
     lyServiceRows,
     lyAddonRows,
     coreServiceRows,
-    coreAddonRows,
     sourceStatus,
     vasBatch,
     dealerCoverage,
@@ -1155,8 +1268,7 @@ async function buildWorkshopPayload(
     () => optionalSource('LY service summary', fetchServiceSummary(lyStart, lyEnd, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
     () => optionalSource('LY add-on summary', fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
     () => optionalSource('core service summary', fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode), [] as ServiceAggregate[], sourceWarnings),
-    () => optionalSource('core add-on summary', fetchCoreAddonSummary(startDate, endDate, advisor, dealerCode), [] as AddonAggregate[], sourceWarnings),
-    () => optionalSource('source status', fetchSourceStatus(), null, sourceWarnings),
+    () => optionalSource('source status', fetchSourceStatus(startDate, endDate, dealerCode), null, sourceWarnings),
     () => optionalSource(
       'workshop VAS amounts',
       fetchPlatinumWorkshopVasAmounts(startDate, endDate, lyStart, lyEnd, dealerCode),
@@ -1191,12 +1303,31 @@ async function buildWorkshopPayload(
     ServiceAggregate[],
     AddonAggregate[],
     ServiceAggregate[],
-    AddonAggregate[],
     Awaited<ReturnType<typeof fetchSourceStatus>>,
     Awaited<ReturnType<typeof fetchPlatinumWorkshopVasAmounts>>,
     Awaited<ReturnType<typeof fetchPlatinumRoBillingCoverage>>,
     Awaited<ReturnType<typeof fetchPlatinumRoBillingAudit>>,
   ]
+
+  if (
+    sourceStatus?.operationAnalysis.coverageMode === 'monthly_snapshot'
+    && sourceStatus.operationAnalysis.periodStart
+    && sourceStatus.operationAnalysis.periodEnd
+  ) {
+    sourceWarnings.push({
+      source: 'operation add-ons',
+      message: `Using the latest monthly Operation Wise snapshot for ${endDate.slice(0, 7)}.`,
+    })
+  }
+
+  if (!sourceStatus?.advisorOperationAnalysis.available && sourceStatus?.operationAnalysis.available) {
+    sourceWarnings.push({
+      source: 'advisor add-ons',
+      message: advisor
+        ? 'Advisor-specific VAS/WA/WB is unavailable because the operation snapshot has no advisor attribution.'
+        : 'Advisor add-on source is unavailable; VAS/WA/WB is rolled up from the operation snapshot under MECH.',
+    })
+  }
 
   const workshopVasMeta = vasBatch.cy
   const lyWorkshopVasMeta = vasBatch.ly
@@ -1222,7 +1353,12 @@ async function buildWorkshopPayload(
     ewCount: lyAuxiliaryCounts.ewCount,
     rsaCount: lyAuxiliaryCounts.rsaCount,
   }, roBillingAudit.ly.dedupedJc)
-  const effectiveCoreAddonRows = advisor ? coreAddonRows : []
+  const effectiveCoreAddonRows = advisor
+    ? [{
+        serviceType: 'Others',
+        ...summarizeAddons(addonRows),
+      }]
+    : []
   const coreAddonTotals = summarizeAddons(effectiveCoreAddonRows)
   if (!advisor && workshopVasMeta.available) coreAddonTotals.vasAmount = workshopVasMeta.amount
   const coreRows = buildRows(coreServiceRows, effectiveCoreAddonRows)
@@ -1331,6 +1467,9 @@ async function buildWorkshopPayload(
         periodStart: workshopVasMeta.periodStart,
         periodEnd: workshopVasMeta.periodEnd,
         sourceRows: workshopVasMeta.sourceRows,
+        matchedRows: workshopVasMeta.matchedRows,
+        unknownCodeRows: workshopVasMeta.unknownCodeRows,
+        identifierVersion: workshopVasMeta.identifierVersion,
         dedupeMode: workshopVasMeta.dedupeMode,
         latestSnapshotUploadedAt: workshopVasMeta.latestSnapshotUploadedAt,
         lyAvailable: hasComparableVasLy,

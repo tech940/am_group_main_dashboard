@@ -8,6 +8,7 @@ import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
 import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import { fetchHyundaiMonthlyOperationMetrics } from '@/lib/hyundai/business-excellence-operations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -109,7 +110,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:workshop-performance:v28:${createHash('sha1')
+  return `hyundai:business-excellence:workshop-performance:v29:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -321,17 +322,22 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
 
 async function fetchAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
   void startDate
-  void endDate
-  void advisor
-  void dealerCode
-  return []
+  if (advisor) return []
+  const operation = await fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode)
+  if (!operation.available) return []
+  return [{
+    serviceType: 'MECH',
+    vasAmount: operation.vasAmount,
+    waCount: operation.waCount,
+    waAmount: operation.waAmount,
+    wbCount: operation.wbCount,
+    wbAmount: operation.wbAmount,
+  }]
 }
 
 async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   void startDate
-  void endDate
-  void dealerCode
-  return 0
+  return (await fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode)).vasAmount
 }
 
 async function fetchCoreAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {

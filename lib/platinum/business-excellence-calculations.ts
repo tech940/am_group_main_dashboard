@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { platinumSourceDealerFilter, platinumSourceDealerSql } from '@/lib/platinum/dealer-filter'
 
-export const PLATINUM_BE_CALCULATION_VERSION = '2026-06-cy-ly-correction-v3'
+export const PLATINUM_BE_CALCULATION_VERSION = '2026-06-platinum-vas-identifiers-v5'
 
 export const PLATINUM_BE_CALCULATION_META = {
   calculationVersion: PLATINUM_BE_CALCULATION_VERSION,
@@ -62,8 +62,9 @@ export function platinumVasPeriodsAlign(
   previousEnd: string | null | undefined
 ) {
   if (!currentStart || !currentEnd || !previousStart || !previousEnd) return false
-  return currentStart.slice(5, 10) === previousStart.slice(5, 10)
-    && currentEnd.slice(5, 10) === previousEnd.slice(5, 10)
+  void currentEnd
+  void previousEnd
+  return currentStart.slice(5, 7) === previousStart.slice(5, 7)
 }
 
 export function platinumComparisonGrowth(current: number, previous: number) {

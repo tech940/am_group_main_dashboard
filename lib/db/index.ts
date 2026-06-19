@@ -4,6 +4,14 @@ import { env } from '@/config/env-config'
 import { recordSqlTiming } from '@/lib/api/timing'
 
 const STATEMENT_TIMEOUT_MS = 12_000
+const DEFAULT_POOL_MAX = 6
+
+function positiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const DB_POOL_MAX = positiveInteger(process.env.DATABASE_POOL_MAX, DEFAULT_POOL_MAX)
 
 type PostgresClient = ReturnType<typeof postgres>
 type PostgresTransaction = postgres.TransactionSql
@@ -27,8 +35,10 @@ const globalForDb = globalThis as unknown as {
 const baseClient = globalForDb.postgresClient ?? postgres(env.database.url, {
   prepare: false, // Required for Supabase Transaction Mode pooler (PgBouncer)
   ssl: { rejectUnauthorized: false },
-  max: 20,
-  idle_timeout: 45,
+  // Keep enough headroom in the Supabase transaction pool for auth and other
+  // app instances. A large per-process pool lets dashboard fan-out starve auth.
+  max: DB_POOL_MAX,
+  idle_timeout: 20,
   connect_timeout: 15,
   max_lifetime: 60 * 30, // 30 minutes - recycle connections periodically
   onnotice: () => {}, // Ignore notices

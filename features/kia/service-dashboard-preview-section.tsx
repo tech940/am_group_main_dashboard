@@ -13,6 +13,8 @@ import {
   getEffectiveBusinessDateFilter,
 } from '@/lib/business-excellence/comparison'
 import { appendKiaDealerCodeParam } from '@/lib/kia/dealer-branch'
+import { appendPlatinumDealerCodeParam } from '@/lib/platinum/dealer-branch'
+import { appendHyundaiDealerCodeParam } from '@/lib/hyundai/dealer-branch'
 
 type PreviewCell = {
   address: string
@@ -30,6 +32,7 @@ type PreviewPayload = {
   metrics: {
     exportDate: string
     monthStart: string
+    sourceWarnings?: string[]
   }
   columns: Array<{ key: string; width: number }>
   rows: Array<{
@@ -48,10 +51,16 @@ function rowHeightToPx(height: number | null) {
   return height ? Math.round(height * 1.35) : 27
 }
 
-function buildPreviewQuery(dateFilter: BusinessDateFilterValue | null, dealerCode?: string | null) {
+function buildPreviewQuery(
+  dateFilter: BusinessDateFilterValue | null,
+  dealerCode: string | null | undefined,
+  brand: 'kia' | 'platinum' | 'hyundai',
+) {
   const effectiveFilter = getEffectiveBusinessDateFilter(dateFilter)
   const params = new URLSearchParams({ endDate: effectiveFilter.endDate })
-  appendKiaDealerCodeParam(params, dealerCode)
+  if (brand === 'platinum') appendPlatinumDealerCodeParam(params, dealerCode)
+  else if (brand === 'hyundai') appendHyundaiDealerCodeParam(params, dealerCode)
+  else appendKiaDealerCodeParam(params, dealerCode)
   return params
 }
 
@@ -74,25 +83,30 @@ function cssCellStyle(cell: PreviewCell, rowHeight: number): CSSProperties {
   }
 }
 
-export function KiaServiceDashboardPreviewSection({
+export function ServiceDashboardPreviewSection({
   dateFilter,
   dealerCode,
   onDownload,
   downloading,
+  brand,
 }: {
   dateFilter: BusinessDateFilterValue | null
   dealerCode?: string | null
   onDownload: () => void
   downloading: boolean
+  brand: 'kia' | 'platinum' | 'hyundai'
 }) {
-  const queryString = useMemo(() => buildPreviewQuery(dateFilter, dealerCode).toString(), [dateFilter, dealerCode])
+  const queryString = useMemo(
+    () => buildPreviewQuery(dateFilter, dealerCode, brand).toString(),
+    [brand, dateFilter, dealerCode],
+  )
   const previewQuery = useQuery({
-    queryKey: ['kia-service-dashboard-preview', queryString],
+    queryKey: [brand, 'service-dashboard-preview', queryString],
     queryFn: async () => {
-      const response = await fetch(`/api/brands/kia/business-excellence/service-dashboard-preview?${queryString}`, {
+      const response = await fetch(`/api/brands/${brand}/business-excellence/service-dashboard-preview?${queryString}`, {
         cache: 'no-store',
       })
-      logApiTimings(response, 'kia-service-dashboard-preview')
+      logApiTimings(response, `${brand}-service-dashboard-preview`)
       const data = await response.json()
       if (!response.ok) throw new Error(data?.error || 'Failed to load Service Dashboard preview')
       return data as PreviewPayload
@@ -154,42 +168,55 @@ export function KiaServiceDashboardPreviewSection({
               {previewQuery.error instanceof Error ? previewQuery.error.message : 'Failed to load Service Dashboard preview'}
             </div>
           ) : preview ? (
-            <div className="overflow-auto rounded-xl border border-slate-300 bg-slate-100 p-3">
-              <table
-                className="border-collapse bg-white text-[12px]"
-                style={{
-                  tableLayout: 'fixed',
-                  width: tableWidth,
-                }}
-              >
-                <colgroup>
-                  {preview.columns.map((column) => (
-                    <col key={column.key} style={{ width: columnWidthToPx(column.width) }} />
-                  ))}
-                </colgroup>
-                <tbody>
-                  {preview.rows.map((row) => (
-                    <tr key={row.index} style={{ height: rowHeightToPx(row.height) }}>
-                      {row.cells.filter((cell) => !cell.hidden).map((cell) => (
-                        <td
-                          key={cell.address}
-                          colSpan={cell.colspan}
-                          rowSpan={cell.rowspan}
-                          className="px-2 py-1 leading-tight"
-                          style={cssCellStyle(cell, rowHeightToPx(row.height))}
-                          title={cell.address}
-                        >
-                          {cell.text}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              {preview.metrics.sourceWarnings?.length ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900">
+                  {preview.metrics.sourceWarnings.join(' ')}
+                </div>
+              ) : null}
+              <div className="overflow-auto rounded-xl border border-slate-300 bg-slate-100 p-3">
+                <table
+                  className="border-collapse bg-white text-[12px]"
+                  style={{
+                    tableLayout: 'fixed',
+                    width: tableWidth,
+                  }}
+                >
+                  <colgroup>
+                    {preview.columns.map((column) => (
+                      <col key={column.key} style={{ width: columnWidthToPx(column.width) }} />
+                    ))}
+                  </colgroup>
+                  <tbody>
+                    {preview.rows.map((row) => (
+                      <tr key={row.index} style={{ height: rowHeightToPx(row.height) }}>
+                        {row.cells.filter((cell) => !cell.hidden).map((cell) => (
+                          <td
+                            key={cell.address}
+                            colSpan={cell.colspan}
+                            rowSpan={cell.rowspan}
+                            className="px-2 py-1 leading-tight"
+                            style={cssCellStyle(cell, rowHeightToPx(row.height))}
+                            title={cell.address}
+                          >
+                            {cell.text}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : null}
         </CardContent>
       </Card>
     </div>
   )
+}
+
+export function KiaServiceDashboardPreviewSection(
+  props: Omit<React.ComponentProps<typeof ServiceDashboardPreviewSection>, 'brand'>,
+) {
+  return <ServiceDashboardPreviewSection {...props} brand="kia" />
 }

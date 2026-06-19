@@ -4,7 +4,10 @@ import { createHash } from 'node:crypto'
 import { and, eq, isNull } from 'drizzle-orm'
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
+import { findAuthUserBySupabaseId } from '@/lib/db/auth-client'
 import { users } from '@/lib/db/schema'
+import { getRedisClient } from '@/lib/redis/client'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 
 export type AppUser = {
@@ -18,7 +21,8 @@ export type AppUser = {
   isActive: boolean
 }
 
-const APP_USER_CACHE_TTL_MS = 60_000
+const APP_USER_CACHE_TTL_MS = 10 * 60_000
+const APP_USER_REDIS_TTL_SECONDS = 24 * 60 * 60
 const AUTH_USER_CACHE_TTL_MS = 30_000
 const appUserCache = new Map<string, { expiresAt: number; user: AppUser | null }>()
 const appUserLookupPromises = new Map<string, Promise<AppUser | null>>()
@@ -29,6 +33,7 @@ export function clearAppUserCache(supabaseId?: string | null) {
   if (supabaseId) {
     appUserCache.delete(supabaseId)
     appUserLookupPromises.delete(supabaseId)
+    void getRedisClient()?.del(appUserRedisKey(supabaseId)).catch(() => null)
     return
   }
 
@@ -39,21 +44,25 @@ export function clearAppUserCache(supabaseId?: string | null) {
 }
 
 function isTransientDbConnectionError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
-  const code = typeof error === 'object' && error !== null && 'code' in error
-    ? String((error as { code?: unknown }).code)
-    : ''
-  const causeCode = typeof error === 'object' && error !== null && 'cause' in error
-    && typeof (error as { cause?: unknown }).cause === 'object'
-    && (error as { cause?: unknown }).cause !== null
-    && 'code' in ((error as { cause?: unknown }).cause as Record<string, unknown>)
-    ? String(((error as { cause?: { code?: unknown } }).cause?.code))
-    : ''
+  const signals: string[] = []
+  let current: unknown = error
 
-  return code === 'CONNECT_TIMEOUT'
-    || causeCode === 'CONNECT_TIMEOUT'
-    || message.includes('CONNECT_TIMEOUT')
-    || message.includes('Connection terminated')
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    if (current instanceof Error) signals.push(current.message)
+    if (typeof current === 'object' && current !== null) {
+      if ('code' in current) signals.push(String((current as { code?: unknown }).code || ''))
+      current = 'cause' in current ? (current as { cause?: unknown }).cause : null
+    } else {
+      signals.push(String(current))
+      current = null
+    }
+  }
+
+  const combined = signals.join(' ')
+  return combined.includes('CONNECT_TIMEOUT')
+    || combined.includes('ECHECKOUTTIMEOUT')
+    || combined.includes('unable to check out connection from the pool')
+    || combined.includes('Connection terminated')
 }
 
 function wait(ms: number) {
@@ -77,6 +86,82 @@ async function findAppUserBySupabaseId(supabaseId: string) {
     .limit(1)
 
   return appUser
+}
+
+function appUserRedisKey(supabaseId: string) {
+  return `auth:app-user:v1:${supabaseId}`
+}
+
+function isAppUser(value: unknown): value is AppUser {
+  if (!value || typeof value !== 'object') return false
+  const user = value as Partial<AppUser>
+  return typeof user.id === 'string'
+    && typeof user.supabaseId === 'string'
+    && typeof user.email === 'string'
+    && typeof user.fullName === 'string'
+    && typeof user.role === 'string'
+    && typeof user.isActive === 'boolean'
+}
+
+async function readPersistentAppUser(supabaseId: string) {
+  try {
+    const cached = await getRedisClient()?.get<unknown>(appUserRedisKey(supabaseId))
+    return isAppUser(cached) && cached.supabaseId === supabaseId ? cached : null
+  } catch {
+    return null
+  }
+}
+
+async function writePersistentAppUser(user: AppUser) {
+  try {
+    await getRedisClient()?.setex(
+      appUserRedisKey(user.supabaseId),
+      APP_USER_REDIS_TTL_SECONDS,
+      user
+    )
+  } catch {
+    // Authentication must not fail because the optional persistent cache failed.
+  }
+}
+
+async function findAppUserBySupabaseIdViaRest(supabaseId: string) {
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .select('id,supabase_id,email,full_name,role,brand,department,is_active')
+    .eq('supabase_id', supabaseId)
+    .is('deleted_at', null)
+    .abortSignal(AbortSignal.timeout(3_000))
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) return undefined
+
+  return {
+    id: String(data.id),
+    supabaseId: String(data.supabase_id),
+    email: String(data.email),
+    fullName: String(data.full_name),
+    role: data.role as AppUser['role'],
+    brand: data.brand === null ? null : String(data.brand),
+    department: data.department === null ? null : String(data.department),
+    isActive: Boolean(data.is_active),
+  }
+}
+
+async function findAppUserBySupabaseIdViaSessionPool(supabaseId: string) {
+  const data = await findAuthUserBySupabaseId(supabaseId)
+  if (!data) return undefined
+
+  return {
+    id: String(data.id),
+    supabaseId: String(data.supabase_id),
+    email: String(data.email),
+    fullName: String(data.full_name),
+    role: data.role as AppUser['role'],
+    brand: data.brand,
+    department: data.department,
+    isActive: Boolean(data.is_active),
+  }
 }
 
 async function getSupabaseUserId() {
@@ -142,7 +227,16 @@ async function getCachedAppUserBySupabaseId(supabaseId: string) {
   if (pending) return await pending
 
   const lookup = (async () => {
-    let appUser: Awaited<ReturnType<typeof findAppUserBySupabaseId>>
+    const persistentUser = await readPersistentAppUser(supabaseId)
+    if (persistentUser?.isActive) {
+      appUserCache.set(supabaseId, {
+        expiresAt: Date.now() + APP_USER_CACHE_TTL_MS,
+        user: persistentUser,
+      })
+      return persistentUser
+    }
+
+    let appUser: AppUser | undefined
     try {
       appUser = await findAppUserBySupabaseId(supabaseId)
     } catch (error) {
@@ -150,8 +244,31 @@ async function getCachedAppUserBySupabaseId(supabaseId: string) {
         throw error
       }
 
-      await wait(350)
-      appUser = await findAppUserBySupabaseId(supabaseId)
+      try {
+        await wait(250)
+        appUser = await findAppUserBySupabaseId(supabaseId)
+      } catch (retryError) {
+        if (isTransientDbConnectionError(retryError)) {
+          try {
+            appUser = await findAppUserBySupabaseIdViaSessionPool(supabaseId)
+          } catch {
+            try {
+              appUser = await findAppUserBySupabaseIdViaRest(supabaseId)
+            } catch (restError) {
+              if (cached?.user?.isActive) {
+                appUserCache.set(supabaseId, {
+                  expiresAt: Date.now() + AUTH_USER_CACHE_TTL_MS,
+                  user: cached.user,
+                })
+                return cached.user
+              }
+              throw restError
+            }
+          }
+        } else {
+          throw retryError
+        }
+      }
     }
 
     const activeUser = appUser && appUser.isActive ? appUser : null
@@ -159,6 +276,7 @@ async function getCachedAppUserBySupabaseId(supabaseId: string) {
       expiresAt: Date.now() + APP_USER_CACHE_TTL_MS,
       user: activeUser,
     })
+    if (activeUser) await writePersistentAppUser(activeUser)
     return activeUser
   })()
 

@@ -39,6 +39,7 @@ import { BusinessExcellenceOverview } from '@/features/hyundai/business-excellen
 import { ExecutiveTableShell, type ExecutiveDashboardTableId } from '@/features/business-excellence/executive-table-shell'
 import { OpenRoSection } from '@/features/hyundai/open-ro-section'
 import { KiaComplaintsSection } from '@/features/hyundai/hyundai-complaints-section'
+import { ServiceDashboardPreviewSection } from '@/features/kia/service-dashboard-preview-section'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   LineChart,
@@ -76,6 +77,7 @@ import {
   BusinessDatePreset,
   appendBusinessComparisonParams,
   buildBusinessDateFilter,
+  getEffectiveBusinessDateFilter,
 } from '@/lib/business-excellence/comparison'
 import { EXECUTIVE_TARGETS } from '@/lib/business-excellence/executive-targets'
 import {
@@ -319,6 +321,7 @@ const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const HYUNDAI_COMPLAINTS_REPORT = 'Hyundai Complaints'
+const SERVICE_DASHBOARD_REPORT = 'Service Dashboard'
 const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [BUSINESS_EXCELLENCE_OVERVIEW_REPORT]: 'overview',
   [EXECUTIVE_DASHBOARD_REPORT]: 'executive-dashboard',
@@ -326,6 +329,7 @@ const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
   [OPEN_RO_REPORT]: 'open-ro',
   [HYUNDAI_COMPLAINTS_REPORT]: 'hyundai-complaints',
+  [SERVICE_DASHBOARD_REPORT]: 'service-dashboard',
 }
 const REPORT_NAMES_BY_SLUG: Record<string, string> = Object.fromEntries(
   Object.entries(REPORT_ROUTE_SLUGS).map(([name, slug]) => [slug, name])
@@ -381,6 +385,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     brand: 'hyundai',
     sheetName: HYUNDAI_COMPLAINTS_REPORT,
     tableName: 'hyundai_call_center_complaints',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'service-dashboard',
+    brand: 'hyundai',
+    sheetName: SERVICE_DASHBOARD_REPORT,
+    tableName: 'service_dashboard_export',
     columns: [],
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
@@ -699,7 +712,7 @@ function WorkshopTrendValueLabel({
 }
 
 function canAccessExecutiveDashboard(role?: string | null) {
-  return ['admin', 'super_admin', 'ceo', 'md'].includes(String(role || '').trim().toLowerCase())
+  return ['super_admin', 'ceo', 'md', 'ea'].includes(String(role || '').trim().toLowerCase())
 }
 
 function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[], role?: string | null) {
@@ -1495,6 +1508,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
   const [aiSummary, setAiSummary] = useState<BusinessAiSummary | null>(null)
   const [aiSummaryError, setAiSummaryError] = useState('')
   const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false)
+  const [isServiceDashboardDownloading, setIsServiceDashboardDownloading] = useState(false)
   const itemsPerPage = 10
   const queryDateFilterKey = searchParams.toString()
 
@@ -1752,6 +1766,43 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
     }
   }, [appliedDateFilter, selectedDealerCode])
 
+  const downloadServiceDashboard = useCallback(async () => {
+    setIsServiceDashboardDownloading(true)
+    try {
+      const effectiveFilter = getEffectiveBusinessDateFilter(appliedDateFilter as BusinessDateFilterValue | null)
+      const params = new URLSearchParams({ endDate: effectiveFilter.endDate })
+      appendKiaDealerCodeParam(params, selectedDealerCode)
+      const response = await fetch(
+        `/api/brands/hyundai/business-excellence/service-dashboard-export?${params.toString()}`,
+        { cache: 'no-store' },
+      )
+      logApiTimings(response, 'hyundai-service-dashboard-export')
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(payload?.error || 'Failed to download Service Dashboard')
+      }
+      const disposition = response.headers.get('Content-Disposition') || ''
+      const fileNameMatch = disposition.match(/filename\*=UTF-8''([^;]+)|filename="([^"]+)"/)
+      const fileName = fileNameMatch
+        ? decodeURIComponent(fileNameMatch[1] || fileNameMatch[2])
+        : `AM_HYUNDAI_Service_Dashboard_${effectiveFilter.endDate}.xlsx`
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = fileName
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Failed to download Hyundai Service Dashboard:', error)
+      alert(error instanceof Error ? error.message : 'Failed to download Service Dashboard')
+    } finally {
+      setIsServiceDashboardDownloading(false)
+    }
+  }, [appliedDateFilter, selectedDealerCode])
+
   const fetchSheetRows = useCallback(async (sheet: SavedSheetMetadata, page: number = 1) => {
     const sheetId = sheet.id
     setFetchingRows(sheetId)
@@ -1803,7 +1854,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === HYUNDAI_COMPLAINTS_REPORT) {
+      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === HYUNDAI_COMPLAINTS_REPORT || activeTab === SERVICE_DASHBOARD_REPORT) {
         setFetchingRows(null)
         return
       }
@@ -1853,8 +1904,9 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
               const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
               const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
               const isKiaComplaintsSheet = selectedSheet.sheetName === HYUNDAI_COMPLAINTS_REPORT
+              const isServiceDashboardSheet = selectedSheet.sheetName === SERVICE_DASHBOARD_REPORT
               const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
-              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
+              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet
               const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
               const supportsHealthPanel = isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
               const branchOptions = [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
@@ -2325,6 +2377,18 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                             <SheetContentSkeleton />
                           ) : (
                             <KiaComplaintsSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isServiceDashboardSheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <ServiceDashboardPreviewSection
+                              brand="hyundai"
+                              dateFilter={appliedDateFilter as BusinessDateFilterValue | null}
+                              dealerCode={selectedDealerCode}
+                              onDownload={() => void downloadServiceDashboard()}
+                              downloading={isServiceDashboardDownloading}
+                            />
                           )
                         ) : isROBillingSheet ? (
                           isApplyingFilter ? (

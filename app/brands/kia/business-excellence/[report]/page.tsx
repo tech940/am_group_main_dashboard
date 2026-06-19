@@ -12,7 +12,7 @@ const REPORT_TITLES: Record<string, string> = {
   'service-dashboard': 'Service Dashboard',
 }
 
-const EXECUTIVE_DASHBOARD_ALLOWED_ROLES = new Set(['admin', 'super_admin', 'ceo', 'md'])
+const EXECUTIVE_DASHBOARD_ALLOWED_ROLES = new Set(['super_admin', 'ceo', 'md', 'ea'])
 
 export async function generateStaticParams() {
   return Object.keys(REPORT_TITLES).map((report) => ({ report }))

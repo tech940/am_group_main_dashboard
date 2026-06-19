@@ -61,20 +61,6 @@ export function getAdminCapabilities(actor: AppUser): AdminActorCapabilities | n
     }
   }
 
-  if (isBranchAdminRole(actor.role) && actor.brand && isBranchValue(actor.brand)) {
-    return {
-      authority: 'branch_admin',
-      branch: actor.brand,
-      canManageAllBranches: false,
-      canManageProtectedRoles: false,
-      canManageBranchAdmins: false,
-      canManageSettings: false,
-      canPermanentlyDelete: false,
-      assignableRoles: Array.from(BRANCH_ASSIGNABLE_ROLES),
-      delegablePermissionPrefixes: [`${actor.brand}.`],
-    }
-  }
-
   return null
 }
 

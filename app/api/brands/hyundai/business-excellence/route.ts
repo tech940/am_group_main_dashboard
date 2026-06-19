@@ -327,7 +327,10 @@ export async function POST() {
   const accessError = await requireBrandApiAccess('hyundai')
   if (accessError) return accessError
 
-  await invalidateCachePattern(`${HYUNDAI_BE_CACHE_PREFIX}:*`)
+  await Promise.all([
+    invalidateCachePattern(`${HYUNDAI_BE_CACHE_PREFIX}:*`),
+    invalidateCachePattern('hyundai:service-dashboard:*'),
+  ])
   return NextResponse.json(
     {
       error: 'Business Excellence now uses relational SQL tables populated by the cron/import pipeline. Spreadsheet JSON uploads are disabled for this section.',

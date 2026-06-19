@@ -1,6 +1,5 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getBrandAccess } from '@/lib/auth/brand-access'
-import { requirePermission } from '@/lib/permissions/service'
 import { HyundaiModulePlaceholder } from '@/features/hyundai/hyundai-module-placeholder'
 import HyundaiBusinessExcellencePage from '@/features/hyundai/business-excellence-page'
 import { HyundaiWarrantyClaimsPage } from '@/features/hyundai/warranty-claims-page'
@@ -10,7 +9,7 @@ type HyundaiModuleDefinition = {
   permission: string
   component?: 'business-excellence' | 'warranty-claims'
   warrantySource?: 'ytp' | 'claim_list'
-  report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'open-ro' | 'workshop-performance' | 'hyundai-complaints'
+  report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'open-ro' | 'workshop-performance' | 'hyundai-complaints' | 'service-dashboard'
 }
 
 const HYUNDAI_MODULES: Record<string, HyundaiModuleDefinition> = {
@@ -53,6 +52,12 @@ const HYUNDAI_MODULES: Record<string, HyundaiModuleDefinition> = {
     permission: 'hyundai.business_excellence.view',
     component: 'business-excellence',
     report: 'executive-dashboard',
+  },
+  'business-excellence/service-dashboard': {
+    title: 'Service Dashboard',
+    permission: 'hyundai.business_excellence.view',
+    component: 'business-excellence',
+    report: 'service-dashboard',
   },
   'service-appointment': {
     title: 'Service Appointment',

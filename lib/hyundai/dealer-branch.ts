@@ -1,11 +1,15 @@
 type HyundaiBranchDealer = {
   label: string
-  dealerCode: 'JAMMU' | 'UDHAMPUR'
+  dealerCode: 'JAMMU' | 'AKHNOOR' | 'KATHUA' | 'RS_PURA' | 'VIJAYPUR' | 'UDHAMPUR'
   dealerCodes: readonly string[]
 }
 
 export const HYUNDAI_BRANCH_DEALERS = [
-  { label: 'Hyundai Jammu', dealerCode: 'JAMMU', dealerCodes: ['N5216', 'N6846', 'N6847'] },
+  { label: 'Hyundai Jammu', dealerCode: 'JAMMU', dealerCodes: ['N5203', 'N5216'] },
+  { label: 'Hyundai Akhnoor', dealerCode: 'AKHNOOR', dealerCodes: ['N5701', 'N6844'] },
+  { label: 'Hyundai Kathua', dealerCode: 'KATHUA', dealerCodes: ['N5804', 'N6845'] },
+  { label: 'Hyundai RS Pura', dealerCode: 'RS_PURA', dealerCodes: ['N6815', 'N6846'] },
+  { label: 'Hyundai Vijaypur', dealerCode: 'VIJAYPUR', dealerCodes: ['N6819', 'N6847'] },
   { label: 'Hyundai Udhampur', dealerCode: 'UDHAMPUR', dealerCodes: ['N5217', 'N6848', 'N6849'] },
 ] as const satisfies readonly HyundaiBranchDealer[]
 
@@ -15,6 +19,10 @@ export function normalizeHyundaiDealerCode(value: string | null | undefined): Hy
   const normalized = String(value || '').trim().toUpperCase()
   if (!normalized || normalized === 'ALL' || normalized === 'ALL_LOCATIONS') return null
   if (normalized === 'JAMMU' || normalized === 'HYUNDAI_JAMMU') return 'JAMMU'
+  if (normalized === 'AKHNOOR' || normalized === 'HYUNDAI_AKHNOOR') return 'AKHNOOR'
+  if (normalized === 'KATHUA' || normalized === 'HYUNDAI_KATHUA') return 'KATHUA'
+  if (normalized === 'RS_PURA' || normalized === 'RSPURA' || normalized === 'HYUNDAI_RS_PURA') return 'RS_PURA'
+  if (normalized === 'VIJAYPUR' || normalized === 'HYUNDAI_VIJAYPUR') return 'VIJAYPUR'
   if (normalized === 'UDHAMPUR' || normalized === 'HYUNDAI_UDHAMPUR') return 'UDHAMPUR'
 
   const branch = HYUNDAI_BRANCH_DEALERS.find((item) => item.dealerCodes.some((code) => code === normalized))

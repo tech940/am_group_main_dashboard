@@ -1,0 +1,475 @@
+[catalog-match] using database endpoint aws-1-ap-northeast-2.pooler.supabase.com:5432
+[
+  {
+    "report_type": "operation",
+    "code": "A10AAACDVASHR",
+    "description": "AC Disinfectant Horizon (HR) (Optional)",
+    "count": 144,
+    "amount": 98776.67,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAGM06WHAL",
+    "description": "Wheel alignment",
+    "count": 170,
+    "amount": 91601.42,
+    "category": "wheel_alignment"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAATLVASHR",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "count": 83,
+    "amount": 80374.6,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AATBC000HR",
+    "description": "Throttle Body Cleaner - Petrol Horizon (HR) (Optional)",
+    "count": 121,
+    "amount": 59416.28,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAECMVASHR",
+    "description": "Engine Cleaning/Dressing Medium Horizon (HR) (Optional)",
+    "count": 112,
+    "amount": 54929,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAGM07WHBL",
+    "description": "Wheel balancing- Each wheel",
+    "count": 373,
+    "amount": 48186.5,
+    "category": "wheel_balancing"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AARUB19LNA",
+    "description": "Rubbing and polishing",
+    "count": 53,
+    "amount": 43972,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAECLVASHR",
+    "description": "Engine Cleaning/Dressing Large Horizon (HR) (Optional)",
+    "count": 76,
+    "amount": 35570.3,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASPMVASHR",
+    "description": "Lubrication (Hinge/Joints/Battery) Medium Horizon (HR) (Optional)",
+    "count": 73,
+    "amount": 35303.58,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASPSVASHR",
+    "description": "Lubrication (Hinge/Joints/Battery) Small Horizon (HR) (Optional)",
+    "count": 62,
+    "amount": 30395.63,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASPLVASHR",
+    "description": "Lubrication (Hinge/Joints/Battery) Large Horizon (HR) (Optional)",
+    "count": 55,
+    "amount": 26248.9,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAPPMVASHR",
+    "description": "Paint Protection (1 Step) Medium Horizon (HR) (Optional)",
+    "count": 29,
+    "amount": 25491.2,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASCLVASHR",
+    "description": "Silencer Coating Large Horizon (HR) (Optional)",
+    "count": 15,
+    "amount": 19844.3,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAPPLVASHR",
+    "description": "Paint Protection (1 Step) Large Horizon (HR) (Optional)",
+    "count": 19,
+    "amount": 16543.4,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAUBCAS0HR",
+    "description": "Underbody Coating Small/Medium Horizon (HR) (Optional)",
+    "count": 8,
+    "amount": 15192.2,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAECSVASHR",
+    "description": "Engine Cleaning/Dressing Small Horizon (HR) (Optional)",
+    "count": 30,
+    "amount": 14668.15,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAPPSVASHR",
+    "description": "Paint Protection (1 Step) Small Horizon (HR) (Optional)",
+    "count": 18,
+    "amount": 12254.24,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASA68CROS",
+    "description": "Crossmember lubrication",
+    "count": 18,
+    "amount": 11875.32,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASCMVASHR",
+    "description": "Silencer Coating Medium",
+    "count": 9,
+    "amount": 11431.2,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAATMVASHR",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "count": 11,
+    "amount": 11317,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAISSVAMHR",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "count": 15,
+    "amount": 10209.3,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAIEMVASHR",
+    "description": "Interior Enrichment Medium Horizon (HR) (Optional)",
+    "count": 9,
+    "amount": 9891,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAISSVASHR",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "count": 12,
+    "amount": 9720,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASCSVASHR",
+    "description": "Silencer Coating Small",
+    "count": 7,
+    "amount": 8153.2,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASA68CROSAA",
+    "description": "Crossmember lubrication",
+    "count": 8,
+    "amount": 7264,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAISSVALHR",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "count": 9,
+    "amount": 7031.2,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAEGRVASHR",
+    "description": "EGR cleaner – Diesel Horizon (HR) (Optional)",
+    "count": 6,
+    "amount": 5794.2,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAISSVASHRAA",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "count": 6,
+    "amount": 4997.3,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAATSVASHR",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "count": 4,
+    "amount": 3640,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAACDVASHRAA",
+    "description": "AC Disinfectant Horizon (HR) (Optional)",
+    "count": 6,
+    "amount": 3335,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AATBC000HRHW",
+    "description": "Throttle Body Cleaner - Petrol Horizon (HR) (Optional)",
+    "count": 8,
+    "amount": 3152.1,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AATBC000HRAA",
+    "description": "Throttle Body Cleaner - Petrol Horizon (HR) (Optional)",
+    "count": 7,
+    "amount": 2753.1,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAUBCAL0HR",
+    "description": "Underbody Coating Large Horizon (HR) (Optional)",
+    "count": 1,
+    "amount": 2099,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAISSVAMHRHW",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "count": 3,
+    "amount": 2027.1,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAUBCAL0HRAA",
+    "description": "Underbody Coating Large Horizon (HR) (Optional)",
+    "count": 1,
+    "amount": 1999,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASA68CROSHW",
+    "description": "Crossmember lubrication",
+    "count": 3,
+    "amount": 1704,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAECLVASHRAA",
+    "description": "Engine Cleaning/Dressing Large Horizon (HR) (Optional)",
+    "count": 4,
+    "amount": 1596,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAIELVASHR",
+    "description": "Interior Enrichment Large Horizon (HR) (Optional)",
+    "count": 1,
+    "amount": 1399,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAACDVAS3M",
+    "description": "AC Disinfectant 3M (Optional)",
+    "count": 2,
+    "amount": 1398,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAACDVASEB",
+    "description": "AC Disinfectant Bardahl (EB) (Optional)",
+    "count": 2,
+    "amount": 1398,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAPILVASHR",
+    "description": "Premium Interior Foam Base Cleaning Large Horizon (HR) (Optional)",
+    "count": 1,
+    "amount": 1305,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAIELVASHRAA",
+    "description": "Interior Enrichment Large Horizon (HR) (Optional)",
+    "count": 1,
+    "amount": 1299,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAPIMVASHR",
+    "description": "Premium Interior Foam Base Cleaning Medium Horizon (HR) (Optional)",
+    "count": 1,
+    "amount": 1200,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASPLVASHRAA",
+    "description": "Lubrication (Hinge/Joints/Battery) Large Horizon (HR) (Optional)",
+    "count": 3,
+    "amount": 1197,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAGM07WHBLHW",
+    "description": "Wheel balancing- Each wheel",
+    "count": 12,
+    "amount": 1152,
+    "category": "wheel_balancing"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAACDVASHRHW",
+    "description": "AC Disinfectant Horizon (HR) (Optional)",
+    "count": 2,
+    "amount": 1150,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAPPLVASHRAA",
+    "description": "Paint Protection (1 Step) Large Horizon (HR) (Optional)",
+    "count": 1,
+    "amount": 799,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAATLVASHRHW",
+    "description": "Interior Antimicrobial Treatment Horizon (HR) (Optional)",
+    "count": 1,
+    "amount": 700,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAECMVASHRHW",
+    "description": "Engine Cleaning/Dressing Medium Horizon (HR) (Optional)",
+    "count": 2,
+    "amount": 598,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAACDVASEBHW",
+    "description": "AC Disinfectant Bardahl (EB) (Optional)",
+    "count": 1,
+    "amount": 575,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASPMVASWT",
+    "description": "LUBRICATION (HINGE/JOINTS/BATTERY) MEDIUM WUERTH (WT) (OPTIONAL)",
+    "count": 1,
+    "amount": 499,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAECMVASEB",
+    "description": "Engine Cleaning/Dressing Medium Bardahl (EB) (Optional)",
+    "count": 1,
+    "amount": 499,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AATBC0003M",
+    "description": "Throttle Body Cleaner",
+    "count": 1,
+    "amount": 499,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAECMVAS3M",
+    "description": "Engine Cleaning/Dressing Medium 3M (Optional)",
+    "count": 1,
+    "amount": 499,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAECLVASEB",
+    "description": "Engine Cleaning/Dressing Large Bardahl (EB) (Optional)",
+    "count": 1,
+    "amount": 499,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASPMVAS3M",
+    "description": "Lubrication (Hinge/Joints/Battery) Medium 3M (Optional)",
+    "count": 1,
+    "amount": 399,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AASPSVASWT",
+    "description": "LUBRICATION (HINGE/JOINTS/BATTERY) SMALL WUERTH (WT) (OPTIONAL)",
+    "count": 1,
+    "amount": 399,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAEMCVASHR",
+    "description": "Emblem Cleaner Horizon (HR) (Optional)",
+    "count": 1,
+    "amount": 299,
+    "category": "vas"
+  },
+  {
+    "report_type": "operation",
+    "code": "A10AAECMVAS3MHW",
+    "description": "Engine Cleaning/Dressing Medium 3M (Optional)",
+    "count": 1,
+    "amount": 299,
+    "category": "vas"
+  }
+]

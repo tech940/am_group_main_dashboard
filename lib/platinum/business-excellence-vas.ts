@@ -1,6 +1,11 @@
 import { sql } from 'drizzle-orm'
 import { analyticsDb } from '@/lib/analytics/db'
 import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
+import {
+  PLATINUM_VAS_IDENTIFIER_VERSION,
+  platinumKnownCodeSql,
+  platinumVasCodeSql,
+} from '@/lib/platinum/vas-identifiers'
 
 type DealerFilter = string | null
 type ResultRow = Record<string, unknown>
@@ -17,8 +22,14 @@ export type PlatinumVasResult = {
   periodStart: string | null
   periodEnd: string | null
   sourceRows: number
+  matchedRows: number
+  unknownCodeRows: number
+  identifierVersion: string
   dedupeMode: string | null
   latestSnapshotUploadedAt?: string | null
+  parityStatus?: 'not_checked' | 'matched' | 'summary_mismatch' | 'live_only'
+  summaryAmount?: number | null
+  summarySourceRows?: number | null
 }
 
 function resultRows(result: unknown): ResultRow[] {
@@ -101,34 +112,39 @@ function emptyResult(reason: string): PlatinumVasResult {
     periodStart: null,
     periodEnd: null,
     sourceRows: 0,
+    matchedRows: 0,
+    unknownCodeRows: 0,
+    identifierVersion: PLATINUM_VAS_IDENTIFIER_VERSION,
     dedupeMode: null,
     latestSnapshotUploadedAt: null,
+    parityStatus: 'not_checked',
+    summaryAmount: null,
+    summarySourceRows: null,
   }
 }
 
 function vasFilter() {
+  return platinumVasCodeSql(sql.raw('code'))
+}
+
+function unknownCodeFilter() {
   return sql`
-    (
-      code ~ '(^|[^a-z0-9])vas|vas([a-z0-9]|$)'
-      OR description ~ '(value[[:space:]-]*added|(^|[^a-z])vas([^a-z]|$))'
-      OR description ~ '(ac[[:space:]-]*evaporator[[:space:]-]*cleaning|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent)'
-      OR description ~ '(under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care)'
-      OR description ~ '(air[[:space:]-]*intake[[:space:]-]*cleaning|engine[[:space:]-]*(cleaning|dressing)|service[[:space:]-]*lubrication|lubrication[[:space:]]*\\(|wheel[[:space:]-]*drum[[:space:]-]*painting|silencer[[:space:]-]*coating)'
-      OR description ~ '(interior[[:space:]-]*antimicrobial|exterior[[:space:]-]*beautification|paint[[:space:]-]*protection|egr[[:space:]-]*cleaner|fuel[[:space:]-]*injector)'
-    )
-    AND description !~ '(painting[[:space:]-]*charges[[:space:]-]*s1|removal[[:space:]]*&[[:space:]]*refit[[:space:]-]*work[[:space:]-]*s1)'
-    AND description !~ '(water[[:space:]-]*borne|body[[:space:]-]*shop|bodyshop|denting|accidental[[:space:]-]*repair)'
+    NULLIF(TRIM(code), '') IS NOT NULL
+    AND NOT (${platinumKnownCodeSql(sql.raw('code'))})
   `
 }
 
 function vasSourceType(startDate: string, endDate: string, periodStart: string | null, periodEnd: string | null) {
   if (periodStart === startDate && periodEnd === endDate) return 'operation_period_exact'
+  if (periodStart?.slice(0, 7) === endDate.slice(0, 7)) return 'operation_month_snapshot'
   if (periodStart && periodEnd && periodStart >= startDate && periodEnd <= endDate) return 'operation_period_covered'
   return 'operation_period_containing'
 }
 
 export function isComparableVasSource(source: string | null | undefined) {
-  return source === 'operation_period_exact' || source === 'operation_period_covered'
+  return source === 'operation_period_exact'
+    || source === 'operation_period_covered'
+    || source === 'operation_month_snapshot'
 }
 
 function nonComparableResult(startDate: string, endDate: string, resolved: PlatinumVasResult): PlatinumVasResult {
@@ -139,6 +155,9 @@ function nonComparableResult(startDate: string, endDate: string, resolved: Plati
     periodStart: resolved.periodStart,
     periodEnd: resolved.periodEnd,
     sourceRows: resolved.sourceRows,
+    matchedRows: resolved.matchedRows,
+    unknownCodeRows: resolved.unknownCodeRows,
+    identifierVersion: resolved.identifierVersion,
     dedupeMode: resolved.dedupeMode,
     latestSnapshotUploadedAt: resolved.latestSnapshotUploadedAt,
   }
@@ -176,11 +195,60 @@ function buildVasResult(
     periodStart,
     periodEnd,
     sourceRows: numberValue(row.source_rows),
+    matchedRows: numberValue(row.source_rows),
+    unknownCodeRows: numberValue(row.unknown_code_rows),
+    identifierVersion: PLATINUM_VAS_IDENTIFIER_VERSION,
     dedupeMode,
     latestSnapshotUploadedAt: dateValue(row.latest_uploaded_at),
+    parityStatus: 'not_checked',
+    summaryAmount: null,
+    summarySourceRows: null,
   }
 }
 
+function vasResultsMatch(summary: PlatinumVasResult, live: PlatinumVasResult) {
+  return Math.abs(summary.amount - live.amount) <= 0.01
+    && summary.sourceRows === live.sourceRows
+    && summary.periodStart === live.periodStart
+    && summary.periodEnd === live.periodEnd
+}
+
+function resolveSummaryParity(summary: PlatinumVasResult, live: PlatinumVasResult | null) {
+  if (!live) return summary
+  if (vasResultsMatch(summary, live)) {
+    return {
+      ...summary,
+      parityStatus: 'matched' as const,
+      summaryAmount: summary.amount,
+      summarySourceRows: summary.sourceRows,
+    }
+  }
+
+  return {
+    ...live,
+    parityStatus: 'summary_mismatch' as const,
+    summaryAmount: summary.amount,
+    summarySourceRows: summary.sourceRows,
+    dedupeMode: 'row_hash_latest_summary_mismatch',
+  }
+}
+
+async function fetchLiveVasForParity(
+  startDate: string,
+  endDate: string,
+  dealerCode: DealerFilter,
+  periodStart: string,
+  periodEnd: string
+) {
+  try {
+    return await fetchOperationVasForPeriod(startDate, endDate, dealerCode, periodStart, periodEnd)
+  } catch (error) {
+    console.warn('Platinum VAS live parity check failed; using materialized summary.', error)
+    return null
+  }
+}
+
+// Queries the materialized summary view for an exact period match.
 async function fetchExactSummaryVas(
   startDate: string,
   endDate: string,
@@ -210,6 +278,7 @@ async function fetchExactSummaryVas(
   )
 }
 
+// Queries the materialized summary view for the best-matching period when an exact match is unavailable.
 async function fetchFallbackSummaryVas(
   startDate: string,
   endDate: string,
@@ -220,18 +289,11 @@ async function fetchFallbackSummaryVas(
     WITH candidate_period AS (
       SELECT period_start, period_end
       FROM am_platinum_vas_period_summary_v1
-      WHERE period_start <= ${endDate}::date
-        AND period_end >= ${startDate}::date
+    WHERE date_trunc('month', period_start)::date = date_trunc('month', ${endDate}::date)::date
         ${dealerWhere}
       GROUP BY period_start, period_end
       ORDER BY
-        CASE
-          WHEN period_start >= ${startDate}::date AND period_end <= ${endDate}::date THEN 0
-          WHEN period_start <= ${startDate}::date AND period_end >= ${endDate}::date THEN 1
-          ELSE 2
-        END,
-        CASE WHEN period_end <= ${endDate}::date THEN period_end END DESC NULLS LAST,
-        (period_end - period_start) ASC,
+        period_end DESC,
         period_start DESC
       LIMIT 1
     )
@@ -297,6 +359,7 @@ async function fetchOperationVasForPeriod(
       COALESCE(SUM(amount) FILTER (WHERE ${vasFilter()}), 0)::float AS vas_amount,
       COUNT(*)::int AS period_rows,
       COUNT(*) FILTER (WHERE ${vasFilter()})::int AS source_rows,
+      COUNT(*) FILTER (WHERE ${unknownCodeFilter()})::int AS unknown_code_rows,
       MIN(period_start)::text AS period_start,
       MAX(period_end)::text AS period_end
     FROM operation_rows
@@ -320,25 +383,12 @@ async function fetchBestEffortOperationVas(
     SELECT report_period_start::date AS period_start,
            report_period_end::date AS period_end
     FROM am_platinum_operation_wise_analysis_report
-    WHERE report_period_start <= ${endDate}::date
-      AND report_period_end >= ${startDate}::date
+    WHERE date_trunc('month', report_period_start)::date = date_trunc('month', ${endDate}::date)::date
       ${reportTypeFilter(columns)}
       ${operationDealerFilter(dealerCode)}
     GROUP BY report_period_start::date, report_period_end::date
     ORDER BY
-      CASE
-        WHEN report_period_start::date = ${startDate}::date
-         AND report_period_end::date = ${endDate}::date THEN 0
-        WHEN report_period_start::date >= ${startDate}::date
-         AND report_period_end::date <= ${endDate}::date THEN 1
-        WHEN report_period_start::date <= ${startDate}::date
-         AND report_period_end::date >= ${endDate}::date THEN 2
-        ELSE 3
-      END,
-      CASE
-        WHEN report_period_end::date <= ${endDate}::date THEN report_period_end::date
-      END DESC NULLS LAST,
-      (report_period_end::date - report_period_start::date) ASC,
+      report_period_end::date DESC,
       report_period_start::date DESC
     LIMIT 1
   `)
@@ -357,6 +407,7 @@ type VasPeriodRequest = {
   endDate: string
 }
 
+// Batch-fetches exact period matches from the materialized summary view.
 async function fetchExactSummaryVasBatch(
   periods: VasPeriodRequest[],
   dealerCode: DealerFilter
@@ -409,43 +460,13 @@ export async function fetchPlatinumWorkshopVasAmounts(
   lyEnd: string,
   dealerCode: DealerFilter = null
 ): Promise<{ cy: PlatinumVasResult; ly: PlatinumVasResult }> {
-  const periods: VasPeriodRequest[] = [
-    { key: 'cy', startDate: cyStart, endDate: cyEnd },
-    { key: 'ly', startDate: lyStart, endDate: lyEnd },
-  ]
-  const summaryTable = 'am_platinum_vas_period_summary_v1'
-  const resolved = new Map<string, PlatinumVasResult>()
-
-  if (await tableExists(summaryTable)) {
-    const exactBatch = await fetchExactSummaryVasBatch(periods, dealerCode)
-    exactBatch.forEach((value, key) => {
-      const period = periods.find((item) => item.key === key)
-      if (!period) return
-      resolved.set(
-        key,
-        key === 'ly'
-          ? finalizeVasResult(value, period.startDate, period.endDate, true)
-          : value
-      )
-    })
-  }
-
-  const pending = periods.filter((period) => !resolved.has(period.key))
-  await Promise.all(pending.map(async (period) => {
-    resolved.set(
-      period.key,
-      await fetchPlatinumWorkshopVasAmount(
-        period.startDate,
-        period.endDate,
-        dealerCode,
-        { requireComparable: period.key === 'ly' }
-      )
-    )
-  }))
-
+  const [cy, ly] = await Promise.all([
+    fetchPlatinumWorkshopVasAmount(cyStart, cyEnd, dealerCode),
+    fetchPlatinumWorkshopVasAmount(lyStart, lyEnd, dealerCode, { requireComparable: true }),
+  ])
   return {
-    cy: resolved.get('cy') || emptyResult(`No Platinum VAS source period covers ${cyStart} to ${cyEnd} for the selected location.`),
-    ly: resolved.get('ly') || emptyResult(`No operation period matches ${lyStart} to ${lyEnd} for the selected location.`),
+    cy,
+    ly,
   }
 }
 
@@ -459,21 +480,20 @@ export async function fetchPlatinumWorkshopVasAmount(
   const sourceTable = 'am_platinum_operation_wise_analysis_report'
   const summaryTable = 'am_platinum_vas_period_summary_v1'
 
-  if (await tableExists(summaryTable)) {
-    const exactSummary = await fetchExactSummaryVas(startDate, endDate, dealerCode)
-    if (exactSummary) return finalizeVasResult(exactSummary, startDate, endDate, requireComparable)
+  // Operation Wise is a monthly report, not a transaction-date source. Always
+  // prefer the latest live snapshot for the selected calendar month.
+  const monthlyOperation = await fetchBestEffortOperationVas(startDate, endDate, dealerCode)
+  if (monthlyOperation) {
+    return finalizeVasResult({
+      ...monthlyOperation,
+      parityStatus: 'live_only',
+    }, startDate, endDate, requireComparable)
   }
-
-  const exactOperation = await fetchOperationVasForPeriod(startDate, endDate, dealerCode, startDate, endDate)
-  if (exactOperation) return finalizeVasResult(exactOperation, startDate, endDate, requireComparable)
 
   if (await tableExists(summaryTable)) {
     const fallbackSummary = await fetchFallbackSummaryVas(startDate, endDate, dealerCode)
     if (fallbackSummary) return finalizeVasResult(fallbackSummary, startDate, endDate, requireComparable)
   }
-
-  const fallbackOperation = await fetchBestEffortOperationVas(startDate, endDate, dealerCode)
-  if (fallbackOperation) return finalizeVasResult(fallbackOperation, startDate, endDate, requireComparable)
 
   const snapshotMeta = await analyticsDb.execute(sql`
     SELECT
@@ -494,6 +514,9 @@ export async function fetchPlatinumWorkshopVasAmount(
     source: 'operation_period_unavailable',
     sourceTable,
     sourceRows: 0,
+    matchedRows: 0,
+    unknownCodeRows: 0,
+    identifierVersion: PLATINUM_VAS_IDENTIFIER_VERSION,
     latestSnapshotUploadedAt: dateValue(snapshotRow?.latest_uploaded_at),
   }
 }

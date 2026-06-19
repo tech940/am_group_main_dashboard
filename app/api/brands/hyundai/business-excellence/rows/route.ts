@@ -9,7 +9,10 @@ export async function POST() {
   const accessError = await requireBrandApiAccess('hyundai')
   if (accessError) return accessError
 
-  await invalidateCachePattern(`${HYUNDAI_BE_CACHE_PREFIX}:*`)
+  await Promise.all([
+    invalidateCachePattern(`${HYUNDAI_BE_CACHE_PREFIX}:*`),
+    invalidateCachePattern('hyundai:service-dashboard:*'),
+  ])
 
   return NextResponse.json(
     {

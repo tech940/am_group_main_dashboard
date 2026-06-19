@@ -24,6 +24,8 @@
     "db:refresh-dashboard-views:scheduler": "node scripts/refresh-dashboard-materialized-views-scheduler.js",
     "verify:platinum-be": "node scripts/verify-platinum-business-excellence.js",
     "verify:platinum-be-api": "node scripts/verify-platinum-be-api.js",
+    "verify:platinum-vas": "tsx scripts/verify-platinum-vas-identifiers.ts",
+    "db:sync-platinum-vas": "tsx scripts/sync-platinum-vas-summary.ts",
     "db:enforce-retention": "node scripts/enforce-brand-analytics-retention.js",
     "bq:fix-partition-expiration": "node scripts/bigquery/fix-partition-expiration.js",
     "bq:apply-ddl": "node scripts/bigquery/apply-ddl.js",
@@ -33,6 +35,9 @@
     "bq:validate-all-brands": "node scripts/bigquery/validate-all-brands.js",
     "service-dashboard-email:send": "tsx scripts/send-service-dashboard-email.ts",
     "service-dashboard-email:scheduler": "node scripts/send-service-dashboard-email-scheduler.js",
+    "db:setup-kia-service-dashboard-snapshots": "node scripts/setup-kia-service-dashboard-snapshots.js",
+    "capture:kia-service-dashboard-snapshot": "tsx scripts/capture-kia-service-dashboard-snapshot.ts",
+    "verify:kia-service-dashboard-snapshots": "tsx scripts/verify-kia-service-dashboard-snapshots.mjs",
     "verify:kia-be-parity": "tsx scripts/verify-kia-business-excellence-parity.mjs"
   },
   "dependencies": {

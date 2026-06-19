@@ -2,6 +2,7 @@ import path from 'path'
 import ExcelJS from 'exceljs'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { db as postgresDb } from '@/lib/db'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import {
@@ -40,6 +41,7 @@ type DealerFilter = KiaDealerCode | null
 type NumericRow = Record<string, unknown>
 
 const SERVICE_DASHBOARD_TEMPLATE = path.join(process.cwd(), 'templates', 'kia', 'service-dashboard-template.xlsx')
+const SERVICE_DASHBOARD_CACHE_VERSION = 'v3'
 const SERVICE_CATEGORIES = ['Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair'] as const
 
 type ServiceCategory = typeof SERVICE_CATEGORIES[number]
@@ -54,7 +56,9 @@ type AmountPair = {
   mtd: number
 }
 
-type ServiceDashboardMetrics = {
+type ServiceDashboardCellValue = string | number | null
+
+export type ServiceDashboardMetrics = {
   exportDate: string
   monthStart: string
   intake: Record<ServiceCategory, CountPair>
@@ -87,7 +91,13 @@ type ServiceDashboardMetrics = {
   }
   vasAmount: number
   bodyshopPnaCases: number
-  sourceMetadata: ReturnType<typeof buildKiaSourceMetadata>
+  sourceMetadata: ReturnType<typeof buildKiaSourceMetadata> | {
+    workingDayCount?: number
+    [key: string]: unknown
+  }
+  unavailableRows?: number[]
+  sourceWarnings?: string[]
+  displayOverrides?: Record<string, ServiceDashboardCellValue>
 }
 
 export type KiaServiceDashboardExport = {
@@ -655,7 +665,65 @@ async function fetchOilMetrics(monthStart: string, exportDate: string, dealerCod
   return invoiceMetrics
 }
 
-async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): Promise<ServiceDashboardMetrics> {
+function parseSnapshotJson<T>(value: unknown): T | null {
+  if (value && typeof value === 'object') return value as T
+  if (typeof value !== 'string') return null
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return null
+  }
+}
+
+async function fetchStoredServiceDashboardSnapshot(
+  reportDate: string,
+  dealerCode: DealerFilter,
+): Promise<ServiceDashboardMetrics | null> {
+  try {
+    const rows = await postgresDb.execute(sql`
+      SELECT metrics, cell_overrides, source_label, is_verified, created_at, updated_at
+      FROM kia_service_dashboard_snapshots
+      WHERE dealer_code = ${dealerCode || 'all'}
+        AND report_date = ${reportDate}::date
+      LIMIT 1
+    `)
+    const row = resultRows(rows)[0]
+    const metrics = parseSnapshotJson<ServiceDashboardMetrics>(row?.metrics)
+    if (!metrics) return null
+
+    const displayOverrides = parseSnapshotJson<Record<string, ServiceDashboardCellValue>>(row.cell_overrides) || {}
+    const sourceWarnings = [
+      ...(metrics.sourceWarnings || []),
+      row.is_verified
+        ? `Verified historical snapshot: ${String(row.source_label || reportDate)}`
+        : `Saved historical snapshot: ${String(row.source_label || reportDate)}`,
+    ]
+
+    return {
+      ...metrics,
+      exportDate: reportDate,
+      displayOverrides,
+      sourceWarnings,
+      sourceMetadata: {
+        ...metrics.sourceMetadata,
+        snapshotMode: row.is_verified ? 'verified_historical' : 'captured_historical',
+        snapshotCreatedAt: row.created_at,
+        snapshotUpdatedAt: row.updated_at,
+        sourceLabel: row.source_label,
+      },
+    }
+  } catch (error) {
+    const code = String((error as { cause?: { code?: unknown }; code?: unknown })?.cause?.code
+      || (error as { code?: unknown })?.code
+      || '')
+    if (code !== '42P01') {
+      console.warn('[kia-service-dashboard] snapshot lookup failed; using live reconstruction', error)
+    }
+    return null
+  }
+}
+
+async function buildLiveMetrics(endDate: string | null, dealerCode: DealerFilter): Promise<ServiceDashboardMetrics> {
   const exportDate = await resolveExportDate(endDate, dealerCode)
   const monthStart = getMonthStart(exportDate)
 
@@ -696,13 +764,31 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
       deduplicationMode: 'RO/job-card key; billed and open intake union; active bill value ranking',
       ...workingDays,
     }),
+    sourceWarnings: [
+      'Live reconstruction uses the latest stored source rows. Historical dates can include corrections loaded after the selected date unless a saved dashboard snapshot exists.',
+    ],
   }
 }
 
+async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): Promise<ServiceDashboardMetrics> {
+  const requestedDate = parseDateInput(endDate)
+  if (requestedDate) {
+    const requestedSnapshot = await fetchStoredServiceDashboardSnapshot(requestedDate, dealerCode)
+    if (requestedSnapshot) return requestedSnapshot
+  }
+
+  const exportDate = await resolveExportDate(endDate, dealerCode)
+  const resolvedSnapshot = await fetchStoredServiceDashboardSnapshot(exportDate, dealerCode)
+  if (resolvedSnapshot) return resolvedSnapshot
+
+  return buildLiveMetrics(exportDate, dealerCode)
+}
+
 export const buildServiceDashboardMetrics = buildMetrics
+export const buildLiveServiceDashboardMetrics = buildLiveMetrics
 
 function serviceDashboardCacheKey(kind: 'metrics' | 'preview', endDate: string | null, dealerCode: DealerFilter) {
-  return `kia:service-dashboard:${kind}:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${dealerCode || 'all'}:${endDate || 'latest'}`
+  return `kia:service-dashboard:${kind}:${SERVICE_DASHBOARD_CACHE_VERSION}:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${dealerCode || 'all'}:${endDate || 'latest'}`
 }
 
 export async function getCachedServiceDashboardMetrics(
@@ -748,7 +834,7 @@ function setFormulaPair(worksheet: ExcelJS.Worksheet, row: number, formula: stri
   setFormula(worksheet, `C${row}`, formula, result, fractionDigits)
 }
 
-function toArrayBuffer(value: ArrayBuffer | Uint8Array) {
+export function toArrayBuffer(value: ArrayBuffer | Uint8Array) {
   const view = value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value)
   const buffer = new ArrayBuffer(view.byteLength)
   new Uint8Array(buffer).set(view)
@@ -856,7 +942,7 @@ function buildMergeLookup(merges: string[]) {
   return lookup
 }
 
-function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: ServiceDashboardMetrics) {
+export function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: ServiceDashboardMetrics) {
   worksheet.name = 'Service Dashboard'
   worksheet.getColumn('A').width = 38.140625
   worksheet.getColumn('B').width = 24.28515625
@@ -981,6 +1067,11 @@ function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: Se
   setFormula(worksheet, 'C40', oilPerRoMechMtdFormula, safeDivide(metrics.oil.engineOilQty.mtd, mechDeliveredMtd), 0)
   setFormulaPair(worksheet, 41, labourWithoutVasFormula, safeDivide(totalLabourMtd - metrics.vasAmount, totalDeliveredMtd), 0)
 
+  for (const rowNumber of metrics.unavailableRows || []) {
+    worksheet.getCell(`B${rowNumber}`).value = 'N/A'
+    worksheet.getCell(`C${rowNumber}`).value = 'N/A'
+  }
+
   // Copy row 41 styling to row 42 for Bodyshop PNA Cases
   const row41 = worksheet.getRow(41)
   const row42 = worksheet.getRow(42)
@@ -999,6 +1090,61 @@ function fillServiceDashboardWorksheet(worksheet: ExcelJS.Worksheet, metrics: Se
   cellC42.style = { ...row41.getCell(3).style }
 
   worksheet.mergeCells('B42:C42')
+
+  for (const [address, value] of Object.entries(metrics.displayOverrides || {})) {
+    worksheet.getCell(address).value = value
+  }
+}
+
+export function buildServiceDashboardPreviewPayload(
+  worksheet: ExcelJS.Worksheet,
+  metrics: ServiceDashboardMetrics,
+  fileName: string,
+): KiaServiceDashboardPreview {
+  const merges = [...(worksheet.model.merges || [])]
+  const mergeLookup = buildMergeLookup(merges)
+  const rows: KiaServiceDashboardPreview['rows'] = []
+
+  for (let rowIndex = 1; rowIndex <= 42; rowIndex += 1) {
+    const row = worksheet.getRow(rowIndex)
+    const cells: ServiceDashboardPreviewCell[] = []
+
+    for (let colIndex = 1; colIndex <= 3; colIndex += 1) {
+      const cell = row.getCell(colIndex)
+      const merge = mergeLookup.get(`${rowIndex}:${colIndex}`)
+      const hidden = Boolean(merge?.hidden)
+      cells.push({
+        address: cell.address,
+        row: rowIndex,
+        col: colIndex,
+        text: getCellText(cell),
+        value: getCellRawValue(cell),
+        colspan: hidden ? 1 : merge?.colspan || 1,
+        rowspan: hidden ? 1 : merge?.rowspan || 1,
+        hidden,
+        style: getCellStyle(cell),
+      })
+    }
+
+    rows.push({
+      index: rowIndex,
+      height: row.height || null,
+      cells,
+    })
+  }
+
+  return {
+    sheetName: worksheet.name,
+    range: 'A1:C42',
+    fileName,
+    metrics,
+    columns: ['A', 'B', 'C'].map((key) => ({
+      key,
+      width: worksheet.getColumn(key).width || 12,
+    })),
+    rows,
+    merges,
+  }
 }
 
 export async function buildKiaServiceDashboardWorkbook({
@@ -1062,50 +1208,7 @@ async function buildKiaServiceDashboardPreviewUncached({
   dealerCode?: DealerFilter
 }): Promise<KiaServiceDashboardPreview> {
   const { worksheet, metrics, fileName } = await buildKiaServiceDashboardWorkbook({ endDate, dealerCode })
-  const merges = [...(worksheet.model.merges || [])]
-  const mergeLookup = buildMergeLookup(merges)
-  const rows: KiaServiceDashboardPreview['rows'] = []
-
-  for (let rowIndex = 1; rowIndex <= 42; rowIndex += 1) {
-    const row = worksheet.getRow(rowIndex)
-    const cells: ServiceDashboardPreviewCell[] = []
-
-    for (let colIndex = 1; colIndex <= 3; colIndex += 1) {
-      const cell = row.getCell(colIndex)
-      const merge = mergeLookup.get(`${rowIndex}:${colIndex}`)
-      const hidden = Boolean(merge?.hidden)
-      cells.push({
-        address: cell.address,
-        row: rowIndex,
-        col: colIndex,
-        text: getCellText(cell),
-        value: getCellRawValue(cell),
-        colspan: hidden ? 1 : merge?.colspan || 1,
-        rowspan: hidden ? 1 : merge?.rowspan || 1,
-        hidden,
-        style: getCellStyle(cell),
-      })
-    }
-
-    rows.push({
-      index: rowIndex,
-      height: row.height || null,
-      cells,
-    })
-  }
-
-  return {
-    sheetName: worksheet.name,
-    range: 'A1:C42',
-    fileName,
-    metrics,
-    columns: ['A', 'B', 'C'].map((key) => ({
-      key,
-      width: worksheet.getColumn(key).width || 12,
-    })),
-    rows,
-    merges,
-  }
+  return buildServiceDashboardPreviewPayload(worksheet, metrics, fileName)
 }
 
 export async function buildKiaServiceDashboardPreview({

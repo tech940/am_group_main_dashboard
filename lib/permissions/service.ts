@@ -31,8 +31,14 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-const PERMISSION_CACHE_VERSION = 'v4'
+const PERMISSION_CACHE_VERSION = 'v5'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
+const ADMIN_ONLY_PERMISSION_GROUPS = new Set(['user_management', 'access_control', 'admin_audit'])
+
+function isAdminOnlyPermission(permissionKey: string) {
+  const permission = PERMISSIONS.find((item) => item.key === permissionKey)
+  return Boolean(permission && ADMIN_ONLY_PERMISSION_GROUPS.has(permission.groupKey))
+}
 
 export function isMissingPermissionTableError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
@@ -109,15 +115,19 @@ function constrainSnapshotToBranch(
 
 function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string | null): PermissionSnapshot {
   const roleKeys = new Set(
-    isSuperAdminRole(role) || hasGlobalAccessRole(role)
+    isSuperAdminRole(role)
       ? PERMISSIONS.map((permission) => permission.key)
+      : hasGlobalAccessRole(role)
+        ? PERMISSIONS.filter((permission) => !ADMIN_ONLY_PERMISSION_GROUPS.has(permission.groupKey)).map((permission) => permission.key)
       : (ROLE_PERMISSION_TEMPLATES[role] || [])
   )
   const roleDefaults = Object.fromEntries(PERMISSIONS.map((permission) => [permission.key, roleKeys.has(permission.key)]))
   applyBranchRoleDefaults(roleDefaults, role, branchAccess)
   constrainSnapshotToBranch(roleDefaults, role, branchAccess)
-  if (isSuperAdminRole(role) || hasGlobalAccessRole(role)) {
+  if (isSuperAdminRole(role)) {
     for (const key of Object.keys(roleDefaults)) roleDefaults[key] = true
+  } else if (hasGlobalAccessRole(role)) {
+    for (const key of Object.keys(roleDefaults)) roleDefaults[key] = !isAdminOnlyPermission(key)
   } else if (branchAccess) {
     for (const key of Object.keys(roleDefaults)) {
       if (key.startsWith(`${branchAccess}.`)) {
@@ -345,8 +355,10 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
 
   const effective = { ...roleDefaults, ...overrides }
   constrainSnapshotToBranch(effective, targetUser.role, targetUser.brand)
-  if (isSuperAdminRole(targetUser.role) || hasGlobalAccessRole(targetUser.role)) {
+  if (isSuperAdminRole(targetUser.role)) {
     for (const key of Object.keys(effective)) effective[key] = true
+  } else if (hasGlobalAccessRole(targetUser.role)) {
+    for (const key of Object.keys(effective)) effective[key] = !isAdminOnlyPermission(key)
   } else if (targetUser.brand) {
     for (const key of Object.keys(effective)) {
       if (key.startsWith(`${targetUser.brand}.`)) {
@@ -368,7 +380,8 @@ export async function getUserPermissionSnapshot(userId: string) {
 
 export async function canUserAccessPermission(appUser: AppUser | null, permissionKey: string): Promise<boolean> {
   if (!appUser || !appUser.isActive) return false
-  if (isSuperAdminRole(appUser.role) || hasGlobalAccessRole(appUser.role)) return true
+  if (isSuperAdminRole(appUser.role)) return true
+  if (hasGlobalAccessRole(appUser.role)) return !isAdminOnlyPermission(permissionKey)
 
   if (appUser.brand && permissionKey.startsWith(`${appUser.brand}.`)) return true
 

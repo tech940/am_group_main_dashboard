@@ -1,6 +1,6 @@
 # Project Context
 
-Last updated: 2026-06-03
+Last updated: 2026-06-19
 
 ## Project Overview
 
@@ -20,6 +20,16 @@ The application is designed for operational users across Admin, CEO, Purchase Ma
   - Redis for server-side dashboard/API caching.
   - Optional PostgreSQL materialized summary view for RO Billing daily aggregates.
 - Storage: Supabase Storage for purchase-order images/PDFs.
+
+## Authorization Policy
+
+- `super_admin`, `md`, `ceo`, and `ea` are global operational roles. They can open every non-admin branch and module regardless of the `users.brand` assignment or user-level branch permission overrides.
+- The Admin Console (`/admin`) and every `/api/admin/*` management capability are restricted to the exact `super_admin` role. MD, CEO, EA, legacy `admin`, and `branch_admin` users must not see or use Admin.
+- `branch_admin` remains a branch-scoped operational role and is not an Admin Console role.
+- The legacy `admin` role must not be treated as an alias for `super_admin`. New privileged accounts should use `super_admin`.
+- Shared role truth lives in `lib/auth/roles.ts`; brand page/API guards use `lib/auth/brand-access.ts`; effective permission snapshots use `lib/permissions/service.ts`; Admin API authority uses `lib/admin/authorization.ts`.
+- Permission cache namespace is `permissions:v5:user:*`. Global executive snapshots grant every operational permission but explicitly keep `user_management`, `access_control`, and `admin_audit` false. Super Admin receives those permissions as well.
+- Executive Dashboard visibility includes Super Admin, MD, CEO, and EA in KIA, Hyundai, and Platinum.
 
 ## Business Excellence Date & Comparison Rules
 
@@ -702,6 +712,28 @@ Finance Order bank options come from `FINANCE_BANK_OPTIONS` in `lib/dashboard-co
 - Permission registry includes `kia.proforma` so the Access Control Manager can govern the module. Normal/viewer-style users receive default Proforma view/create/edit access; `admin`, `ceo`, `md`, `ea`, and `manager` roles receive approver access defaults and see Pending Approval in the Proforma navbar. Kia Proforma route pages and APIs now enforce `kia.proforma.view`, `kia.proforma.create`, `kia.proforma.edit`, and `kia.proforma.approve` server-side, and `canApproveKiaProformaForUser` treats either legacy profile approver/global approver roles or the scoped `kia.proforma.approve` permission as approval authority. This allows a user to be a KIA-only Proforma Approver or Branch Admin without receiving global admin access.
 - Kia Proforma route pages render the module shell with `kia.proforma.view` access; actual saves still require the POST/API `kia.proforma.create` permission. The options API returns explicit JSON failures and accepts both array and `{ rows }` Drizzle raw-query result shapes, so model/trim/bank/insurance lookup loading does not silently collapse. Proforma table fetches keep a visible retryable error state instead of leaving blank panels when `/api/brands/kia/proforma` fails.
 - Dashboard theme selector includes `Executive Navy`, a premium dark-navy palette centered on `#031430` with coordinated navy hover, soft card, border, support, and chart colors.
+
+### Platinum and Hyundai Operation Wise / Service Dashboard restoration - 19 Jun 2026
+
+- Platinum materialized-view reads no longer select the nonexistent `unknown_code_rows` column. That diagnostic remains only in live raw-table aggregation where it is computed. Optional diagnostic failures must never discard otherwise valid VAS amounts.
+- Platinum VAS/WA/WB follows the Operation Wise report's month/snapshot model. It resolves by `report_period_start` and `report_period_end`, uses the latest valid contained monthly snapshot when an MTD request extends beyond the uploaded report, reports actual source coverage, normalizes Rajouri `N6824` to `N6250`, and de-duplicates by `row_hash`.
+- Platinum and Hyundai WA/WB classification uses the shared Operation Wise code registry. WA/WB business counts are classified operation rows after de-duplication; amounts use `total_amt`. Source-level values without reliable `service_advisor` attribution are assigned only to MECH and are not fabricated across advisors.
+- AM Hyundai now has the same monthly Operation Wise data path as Platinum through `lib/hyundai/business-excellence-operations.ts`. Hyundai Overview VAS and Workshop WA/WB use `hyundai_operation_wise_analysis_report`, identical dealer/month filtering, source coverage metadata, and warnings.
+- Correct Hyundai DMS dealer mappings include Jammu `N5203/N5216`, Akhnoor `N5701/N6844`, Kathua `N5804/N6845`, RS Pura `N6815/N6846`, Vijaypur `N6819/N6847`, and Udhampur `N5217/N6848/N6849`.
+- The AM Hyundai Service Dashboard is live in the Business Excellence report selector with preview and Excel export routes at `/api/brands/hyundai/business-excellence/service-dashboard-preview` and `/service-dashboard-export`. It reads Hyundai RO Billing, Repair Orders, Operation Wise, EW, RSA, and MCP sources, reuses the proven workbook layout, and returns source warnings instead of hanging when optional tables are absent.
+- Platinum and Hyundai catch-all page registries must explicitly include `business-excellence/service-dashboard`. The report selector alone is not sufficient: an omitted route definition falls through to `forbidden()` and misleadingly appears to be an authorization failure even for Super Admin.
+- Hyundai Business Excellence and Service Dashboard cache invalidation covers both `hyundai:business-excellence:*` and `hyundai:service-dashboard:*`.
+- Database audit on 19 Jun 2026 found the current Hyundai June Operation Wise load incomplete: only six relevant source rows were present across loaded dealers and their amounts were zero. The application path is fixed, but genuine non-zero Hyundai VAS/WA/WB requires the cron/import pipeline to reload the complete monthly Operation Wise report.
+- Validation completed for this restoration: TypeScript, focused ESLint, direct Operation Wise helper checks, Service Dashboard preview/export workbook generation, and the production Next.js build.
+
+### KIA Service Dashboard historical snapshot correction - 19 Jun 2026
+
+- A selected historical date must not be rebuilt as though the current source tables were unchanged since that date. `ro_billing_report`, `open_ro_yearly`, `ew_report`, and cumulative Operation Wise data contain later corrections/backfills or current-only status, so filtering their business date columns does not reproduce the source state that existed on an earlier report date.
+- The 08 Jun 2026 MD report proved the drift. The latest source includes free-service bill `B202601654 / R202601653`, adding rounded labour Rs 2,090, parts Rs 3,999, and one delivered vehicle that were absent from the issued 08 Jun report. Bill `B202601653 / R202601658` existed in the report count but its Rs 720 labour and Rs 2,864 parts were populated later. Those two changes exactly explain the current-vs-issued Today and MTD revenue differences. EW and pending RO counts also drifted because later rows/status changes are visible in the latest tables.
+- `kia_service_dashboard_snapshots` stores immutable dated metrics plus optional verified display overrides. The KIA preview/export path now prefers an exact dealer/date snapshot and only uses live reconstruction when no saved snapshot exists. Live reconstruction carries an explicit warning that later corrections can affect historical dates.
+- Verified Jammu (`JK402`, the normal KIA Business Excellence default) and all-location snapshots are seeded for 08 Jun 2026 and 17 Jun 2026 from the MD reports. Dealer-specific requests must use the matching dealer snapshot key; storing only `all` causes the default `JK402` page to fall through to live reconstruction. The 08 Jun `Average RO = 9` is retained as an explicit verified report value because it is inconsistent with the working-day formula that correctly produces `12` for 17 Jun; changing the global formula would break the matching report.
+- Run `npm run db:setup-kia-service-dashboard-snapshots` once per database. After every successful KIA source-report cron batch, run `npm run capture:kia-service-dashboard-snapshot -- --date YYYY-MM-DD`. Run it only after RO Billing, Open RO/Repair Orders, EW, RSA, MCP, Operation Wise, and ADV Lubricants/VAS imports have all completed and passed their row-count/coverage checks. Verified snapshots are protected from cron overwrite.
+- Regression verification is `npm run verify:kia-service-dashboard-snapshots`. KIA Service Dashboard cache keys use their own `v3` namespace so older all-location and `JK402` reconstructed June 8 responses are discarded.
 
 ## Features In Progress
 

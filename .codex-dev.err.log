@@ -1,0 +1,113 @@
+[browser] Uncaught Error: Failed query: select "id", "supabase_id", "email", "full_name", "role", "brand", "department", "is_active" from "users" where ("users"."supabase_id" = $1 and "users"."deleted_at" is null) limit $2
+params: 63595f8b-be3e-47fe-9ba5-f3bd5335587d,1
+    at  findAppUserBySupabaseId (about://React/Server/C:%5CUsers%5Csahil%5CDownloads%5Cam_group_main_dashboard%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__0xxy_6e._.js?0:2133:23)
+    at <anonymous> (about://React/Server/C:%5CUsers%5Csahil%5CDownloads%5Cam_group_main_dashboard%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__0xxy_6e._.js?1:2196:23)
+    at  getCachedAppUserBySupabaseId (about://React/Server/C:%5CUsers%5Csahil%5CDownloads%5Cam_group_main_dashboard%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__0xxy_6e._.js?2:2224:16)
+    at  getAuthenticatedAppUser (about://React/Server/C:%5CUsers%5Csahil%5CDownloads%5Cam_group_main_dashboard%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__0xxy_6e._.js?3:2232:21)
+    at  getBrandAccess (about://React/Server/C:%5CUsers%5Csahil%5CDownloads%5Cam_group_main_dashboard%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__0xxy_6e._.js?4:2400:21)
+    at  Page (about://React/Server/C:%5CUsers%5Csahil%5CDownloads%5Cam_group_main_dashboard%5C.next%5Cdev%5Cserver%5Cchunks%5Cssr%5C%5Broot-of-the-server%5D__0xxy_6e._.js?5:4622:20)
+Error [PostgresError]: (ECHECKOUTTIMEOUT) unable to check out connection from the pool after 15000ms in Transaction mode
+    at ignore-listed frames {
+  code: 'XX000',
+  severity_local: 'FATAL'
+}
+⨯ unhandledRejection: Error [PostgresError]: (ECHECKOUTTIMEOUT) unable to check out connection from the pool after 15000ms in Transaction mode
+    at ignore-listed frames {
+  code: 'XX000',
+  severity_local: 'FATAL'
+}
+⨯ unhandledRejection:  Error [PostgresError]: (ECHECKOUTTIMEOUT) unable to check out connection from the pool after 15000ms in Transaction mode
+    at ignore-listed frames {
+  code: 'XX000',
+  severity_local: 'FATAL'
+}
+⨯ Error: Failed query: select "id", "supabase_id", "email", "full_name", "role", "brand", "department", "is_active" from "users" where ("users"."supabase_id" = $1 and "users"."deleted_at" is null) limit $2
+params: 63595f8b-be3e-47fe-9ba5-f3bd5335587d,1
+    at async findAppUserBySupabaseId (lib\auth\app-user.ts:68:21)
+    at async (lib\auth\app-user.ts:151:17)
+    at async getCachedAppUserBySupabaseId (lib\auth\app-user.ts:182:12)
+    at async getAuthenticatedAppUser (lib\auth\app-user.ts:192:19)
+    at async getBrandAccess (lib\auth\brand-access.ts:16:19)
+    at async Page (app\brands\platinum\[...module]\page.tsx:104:18)
+  66 |
+  67 | async function findAppUserBySupabaseId(supabaseId: string) {
+> 68 |   const [appUser] = await db
+     |                     ^
+  69 |     .select({
+  70 |       id: users.id,
+  71 |       supabaseId: users.supabaseId, {
+  query: 'select "id", "supabase_id", "email", "full_name", "role", "brand", "department", "is_active" from "users" where ("users"."supabase_id" = $1 and "users"."deleted_at" is null) limit $2',
+  params: [ '63595f8b-be3e-47fe-9ba5-f3bd5335587d', 1 ],
+  digest: '2916756258',
+  [cause]: Error [PostgresError]: (ECHECKOUTTIMEOUT) unable to check out connection from the pool after 15000ms in Transaction mode
+      at ignore-listed frames {
+    code: 'XX000',
+    severity_local: 'FATAL'
+  }
+}
+Error [PostgresError]: (ECHECKOUTTIMEOUT) unable to check out connection from the pool after 15000ms in Transaction mode
+    at ignore-listed frames {
+  code: 'XX000',
+  severity_local: 'FATAL'
+}
+⨯ unhandledRejection: Error [PostgresError]: (ECHECKOUTTIMEOUT) unable to check out connection from the pool after 15000ms in Transaction mode
+    at ignore-listed frames {
+  code: 'XX000',
+  severity_local: 'FATAL'
+}
+⨯ unhandledRejection:  Error [PostgresError]: (ECHECKOUTTIMEOUT) unable to check out connection from the pool after 15000ms in Transaction mode
+    at ignore-listed frames {
+  code: 'XX000',
+  severity_local: 'FATAL'
+}
+⨯ Error: Failed query: select "id", "supabase_id", "email", "full_name", "role", "brand", "department", "is_active" from "users" where ("users"."supabase_id" = $1 and "users"."deleted_at" is null) limit $2
+params: 63595f8b-be3e-47fe-9ba5-f3bd5335587d,1
+    at async findAppUserBySupabaseId (lib\auth\app-user.ts:69:21)
+    at async (lib\auth\app-user.ts:175:17)
+    at async getCachedAppUserBySupabaseId (lib\auth\app-user.ts:214:12)
+    at async getAuthenticatedAppUser (lib\auth\app-user.ts:224:19)
+    at async getBrandAccess (lib\auth\brand-access.ts:16:19)
+    at async Page (app\brands\platinum\[...module]\page.tsx:104:18)
+  67 |
+  68 | async function findAppUserBySupabaseId(supabaseId: string) {
+> 69 |   const [appUser] = await db
+     |                     ^
+  70 |     .select({
+  71 |       id: users.id,
+  72 |       supabaseId: users.supabaseId, {
+  query: 'select "id", "supabase_id", "email", "full_name", "role", "brand", "department", "is_active" from "users" where ("users"."supabase_id" = $1 and "users"."deleted_at" is null) limit $2',
+  params: [ '63595f8b-be3e-47fe-9ba5-f3bd5335587d', 1 ],
+  digest: '4158623146',
+  [cause]: Error [PostgresError]: (ECHECKOUTTIMEOUT) unable to check out connection from the pool after 15000ms in Transaction mode
+      at ignore-listed frames {
+    code: 'XX000',
+    severity_local: 'FATAL'
+  }
+}
+Error [AuthRetryableFetchError]: {}
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 504,
+  code: undefined
+}
+Error [AuthRetryableFetchError]: {}
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 504,
+  code: undefined
+}
+[browser] Uncaught Error: Failed query: select "id", "supabase_id", "email", "full_name", "role", "brand", "department", "is_active" from "users" where ("users"."supabase_id" = $1 and "users"."deleted_at" is null) limit $2
+params: 63595f8b-be3e-47fe-9ba5-f3bd5335587d,1
+    at  findAppUserBySupabaseId (lib\auth\app-user.ts:69:21)
+    at <anonymous> (lib\auth\app-user.ts:175:17)
+    at  getCachedAppUserBySupabaseId (lib\auth\app-user.ts:214:12)
+    at  getAuthenticatedAppUser (lib\auth\app-user.ts:224:19)
+    at  getBrandAccess (lib\auth\brand-access.ts:16:19)
+    at  Page (app\brands\platinum\[...module]\page.tsx:104:18)
+  67 |
+  68 | async function findAppUserBySupabaseId(supabaseId: string) {
+> 69 |   const [appUser] = await db
+     |                     ^
+  70 |     .select({
+  71 |       id: users.id,
+  72 |       supabaseId: users.supabaseId,

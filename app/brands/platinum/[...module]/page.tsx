@@ -10,7 +10,7 @@ type PlatinumModuleDefinition = {
   permission: string
   component?: 'business-excellence' | 'warranty-claims'
   warrantySource?: 'ytp' | 'claim_list'
-  report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'workshop-performance' | 'open-ro' | 'platinum-complaints' | 'sot-analysis'
+  report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'workshop-performance' | 'open-ro' | 'platinum-complaints' | 'sot-analysis' | 'service-dashboard'
 }
 
 const PLATINUM_MODULES: Record<string, PlatinumModuleDefinition> = {
@@ -55,6 +55,12 @@ const PLATINUM_MODULES: Record<string, PlatinumModuleDefinition> = {
     permission: 'platinum.business_excellence.view',
     component: 'business-excellence',
     report: 'sot-analysis',
+  },
+  'business-excellence/service-dashboard': {
+    title: 'Service Dashboard',
+    permission: 'platinum.business_excellence.view',
+    component: 'business-excellence',
+    report: 'service-dashboard',
   },
   'service-appointment': {
     title: 'Service Appointment',

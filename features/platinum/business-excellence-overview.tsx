@@ -76,8 +76,14 @@ type WorkshopSnapshot = {
   vasPeriodStart?: string | null
   vasPeriodEnd?: string | null
   vasSourceRows?: number
+  vasMatchedRows?: number
+  vasUnknownCodeRows?: number
+  vasIdentifierVersion?: string
   vasDedupeMode?: string | null
   vasLatestSnapshotUploadedAt?: string | null
+  vasParityStatus?: 'not_checked' | 'matched' | 'summary_mismatch' | 'live_only'
+  vasSummaryAmount?: number | null
+  vasSummarySourceRows?: number | null
   labourPerRo: number
   minDate: string | null
   maxDate: string | null
@@ -1672,10 +1678,10 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
     : formatCurrency(data.workshopSnapshot.vasAmount)
   const vasMetric = data.comparison?.workshopVasAmount
   const vasTileMeta = data.workshopSnapshot.vasAvailable === false
-    ? 'No KIA-style period source'
+    ? data.workshopSnapshot.vasUnavailableReason || 'No VAS operation snapshot covers the selected period'
     : [
-      data.workshopSnapshot.vasPeriodEnd
-        ? `Source through ${formatDisplayDate(data.workshopSnapshot.vasPeriodEnd)}`
+      data.workshopSnapshot.vasPeriodStart && data.workshopSnapshot.vasPeriodEnd
+        ? `Source ${formatDisplayDate(data.workshopSnapshot.vasPeriodStart)} – ${formatDisplayDate(data.workshopSnapshot.vasPeriodEnd)}`
         : 'Value added services',
       vasMetric?.comparisonStatus === 'period_mismatch' && vasMetric.lyPeriodStart && vasMetric.lyPeriodEnd
         ? `LY source: ${formatDisplayDate(vasMetric.lyPeriodStart)} – ${formatDisplayDate(vasMetric.lyPeriodEnd)}`
