@@ -3,6 +3,11 @@ import 'server-only'
 import { createHash } from 'crypto'
 import { sql, type SQL } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { getHyundaiDealerCodes } from '@/lib/hyundai/dealer-branch'
+import {
+  hyundaiActiveBillSql,
+  hyundaiRoBillingRoKeySql,
+} from '@/lib/hyundai/business-excellence-calculations'
 
 export type HyundaiBranch = 'all' | 'jammu' | 'udhampur'
 export type HyundaiMetric = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
@@ -17,7 +22,7 @@ export type HyundaiDateFilters = {
 }
 
 export const HYUNDAI_BRANCH_DEALERS = {
-  jammu: ['N5216', 'N6846', 'N6847'],
+  jammu: ['N5203', 'N5216'],
   udhampur: ['N5217', 'N6848', 'N6849'],
 } as const
 
@@ -28,6 +33,7 @@ export const HYUNDAI_REPORTS = [
   { value: 'open-ro', label: 'Open RO (Repair Orders)', path: '/brands/hyundai/business-excellence/open-ro', supported: true },
   { value: 'workshop-performance', label: 'Workshop Performance', path: '/brands/hyundai/business-excellence/workshop-performance', supported: true },
   { value: 'hyundai-complaints', label: 'Hyundai Complaints', path: '/brands/hyundai/business-excellence/hyundai-complaints', supported: true },
+  { value: 'sot-analysis', label: 'SOT Analysis', path: '/brands/hyundai/business-excellence/sot-analysis', supported: true },
 ] as const
 
 export const HYUNDAI_METRICS: Array<{ value: HyundaiMetric; label: string }> = [
@@ -300,15 +306,15 @@ export function getHyundaiDateFilters(searchParams: URLSearchParams): HyundaiDat
 }
 
 export function createHyundaiCacheKey(section: string, filters: HyundaiDateFilters, extras: Record<string, unknown> = {}) {
-  return `hyundai:business-excellence:${section}:v2:${createHash('sha1').update(JSON.stringify({ filters, extras })).digest('hex')}`
+  return `hyundai:business-excellence:${section}:v3:${createHash('sha1').update(JSON.stringify({ filters, extras })).digest('hex')}`
 }
 
 function amountExpression(columnName: string) {
   return sql`
-    ABS(COALESCE(
+    COALESCE(
       NULLIF(regexp_replace(${sql.raw(columnName)}::text, '[^0-9.-]', '', 'g'), '')::numeric,
       0
-    ))
+    )
   `
 }
 
@@ -323,8 +329,12 @@ function dateExpression(columnName: string) {
 }
 
 function dealerPredicate(dealerExpression: SQL, filters: HyundaiDateFilters) {
+  const dealerCodes = getHyundaiDealerCodes(filters.dealerCode)
+  if (dealerCodes.length > 0) {
+    return sql`${dealerExpression} IN (${sql.join(dealerCodes.map((code) => sql`${code}`), sql`, `)})`
+  }
   if (filters.branch === 'jammu') {
-    return sql`${dealerExpression} IN ('N5216', 'N6846', 'N6847')`
+    return sql`${dealerExpression} IN ('N5203', 'N5216')`
   }
   if (filters.branch === 'udhampur') {
     return sql`${dealerExpression} IN ('N5217', 'N6848', 'N6849')`
@@ -533,7 +543,7 @@ async function readBillingRows(filters: HyundaiDateFilters) {
   const result = await db.execute(sql`
     SELECT
       LEFT(bill_date_normalized::text, 10) AS bill_date,
-      COALESCE(NULLIF(TRIM(r_o_no::text), ''), NULLIF(TRIM(bill_no::text), ''), id::text) AS ro_key,
+      ${hyundaiRoBillingRoKeySql()} AS ro_key,
       COALESCE(NULLIF(TRIM(work_type::text), ''), 'Others') AS work_type,
       COALESCE(NULLIF(TRIM(service_advisor::text), ''), 'Unassigned') AS advisor,
       ${dealerExpression} AS dealer_code,
@@ -547,6 +557,7 @@ async function readBillingRows(filters: HyundaiDateFilters) {
       FROM hyundai_ro_billing_report
     ) billing_base
     WHERE bill_date_normalized IS NOT NULL
+      AND ${hyundaiActiveBillSql()}
       AND ${branchFilter}
   `)
 

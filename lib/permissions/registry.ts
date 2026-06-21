@@ -218,6 +218,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'kia.insurance',
+    name: 'Insurance',
+    parentKey: 'kia',
+    description: 'AM KIA insurance operations and reporting section.',
+    sortOrder: 38,
+    actions: ['view'],
+  },
+  {
     key: 'hyundai.service',
     name: 'Service',
     parentKey: 'hyundai',
@@ -732,6 +740,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.service_appointment',
     'kia.demo_cars_list',
     'kia.proforma',
+    'kia.insurance',
     ...hyundaiPlatinumExecutiveGroups,
     'purchase_orders',
     'finance_orders',
@@ -750,6 +759,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.service_appointment',
     'kia.demo_cars_list',
     'kia.proforma',
+    'kia.insurance',
     ...hyundaiPlatinumExecutiveGroups,
     'purchase_orders',
     'finance_orders',
@@ -766,6 +776,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.service_appointment',
     'kia.demo_cars_list',
     'kia.proforma',
+    'kia.insurance',
     'purchase_orders',
     'finance_orders',
     'am_finance',
@@ -783,15 +794,15 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
   ],
   manager: [
-    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'approve']),
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma', 'kia.insurance'], ['view', 'approve']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   technician: [
-    ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   viewer: [
-    ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
 }

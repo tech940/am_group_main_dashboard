@@ -6,7 +6,11 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import {
+  hyundaiSourceDealerFilter,
+  normalizeHyundaiDealerCode,
+} from '@/lib/hyundai/dealer-branch'
+import { HYUNDAI_BE_CALCULATION_META } from '@/lib/hyundai/business-excellence-calculations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -76,10 +80,16 @@ function numericText(column: ReturnType<typeof sql.raw>) {
   return sql`COALESCE(NULLIF(regexp_replace(${column}::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)`
 }
 
+function complaintBusinessDateSql() {
+  return sql`COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date`
+}
+
 function complaintDealerCodeFilter(dealerCode: string | null) {
-  const dealerCodes = getHyundaiDealerCodes(dealerCode)
-  if (dealerCodes.length === 0) return sql``
-  return sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) IN (${sql.join(dealerCodes.map((code) => sql`${code}`), sql`, `)})`
+  return hyundaiSourceDealerFilter(
+    dealerCode,
+    sql.raw('source_dealer_code'),
+    [sql.raw('dealer_code')],
+  )
 }
 
 function complaintAttributeFilters(filters: ComplaintFilters) {
@@ -94,12 +104,14 @@ function complaintAttributeFilters(filters: ComplaintFilters) {
 }
 
 function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: ComparisonScopeDates) {
+  const complaintBusinessDate = complaintBusinessDateSql()
   return sql`
     WITH latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
-        *
+        *,
+        ${complaintBusinessDate} AS business_date
       FROM hyundai_call_center_complaints
-      WHERE complaint_date IS NOT NULL
+      WHERE ${complaintBusinessDate} IS NOT NULL
       ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
@@ -116,7 +128,7 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
         dealer_code,
         source_dealer_code,
         region,
-        complaint_date,
+        business_date AS complaint_date,
         resolving_date,
         resolved_by_dealer,
         close_date,
@@ -144,15 +156,15 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
         END AS status_group,
         COALESCE(
           CASE
-            WHEN close_date IS NOT NULL THEN GREATEST((close_date - complaint_date)::int, 0)
-            WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - complaint_date)::int, 0)
+            WHEN close_date IS NOT NULL THEN GREATEST((close_date - business_date)::int, 0)
+            WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - business_date)::int, 0)
             ELSE NULL
           END,
           ${numericText(sql.raw('pending_days'))}::int,
-          GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+          GREATEST((CURRENT_DATE - business_date)::int, 0)
         ) AS resolution_days,
         CASE
-          WHEN COALESCE(close_date, resolving_date) IS NULL THEN GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+          WHEN COALESCE(close_date, resolving_date) IS NULL THEN GREATEST((CURRENT_DATE - business_date)::int, 0)
           ELSE 0
         END AS open_days,
         CASE
@@ -210,7 +222,7 @@ function complaintBaseSql(filters: ComplaintFilters, comparisonScope?: Compariso
 }
 
 function cacheKey(filters: ComplaintFilters, chunk: ComplaintChunk) {
-  return `hyundai:business-excellence:complaints:v9:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `hyundai:business-excellence:complaints:v10:${chunk}:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 function currentYearFromFilters(filters: ComplaintFilters) {
@@ -290,23 +302,24 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         SELECT generate_series(1, 12) AS month_no
       ),
       latest AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
+        SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
+          *, ${complaintBusinessDateSql()} AS business_date
         FROM hyundai_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE ${complaintBusinessDateSql()} IS NOT NULL
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
         SELECT
-          complaint_date,
+          business_date AS complaint_date,
           status,
           COALESCE(
             CASE
-              WHEN close_date IS NOT NULL THEN GREATEST((close_date - complaint_date)::int, 0)
-              WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - complaint_date)::int, 0)
+              WHEN close_date IS NOT NULL THEN GREATEST((close_date - business_date)::int, 0)
+              WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - business_date)::int, 0)
               ELSE NULL
             END,
             ${numericText(sql.raw('pending_days'))}::int,
-            GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+            GREATEST((CURRENT_DATE - business_date)::int, 0)
           ) AS resolution_days,
           CASE
             WHEN LOWER(COALESCE(status, '')) IN ('close', 'closed', 'resolved') THEN 'Closed'
@@ -347,22 +360,23 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     `) : Promise.resolve([]),
     includeSecondary ? db.execute(sql`
       WITH latest AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
+        SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
+          *, ${complaintBusinessDateSql()} AS business_date
         FROM hyundai_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE ${complaintBusinessDateSql()} IS NOT NULL
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
         SELECT
-          complaint_date,
+          business_date AS complaint_date,
           COALESCE(
             CASE
-              WHEN close_date IS NOT NULL THEN GREATEST((close_date - complaint_date)::int, 0)
-              WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - complaint_date)::int, 0)
+              WHEN close_date IS NOT NULL THEN GREATEST((close_date - business_date)::int, 0)
+              WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - business_date)::int, 0)
               ELSE NULL
             END,
             ${numericText(sql.raw('pending_days'))}::int,
-            GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+            GREATEST((CURRENT_DATE - business_date)::int, 0)
           ) AS resolution_days,
           CASE
             WHEN LOWER(COALESCE(status, '')) IN ('close', 'closed', 'resolved') THEN 'Closed'
@@ -383,22 +397,23 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     `) : Promise.resolve([]),
     includeSecondary ? db.execute(sql`
       WITH latest AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
+        SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
+          *, ${complaintBusinessDateSql()} AS business_date
         FROM hyundai_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE ${complaintBusinessDateSql()} IS NOT NULL
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),
       enriched AS (
         SELECT
-          complaint_date,
+          business_date AS complaint_date,
           COALESCE(
             CASE
-              WHEN close_date IS NOT NULL THEN GREATEST((close_date - complaint_date)::int, 0)
-              WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - complaint_date)::int, 0)
+              WHEN close_date IS NOT NULL THEN GREATEST((close_date - business_date)::int, 0)
+              WHEN resolving_date IS NOT NULL THEN GREATEST((resolving_date - business_date)::int, 0)
               ELSE NULL
             END,
             ${numericText(sql.raw('pending_days'))}::int,
-            GREATEST((CURRENT_DATE - complaint_date)::int, 0)
+            GREATEST((CURRENT_DATE - business_date)::int, 0)
           ) AS resolution_days,
           CASE
             WHEN LOWER(COALESCE(status, '')) IN ('close', 'closed', 'resolved') THEN 'Closed'
@@ -525,9 +540,10 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     `) : Promise.resolve([]),
     includeSummary ? db.execute(sql`
       WITH latest AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text)) *
+        SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
+          *, ${complaintBusinessDateSql()} AS business_date
         FROM hyundai_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE ${complaintBusinessDateSql()} IS NOT NULL
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
       SELECT jsonb_build_object(
@@ -556,8 +572,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     includeSummary ? db.execute(sql`
       SELECT
         COUNT(*)::int AS total_rows,
-        MIN(complaint_date) AS min_date,
-        MAX(complaint_date) AS max_date,
+        MIN(${complaintBusinessDateSql()}) AS min_date,
+        MAX(${complaintBusinessDateSql()}) AS max_date,
         MAX(uploaded_at) AS uploaded_at
       FROM hyundai_call_center_complaints
     `) : Promise.resolve([]),
@@ -704,11 +720,12 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       sources: options.sources || [],
     },
     meta: {
+      ...HYUNDAI_BE_CALCULATION_META,
       rowCount: numberValue(kpis.total),
       detailLimit: 150,
       chunk,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
-      dateBasis: 'Complaint Date',
+      dateBasis: 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)',
       comparison: {
         preset: filters.periodPreset,
         comparisonMode: filters.comparisonMode || 'none',

@@ -13,14 +13,21 @@ import {
   type ServiceDashboardMetrics,
 } from '@/lib/kia/service-dashboard-export'
 import { fetchHyundaiMonthlyOperationMetrics } from '@/lib/hyundai/business-excellence-operations'
-import { getHyundaiDealerCodes } from '@/lib/hyundai/dealer-branch'
+import { getHyundaiDealerCodes, hyundaiSourceDealerFilter } from '@/lib/hyundai/dealer-branch'
+import {
+  HYUNDAI_BE_CALCULATION_META,
+  hyundaiActiveBillSql,
+  hyundaiRoBillingDealerFilter,
+  hyundaiRoBillingInvoiceKeySql,
+  hyundaiRoBillingRoKeySql,
+} from '@/lib/hyundai/business-excellence-calculations'
 
 type DealerFilter = string | null
 type Row = Record<string, unknown>
 type ServiceCategory = 'Free Service' | 'Paid Service' | 'Running Repair' | 'Accidental Repair'
 
 const CATEGORIES: ServiceCategory[] = ['Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair']
-const VERSION = 'hyundai-service-dashboard-v1'
+const VERSION = 'hyundai-service-dashboard-v2'
 const TEMPLATE = path.join(process.cwd(), 'templates', 'platinum', 'service-dashboard-template.xlsx')
 
 function rows(value: unknown): Row[] {
@@ -46,18 +53,16 @@ function codeList(dealerCode: DealerFilter) {
   return codes.length ? sql.join(codes.map((code) => sql`${code}`), sql`, `) : null
 }
 
-function roDealerFilter(dealerCode: DealerFilter, alias = '') {
-  const codes = codeList(dealerCode)
-  return codes
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(${sql.raw(`${alias}dealer_code`)}, ''), NULLIF(${sql.raw(`${alias}main_dealer_code`)}, ''), NULLIF(${sql.raw(`${alias}source_dealer_code`)}, '')))) IN (${codes})`
-    : sql``
+function roDealerFilter(dealerCode: DealerFilter) {
+  return hyundaiRoBillingDealerFilter(dealerCode)
 }
 
 function repairDealerFilter(dealerCode: DealerFilter, alias = '') {
-  const codes = codeList(dealerCode)
-  return codes
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(${sql.raw(`${alias}dealer_code`)}, ''), NULLIF(${sql.raw(`${alias}dealer`)}, ''), NULLIF(${sql.raw(`${alias}source_dealer_code`)}, '')))) IN (${codes})`
-    : sql``
+  return hyundaiSourceDealerFilter(
+    dealerCode,
+    sql.raw(`${alias}source_dealer_code`),
+    [sql.raw(`${alias}dealer_code`), sql.raw(`${alias}dealer`)],
+  )
 }
 
 function categorySql(column: string) {
@@ -102,6 +107,7 @@ async function fetchIntake(startDate: string, endDate: string, dealerCode: Deale
         r_o_date::date AS report_date, ${categorySql('work_type')} AS category, uploaded_at, id
       FROM hyundai_ro_billing_report
       WHERE r_o_date >= ${startDate}::date AND r_o_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${hyundaiActiveBillSql()}
         ${roDealerFilter(dealerCode)}
       UNION ALL
       SELECT COALESCE(NULLIF(TRIM(r_o_no), ''), id::text), r_o_date::date,
@@ -133,12 +139,13 @@ async function fetchRevenue(startDate: string, endDate: string, dealerCode: Deal
   const result = await db.execute(sql`
     WITH raw AS (
       SELECT bill_date::date AS report_date, ${categorySql('work_type')} AS category,
-        COALESCE(NULLIF(TRIM(bill_no), ''), NULLIF(TRIM(r_o_no), ''), id::text) AS invoice_key,
-        COALESCE(NULLIF(TRIM(r_o_no), ''), NULLIF(TRIM(bill_no), ''), id::text) AS ro_key,
+        ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
+        ${hyundaiRoBillingRoKeySql()} AS ro_key,
         COALESCE(labour_amt, 0)::numeric AS labour, COALESCE(part_amt, 0)::numeric AS parts,
         uploaded_at, id
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${hyundaiActiveBillSql()}
         ${roDealerFilter(dealerCode)}
     ),
     dedup AS (
@@ -265,6 +272,9 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
     'Bodyshop PNA is N/A because the Hyundai RO source has no validated PNA field.',
     ...addons.warnings,
     ...(!operations.available ? ['No Hyundai Operation Wise snapshot exists for the selected month.'] : []),
+    ...(operations.available && operations.classifiedRows === 0
+      ? ['Hyundai Operation Wise snapshot contains no classified VAS/WA/WB rows; zeroes are source-incomplete, not verified business zeroes.']
+      : []),
   ]
   return {
     exportDate,
@@ -286,6 +296,7 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
     sourceWarnings: warnings,
     sourceMetadata: {
       brand: 'hyundai',
+      ...HYUNDAI_BE_CALCULATION_META,
       dealerCode,
       startDate,
       endDate: exportDate,
@@ -293,6 +304,9 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
       operationPeriodEnd: operations.periodEnd,
       workingDayCount: numberValue(rows(workingDays)[0]?.count),
       identifierVersion: operations.identifierVersion,
+      operationSourceRows: operations.sourceRows,
+      operationClassifiedRows: operations.classifiedRows,
+      operationUnknownCodeRows: operations.unknownCodeRows,
       sourceWarnings: warnings,
     },
   }

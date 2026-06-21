@@ -9,6 +9,13 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
 import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
 import { fetchHyundaiMonthlyOperationMetrics } from '@/lib/hyundai/business-excellence-operations'
+import {
+  HYUNDAI_BE_CALCULATION_META,
+  hyundaiActiveBillSql,
+  hyundaiRoBillingDealerFilter,
+  hyundaiRoBillingInvoiceKeySql,
+  hyundaiRoBillingRoKeySql,
+} from '@/lib/hyundai/business-excellence-calculations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -110,7 +117,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:workshop-performance:v29:${createHash('sha1')
+  return `hyundai:business-excellence:workshop-performance:v30:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -121,10 +128,7 @@ function dealerCodeListSql(dealerCode: DealerFilter) {
 }
 
 function roBillingDealerFilter(dealerCode: DealerFilter) {
-  const dealerCodes = dealerCodeListSql(dealerCode)
-  return dealerCodes
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) IN (${dealerCodes})`
-    : sql``
+  return hyundaiRoBillingDealerFilter(dealerCode)
 }
 
 function accidentAdvisorSqlList() {
@@ -196,7 +200,8 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
     WITH base AS (
       SELECT
         ${workshopCategoryExpression('service_advisor')} AS workshop_category,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
+        ${hyundaiRoBillingRoKeySql()} AS ro_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
         COALESCE(total_amt, 0)::numeric AS total_amt,
@@ -209,24 +214,26 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${hyundaiActiveBillSql()}
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
     dedup AS (
       SELECT
         workshop_category,
-        jc_key,
+        invoice_key,
+        (ARRAY_AGG(ro_key))[1] AS ro_key,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
         (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt,
         MAX(discount_amount) AS discount_amount
       FROM base
-      GROUP BY workshop_category, jc_key
+      GROUP BY workshop_category, invoice_key
     )
     SELECT
       workshop_category AS group_type,
       workshop_category AS service_type,
-      COUNT(*)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount,
       COALESCE(SUM(total_amt), 0)::float AS total_amount,
@@ -268,7 +275,8 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
       SELECT
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS group_type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
+        ${hyundaiRoBillingRoKeySql()} AS ro_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
         COALESCE(total_amt, 0)::numeric AS total_amt,
@@ -281,6 +289,7 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${hyundaiActiveBillSql()}
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
@@ -288,18 +297,19 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
       SELECT
         group_type,
         service_type,
-        jc_key,
+        invoice_key,
+        (ARRAY_AGG(ro_key))[1] AS ro_key,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
         (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt,
         MAX(discount_amount) AS discount_amount
       FROM base
-      GROUP BY group_type, service_type, jc_key
+      GROUP BY group_type, service_type, invoice_key
     )
     SELECT
       group_type,
       service_type,
-      COUNT(*)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount,
       COALESCE(SUM(total_amt), 0)::float AS total_amount,
@@ -335,31 +345,9 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
   }]
 }
 
-async function fetchWorkshopVasAmount(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  void startDate
-  return (await fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode)).vasAmount
-}
-
 async function fetchCoreAddonSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<AddonAggregate[]> {
-  if (advisor) {
-    const addonTotals = summarizeAddons(await fetchAddonSummary(startDate, endDate, advisor, dealerCode))
-
-    return [{
-      serviceType: 'Others',
-      ...addonTotals,
-    }]
-  }
-
-  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
-
-  return [{
-    serviceType: 'Others',
-    vasAmount,
-    waCount: 0,
-    waAmount: 0,
-    wbCount: 0,
-    wbAmount: 0,
-  }]
+  if (advisor) return []
+  return fetchAddonSummary(startDate, endDate, null, dealerCode)
 }
 
 async function fetchDailyTrend(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null) {
@@ -379,27 +367,30 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
     WITH base AS (
       SELECT
         bill_date::date AS bill_date,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
+        ${hyundaiRoBillingRoKeySql()} AS ro_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${hyundaiActiveBillSql()}
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
     dedup AS (
       SELECT
         bill_date,
-        jc_key,
+        invoice_key,
+        (ARRAY_AGG(ro_key))[1] AS ro_key,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
       FROM base
-      GROUP BY bill_date, jc_key
+      GROUP BY bill_date, invoice_key
     )
     SELECT
       bill_date,
-      COUNT(*)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount
     FROM dedup
@@ -432,26 +423,29 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
     WITH base AS (
       SELECT
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
+        ${hyundaiRoBillingRoKeySql()} AS ro_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${hyundaiActiveBillSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
       SELECT
         advisor,
-        jc_key,
+        invoice_key,
+        (ARRAY_AGG(ro_key))[1] AS ro_key,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
       FROM base
-      GROUP BY advisor, jc_key
+      GROUP BY advisor, invoice_key
     )
     SELECT
       advisor,
-      COUNT(*)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount
     FROM dedup
@@ -796,6 +790,8 @@ async function buildWorkshopPayload(
     lyAddonRows,
     coreServiceRows,
     coreAddonRows,
+    operationCoverage,
+    lyOperationCoverage,
   ] = await Promise.all([
     fetchServiceSummary(startDate, endDate, advisor, dealerCode),
     fetchAddonSummary(startDate, endDate, advisor, dealerCode),
@@ -807,6 +803,8 @@ async function buildWorkshopPayload(
     fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode),
     fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode),
     fetchCoreAddonSummary(startDate, endDate, advisor, dealerCode),
+    fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode),
+    fetchHyundaiMonthlyOperationMetrics(lyEnd, dealerCode),
   ])
 
   const addonTotals = summarizeAddons(addonRows)
@@ -859,12 +857,40 @@ async function buildWorkshopPayload(
     dailyTrend,
     advisors,
     meta: {
+      ...HYUNDAI_BE_CALCULATION_META,
       rowCount: rows.length,
-      jcDefinition: 'COUNT(DISTINCT COALESCE(bill_no, r_o_no, id))',
+      jcDefinition: HYUNDAI_BE_CALCULATION_META.loadDefinition,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       advisor,
       dealerCode,
       comparison,
+      operationCoverage: {
+        current: {
+          available: operationCoverage.available,
+          periodStart: operationCoverage.periodStart,
+          periodEnd: operationCoverage.periodEnd,
+          identifierVersion: operationCoverage.identifierVersion,
+          sourceRows: operationCoverage.sourceRows,
+          classifiedRows: operationCoverage.classifiedRows,
+          unknownCodeRows: operationCoverage.unknownCodeRows,
+        },
+        previous: {
+          available: lyOperationCoverage.available,
+          periodStart: lyOperationCoverage.periodStart,
+          periodEnd: lyOperationCoverage.periodEnd,
+          identifierVersion: lyOperationCoverage.identifierVersion,
+          sourceRows: lyOperationCoverage.sourceRows,
+          classifiedRows: lyOperationCoverage.classifiedRows,
+          unknownCodeRows: lyOperationCoverage.unknownCodeRows,
+        },
+      },
+      sourceWarnings: [
+        ...(!operationCoverage.available ? ['No contained Hyundai Operation Wise snapshot exists for the selected period.'] : []),
+        ...(operationCoverage.available && operationCoverage.classifiedRows === 0
+          ? ['Hyundai Operation Wise snapshot exists but contains no classified VAS/WA/WB rows. Reload the complete report before treating zero values as business performance.']
+          : []),
+        ...(dealerCode && auxiliaryCounts.rsaCount > 0 ? ['RSA source is not dealer-scoped unless a verified dealer column is present.'] : []),
+      ],
       unsupportedComparisonSources: {
         hyundai_ew_report: 'EW has only May 2026 data.',
         am_hyundai_mcp_report: 'MCP is close to one year but not enough for full LY comparisons yet.',

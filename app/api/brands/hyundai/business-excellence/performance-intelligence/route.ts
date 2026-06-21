@@ -6,7 +6,13 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import { normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import {
+  HYUNDAI_BE_CALCULATION_META,
+  hyundaiActiveBillSql,
+  hyundaiRoBillingDealerSql,
+  hyundaiRoBillingInvoiceKeySql,
+} from '@/lib/hyundai/business-excellence-calculations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -134,12 +140,13 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `hyundai:business-excellence:performance-intelligence:v7:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `hyundai:business-excellence:performance-intelligence:v8:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {
   const clauses = [
     sql`bill_date BETWEEN ${toDateInputValue(startDate)}::date AND ${toDateInputValue(endDate)}::date`,
+    hyundaiActiveBillSql(),
   ]
 
   if (filters.searchReg) {
@@ -147,11 +154,8 @@ function buildPerformanceWhere(startDate: Date, endDate: Date, filters: Performa
   }
 
   if (filters.branch !== 'all') {
-    const dealerCodes = getHyundaiDealerCodes(filters.branch)
-    clauses.push(dealerCodes.length > 0
-      ? sql`UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'Unspecified'))) IN (${sql.join(dealerCodes.map((code) => sql`${code}`), sql`, `)})`
-      : sql`UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'Unspecified'))) = ${filters.branch}`
-    )
+    const normalizedDealer = normalizeHyundaiDealerCode(filters.branch)
+    clauses.push(sql`${hyundaiRoBillingDealerSql()} = ${normalizedDealer || filters.branch}`)
   }
 
   if (filters.serviceType !== 'all') {
@@ -176,9 +180,9 @@ function buildScoredPerformanceSql(startDate: Date, endDate: Date, filters: Perf
     WITH base AS (
       SELECT
         id::text AS id,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+        ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
         bill_date::date AS bill_date,
-        COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, ''), 'Unspecified') AS branch,
+        COALESCE(${hyundaiRoBillingDealerSql()}, 'Unspecified') AS branch,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
@@ -428,6 +432,7 @@ export async function GET(request: Request) {
       const safePage = Math.min(page, totalPages)
 
       return {
+        calculationMeta: HYUNDAI_BE_CALCULATION_META,
         dateRange: {
           startDate: toDateInputValue(startDate),
           endDate: toDateInputValue(endDate),

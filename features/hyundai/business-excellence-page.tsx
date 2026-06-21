@@ -321,6 +321,7 @@ const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const HYUNDAI_COMPLAINTS_REPORT = 'Hyundai Complaints'
+const HYUNDAI_SOT_REPORT = 'SOT Analysis'
 const SERVICE_DASHBOARD_REPORT = 'Service Dashboard'
 const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [BUSINESS_EXCELLENCE_OVERVIEW_REPORT]: 'overview',
@@ -329,6 +330,7 @@ const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
   [OPEN_RO_REPORT]: 'open-ro',
   [HYUNDAI_COMPLAINTS_REPORT]: 'hyundai-complaints',
+  [HYUNDAI_SOT_REPORT]: 'sot-analysis',
   [SERVICE_DASHBOARD_REPORT]: 'service-dashboard',
 }
 const REPORT_NAMES_BY_SLUG: Record<string, string> = Object.fromEntries(
@@ -385,6 +387,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     brand: 'hyundai',
     sheetName: HYUNDAI_COMPLAINTS_REPORT,
     tableName: 'hyundai_call_center_complaints',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'sot-analysis',
+    brand: 'hyundai',
+    sheetName: HYUNDAI_SOT_REPORT,
+    tableName: 'hyundai_sot_source_unavailable',
     columns: [],
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
@@ -1904,9 +1915,10 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
               const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
               const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
               const isKiaComplaintsSheet = selectedSheet.sheetName === HYUNDAI_COMPLAINTS_REPORT
+              const isSotSheet = selectedSheet.sheetName === HYUNDAI_SOT_REPORT
               const isServiceDashboardSheet = selectedSheet.sheetName === SERVICE_DASHBOARD_REPORT
               const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
-              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet
+              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet || isSotSheet
               const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
               const supportsHealthPanel = isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
               const branchOptions = [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
@@ -2390,6 +2402,14 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                               downloading={isServiceDashboardDownloading}
                             />
                           )
+                        ) : isSotSheet ? (
+                          <div className="m-4 rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center">
+                            <ShieldAlert className="mx-auto h-10 w-10 text-amber-600" />
+                            <h3 className="mt-4 text-xl font-black text-slate-950">Hyundai SOT source unavailable</h3>
+                            <p className="mx-auto mt-2 max-w-2xl text-sm font-semibold text-slate-600">
+                              No verified Hyundai Trust Package or SOT-equivalent report is connected. MCP is intentionally not substituted because it represents a different business product.
+                            </p>
+                          </div>
                         ) : isROBillingSheet ? (
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
@@ -3977,6 +3997,7 @@ function BusinessExecutiveDashboard({
   dealerCode: string | null
   onDealerChange: (dealerCode: string | null) => void
 }) {
+  void onDealerChange
   const [activeExecutiveMetric, setActiveExecutiveMetric] = useState<ROAnalysisType>('load')
   const [activeExecutiveTableMetric, setActiveExecutiveTableMetric] = useState<ROAnalysisType>('load')
   const [expandedExecutiveTable, setExpandedExecutiveTable] = useState<ExecutiveDashboardTableId | null>(null)

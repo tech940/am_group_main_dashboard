@@ -1,0 +1,327 @@
+"filename", "language", "log", "Markdown", "TypeScript JSX", "JSON", "PostCSS", "TypeScript", "JavaScript", "MS SQL", "comment", "blank", "total"
+"c:\Users\sahil\Downloads\am_group_main_dashboard\.codex-dev.err.log", "log", 113, 0, 0, 0, 0, 0, 0, 0, 0, 1, 114
+"c:\Users\sahil\Downloads\am_group_main_dashboard\.codex-dev.log", "log", 522, 0, 0, 0, 0, 0, 0, 0, 0, 4, 526
+"c:\Users\sahil\Downloads\am_group_main_dashboard\.kilo\plans\platinum-be-data-gap-analysis.md", "Markdown", 0, 342, 0, 0, 0, 0, 0, 0, 0, 88, 430
+"c:\Users\sahil\Downloads\am_group_main_dashboard\.kilo\plans\report-table-mapping-analysis.md", "Markdown", 0, 90, 0, 0, 0, 0, 0, 0, 0, 21, 111
+"c:\Users\sahil\Downloads\am_group_main_dashboard\PROJECT_CONTEXT.md", "Markdown", 0, 36, 0, 0, 0, 0, 0, 0, 0, 8, 44
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\admin\page.tsx", "TypeScript JSX", 0, 0, 6, 0, 0, 0, 0, 0, 0, 1, 7
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\admin\settings\route.ts", "TypeScript", 0, 0, 0, 0, 0, 8, 0, 0, 0, 1, 9
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\admin\users\route.ts", "TypeScript", 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 5
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\complaints\route.ts", "TypeScript", 0, 0, 0, 0, 0, 16, 0, 0, 0, 1, 17
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\freshness\route.ts", "TypeScript", 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 14
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\open-ro\route.ts", "TypeScript", 0, 0, 0, 0, 0, 3, 0, 0, 0, -1, 2
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\overview\route.ts", "TypeScript", 0, 0, 0, 0, 0, 37, 0, 0, 0, 0, 37
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\performance-intelligence\route.ts", "TypeScript", 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 5
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\ro-billing-analysis\route.ts", "TypeScript", 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 15
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\ro-billing-report\route.ts", "TypeScript", 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\route.ts", "TypeScript", 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\rows\route.ts", "TypeScript", 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\service-dashboard-export\route.ts", "TypeScript", 0, 0, 0, 0, 0, 32, 0, 0, 0, 3, 35
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\service-dashboard-preview\route.ts", "TypeScript", 0, 0, 0, 0, 0, 26, 0, 0, 0, 3, 29
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\sot\route.ts", "TypeScript", 0, 0, 0, 0, 0, 29, 0, 0, 0, 4, 33
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\workshop-performance\route.ts", "TypeScript", 0, 0, 0, 0, 0, 36, 0, 0, 0, -4, 32
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\warranty-claims\actions\route.ts", "TypeScript", 0, 0, 0, 0, 0, 41, 0, 0, 0, 0, 41
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\warranty-claims\evidence\[id]\route.ts", "TypeScript", 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 4
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\warranty-claims\route.ts", "TypeScript", 0, 0, 0, 0, 0, 338, 0, 0, 2, 52, 392
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\ai-summary\route.ts", "TypeScript", 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\complaints\route.ts", "TypeScript", 0, 0, 0, 0, 0, 18, 0, 0, 0, 0, 18
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\open-ro\route.ts", "TypeScript", 0, 0, 0, 0, 0, -7, 0, 0, 0, -1, -8
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\overview\route.ts", "TypeScript", 0, 0, 0, 0, 0, -308, 0, 0, 0, -20, -328
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\performance-intelligence\route.ts", "TypeScript", 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 14
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\ro-billing-analysis\route.ts", "TypeScript", 0, 0, 0, 0, 0, 27, 0, 0, 0, 0, 27
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\route.ts", "TypeScript", 0, 0, 0, 0, 0, 21, 0, 0, 0, 2, 23
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\rows\route.ts", "TypeScript", 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\workshop-performance\route.ts", "TypeScript", 0, 0, 0, 0, 0, -130, 0, 0, 0, -7, -137
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\[id]\preview\route.ts", "TypeScript", 0, 0, 0, 0, 0, 36, 0, 0, 0, 5, 41
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\[id]\route.ts", "TypeScript", 0, 0, 0, 0, 0, 94, 0, 0, 0, 12, 106
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\analytics\route.ts", "TypeScript", 0, 0, 0, 0, 0, 141, 0, 0, 0, 11, 152
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\options\route.ts", "TypeScript", 0, 0, 0, 0, 0, 78, 0, 0, 0, 7, 85
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\route.ts", "TypeScript", 0, 0, 0, 0, 0, 195, 0, 0, 0, 20, 215
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\settings\route.ts", "TypeScript", 0, 0, 0, 0, 0, 27, 0, 0, 0, 6, 33
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\freshness\route.ts", "TypeScript", 0, 0, 0, 0, 0, 49, 0, 0, 0, -4, 45
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\open-ro\route.ts", "TypeScript", 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\overview\route.ts", "TypeScript", 0, 0, 0, 0, 0, 116, 0, 0, 0, -9, 107
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\ro-billing-analysis\route.ts", "TypeScript", 0, 0, 0, 0, 0, 133, 0, 0, 0, 4, 137
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\route.ts", "TypeScript", 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\rows\route.ts", "TypeScript", 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\service-dashboard-export\route.ts", "TypeScript", 0, 0, 0, 0, 0, 36, 0, 0, 0, 5, 41
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\service-dashboard-preview\route.ts", "TypeScript", 0, 0, 0, 0, 0, 30, 0, 0, 0, 5, 35
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\sot\route.ts", "TypeScript", 0, 0, 0, 0, 0, 44, 0, 0, 0, 3, 47
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\workshop-performance\route.ts", "TypeScript", 0, 0, 0, 0, 0, 157, 0, 0, 0, 9, 166
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\warranty-claims\actions\route.ts", "TypeScript", 0, 0, 0, 0, 0, 195, 0, 0, 0, 13, 208
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\warranty-claims\dealer-mappings\route.ts", "TypeScript", 0, 0, 0, 0, 0, 35, 0, 0, 0, 3, 38
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\warranty-claims\evidence\[id]\route.ts", "TypeScript", 0, 0, 0, 0, 0, 33, 0, 0, 0, 2, 35
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\warranty-claims\route.ts", "TypeScript", 0, 0, 0, 0, 0, 618, 0, 0, 3, 66, 687
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\purchase-orders\bulk-approve\route.ts", "TypeScript", 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\purchase-orders\workflow\route.ts", "TypeScript", 0, 0, 0, 0, 0, 10, 0, 0, 0, 1, 11
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\hyundai\[...module]\page.tsx", "TypeScript JSX", 0, 0, 7, 0, 0, 0, 0, 0, 5, 0, 12
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\hyundai\page.tsx", "TypeScript JSX", 0, 0, -4, 0, 0, 0, 0, 0, 5, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\mg\[...module]\page.tsx", "TypeScript JSX", 0, 0, 74, 0, 0, 0, 0, 0, 0, 12, 86
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\mg\page.tsx", "TypeScript JSX", 0, 0, 27, 0, 0, 0, 0, 0, 0, 7, 34
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\mg\proforma\[section]\page.tsx", "TypeScript JSX", 0, 0, 30, 0, 0, 0, 0, 0, 0, 6, 36
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\mg\proforma\page.tsx", "TypeScript JSX", 0, 0, 16, 0, 0, 0, 0, 0, 0, 4, 20
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\platinum\[...module]\page.tsx", "TypeScript JSX", 0, 0, 23, 0, 0, 0, 0, 0, 0, 1, 24
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\globals.css", "PostCSS", 0, 0, 0, 0, 90, 0, 0, 0, 0, 17, 107
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\layout.tsx", "TypeScript JSX", 0, 0, -18, 0, 0, 0, 0, 0, 0, -1, -19
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\purchase-orders\page.tsx", "TypeScript JSX", 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 7
+"c:\Users\sahil\Downloads\am_group_main_dashboard\app\theme-initializer.tsx", "TypeScript JSX", 0, 0, 30, 0, 0, 0, 0, 0, 0, 5, 35
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\layout\sidebar.tsx", "TypeScript JSX", 0, 0, 45, 0, 0, 0, 0, 0, 0, 1, 46
+"c:\Users\sahil\Downloads\am_group_main_dashboard\components\providers\query-provider.tsx", "TypeScript JSX", 0, 0, 7, 0, 0, 0, 0, 0, 0, 1, 8
+"c:\Users\sahil\Downloads\am_group_main_dashboard\config\env-config.ts", "TypeScript", 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 5
+"c:\Users\sahil\Downloads\am_group_main_dashboard\docs\bigquery-dual-write-contract.md", "Markdown", 0, 60, 0, 0, 0, 0, 0, 0, 0, 25, 85
+"c:\Users\sahil\Downloads\am_group_main_dashboard\docs\bigquery-migration-deploy.md", "Markdown", 0, 64, 0, 0, 0, 0, 0, 0, 0, 29, 93
+"c:\Users\sahil\Downloads\am_group_main_dashboard\docs\bigquery-migration-inventory-2026-06-15.md", "Markdown", 0, 109, 0, 0, 0, 0, 0, 0, 0, 8, 117
+"c:\Users\sahil\Downloads\am_group_main_dashboard\docs\bigquery-migration-rollback.md", "Markdown", 0, 33, 0, 0, 0, 0, 0, 0, 0, 15, 48
+"c:\Users\sahil\Downloads\am_group_main_dashboard\docs\database-performance-audit-2026-06-14.md", "Markdown", 0, 167, 0, 0, 0, 0, 0, 0, 0, 75, 242
+"c:\Users\sahil\Downloads\am_group_main_dashboard\docs\hyundai-business-excellence-source-contract.md", "Markdown", 0, 39, 0, 0, 0, 0, 0, 0, 0, 8, 47
+"c:\Users\sahil\Downloads\am_group_main_dashboard\docs\hyundai-data-coverage-2026-06-15.md", "Markdown", 0, 133, 0, 0, 0, 0, 0, 0, 0, 24, 157
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\business-excellence-page.tsx", "TypeScript JSX", 0, 0, 84, 0, 0, 0, 0, 0, 0, 1, 85
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\warranty-claims-page.tsx", "TypeScript JSX", 0, 0, 546, 0, 0, 0, 0, 0, 1, 32, 579
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\business-excellence-overview.tsx", "TypeScript JSX", 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 5
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\service-dashboard-preview-section.tsx", "TypeScript JSX", 0, 0, 26, 0, 0, 0, 0, 0, 0, 1, 27
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\mg\mg-module-placeholder.tsx", "TypeScript JSX", 0, 0, 29, 0, 0, 0, 0, 0, 0, 3, 32
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\mg\mg-proforma-page.tsx", "TypeScript JSX", 0, 0, 1327, 0, 0, 0, 0, 0, 1, 64, 1392
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\business-excellence-overview.tsx", "TypeScript JSX", 0, 0, 17, 0, 0, 0, 0, 0, 0, 0, 17
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\business-excellence-page.tsx", "TypeScript JSX", 0, 0, 108, 0, 0, 0, 0, 0, 0, 3, 111
+"c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\platinum-complaints-section.tsx", "TypeScript JSX", 0, 0, 31, 0, 0, 0, 0, 0, 0, 5, 36
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\admin\authorization.ts", "TypeScript", 0, 0, 0, 0, 0, -13, 0, 0, 0, -1, -14
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\am-finance\access.ts", "TypeScript", 0, 0, 0, 0, 0, -2, 0, 0, 0, 0, -2
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\bigquery-provider.ts", "TypeScript", 0, 0, 0, 0, 0, 57, 0, 0, 5, 7, 69
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\client.ts", "TypeScript", 0, 0, 0, 0, 0, 16, 0, 0, 0, 5, 21
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\config.ts", "TypeScript", 0, 0, 0, 0, 0, 23, 0, 0, 0, 5, 28
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\db.ts", "TypeScript", 0, 0, 0, 0, 0, 12, 0, 0, 4, 3, 19
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\dual-provider.ts", "TypeScript", 0, 0, 0, 0, 0, 51, 0, 0, 0, 7, 58
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\index.ts", "TypeScript", 0, 0, 0, 0, 0, 29, 0, 0, 0, 7, 36
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\postgres-provider.ts", "TypeScript", 0, 0, 0, 0, 0, 35, 0, 0, 0, 2, 37
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\sql-dialect\porting-guide.md", "Markdown", 0, 26, 0, 0, 0, 0, 0, 0, 0, 8, 34
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\table-map.ts", "TypeScript", 0, 0, 0, 0, 0, 62, 0, 0, 4, 3, 69
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\types.ts", "TypeScript", 0, 0, 0, 0, 0, 21, 0, 0, 0, 4, 25
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\app-user.ts", "TypeScript", 0, 0, 0, 0, 0, 106, 0, 0, 1, 11, 118
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\roles.ts", "TypeScript", 0, 0, 0, 0, 0, 5, 0, 0, 1, 1, 7
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\db\auth-client.ts", "TypeScript", 0, 0, 0, 0, 0, 59, 0, 0, 3, 12, 74
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\db\index.ts", "TypeScript", 0, 0, 0, 0, 0, 23, 0, 0, 2, 6, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\db\schema.ts", "TypeScript", 0, 0, 0, 0, 0, 115, 0, 0, 0, 4, 119
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\etl\dual-write-types.ts", "TypeScript", 0, 0, 0, 0, 0, 11, 0, 0, 0, 2, 13
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\business-excellence-calculations.ts", "TypeScript", 0, 0, 0, 0, 0, 62, 0, 0, 0, 12, 74
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\business-excellence-operations.ts", "TypeScript", 0, 0, 0, 0, 0, 156, 0, 0, 0, 11, 167
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\business-excellence.ts", "TypeScript", 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 11
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\dealer-branch.ts", "TypeScript", 0, 0, 0, 0, 0, 41, 0, 0, 0, 4, 45
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\service-dashboard-export.ts", "TypeScript", 0, 0, 0, 0, 0, 341, 0, 0, 0, 22, 363
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\warranty-claims.ts", "TypeScript", 0, 0, 0, 0, 0, 126, 0, 0, 0, 19, 145
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\warranty-dealers.ts", "TypeScript", 0, 0, 0, 0, 0, 33, 0, 0, 0, 10, 43
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\business-excellence-contract.ts", "TypeScript", 0, 0, 0, 0, 0, 221, 0, 0, 0, 27, 248
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\dealer-branch.ts", "TypeScript", 0, 0, 0, 0, 0, 11, 0, 0, 1, 3, 15
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\ro-billing-kpis.ts", "TypeScript", 0, 0, 0, 0, 0, 137, 0, 0, 1, 14, 152
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\service-dashboard-export.ts", "TypeScript", 0, 0, 0, 0, 0, 145, 0, 0, 1, 11, 157
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\service-dashboard-metrics.ts", "TypeScript", 0, 0, 0, 0, 0, 766, 0, 0, 2, 85, 853
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\mg-proforma\access.ts", "TypeScript", 0, 0, 0, 0, 0, 33, 0, 0, 0, 9, 42
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\mg-proforma\invoice.ts", "TypeScript", 0, 0, 0, 0, 0, 542, 0, 0, 0, 36, 578
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\mg-proforma\pricing.ts", "TypeScript", 0, 0, 0, 0, 0, 184, 0, 0, 0, 23, 207
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\mg-proforma\server.ts", "TypeScript", 0, 0, 0, 0, 0, 37, 0, 0, 0, 8, 45
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\permissions\registry.ts", "TypeScript", 0, 0, 0, 0, 0, 82, 0, 0, 0, 0, 82
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\permissions\service.ts", "TypeScript", 0, 0, 0, 0, 0, 32, 0, 0, 0, 3, 35
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-calculations.ts", "TypeScript", 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-coverage.ts", "TypeScript", 0, 0, 0, 0, 0, -11, 0, 0, 0, 0, -11
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-metrics.ts", "TypeScript", 0, 0, 0, 0, 0, 210, 0, 0, 0, 30, 240
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-vas.ts", "TypeScript", 0, 0, 0, 0, 0, 195, 0, 0, 5, 27, 227
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\ro-billing-audit.ts", "TypeScript", 0, 0, 0, 0, 0, 31, 0, 0, 0, 4, 35
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\service-dashboard-export.ts", "TypeScript", 0, 0, 0, 0, 0, 523, 0, 0, 0, 30, 553
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\vas-identifiers.ts", "TypeScript", 0, 0, 0, 0, 0, 317, 0, 0, 0, 18, 335
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\warranty-claims.ts", "TypeScript", 0, 0, 0, 0, 0, 230, 0, 0, 0, 33, 263
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\warranty-dealers.ts", "TypeScript", 0, 0, 0, 0, 0, 25, 0, 0, 0, 8, 33
+"c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\storage.ts", "TypeScript", 0, 0, 0, 0, 0, 12, 0, 0, 0, 3, 15
+"c:\Users\sahil\Downloads\am_group_main_dashboard\package-lock.json", "JSON", 0, 0, 0, 733, 0, 0, 0, 0, 0, 0, 733
+"c:\Users\sahil\Downloads\am_group_main_dashboard\package.json", "JSON", 0, 0, 0, 19, 0, 0, 0, 0, 0, 0, 19
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\audit-platinum-history.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 249, 0, 0, 20, 269
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\audit-platinum-january-2025.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 359, 0, 0, 8, 367
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\audit-platinum-operation-coverage.ts", "TypeScript", 0, 0, 0, 0, 0, 250, 0, 0, 0, 14, 264
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\calculate-pending.ts", "TypeScript", 0, 0, 0, 0, 0, 42, 0, 0, 0, 5, 47
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\calculate-pure-intake.ts", "TypeScript", 0, 0, 0, 0, 0, 56, 0, 0, 0, 4, 60
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-accidental-dates.ts", "TypeScript", 0, 0, 0, 0, 0, 43, 0, 0, 0, 5, 48
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-business-days.ts", "TypeScript", 0, 0, 0, 0, 0, 25, 0, 0, 0, 5, 30
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-calculation-details.ts", "TypeScript", 0, 0, 0, 0, 0, 73, 0, 0, 2, 6, 81
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-canceled-parts.ts", "TypeScript", 0, 0, 0, 0, 0, 26, 0, 0, 0, 4, 30
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-current-max.ts", "TypeScript", 0, 0, 0, 0, 0, 33, 0, 0, 2, 9, 44
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-duplicates.ts", "TypeScript", 0, 0, 0, 0, 0, 12, 0, 0, 0, 3, 15
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-merges.ts", "TypeScript", 0, 0, 0, 0, 0, 12, 0, 0, 0, 3, 15
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-mg-tables.ts", "TypeScript", 0, 0, 0, 0, 0, 74, 0, 0, 8, 17, 99
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-missing-cols.ts", "TypeScript", 0, 0, 0, 0, 0, 20, 0, 0, 1, 5, 26
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-oil-values.ts", "TypeScript", 0, 0, 0, 0, 0, 24, 0, 0, 0, 5, 29
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-open-accidental-cancel.ts", "TypeScript", 0, 0, 0, 0, 0, 24, 0, 0, 0, 4, 28
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-open-ro-status.ts", "TypeScript", 0, 0, 0, 0, 0, 17, 0, 0, 0, 4, 21
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-parts-categories.ts", "TypeScript", 0, 0, 0, 0, 0, 39, 0, 0, 0, 4, 43
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-pna.ts", "TypeScript", 0, 0, 0, 0, 0, 23, 0, 0, 0, 4, 27
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-ro-anywhere.ts", "TypeScript", 0, 0, 0, 0, 0, 20, 0, 0, 0, 4, 24
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-ro.ts", "TypeScript", 0, 0, 0, 0, 0, 23, 0, 0, 0, 5, 28
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-rsa.ts", "TypeScript", 0, 0, 0, 0, 0, 25, 0, 0, 0, 4, 29
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-triggers.ts", "TypeScript", 0, 0, 0, 0, 0, 23, 0, 0, 0, 3, 26
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\compare-june17.ts", "TypeScript", 0, 0, 0, 0, 0, 10, 0, 0, 0, 3, 13
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\db-diag.log", "log", 534, 0, 0, 0, 0, 0, 0, 0, 0, 0, 534
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\fix-missing-cols.ts", "TypeScript", 0, 0, 0, 0, 0, 24, 0, 0, 4, 10, 38
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-accidental-substatus.ts", "TypeScript", 0, 0, 0, 0, 0, 35, 0, 0, 0, 5, 40
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-db-schema.ts", "TypeScript", 0, 0, 0, 0, 0, 23, 0, 0, 0, 3, 26
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-dealers.ts", "TypeScript", 0, 0, 0, 0, 0, 29, 0, 0, 1, 6, 36
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-open-june.ts", "TypeScript", 0, 0, 0, 0, 0, 27, 0, 0, 0, 4, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-open-ro-fields.ts", "TypeScript", 0, 0, 0, 0, 0, 27, 0, 0, 0, 4, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-open-statuses.ts", "TypeScript", 0, 0, 0, 0, 0, 40, 0, 0, 0, 4, 44
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-platinum-active.ts", "TypeScript", 0, 0, 0, 0, 0, 75, 0, 0, 3, 7, 85
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-platinum-data.ts", "TypeScript", 0, 0, 0, 0, 0, 88, 0, 0, 6, 15, 109
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-template.ts", "TypeScript", 0, 0, 0, 0, 0, 14, 0, 0, 0, 3, 17
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\invalidate-cache.ts", "TypeScript", 0, 0, 0, 0, 0, 14, 0, 0, 2, 6, 22
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\investigate-intake.ts", "TypeScript", 0, 0, 0, 0, 0, 44, 0, 0, 0, 5, 49
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\kia-be-dev.err.log", "log", 6, 0, 0, 0, 0, 0, 0, 0, 0, 3, 9
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\kia-be-dev.out.log", "log", 8, 0, 0, 0, 0, 0, 0, 0, 0, 3, 11
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\list-pending-accidental.ts", "TypeScript", 0, 0, 0, 0, 0, 37, 0, 0, 0, 5, 42
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\n5211-classified-current.json", "JSON", 0, 0, 0, 475, 0, 0, 0, 0, 0, 1, 476
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\n5211-jun1-15-rows.json", "JSON", 0, 0, 0, 2, 0, 0, 0, 0, 0, 1, 3
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\n6250-classified-rows.json", "JSON", 0, 0, 0, 233, 0, 0, 0, 0, 0, 1, 234
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\platinum-history-audit.json", "JSON", 0, 0, 0, 1831, 0, 0, 0, 0, 0, 0, 1831
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\platinum-operation-coverage.json", "JSON", 0, 0, 0, 5814, 0, 0, 0, 0, 0, 1, 5815
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\platinum-verify-dev.err.log", "log", 7, 0, 0, 0, 0, 0, 0, 0, 0, 3, 10
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\platinum-verify-dev.out.log", "log", 8, 0, 0, 0, 0, 0, 0, 0, 0, 3, 11
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\run-pending-query.ts", "TypeScript", 0, 0, 0, 0, 0, 58, 0, 0, 0, 5, 63
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\run-rsa-query.ts", "TypeScript", 0, 0, 0, 0, 0, 28, 0, 0, 0, 4, 32
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\am-finance-performance-indexes.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 2
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\analyze-hyundai-data-coverage.js", "JavaScript", 0, 0, 0, 0, 0, 0, 342, 0, 4, 17, 363
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\apply-postgres-performance-audit-fixes.js", "JavaScript", 0, 0, 0, 0, 0, 0, 54, 0, 0, 9, 63
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\apply-supabase-remediation.js", "JavaScript", 0, 0, 0, 0, 0, 0, 99, 0, 0, 14, 113
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\audit-hyundai-business-excellence.js", "JavaScript", 0, 0, 0, 0, 0, 0, 219, 0, 0, 23, 242
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\backup-and-drop-analytics-tables.js", "JavaScript", 0, 0, 0, 0, 0, 0, 206, 0, 14, 36, 256
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\apply-ddl.js", "JavaScript", 0, 0, 0, 0, 0, 0, 50, 0, 8, 11, 69
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\check-partition-nulls.js", "JavaScript", 0, 0, 0, 0, 0, 0, 33, 0, 0, 3, 36
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\compare-loaded-ids.js", "JavaScript", 0, 0, 0, 0, 0, 0, 28, 0, 0, 4, 32
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\db-url.js", "JavaScript", 0, 0, 0, 0, 0, 0, 70, 0, 3, 16, 89
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\000_datasets.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 14, 2, 2, 18
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\001_platinum_facts.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 99, 2, 8, 109
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\002_kia_facts.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 127, 1, 13, 141
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\003_hyundai_facts.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 89, 1, 10, 100
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\010_aggregates.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 120, 1, 12, 133
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\fix-partition-expiration.js", "JavaScript", 0, 0, 0, 0, 0, 0, 37, 0, 4, 6, 47
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\scheduled-queries\platinum_vas_period_summary.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 68, 2, 2, 72
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\sync-incremental.js", "JavaScript", 0, 0, 0, 0, 0, 0, 120, 0, 10, 23, 153
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\table-map.js", "JavaScript", 0, 0, 0, 0, 0, 0, 18, 0, 1, 2, 21
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\test-db-connection.js", "JavaScript", 0, 0, 0, 0, 0, 0, 18, 0, 0, 5, 23
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\test-single-load.js", "JavaScript", 0, 0, 0, 0, 0, 0, 51, 0, 0, 9, 60
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\validate-all-brands.js", "JavaScript", 0, 0, 0, 0, 0, 0, 23, 0, 3, 5, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\validate-parity.js", "JavaScript", 0, 0, 0, 0, 0, 0, 59, 0, 9, 13, 81
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\verify-history-range.js", "JavaScript", 0, 0, 0, 0, 0, 0, 81, 0, 0, 2, 83
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\capture-kia-service-dashboard-snapshot.ts", "TypeScript", 0, 0, 0, 0, 0, 70, 0, 0, 0, 6, 76
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\check-kia-adv-vas.js", "JavaScript", 0, 0, 0, 0, 0, 0, 21, 0, 0, 3, 24
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\compare-kia-intake-analytics.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 42, 0, 0, 6, 48
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\compare-kia-intake-drizzle.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 63, 0, 0, 7, 70
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\compare-kia-intake-sources.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 39, 0, 0, 7, 46
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\configure-kia-business-excellence.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 8, 0, 1, 9
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-demo-vehicle-remarks.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 3
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-kia-proforma.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-mg-proforma.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 182, 0, 18, 200
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-purchase-orders-table.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 6
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-acc-today2.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 21, 0, 0, 5, 26
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-al-bc-codes.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 22, 0, 0, 4, 26
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-align48.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 45, 0, 1, 6, 52
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-alignment-labour.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 44, 0, 0, 5, 49
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-bc-delta.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 25, 0, 1, 5, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-bc5-labour.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 36, 0, 1, 7, 44
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-billing-cols.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 42, 0, 1, 7, 50
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-bodyshop-rows.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 14, 0, 0, 4, 18
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-dealer-only-2.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 46, 0, 0, 5, 51
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-export-gaps.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 141, 0, 4, 10, 155
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-jun15-all.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 35, 0, 1, 6, 42
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-june16-period.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 60, 0, 1, 7, 68
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-extras.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 62, 0, 1, 6, 69
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-full.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 102, 0, 1, 6, 109
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-jk402.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 236, 0, 3, 17, 256
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-model.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 72, 0, 1, 7, 80
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-mtd.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 101, 0, 1, 8, 110
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-ops-metrics.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 160, 0, 1, 15, 176
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-vas-ly.js", "JavaScript", 0, 0, 0, 0, 0, 0, 118, 0, 3, 14, 135
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-labour-target.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 45, 0, 0, 5, 50
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-mech-pending.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 33, 0, 0, 4, 37
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-oil-parts.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 23, 0, 0, 4, 27
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-oil-types.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 35, 0, 1, 6, 42
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-oil262.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 60, 0, 1, 7, 68
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-open-dealer-code.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 64, 0, 1, 7, 72
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-open-dealer-codes.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 20, 0, 0, 2, 22
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-open-ro-cols.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 15, 0, 0, 4, 19
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-open-ro-gate.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 22, 0, 0, 4, 26
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ops-filter.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 75, 0, 1, 7, 83
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ops-oil-exact.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 58, 0, 0, 6, 64
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ops-oil-vas.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 60, 0, 0, 6, 66
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-pend-today-logic.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 76, 0, 0, 5, 81
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-pend-today.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 19, 0, 0, 5, 24
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-pending-12.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 84, 0, 0, 5, 89
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-pending-intake.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 59, 0, 2, 7, 68
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ref-match.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 111, 0, 4, 12, 127
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ro-billing-td-api.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 62, 0, 0, 10, 72
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ro-billing-td-pipeline.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 52, 0, 0, 7, 59
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ro-billing-td.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 39, 0, 0, 9, 48
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-vas-target.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 32, 0, 0, 5, 37
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-vin-vs-dealer.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 39, 0, 0, 3, 42
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-wa-wb-rows.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 75, 0, 1, 6, 82
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-wb-labour-rows.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 46, 0, 0, 6, 52
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-wb-nonop.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 44, 0, 0, 6, 50
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-wb-oil-rows.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 46, 0, 1, 5, 52
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\enforce-brand-analytics-retention.js", "JavaScript", 0, 0, 0, 0, 0, 0, 187, 0, 12, 21, 220
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\export-kia-service-dashboard.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 12, 0, 0, 3, 15
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\import-mg-proforma-xlsx.js", "JavaScript", 0, 0, 0, 0, 0, 0, 476, 0, 1, 33, 510
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-dealer-codes.js", "JavaScript", 0, 0, 0, 0, 0, 0, 49, 0, 0, 11, 60
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-dealer-intake-split.js", "JavaScript", 0, 0, 0, 0, 0, 0, 34, 0, 0, 3, 37
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-accidental.js", "JavaScript", 0, 0, 0, 0, 0, 0, 67, 0, 0, 8, 75
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-gaps.js", "JavaScript", 0, 0, 0, 0, 0, 0, 73, 0, 0, 9, 82
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-jckey.js", "JavaScript", 0, 0, 0, 0, 0, 0, 36, 0, 0, 4, 40
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-keys.js", "JavaScript", 0, 0, 0, 0, 0, 0, 74, 0, 0, 8, 82
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-oil.js", "JavaScript", 0, 0, 0, 0, 0, 0, 87, 0, 0, 8, 95
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-june-oil.js", "JavaScript", 0, 0, 0, 0, 0, 0, 66, 0, 0, 2, 68
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-oil-source.js", "JavaScript", 0, 0, 0, 0, 0, 0, 47, 0, 0, 6, 53
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-op-oil-vas.js", "JavaScript", 0, 0, 0, 0, 0, 0, 54, 0, 0, 6, 60
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-ops-alignment.js", "JavaScript", 0, 0, 0, 0, 0, 0, 35, 0, 0, 5, 40
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-paid-today.js", "JavaScript", 0, 0, 0, 0, 0, 0, 29, 0, 0, 6, 35
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-pending.js", "JavaScript", 0, 0, 0, 0, 0, 0, 53, 0, 0, 6, 59
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-vas-dates.js", "JavaScript", 0, 0, 0, 0, 0, 0, 35, 0, 0, 6, 41
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-vas.js", "JavaScript", 0, 0, 0, 0, 0, 0, 55, 0, 0, 8, 63
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-po-images.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 17, 0, 0, 5, 22
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-warranty-matrix-monthly.js", "JavaScript", 0, 0, 0, 0, 0, 0, 134, 0, 3, 23, 160
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inventory-supabase-storage.js", "JavaScript", 0, 0, 0, 0, 0, 0, 192, 0, 4, 23, 219
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\lib\platinum-be-api-auth.js", "JavaScript", 0, 0, 0, 0, 0, 0, 139, 0, 0, 23, 162
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\platinum-business-excellence-performance.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 81, 5, 0, 86
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\postgres-performance-audit-fixes-concurrent.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 36, 6, 5, 47
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\postgres-performance-audit-fixes.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 36, 14, 5, 55
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-db-wrapper-timeout.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 19, 0, 0, 3, 22
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-hyundai-overview-summary.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 128, 0, 0, 7, 135
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-hyundai-overview.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 74, 0, 0, 3, 77
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-statement-timeout-options.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 23, 0, 0, 4, 27
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-statement-timeout-session.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 26, 0, 0, 4, 30
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-statement-timeout-tx.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 22, 0, 0, 6, 28
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-statement-timeout.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 10, 0, 0, 2, 12
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\read-kia-service-dashboard-xlsx.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 17, 0, 0, 4, 21
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\reconcile-kia-service-dashboard.js", "JavaScript", 0, 0, 0, 0, 0, 0, 130, 0, 0, 15, 145
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\refresh-platinum-vas-view.js", "JavaScript", 0, 0, 0, 0, 0, 0, 223, 0, 19, 14, 256
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\restore-kia-adv-vas.js", "JavaScript", 0, 0, 0, 0, 0, 0, 247, 0, 9, 39, 295
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hyundai-business-excellence-parity.js", "JavaScript", 0, 0, 0, 0, 0, 0, 53, 0, 0, 7, 60
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hyundai-business-excellence-parity.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 41, 2, 9, 52
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hyundai-warranty-claims.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 3
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-kia-service-dashboard-snapshots.js", "JavaScript", 0, 0, 0, 0, 0, 0, 220, 0, 0, 9, 229
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\supabase-free-disk-drop-analytics.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 1, 12, 3, 16
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\supabase-query-performance-fixes-concurrent.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 41, 5, 16, 62
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\supabase-query-performance-fixes.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 41, 30, 22, 93
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\supabase-security-linter-fixes.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 163, 28, 24, 215
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\sync-platinum-vas-summary.ts", "TypeScript", 0, 0, 0, 0, 0, 233, 0, 0, 0, 15, 248
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\test-operation-oil-analytics.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 26, 0, 0, 5, 31
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\test-operation-oil-drizzle.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 52, 0, 0, 7, 59
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\test-po-signed-url.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 21, 0, 0, 5, 26
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\trim-kia-adv-vas-2025.js", "JavaScript", 0, 0, 0, 0, 0, 0, 58, 0, 0, 10, 68
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\update-purchase-orders-workflow.sql", "MS SQL", 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 3
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-hyundai-business-excellence-parity.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 114, 0, 0, 11, 125
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-hyundai-operation-metrics.ts", "TypeScript", 0, 0, 0, 0, 0, 23, 0, 0, 0, 4, 27
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-billing-kpi-alignment.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 26, 0, 0, 6, 32
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-business-excellence-parity.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 145, 0, 0, 13, 158
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-service-dashboard-metrics.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 30, 0, 0, 6, 36
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-service-dashboard-preview-cache.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 9, 0, 0, 4, 13
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-service-dashboard-snapshots.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 58, 0, 0, 6, 64
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-platinum-be-api.js", "JavaScript", 0, 0, 0, 0, 0, 0, 129, 0, 0, 23, 152
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-platinum-business-excellence.js", "JavaScript", 0, 0, 0, 0, 0, 0, 179, 0, 0, 5, 184
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-platinum-vas-identifiers.ts", "TypeScript", 0, 0, 0, 0, 0, 33, 0, 0, 0, 5, 38
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-supabase-remediation.mjs", "JavaScript", 0, 0, 0, 0, 0, 0, 118, 0, 13, 11, 142
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-vas-n6250.js", "JavaScript", 0, 0, 0, 0, 0, 0, 54, 0, 2, 8, 64
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-wawb-codes.js", "JavaScript", 0, 0, 0, 0, 0, 0, 120, 0, 4, 10, 134
+"c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-wawb-count.js", "JavaScript", 0, 0, 0, 0, 0, 0, 114, 0, 3, 9, 126
+"Total", "-", 1198, 1099, 2423, 9107, 90, 9245, 9353, 1164, 346, 2629, 36654

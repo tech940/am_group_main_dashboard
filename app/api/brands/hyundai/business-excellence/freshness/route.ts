@@ -30,6 +30,7 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
   ],
   open_ro_repair_orders: [{ table: 'hyundai_repair_order_list', label: 'Open RO' }],
   hyundai_complaints: [{ table: 'hyundai_call_center_complaints', label: 'Complaints' }],
+  sot_analysis: [],
 }
 
 function normalizeReportKey(value: string | null) {
@@ -69,8 +70,8 @@ function resolveDateColumn(table: string, columns: Set<string>) {
   const candidatesByTable: Record<string, string[]> = {
     hyundai_ro_billing_report: ['bill_date', 'uploaded_at'],
     hyundai_repair_order_list: ['r_o_date', 'ro_date', 'uploaded_at'],
-    hyundai_call_center_complaints: ['complaint_date', 'uploaded_at'],
-    hyundai_operation_wise_analysis_report: ['report_month', 'uploaded_at'],
+    hyundai_call_center_complaints: ['complaint_date', 'resolving_date', 'dealer_resolving_date', 'close_date', 'uploaded_at'],
+    hyundai_operation_wise_analysis_report: ['report_period_end', 'report_period_start', 'report_month', 'uploaded_at'],
     hyundai_ew_report: ['reg_date', 'ew_reg_date', 'uploaded_at'],
   }
   return (candidatesByTable[table] || ['uploaded_at']).find((column) => columns.has(column)) || null
@@ -86,7 +87,20 @@ async function readSourceFreshness(source: FreshnessSource, dealerCode: string |
     ? sql`WHERE UPPER(TRIM(COALESCE(${sql.raw(`"${dealerColumn}"`)}::text, ''))) IN (${sql.join(dealerCodes.map((code) => sql`${code}`), sql`, `)})`
     : sql``
   const dateColumn = resolveDateColumn(source.table, columns)
-  const dateProjection = dateColumn
+  const dateProjection = source.table === 'hyundai_call_center_complaints'
+    && ['complaint_date', 'resolving_date', 'dealer_resolving_date', 'close_date'].some((column) => columns.has(column))
+    ? sql`
+        MIN(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text AS "minDate",
+        MAX(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text AS "maxDate",
+      `
+    : source.table === 'hyundai_operation_wise_analysis_report'
+      && columns.has('report_period_start')
+      && columns.has('report_period_end')
+      ? sql`
+          MIN(report_period_start)::text AS "minDate",
+          MAX(report_period_end)::text AS "maxDate",
+        `
+      : dateColumn
     ? sql`${sql.raw(`MIN("${dateColumn}")::text`)} AS "minDate", ${sql.raw(`MAX("${dateColumn}")::text`)} AS "maxDate",`
     : sql`NULL::text AS "minDate", NULL::text AS "maxDate",`
 

@@ -1,0 +1,810 @@
+Date : 2026-06-20 14:16:59
+Directory : c:\Users\sahil\Downloads\am_group_main_dashboard
+Total : 566 files,  153820 codes, 1000 comments, 12487 blanks, all 167307 lines
+
+Languages
++--------------------+------------+------------+------------+------------+------------+
+| language           | files      | code       | comment    | blank      | total      |
++--------------------+------------+------------+------------+------------+------------+
+| TypeScript JSX     |        110 |     62,292 |        232 |      4,494 |     67,018 |
+| TypeScript         |        220 |     47,166 |        230 |      4,458 |     51,854 |
+| JSON               |          8 |     20,372 |          0 |          7 |     20,379 |
+| JavaScript         |        135 |     11,246 |        163 |      1,261 |     12,670 |
+| Markdown           |         26 |      5,253 |          2 |      1,401 |      6,656 |
+| MS SQL             |         45 |      3,944 |        368 |        589 |      4,901 |
+| log                |         14 |      1,880 |          0 |         37 |      1,917 |
+| PostCSS            |          1 |      1,598 |          0 |        232 |      1,830 |
+| JSON with Comments |          1 |         34 |          0 |          1 |         35 |
+| PowerShell         |          1 |         30 |          5 |          7 |         42 |
+| XML                |          5 |          5 |          0 |          0 |          5 |
++--------------------+------------+------------+------------+------------+------------+
+
+Directories
++---------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                                            | files      | code       | comment    | blank      | total      |
++---------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                                               |        566 |    153,820 |      1,000 |     12,487 |    167,307 |
+| . (Files)                                                                                                                       |         35 |     16,625 |         26 |      1,009 |     17,660 |
+| .kilo                                                                                                                           |          2 |        432 |          0 |        109 |        541 |
+| .kilo\plans                                                                                                                     |          2 |        432 |          0 |        109 |        541 |
+| app                                                                                                                             |        124 |     36,554 |         65 |      3,363 |     39,982 |
+| app (Files)                                                                                                                     |          5 |      1,715 |          1 |        248 |      1,964 |
+| app\admin                                                                                                                       |          5 |         37 |          0 |         11 |         48 |
+| app\admin (Files)                                                                                                               |          1 |         15 |          0 |          3 |         18 |
+| app\admin\permissions                                                                                                           |          1 |         10 |          0 |          2 |         12 |
+| app\admin\roles                                                                                                                 |          1 |          4 |          0 |          2 |          6 |
+| app\admin\settings                                                                                                              |          1 |          4 |          0 |          2 |          6 |
+| app\admin\users                                                                                                                 |          1 |          4 |          0 |          2 |          6 |
+| app\am-finance                                                                                                                  |          1 |         24 |          0 |          5 |         29 |
+| app\api                                                                                                                         |         90 |     30,883 |         26 |      2,614 |     33,523 |
+| app\api\admin                                                                                                                   |          5 |        838 |          0 |         91 |        929 |
+| app\api\admin\audit                                                                                                             |          1 |         54 |          0 |          7 |         61 |
+| app\api\admin\overview                                                                                                          |          1 |         61 |          0 |          6 |         67 |
+| app\api\admin\permissions                                                                                                       |          1 |        188 |          0 |         17 |        205 |
+| app\api\admin\settings                                                                                                          |          1 |         97 |          0 |         16 |        113 |
+| app\api\admin\users                                                                                                             |          1 |        438 |          0 |         45 |        483 |
+| app\api\am-finance                                                                                                              |          4 |      1,710 |          0 |        189 |      1,899 |
+| app\api\am-finance (Files)                                                                                                      |          1 |        702 |          0 |         77 |        779 |
+| app\api\am-finance\analytics                                                                                                    |          1 |        868 |          0 |         93 |        961 |
+| app\api\am-finance\audit                                                                                                        |          1 |         89 |          0 |          9 |         98 |
+| app\api\am-finance\duplicates                                                                                                   |          1 |         51 |          0 |         10 |         61 |
+| app\api\auth                                                                                                                    |          4 |        130 |          1 |         26 |        157 |
+| app\api\auth\login                                                                                                              |          1 |         48 |          0 |          7 |         55 |
+| app\api\auth\logout                                                                                                             |          1 |         10 |          1 |          6 |         17 |
+| app\api\auth\permissions                                                                                                        |          1 |         33 |          0 |          6 |         39 |
+| app\api\auth\user                                                                                                               |          1 |         39 |          0 |          7 |         46 |
+| app\api\brands                                                                                                                  |         64 |     25,735 |          5 |      1,954 |     27,694 |
+| app\api\brands\hyundai                                                                                                          |         19 |      7,724 |          2 |        571 |      8,297 |
+| app\api\brands\hyundai\business-excellence                                                                                      |         14 |      6,562 |          0 |        471 |      7,033 |
+| app\api\brands\hyundai\business-excellence (Files)                                                                              |          1 |        305 |          0 |         36 |        341 |
+| app\api\brands\hyundai\business-excellence\ai-summary                                                                           |          1 |        445 |          0 |         65 |        510 |
+| app\api\brands\hyundai\business-excellence\complaints                                                                           |          1 |        752 |          0 |         28 |        780 |
+| app\api\brands\hyundai\business-excellence\freshness                                                                            |          1 |        153 |          0 |         11 |        164 |
+| app\api\brands\hyundai\business-excellence\open-ro                                                                              |          1 |        513 |          0 |         29 |        542 |
+| app\api\brands\hyundai\business-excellence\overview                                                                             |          1 |      1,215 |          0 |         62 |      1,277 |
+| app\api\brands\hyundai\business-excellence\performance-intelligence                                                             |          1 |        442 |          0 |         30 |        472 |
+| app\api\brands\hyundai\business-excellence\ro-billing-analysis                                                                  |          1 |      1,413 |          0 |        140 |      1,553 |
+| app\api\brands\hyundai\business-excellence\ro-billing-report                                                                    |          1 |        319 |          0 |         15 |        334 |
+| app\api\brands\hyundai\business-excellence\rows                                                                                 |          1 |         19 |          0 |          5 |         24 |
+| app\api\brands\hyundai\business-excellence\service-dashboard-export                                                             |          1 |         32 |          0 |          3 |         35 |
+| app\api\brands\hyundai\business-excellence\service-dashboard-preview                                                            |          1 |         26 |          0 |          3 |         29 |
+| app\api\brands\hyundai\business-excellence\sot                                                                                  |          1 |         29 |          0 |          4 |         33 |
+| app\api\brands\hyundai\business-excellence\workshop-performance                                                                 |          1 |        899 |          0 |         40 |        939 |
+| app\api\brands\hyundai\repair-orders                                                                                            |          1 |        292 |          0 |         15 |        307 |
+| app\api\brands\hyundai\warranty-claims                                                                                          |          4 |        870 |          2 |         85 |        957 |
+| app\api\brands\hyundai\warranty-claims (Files)                                                                                  |          1 |        610 |          2 |         66 |        678 |
+| app\api\brands\hyundai\warranty-claims\actions                                                                                  |          1 |        195 |          0 |         13 |        208 |
+| app\api\brands\hyundai\warranty-claims\dealer-mappings                                                                          |          1 |         35 |          0 |          3 |         38 |
+| app\api\brands\hyundai\warranty-claims\evidence                                                                                 |          1 |         30 |          0 |          3 |         33 |
+| app\api\brands\hyundai\warranty-claims\evidence\[id]                                                                            |          1 |         30 |          0 |          3 |         33 |
+| app\api\brands\kia                                                                                                              |         22 |      8,090 |          0 |        655 |      8,745 |
+| app\api\brands\kia\business-excellence                                                                                          |         13 |      6,238 |          0 |        492 |      6,730 |
+| app\api\brands\kia\business-excellence (Files)                                                                                  |          1 |        321 |          0 |         38 |        359 |
+| app\api\brands\kia\business-excellence\ai-summary                                                                               |          1 |        446 |          0 |         65 |        511 |
+| app\api\brands\kia\business-excellence\complaints                                                                               |          1 |        748 |          0 |         26 |        774 |
+| app\api\brands\kia\business-excellence\freshness                                                                                |          1 |        119 |          0 |         10 |        129 |
+| app\api\brands\kia\business-excellence\open-ro                                                                                  |          1 |        516 |          0 |         29 |        545 |
+| app\api\brands\kia\business-excellence\overview                                                                                 |          1 |      1,086 |          0 |         59 |      1,145 |
+| app\api\brands\kia\business-excellence\performance-intelligence                                                                 |          1 |        447 |          0 |         30 |        477 |
+| app\api\brands\kia\business-excellence\ro-billing-analysis                                                                      |          1 |      1,553 |          0 |        143 |      1,696 |
+| app\api\brands\kia\business-excellence\rows                                                                                     |          1 |         17 |          0 |          5 |         22 |
+| app\api\brands\kia\business-excellence\service-dashboard-email                                                                  |          1 |         48 |          0 |          8 |         56 |
+| app\api\brands\kia\business-excellence\service-dashboard-export                                                                 |          1 |         36 |          0 |          6 |         42 |
+| app\api\brands\kia\business-excellence\service-dashboard-preview                                                                |          1 |         33 |          0 |          6 |         39 |
+| app\api\brands\kia\business-excellence\workshop-performance                                                                     |          1 |        868 |          0 |         67 |        935 |
+| app\api\brands\kia\demo-cars-list                                                                                               |          1 |        504 |          0 |         32 |        536 |
+| app\api\brands\kia\demo-job-cards                                                                                               |          1 |        422 |          0 |         51 |        473 |
+| app\api\brands\kia\proforma                                                                                                     |          6 |        545 |          0 |         59 |        604 |
+| app\api\brands\kia\proforma (Files)                                                                                             |          1 |        191 |          0 |         20 |        211 |
+| app\api\brands\kia\proforma\[id]                                                                                                |          2 |        130 |          0 |         17 |        147 |
+| app\api\brands\kia\proforma\[id] (Files)                                                                                        |          1 |         94 |          0 |         12 |        106 |
+| app\api\brands\kia\proforma\[id]\preview                                                                                        |          1 |         36 |          0 |          5 |         41 |
+| app\api\brands\kia\proforma\analytics                                                                                           |          1 |        138 |          0 |          9 |        147 |
+| app\api\brands\kia\proforma\options                                                                                             |          1 |         59 |          0 |          7 |         66 |
+| app\api\brands\kia\proforma\settings                                                                                            |          1 |         27 |          0 |          6 |         33 |
+| app\api\brands\kia\service-appointment                                                                                          |          1 |        381 |          0 |         21 |        402 |
+| app\api\brands\mg                                                                                                               |          6 |        571 |          0 |         61 |        632 |
+| app\api\brands\mg\proforma                                                                                                      |          6 |        571 |          0 |         61 |        632 |
+| app\api\brands\mg\proforma (Files)                                                                                              |          1 |        195 |          0 |         20 |        215 |
+| app\api\brands\mg\proforma\[id]                                                                                                 |          2 |        130 |          0 |         17 |        147 |
+| app\api\brands\mg\proforma\[id] (Files)                                                                                         |          1 |         94 |          0 |         12 |        106 |
+| app\api\brands\mg\proforma\[id]\preview                                                                                         |          1 |         36 |          0 |          5 |         41 |
+| app\api\brands\mg\proforma\analytics                                                                                            |          1 |        141 |          0 |         11 |        152 |
+| app\api\brands\mg\proforma\options                                                                                              |          1 |         78 |          0 |          7 |         85 |
+| app\api\brands\mg\proforma\settings                                                                                             |          1 |         27 |          0 |          6 |         33 |
+| app\api\brands\platinum                                                                                                         |         17 |      9,350 |          3 |        667 |     10,020 |
+| app\api\brands\platinum\business-excellence                                                                                     |         13 |      8,469 |          0 |        583 |      9,052 |
+| app\api\brands\platinum\business-excellence (Files)                                                                             |          1 |        325 |          0 |         36 |        361 |
+| app\api\brands\platinum\business-excellence\ai-summary                                                                          |          1 |        489 |          0 |         71 |        560 |
+| app\api\brands\platinum\business-excellence\complaints                                                                          |          1 |      1,099 |          0 |         35 |      1,134 |
+| app\api\brands\platinum\business-excellence\freshness                                                                           |          1 |        189 |          0 |          9 |        198 |
+| app\api\brands\platinum\business-excellence\open-ro                                                                             |          1 |        543 |          0 |         31 |        574 |
+| app\api\brands\platinum\business-excellence\overview                                                                            |          1 |      1,665 |          0 |         76 |      1,741 |
+| app\api\brands\platinum\business-excellence\performance-intelligence                                                            |          1 |        457 |          0 |         30 |        487 |
+| app\api\brands\platinum\business-excellence\ro-billing-analysis                                                                 |          1 |      1,718 |          0 |        148 |      1,866 |
+| app\api\brands\platinum\business-excellence\rows                                                                                |          1 |         19 |          0 |          5 |         24 |
+| app\api\brands\platinum\business-excellence\service-dashboard-export                                                            |          1 |         36 |          0 |          5 |         41 |
+| app\api\brands\platinum\business-excellence\service-dashboard-preview                                                           |          1 |         30 |          0 |          5 |         35 |
+| app\api\brands\platinum\business-excellence\sot                                                                                 |          1 |        469 |          0 |         35 |        504 |
+| app\api\brands\platinum\business-excellence\workshop-performance                                                                |          1 |      1,430 |          0 |         97 |      1,527 |
+| app\api\brands\platinum\warranty-claims                                                                                         |          4 |        881 |          3 |         84 |        968 |
+| app\api\brands\platinum\warranty-claims (Files)                                                                                 |          1 |        618 |          3 |         66 |        687 |
+| app\api\brands\platinum\warranty-claims\actions                                                                                 |          1 |        195 |          0 |         13 |        208 |
+| app\api\brands\platinum\warranty-claims\dealer-mappings                                                                         |          1 |         35 |          0 |          3 |         38 |
+| app\api\brands\platinum\warranty-claims\evidence                                                                                |          1 |         33 |          0 |          2 |         35 |
+| app\api\brands\platinum\warranty-claims\evidence\[id]                                                                           |          1 |         33 |          0 |          2 |         35 |
+| app\api\business-excellence                                                                                                     |          2 |         12 |          0 |          6 |         18 |
+| app\api\business-excellence (Files)                                                                                             |          1 |          6 |          0 |          3 |          9 |
+| app\api\business-excellence\ro-billing-analysis                                                                                 |          1 |          6 |          0 |          3 |          9 |
+| app\api\finance-orders                                                                                                          |          2 |        680 |          0 |         70 |        750 |
+| app\api\finance-orders (Files)                                                                                                  |          1 |        399 |          0 |         46 |        445 |
+| app\api\finance-orders\workflow                                                                                                 |          1 |        281 |          0 |         24 |        305 |
+| app\api\health                                                                                                                  |          1 |         33 |          2 |          5 |         40 |
+| app\api\notifications                                                                                                           |          1 |        102 |          0 |         17 |        119 |
+| app\api\purchase-orders                                                                                                         |          6 |      1,525 |         14 |        233 |      1,772 |
+| app\api\purchase-orders (Files)                                                                                                 |          1 |        495 |          4 |         85 |        584 |
+| app\api\purchase-orders\approve                                                                                                 |          1 |         74 |          7 |         17 |         98 |
+| app\api\purchase-orders\bulk-approve                                                                                            |          1 |        176 |          0 |         27 |        203 |
+| app\api\purchase-orders\file                                                                                                    |          1 |         89 |          1 |         24 |        114 |
+| app\api\purchase-orders\upload                                                                                                  |          1 |         74 |          0 |         13 |         87 |
+| app\api\purchase-orders\workflow                                                                                                |          1 |        617 |          2 |         67 |        686 |
+| app\api\user-preferences                                                                                                        |          1 |        118 |          4 |         23 |        145 |
+| app\auth                                                                                                                        |          1 |        220 |          1 |         20 |        241 |
+| app\auth\login                                                                                                                  |          1 |        220 |          1 |         20 |        241 |
+| app\brands                                                                                                                      |         19 |      1,335 |         34 |        215 |      1,584 |
+| app\brands\hyundai                                                                                                              |          3 |        204 |         10 |         31 |        245 |
+| app\brands\hyundai (Files)                                                                                                      |          1 |         18 |          5 |          7 |         30 |
+| app\brands\hyundai\[...module]                                                                                                  |          1 |        145 |          5 |         17 |        167 |
+| app\brands\hyundai\business-excellence                                                                                          |          1 |         41 |          0 |          7 |         48 |
+| app\brands\kia                                                                                                                  |          9 |        799 |         24 |        127 |        950 |
+| app\brands\kia\business-excellence                                                                                              |          3 |         94 |          0 |         20 |        114 |
+| app\brands\kia\business-excellence (Files)                                                                                      |          1 |         29 |          0 |          7 |         36 |
+| app\brands\kia\business-excellence\[report]                                                                                     |          2 |         65 |          0 |         13 |         78 |
+| app\brands\kia\demo-cars-list                                                                                                   |          1 |         17 |          0 |          6 |         23 |
+| app\brands\kia\demo-job-cards                                                                                                   |          1 |         17 |          0 |          6 |         23 |
+| app\brands\kia\proforma                                                                                                         |          2 |         46 |          0 |         10 |         56 |
+| app\brands\kia\proforma (Files)                                                                                                 |          1 |         16 |          0 |          4 |         20 |
+| app\brands\kia\proforma\[section]                                                                                               |          1 |         30 |          0 |          6 |         36 |
+| app\brands\kia\ro-billing                                                                                                       |          1 |        603 |         24 |         78 |        705 |
+| app\brands\kia\service-appointment                                                                                              |          1 |         22 |          0 |          7 |         29 |
+| app\brands\mg                                                                                                                   |          4 |        147 |          0 |         29 |        176 |
+| app\brands\mg (Files)                                                                                                           |          1 |         27 |          0 |          7 |         34 |
+| app\brands\mg\[...module]                                                                                                       |          1 |         74 |          0 |         12 |         86 |
+| app\brands\mg\proforma                                                                                                          |          2 |         46 |          0 |         10 |         56 |
+| app\brands\mg\proforma (Files)                                                                                                  |          1 |         16 |          0 |          4 |         20 |
+| app\brands\mg\proforma\[section]                                                                                                |          1 |         30 |          0 |          6 |         36 |
+| app\brands\platinum                                                                                                             |          3 |        185 |          0 |         28 |        213 |
+| app\brands\platinum (Files)                                                                                                     |          1 |         27 |          0 |          7 |         34 |
+| app\brands\platinum\[...module]                                                                                                 |          1 |        129 |          0 |         14 |        143 |
+| app\brands\platinum\business-excellence                                                                                         |          1 |         29 |          0 |          7 |         36 |
+| app\dashboard                                                                                                                   |          1 |         60 |          0 |          6 |         66 |
+| app\finance-orders                                                                                                              |          1 |         23 |          0 |          5 |         28 |
+| app\purchase-orders                                                                                                             |          1 |      2,257 |          3 |        239 |      2,499 |
+| components                                                                                                                      |         46 |      8,991 |        119 |        860 |      9,970 |
+| components\analytics                                                                                                            |          6 |        395 |          0 |         28 |        423 |
+| components\layout                                                                                                               |          4 |      1,871 |         38 |        188 |      2,097 |
+| components\providers                                                                                                            |          1 |        146 |          2 |         30 |        178 |
+| components\purchase-orders                                                                                                      |         18 |      4,958 |         56 |        425 |      5,439 |
+| components\shared                                                                                                               |          4 |        643 |         20 |         59 |        722 |
+| components\ui                                                                                                                   |         13 |        978 |          3 |        130 |      1,111 |
+| config                                                                                                                          |          1 |         30 |         12 |          5 |         47 |
+| context                                                                                                                         |          1 |         22 |          0 |          7 |         29 |
+| docs                                                                                                                            |          8 |      1,818 |          0 |        328 |      2,146 |
+| features                                                                                                                        |         32 |     49,271 |         74 |      3,123 |     52,468 |
+| features\admin                                                                                                                  |          1 |        694 |          0 |         33 |        727 |
+| features\am-finance                                                                                                             |          1 |      2,683 |          0 |        212 |      2,895 |
+| features\business-excellence                                                                                                    |          2 |        496 |          0 |         26 |        522 |
+| features\dashboard                                                                                                              |          1 |        116 |          4 |          6 |        126 |
+| features\finance-orders                                                                                                         |          1 |      1,219 |          0 |         70 |      1,289 |
+| features\hyundai                                                                                                                |          7 |     13,705 |         23 |        862 |     14,590 |
+| features\kia                                                                                                                    |         10 |     15,600 |         24 |        980 |     16,604 |
+| features\mg                                                                                                                     |          2 |      1,356 |          1 |         67 |      1,424 |
+| features\platinum                                                                                                               |          7 |     13,402 |         22 |        867 |     14,291 |
+| lib                                                                                                                             |         79 |     13,953 |        125 |      1,537 |     15,615 |
+| lib (Files)                                                                                                                     |          5 |        404 |          0 |         71 |        475 |
+| lib\admin                                                                                                                       |          1 |        186 |          0 |         22 |        208 |
+| lib\am-finance                                                                                                                  |          1 |         22 |          0 |          7 |         29 |
+| lib\analytics                                                                                                                   |         10 |        332 |         13 |         51 |        396 |
+| lib\analytics (Files)                                                                                                           |          9 |        306 |         13 |         43 |        362 |
+| lib\analytics\sql-dialect                                                                                                       |          1 |         26 |          0 |          8 |         34 |
+| lib\api                                                                                                                         |          2 |        200 |          0 |         32 |        232 |
+| lib\auth                                                                                                                        |          4 |        331 |          5 |         64 |        400 |
+| lib\business-excellence                                                                                                         |          3 |        251 |          0 |         33 |        284 |
+| lib\db                                                                                                                          |          3 |      1,122 |         40 |         99 |      1,261 |
+| lib\etl                                                                                                                         |          1 |         11 |          0 |          2 |         13 |
+| lib\finance-orders                                                                                                              |          1 |        120 |          0 |         24 |        144 |
+| lib\hooks                                                                                                                       |          2 |        140 |          6 |         26 |        172 |
+| lib\hyundai                                                                                                                     |          8 |      1,666 |          0 |        181 |      1,847 |
+| lib\kia                                                                                                                         |          5 |      2,268 |          5 |        249 |      2,522 |
+| lib\kia-proforma                                                                                                                |          4 |        763 |          0 |         70 |        833 |
+| lib\mg-proforma                                                                                                                 |          4 |        796 |          0 |         76 |        872 |
+| lib\notifications                                                                                                               |          3 |        594 |          0 |         68 |        662 |
+| lib\permissions                                                                                                                 |          2 |      1,215 |          0 |         73 |      1,288 |
+| lib\platinum                                                                                                                    |         11 |      2,723 |          5 |        255 |      2,983 |
+| lib\purchase-orders                                                                                                             |          1 |        213 |          0 |         28 |        241 |
+| lib\redis                                                                                                                       |          2 |        244 |         10 |         44 |        298 |
+| lib\reports                                                                                                                     |          1 |        144 |          0 |         23 |        167 |
+| lib\supabase                                                                                                                    |          5 |        208 |         41 |         39 |        288 |
+| public                                                                                                                          |          6 |         57 |          0 |         11 |         68 |
+| scratch                                                                                                                         |         50 |     11,012 |         29 |        254 |     11,295 |
+| scripts                                                                                                                         |        182 |     15,055 |        550 |      1,881 |     17,486 |
+| scripts (Files)                                                                                                                 |        163 |     13,811 |        503 |      1,712 |     16,026 |
+| scripts\bigquery                                                                                                                |         18 |      1,105 |         47 |        146 |      1,298 |
+| scripts\bigquery (Files)                                                                                                        |         12 |        588 |         38 |         99 |        725 |
+| scripts\bigquery\ddl                                                                                                            |          5 |        449 |          7 |         45 |        501 |
+| scripts\bigquery\scheduled-queries                                                                                              |          1 |         68 |          2 |          2 |         72 |
+| scripts\lib                                                                                                                     |          1 |        139 |          0 |         23 |        162 |
++---------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++---------------------------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| filename                                                                                                                        | language           | code       | comment    | blank      | total      |
++---------------------------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| c:\Users\sahil\Downloads\am_group_main_dashboard\.codex-dev.err.log                                                             | log                |        113 |          0 |          1 |        114 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\.codex-dev.log                                                                 | log                |        522 |          0 |          4 |        526 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\.kilo\plans\platinum-be-data-gap-analysis.md                                   | Markdown           |        342 |          0 |         88 |        430 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\.kilo\plans\report-table-mapping-analysis.md                                   | Markdown           |         90 |          0 |         21 |        111 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\AGENTS.md                                                                      | Markdown           |          2 |          2 |          2 |          6 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\BRAND_ACCESS_SETUP.md                                                          | Markdown           |        116 |          0 |         34 |        150 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\CLAUDE.md                                                                      | Markdown           |          1 |          0 |          1 |          2 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\PROJECT_CONTEXT.md                                                             | Markdown           |        640 |          0 |        153 |        793 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\PROJECT_DEEP_ANALYSIS.md                                                       | Markdown           |        436 |          0 |        189 |        625 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\PROJECT_KT_HANDOVER.md                                                         | Markdown           |        456 |          0 |        199 |        655 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\PURCHASE_ORDERS_COMPLETE.md                                                    | Markdown           |        265 |          0 |         62 |        327 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\PURCHASE_ORDERS_ENHANCEMENTS_GUIDE.md                                          | Markdown           |        258 |          0 |         71 |        329 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\PURCHASE_ORDERS_SETUP.md                                                       | Markdown           |        146 |          0 |         51 |        197 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\QUICK_START.md                                                                 | Markdown           |         91 |          0 |         26 |        117 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\README.md                                                                      | Markdown           |         23 |          0 |         14 |         37 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\REDIS_SETUP.md                                                                 | Markdown           |        134 |          0 |         54 |        188 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\SETTINGS_SETUP.md                                                              | Markdown           |        172 |          0 |         38 |        210 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\SETUP_ADMIN_USER.md                                                            | Markdown           |        120 |          0 |         33 |        153 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\WORKFLOW_REDESIGN_SUMMARY.md                                                   | Markdown           |        117 |          0 |         29 |        146 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\admin\page.tsx                                                             | TypeScript JSX     |         15 |          0 |          3 |         18 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\admin\permissions\page.tsx                                                 | TypeScript JSX     |         10 |          0 |          2 |         12 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\admin\roles\page.tsx                                                       | TypeScript JSX     |          4 |          0 |          2 |          6 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\admin\settings\page.tsx                                                    | TypeScript JSX     |          4 |          0 |          2 |          6 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\admin\users\page.tsx                                                       | TypeScript JSX     |          4 |          0 |          2 |          6 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\am-finance\page.tsx                                                        | TypeScript JSX     |         24 |          0 |          5 |         29 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\admin\audit\route.ts                                                   | TypeScript         |         54 |          0 |          7 |         61 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\admin\overview\route.ts                                                | TypeScript         |         61 |          0 |          6 |         67 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\admin\permissions\route.ts                                             | TypeScript         |        188 |          0 |         17 |        205 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\admin\settings\route.ts                                                | TypeScript         |         97 |          0 |         16 |        113 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\admin\users\route.ts                                                   | TypeScript         |        438 |          0 |         45 |        483 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\am-finance\analytics\route.ts                                          | TypeScript         |        868 |          0 |         93 |        961 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\am-finance\audit\route.ts                                              | TypeScript         |         89 |          0 |          9 |         98 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\am-finance\duplicates\route.ts                                         | TypeScript         |         51 |          0 |         10 |         61 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\am-finance\route.ts                                                    | TypeScript         |        702 |          0 |         77 |        779 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\auth\login\route.ts                                                    | TypeScript         |         48 |          0 |          7 |         55 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\auth\logout\route.ts                                                   | TypeScript         |         10 |          1 |          6 |         17 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\auth\permissions\route.ts                                              | TypeScript         |         33 |          0 |          6 |         39 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\auth\user\route.ts                                                     | TypeScript         |         39 |          0 |          7 |         46 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\ai-summary\route.ts                 | TypeScript         |        445 |          0 |         65 |        510 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\complaints\route.ts                 | TypeScript         |        752 |          0 |         28 |        780 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\freshness\route.ts                  | TypeScript         |        153 |          0 |         11 |        164 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\open-ro\route.ts                    | TypeScript         |        513 |          0 |         29 |        542 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\overview\route.ts                   | TypeScript         |      1,215 |          0 |         62 |      1,277 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\performance-intelligence\route.ts   | TypeScript         |        442 |          0 |         30 |        472 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\ro-billing-analysis\route.ts        | TypeScript         |      1,413 |          0 |        140 |      1,553 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\ro-billing-report\route.ts          | TypeScript         |        319 |          0 |         15 |        334 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\route.ts                            | TypeScript         |        305 |          0 |         36 |        341 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\rows\route.ts                       | TypeScript         |         19 |          0 |          5 |         24 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\service-dashboard-export\route.ts   | TypeScript         |         32 |          0 |          3 |         35 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\service-dashboard-preview\route.ts  | TypeScript         |         26 |          0 |          3 |         29 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\sot\route.ts                        | TypeScript         |         29 |          0 |          4 |         33 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\business-excellence\workshop-performance\route.ts       | TypeScript         |        899 |          0 |         40 |        939 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\repair-orders\route.ts                                  | TypeScript         |        292 |          0 |         15 |        307 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\warranty-claims\actions\route.ts                        | TypeScript         |        195 |          0 |         13 |        208 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\warranty-claims\dealer-mappings\route.ts                | TypeScript         |         35 |          0 |          3 |         38 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\warranty-claims\evidence\[id]\route.ts                  | TypeScript         |         30 |          0 |          3 |         33 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\hyundai\warranty-claims\route.ts                                | TypeScript         |        610 |          2 |         66 |        678 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\ai-summary\route.ts                     | TypeScript         |        446 |          0 |         65 |        511 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\complaints\route.ts                     | TypeScript         |        748 |          0 |         26 |        774 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\freshness\route.ts                      | TypeScript         |        119 |          0 |         10 |        129 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\open-ro\route.ts                        | TypeScript         |        516 |          0 |         29 |        545 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\overview\route.ts                       | TypeScript         |      1,086 |          0 |         59 |      1,145 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\performance-intelligence\route.ts       | TypeScript         |        447 |          0 |         30 |        477 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\ro-billing-analysis\route.ts            | TypeScript         |      1,553 |          0 |        143 |      1,696 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\route.ts                                | TypeScript         |        321 |          0 |         38 |        359 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\rows\route.ts                           | TypeScript         |         17 |          0 |          5 |         22 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\service-dashboard-email\route.ts        | TypeScript         |         48 |          0 |          8 |         56 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\service-dashboard-export\route.ts       | TypeScript         |         36 |          0 |          6 |         42 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\service-dashboard-preview\route.ts      | TypeScript         |         33 |          0 |          6 |         39 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\business-excellence\workshop-performance\route.ts           | TypeScript         |        868 |          0 |         67 |        935 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\demo-cars-list\route.ts                                     | TypeScript         |        504 |          0 |         32 |        536 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\demo-job-cards\route.ts                                     | TypeScript         |        422 |          0 |         51 |        473 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\proforma\[id]\preview\route.ts                              | TypeScript         |         36 |          0 |          5 |         41 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\proforma\[id]\route.ts                                      | TypeScript         |         94 |          0 |         12 |        106 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\proforma\analytics\route.ts                                 | TypeScript         |        138 |          0 |          9 |        147 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\proforma\options\route.ts                                   | TypeScript         |         59 |          0 |          7 |         66 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\proforma\route.ts                                           | TypeScript         |        191 |          0 |         20 |        211 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\proforma\settings\route.ts                                  | TypeScript         |         27 |          0 |          6 |         33 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\kia\service-appointment\route.ts                                | TypeScript         |        381 |          0 |         21 |        402 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\[id]\preview\route.ts                               | TypeScript         |         36 |          0 |          5 |         41 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\[id]\route.ts                                       | TypeScript         |         94 |          0 |         12 |        106 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\analytics\route.ts                                  | TypeScript         |        141 |          0 |         11 |        152 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\options\route.ts                                    | TypeScript         |         78 |          0 |          7 |         85 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\route.ts                                            | TypeScript         |        195 |          0 |         20 |        215 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\mg\proforma\settings\route.ts                                   | TypeScript         |         27 |          0 |          6 |         33 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\ai-summary\route.ts                | TypeScript         |        489 |          0 |         71 |        560 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\complaints\route.ts                | TypeScript         |      1,099 |          0 |         35 |      1,134 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\freshness\route.ts                 | TypeScript         |        189 |          0 |          9 |        198 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\open-ro\route.ts                   | TypeScript         |        543 |          0 |         31 |        574 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\overview\route.ts                  | TypeScript         |      1,665 |          0 |         76 |      1,741 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\performance-intelligence\route.ts  | TypeScript         |        457 |          0 |         30 |        487 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\ro-billing-analysis\route.ts       | TypeScript         |      1,718 |          0 |        148 |      1,866 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\route.ts                           | TypeScript         |        325 |          0 |         36 |        361 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\rows\route.ts                      | TypeScript         |         19 |          0 |          5 |         24 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\service-dashboard-export\route.ts  | TypeScript         |         36 |          0 |          5 |         41 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\service-dashboard-preview\route.ts | TypeScript         |         30 |          0 |          5 |         35 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\sot\route.ts                       | TypeScript         |        469 |          0 |         35 |        504 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\business-excellence\workshop-performance\route.ts      | TypeScript         |      1,430 |          0 |         97 |      1,527 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\warranty-claims\actions\route.ts                       | TypeScript         |        195 |          0 |         13 |        208 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\warranty-claims\dealer-mappings\route.ts               | TypeScript         |         35 |          0 |          3 |         38 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\warranty-claims\evidence\[id]\route.ts                 | TypeScript         |         33 |          0 |          2 |         35 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\brands\platinum\warranty-claims\route.ts                               | TypeScript         |        618 |          3 |         66 |        687 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\business-excellence\ro-billing-analysis\route.ts                       | TypeScript         |          6 |          0 |          3 |          9 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\business-excellence\route.ts                                           | TypeScript         |          6 |          0 |          3 |          9 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\finance-orders\route.ts                                                | TypeScript         |        399 |          0 |         46 |        445 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\finance-orders\workflow\route.ts                                       | TypeScript         |        281 |          0 |         24 |        305 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\health\route.ts                                                        | TypeScript         |         33 |          2 |          5 |         40 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\notifications\route.ts                                                 | TypeScript         |        102 |          0 |         17 |        119 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\purchase-orders\approve\route.ts                                       | TypeScript         |         74 |          7 |         17 |         98 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\purchase-orders\bulk-approve\route.ts                                  | TypeScript         |        176 |          0 |         27 |        203 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\purchase-orders\file\route.ts                                          | TypeScript         |         89 |          1 |         24 |        114 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\purchase-orders\route.ts                                               | TypeScript         |        495 |          4 |         85 |        584 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\purchase-orders\upload\route.ts                                        | TypeScript         |         74 |          0 |         13 |         87 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\purchase-orders\workflow\route.ts                                      | TypeScript         |        617 |          2 |         67 |        686 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\api\user-preferences\route.ts                                              | TypeScript         |        118 |          4 |         23 |        145 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\auth\login\page.tsx                                                        | TypeScript JSX     |        220 |          1 |         20 |        241 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\hyundai\[...module]\page.tsx                                        | TypeScript JSX     |        145 |          5 |         17 |        167 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\hyundai\business-excellence\page.tsx                                | TypeScript JSX     |         41 |          0 |          7 |         48 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\hyundai\page.tsx                                                    | TypeScript JSX     |         18 |          5 |          7 |         30 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\kia\business-excellence\[report]\loading.tsx                        | TypeScript JSX     |         16 |          0 |          1 |         17 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\kia\business-excellence\[report]\page.tsx                           | TypeScript JSX     |         49 |          0 |         12 |         61 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\kia\business-excellence\page.tsx                                    | TypeScript JSX     |         29 |          0 |          7 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\kia\demo-cars-list\page.tsx                                         | TypeScript JSX     |         17 |          0 |          6 |         23 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\kia\demo-job-cards\page.tsx                                         | TypeScript JSX     |         17 |          0 |          6 |         23 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\kia\proforma\[section]\page.tsx                                     | TypeScript JSX     |         30 |          0 |          6 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\kia\proforma\page.tsx                                               | TypeScript JSX     |         16 |          0 |          4 |         20 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\kia\ro-billing\page.tsx                                             | TypeScript JSX     |        603 |         24 |         78 |        705 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\kia\service-appointment\page.tsx                                    | TypeScript JSX     |         22 |          0 |          7 |         29 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\mg\[...module]\page.tsx                                             | TypeScript JSX     |         74 |          0 |         12 |         86 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\mg\page.tsx                                                         | TypeScript JSX     |         27 |          0 |          7 |         34 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\mg\proforma\[section]\page.tsx                                      | TypeScript JSX     |         30 |          0 |          6 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\mg\proforma\page.tsx                                                | TypeScript JSX     |         16 |          0 |          4 |         20 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\platinum\[...module]\page.tsx                                       | TypeScript JSX     |        129 |          0 |         14 |        143 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\platinum\business-excellence\page.tsx                               | TypeScript JSX     |         29 |          0 |          7 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\brands\platinum\page.tsx                                                   | TypeScript JSX     |         27 |          0 |          7 |         34 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\dashboard\page.tsx                                                         | TypeScript JSX     |         60 |          0 |          6 |         66 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\finance-orders\page.tsx                                                    | TypeScript JSX     |         23 |          0 |          5 |         28 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\forbidden.tsx                                                              | TypeScript JSX     |         20 |          0 |          2 |         22 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\globals.css                                                                | PostCSS            |      1,598 |          0 |        232 |      1,830 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\layout.tsx                                                                 | TypeScript JSX     |         51 |          0 |          5 |         56 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\page.tsx                                                                   | TypeScript JSX     |         16 |          1 |          4 |         21 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\purchase-orders\page.tsx                                                   | TypeScript JSX     |      2,257 |          3 |        239 |      2,499 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\app\theme-initializer.tsx                                                      | TypeScript JSX     |         30 |          0 |          5 |         35 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components.json                                                                | JSON               |         20 |          0 |          1 |         21 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\activity-card.tsx                                         | TypeScript JSX     |         50 |          0 |          5 |         55 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\integration-list.tsx                                      | TypeScript JSX     |         65 |          0 |          4 |         69 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\kpi-card.tsx                                              | TypeScript JSX     |         55 |          0 |          7 |         62 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\sales-distribution.tsx                                    | TypeScript JSX     |         66 |          0 |          4 |         70 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\sales-overview.tsx                                        | TypeScript JSX     |         95 |          0 |          4 |         99 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\analytics\subscriber-chart.tsx                                      | TypeScript JSX     |         64 |          0 |          4 |         68 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\layout\header.tsx                                                   | TypeScript JSX     |        280 |          3 |         33 |        316 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\layout\main-layout.tsx                                              | TypeScript JSX     |         27 |          0 |          3 |         30 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\layout\notification-bell.tsx                                        | TypeScript JSX     |        830 |          0 |        116 |        946 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\layout\sidebar.tsx                                                  | TypeScript JSX     |        734 |         35 |         36 |        805 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\providers\query-provider.tsx                                        | TypeScript JSX     |        146 |          2 |         30 |        178 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\approval-card.tsx                                   | TypeScript JSX     |        151 |          1 |         15 |        167 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\image-gallery.tsx                                   | TypeScript JSX     |        135 |          1 |         20 |        156 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\md-grid-view.tsx                                    | TypeScript JSX     |        439 |          1 |         27 |        467 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\md-table-view.tsx                                   | TypeScript JSX     |        544 |          1 |         47 |        592 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\multi-stage-form.tsx                                | TypeScript JSX     |        600 |         13 |         38 |        651 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\multiple-image-upload.tsx                           | TypeScript JSX     |        339 |          1 |         43 |        383 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\order-image-preview-button.tsx                      | TypeScript JSX     |        339 |          1 |         30 |        370 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\po-table-view.tsx                                   | TypeScript JSX     |        279 |          4 |         25 |        308 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\remarks-dialog.tsx                                  | TypeScript JSX     |        100 |          1 |         10 |        111 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage1-initial-submission.tsx                       | TypeScript JSX     |        361 |          6 |         26 |        393 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage2-vendor-information.tsx                       | TypeScript JSX     |        263 |          0 |         31 |        294 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage3-ea-approval.tsx                              | TypeScript JSX     |        169 |          4 |         12 |        185 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage3-md-approval.tsx                              | TypeScript JSX     |        176 |          5 |         13 |        194 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage4-grn.tsx                                      | TypeScript JSX     |        244 |          7 |         20 |        271 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\stage5-accounts.tsx                                 | TypeScript JSX     |        305 |          3 |         26 |        334 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\workflow-card-theme.ts                              | TypeScript         |         31 |          0 |          6 |         37 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\workflow-status-card.tsx                            | TypeScript JSX     |        287 |          0 |         19 |        306 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\purchase-orders\workflow-timeline.tsx                               | TypeScript JSX     |        196 |          7 |         17 |        220 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\shared\access-control-overlay.tsx                                   | TypeScript JSX     |         41 |          3 |          7 |         51 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\shared\data-table.tsx                                               | TypeScript JSX     |        186 |          0 |          9 |        195 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\shared\dynamic-row-form.tsx                                         | TypeScript JSX     |        320 |         16 |         36 |        372 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\shared\form.tsx                                                     | TypeScript JSX     |         96 |          1 |          7 |        104 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\badge.tsx                                                        | TypeScript JSX     |         35 |          0 |          6 |         41 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\button.tsx                                                       | TypeScript JSX     |         51 |          0 |          6 |         57 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\card.tsx                                                         | TypeScript JSX     |         71 |          0 |          9 |         80 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\checkbox.tsx                                                     | TypeScript JSX     |         26 |          1 |          6 |         33 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\dialog.tsx                                                       | TypeScript JSX     |        108 |          0 |         13 |        121 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\dropdown-menu.tsx                                                | TypeScript JSX     |        181 |          0 |         18 |        199 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\form.tsx                                                         | TypeScript JSX     |        145 |          0 |         24 |        169 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\input.tsx                                                        | TypeScript JSX     |         22 |          1 |          5 |         28 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\label.tsx                                                        | TypeScript JSX     |         20 |          0 |          5 |         25 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\select.tsx                                                       | TypeScript JSX     |        145 |          0 |         14 |        159 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\table.tsx                                                        | TypeScript JSX     |        107 |          0 |         11 |        118 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\tabs.tsx                                                         | TypeScript JSX     |         47 |          0 |          7 |         54 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\components\ui\textarea.tsx                                                     | TypeScript JSX     |         20 |          1 |          6 |         27 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\config\env-config.ts                                                           | TypeScript         |         30 |         12 |          5 |         47 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\context\sidebar-context.tsx                                                    | TypeScript JSX     |         22 |          0 |          7 |         29 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\docs\BUSINESS_EXCELLENCE_SQL_QUERIES.md                                        | Markdown           |      1,213 |          0 |        144 |      1,357 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\docs\bigquery-dual-write-contract.md                                           | Markdown           |         60 |          0 |         25 |         85 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\docs\bigquery-migration-deploy.md                                              | Markdown           |         64 |          0 |         29 |         93 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\docs\bigquery-migration-inventory-2026-06-15.md                                | Markdown           |        109 |          0 |          8 |        117 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\docs\bigquery-migration-rollback.md                                            | Markdown           |         33 |          0 |         15 |         48 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\docs\database-performance-audit-2026-06-14.md                                  | Markdown           |        167 |          0 |         75 |        242 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\docs\hyundai-business-excellence-source-contract.md                            | Markdown           |         39 |          0 |          8 |         47 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\docs\hyundai-data-coverage-2026-06-15.md                                       | Markdown           |        133 |          0 |         24 |        157 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\drizzle.config.ts                                                              | TypeScript         |         11 |          0 |          2 |         13 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\eslint.config.mjs                                                              | JavaScript         |         17 |          2 |          3 |         22 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\admin\admin-console.tsx                                               | TypeScript JSX     |        694 |          0 |         33 |        727 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\am-finance\am-finance-page.tsx                                        | TypeScript JSX     |      2,683 |          0 |        212 |      2,895 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\business-excellence\executive-table-shell.tsx                         | TypeScript JSX     |         81 |          0 |          6 |         87 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\business-excellence\shared-ui.tsx                                     | TypeScript JSX     |        415 |          0 |         20 |        435 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\dashboard\dashboard-page.tsx                                          | TypeScript JSX     |        116 |          4 |          6 |        126 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\finance-orders\finance-orders-page.tsx                                | TypeScript JSX     |      1,219 |          0 |         70 |      1,289 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\business-excellence-overview.tsx                              | TypeScript JSX     |      1,732 |          0 |        110 |      1,842 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\business-excellence-page.tsx                                  | TypeScript JSX     |      8,025 |         18 |        501 |      8,544 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\hyundai-complaints-section.tsx                                | TypeScript JSX     |      1,131 |          2 |         72 |      1,205 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\hyundai-module-placeholder.tsx                                | TypeScript JSX     |         29 |          0 |          3 |         32 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\open-ro-section.tsx                                           | TypeScript JSX     |      1,254 |          2 |         79 |      1,335 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\repair-orders-page.tsx                                        | TypeScript JSX     |        410 |          0 |         33 |        443 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\hyundai\warranty-claims-page.tsx                                      | TypeScript JSX     |      1,124 |          1 |         64 |      1,189 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\business-excellence-overview.tsx                                  | TypeScript JSX     |      1,772 |          0 |        112 |      1,884 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\business-excellence-page.tsx                                      | TypeScript JSX     |      7,959 |         19 |        498 |      8,476 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\demo-cars-list-page.tsx                                           | TypeScript JSX     |        540 |          0 |         36 |        576 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\demo-job-cards-page.tsx                                           | TypeScript JSX     |        852 |          0 |         51 |        903 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\kia-complaints-section.tsx                                        | TypeScript JSX     |      1,143 |          2 |         75 |      1,220 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\kia-proforma-page.tsx                                             | TypeScript JSX     |      1,284 |          1 |         68 |      1,353 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\open-ro-section.tsx                                               | TypeScript JSX     |      1,254 |          2 |         79 |      1,335 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\performance-diagnostics-panel.tsx                                 | TypeScript JSX     |        246 |          0 |         18 |        264 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\service-appointment-page.tsx                                      | TypeScript JSX     |        339 |          0 |         31 |        370 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\kia\service-dashboard-preview-section.tsx                             | TypeScript JSX     |        211 |          0 |         12 |        223 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\mg\mg-module-placeholder.tsx                                          | TypeScript JSX     |         29 |          0 |          3 |         32 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\mg\mg-proforma-page.tsx                                               | TypeScript JSX     |      1,327 |          1 |         64 |      1,392 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\api-client.ts                                                | TypeScript         |         34 |          0 |          7 |         41 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\business-excellence-overview.tsx                             | TypeScript JSX     |      2,009 |          0 |        126 |      2,135 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\business-excellence-page.tsx                                 | TypeScript JSX     |      8,146 |         18 |        510 |      8,674 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\open-ro-section.tsx                                          | TypeScript JSX     |      1,299 |          2 |         82 |      1,383 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\platinum-complaints-section.tsx                              | TypeScript JSX     |      1,187 |          2 |         82 |      1,271 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\platinum-module-placeholder.tsx                              | TypeScript JSX     |         29 |          0 |          3 |         32 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\features\platinum\sot-analysis-section.tsx                                     | TypeScript JSX     |        698 |          0 |         57 |        755 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\admin\authorization.ts                                                     | TypeScript         |        186 |          0 |         22 |        208 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\am-finance\access.ts                                                       | TypeScript         |         22 |          0 |          7 |         29 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\bigquery-provider.ts                                             | TypeScript         |         57 |          5 |          7 |         69 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\client.ts                                                        | TypeScript         |         16 |          0 |          5 |         21 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\config.ts                                                        | TypeScript         |         23 |          0 |          5 |         28 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\db.ts                                                            | TypeScript         |         12 |          4 |          3 |         19 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\dual-provider.ts                                                 | TypeScript         |         51 |          0 |          7 |         58 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\index.ts                                                         | TypeScript         |         29 |          0 |          7 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\postgres-provider.ts                                             | TypeScript         |         35 |          0 |          2 |         37 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\sql-dialect\porting-guide.md                                     | Markdown           |         26 |          0 |          8 |         34 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\table-map.ts                                                     | TypeScript         |         62 |          4 |          3 |         69 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\analytics\types.ts                                                         | TypeScript         |         21 |          0 |          4 |         25 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\api\client-timing.ts                                                       | TypeScript         |         94 |          0 |         15 |        109 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\api\timing.ts                                                              | TypeScript         |        106 |          0 |         17 |        123 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\app-user.ts                                                           | TypeScript         |        261 |          2 |         40 |        303 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\auth-helpers.ts                                                       | TypeScript         |         24 |          2 |         10 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\brand-access.ts                                                       | TypeScript         |         30 |          0 |          9 |         39 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\auth\roles.ts                                                              | TypeScript         |         16 |          1 |          5 |         22 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\branch-module-access.ts                                                    | TypeScript         |        183 |          0 |         21 |        204 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\branches.ts                                                                | TypeScript         |         36 |          0 |         10 |         46 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\business-excellence\comparison.ts                                          | TypeScript         |        207 |          0 |         27 |        234 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\business-excellence\executive-targets.ts                                   | TypeScript         |         36 |          0 |          2 |         38 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\business-excellence\workshop-classification.ts                             | TypeScript         |          8 |          0 |          4 |         12 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\dashboard-config.ts                                                        | TypeScript         |         66 |          0 |          5 |         71 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\date-time.ts                                                               | TypeScript         |        114 |          0 |         33 |        147 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\db\auth-client.ts                                                          | TypeScript         |         59 |          3 |         12 |         74 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\db\index.ts                                                                | TypeScript         |         90 |          5 |         19 |        114 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\db\schema.ts                                                               | TypeScript         |        973 |         32 |         68 |      1,073 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\etl\dual-write-types.ts                                                    | TypeScript         |         11 |          0 |          2 |         13 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\finance-orders\access.ts                                                   | TypeScript         |        120 |          0 |         24 |        144 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hooks\use-user-preferences.ts                                              | TypeScript         |        111 |          5 |         20 |        136 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hooks\use-user-role.ts                                                     | TypeScript         |         29 |          1 |          6 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\business-excellence-calculations.ts                                | TypeScript         |         62 |          0 |         12 |         74 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\business-excellence-operations.ts                                  | TypeScript         |        156 |          0 |         11 |        167 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\business-excellence.ts                                             | TypeScript         |        732 |          0 |         74 |        806 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\dealer-branch.ts                                                   | TypeScript         |         73 |          0 |         12 |         85 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\service-dashboard-export.ts                                        | TypeScript         |        341 |          0 |         22 |        363 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\warranty-claims.ts                                                 | TypeScript         |        230 |          0 |         34 |        264 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\warranty-dealers.ts                                                | TypeScript         |         33 |          0 |         10 |         43 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\hyundai\warranty-storage.ts                                                | TypeScript         |         39 |          0 |          6 |         45 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia-proforma\access.ts                                                     | TypeScript         |         33 |          0 |          9 |         42 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia-proforma\invoice.ts                                                    | TypeScript         |        529 |          0 |         34 |        563 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia-proforma\pricing.ts                                                    | TypeScript         |        164 |          0 |         19 |        183 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia-proforma\server.ts                                                     | TypeScript         |         37 |          0 |          8 |         45 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\business-excellence-contract.ts                                        | TypeScript         |        221 |          0 |         27 |        248 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\dealer-branch.ts                                                       | TypeScript         |         31 |          1 |          9 |         41 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\ro-billing-kpis.ts                                                     | TypeScript         |        137 |          1 |         14 |        152 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\service-dashboard-export.ts                                            | TypeScript         |      1,113 |          1 |        114 |      1,228 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\kia\service-dashboard-metrics.ts                                           | TypeScript         |        766 |          2 |         85 |        853 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\mg-proforma\access.ts                                                      | TypeScript         |         33 |          0 |          9 |         42 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\mg-proforma\invoice.ts                                                     | TypeScript         |        542 |          0 |         36 |        578 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\mg-proforma\pricing.ts                                                     | TypeScript         |        184 |          0 |         23 |        207 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\mg-proforma\server.ts                                                      | TypeScript         |         37 |          0 |          8 |         45 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\notifications\finance-workflow.ts                                          | TypeScript         |        268 |          0 |         29 |        297 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\notifications\types.ts                                                     | TypeScript         |         16 |          0 |          2 |         18 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\notifications\workflow.ts                                                  | TypeScript         |        310 |          0 |         37 |        347 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\permissions\registry.ts                                                    | TypeScript         |        789 |          0 |         14 |        803 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\permissions\service.ts                                                     | TypeScript         |        426 |          0 |         59 |        485 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-calculations.ts                               | TypeScript         |         62 |          0 |         12 |         74 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-coverage.ts                                   | TypeScript         |        228 |          0 |         19 |        247 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-metrics.ts                                    | TypeScript         |        210 |          0 |         30 |        240 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\business-excellence-vas.ts                                        | TypeScript         |        463 |          5 |         55 |        523 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\dealer-branch.ts                                                  | TypeScript         |         35 |          0 |          8 |         43 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\dealer-filter.ts                                                  | TypeScript         |         27 |          0 |          6 |         33 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\ro-billing-audit.ts                                               | TypeScript         |        603 |          0 |         36 |        639 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\service-dashboard-export.ts                                       | TypeScript         |        523 |          0 |         30 |        553 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\vas-identifiers.ts                                                | TypeScript         |        317 |          0 |         18 |        335 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\warranty-claims.ts                                                | TypeScript         |        230 |          0 |         33 |        263 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\platinum\warranty-dealers.ts                                               | TypeScript         |         25 |          0 |          8 |         33 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\purchase-orders\access.ts                                                  | TypeScript         |        213 |          0 |         28 |        241 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\redis\cache-utils.ts                                                       | TypeScript         |        216 |          3 |         35 |        254 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\redis\client.ts                                                            | TypeScript         |         28 |          7 |          9 |         44 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\reports\service-dashboard-email.ts                                         | TypeScript         |        144 |          0 |         23 |        167 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\admin.ts                                                          | TypeScript         |         12 |          4 |          2 |         18 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\client.ts                                                         | TypeScript         |         15 |          2 |          2 |         19 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\middleware.ts                                                     | TypeScript         |         54 |          8 |          9 |         71 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\server.ts                                                         | TypeScript         |         25 |          3 |          3 |         31 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\supabase\storage.ts                                                        | TypeScript         |        102 |         24 |         23 |        149 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\lib\utils.ts                                                                   | TypeScript         |          5 |          0 |          2 |          7 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\next.config.ts                                                                 | TypeScript         |         26 |          0 |          3 |         29 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\package-lock.json                                                              | JSON               |     11,900 |          0 |          1 |     11,901 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\package.json                                                                   | JSON               |         97 |          0 |          1 |         98 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\postcss.config.mjs                                                             | JavaScript         |          6 |          0 |          2 |          8 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\proxy.ts                                                                       | TypeScript         |         10 |          8 |          4 |         22 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\public\file.svg                                                                | XML                |          1 |          0 |          0 |          1 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\public\globe.svg                                                               | XML                |          1 |          0 |          0 |          1 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\public\next.svg                                                                | XML                |          1 |          0 |          0 |          1 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\public\sw.js                                                                   | JavaScript         |         52 |          0 |         11 |         63 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\public\vercel.svg                                                              | XML                |          1 |          0 |          0 |          1 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\public\window.svg                                                              | XML                |          1 |          0 |          0 |          1 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\audit-platinum-history.mjs                                             | JavaScript         |        249 |          0 |         20 |        269 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\audit-platinum-january-2025.mjs                                        | JavaScript         |        359 |          0 |          8 |        367 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\audit-platinum-operation-coverage.ts                                   | TypeScript         |        250 |          0 |         14 |        264 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\calculate-pending.ts                                                   | TypeScript         |         42 |          0 |          5 |         47 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\calculate-pure-intake.ts                                               | TypeScript         |         56 |          0 |          4 |         60 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-accidental-dates.ts                                              | TypeScript         |         43 |          0 |          5 |         48 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-business-days.ts                                                 | TypeScript         |         25 |          0 |          5 |         30 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-calculation-details.ts                                           | TypeScript         |         73 |          2 |          6 |         81 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-canceled-parts.ts                                                | TypeScript         |         26 |          0 |          4 |         30 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-current-max.ts                                                   | TypeScript         |         33 |          2 |          9 |         44 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-duplicates.ts                                                    | TypeScript         |         12 |          0 |          3 |         15 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-merges.ts                                                        | TypeScript         |         12 |          0 |          3 |         15 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-mg-tables.ts                                                     | TypeScript         |         74 |          8 |         17 |         99 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-missing-cols.ts                                                  | TypeScript         |         20 |          1 |          5 |         26 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-oil-values.ts                                                    | TypeScript         |         24 |          0 |          5 |         29 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-open-accidental-cancel.ts                                        | TypeScript         |         24 |          0 |          4 |         28 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-open-ro-status.ts                                                | TypeScript         |         17 |          0 |          4 |         21 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-parts-categories.ts                                              | TypeScript         |         39 |          0 |          4 |         43 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-pna.ts                                                           | TypeScript         |         23 |          0 |          4 |         27 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-ro-anywhere.ts                                                   | TypeScript         |         20 |          0 |          4 |         24 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-ro.ts                                                            | TypeScript         |         23 |          0 |          5 |         28 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-rsa.ts                                                           | TypeScript         |         25 |          0 |          4 |         29 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\check-triggers.ts                                                      | TypeScript         |         23 |          0 |          3 |         26 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\compare-june17.ts                                                      | TypeScript         |         10 |          0 |          3 |         13 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\db-diag.log                                                            | log                |        534 |          0 |          0 |        534 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\fix-missing-cols.ts                                                    | TypeScript         |         24 |          4 |         10 |         38 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\init-db.ts                                                             | TypeScript         |         29 |          0 |          4 |         33 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-accidental-substatus.ts                                        | TypeScript         |         35 |          0 |          5 |         40 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-db-schema.ts                                                   | TypeScript         |         23 |          0 |          3 |         26 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-dealers.ts                                                     | TypeScript         |         29 |          1 |          6 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-open-june.ts                                                   | TypeScript         |         27 |          0 |          4 |         31 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-open-ro-fields.ts                                              | TypeScript         |         27 |          0 |          4 |         31 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-open-statuses.ts                                               | TypeScript         |         40 |          0 |          4 |         44 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-platinum-active.ts                                             | TypeScript         |         75 |          3 |          7 |         85 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-platinum-data.ts                                               | TypeScript         |         88 |          6 |         15 |        109 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\inspect-template.ts                                                    | TypeScript         |         14 |          0 |          3 |         17 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\invalidate-cache.ts                                                    | TypeScript         |         14 |          2 |          6 |         22 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\investigate-intake.ts                                                  | TypeScript         |         44 |          0 |          5 |         49 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\kia-be-dev.err.log                                                     | log                |          6 |          0 |          3 |          9 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\kia-be-dev.out.log                                                     | log                |          8 |          0 |          3 |         11 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\list-pending-accidental.ts                                             | TypeScript         |         37 |          0 |          5 |         42 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\n5211-classified-current.json                                          | JSON               |        475 |          0 |          1 |        476 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\n5211-jun1-15-rows.json                                                | JSON               |          2 |          0 |          1 |          3 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\n6250-classified-rows.json                                             | JSON               |        233 |          0 |          1 |        234 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\platinum-history-audit.json                                            | JSON               |      1,831 |          0 |          0 |      1,831 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\platinum-operation-coverage.json                                       | JSON               |      5,814 |          0 |          1 |      5,815 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\platinum-verify-dev.err.log                                            | log                |          7 |          0 |          3 |         10 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\platinum-verify-dev.out.log                                            | log                |          8 |          0 |          3 |         11 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\run-pending-query.ts                                                   | TypeScript         |         58 |          0 |          5 |         63 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scratch\run-rsa-query.ts                                                       | TypeScript         |         28 |          0 |          4 |         32 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-actual-amount-column.sql                                           | MS SQL             |          3 |          3 |          3 |          9 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-brand-column.sql                                                   | MS SQL             |          2 |          5 |          4 |         11 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-purchase-order-bill-images.sql                                     | MS SQL             |          6 |          1 |          3 |         10 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-purchase-order-enhancements.sql                                    | MS SQL             |        114 |         24 |         21 |        159 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-purchase-order-notifications.sql                                   | MS SQL             |        110 |          6 |         19 |        135 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\add-purchase-order-vendor-details.sql                                  | MS SQL             |         10 |          2 |          4 |         16 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\am-finance-performance-indexes.sql                                     | MS SQL             |         34 |          2 |         10 |         46 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\analyze-hyundai-data-coverage.js                                       | JavaScript         |        342 |          4 |         17 |        363 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\apply-postgres-performance-audit-fixes.js                              | JavaScript         |         54 |          0 |          9 |         63 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\apply-supabase-remediation.js                                          | JavaScript         |         99 |          0 |         14 |        113 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\audit-hyundai-business-excellence.js                                   | JavaScript         |        219 |          0 |         23 |        242 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\backfill-purchase-order-stage-notifications.sql                        | MS SQL             |         56 |          2 |          2 |         60 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\backup-and-drop-analytics-tables.js                                    | JavaScript         |        206 |         14 |         36 |        256 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\backup-database-scheduler.js                                           | JavaScript         |         73 |          0 |         13 |         86 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\backup-database.js                                                     | JavaScript         |        115 |          0 |         29 |        144 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\apply-ddl.js                                                  | JavaScript         |         50 |          8 |         11 |         69 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\check-partition-nulls.js                                      | JavaScript         |         33 |          0 |          3 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\compare-loaded-ids.js                                         | JavaScript         |         28 |          0 |          4 |         32 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\db-url.js                                                     | JavaScript         |         70 |          3 |         16 |         89 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\000_datasets.sql                                          | MS SQL             |         14 |          2 |          2 |         18 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\001_platinum_facts.sql                                    | MS SQL             |         99 |          2 |          8 |        109 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\002_kia_facts.sql                                         | MS SQL             |        127 |          1 |         13 |        141 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\003_hyundai_facts.sql                                     | MS SQL             |         89 |          1 |         10 |        100 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\ddl\010_aggregates.sql                                        | MS SQL             |        120 |          1 |         12 |        133 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\fix-partition-expiration.js                                   | JavaScript         |         37 |          4 |          6 |         47 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\scheduled-queries\platinum_vas_period_summary.sql             | MS SQL             |         68 |          2 |          2 |         72 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\sync-incremental.js                                           | JavaScript         |        120 |         10 |         23 |        153 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\table-map.js                                                  | JavaScript         |         18 |          1 |          2 |         21 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\test-db-connection.js                                         | JavaScript         |         18 |          0 |          5 |         23 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\test-single-load.js                                           | JavaScript         |         51 |          0 |          9 |         60 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\validate-all-brands.js                                        | JavaScript         |         23 |          3 |          5 |         31 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\validate-parity.js                                            | JavaScript         |         59 |          9 |         13 |         81 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\bigquery\verify-history-range.js                                       | JavaScript         |         81 |          0 |          2 |         83 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\business-excellence-relational-indexes.sql                             | MS SQL             |         77 |          2 |         39 |        118 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\capture-kia-service-dashboard-snapshot.ts                              | TypeScript         |         70 |          0 |          6 |         76 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\check-kia-adv-vas.js                                                   | JavaScript         |         21 |          0 |          3 |         24 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\compare-kia-intake-analytics.mjs                                       | JavaScript         |         42 |          0 |          6 |         48 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\compare-kia-intake-drizzle.mjs                                         | JavaScript         |         63 |          0 |          7 |         70 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\compare-kia-intake-sources.mjs                                         | JavaScript         |         39 |          0 |          7 |         46 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\configure-kia-business-excellence.sql                                  | MS SQL             |          8 |          0 |          1 |          9 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-admin-user.sql                                                  | MS SQL             |         22 |         10 |          6 |         38 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-admin-user.ts                                                   | TypeScript         |         76 |         10 |         17 |        103 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-am-finance-v2.sql                                               | MS SQL             |         29 |          0 |          8 |         37 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-demo-vehicle-details.sql                                        | MS SQL             |         30 |          2 |          8 |         40 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-demo-vehicle-remarks.sql                                        | MS SQL             |         34 |          3 |          9 |         46 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-finance-orders.sql                                              | MS SQL             |        126 |          0 |         13 |        139 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-kia-proforma.sql                                                | MS SQL             |        171 |          0 |         18 |        189 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-mg-proforma.sql                                                 | MS SQL             |        182 |          0 |         18 |        200 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-permissions-manager.sql                                         | MS SQL             |        150 |          2 |         12 |        164 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-purchase-orders-table.sql                                       | MS SQL             |        162 |         24 |         29 |        215 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\create-settings-table.sql                                              | MS SQL             |         24 |          4 |          3 |         31 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\dashboard-performance-optimization.sql                                 | MS SQL             |        365 |         25 |         60 |        450 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-acc-today2.mjs                                                | JavaScript         |         21 |          0 |          5 |         26 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-al-bc-codes.mjs                                               | JavaScript         |         22 |          0 |          4 |         26 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-align48.mjs                                                   | JavaScript         |         45 |          1 |          6 |         52 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-alignment-labour.mjs                                          | JavaScript         |         44 |          0 |          5 |         49 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-bc-delta.mjs                                                  | JavaScript         |         25 |          1 |          5 |         31 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-bc5-labour.mjs                                                | JavaScript         |         36 |          1 |          7 |         44 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-billing-cols.mjs                                              | JavaScript         |         42 |          1 |          7 |         50 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-bodyshop-rows.mjs                                             | JavaScript         |         14 |          0 |          4 |         18 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-dealer-only-2.mjs                                             | JavaScript         |         46 |          0 |          5 |         51 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-export-gaps.mjs                                               | JavaScript         |        141 |          4 |         10 |        155 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-jun15-all.mjs                                                 | JavaScript         |         35 |          1 |          6 |         42 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-june16-period.mjs                                             | JavaScript         |         60 |          1 |          7 |         68 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-extras.mjs                                         | JavaScript         |         62 |          1 |          6 |         69 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-full.mjs                                           | JavaScript         |        102 |          1 |          6 |        109 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-jk402.mjs                                          | JavaScript         |        236 |          3 |         17 |        256 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-model.mjs                                          | JavaScript         |         72 |          1 |          7 |         80 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-intake-mtd.mjs                                            | JavaScript         |        101 |          1 |          8 |        110 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-ops-metrics.mjs                                           | JavaScript         |        160 |          1 |         15 |        176 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-kia-vas-ly.js                                                 | JavaScript         |        118 |          3 |         14 |        135 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-labour-target.mjs                                             | JavaScript         |         45 |          0 |          5 |         50 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-mech-pending.mjs                                              | JavaScript         |         33 |          0 |          4 |         37 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-oil-parts.mjs                                                 | JavaScript         |         23 |          0 |          4 |         27 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-oil-types.mjs                                                 | JavaScript         |         35 |          1 |          6 |         42 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-oil262.mjs                                                    | JavaScript         |         60 |          1 |          7 |         68 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-open-dealer-code.mjs                                          | JavaScript         |         64 |          1 |          7 |         72 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-open-dealer-codes.mjs                                         | JavaScript         |         20 |          0 |          2 |         22 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-open-ro-cols.mjs                                              | JavaScript         |         15 |          0 |          4 |         19 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-open-ro-gate.mjs                                              | JavaScript         |         22 |          0 |          4 |         26 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ops-filter.mjs                                                | JavaScript         |         75 |          1 |          7 |         83 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ops-oil-exact.mjs                                             | JavaScript         |         58 |          0 |          6 |         64 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ops-oil-vas.mjs                                               | JavaScript         |         60 |          0 |          6 |         66 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-pend-today-logic.mjs                                          | JavaScript         |         76 |          0 |          5 |         81 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-pend-today.mjs                                                | JavaScript         |         19 |          0 |          5 |         24 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-pending-12.mjs                                                | JavaScript         |         84 |          0 |          5 |         89 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-pending-intake.mjs                                            | JavaScript         |         59 |          2 |          7 |         68 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ref-match.mjs                                                 | JavaScript         |        111 |          4 |         12 |        127 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ro-billing-td-api.mjs                                         | JavaScript         |         62 |          0 |         10 |         72 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ro-billing-td-pipeline.mjs                                    | JavaScript         |         52 |          0 |          7 |         59 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-ro-billing-td.mjs                                             | JavaScript         |         39 |          0 |          9 |         48 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-vas-target.mjs                                                | JavaScript         |         32 |          0 |          5 |         37 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-vin-vs-dealer.mjs                                             | JavaScript         |         39 |          0 |          3 |         42 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-wa-wb-rows.mjs                                                | JavaScript         |         75 |          1 |          6 |         82 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-wb-labour-rows.mjs                                            | JavaScript         |         46 |          0 |          6 |         52 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-wb-nonop.mjs                                                  | JavaScript         |         44 |          0 |          6 |         50 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\diagnose-wb-oil-rows.mjs                                               | JavaScript         |         46 |          1 |          5 |         52 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\enforce-brand-analytics-retention.js                                   | JavaScript         |        187 |         12 |         21 |        220 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\export-kia-service-dashboard.mjs                                       | JavaScript         |         12 |          0 |          3 |         15 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\fix-notification-timestamps.sql                                        | MS SQL             |         12 |          7 |          5 |         24 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\fix-purchase-order-access-policies.sql                                 | MS SQL             |        195 |          1 |         12 |        208 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\fix-purchase-order-denial-status-enum.sql                              | MS SQL             |         19 |          2 |          3 |         24 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\fix-purchase-order-timezones.sql                                       | MS SQL             |         90 |         10 |         25 |        125 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\import-kia-price-details-csv.js                                        | JavaScript         |        287 |          1 |         21 |        309 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\import-kia-proforma-xlsx.js                                            | JavaScript         |        562 |          1 |         34 |        597 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\import-mg-proforma-xlsx.js                                             | JavaScript         |        476 |          1 |         33 |        510 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-dealer-codes.js                                            | JavaScript         |         49 |          0 |         11 |         60 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-dealer-intake-split.js                                     | JavaScript         |         34 |          0 |          3 |         37 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-accidental.js                                       | JavaScript         |         67 |          0 |          8 |         75 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-gaps.js                                             | JavaScript         |         73 |          0 |          9 |         82 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-jckey.js                                            | JavaScript         |         36 |          0 |          4 |         40 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-keys.js                                             | JavaScript         |         74 |          0 |          8 |         82 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-intake-oil.js                                              | JavaScript         |         87 |          0 |          8 |         95 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-june-oil.js                                                | JavaScript         |         66 |          0 |          2 |         68 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-oil-source.js                                              | JavaScript         |         47 |          0 |          6 |         53 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-op-oil-vas.js                                              | JavaScript         |         54 |          0 |          6 |         60 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-ops-alignment.js                                           | JavaScript         |         35 |          0 |          5 |         40 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-paid-today.js                                              | JavaScript         |         29 |          0 |          6 |         35 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-pending.js                                                 | JavaScript         |         53 |          0 |          6 |         59 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-vas-dates.js                                               | JavaScript         |         35 |          0 |          6 |         41 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-kia-vas.js                                                     | JavaScript         |         55 |          0 |          8 |         63 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-po-images.mjs                                                  | JavaScript         |         17 |          0 |          5 |         22 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inspect-warranty-matrix-monthly.js                                     | JavaScript         |        134 |          3 |         23 |        160 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\inventory-supabase-storage.js                                          | JavaScript         |        192 |          4 |         23 |        219 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\lib\platinum-be-api-auth.js                                            | JavaScript         |        139 |          0 |         23 |        162 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\platinum-business-excellence-performance.sql                           | MS SQL             |        496 |          7 |         26 |        529 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\postgres-performance-audit-fixes-concurrent.sql                        | MS SQL             |         36 |          6 |          5 |         47 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\postgres-performance-audit-fixes.sql                                   | MS SQL             |         36 |         14 |          5 |         55 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\pre-live-check.js                                                      | JavaScript         |         75 |          0 |         17 |         92 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-db-wrapper-timeout.mjs                                           | JavaScript         |         19 |          0 |          3 |         22 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-hyundai-overview-summary.mjs                                     | JavaScript         |        128 |          0 |          7 |        135 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-hyundai-overview.mjs                                             | JavaScript         |         74 |          0 |          3 |         77 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-statement-timeout-options.mjs                                    | JavaScript         |         23 |          0 |          4 |         27 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-statement-timeout-session.mjs                                    | JavaScript         |         26 |          0 |          4 |         30 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-statement-timeout-tx.mjs                                         | JavaScript         |         22 |          0 |          6 |         28 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\probe-statement-timeout.mjs                                            | JavaScript         |         10 |          0 |          2 |         12 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\read-kia-service-dashboard-xlsx.mjs                                    | JavaScript         |         17 |          0 |          4 |         21 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\reconcile-kia-service-dashboard.js                                     | JavaScript         |        130 |          0 |         15 |        145 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\refresh-dashboard-materialized-views-scheduler.js                      | JavaScript         |         85 |          0 |         16 |        101 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\refresh-dashboard-materialized-views.js                                | JavaScript         |         72 |          0 |          9 |         81 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\refresh-platinum-vas-view.js                                           | JavaScript         |        223 |         19 |         14 |        256 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\restore-kia-adv-vas.js                                                 | JavaScript         |        247 |          9 |         39 |        295 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\send-service-dashboard-email-scheduler.js                              | JavaScript         |        122 |          0 |         18 |        140 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\send-service-dashboard-email.ts                                        | TypeScript         |         23 |          0 |          6 |         29 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-am-finance-v2.js                                                 | JavaScript         |         30 |          0 |          6 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-finance-orders.js                                                | JavaScript         |         43 |          0 |         10 |         53 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hierarchical-admin.js                                            | JavaScript         |         27 |          0 |          4 |         31 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hierarchical-admin.sql                                           | MS SQL             |         28 |          3 |          6 |         37 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hyundai-business-excellence-parity.js                            | JavaScript         |         53 |          0 |          7 |         60 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hyundai-business-excellence-parity.sql                           | MS SQL             |         41 |          2 |          9 |         52 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-hyundai-warranty-claims.sql                                      | MS SQL             |         48 |          0 |          8 |         56 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-kia-service-dashboard-snapshots.js                               | JavaScript         |        220 |          0 |          9 |        229 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-permissions-manager.js                                           | JavaScript         |         29 |          0 |          6 |         35 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-platinum-business-excellence.js                                  | JavaScript         |         40 |          0 |          7 |         47 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-purchase-orders-user.sql                                         | MS SQL             |          3 |         31 |          5 |         39 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\setup-storage-policies.sql                                             | MS SQL             |         23 |          9 |          7 |         39 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\supabase-free-disk-drop-analytics.sql                                  | MS SQL             |          1 |         12 |          3 |         16 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\supabase-query-performance-fixes-concurrent.sql                        | MS SQL             |         41 |          5 |         16 |         62 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\supabase-query-performance-fixes.sql                                   | MS SQL             |         41 |         30 |         22 |         93 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\supabase-security-linter-fixes.sql                                     | MS SQL             |        163 |         28 |         24 |        215 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\sync-platinum-vas-summary.ts                                           | TypeScript         |        233 |          0 |         15 |        248 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\test-operation-oil-analytics.mjs                                       | JavaScript         |         26 |          0 |          5 |         31 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\test-operation-oil-drizzle.mjs                                         | JavaScript         |         52 |          0 |          7 |         59 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\test-po-signed-url.mjs                                                 | JavaScript         |         21 |          0 |          5 |         26 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\trim-kia-adv-vas-2025.js                                               | JavaScript         |         58 |          0 |         10 |         68 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\update-admin-user.ts                                                   | TypeScript         |         90 |         11 |         22 |        123 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\update-purchase-order-status-enum.sql                                  | MS SQL             |         66 |          4 |         11 |         81 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\update-purchase-orders-workflow.sql                                    | MS SQL             |        373 |         71 |         60 |        504 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-hyundai-business-excellence-parity.mjs                          | JavaScript         |        114 |          0 |         11 |        125 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-hyundai-operation-metrics.ts                                    | TypeScript         |         23 |          0 |          4 |         27 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-billing-kpi-alignment.mjs                                   | JavaScript         |         26 |          0 |          6 |         32 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-business-excellence-parity.mjs                              | JavaScript         |        145 |          0 |         13 |        158 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-service-dashboard-metrics.mjs                               | JavaScript         |         30 |          0 |          6 |         36 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-service-dashboard-preview-cache.mjs                         | JavaScript         |          9 |          0 |          4 |         13 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-kia-service-dashboard-snapshots.mjs                             | JavaScript         |         58 |          0 |          6 |         64 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-platinum-be-api.js                                              | JavaScript         |        129 |          0 |         23 |        152 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-platinum-business-excellence.js                                 | JavaScript         |        437 |          0 |         31 |        468 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-platinum-vas-identifiers.ts                                     | TypeScript         |         33 |          0 |          5 |         38 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-supabase-remediation.mjs                                        | JavaScript         |        118 |         13 |         11 |        142 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-vas-n6250.js                                                    | JavaScript         |         54 |          2 |          8 |         64 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-wawb-codes.js                                                   | JavaScript         |        120 |          4 |         10 |        134 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\scripts\verify-wawb-count.js                                                   | JavaScript         |        114 |          3 |          9 |        126 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\tailwind.config.ts                                                             | TypeScript         |        180 |          9 |          3 |        192 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-refinement-dev.err.log                                          | log                |        180 |          0 |          1 |        181 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-refinement-dev.out.log                                          | log                |        142 |          0 |          4 |        146 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-refinement-start.err.log                                        | log                |        274 |          0 |          3 |        277 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-refinement-start.out.log                                        | log                |         35 |          0 |          3 |         38 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-am-finance-start.log                                                       | log                |         37 |          0 |          3 |         40 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-platinum-dev.err.log                                                       | log                |          6 |          0 |          3 |          9 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\tmp-platinum-dev.out.log                                                       | log                |          8 |          0 |          3 |         11 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\tsconfig.json                                                                  | JSON with Comments |         34 |          0 |          1 |         35 |
+| c:\Users\sahil\Downloads\am_group_main_dashboard\validate.ps1                                                                   | PowerShell         |         30 |          5 |          7 |         42 |
+| Total                                                                                                                           |                    |    153,820 |      1,000 |     12,487 |    167,307 |
++---------------------------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+

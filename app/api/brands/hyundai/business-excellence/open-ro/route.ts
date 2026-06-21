@@ -6,7 +6,8 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import { hyundaiSourceDealerFilter, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import { HYUNDAI_BE_CALCULATION_META } from '@/lib/hyundai/business-excellence-calculations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -32,10 +33,10 @@ type OpenRoFilters = {
 type OpenRoChunk = 'summary' | 'details' | 'full'
 
 function openRoDealerFilter(filters: OpenRoFilters) {
-  const dealerCodes = getHyundaiDealerCodes(filters.dealerCode)
-  if (dealerCodes.length === 0) return sql``
-
-  return sql`AND UPPER(TRIM(COALESCE(hyundai_repair_order_list.dealer, ''))) IN (${sql.join(dealerCodes.map((code) => sql`${code}`), sql`, `)})`
+  return hyundaiSourceDealerFilter(
+    filters.dealerCode,
+    sql.raw('hyundai_repair_order_list.dealer'),
+  )
 }
 
 function openRoBaseSql(filters: OpenRoFilters) {
@@ -84,13 +85,13 @@ function openRoBaseSql(filters: OpenRoFilters) {
         *,
         CASE
           WHEN ro_date IS NULL THEN 0
-          ELSE GREATEST((CURRENT_DATE - ro_date)::int, 0)
+          ELSE GREATEST((COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int, 0)
         END AS aging_days,
         CASE
           WHEN ro_date IS NULL THEN '0-4D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 4 THEN '0-4D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 7 THEN '5-7D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 15 THEN '8-15D'
+          WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 4 THEN '0-4D'
+          WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 7 THEN '5-7D'
+          WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 15 THEN '8-15D'
           ELSE '>15D'
         END AS aging_bucket,
         CASE
@@ -190,7 +191,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `hyundai:business-excellence:open-ro:v8:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `hyundai:business-excellence:open-ro:v9:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -479,6 +480,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       insuranceCompanies: asStringArray(optionRow.insurance_companies),
     },
     meta: {
+      ...HYUNDAI_BE_CALCULATION_META,
       rowCount: details.length,
       detailLimit: 1000,
       chunk,

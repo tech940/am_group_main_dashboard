@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/clean-next-dev-types.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -36,9 +37,12 @@
     "service-dashboard-email:send": "tsx scripts/send-service-dashboard-email.ts",
     "service-dashboard-email:scheduler": "node scripts/send-service-dashboard-email-scheduler.js",
     "db:setup-kia-service-dashboard-snapshots": "node scripts/setup-kia-service-dashboard-snapshots.js",
+    "db:setup-hyundai-be-parity": "node scripts/setup-hyundai-business-excellence-parity.js",
     "capture:kia-service-dashboard-snapshot": "tsx scripts/capture-kia-service-dashboard-snapshot.ts",
     "verify:kia-service-dashboard-snapshots": "tsx scripts/verify-kia-service-dashboard-snapshots.mjs",
-    "verify:kia-be-parity": "tsx scripts/verify-kia-business-excellence-parity.mjs"
+    "verify:kia-be-parity": "tsx scripts/verify-kia-business-excellence-parity.mjs",
+    "verify:hyundai-be-parity": "node scripts/verify-hyundai-business-excellence-parity.mjs",
+    "verify:hyundai-operations": "tsx scripts/verify-hyundai-operation-metrics.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

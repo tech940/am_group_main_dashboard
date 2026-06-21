@@ -6,7 +6,15 @@ import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import { normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import {
+  HYUNDAI_BE_CALCULATION_META,
+  hyundaiActiveBillSql,
+  hyundaiCancelledBillSql,
+  hyundaiRoBillingDealerFilter,
+  hyundaiRoBillingInvoiceKeySql,
+  hyundaiRoBillingRoKeySql,
+} from '@/lib/hyundai/business-excellence-calculations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -553,18 +561,15 @@ function numberValue(value: unknown) {
 }
 
 function activeBillStatusSql() {
-  return sql`TRUE`
+  return hyundaiActiveBillSql()
 }
 
 function cancelledBillStatusSql() {
-  return sql`FALSE`
+  return hyundaiCancelledBillSql()
 }
 
 function roBillingDealerFilter(dealerCode: DealerFilter) {
-  const dealerCodes = getHyundaiDealerCodes(dealerCode)
-  return dealerCodes.length > 0
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) IN (${sql.join(dealerCodes.map((code) => sql`${code}`), sql`, `)})`
-    : sql``
+  return hyundaiRoBillingDealerFilter(dealerCode)
 }
 
 function measureWorkTypeRow(row: WorkTypeAggregateRow, period: PeriodKey, side: 'cy' | 'ly', analysisType: AnalysisType) {
@@ -703,12 +708,14 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date, compariso
     WITH dedup AS (
       SELECT
         bill_key,
+        (ARRAY_AGG(ro_key))[1] AS ro_key,
         bill_date,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
       FROM (
         SELECT
-          COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+          ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
+          ${hyundaiRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           COALESCE(part_amt, 0)::numeric AS part_amt
@@ -722,7 +729,7 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date, compariso
     )
     SELECT
       bill_date,
-      COUNT(DISTINCT bill_key)::int AS load,
+      COUNT(DISTINCT ro_key)::int AS load,
       COALESCE(SUM(labour_amt), 0)::float AS labour,
       COALESCE(SUM(part_amt), 0)::float AS parts
     FROM dedup
@@ -771,12 +778,14 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
     WITH dedup AS (
       SELECT
         bill_key,
+        (ARRAY_AGG(ro_key))[1] AS ro_key,
         bill_date,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
       FROM (
         SELECT
-          COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+          ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
+          ${hyundaiRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           COALESCE(part_amt, 0)::numeric AS part_amt
@@ -793,7 +802,7 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
           WHEN EXTRACT(MONTH FROM bill_date) >= 4 THEN EXTRACT(YEAR FROM bill_date)::int
           ELSE EXTRACT(YEAR FROM bill_date)::int - 1
         END AS fiscal_start_year,
-        COUNT(DISTINCT bill_key)::int AS load,
+        COUNT(DISTINCT ro_key)::int AS load,
         COALESCE(SUM(labour_amt), 0)::float AS labour,
         COALESCE(SUM(part_amt), 0)::float AS parts
       FROM dedup
@@ -869,13 +878,15 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
       SELECT
         service_advisor AS name,
         bill_key,
+        (ARRAY_AGG(ro_key))[1] AS ro_key,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
         (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
       FROM (
         SELECT
           COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS service_advisor,
-          COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+          ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
+          ${hyundaiRoBillingRoKeySql()} AS ro_key,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           COALESCE(part_amt, 0)::numeric AS part_amt,
           COALESCE(total_amt, 0)::numeric AS total_amt
@@ -890,7 +901,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
     advisor_totals AS (
       SELECT
         name,
-        COUNT(DISTINCT bill_key)::int AS load,
+        COUNT(DISTINCT ro_key)::int AS load,
         COALESCE(SUM(labour_amt), 0)::float AS labour,
         COALESCE(SUM(part_amt), 0)::float AS parts,
         COALESCE(SUM(total_amt), 0)::float AS total_amount
@@ -950,6 +961,7 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
         work_type,
         service_type,
         bill_key,
+        (ARRAY_AGG(ro_key))[1] AS ro_key,
         bill_date,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
@@ -957,7 +969,8 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
         SELECT
           COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
           COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
-          COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+          ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
+          ${hyundaiRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           COALESCE(part_amt, 0)::numeric AS part_amt
@@ -972,13 +985,13 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
     SELECT
       work_type,
       service_type,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date)::int AS td_cy_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date)::int AS mtd_cy_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date)::int AS mtd_ly_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date)::int AS qtd_cy_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date)::int AS qtd_ly_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date)::int AS ytd_cy_load,
-      COUNT(DISTINCT bill_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date)::int AS ytd_ly_load,
+      COUNT(DISTINCT ro_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date)::int AS td_cy_load,
+      COUNT(DISTINCT ro_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date)::int AS mtd_cy_load,
+      COUNT(DISTINCT ro_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date)::int AS mtd_ly_load,
+      COUNT(DISTINCT ro_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.cyStart)}::date AND ${toDateInputValue(windows.qtd.cyEnd)}::date)::int AS qtd_cy_load,
+      COUNT(DISTINCT ro_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.qtd.lyStart)}::date AND ${toDateInputValue(windows.qtd.lyEnd)}::date)::int AS qtd_ly_load,
+      COUNT(DISTINCT ro_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.cyStart)}::date AND ${toDateInputValue(windows.ytd.cyEnd)}::date)::int AS ytd_cy_load,
+      COUNT(DISTINCT ro_key) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.ytd.lyStart)}::date AND ${toDateInputValue(windows.ytd.lyEnd)}::date)::int AS ytd_ly_load,
       COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.td.cyStart)}::date AND ${toDateInputValue(windows.td.cyEnd)}::date), 0)::float AS td_cy_labour,
       COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.cyStart)}::date AND ${toDateInputValue(windows.mtd.cyEnd)}::date), 0)::float AS mtd_cy_labour,
       COALESCE(SUM(labour_amt) FILTER (WHERE bill_date BETWEEN ${toDateInputValue(windows.mtd.lyStart)}::date AND ${toDateInputValue(windows.mtd.lyEnd)}::date), 0)::float AS mtd_ly_labour,
@@ -1076,7 +1089,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
   const result = await db.execute(sql`
     WITH cancelled AS (
       SELECT
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS bill_key,
+        ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
         NULLIF(bill_no, '') AS bill_no,
         NULLIF(r_o_no, '') AS ro_no,
         bill_date::date AS bill_date,
@@ -1161,7 +1174,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
 }
 
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date, dealerCode: DealerFilter = null) {
-  return `hyundai:business-excellence:ro-billing:base-rows:v5:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
+  return `hyundai:business-excellence:ro-billing:base-rows:v6:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1169,7 +1182,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `hyundai:business-excellence:ro-billing:v22:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `hyundai:business-excellence:ro-billing:v23:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1254,6 +1267,7 @@ export async function GET(request: Request) {
         return key in FILTER_COLUMNS && value && value !== 'all'
       })
       const baseFastResponse = {
+        calculationMeta: HYUNDAI_BE_CALCULATION_META,
         sheet: {
           id: 'hyundai_ro_billing_report',
           brand: 'hyundai',
@@ -1422,6 +1436,7 @@ export async function GET(request: Request) {
       const rowsWithBillDate = allRows.filter((row) => !!parseBillDate(row))
       const filteredRows = applyFilters(rowsWithBillDate, searchParams)
       const baseResponse = {
+        calculationMeta: HYUNDAI_BE_CALCULATION_META,
         sheet: {
           id: sheetData.id,
           brand: sheetData.brand,

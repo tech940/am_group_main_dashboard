@@ -62,6 +62,12 @@ const brandNavigation = [
         key: 'h-promise',
         submenus: [],
       },
+      {
+        name: 'Insurance',
+        key: 'insurance',
+        href: '/brands/kia/insurance',
+        submenus: [],
+      },
     ],
   },
   {
@@ -187,6 +193,7 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
   '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
   '/brands/kia/proforma': 'kia.proforma.view',
+  '/brands/kia/insurance': 'kia.insurance.view',
   '/brands/hyundai/business-excellence/overview': 'hyundai.business_excellence.view',
   '/brands/hyundai/service-appointment': 'hyundai.service_appointment.view',
   '/brands/hyundai/demo-job-cards': 'hyundai.demo_job_cards.view',
@@ -690,30 +697,69 @@ export function Sidebar() {
                           {brand.sections.map((section) => {
                             const sectionKey = `${brand.key}:${section.key}`
                             const sectionOpen = openBrandSections.has(sectionKey)
-                            const sectionActive = section.submenus.some((sub) => isSidebarHrefActive(sub.href, pathname))
+                            const directHref = 'href' in section ? section.href : undefined
+                            const sectionActive = directHref
+                              ? isSidebarHrefActive(directHref, pathname)
+                              : section.submenus.some((sub) => isSidebarHrefActive(sub.href, pathname))
                             const hasChildren = section.submenus.length > 0
+                            const directPermissionKey = directHref ? sidebarPermissionByHref[directHref] : undefined
+                            const isBrandUser = userBrand === brand.key || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
+                            const directLocked = directHref && !isBrandUser && directPermissionKey
+                              ? !hasPermission(directPermissionKey)
+                              : false
 
                             return (
                               <div key={section.key} className="space-y-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => hasChildren ? toggleBrandSection(sectionKey) : undefined}
-                                  className={cn(
-                                    'flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-left text-[11px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
-                                    sectionActive || sectionOpen
-                                      ? 'bg-white/18 text-white'
-                                      : 'bg-white/8 text-indigo-50/75 hover:bg-white/14 hover:text-white',
-                                    !hasChildren && 'cursor-default opacity-70'
-                                  )}
-                                >
-                                  {hasChildren ? (
-                                    sectionOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />
+                                {directHref ? (
+                                  directLocked ? (
+                                    <button
+                                      type="button"
+                                      onClick={showLockedSectionMessage}
+                                      className="flex w-full items-center gap-2 rounded-lg border border-white/15 bg-white/8 px-3 py-2 text-left text-[11px] font-black uppercase tracking-[0.16em] text-indigo-50/65 shadow-sm transition-all hover:bg-white/14"
+                                    >
+                                      <Shield className="h-3.5 w-3.5" />
+                                      <span className="flex-1">{section.name}</span>
+                                      <Lock className="h-3.5 w-3.5" />
+                                    </button>
                                   ) : (
-                                    <span className="h-3.5 w-3.5" />
-                                  )}
-                                  <span className="flex-1">{section.name}</span>
-                                  {!hasChildren && <span className="text-[8px] tracking-widest text-indigo-50/45">Soon</span>}
-                                </button>
+                                    <Link
+                                      href={directHref}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      prefetch={false}
+                                      onClick={handleSidebarLinkClick}
+                                      className={cn(
+                                        'flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-left text-[11px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
+                                        sectionActive
+                                          ? 'bg-white/18 text-white'
+                                          : 'bg-white/8 text-indigo-50/75 hover:bg-white/14 hover:text-white'
+                                      )}
+                                    >
+                                      <Shield className="h-3.5 w-3.5" />
+                                      <span className="flex-1">{section.name}</span>
+                                    </Link>
+                                  )
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => hasChildren ? toggleBrandSection(sectionKey) : undefined}
+                                    className={cn(
+                                      'flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-left text-[11px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
+                                      sectionActive || sectionOpen
+                                        ? 'bg-white/18 text-white'
+                                        : 'bg-white/8 text-indigo-50/75 hover:bg-white/14 hover:text-white',
+                                      !hasChildren && 'cursor-default opacity-70'
+                                    )}
+                                  >
+                                    {hasChildren ? (
+                                      sectionOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <span className="h-3.5 w-3.5" />
+                                    )}
+                                    <span className="flex-1">{section.name}</span>
+                                    {!hasChildren && <span className="text-[8px] tracking-widest text-indigo-50/45">Soon</span>}
+                                  </button>
+                                )}
 
                                 {hasChildren && sectionOpen && (
                                   <div className="ml-4 space-y-1.5 border-l border-white/15 pl-3">

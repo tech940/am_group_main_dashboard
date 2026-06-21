@@ -6,8 +6,20 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import {
+  getHyundaiDealerCodes,
+  hyundaiSourceDealerFilter,
+  normalizeHyundaiDealerCode,
+} from '@/lib/hyundai/dealer-branch'
 import { fetchHyundaiMonthlyOperationMetrics } from '@/lib/hyundai/business-excellence-operations'
+import {
+  HYUNDAI_BE_CALCULATION_META,
+  hyundaiActiveBillSql,
+  hyundaiComparisonGrowth,
+  hyundaiRoBillingDealerFilter,
+  hyundaiRoBillingInvoiceKeySql,
+  hyundaiRoBillingRoKeySql,
+} from '@/lib/hyundai/business-excellence-calculations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -83,8 +95,7 @@ function perUnit(amount: number, count: number) {
 }
 
 function growth(current: number, previous: number) {
-  if (previous <= 0) return current > 0 ? 100 : 0
-  return ((current - previous) / previous) * 100
+  return hyundaiComparisonGrowth(current, previous)
 }
 
 function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
@@ -97,13 +108,13 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:overview:v25:${chunk}:${createHash('sha1')
+  return `hyundai:business-excellence:overview:v26:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
 
 function activeBillStatusSql() {
-  return sql`TRUE`
+  return hyundaiActiveBillSql()
 }
 
 function dealerCodeListSql(dealerCode: DealerFilter) {
@@ -112,24 +123,22 @@ function dealerCodeListSql(dealerCode: DealerFilter) {
 }
 
 function roBillingDealerFilter(dealerCode: DealerFilter) {
-  const dealerCodes = dealerCodeListSql(dealerCode)
-  return dealerCodes
-    ? sql`AND UPPER(TRIM(COALESCE(NULLIF(dealer_code, ''), NULLIF(main_dealer_code, '')))) IN (${dealerCodes})`
-    : sql``
+  return hyundaiRoBillingDealerFilter(dealerCode)
 }
 
 function complaintsDealerFilter(dealerCode: DealerFilter) {
-  const dealerCodes = dealerCodeListSql(dealerCode)
-  return dealerCodes
-    ? sql`AND UPPER(TRIM(COALESCE(source_dealer_code, ''))) IN (${dealerCodes})`
-    : sql``
+  return hyundaiSourceDealerFilter(
+    dealerCode,
+    sql.raw('source_dealer_code'),
+    [sql.raw('dealer_code')],
+  )
 }
 
 function openRoDealerFilter(dealerCode: DealerFilter) {
-  const dealerCodes = dealerCodeListSql(dealerCode)
-  return dealerCodes
-    ? sql`AND UPPER(TRIM(COALESCE(dealer, ''))) IN (${dealerCodes})`
-    : sql``
+  return hyundaiSourceDealerFilter(
+    dealerCode,
+    sql.raw('dealer'),
+  )
 }
 
 function sameDateLastYear(value: string) {
@@ -350,7 +359,8 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
     WITH raw AS (
       SELECT
         bill_date::date AS report_date,
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
+        ${hyundaiRoBillingRoKeySql()} AS ro_key,
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
         CASE
           WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
@@ -378,14 +388,15 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
       SELECT
         *,
         ROW_NUMBER() OVER (
-          PARTITION BY jc_key
+          PARTITION BY invoice_key
           ORDER BY ABS(labour_amt + part_amt) DESC, report_date DESC
         ) AS row_rank
       FROM raw
     ),
     base AS (
       SELECT
-        jc_key,
+        invoice_key,
+        (ARRAY_AGG(ro_key ORDER BY row_rank ASC))[1] AS jc_key,
         (ARRAY_AGG(report_date ORDER BY row_rank ASC))[1] AS report_date,
         (ARRAY_AGG(advisor ORDER BY row_rank ASC))[1] AS advisor,
         (ARRAY_AGG(service_category ORDER BY row_rank ASC))[1] AS service_category,
@@ -393,7 +404,7 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
         (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
       FROM ranked
-      GROUP BY jc_key
+      GROUP BY invoice_key
     ),
     enriched AS (
       SELECT
@@ -456,18 +467,19 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
 }
 
 function complaintsBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
+  const complaintDate = sql`COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date`
   return sql`
     WITH latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
         *
       FROM hyundai_call_center_complaints
-      WHERE complaint_date IS NOT NULL
+      WHERE ${complaintDate} IS NOT NULL
       ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
     enriched AS (
       SELECT
         complaint_no,
-        complaint_date,
+        ${complaintDate} AS complaint_date,
         close_date,
         resolving_date,
         dealer_name,
@@ -503,8 +515,8 @@ function complaintsBaseSql(startDate: string, endDate: string, dealerCode: Deale
           ELSE COALESCE(NULLIF(sr_area, ''), 'General Service')
         END AS signal_area
       FROM latest
-      WHERE complaint_date >= ${startDate}::date
-        AND complaint_date < (${endDate}::date + INTERVAL '1 day')
+      WHERE ${complaintDate} >= ${startDate}::date
+        AND ${complaintDate} < (${endDate}::date + INTERVAL '1 day')
         ${complaintsDealerFilter(dealerCode)}
     )
   `
@@ -562,7 +574,8 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
   ` : sql`
     WITH raw AS (
       SELECT
-        COALESCE(NULLIF(bill_no, ''), NULLIF(r_o_no, ''), id::text) AS jc_key,
+        ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
+        ${hyundaiRoBillingRoKeySql()} AS ro_key,
         bill_date::date AS report_date,
         CASE
           WHEN LOWER(COALESCE(work_type, '')) LIKE '%accident%'
@@ -582,23 +595,25 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
+        AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
     dedup AS (
       SELECT
-        jc_key,
+        invoice_key,
+        (ARRAY_AGG(ro_key))[1] AS ro_key,
         (ARRAY_AGG(report_date ORDER BY report_date DESC))[1] AS report_date,
         (ARRAY_AGG(service_type ORDER BY ABS(labour_amt + part_amt) DESC))[1] AS service_type,
         (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
         (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
       FROM raw
-      GROUP BY jc_key
+      GROUP BY invoice_key
     )
     SELECT
       service_type,
       MIN(report_date)::text AS min_date,
       MAX(report_date)::text AS max_date,
-      COUNT(*)::int AS total_jc,
+      COUNT(DISTINCT ro_key)::int AS total_jc,
       COALESCE(SUM(labour_amt), 0)::float AS labour_amount,
       COALESCE(SUM(part_amt), 0)::float AS part_amount
     FROM dedup
@@ -732,6 +747,8 @@ async function buildOverviewPayload(
     lyComplaintKpiRows,
     lyAddonKpis,
     lyWorkshopSnapshot,
+    operationCoverage,
+    lyOperationCoverage,
   ] = await Promise.all([
     db.execute(sql`
       ${roSql}
@@ -849,17 +866,19 @@ async function buildOverviewPayload(
       WITH latest AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(complaint_no, ''), id::text))
           complaint_no,
-          complaint_date,
+          COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date AS complaint_date,
           status,
           close_date,
           resolving_date,
           pending_days,
           uploaded_at
         FROM hyundai_call_center_complaints
-        WHERE complaint_date IS NOT NULL
+        WHERE COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date IS NOT NULL
           AND (
-            (complaint_date >= ${startDate}::date AND complaint_date < (${endDate}::date + INTERVAL '1 day'))
-            OR (complaint_date >= ${lyStartDate}::date AND complaint_date < (${lyEndDate}::date + INTERVAL '1 day'))
+            (COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date >= ${startDate}::date
+              AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date < (${endDate}::date + INTERVAL '1 day'))
+            OR (COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date >= ${lyStartDate}::date
+              AND COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)::date < (${lyEndDate}::date + INTERVAL '1 day'))
           )
           ${complaintsDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(complaint_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
@@ -919,6 +938,8 @@ async function buildOverviewPayload(
     `) : emptyRows(),
     includeComparison ? fetchAddonKpis(lyStartDate, lyEndDate, dealerCode) : emptyAddonKpis(),
     includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode) : emptyWorkshopSnapshot(),
+    fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode),
+    includeComparison ? fetchHyundaiMonthlyOperationMetrics(lyEndDate, dealerCode) : Promise.resolve(null),
   ])
 
   const roKpis = resultRows(roKpiRows)[0] || {}
@@ -1164,6 +1185,7 @@ async function buildOverviewPayload(
       },
     ],
     meta: {
+      ...HYUNDAI_BE_CALCULATION_META,
       chunk,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       periodScope: {
@@ -1191,11 +1213,27 @@ async function buildOverviewPayload(
           minDate: workshopSnapshot.minDate,
           maxDate: workshopSnapshot.maxDate,
         },
+        operationWise: {
+          available: operationCoverage.available,
+          periodStart: operationCoverage.periodStart,
+          periodEnd: operationCoverage.periodEnd,
+          identifierVersion: operationCoverage.identifierVersion,
+          sourceRows: operationCoverage.sourceRows,
+          classifiedRows: operationCoverage.classifiedRows,
+          unknownCodeRows: operationCoverage.unknownCodeRows,
+        },
       },
+      sourceWarnings: [
+        ...(!operationCoverage.available ? ['No contained Hyundai Operation Wise snapshot exists for the selected period.'] : []),
+        ...(operationCoverage.available && operationCoverage.classifiedRows === 0
+          ? ['Hyundai Operation Wise snapshot exists but contains no classified VAS/WA/WB rows. Reload the complete report before treating zero values as business performance.']
+          : []),
+        ...(includeComparison && !lyOperationCoverage?.available ? ['No comparable Hyundai Operation Wise snapshot exists for the comparison period.'] : []),
+      ],
       dateBases: {
         roBilling: 'bill_date',
         openRo: 'ro_date',
-        complaints: 'complaint_date',
+        complaints: 'COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)',
         ew: 'reg_date',
         rsa: 'invoice_date',
         mcp: 'package_purchase_date',

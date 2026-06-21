@@ -1,3 +1,5 @@
+import { sql } from 'drizzle-orm'
+
 type HyundaiBranchDealer = {
   label: string
   dealerCode: 'JAMMU' | 'AKHNOOR' | 'KATHUA' | 'RS_PURA' | 'VIJAYPUR' | 'UDHAMPUR'
@@ -32,6 +34,41 @@ export function normalizeHyundaiDealerCode(value: string | null | undefined): Hy
 export function getHyundaiDealerCodes(value: string | null | undefined): string[] {
   const normalized = normalizeHyundaiDealerCode(value)
   return [...(HYUNDAI_BRANCH_DEALERS.find((item) => item.dealerCode === normalized)?.dealerCodes || [])]
+}
+
+export function hyundaiSourceDealerSql(
+  sourceColumn: ReturnType<typeof sql.raw> = sql.raw('source_dealer_code'),
+  fallbackColumns: ReturnType<typeof sql.raw>[] = [],
+) {
+  const candidates = [
+    sql`NULLIF(NULLIF(UPPER(TRIM(COALESCE(${sourceColumn}::text, ''))), ''), 'ACTIVE')`,
+    ...fallbackColumns.map((column) => sql`NULLIF(UPPER(TRIM(COALESCE(${column}::text, ''))), '')`),
+  ]
+  const resolved = sql`COALESCE(${sql.join(candidates, sql`, `)})`
+
+  return sql`
+    CASE
+      WHEN ${resolved} IN ('N5203', 'N5216') THEN 'JAMMU'
+      WHEN ${resolved} IN ('N5701', 'N6844') THEN 'AKHNOOR'
+      WHEN ${resolved} IN ('N5804', 'N6845') THEN 'KATHUA'
+      WHEN ${resolved} IN ('N6815', 'N6846') THEN 'RS_PURA'
+      WHEN ${resolved} IN ('N6819', 'N6847') THEN 'VIJAYPUR'
+      WHEN ${resolved} IN ('N5217', 'N6848', 'N6849') THEN 'UDHAMPUR'
+      WHEN UPPER(TRIM(COALESCE(${sourceColumn}::text, ''))) = 'ACTIVE' THEN 'JAMMU'
+      ELSE ${resolved}
+    END
+  `
+}
+
+export function hyundaiSourceDealerFilter(
+  dealerCode: string | null | undefined,
+  sourceColumn: ReturnType<typeof sql.raw> = sql.raw('source_dealer_code'),
+  fallbackColumns: ReturnType<typeof sql.raw>[] = [],
+) {
+  const normalized = normalizeHyundaiDealerCode(dealerCode)
+  return normalized
+    ? sql`AND ${hyundaiSourceDealerSql(sourceColumn, fallbackColumns)} = ${normalized}`
+    : sql``
 }
 
 export function getHyundaiDealerLabel(value: string | null | undefined) {

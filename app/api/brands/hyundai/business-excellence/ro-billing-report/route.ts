@@ -8,6 +8,14 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { requirePermission } from '@/lib/permissions/service'
+import { normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import {
+  HYUNDAI_BE_CALCULATION_META,
+  hyundaiActiveBillSql,
+  hyundaiRoBillingDealerSql,
+  hyundaiRoBillingInvoiceKeySql,
+  hyundaiRoBillingRoKeySql,
+} from '@/lib/hyundai/business-excellence-calculations'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -20,6 +28,7 @@ type BillingFilters = {
   pageSize: number
   search: string
   branch: string
+  dealerCode: string | null
   billType: string
   workType: string
   advisor: string
@@ -55,11 +64,14 @@ function normalizedDate(value: string | null) {
 }
 
 function getFilters(searchParams: URLSearchParams): BillingFilters {
+  const branch = normalizedBranch(searchParams.get('branch'))
   return {
     page: positiveInteger(searchParams.get('page'), 1),
     pageSize: Math.min(50, positiveInteger(searchParams.get('pageSize'), PAGE_SIZE)),
     search: String(searchParams.get('search') || '').trim(),
-    branch: normalizedBranch(searchParams.get('branch')),
+    branch,
+    dealerCode: normalizeHyundaiDealerCode(searchParams.get('dealer_code'))
+      || (branch === 'jammu' ? 'JAMMU' : branch === 'udhampur' ? 'UDHAMPUR' : null),
     billType: normalizedFilter(searchParams.get('billType')),
     workType: normalizedFilter(searchParams.get('workType')),
     advisor: normalizedFilter(searchParams.get('advisor')),
@@ -69,7 +81,7 @@ function getFilters(searchParams: URLSearchParams): BillingFilters {
 }
 
 function createCacheKey(filters: BillingFilters) {
-  return `hyundai:business-excellence:ro-billing-report:v1:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `hyundai:business-excellence:ro-billing-report:v2:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 async function tableExists(tableName: string) {
@@ -79,10 +91,10 @@ async function tableExists(tableName: string) {
 
 function amountExpression(columnName: string) {
   return sql`
-    ABS(COALESCE(
+    COALESCE(
       NULLIF(regexp_replace(${sql.raw(columnName)}::text, '[^0-9.-]', '', 'g'), '')::numeric,
       0
-    ))
+    )
   `
 }
 
@@ -98,9 +110,12 @@ function dateExpression(columnName: string) {
 
 function baseQuery(filters: BillingFilters) {
   return sql`
-    WITH base AS (
+    WITH base_raw AS (
       SELECT
         id::text AS id,
+        ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
+        ${hyundaiRoBillingRoKeySql()} AS ro_key,
+        ${hyundaiRoBillingDealerSql()} AS canonical_dealer,
         COALESCE(NULLIF(TRIM(bill_no::text), ''), '-') AS bill_no,
         ${dateExpression('bill_date')} AS bill_date,
         COALESCE(NULLIF(TRIM(bill_type::text), ''), '-') AS bill_type,
@@ -126,15 +141,29 @@ function baseQuery(filters: BillingFilters) {
         ${amountExpression('labour_disc')} AS labour_discount,
         uploaded_at
       FROM hyundai_ro_billing_report
+      WHERE ${hyundaiActiveBillSql()}
+    ),
+    ranked AS (
+      SELECT
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY invoice_key
+          ORDER BY ABS(labour_amount + parts_amount) DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
+      FROM base_raw
+    ),
+    base AS (
+      SELECT *
+      FROM ranked
+      WHERE row_rank = 1
     ),
     filtered AS (
       SELECT *
       FROM base
       WHERE (${filters.billType} = 'all' OR lower(bill_type) = lower(${filters.billType}))
         AND (
-          ${filters.branch} = 'all'
-          OR (${filters.branch} = 'jammu' AND dealer_code IN ('N5216', 'N6846', 'N6847'))
-          OR (${filters.branch} = 'udhampur' AND dealer_code IN ('N5217', 'N6848', 'N6849'))
+          ${filters.dealerCode}::text IS NULL
+          OR canonical_dealer = ${filters.dealerCode}
         )
         AND (${filters.workType} = 'all' OR lower(work_type) = lower(${filters.workType}))
         AND (${filters.advisor} = 'all' OR lower(service_advisor) = lower(${filters.advisor}))
@@ -166,9 +195,9 @@ function baseQuery(filters: BillingFilters) {
       (SELECT MAX(uploaded_at) FROM base) AS source_updated_at,
       (
         SELECT jsonb_build_object(
-          'bills', COUNT(*)::integer,
-          'repairOrders', COUNT(DISTINCT ro_no)::integer,
-          'revenue', COALESCE(SUM(total_amount), 0),
+          'bills', COUNT(DISTINCT invoice_key)::integer,
+          'repairOrders', COUNT(DISTINCT ro_key)::integer,
+          'revenue', COALESCE(SUM(labour_amount + parts_amount), 0),
           'labourAmount', COALESCE(SUM(labour_amount), 0),
           'partsAmount', COALESCE(SUM(parts_amount), 0),
           'otherAmount', COALESCE(SUM(other_amount), 0),
@@ -218,6 +247,7 @@ async function buildPayload(filters: BillingFilters) {
   if (!hasTable) {
     return {
       meta: {
+        calculationMeta: HYUNDAI_BE_CALCULATION_META,
         source: 'hyundai_ro_billing_report',
         generatedAt: new Date().toISOString(),
         sourceUpdatedAt: null,
@@ -245,6 +275,7 @@ async function buildPayload(filters: BillingFilters) {
 
   return {
     meta: {
+      calculationMeta: HYUNDAI_BE_CALCULATION_META,
       source: 'hyundai_ro_billing_report',
       generatedAt: new Date().toISOString(),
       sourceUpdatedAt: row.source_updated_at || null,
