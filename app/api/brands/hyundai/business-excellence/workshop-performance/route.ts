@@ -73,6 +73,17 @@ function sameDateLastYear(date: Date) {
   return new Date(date.getFullYear() - 1, date.getMonth(), date.getDate())
 }
 
+function endOfMonth(value: string) {
+  const [year, month] = value.split('-').map(Number)
+  return toDateInputValue(new Date(year, month, 0))
+}
+
+function isMonthAnchoredRange(startDate: string, endDate: string) {
+  const [startYear, startMonth, startDay] = startDate.split('-').map(Number)
+  const [endYear, endMonth] = endDate.split('-').map(Number)
+  return startDay === 1 && startYear === endYear && startMonth === endMonth
+}
+
 function defaultRange() {
   const today = new Date()
   return {
@@ -117,7 +128,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:workshop-performance:v32:${createHash('sha1')
+  return `hyundai:business-excellence:workshop-performance:v34:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -809,6 +820,11 @@ async function buildWorkshopPayload(
   const parsedEnd = parseDateInput(endDate)
   const lyStart = comparison.comparisonStartDate || (parsedStart ? toDateInputValue(sameDateLastYear(parsedStart)) : startDate)
   const lyEnd = comparison.comparisonEndDate || (parsedEnd ? toDateInputValue(sameDateLastYear(parsedEnd)) : endDate)
+  const lyOperationEnd = comparison.preset === 'mtd'
+    || comparison.preset === 'current_month'
+    || isMonthAnchoredRange(startDate, endDate)
+    ? endOfMonth(lyEnd)
+    : lyEnd
 
   const [
     serviceRows,
@@ -835,7 +851,7 @@ async function buildWorkshopPayload(
     fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode),
     fetchCoreAddonSummary(startDate, endDate, advisor, dealerCode),
     fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode),
-    fetchHyundaiMonthlyOperationMetrics(lyEnd, dealerCode),
+    fetchHyundaiMonthlyOperationMetrics(lyOperationEnd, dealerCode),
   ])
 
   const addonTotals = summarizeAddons(addonRows)

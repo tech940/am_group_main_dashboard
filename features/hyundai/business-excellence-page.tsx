@@ -493,6 +493,17 @@ function normalizeSheetKey(value: string) {
     .replace(/^_+|_+$/g, '')
 }
 
+async function fetchJsonWithTimeout<T>(url: string, label: string, timeoutMs = 12000) {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  logApiTimings(response, label)
+  if (!response.ok) {
+    throw new Error(`Request failed for ${label}`)
+  }
+  return await response.json() as T
+}
+
 function getRecordValue(row: Record<string, unknown>, snakeKey: string, legacyKey?: string) {
   return row[snakeKey] ?? (legacyKey ? row[legacyKey] : undefined)
 }
@@ -1589,10 +1600,10 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
   const freshnessQuery = useQuery<BusinessFreshnessResponse>({
     queryKey: ['business-excellence', 'freshness', freshnessQueryString],
     queryFn: async () => {
-      const response = await fetch(`/api/brands/hyundai/business-excellence/freshness?${freshnessQueryString}`)
-      logApiTimings(response, 'business-excellence-freshness')
-      if (!response.ok) throw new Error('Failed to fetch Business Excellence freshness')
-      return await response.json()
+      return await fetchJsonWithTimeout<BusinessFreshnessResponse>(
+        `/api/brands/hyundai/business-excellence/freshness?${freshnessQueryString}`,
+        'business-excellence-freshness'
+      )
     },
     enabled: Boolean(activeTab || initialReportName),
     staleTime: DASHBOARD_STALE_TIME_MS,
@@ -1920,7 +1931,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
               const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
               const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet || isSotSheet
               const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
-              const supportsHealthPanel = isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
+              const supportsHealthPanel = false
               const branchOptions = [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
@@ -1946,7 +1957,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                               <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
                                 Updated: {freshnessQuery.isLoading && !freshnessQuery.data ? 'Checking...' : freshnessQuery.isError ? 'Not available' : formatBusinessFreshness(freshnessQuery.data?.sourceUpdatedAt)}
                               </span>
-                              <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" aria-label="Business Excellence branch filter">
+                              <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-slate-200 bg-slate-50/80 p-2 shadow-sm" aria-label="Business Excellence branch filter">
                                 {branchOptions.map((branch) => {
                                   const isActive = branch.dealerCode
                                     ? selectedDealerCode === branch.dealerCode
@@ -1957,10 +1968,10 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                                       type="button"
                                       onClick={() => handleDealerChange(branch.dealerCode)}
                                       className={cn(
-                                        'rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest transition',
+                                        'min-w-[9.75rem] rounded-2xl border px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] leading-tight transition',
                                         isActive
-                                          ? 'bg-[var(--dashboard-action-bg)] text-white shadow-sm'
-                                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                                          ? 'border-[var(--dashboard-action-bg)] bg-[var(--dashboard-action-bg)] text-white shadow-sm'
+                                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
                                       )}
                                     >
                                       {branch.label}
@@ -3573,6 +3584,26 @@ function executiveQueryString(view: 'table' | 'trend' | 'fy', dateFilter: Busine
   return params.toString()
 }
 
+function executiveBatchQueryString(dateFilter: BusinessDateFilter, dealerCode?: string | null) {
+  const tableRange = getDefaultRODateRange(dateFilter)
+  const trendRange = getROTrendDateRange(dateFilter)
+  const params = new URLSearchParams({
+    brand: 'hyundai',
+    sheet: 'hyundai_ro_billing_report',
+    analysisType: 'load',
+    views: 'all',
+    groupBy: 'work_type',
+    metrics: 'all',
+    startDate: tableRange.startDate,
+    endDate: tableRange.endDate,
+    trendStartDate: trendRange.startDate,
+    trendEndDate: trendRange.endDate,
+  })
+  appendBusinessComparisonParams(params, dateFilter)
+  appendKiaDealerCodeParam(params, dealerCode)
+  return params.toString()
+}
+
 function getExecutiveMetricRows(response: ROAnalysisResponse | null | undefined, metric: ROAnalysisType) {
   return response?.byMetric?.[metric]?.rows || (metric === 'load' ? response?.rows : undefined) || []
 }
@@ -3622,7 +3653,7 @@ function getExecutiveDisplayBaseRows(response: ROAnalysisResponse | null | undef
   const paidNames = ['Paid Service']
   const freeNames = ['Free Service', 'Free Services', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA First Free Service', 'TMA Second Free Service', 'TMA Third Free Service', 'Sixth Free Service']
   const runningNames = ['Running Repair', 'Running Repairs']
-  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop']
+  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop', 'Body Shop', 'Insurance', 'CRASH', 'Accident Repair', 'Body Repair', 'Paint & Body', 'Paint and Body']
   const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
 
   const paidRows = topRows.filter((row) => matchesAny(row, paidNames))
@@ -4023,11 +4054,34 @@ function BusinessExecutiveDashboard({
     })
   }, [dateFilter, queryClient])
 
-  const tableQuery = useQuery({
-    queryKey: ['business-excellence', 'executive-dashboard', 'table', selectedLocation, dateFilter],
-    queryFn: () => fetchExecutiveSummary('table', selectedDealer),
+  const executiveBatchQuery = useQuery({
+    queryKey: ['business-excellence', 'executive-dashboard', 'batch', selectedLocation, dateFilter],
+    queryFn: async () => {
+      const queryString = executiveBatchQueryString(dateFilter, selectedDealer)
+      const response = await fetch(`/api/brands/hyundai/business-excellence/ro-billing-analysis?${queryString}`)
+      logApiTimings(response, 'executive-dashboard-batch')
+      if (!response.ok) throw new Error('Failed to fetch executive dashboard batch')
+      const data = await response.json() as {
+        byView?: {
+          table?: ROAnalysisResponse
+          trend?: ROAnalysisResponse
+          fy?: ROAnalysisResponse
+        }
+      }
+      return {
+        table: data.byView?.table,
+        trend: data.byView?.trend,
+        fy: data.byView?.fy,
+      }
+    },
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
+
+  const tableQuery = {
+    data: executiveBatchQuery.data?.table,
+    isLoading: executiveBatchQuery.isLoading,
+    isError: executiveBatchQuery.isError,
+  }
 
   const branchTableQuery = useQuery({
     queryKey: ['business-excellence', 'executive-dashboard', 'branch-table', dateFilter],
@@ -4044,20 +4098,21 @@ function BusinessExecutiveDashboard({
         })),
       }
     },
+    enabled: Boolean(expandedExecutiveTable),
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
 
-  const trendQuery = useQuery({
-    queryKey: ['business-excellence', 'executive-dashboard', 'trend', selectedLocation, dateFilter],
-    queryFn: () => fetchExecutiveSummary('trend', selectedDealer),
-    staleTime: DASHBOARD_STALE_TIME_MS,
-  })
+  const trendQuery = {
+    data: executiveBatchQuery.data?.trend,
+    isLoading: executiveBatchQuery.isLoading,
+    isError: executiveBatchQuery.isError,
+  }
 
-  const fyQuery = useQuery({
-    queryKey: ['business-excellence', 'executive-dashboard', 'fy', selectedLocation, dateFilter],
-    queryFn: () => fetchExecutiveSummary('fy', selectedDealer),
-    staleTime: DASHBOARD_STALE_TIME_MS,
-  })
+  const fyQuery = {
+    data: executiveBatchQuery.data?.fy,
+    isLoading: executiveBatchQuery.isLoading,
+    isError: executiveBatchQuery.isError,
+  }
 
   const selectedTable = tableQuery.data
   const labourTotal = getExecutiveTotalRow(selectedTable, 'labour')
@@ -4065,6 +4120,8 @@ function BusinessExecutiveDashboard({
   const labourMtd = executivePeriod(labourTotal, 'mtd')
   const partsMtd = executivePeriod(partsTotal, 'mtd')
   const revenueMtd = combineExecutiveMetricValues(labourMtd, partsMtd)
+
+  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (!item.dealerCode && selectedLocation === 'all'))?.label || 'All Locations'
 
   const locationRows = useMemo(() => {
     const buildRow = (label: string, response?: ROAnalysisResponse) => {
@@ -4077,11 +4134,16 @@ function BusinessExecutiveDashboard({
         ytd: executivePeriod(row, 'ytd'),
       }
     }
+    if (branchTableQuery.data) {
+      return [
+        ...branchTableQuery.data.branches.map((branch) => buildRow(branch.label, branch.response)),
+        buildRow('Total', branchTableQuery.data.all),
+      ]
+    }
     return [
-      ...(branchTableQuery.data?.branches || []).map((branch) => buildRow(branch.label, branch.response)),
-      buildRow('Total', branchTableQuery.data?.all),
+      buildRow(selectedLocationLabel, selectedTable),
     ]
-  }, [branchTableQuery.data])
+  }, [branchTableQuery.data, selectedLocationLabel, selectedTable])
 
   const serviceTypeRows = useMemo(() => {
     return getExecutiveDisplayMetricRows(selectedTable, activeExecutiveTableMetric)
@@ -4235,7 +4297,6 @@ function BusinessExecutiveDashboard({
   }, [fyQuery.data])
 
   const isLoading = tableQuery.isLoading || branchTableQuery.isLoading || trendQuery.isLoading || fyQuery.isLoading
-  const selectedLocationLabel = EXECUTIVE_LOCATION_OPTIONS.find((item) => item.dealerCode === selectedDealer || (!item.dealerCode && selectedLocation === 'all'))?.label || 'All Locations'
 
   return (
     <div className="space-y-4">
@@ -5594,7 +5655,7 @@ function ServiceTypePerformance({
     const paidNames = ['Paid Service']
     const freeNames = ['Free Service', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA-First Free Service', 'TMA-Second Free Service', 'TMA-Third Free Service', 'Sixth Free Service']
     const runningNames = ['Running Repair', 'Running Repairs']
-    const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop']
+    const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop', 'Body Shop', 'Insurance', 'CRASH', 'Accident Repair', 'Body Repair', 'Paint & Body', 'Paint and Body']
     const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
     const paidRows = topRows.filter((row) => nameMatches(row, paidNames))
     const freeRows = topRows.filter((row) => nameMatches(row, freeNames))
@@ -5817,17 +5878,17 @@ function ServiceTypePerformance({
     appendBusinessComparisonParams(params, dateFilter)
     appendKiaDealerCodeParam(params, dealerCode)
     const queryString = params.toString()
-    return queryClient.fetchQuery({
-      queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
-      queryFn: async () => {
-        const response = await fetch(`/api/brands/hyundai/business-excellence/ro-billing-analysis?${queryString}`)
-        logApiTimings(response, `ro-billing-${analysisType}-${view}`)
-        if (!response.ok) throw new Error(`Failed to fetch RO Billing ${analysisType} ${view} summary`)
-        return await response.json() as ROAnalysisResponse
-      },
-      staleTime: DASHBOARD_STALE_TIME_MS,
-    })
-  }, [dateFilter, dealerCode, queryClient])
+      return queryClient.fetchQuery({
+        queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
+        queryFn: async () => {
+          return await fetchJsonWithTimeout<ROAnalysisResponse>(
+            `/api/brands/hyundai/business-excellence/ro-billing-analysis?${queryString}`,
+            `ro-billing-${analysisType}-${view}`
+          )
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
+      })
+    }, [dateFilter, dealerCode, queryClient])
 
   const fetchAnalysisBundle = useCallback(async (view: 'trend' | 'fy') => {
     const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
@@ -5844,17 +5905,17 @@ function ServiceTypePerformance({
     appendBusinessComparisonParams(params, dateFilter)
     appendKiaDealerCodeParam(params, dealerCode)
     const queryString = params.toString()
-    return queryClient.fetchQuery({
-      queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
-      queryFn: async () => {
-        const response = await fetch(`/api/brands/hyundai/business-excellence/ro-billing-analysis?${queryString}`)
-        logApiTimings(response, `ro-billing-${view}-bundle`)
-        if (!response.ok) throw new Error(`Failed to fetch RO Billing ${view} bundle`)
-        return await response.json() as ROAnalysisResponse
-      },
-      staleTime: DASHBOARD_STALE_TIME_MS,
-    })
-  }, [dateFilter, dealerCode, queryClient])
+      return queryClient.fetchQuery({
+        queryKey: ['business-excellence', 'ro-billing-analysis', queryString],
+        queryFn: async () => {
+          return await fetchJsonWithTimeout<ROAnalysisResponse>(
+            `/api/brands/hyundai/business-excellence/ro-billing-analysis?${queryString}`,
+            `ro-billing-${view}-bundle`
+          )
+        },
+        staleTime: DASHBOARD_STALE_TIME_MS,
+      })
+    }, [dateFilter, dealerCode, queryClient])
 
   useEffect(() => {
     let isActive = true
@@ -6408,7 +6469,7 @@ function ServiceTypePerformance({
     const paidServiceTypes = ['Paid Service']
     const freeServiceTypes = ['Free Service', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA-First Free Service', 'TMA-Second Free Service', 'TMA-Third Free Service', 'Sixth Free Service']
     const runningRepairTypes = ['Running Repair']
-    const accidentTypes = ['Accident', 'Bodyshop']
+    const accidentTypes = ['Accident', 'Bodyshop', 'Body Shop', 'Insurance', 'CRASH', 'Accident Repair', 'Body Repair', 'Paint & Body', 'Paint and Body']
     const classifiedTypes = [...paidServiceTypes, ...freeServiceTypes, ...runningRepairTypes, ...accidentTypes]
     const othersData = data.filter(d => !matchesTypes(d, classifiedTypes))
     const otherWorkTypes = Array.from(
@@ -8187,7 +8248,9 @@ function ServiceTypePerformance({
                   <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                     {executiveAnalytics.kpis.map((kpi) => {
                       const Icon = kpi.icon
-                      const isPositive = kpi.growth === null || kpi.growth >= 0
+                      const growthValue = kpi.growth
+                      const isNeutral = growthValue === null
+                      const isPositive = !isNeutral && growthValue >= 0
                       const accentClasses: Record<string, string> = {
                         teal: 'from-teal-500/15 text-teal-700 ring-teal-100',
                         blue: 'from-blue-500/15 text-blue-700 ring-blue-100',
@@ -8205,7 +8268,10 @@ function ServiceTypePerformance({
                             <div className={cn('rounded-2xl bg-gradient-to-br to-white p-3 ring-1', accentClasses[kpi.accent])}>
                               <Icon className="h-5 w-5" />
                             </div>
-                            <div className={cn('rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest', isPositive ? 'bg-teal-50 text-teal-700' : 'bg-rose-50 text-rose-700')}>
+                            <div className={cn(
+                              'rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest',
+                              isNeutral ? 'bg-slate-100 text-slate-500' : isPositive ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                            )}>
                               {kpi.growth === null ? 'N/A' : formatSignedGrowth(kpi.growth)}
                             </div>
                           </div>

@@ -36,15 +36,22 @@ function openRoDealerFilter(filters: OpenRoFilters) {
   return hyundaiSourceDealerFilter(
     filters.dealerCode,
     sql.raw('hyundai_repair_order_list.dealer'),
+    [
+      sql.raw('hyundai_repair_order_list.source_dealer_code'),
+      sql.raw('hyundai_repair_order_list.dealer_code'),
+      sql.raw('hyundai_repair_order_list.dlr_no')
+    ]
   )
 }
 
 function openRoBaseSql(filters: OpenRoFilters) {
   return sql`
     WITH active AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
+      SELECT DISTINCT ON (
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text)
+      )
         id,
-        COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
         r_o_no,
         r_o_date::date AS ro_date,
         reg_no,
@@ -74,11 +81,19 @@ function openRoBaseSql(filters: OpenRoFilters) {
         special_message AS task_description,
         uploaded_at
       FROM hyundai_repair_order_list
-      WHERE LOWER(COALESCE(r_o_status, '')) = 'open'
-        AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
+      WHERE cancel_date IS NULL
+        AND NOT (
+          LOWER(COALESCE(status::text, '')) ~ '(close|closed|delivered|cancel)'
+          OR LOWER(COALESCE(r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
+          OR LOWER(COALESCE(new_r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
+          OR LOWER(COALESCE(type_of_free_service::text, '')) ~ '(close|closed|delivered|cancel)'
+        )
         AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}
-      ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+      ORDER BY
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
+        uploaded_at DESC NULLS LAST,
+        id DESC
     ),
     enriched AS (
       SELECT
@@ -352,18 +367,28 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
     `) : Promise.resolve([]),
     includeSummary ? db.execute(sql`
       WITH active AS (
-        SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
-        svc_adv AS service_adv,
-        work_type,
-        work_type AS service_type,
-        '-' AS insurance_company_name,
-        r_o_date::date AS ro_date
+        SELECT DISTINCT ON (
+          COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text)
+        )
+          svc_adv AS service_adv,
+          work_type,
+          work_type AS service_type,
+          '-' AS insurance_company_name,
+          r_o_date::date AS ro_date
         FROM hyundai_repair_order_list
-        WHERE LOWER(COALESCE(r_o_status, '')) = 'open'
-          AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
+        WHERE cancel_date IS NULL
+          AND NOT (
+            LOWER(COALESCE(status::text, '')) ~ '(close|closed|delivered|cancel)'
+            OR LOWER(COALESCE(r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
+            OR LOWER(COALESCE(new_r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
+            OR LOWER(COALESCE(type_of_free_service::text, '')) ~ '(close|closed|delivered|cancel)'
+          )
           AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
           ${openRoDealerFilter(filters)}
-        ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+        ORDER BY
+          COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
+          uploaded_at DESC NULLS LAST,
+          id DESC
       ),
       enriched AS (
         SELECT

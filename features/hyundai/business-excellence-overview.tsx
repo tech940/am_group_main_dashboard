@@ -183,6 +183,10 @@ type ComparisonMetric = {
   comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing' | 'period_mismatch'
   comparisonLabel?: string | null
   unavailableReason?: string | null
+  periodStart?: string | null
+  periodEnd?: string | null
+  lyPeriodStart?: string | null
+  lyPeriodEnd?: string | null
 }
 
 type ROAnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'

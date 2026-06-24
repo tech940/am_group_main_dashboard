@@ -78,11 +78,9 @@ export async function fetchHyundaiMonthlyOperationMetrics(
       SELECT report_period_start::date AS period_start, report_period_end::date AS period_end
       FROM hyundai_operation_wise_analysis_report
       WHERE date_trunc('month', report_period_start)::date = date_trunc('month', ${endDate}::date)::date
-        AND report_period_start::date <= ${endDate}::date
         ${dealerFilter(dealerCode)}
       GROUP BY report_period_start::date, report_period_end::date
       ORDER BY
-        CASE WHEN report_period_end::date = ${endDate}::date THEN 0 ELSE 1 END,
         report_period_end::date DESC,
         report_period_start::date DESC
       LIMIT 1

@@ -857,7 +857,6 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
       FROM ro_billing_daily_summary_v2
       WHERE bill_date >= ${toDateInputValue(startDate)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
-        AND ${activeBillStatusSql()}
       GROUP BY name
     ),
     ranked AS (
@@ -1199,7 +1198,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
 }
 
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date, dealerCode: DealerFilter = null) {
-  return `hyundai:business-excellence:ro-billing:base-rows:v8:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
+  return `hyundai:business-excellence:ro-billing:base-rows:v9:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1207,7 +1206,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `hyundai:business-excellence:ro-billing:v25:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `hyundai:business-excellence:ro-billing:v26:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {
@@ -1239,14 +1238,19 @@ export async function GET(request: Request) {
     const groupBy = normalizeGroupBy(searchParams.get('groupBy') || 'work_type')
     const skipCache = searchParams.get('skipCache') === 'true'
     const batchMetrics = searchParams.get('metrics') === 'all'
+    const viewsAll = searchParams.get('views') === 'all'
     const dealerCode = normalizeHyundaiDealerCode(searchParams.get('dealer_code')) || null
 
     if (!RO_ANALYSIS_TYPES.includes(analysisType)) {
       return NextResponse.json({ error: 'Invalid analysis type' }, { status: 400 })
     }
 
-    if (!['table', 'trend', 'fy', 'analytics', 'revenue', 'leaderboard'].includes(view)) {
+    if (!viewsAll && !['table', 'trend', 'fy', 'analytics', 'revenue', 'leaderboard'].includes(view)) {
       return NextResponse.json({ error: 'Invalid analysis view' }, { status: 400 })
+    }
+
+    if (viewsAll && groupBy !== 'work_type') {
+      return NextResponse.json({ error: 'views=all requires work_type groupBy' }, { status: 400 })
     }
 
     if (brand !== 'hyundai' || sheet !== 'hyundai_ro_billing_report') {
@@ -1284,6 +1288,19 @@ export async function GET(request: Request) {
       cacheParams.delete('comparisonEndDate')
     }
     if (batchMetrics) cacheParams.set('metrics', 'all')
+    if (viewsAll) {
+      cacheParams.set('views', 'all')
+      const trendStartDate = searchParams.get('trendStartDate')
+      const trendEndDate = searchParams.get('trendEndDate')
+      if (trendStartDate) cacheParams.set('trendStartDate', trendStartDate)
+      else cacheParams.delete('trendStartDate')
+      if (trendEndDate) cacheParams.set('trendEndDate', trendEndDate)
+      else cacheParams.delete('trendEndDate')
+    } else {
+      cacheParams.delete('views')
+      cacheParams.delete('trendStartDate')
+      cacheParams.delete('trendEndDate')
+    }
     const cacheKey = createCacheKey(cacheParams)
 
     const analyze = async () => {
@@ -1308,6 +1325,108 @@ export async function GET(request: Request) {
           comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
         },
         filterOptions: {},
+      }
+      if (viewsAll && groupBy === 'work_type' && !hasFilters) {
+        const trendStartDate = startOfDay(parseDateInput(searchParams.get('trendStartDate')) || startDate)
+        const trendEndDate = endOfDay(parseDateInput(searchParams.get('trendEndDate')) || endDate)
+        const [cancelledSummary, aggregateRows, trendAggregateRows, fyAggregateRows] = await Promise.all([
+          timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode)),
+          timer.time('work-type-sql-summary', () => fetchWorkTypeAggregateRows(windows, dealerCode)),
+          timer.time('daily-trend-sql-summary', () => fetchDailyAggregateRows(trendStartDate, trendEndDate, comparisonRange, dealerCode)),
+          timer.time('fy-trend-sql-summary', () => fetchFiscalAggregateRows(dealerCode)),
+        ])
+
+        const tableByMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
+          const rows = aggregateRowsToStats(aggregateRows, type)
+          return [type, {
+            ...baseFastResponse,
+            analysisType: type,
+            rowCounts: {
+              totalRows: 0,
+              rowsWithBillDate: 0,
+              filteredRows: rows.length,
+            },
+            rows,
+          }]
+        }))
+        const trendByMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
+          const trend = buildDailyTrendRows(trendAggregateRows, type, trendStartDate, trendEndDate, comparisonRange)
+          return [type, {
+            ...baseFastResponse,
+            analysisType: type,
+            dateRange: {
+              startDate: toDateInputValue(trendStartDate),
+              endDate: toDateInputValue(trendEndDate),
+              comparisonStartDate: comparisonRange ? toDateInputValue(comparisonRange.startDate) : null,
+              comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
+            },
+            rowCounts: {
+              totalRows: 0,
+              rowsWithBillDate: 0,
+              filteredRows: trend.length,
+            },
+            trend,
+          }]
+        }))
+        const fyByMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
+          const fyTrends = buildFiscalTrendRows(fyAggregateRows, type)
+          return [type, {
+            ...baseFastResponse,
+            analysisType: type,
+            rowCounts: {
+              totalRows: 0,
+              rowsWithBillDate: 0,
+              filteredRows: fyTrends.length,
+            },
+            fyTrends,
+          }]
+        }))
+
+        return {
+          ...baseFastResponse,
+          views: 'all',
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: aggregateRows.length,
+          },
+          byView: {
+            table: {
+              ...baseFastResponse,
+              cancelledSummary,
+              rowCounts: {
+                totalRows: 0,
+                rowsWithBillDate: 0,
+                filteredRows: aggregateRows.length,
+              },
+              byMetric: tableByMetric,
+            },
+            trend: {
+              ...baseFastResponse,
+              dateRange: {
+                startDate: toDateInputValue(trendStartDate),
+                endDate: toDateInputValue(trendEndDate),
+                comparisonStartDate: comparisonRange ? toDateInputValue(comparisonRange.startDate) : null,
+                comparisonEndDate: comparisonRange ? toDateInputValue(comparisonRange.endDate) : null,
+              },
+              rowCounts: {
+                totalRows: 0,
+                rowsWithBillDate: 0,
+                filteredRows: trendAggregateRows.length,
+              },
+              byMetric: trendByMetric,
+            },
+            fy: {
+              ...baseFastResponse,
+              rowCounts: {
+                totalRows: 0,
+                rowsWithBillDate: 0,
+                filteredRows: fyAggregateRows.length,
+              },
+              byMetric: fyByMetric,
+            },
+          },
+        }
       }
       if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
         const cancelledSummary = await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode))

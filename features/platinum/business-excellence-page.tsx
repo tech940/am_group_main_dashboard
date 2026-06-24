@@ -1938,7 +1938,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
               const isServiceDashboardSheet = selectedSheet.sheetName === SERVICE_DASHBOARD_REPORT
               const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isSotSheet || isServiceDashboardSheet
               const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet || isSotSheet
-              const supportsHealthPanel = isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet
+              const supportsHealthPanel = false
               const branchOptions = [{ label: 'All Locations', dealerCode: PLATINUM_ALL_LOCATIONS_CODE }, ...KIA_BRANCH_DEALERS]
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`

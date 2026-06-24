@@ -1972,7 +1972,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                             {isAiSummaryLoading ? 'Summarising' : 'AI Summary'}
                           </Button>
 
-                          {usesDateControls && !isOverviewSheet && !isServiceDashboardSheet && (
+                          {false && usesDateControls && !isOverviewSheet && !isServiceDashboardSheet && (
                             <Button
                               type="button"
                               variant="outline"

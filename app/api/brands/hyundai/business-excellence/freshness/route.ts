@@ -3,34 +3,140 @@ import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
+import {
+  hyundaiSourceDealerSql,
+  normalizeHyundaiDealerCode,
+} from '@/lib/hyundai/dealer-branch'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
+const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
+
 type FreshnessSource = {
   table: string
   label: string
+  dealerColumn?: string
+  fallbackDealerColumns?: string[]
+  hasUploadedAt?: boolean
+  minDateSql?: ReturnType<typeof sql>
+  maxDateSql?: ReturnType<typeof sql>
 }
 
 const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
-  executive_dashboard: [{ table: 'hyundai_ro_billing_report', label: 'RO Billing' }],
+  executive_dashboard: [{
+    table: 'hyundai_ro_billing_report',
+    label: 'RO Billing',
+    dealerColumn: 'source_dealer_code',
+    fallbackDealerColumns: ['dealer_code', 'main_dealer_code'],
+    minDateSql: sql`MIN(bill_date)::text`,
+    maxDateSql: sql`MAX(bill_date)::text`,
+  }],
   business_excellence_overview: [
-    { table: 'hyundai_ro_billing_report', label: 'RO Billing' },
-    { table: 'hyundai_repair_order_list', label: 'Open RO' },
-    { table: 'hyundai_call_center_complaints', label: 'Complaints' },
-    { table: 'hyundai_operation_wise_analysis_report', label: 'Operation Analysis' },
-    { table: 'hyundai_ew_report', label: 'EW' },
+    {
+      table: 'hyundai_ro_billing_report',
+      label: 'RO Billing',
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dealer_code', 'main_dealer_code'],
+      minDateSql: sql`MIN(bill_date)::text`,
+      maxDateSql: sql`MAX(bill_date)::text`,
+    },
+    {
+      table: 'hyundai_repair_order_list',
+      label: 'Open RO',
+      dealerColumn: 'dealer',
+      fallbackDealerColumns: ['source_dealer_code', 'dealer_code', 'dlr_no'],
+      minDateSql: sql`MIN(r_o_date)::text`,
+      maxDateSql: sql`MAX(r_o_date)::text`,
+    },
+    {
+      table: 'hyundai_call_center_complaints',
+      label: 'Complaints',
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dealer_code'],
+      minDateSql: sql`MIN(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text`,
+      maxDateSql: sql`MAX(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text`,
+    },
+    {
+      table: 'hyundai_operation_wise_analysis_report',
+      label: 'Operation Analysis',
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dealer_code'],
+      minDateSql: sql`MIN(report_period_start)::text`,
+      maxDateSql: sql`MAX(report_period_end)::text`,
+    },
+    {
+      table: 'hyundai_ew_report',
+      label: 'EW',
+      dealerColumn: 'dlr_no',
+      fallbackDealerColumns: ['dealer_code', 'source_dealer_code'],
+      minDateSql: sql`MIN(reg_date)::text`,
+      maxDateSql: sql`MAX(reg_date)::text`,
+    },
   ],
-  hyundai_ro_billing_report: [{ table: 'hyundai_ro_billing_report', label: 'RO Billing' }],
+  hyundai_ro_billing_report: [{
+    table: 'hyundai_ro_billing_report',
+    label: 'RO Billing',
+    dealerColumn: 'source_dealer_code',
+    fallbackDealerColumns: ['dealer_code', 'main_dealer_code'],
+    minDateSql: sql`MIN(bill_date)::text`,
+    maxDateSql: sql`MAX(bill_date)::text`,
+  }],
   workshop_performance: [
-    { table: 'hyundai_ro_billing_report', label: 'RO Billing' },
-    { table: 'hyundai_operation_wise_analysis_report', label: 'Operation Analysis' },
-    { table: 'hyundai_ew_report', label: 'EW' },
+    {
+      table: 'hyundai_ro_billing_report',
+      label: 'RO Billing',
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dealer_code', 'main_dealer_code'],
+      minDateSql: sql`MIN(bill_date)::text`,
+      maxDateSql: sql`MAX(bill_date)::text`,
+    },
+    {
+      table: 'hyundai_operation_wise_analysis_report',
+      label: 'Operation Analysis',
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dealer_code'],
+      minDateSql: sql`MIN(report_period_start)::text`,
+      maxDateSql: sql`MAX(report_period_end)::text`,
+    },
+    {
+      table: 'hyundai_ew_report',
+      label: 'EW',
+      dealerColumn: 'dlr_no',
+      fallbackDealerColumns: ['dealer_code', 'source_dealer_code'],
+      minDateSql: sql`MIN(reg_date)::text`,
+      maxDateSql: sql`MAX(reg_date)::text`,
+    },
   ],
-  open_ro_repair_orders: [{ table: 'hyundai_repair_order_list', label: 'Open RO' }],
-  hyundai_complaints: [{ table: 'hyundai_call_center_complaints', label: 'Complaints' }],
+  open_ro_repair_orders: [{
+    table: 'hyundai_repair_order_list',
+    label: 'Open RO',
+    dealerColumn: 'dealer',
+    fallbackDealerColumns: ['source_dealer_code', 'dealer_code', 'dlr_no'],
+    minDateSql: sql`MIN(r_o_date)::text`,
+    maxDateSql: sql`MAX(r_o_date)::text`,
+  }],
+  hyundai_complaints: [{
+    table: 'hyundai_call_center_complaints',
+    label: 'Complaints',
+    dealerColumn: 'source_dealer_code',
+    fallbackDealerColumns: ['dealer_code'],
+    minDateSql: sql`MIN(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text`,
+    maxDateSql: sql`MAX(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text`,
+  }],
   sot_analysis: [],
+}
+
+type FreshnessRow = {
+  table: string
+  label: string
+  sourceUpdatedAt: string | Date | null
+  minDate: string | null
+  maxDate: string | null
+  rowCount: number | string | null
+  dealerScoped: boolean
 }
 
 function normalizeReportKey(value: string | null) {
@@ -42,87 +148,54 @@ function normalizeReportKey(value: string | null) {
     .replace(/^_+|_+$/g, '')
 }
 
-async function readColumns(table: string) {
-  const rows = await db.execute(sql`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = ${table}
-  `) as Array<{ column_name: string }>
-
-  return new Set(rows.map((row) => row.column_name))
-}
-
-function resolveDealerColumn(table: string, columns: Set<string>) {
-  if (table === 'hyundai_call_center_complaints' && columns.has('source_dealer_code')) return 'source_dealer_code'
-  if (table === 'hyundai_repair_order_list' && columns.has('dealer')) return 'dealer'
-  if (table === 'hyundai_ew_report' && columns.has('dlr_no')) return 'dlr_no'
-  if (table === 'hyundai_operation_wise_analysis_report' && columns.has('source_dealer_code')) return 'source_dealer_code'
-  if (columns.has('dealer_code')) return 'dealer_code'
-  if (columns.has('main_dealer_code')) return 'main_dealer_code'
-  if (columns.has('billing_dealer_code')) return 'billing_dealer_code'
-  if (columns.has('main_dealer')) return 'main_dealer'
-  if (columns.has('source_dealer_code')) return 'source_dealer_code'
-  return null
-}
-
-function resolveDateColumn(table: string, columns: Set<string>) {
-  const candidatesByTable: Record<string, string[]> = {
-    hyundai_ro_billing_report: ['bill_date', 'uploaded_at'],
-    hyundai_repair_order_list: ['r_o_date', 'ro_date', 'uploaded_at'],
-    hyundai_call_center_complaints: ['complaint_date', 'resolving_date', 'dealer_resolving_date', 'close_date', 'uploaded_at'],
-    hyundai_operation_wise_analysis_report: ['report_period_end', 'report_period_start', 'report_month', 'uploaded_at'],
-    hyundai_ew_report: ['reg_date', 'ew_reg_date', 'uploaded_at'],
-  }
-  return (candidatesByTable[table] || ['uploaded_at']).find((column) => columns.has(column)) || null
-}
-
-async function readSourceFreshness(source: FreshnessSource, dealerCode: string | null) {
-  const columns = await readColumns(source.table)
-  if (!columns.has('uploaded_at')) return null
-
-  const dealerColumn = dealerCode ? resolveDealerColumn(source.table, columns) : null
-  const dealerCodes = getHyundaiDealerCodes(dealerCode)
-  const dealerWhere = dealerCodes.length > 0 && dealerColumn
-    ? sql`WHERE UPPER(TRIM(COALESCE(${sql.raw(`"${dealerColumn}"`)}::text, ''))) IN (${sql.join(dealerCodes.map((code) => sql`${code}`), sql`, `)})`
+function buildFreshnessSelect(source: FreshnessSource, dealerCode: string | null) {
+  const dealerExpression = source.dealerColumn
+    ? hyundaiSourceDealerSql(
+        sql.raw(`"${source.dealerColumn}"`),
+        (source.fallbackDealerColumns || []).map((column) => sql.raw(`"${column}"`))
+      )
+    : null
+  const dealerWhere = dealerCode && dealerExpression
+    ? sql`WHERE ${dealerExpression} = ${dealerCode}`
     : sql``
-  const dateColumn = resolveDateColumn(source.table, columns)
-  const dateProjection = source.table === 'hyundai_call_center_complaints'
-    && ['complaint_date', 'resolving_date', 'dealer_resolving_date', 'close_date'].some((column) => columns.has(column))
-    ? sql`
-        MIN(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text AS "minDate",
-        MAX(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text AS "maxDate",
-      `
-    : source.table === 'hyundai_operation_wise_analysis_report'
-      && columns.has('report_period_start')
-      && columns.has('report_period_end')
-      ? sql`
-          MIN(report_period_start)::text AS "minDate",
-          MAX(report_period_end)::text AS "maxDate",
-        `
-      : dateColumn
-    ? sql`${sql.raw(`MIN("${dateColumn}")::text`)} AS "minDate", ${sql.raw(`MAX("${dateColumn}")::text`)} AS "maxDate",`
-    : sql`NULL::text AS "minDate", NULL::text AS "maxDate",`
 
-  const rows = await db.execute(sql`
+  return sql`
     SELECT
+      ${source.table}::text AS "table",
+      ${source.label}::text AS "label",
       MAX(uploaded_at) AS "sourceUpdatedAt",
-      ${dateProjection}
-      COUNT(*)::int AS "rowCount"
+      ${source.minDateSql || sql`NULL::text`} AS "minDate",
+      ${source.maxDateSql || sql`NULL::text`} AS "maxDate",
+      COALESCE((
+        SELECT n_live_tup::bigint
+        FROM pg_stat_user_tables
+        WHERE schemaname = 'public' AND relname = ${source.table}
+      ), 0)::bigint AS "rowCount",
+      ${Boolean(dealerCode && dealerExpression)}::boolean AS "dealerScoped"
     FROM ${sql.raw(`"${source.table}"`)}
     ${dealerWhere}
-  `) as Array<{ sourceUpdatedAt: string | Date | null; minDate: string | null; maxDate: string | null; rowCount: number | string | null }>
+  `
+}
 
-  const row = rows[0]
-  return {
-    table: source.table,
-    label: source.label,
-    sourceUpdatedAt: row?.sourceUpdatedAt ? new Date(row.sourceUpdatedAt).toISOString() : null,
-    minDate: row?.minDate || null,
-    maxDate: row?.maxDate || null,
-    rowCount: Number(row?.rowCount || 0),
-    dealerScoped: Boolean(dealerColumn && dealerCodes.length > 0),
-  }
+async function readSourceFreshness(sources: FreshnessSource[], dealerCode: string | null) {
+  const queryableSources = sources.filter((source) => source.hasUploadedAt !== false)
+  if (queryableSources.length === 0) return []
+
+  const query = sql.join(
+    queryableSources.map((source) => buildFreshnessSelect(source, dealerCode)),
+    sql` UNION ALL `
+  )
+  const result = await db.execute(query) as FreshnessRow[]
+
+  return result.map((row) => ({
+    table: row.table,
+    label: row.label,
+    sourceUpdatedAt: row.sourceUpdatedAt ? new Date(row.sourceUpdatedAt).toISOString() : null,
+    minDate: row.minDate || null,
+    maxDate: row.maxDate || null,
+    rowCount: Number(row.rowCount || 0),
+    dealerScoped: Boolean(row.dealerScoped),
+  }))
 }
 
 export async function GET(request: Request) {
@@ -136,25 +209,28 @@ export async function GET(request: Request) {
     const dealerCode = normalizeHyundaiDealerCode(searchParams.get('dealer_code'))
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
-    const sourceFreshness = (await timer.time('freshness-db', async () => {
-      const settled = await Promise.allSettled(sources.map((source) => readSourceFreshness(source, dealerCode)))
-      return settled
-        .map((result) => result.status === 'fulfilled' ? result.value : null)
-        .filter((item): item is NonNullable<typeof item> => Boolean(item))
-    }))
+    const data = await timer.time('response-cache', () => getCachedData(
+      `hyundai:business-excellence:freshness:v2:${reportKey}:${dealerCode || 'all'}`,
+      async () => {
+        const sourceFreshness = await readSourceFreshness(sources, dealerCode)
+        const sourceUpdatedAt = sourceFreshness
+          .map((source) => source.sourceUpdatedAt)
+          .filter((value): value is string => Boolean(value))
+          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null
 
-    const sourceUpdatedAt = sourceFreshness
-      .map((source) => source.sourceUpdatedAt)
-      .filter((value): value is string => Boolean(value))
-      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null
+        return {
+          report: reportKey,
+          dealerCode,
+          sourceUpdatedAt,
+          sources: sourceFreshness,
+          lastUpdatedAt: new Date().toISOString(),
+        }
+      },
+      CACHE_TTL_SECONDS
+    ))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json({
-      report: reportKey,
-      dealerCode,
-      sourceUpdatedAt,
-      sources: sourceFreshness,
-    }), timing.serverTiming)
+    return withServerTiming(NextResponse.json(data), timing.serverTiming)
   } catch (error) {
     timer.finish()
     console.error('Failed to read Hyundai Business Excellence freshness:', error)

@@ -108,7 +108,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:overview:v28:${chunk}:${createHash('sha1')
+  return `hyundai:business-excellence:overview:v29:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -190,6 +190,7 @@ function openRoDealerFilter(dealerCode: DealerFilter) {
   return hyundaiSourceDealerFilter(
     dealerCode,
     sql.raw('dealer'),
+    [sql.raw('source_dealer_code'), sql.raw('dealer_code'), sql.raw('dlr_no')]
   )
 }
 
@@ -201,6 +202,11 @@ function sameDateLastYear(value: string) {
 function parseDateParts(value: string) {
   const [year, month, day] = value.split('-').map(Number)
   return { year, month, day }
+}
+
+function endOfMonth(value: string) {
+  const { year, month } = parseDateParts(value)
+  return toDateInputValue(new Date(year, month, 0))
 }
 
 function sameQuarterToDateLastYear(endDate: string) {
@@ -475,8 +481,10 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
 function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
   return sql`
     WITH active AS (
-      SELECT DISTINCT ON (COALESCE(NULLIF(r_o_no, ''), id::text))
-        COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
+      SELECT DISTINCT ON (
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text)
+      )
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
         r_o_date::date AS ro_date,
         svc_adv AS service_adv,
         work_type,
@@ -485,11 +493,19 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
         NULL::date AS promise_date,
         uploaded_at
       FROM hyundai_repair_order_list
-      WHERE LOWER(COALESCE(r_o_status, '')) = 'open'
-        AND r_o_date >= ${startDate}::date
+      WHERE cancel_date IS NULL
+        AND NOT (
+          LOWER(COALESCE(status::text, '')) ~ '(close|closed|delivered|cancel)'
+          OR LOWER(COALESCE(r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
+          OR LOWER(COALESCE(new_r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
+          OR LOWER(COALESCE(type_of_free_service::text, '')) ~ '(close|closed|delivered|cancel)'
+        )
         AND r_o_date < (${endDate}::date + INTERVAL '1 day')
         ${openRoDealerFilter(dealerCode)}
-      ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+      ORDER BY
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
+        uploaded_at DESC NULLS LAST,
+        id DESC
     ),
     enriched AS (
       SELECT
@@ -612,7 +628,12 @@ async function fetchAddonKpis(startDate: string, endDate: string, dealerCode: De
   }
 }
 
-async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
+async function fetchWorkshopSnapshot(
+  startDate: string,
+  endDate: string,
+  dealerCode: DealerFilter = null,
+  vasEndDate?: string,
+) {
   const hasWorkshopSummary = await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode)
   const serviceRows = await db.execute(hasWorkshopSummary ? sql`
     SELECT
@@ -699,7 +720,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
     }
   })
 
-  const vasAmount = await fetchWorkshopVasAmount(startDate, endDate, dealerCode)
+  const vasAmount = await fetchWorkshopVasAmount(startDate, vasEndDate || endDate, dealerCode)
   const totalJc = rows.reduce((sum, row) => sum + row.totalJc, 0)
   const labourAmount = rows.reduce((sum, row) => sum + row.labourAmount, 0)
   const partsAmount = rows.reduce((sum, row) => sum + row.partsAmount, 0)
@@ -788,6 +809,11 @@ async function buildOverviewPayload(
   const comparisonRange = resolveOverviewComparisonRange(startDate, endDate, comparison)
   const lyStartDate = comparisonRange.startDate
   const lyEndDate = comparisonRange.endDate
+  const lyOperationEndDate = comparison.preset === 'mtd'
+    || comparison.preset === 'current_month'
+    || isMonthAnchoredRange(startDate, endDate)
+    ? endOfMonth(lyEndDate)
+    : lyEndDate
   const lyRoSql = roBillingBaseSql(lyStartDate, lyEndDate, dealerCode)
   const lyOpenSql = openRoBaseSql(lyStartDate, lyEndDate, dealerCode)
   const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate, dealerCode)
@@ -975,7 +1001,7 @@ async function buildOverviewPayload(
       ORDER BY EXTRACT(MONTH FROM complaint_date)::int ASC
     `) : emptyRows(),
     fetchAddonKpis(startDate, endDate, dealerCode),
-    fetchWorkshopSnapshot(startDate, endDate, dealerCode),
+    fetchWorkshopSnapshot(startDate, endDate, dealerCode, endDate),
     includeComparison ? db.execute(sql`
       ${lyRoSql}
       SELECT
@@ -1004,9 +1030,9 @@ async function buildOverviewPayload(
       FROM enriched
     `) : emptyRows(),
     includeComparison ? fetchAddonKpis(lyStartDate, lyEndDate, dealerCode) : emptyAddonKpis(),
-    includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode) : emptyWorkshopSnapshot(),
+    includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode, lyOperationEndDate) : emptyWorkshopSnapshot(),
     fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode),
-    includeComparison ? fetchHyundaiMonthlyOperationMetrics(lyEndDate, dealerCode) : Promise.resolve(null),
+    includeComparison ? fetchHyundaiMonthlyOperationMetrics(lyOperationEndDate, dealerCode) : Promise.resolve(null),
     fetchRoBillingCoverage(startDate, endDate, dealerCode),
   ])
 
@@ -1041,9 +1067,19 @@ async function buildOverviewPayload(
   const lyComplaintsOpen = numberValue(lyComplaintKpis.open)
   const lyComplaintsOver15 = numberValue(lyComplaintKpis.over_15)
   const lyAddOnTotal = lyAddonKpis.ewCount + lyAddonKpis.rsaCount + lyAddonKpis.mcpCount
-  const roBillingComparable = roBillingCoverage.hasCompleteCoverage
+  const roBillingMaxDate = dateValue(roKpis.max_bill_date)
+  const effectiveRoBillingCoverage = roBillingCoverage.hasDataInRange && roBillingMaxDate
+    ? {
+        ...roBillingCoverage,
+        hasCompleteCoverage: roBillingMaxDate >= endDate,
+        latestAvailableDate: roBillingMaxDate,
+        comparisonStatus: roBillingMaxDate >= endDate ? 'available' : 'not_comparable',
+        comparisonLabel: roBillingMaxDate >= endDate ? null : `CY available through ${roBillingMaxDate}`,
+      }
+    : roBillingCoverage
+  const roBillingComparable = effectiveRoBillingCoverage.hasCompleteCoverage
   const roBillingComparisonStatus = roBillingComparable ? 'available' : 'not_comparable'
-  const roBillingComparisonLabel = roBillingCoverage.comparisonLabel
+  const roBillingComparisonLabel = effectiveRoBillingCoverage.comparisonLabel
   const billingComparison = (cy: number, ly: number) => ({
     cy,
     ly,
@@ -1052,7 +1088,7 @@ async function buildOverviewPayload(
     comparisonLabel: roBillingComparisonLabel,
     unavailableReason: roBillingComparable
       ? null
-      : `Requested through ${endDate}; source is available through ${roBillingCoverage.latestAvailableDate || 'no date'}.`,
+      : `Requested through ${endDate}; source is available through ${effectiveRoBillingCoverage.latestAvailableDate || 'no date'}.`,
   })
 
   return {
@@ -1195,6 +1231,10 @@ async function buildOverviewPayload(
         unavailableReason: !operationCoverage.available || !lyOperationCoverage?.available
           ? 'VAS comparison requires both CY and LY monthly Operation Wise snapshots.'
           : null,
+        periodStart: operationCoverage.periodStart,
+        periodEnd: operationCoverage.periodEnd,
+        lyPeriodStart: lyOperationCoverage?.periodStart || null,
+        lyPeriodEnd: lyOperationCoverage?.periodEnd || null,
       },
     } : undefined,
     charts: {
@@ -1317,30 +1357,30 @@ async function buildOverviewPayload(
         },
       },
       dealerCoverage: {
-        primary: roBillingCoverage,
-        roBilling: roBillingCoverage,
+        primary: effectiveRoBillingCoverage,
+        roBilling: effectiveRoBillingCoverage,
       },
       roBillingAudit: {
         sourceAvailable: true,
-        rawRows: roBillingCoverage.rawRowsInRange,
-        activeRawRows: roBillingCoverage.rowCountInRange,
-        cancelledRows: roBillingCoverage.cancelledRowsInRange,
+        rawRows: effectiveRoBillingCoverage.rawRowsInRange,
+        activeRawRows: effectiveRoBillingCoverage.rowCountInRange,
+        cancelledRows: effectiveRoBillingCoverage.cancelledRowsInRange,
         dedupedInvoices: numberValue(roKpis.deduped_invoices),
         dedupedJc: totalJc,
         duplicateRowsRemoved: Math.max(
           0,
-          roBillingCoverage.rowCountInRange - numberValue(roKpis.deduped_invoices),
+          effectiveRoBillingCoverage.rowCountInRange - numberValue(roKpis.deduped_invoices),
         ),
         labour,
         parts,
         revenue,
         minBillDate: dateValue(roKpis.min_bill_date),
-        maxBillDate: dateValue(roKpis.max_bill_date),
-        latestUploadedAt: roBillingCoverage.lastUpdatedAt,
+        maxBillDate: roBillingMaxDate,
+        latestUploadedAt: effectiveRoBillingCoverage.lastUpdatedAt,
       },
       sourceWarnings: [
-        ...(!roBillingCoverage.hasCompleteCoverage
-          ? [`RO Billing is available through ${roBillingCoverage.latestAvailableDate || 'no date'}; comparison and health scoring are suppressed for the requested end date ${endDate}.`]
+        ...(!effectiveRoBillingCoverage.hasCompleteCoverage
+          ? [`RO Billing is available through ${effectiveRoBillingCoverage.latestAvailableDate || 'no date'}; comparison and health scoring are suppressed for the requested end date ${endDate}.`]
           : []),
         ...(!operationCoverage.available ? ['No contained Hyundai Operation Wise snapshot exists for the selected period.'] : []),
         ...(operationCoverage.available && operationCoverage.classifiedRows === 0
