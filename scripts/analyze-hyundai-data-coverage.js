@@ -9,8 +9,12 @@ const postgres = require('postgres')
 const { pickDatabaseUrl } = require('./bigquery/db-url')
 
 const HYUNDAI_BRANCH_DEALERS = {
-  jammu: ['N5216', 'N6846', 'N6847'],
-  udhampur: ['N5217', 'N6848', 'N6849'],
+  jammu: ['N5203', 'N5216'],
+  akhnoor: ['N5701', 'N6844'],
+  kathua: ['N5804', 'N6845'],
+  rs_pura: ['N6815', 'N6846'],
+  vijaypur: ['N6819', 'N6847'],
+  billawar: ['N6828', 'N6848'],
 }
 
 const TABLE_SPECS = [
@@ -244,8 +248,10 @@ async function analyzeTable(db, spec) {
 function classifyBranch(dealerCode) {
   if (!dealerCode) return 'unknown'
   const normalized = String(dealerCode).trim().toUpperCase()
-  if (HYUNDAI_BRANCH_DEALERS.jammu.includes(normalized)) return 'jammu'
-  if (HYUNDAI_BRANCH_DEALERS.udhampur.includes(normalized)) return 'udhampur'
+  if (normalized === 'ACTIVE') return 'jammu'
+  for (const [branch, dealerCodes] of Object.entries(HYUNDAI_BRANCH_DEALERS)) {
+    if (dealerCodes.includes(normalized)) return branch
+  }
   return 'other'
 }
 
@@ -258,8 +264,13 @@ function renderMarkdown(report) {
   lines.push('Scope: all `hyundai_*` analytics tables **except warranty** (`hyundai_warranty_*`).')
   lines.push('')
   lines.push('Canonical Hyundai dealer codes in app:')
-  lines.push('- Jammu: `N5216`, `N6846`, `N6847`')
-  lines.push('- Udhampur: `N5217`, `N6848`, `N6849`')
+  lines.push('- Jammu: `N5203`, `N5216`')
+  lines.push('- Akhnoor: `N5701`, `N6844`')
+  lines.push('- Kathua: `N5804`, `N6845`')
+  lines.push('- RS Pura: `N6815`, `N6846`')
+  lines.push('- Vijaypur: `N6819`, `N6847`')
+  lines.push('- Billawar: `N6828`, `N6848`')
+  lines.push('- Legacy URL label `UDHAMPUR` aliases to Billawar; source codes `N5217` and `N6849` remain unmapped.')
   lines.push('')
   lines.push('## Summary')
   lines.push('')

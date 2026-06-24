@@ -117,7 +117,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:workshop-performance:v30:${createHash('sha1')
+  return `hyundai:business-excellence:workshop-performance:v32:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -199,6 +199,7 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
   ` : sql`
     WITH base AS (
       SELECT
+        id,
         ${workshopCategoryExpression('service_advisor')} AS workshop_category,
         ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
         ${hyundaiRoBillingRoKeySql()} AS ro_key,
@@ -210,7 +211,8 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
           COALESCE(total_disc, 0)::numeric,
           ${numericText(sql.raw('labour_disc'))},
           ${numericText(sql.raw('part_disc'))}
-        ) AS discount_amount
+        ) AS discount_amount,
+        uploaded_at
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
@@ -218,17 +220,22 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
-        workshop_category,
-        invoice_key,
-        (ARRAY_AGG(ro_key))[1] AS ro_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt,
-        MAX(discount_amount) AS discount_amount
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY invoice_key
+          ORDER BY
+            ABS(labour_amt + part_amt) DESC,
+            uploaded_at DESC NULLS LAST,
+            id DESC
+        ) AS row_rank
       FROM base
-      GROUP BY workshop_category, invoice_key
+    ),
+    dedup AS (
+      SELECT workshop_category, invoice_key, ro_key, labour_amt, part_amt, total_amt, discount_amount
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       workshop_category AS group_type,
@@ -273,6 +280,7 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
   ` : sql`
     WITH base AS (
       SELECT
+        id,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS group_type,
         COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
         ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
@@ -285,7 +293,8 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
           COALESCE(total_disc, 0)::numeric,
           ${numericText(sql.raw('labour_disc'))},
           ${numericText(sql.raw('part_disc'))}
-        ) AS discount_amount
+        ) AS discount_amount,
+        uploaded_at
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
@@ -293,18 +302,22 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
-        group_type,
-        service_type,
-        invoice_key,
-        (ARRAY_AGG(ro_key))[1] AS ro_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt,
-        MAX(discount_amount) AS discount_amount
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY invoice_key
+          ORDER BY
+            ABS(labour_amt + part_amt) DESC,
+            uploaded_at DESC NULLS LAST,
+            id DESC
+        ) AS row_rank
       FROM base
-      GROUP BY group_type, service_type, invoice_key
+    ),
+    dedup AS (
+      SELECT group_type, service_type, invoice_key, ro_key, labour_amt, part_amt, total_amt, discount_amount
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       group_type,
@@ -366,11 +379,13 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
   ` : sql`
     WITH base AS (
       SELECT
+        id,
         bill_date::date AS bill_date,
         ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
         ${hyundaiRoBillingRoKeySql()} AS ro_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
-        COALESCE(part_amt, 0)::numeric AS part_amt
+        COALESCE(part_amt, 0)::numeric AS part_amt,
+        uploaded_at
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
@@ -378,15 +393,22 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
         ${roBillingDealerFilter(dealerCode)}
         ${advisorWhereClause(advisor)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
-        bill_date,
-        invoice_key,
-        (ARRAY_AGG(ro_key))[1] AS ro_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY invoice_key
+          ORDER BY
+            ABS(labour_amt + part_amt) DESC,
+            uploaded_at DESC NULLS LAST,
+            id DESC
+        ) AS row_rank
       FROM base
-      GROUP BY bill_date, invoice_key
+    ),
+    dedup AS (
+      SELECT bill_date, invoice_key, ro_key, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       bill_date,
@@ -422,26 +444,35 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
   ` : sql`
     WITH base AS (
       SELECT
+        id,
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS advisor,
         ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
         ${hyundaiRoBillingRoKeySql()} AS ro_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
-        COALESCE(part_amt, 0)::numeric AS part_amt
+        COALESCE(part_amt, 0)::numeric AS part_amt,
+        uploaded_at
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${hyundaiActiveBillSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
-        advisor,
-        invoice_key,
-        (ARRAY_AGG(ro_key))[1] AS ro_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY invoice_key
+          ORDER BY
+            ABS(labour_amt + part_amt) DESC,
+            uploaded_at DESC NULLS LAST,
+            id DESC
+        ) AS row_rank
       FROM base
-      GROUP BY advisor, invoice_key
+    ),
+    dedup AS (
+      SELECT advisor, invoice_key, ro_key, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       advisor,

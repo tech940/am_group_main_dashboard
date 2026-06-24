@@ -27,7 +27,7 @@ type Row = Record<string, unknown>
 type ServiceCategory = 'Free Service' | 'Paid Service' | 'Running Repair' | 'Accidental Repair'
 
 const CATEGORIES: ServiceCategory[] = ['Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair']
-const VERSION = 'hyundai-service-dashboard-v2'
+const VERSION = 'hyundai-service-dashboard-v4'
 const TEMPLATE = path.join(process.cwd(), 'templates', 'platinum', 'service-dashboard-template.xlsx')
 
 function rows(value: unknown): Row[] {

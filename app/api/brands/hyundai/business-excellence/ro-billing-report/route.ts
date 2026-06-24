@@ -55,7 +55,8 @@ function normalizedFilter(value: string | null) {
 
 function normalizedBranch(value: string | null) {
   const normalized = String(value || 'all').trim().toLowerCase()
-  return ['all', 'jammu', 'udhampur'].includes(normalized) ? normalized : 'all'
+  if (normalized === 'udhampur') return 'billawar'
+  return ['all', 'jammu', 'billawar'].includes(normalized) ? normalized : 'all'
 }
 
 function normalizedDate(value: string | null) {
@@ -71,7 +72,7 @@ function getFilters(searchParams: URLSearchParams): BillingFilters {
     search: String(searchParams.get('search') || '').trim(),
     branch,
     dealerCode: normalizeHyundaiDealerCode(searchParams.get('dealer_code'))
-      || (branch === 'jammu' ? 'JAMMU' : branch === 'udhampur' ? 'UDHAMPUR' : null),
+      || (branch === 'jammu' ? 'JAMMU' : branch === 'billawar' ? 'BILLAWAR' : null),
     billType: normalizedFilter(searchParams.get('billType')),
     workType: normalizedFilter(searchParams.get('workType')),
     advisor: normalizedFilter(searchParams.get('advisor')),
@@ -81,7 +82,7 @@ function getFilters(searchParams: URLSearchParams): BillingFilters {
 }
 
 function createCacheKey(filters: BillingFilters) {
-  return `hyundai:business-excellence:ro-billing-report:v2:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `hyundai:business-excellence:ro-billing-report:v4:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 async function tableExists(tableName: string) {

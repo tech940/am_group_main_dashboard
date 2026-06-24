@@ -24,12 +24,31 @@ const dealerCase = `
     WHEN resolved_dealer IN ('N5804', 'N6845') THEN 'KATHUA'
     WHEN resolved_dealer IN ('N6815', 'N6846') THEN 'RS_PURA'
     WHEN resolved_dealer IN ('N6819', 'N6847') THEN 'VIJAYPUR'
-    WHEN resolved_dealer IN ('N5217', 'N6848', 'N6849') THEN 'UDHAMPUR'
+    WHEN resolved_dealer IN ('N6826', 'N6828', 'N6848') THEN 'BILLAWAR'
     ELSE COALESCE(resolved_dealer, 'UNMAPPED')
   END
 `
 
 async function main() {
+  const integrity = await db`
+    SELECT
+      (SELECT COUNT(*) FROM hyundai_ro_billing_report)::int AS billing_rows,
+      (SELECT COUNT(DISTINCT row_hash) FROM hyundai_ro_billing_report)::int AS billing_hashes,
+      (SELECT COUNT(*) FROM hyundai_repair_order_list)::int AS repair_rows,
+      (SELECT COUNT(DISTINCT row_hash) FROM hyundai_repair_order_list)::int AS repair_hashes,
+      (SELECT COUNT(*) FROM hyundai_operation_wise_analysis_report)::int AS operation_rows,
+      (SELECT COUNT(DISTINCT row_hash) FROM hyundai_operation_wise_analysis_report)::int AS operation_hashes,
+      (
+        SELECT COUNT(*)::int
+        FROM pg_trigger
+        WHERE NOT tgisinternal
+          AND tgname IN (
+            'hyundai_ro_billing_safe_hash',
+            'hyundai_repair_order_safe_hash',
+            'hyundai_operation_safe_hash'
+          )
+      ) AS safe_hash_triggers
+  `
   const billing = await db.unsafe(`
     WITH normalized AS (
       SELECT
@@ -94,6 +113,28 @@ async function main() {
       `
     : [{ min_period_start: null, max_period_end: null, rows: 0, distinct_hashes: 0 }]
 
+  const unmappedLegacyCodes = await db`
+    SELECT code, SUM(rows)::int AS rows
+    FROM (
+      SELECT UPPER(TRIM(COALESCE(source_dealer_code, dealer_code, main_dealer_code, ''))) AS code, COUNT(*)::int AS rows
+      FROM hyundai_ro_billing_report
+      WHERE UPPER(TRIM(COALESCE(source_dealer_code, dealer_code, main_dealer_code, ''))) IN ('N5217', 'N6849')
+      GROUP BY 1
+      UNION ALL
+      SELECT UPPER(TRIM(COALESCE(source_dealer_code, dealer_code, dlr_no, ''))) AS code, COUNT(*)::int AS rows
+      FROM hyundai_repair_order_list
+      WHERE UPPER(TRIM(COALESCE(source_dealer_code, dealer_code, dlr_no, ''))) IN ('N5217', 'N6849')
+      GROUP BY 1
+      UNION ALL
+      SELECT UPPER(TRIM(COALESCE(source_dealer_code, dealer_code, ''))) AS code, COUNT(*)::int AS rows
+      FROM hyundai_operation_wise_analysis_report
+      WHERE UPPER(TRIM(COALESCE(source_dealer_code, dealer_code, ''))) IN ('N5217', 'N6849')
+      GROUP BY 1
+    ) source
+    GROUP BY code
+    ORDER BY code
+  `
+
   const totals = billing.reduce((acc, row) => ({
     load: acc.load + Number(row.load || 0),
     labour: acc.labour + Number(row.labour || 0),
@@ -107,14 +148,24 @@ async function main() {
     allLocations: totals,
     complaints: complaints[0],
     operationWise: operation[0],
+    integrity: integrity[0],
+    unmappedLegacyCodes,
     checks: {
       revenueReconciles: Math.abs(totals.revenue - totals.labour - totals.parts) < 0.02,
       complaintFallbackHasRows: Number(complaints[0]?.rows_with_business_date || 0) > 0,
+      billingRecoveryCount: Number(integrity[0]?.billing_rows) === 134485,
+      repairRecoveryCount: Number(integrity[0]?.repair_rows) === 170132,
+      operationRecoveryCount: Number(integrity[0]?.operation_rows) === 34979,
+      uniqueSafeHashes:
+        Number(integrity[0]?.billing_rows) === Number(integrity[0]?.billing_hashes)
+        && Number(integrity[0]?.repair_rows) === Number(integrity[0]?.repair_hashes)
+        && Number(integrity[0]?.operation_rows) === Number(integrity[0]?.operation_hashes),
+      safeHashTriggersInstalled: Number(integrity[0]?.safe_hash_triggers) === 3,
     },
   }
 
   console.log(JSON.stringify(result, null, 2))
-  if (!result.checks.revenueReconciles) process.exitCode = 1
+  if (Object.values(result.checks).some((value) => !value)) process.exitCode = 1
 }
 
 try {

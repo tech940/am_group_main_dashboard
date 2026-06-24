@@ -108,7 +108,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:overview:v26:${chunk}:${createHash('sha1')
+  return `hyundai:business-excellence:overview:v28:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -124,6 +124,58 @@ function dealerCodeListSql(dealerCode: DealerFilter) {
 
 function roBillingDealerFilter(dealerCode: DealerFilter) {
   return hyundaiRoBillingDealerFilter(dealerCode)
+}
+
+async function fetchRoBillingCoverage(startDate: string, endDate: string, dealerCode: DealerFilter) {
+  const result = await db.execute(sql`
+    SELECT
+      COUNT(*) FILTER (
+        WHERE bill_date >= ${startDate}::date
+          AND bill_date < (${endDate}::date + INTERVAL '1 day')
+      )::int AS raw_rows_in_range,
+      COUNT(*) FILTER (
+        WHERE bill_date >= ${startDate}::date
+          AND bill_date < (${endDate}::date + INTERVAL '1 day')
+          AND ${activeBillStatusSql()}
+      )::int AS row_count_in_range,
+      COUNT(*) FILTER (
+        WHERE bill_date >= ${startDate}::date
+          AND bill_date < (${endDate}::date + INTERVAL '1 day')
+          AND NOT (${activeBillStatusSql()})
+      )::int AS cancelled_rows_in_range,
+      MIN(bill_date)::text AS earliest_available_date,
+      MAX(bill_date)::text AS latest_available_date,
+      MAX(uploaded_at)::text AS last_updated_at
+    FROM hyundai_ro_billing_report
+    WHERE TRUE
+      ${roBillingDealerFilter(dealerCode)}
+  `)
+  const row = resultRows(result)[0] || {}
+  const latestAvailableDate = dateValue(row.latest_available_date)
+  const rowCountInRange = numberValue(row.row_count_in_range)
+  const hasCompleteCoverage = Boolean(latestAvailableDate && latestAvailableDate >= endDate)
+  return {
+    dealerCode: dealerCode || 'ALL_LOCATIONS',
+    isAllLocations: !dealerCode,
+    hasDataInRange: rowCountInRange > 0,
+    hasCompleteCoverage,
+    rowCountInRange,
+    rawRowsInRange: numberValue(row.raw_rows_in_range),
+    cancelledRowsInRange: numberValue(row.cancelled_rows_in_range),
+    earliestAvailableDate: dateValue(row.earliest_available_date),
+    latestAvailableDate,
+    requestedStartDate: startDate,
+    requestedEndDate: endDate,
+    dateBasis: 'bill_date',
+    sourceLabel: 'RO Billing',
+    comparisonStatus: hasCompleteCoverage ? 'available' : 'not_comparable',
+    comparisonLabel: hasCompleteCoverage
+      ? null
+      : latestAvailableDate
+        ? `CY available through ${latestAvailableDate}`
+        : 'RO Billing source unavailable',
+    lastUpdatedAt: row.last_updated_at ? String(row.last_updated_at) : null,
+  } as const
 }
 
 function complaintsDealerFilter(dealerCode: DealerFilter) {
@@ -358,6 +410,7 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
   return sql`
     WITH raw AS (
       SELECT
+        id,
         bill_date::date AS report_date,
         ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
         ${hyundaiRoBillingRoKeySql()} AS ro_key,
@@ -377,7 +430,8 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
         END AS service_category,
         ${numericText(sql.raw('labour_amt'))} AS labour_amt,
         ${numericText(sql.raw('part_amt'))} AS part_amt,
-        ${numericText(sql.raw('total_amt'))} AS total_amt
+        ${numericText(sql.raw('total_amt'))} AS total_amt,
+        uploaded_at
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
@@ -389,22 +443,25 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
         *,
         ROW_NUMBER() OVER (
           PARTITION BY invoice_key
-          ORDER BY ABS(labour_amt + part_amt) DESC, report_date DESC
+          ORDER BY
+            ABS(labour_amt + part_amt) DESC,
+            uploaded_at DESC NULLS LAST,
+            id DESC
         ) AS row_rank
       FROM raw
     ),
     base AS (
       SELECT
         invoice_key,
-        (ARRAY_AGG(ro_key ORDER BY row_rank ASC))[1] AS jc_key,
-        (ARRAY_AGG(report_date ORDER BY row_rank ASC))[1] AS report_date,
-        (ARRAY_AGG(advisor ORDER BY row_rank ASC))[1] AS advisor,
-        (ARRAY_AGG(service_category ORDER BY row_rank ASC))[1] AS service_category,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+        ro_key AS jc_key,
+        report_date,
+        advisor,
+        service_category,
+        labour_amt,
+        part_amt,
+        total_amt
       FROM ranked
-      GROUP BY invoice_key
+      WHERE row_rank = 1
     ),
     enriched AS (
       SELECT
@@ -574,6 +631,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
   ` : sql`
     WITH raw AS (
       SELECT
+        id,
         ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
         ${hyundaiRoBillingRoKeySql()} AS ro_key,
         bill_date::date AS report_date,
@@ -591,23 +649,30 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
           ELSE COALESCE(NULLIF(work_type, ''), 'Others')
         END AS service_type,
         ${numericText(sql.raw('labour_amt'))} AS labour_amt,
-        ${numericText(sql.raw('part_amt'))} AS part_amt
+        ${numericText(sql.raw('part_amt'))} AS part_amt,
+        uploaded_at
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
-        invoice_key,
-        (ARRAY_AGG(ro_key))[1] AS ro_key,
-        (ARRAY_AGG(report_date ORDER BY report_date DESC))[1] AS report_date,
-        (ARRAY_AGG(service_type ORDER BY ABS(labour_amt + part_amt) DESC))[1] AS service_type,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY invoice_key
+          ORDER BY
+            ABS(labour_amt + part_amt) DESC,
+            uploaded_at DESC NULLS LAST,
+            id DESC
+        ) AS row_rank
       FROM raw
-      GROUP BY invoice_key
+    ),
+    dedup AS (
+      SELECT invoice_key, ro_key, report_date, service_type, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       service_type,
@@ -749,10 +814,12 @@ async function buildOverviewPayload(
     lyWorkshopSnapshot,
     operationCoverage,
     lyOperationCoverage,
+    roBillingCoverage,
   ] = await Promise.all([
     db.execute(sql`
       ${roSql}
       SELECT
+        COUNT(*)::int AS deduped_invoices,
         COUNT(DISTINCT jc_key)::int AS total_jc,
         MIN(report_date)::text AS min_bill_date,
         MAX(report_date)::text AS max_bill_date,
@@ -940,6 +1007,7 @@ async function buildOverviewPayload(
     includeComparison ? fetchWorkshopSnapshot(lyStartDate, lyEndDate, dealerCode) : emptyWorkshopSnapshot(),
     fetchHyundaiMonthlyOperationMetrics(endDate, dealerCode),
     includeComparison ? fetchHyundaiMonthlyOperationMetrics(lyEndDate, dealerCode) : Promise.resolve(null),
+    fetchRoBillingCoverage(startDate, endDate, dealerCode),
   ])
 
   const roKpis = resultRows(roKpiRows)[0] || {}
@@ -973,6 +1041,19 @@ async function buildOverviewPayload(
   const lyComplaintsOpen = numberValue(lyComplaintKpis.open)
   const lyComplaintsOver15 = numberValue(lyComplaintKpis.over_15)
   const lyAddOnTotal = lyAddonKpis.ewCount + lyAddonKpis.rsaCount + lyAddonKpis.mcpCount
+  const roBillingComparable = roBillingCoverage.hasCompleteCoverage
+  const roBillingComparisonStatus = roBillingComparable ? 'available' : 'not_comparable'
+  const roBillingComparisonLabel = roBillingCoverage.comparisonLabel
+  const billingComparison = (cy: number, ly: number) => ({
+    cy,
+    ly,
+    deltaPct: roBillingComparable ? growth(cy, ly) : null,
+    comparisonStatus: roBillingComparisonStatus,
+    comparisonLabel: roBillingComparisonLabel,
+    unavailableReason: roBillingComparable
+      ? null
+      : `Requested through ${endDate}; source is available through ${roBillingCoverage.latestAvailableDate || 'no date'}.`,
+  })
 
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
@@ -1008,45 +1089,34 @@ async function buildOverviewPayload(
         startDate: lyStartDate,
         endDate: lyEndDate,
       },
-      revenue: {
-        cy: revenue,
-        ly: lyRevenue,
-        deltaPct: growth(revenue, lyRevenue),
-      },
-      labour: {
-        cy: labour,
-        ly: lyLabour,
-        deltaPct: growth(labour, lyLabour),
-      },
-      parts: {
-        cy: parts,
-        ly: lyParts,
-        deltaPct: growth(parts, lyParts),
-      },
-      totalJc: {
-        cy: totalJc,
-        ly: lyTotalJc,
-        deltaPct: growth(totalJc, lyTotalJc),
-      },
-      avgBilling: {
-        cy: perUnit(revenue, totalJc),
-        ly: perUnit(lyRevenue, lyTotalJc),
-        deltaPct: growth(perUnit(revenue, totalJc), perUnit(lyRevenue, lyTotalJc)),
-      },
+      revenue: billingComparison(revenue, lyRevenue),
+      labour: billingComparison(labour, lyLabour),
+      parts: billingComparison(parts, lyParts),
+      totalJc: billingComparison(totalJc, lyTotalJc),
+      avgBilling: billingComparison(perUnit(revenue, totalJc), perUnit(lyRevenue, lyTotalJc)),
       openRo: {
         cy: totalOpenRo,
         ly: lyOpenRo,
-        deltaPct: growth(totalOpenRo, lyOpenRo),
+        deltaPct: null,
+        comparisonStatus: 'not_comparable',
+        comparisonLabel: 'Current WIP only',
+        unavailableReason: 'Open RO is a current-state source and has no historical snapshot comparison.',
       },
       delayedRo: {
         cy: delayedRo,
         ly: lyDelayedRo,
-        deltaPct: growth(delayedRo, lyDelayedRo),
+        deltaPct: null,
+        comparisonStatus: 'not_comparable',
+        comparisonLabel: 'Current WIP only',
+        unavailableReason: 'Delayed RO is derived from the current open-RO state.',
       },
       openOver15: {
         cy: openOver15,
         ly: lyOpenOver15,
-        deltaPct: growth(openOver15, lyOpenOver15),
+        deltaPct: null,
+        comparisonStatus: 'not_comparable',
+        comparisonLabel: 'Current WIP only',
+        unavailableReason: 'Aged WIP is derived from the current open-RO state.',
       },
       complaintsTotal: {
         cy: complaintsTotal,
@@ -1086,22 +1156,45 @@ async function buildOverviewPayload(
       workshopRevenue: {
         cy: workshopSnapshot.totalRevenue,
         ly: lyWorkshopSnapshot.totalRevenue,
-        deltaPct: growth(workshopSnapshot.totalRevenue, lyWorkshopSnapshot.totalRevenue),
+        deltaPct: roBillingComparable ? growth(workshopSnapshot.totalRevenue, lyWorkshopSnapshot.totalRevenue) : null,
+        comparisonStatus: roBillingComparisonStatus,
+        comparisonLabel: roBillingComparisonLabel,
       },
       workshopTotalJc: {
         cy: workshopSnapshot.totalJc,
         ly: lyWorkshopSnapshot.totalJc,
-        deltaPct: growth(workshopSnapshot.totalJc, lyWorkshopSnapshot.totalJc),
+        deltaPct: roBillingComparable ? growth(workshopSnapshot.totalJc, lyWorkshopSnapshot.totalJc) : null,
+        comparisonStatus: roBillingComparisonStatus,
+        comparisonLabel: roBillingComparisonLabel,
       },
       workshopLabourPerRo: {
         cy: workshopSnapshot.labourPerRo,
         ly: lyWorkshopSnapshot.labourPerRo,
-        deltaPct: growth(workshopSnapshot.labourPerRo, lyWorkshopSnapshot.labourPerRo),
+        deltaPct: roBillingComparable ? growth(workshopSnapshot.labourPerRo, lyWorkshopSnapshot.labourPerRo) : null,
+        comparisonStatus: roBillingComparisonStatus,
+        comparisonLabel: roBillingComparisonLabel,
       },
       workshopVasAmount: {
         cy: workshopSnapshot.vasAmount,
         ly: lyWorkshopSnapshot.vasAmount,
-        deltaPct: growth(workshopSnapshot.vasAmount, lyWorkshopSnapshot.vasAmount),
+        deltaPct: operationCoverage.available
+          && Boolean(lyOperationCoverage?.available)
+          && operationCoverage.periodStart?.slice(5, 7) === lyOperationCoverage?.periodStart?.slice(5, 7)
+          ? growth(workshopSnapshot.vasAmount, lyWorkshopSnapshot.vasAmount)
+          : null,
+        comparisonStatus: !operationCoverage.available || !lyOperationCoverage?.available
+          ? 'source_missing'
+          : operationCoverage.periodStart?.slice(5, 7) === lyOperationCoverage.periodStart?.slice(5, 7)
+            ? (lyWorkshopSnapshot.vasAmount === 0 ? 'exact_zero' : 'available')
+            : 'period_mismatch',
+        comparisonLabel: !operationCoverage.available || !lyOperationCoverage?.available
+          ? 'Operation Wise source unavailable'
+          : operationCoverage.periodStart?.slice(5, 7) === lyOperationCoverage.periodStart?.slice(5, 7)
+            ? null
+            : 'Source periods differ',
+        unavailableReason: !operationCoverage.available || !lyOperationCoverage?.available
+          ? 'VAS comparison requires both CY and LY monthly Operation Wise snapshots.'
+          : null,
       },
     } : undefined,
     charts: {
@@ -1223,7 +1316,32 @@ async function buildOverviewPayload(
           unknownCodeRows: operationCoverage.unknownCodeRows,
         },
       },
+      dealerCoverage: {
+        primary: roBillingCoverage,
+        roBilling: roBillingCoverage,
+      },
+      roBillingAudit: {
+        sourceAvailable: true,
+        rawRows: roBillingCoverage.rawRowsInRange,
+        activeRawRows: roBillingCoverage.rowCountInRange,
+        cancelledRows: roBillingCoverage.cancelledRowsInRange,
+        dedupedInvoices: numberValue(roKpis.deduped_invoices),
+        dedupedJc: totalJc,
+        duplicateRowsRemoved: Math.max(
+          0,
+          roBillingCoverage.rowCountInRange - numberValue(roKpis.deduped_invoices),
+        ),
+        labour,
+        parts,
+        revenue,
+        minBillDate: dateValue(roKpis.min_bill_date),
+        maxBillDate: dateValue(roKpis.max_bill_date),
+        latestUploadedAt: roBillingCoverage.lastUpdatedAt,
+      },
       sourceWarnings: [
+        ...(!roBillingCoverage.hasCompleteCoverage
+          ? [`RO Billing is available through ${roBillingCoverage.latestAvailableDate || 'no date'}; comparison and health scoring are suppressed for the requested end date ${endDate}.`]
+          : []),
         ...(!operationCoverage.available ? ['No contained Hyundai Operation Wise snapshot exists for the selected period.'] : []),
         ...(operationCoverage.available && operationCoverage.classifiedRows === 0
           ? ['Hyundai Operation Wise snapshot exists but contains no classified VAS/WA/WB rows. Reload the complete report before treating zero values as business performance.']

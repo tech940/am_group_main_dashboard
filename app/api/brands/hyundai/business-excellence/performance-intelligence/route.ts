@@ -140,7 +140,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `hyundai:business-excellence:performance-intelligence:v8:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `hyundai:business-excellence:performance-intelligence:v10:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildPerformanceWhere(startDate: Date, endDate: Date, filters: PerformanceFilterContext) {

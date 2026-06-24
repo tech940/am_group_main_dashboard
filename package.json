@@ -42,7 +42,9 @@
     "verify:kia-service-dashboard-snapshots": "tsx scripts/verify-kia-service-dashboard-snapshots.mjs",
     "verify:kia-be-parity": "tsx scripts/verify-kia-business-excellence-parity.mjs",
     "verify:hyundai-be-parity": "node scripts/verify-hyundai-business-excellence-parity.mjs",
+    "verify:hyundai-dealers": "tsx scripts/verify-hyundai-dealer-registry.ts",
     "verify:hyundai-operations": "tsx scripts/verify-hyundai-operation-metrics.ts"
+    ,"db:repair-hyundai-be": "node scripts/repair-hyundai-business-excellence-data.mjs"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

@@ -31,22 +31,7 @@ async function main() {
   try {
     const file = path.join(__dirname, 'setup-hyundai-business-excellence-parity.sql')
     const source = fs.readFileSync(file, 'utf8')
-    const statements = source
-      .split(/;\s*(?:\r?\n|$)/)
-      .map((statement) => statement.replace(/^--.*$/gm, '').trim())
-      .filter(Boolean)
-
-    for (const statement of statements) {
-      try {
-        await db.unsafe(statement)
-      } catch (error) {
-        if (error?.code === '42P01' || error?.code === '42703') {
-          console.warn(`[hyundai-parity] skipped unavailable source/index: ${error.message}`)
-          continue
-        }
-        throw error
-      }
-    }
+    await db.unsafe(source)
     console.log('[hyundai-parity] indexes applied')
   } finally {
     await db.end()

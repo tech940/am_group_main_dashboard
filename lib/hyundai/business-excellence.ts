@@ -3,13 +3,13 @@ import 'server-only'
 import { createHash } from 'crypto'
 import { sql, type SQL } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
-import { getHyundaiDealerCodes } from '@/lib/hyundai/dealer-branch'
+import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
 import {
   hyundaiActiveBillSql,
   hyundaiRoBillingRoKeySql,
 } from '@/lib/hyundai/business-excellence-calculations'
 
-export type HyundaiBranch = 'all' | 'jammu' | 'udhampur'
+export type HyundaiBranch = 'all' | 'jammu' | 'billawar'
 export type HyundaiMetric = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
 
 export type HyundaiDateFilters = {
@@ -23,7 +23,7 @@ export type HyundaiDateFilters = {
 
 export const HYUNDAI_BRANCH_DEALERS = {
   jammu: ['N5203', 'N5216'],
-  udhampur: ['N5217', 'N6848', 'N6849'],
+  billawar: ['N6826', 'N6828', 'N6848'],
 } as const
 
 export const HYUNDAI_REPORTS = [
@@ -280,13 +280,14 @@ function eachDay(start: string, end: string) {
 
 function normalizeBranch(value: string | null | undefined): HyundaiBranch {
   const normalized = String(value || 'all').trim().toLowerCase()
-  return normalized === 'jammu' || normalized === 'udhampur' ? normalized : 'all'
+  if (normalized === 'udhampur') return 'billawar'
+  return normalized === 'jammu' || normalized === 'billawar' ? normalized : 'all'
 }
 
 function normalizeDealerToBranch(value: string | null | undefined): HyundaiBranch {
-  const normalized = String(value || '').trim().toUpperCase()
-  if ((HYUNDAI_BRANCH_DEALERS.jammu as readonly string[]).includes(normalized)) return 'jammu'
-  if ((HYUNDAI_BRANCH_DEALERS.udhampur as readonly string[]).includes(normalized)) return 'udhampur'
+  const normalized = normalizeHyundaiDealerCode(value)
+  if (normalized === 'JAMMU') return 'jammu'
+  if (normalized === 'BILLAWAR') return 'billawar'
   return 'all'
 }
 
@@ -301,12 +302,12 @@ export function getHyundaiDateFilters(searchParams: URLSearchParams): HyundaiDat
     compareStartDate: normalizedDate(searchParams.get('compareStartDate') || searchParams.get('comparisonStartDate')) || addYears(startDate, -1),
     compareEndDate: normalizedDate(searchParams.get('compareEndDate') || searchParams.get('comparisonEndDate')) || addYears(endDate, -1),
     branch,
-    dealerCode: String(searchParams.get('dealer_code') || '').trim().toUpperCase(),
+    dealerCode: normalizeHyundaiDealerCode(searchParams.get('dealer_code')) || '',
   }
 }
 
 export function createHyundaiCacheKey(section: string, filters: HyundaiDateFilters, extras: Record<string, unknown> = {}) {
-  return `hyundai:business-excellence:${section}:v3:${createHash('sha1').update(JSON.stringify({ filters, extras })).digest('hex')}`
+  return `hyundai:business-excellence:${section}:v5:${createHash('sha1').update(JSON.stringify({ filters, extras })).digest('hex')}`
 }
 
 function amountExpression(columnName: string) {
@@ -336,8 +337,8 @@ function dealerPredicate(dealerExpression: SQL, filters: HyundaiDateFilters) {
   if (filters.branch === 'jammu') {
     return sql`${dealerExpression} IN ('N5203', 'N5216')`
   }
-  if (filters.branch === 'udhampur') {
-    return sql`${dealerExpression} IN ('N5217', 'N6848', 'N6849')`
+  if (filters.branch === 'billawar') {
+    return sql`${dealerExpression} IN ('N6826', 'N6828', 'N6848')`
   }
   return sql`TRUE`
 }

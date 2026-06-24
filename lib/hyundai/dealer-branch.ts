@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm'
 
 type HyundaiBranchDealer = {
   label: string
-  dealerCode: 'JAMMU' | 'AKHNOOR' | 'KATHUA' | 'RS_PURA' | 'VIJAYPUR' | 'UDHAMPUR'
+  dealerCode: 'JAMMU' | 'AKHNOOR' | 'KATHUA' | 'RS_PURA' | 'VIJAYPUR' | 'BILLAWAR'
   dealerCodes: readonly string[]
 }
 
@@ -12,7 +12,7 @@ export const HYUNDAI_BRANCH_DEALERS = [
   { label: 'Hyundai Kathua', dealerCode: 'KATHUA', dealerCodes: ['N5804', 'N6845'] },
   { label: 'Hyundai RS Pura', dealerCode: 'RS_PURA', dealerCodes: ['N6815', 'N6846'] },
   { label: 'Hyundai Vijaypur', dealerCode: 'VIJAYPUR', dealerCodes: ['N6819', 'N6847'] },
-  { label: 'Hyundai Udhampur', dealerCode: 'UDHAMPUR', dealerCodes: ['N5217', 'N6848', 'N6849'] },
+  { label: 'Hyundai Billawar', dealerCode: 'BILLAWAR', dealerCodes: ['N6826', 'N6828', 'N6848'] },
 ] as const satisfies readonly HyundaiBranchDealer[]
 
 export type HyundaiDealerCode = (typeof HYUNDAI_BRANCH_DEALERS)[number]['dealerCode']
@@ -25,7 +25,12 @@ export function normalizeHyundaiDealerCode(value: string | null | undefined): Hy
   if (normalized === 'KATHUA' || normalized === 'HYUNDAI_KATHUA') return 'KATHUA'
   if (normalized === 'RS_PURA' || normalized === 'RSPURA' || normalized === 'HYUNDAI_RS_PURA') return 'RS_PURA'
   if (normalized === 'VIJAYPUR' || normalized === 'HYUNDAI_VIJAYPUR') return 'VIJAYPUR'
-  if (normalized === 'UDHAMPUR' || normalized === 'HYUNDAI_UDHAMPUR') return 'UDHAMPUR'
+  if (
+    normalized === 'BILLAWAR'
+    || normalized === 'HYUNDAI_BILLAWAR'
+    || normalized === 'UDHAMPUR'
+    || normalized === 'HYUNDAI_UDHAMPUR'
+  ) return 'BILLAWAR'
 
   const branch = HYUNDAI_BRANCH_DEALERS.find((item) => item.dealerCodes.some((code) => code === normalized))
   return branch?.dealerCode || null
@@ -53,7 +58,7 @@ export function hyundaiSourceDealerSql(
       WHEN ${resolved} IN ('N5804', 'N6845') THEN 'KATHUA'
       WHEN ${resolved} IN ('N6815', 'N6846') THEN 'RS_PURA'
       WHEN ${resolved} IN ('N6819', 'N6847') THEN 'VIJAYPUR'
-      WHEN ${resolved} IN ('N5217', 'N6848', 'N6849') THEN 'UDHAMPUR'
+      WHEN ${resolved} IN ('N6826', 'N6828', 'N6848') THEN 'BILLAWAR'
       WHEN UPPER(TRIM(COALESCE(${sourceColumn}::text, ''))) = 'ACTIVE' THEN 'JAMMU'
       ELSE ${resolved}
     END

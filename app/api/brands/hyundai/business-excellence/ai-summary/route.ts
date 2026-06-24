@@ -466,7 +466,7 @@ function buildSummaryText(summary: AiStructuredSummary) {
 }
 
 function createCacheKey(report: string, startDate: string, endDate: string, dataset: unknown, dealerCode?: string | null) {
-  return `hyundai:business-excellence:ai-summary:v8:${createHash('sha1')
+  return `hyundai:business-excellence:ai-summary:v10:${createHash('sha1')
     .update(JSON.stringify({ report, startDate, endDate, dealerCode: normalizeHyundaiDealerCode(dealerCode), dataset }))
     .digest('hex')}`
 }

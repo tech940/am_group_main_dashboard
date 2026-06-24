@@ -705,27 +705,33 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date, compariso
   const relationalEnd = comparisonRange && comparisonRange.endDate > endDate ? comparisonRange.endDate : endDate
 
   const result = await db.execute(sql`
-    WITH dedup AS (
+    WITH ranked AS (
       SELECT
-        bill_key,
-        (ARRAY_AGG(ro_key))[1] AS ro_key,
-        bill_date,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY bill_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM (
         SELECT
+          id,
           ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
           ${hyundaiRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt
+          COALESCE(part_amt, 0)::numeric AS part_amt,
+          uploaded_at
         FROM hyundai_ro_billing_report
         WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
           AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
-      GROUP BY bill_key, bill_date
+    ),
+    dedup AS (
+      SELECT bill_key, ro_key, bill_date, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       bill_date,
@@ -775,26 +781,32 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
     ORDER BY fiscal_start_year DESC
     LIMIT 5
   ` : sql`
-    WITH dedup AS (
+    WITH ranked AS (
       SELECT
-        bill_key,
-        (ARRAY_AGG(ro_key))[1] AS ro_key,
-        bill_date,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY bill_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM (
         SELECT
+          id,
           ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
           ${hyundaiRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt
+          COALESCE(part_amt, 0)::numeric AS part_amt,
+          uploaded_at
         FROM hyundai_ro_billing_report
         WHERE bill_date IS NOT NULL
           AND ${activeBillStatusSql()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
-      GROUP BY bill_key, bill_date
+    ),
+    dedup AS (
+      SELECT bill_key, ro_key, bill_date, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     ),
     fiscal AS (
       SELECT
@@ -874,29 +886,34 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
     ORDER BY ranked.revenue DESC, ranked.load DESC, ranked.name ASC
     LIMIT 100
   ` : sql`
-    WITH dedup AS (
+    WITH ranked AS (
       SELECT
-        service_advisor AS name,
-        bill_key,
-        (ARRAY_AGG(ro_key))[1] AS ro_key,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY bill_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM (
         SELECT
+          id,
           COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS service_advisor,
           ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
           ${hyundaiRoBillingRoKeySql()} AS ro_key,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           COALESCE(part_amt, 0)::numeric AS part_amt,
-          COALESCE(total_amt, 0)::numeric AS total_amt
+          COALESCE(total_amt, 0)::numeric AS total_amt,
+          uploaded_at
         FROM hyundai_ro_billing_report
         WHERE bill_date >= ${toDateInputValue(startDate)}::date
           AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
-      GROUP BY service_advisor, bill_key
+    ),
+    dedup AS (
+      SELECT service_advisor AS name, bill_key, ro_key, labour_amt, part_amt, total_amt
+      FROM ranked
+      WHERE row_rank = 1
     ),
     advisor_totals AS (
       SELECT
@@ -956,31 +973,35 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
 
 async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWindow>, dealerCode: DealerFilter = null) {
   const result = await db.execute(sql`
-    WITH dedup AS (
+    WITH ranked AS (
       SELECT
-        work_type,
-        service_type,
-        bill_key,
-        (ARRAY_AGG(ro_key))[1] AS ro_key,
-        bill_date,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY bill_key
+          ORDER BY ABS(labour_amt + part_amt) DESC, uploaded_at DESC NULLS LAST, id DESC
+        ) AS row_rank
       FROM (
         SELECT
+          id,
           COALESCE(NULLIF(work_type, ''), 'Unspecified') AS work_type,
           COALESCE(NULLIF(work_type, ''), 'Unspecified') AS service_type,
           ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
           ${hyundaiRoBillingRoKeySql()} AS ro_key,
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
-          COALESCE(part_amt, 0)::numeric AS part_amt
+          COALESCE(part_amt, 0)::numeric AS part_amt,
+          uploaded_at
         FROM hyundai_ro_billing_report
         WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
           AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
           ${roBillingDealerFilter(dealerCode)}
       ) base
-      GROUP BY work_type, service_type, bill_key, bill_date
+    ),
+    dedup AS (
+      SELECT work_type, service_type, bill_key, ro_key, bill_date, labour_amt, part_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       work_type,
@@ -1089,6 +1110,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
   const result = await db.execute(sql`
     WITH cancelled AS (
       SELECT
+        id,
         ${hyundaiRoBillingInvoiceKeySql()} AS bill_key,
         NULLIF(bill_no, '') AS bill_no,
         NULLIF(r_o_no, '') AS ro_no,
@@ -1099,28 +1121,31 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
         'Cancel' AS bill_status,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
-        COALESCE(total_amt, 0)::numeric AS total_amt
+        COALESCE(total_amt, 0)::numeric AS total_amt,
+        uploaded_at
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${toDateInputValue(startDate)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
         AND ${cancelledBillStatusSql()}
         ${roBillingDealerFilter(dealerCode)}
     ),
-    dedup AS (
+    ranked AS (
       SELECT
-        bill_key,
-        (ARRAY_AGG(bill_no ORDER BY bill_date DESC NULLS LAST))[1] AS bill_no,
-        (ARRAY_AGG(ro_no ORDER BY bill_date DESC NULLS LAST))[1] AS ro_no,
-        MAX(bill_date)::text AS bill_date,
-        (ARRAY_AGG(work_type ORDER BY ABS(COALESCE(total_amt, labour_amt + part_amt, 0)) DESC))[1] AS work_type,
-        (ARRAY_AGG(service_type ORDER BY ABS(COALESCE(total_amt, labour_amt + part_amt, 0)) DESC))[1] AS service_type,
-        (ARRAY_AGG(advisor ORDER BY bill_date DESC NULLS LAST))[1] AS advisor,
-        (ARRAY_AGG(bill_status ORDER BY bill_date DESC NULLS LAST))[1] AS bill_status,
-        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
-        (ARRAY_AGG(part_amt ORDER BY ABS(part_amt) DESC))[1] AS part_amt,
-        (ARRAY_AGG(total_amt ORDER BY ABS(total_amt) DESC))[1] AS total_amt
+        *,
+        ROW_NUMBER() OVER (
+          PARTITION BY bill_key
+          ORDER BY
+            ABS(COALESCE(total_amt, labour_amt + part_amt, 0)) DESC,
+            uploaded_at DESC NULLS LAST,
+            id DESC
+        ) AS row_rank
       FROM cancelled
-      GROUP BY bill_key
+    ),
+    dedup AS (
+      SELECT bill_key, bill_no, ro_no, bill_date::text AS bill_date, work_type, service_type,
+        advisor, bill_status, labour_amt, part_amt, total_amt
+      FROM ranked
+      WHERE row_rank = 1
     )
     SELECT
       bill_key,
@@ -1174,7 +1199,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
 }
 
 function createBaseRowsCacheKey(startDate?: Date, endDate?: Date, dealerCode: DealerFilter = null) {
-  return `hyundai:business-excellence:ro-billing:base-rows:v6:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
+  return `hyundai:business-excellence:ro-billing:base-rows:v8:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
 }
 
 function createCacheKey(searchParams: URLSearchParams) {
@@ -1182,7 +1207,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `hyundai:business-excellence:ro-billing:v23:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `hyundai:business-excellence:ro-billing:v25:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {

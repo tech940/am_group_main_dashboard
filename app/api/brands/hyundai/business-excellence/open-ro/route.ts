@@ -191,7 +191,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `hyundai:business-excellence:open-ro:v9:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `hyundai:business-excellence:open-ro:v11:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {

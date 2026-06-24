@@ -79,7 +79,6 @@ export async function fetchHyundaiMonthlyOperationMetrics(
       FROM hyundai_operation_wise_analysis_report
       WHERE date_trunc('month', report_period_start)::date = date_trunc('month', ${endDate}::date)::date
         AND report_period_start::date <= ${endDate}::date
-        AND report_period_end::date <= ${endDate}::date
         ${dealerFilter(dealerCode)}
       GROUP BY report_period_start::date, report_period_end::date
       ORDER BY
@@ -123,14 +122,15 @@ export async function fetchHyundaiMonthlyOperationMetrics(
           AND NOT (${platinumWheelAlignmentCodeSql(sql.raw('latest.code'))})
           AND NOT (${platinumWheelBalancingCodeSql(sql.raw('latest.code'))})
       )::int AS unknown_code_rows,
-      COALESCE(
-        ARRAY_AGG(DISTINCT latest.code ORDER BY latest.code) FILTER (
-          WHERE latest.code <> ''
-            AND NOT (${platinumVasCodeSql(sql.raw('latest.code'))})
-            AND NOT (${platinumWheelAlignmentCodeSql(sql.raw('latest.code'))})
-            AND NOT (${platinumWheelBalancingCodeSql(sql.raw('latest.code'))})
-        ),
-        ARRAY[]::text[]
+      ARRAY(
+        SELECT DISTINCT unknown.code
+        FROM latest unknown
+        WHERE unknown.code <> ''
+          AND NOT (${platinumVasCodeSql(sql.raw('unknown.code'))})
+          AND NOT (${platinumWheelAlignmentCodeSql(sql.raw('unknown.code'))})
+          AND NOT (${platinumWheelBalancingCodeSql(sql.raw('unknown.code'))})
+        ORDER BY unknown.code
+        LIMIT 25
       ) AS unknown_codes
     FROM candidate_period period
     LEFT JOIN latest ON TRUE

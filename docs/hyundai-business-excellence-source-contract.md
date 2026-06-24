@@ -1,6 +1,6 @@
 # AM Hyundai Business Excellence Source Contract
 
-Updated: 20 Jun 2026
+Updated: 24 Jun 2026
 
 ## Canonical business rules
 
@@ -10,7 +10,9 @@ Updated: 20 Jun 2026
   - Kathua: `N5804`, `N6845`
   - RS Pura: `N6815`, `N6846`
   - Vijaypur: `N6819`, `N6847`
-  - Udhampur: `N5217`, `N6848`, `N6849`
+  - Billawar: `N6826`, `N6828`, `N6848`
+- Legacy filter values `UDHAMPUR` and `HYUNDAI_UDHAMPUR` normalize to canonical `BILLAWAR` for bookmark compatibility.
+- `N5217` and `N6849` are deliberately unmapped. They must be reported as source diagnostics if imported, not silently assigned to Billawar.
 - Legacy `ACTIVE` rows belong to Jammu only when no better dealer column is available.
 - RO Billing excludes `bill_type` values containing `cancel`.
 - Invoice identity is canonical dealer + `bill_date` + `bill_no`, falling back to `r_o_no` and `id`.
@@ -18,7 +20,7 @@ Updated: 20 Jun 2026
 - Duplicate invoice rows are ranked by absolute `labour_amt + part_amt`, then latest `uploaded_at` and `id`.
 - Dashboard revenue is `labour_amt + part_amt`. `total_amt` is reconciliation-only.
 - Operation Wise is monthly/snapshot data. Its coverage is `report_period_start` through `report_period_end`; it is never presented as daily data.
-- VAS/WA/WB rows are deduplicated by dealer, report period, and `row_hash`.
+- VAS/WA/WB rows are deduplicated by dealer, report period, and `row_hash`. Because Hyundai Operation Wise is a monthly snapshot without transaction dates, requests resolve to an exact period end when present or otherwise the latest uploaded snapshot in that selected month; APIs always display the actual source coverage.
 - WA/WB counts are `SUM(total_count)`. VAS/WA/WB amounts are `SUM(total_amt)`.
 - Complaint business date is `COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date)`.
 
@@ -40,7 +42,7 @@ Updated: 20 Jun 2026
 
 - The 15 Jun 2026 audit found RO Billing and Repair Order history beginning in 2021, but branch uploads were uneven by dealer and date.
 - Operation Wise and PSF were previously removed from Supabase and preserved in local backups; APIs now treat a missing or old-schema Operation Wise table as unavailable rather than returning fabricated zeroes.
-- The live 01-19 Jun 2026 Operation Wise snapshot contains only five deduplicated rows: Jammu has three and Kathua has two. The only codes are `A10AA35100RQ0`, `A10AAOT30GENE`, and `A10AAREP14LNA`; none classifies as VAS, WA, or WB. Akhnoor, RS Pura, Vijaypur, and Udhampur have no contained June snapshot. This is an incomplete/wrong source upload, not a dashboard calculation result.
+- The live 01-21 Jun 2026 Operation Wise snapshot is available for all six locations. Billawar (`N6848`) reconciles to VAS `Rs 66,996.61`, WA `38 / Rs 14,807.39`, and WB `149 / Rs 14,266.12`. Diagnostic metadata preserves the full unclassified-row count but returns only a 25-code sample.
 - RSA/MCP branch attribution is unavailable when their source does not expose a verified dealer field.
 - Hyundai SOT remains unavailable. MCP must not be presented as SOT.
 - Run `node scripts/audit-hyundai-business-excellence.js` after imports to refresh the detailed schema/sample audit in `scratch/hyundai-business-excellence-source-audit.json`.

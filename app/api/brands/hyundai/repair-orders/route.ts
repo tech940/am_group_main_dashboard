@@ -8,6 +8,7 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { requirePermission } from '@/lib/permissions/service'
+import { hyundaiSourceDealerSql } from '@/lib/hyundai/dealer-branch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -46,7 +47,8 @@ function normalizedFilter(value: string | null) {
 
 function normalizedBranch(value: string | null) {
   const normalized = String(value || 'all').trim().toLowerCase()
-  return ['all', 'jammu', 'udhampur'].includes(normalized) ? normalized : 'all'
+  if (normalized === 'udhampur') return 'billawar'
+  return ['all', 'jammu', 'billawar'].includes(normalized) ? normalized : 'all'
 }
 
 function normalizedDate(value: string | null) {
@@ -69,7 +71,7 @@ function getFilters(searchParams: URLSearchParams): RepairOrderFilters {
 }
 
 function createCacheKey(filters: RepairOrderFilters) {
-  return `hyundai:repair-orders:v1:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
+  return `hyundai:repair-orders:v2:${createHash('sha1').update(JSON.stringify(filters)).digest('hex')}`
 }
 
 async function tableExists(tableName: string) {
@@ -116,6 +118,10 @@ function baseQuery(filters: RepairOrderFilters) {
         COALESCE(NULLIF(TRIM(uc_category::text), ''), '-') AS uc_category,
         COALESCE(NULLIF(TRIM(mileage::text), ''), '-') AS mileage,
         COALESCE(NULLIF(TRIM(source_dealer_code::text), ''), NULLIF(TRIM(dealer::text), ''), NULLIF(TRIM(main_dealer::text), ''), '-') AS dealer_code,
+        ${hyundaiSourceDealerSql(
+          sql.raw('source_dealer_code'),
+          [sql.raw('dealer_code'), sql.raw('dealer'), sql.raw('main_dealer'), sql.raw('dlr_no')],
+        )} AS canonical_dealer,
         ${dateExpression('promise_date_time')} AS promise_date,
         ${dateExpression('closing_date_time')} AS closing_date,
         ${dateExpression('cancel_date')} AS cancel_date,
@@ -132,8 +138,8 @@ function baseQuery(filters: RepairOrderFilters) {
       WHERE (${filters.status} = 'all' OR lower(status) = lower(${filters.status}))
         AND (
           ${filters.branch} = 'all'
-          OR (${filters.branch} = 'jammu' AND dealer_code IN ('N5216', 'N6846', 'N6847'))
-          OR (${filters.branch} = 'udhampur' AND dealer_code IN ('N5217', 'N6848', 'N6849'))
+          OR (${filters.branch} = 'jammu' AND canonical_dealer = 'JAMMU')
+          OR (${filters.branch} = 'billawar' AND canonical_dealer = 'BILLAWAR')
         )
         AND (${filters.workType} = 'all' OR lower(work_type) = lower(${filters.workType}))
         AND (${filters.advisor} = 'all' OR lower(service_advisor) = lower(${filters.advisor}))

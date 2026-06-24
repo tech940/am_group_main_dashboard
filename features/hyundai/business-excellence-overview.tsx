@@ -156,6 +156,17 @@ type OverviewData = {
       complaints?: { minDate: string | null; maxDate: string | null }
       workshopPerformance?: { minDate: string | null; maxDate: string | null }
     }
+    dealerCoverage?: {
+      primary?: {
+        hasDataInRange: boolean
+        hasCompleteCoverage: boolean
+        latestAvailableDate: string | null
+        requestedEndDate: string
+        comparisonStatus: 'available' | 'not_comparable'
+        comparisonLabel: string | null
+      }
+    }
+    sourceWarnings?: string[]
   }
 }
 
@@ -168,7 +179,10 @@ function withChunk(queryString: string, chunk: 'summary' | 'secondary') {
 type ComparisonMetric = {
   cy: number
   ly: number
-  deltaPct: number
+  deltaPct: number | null
+  comparisonStatus?: 'available' | 'exact_zero' | 'not_comparable' | 'source_missing' | 'period_mismatch'
+  comparisonLabel?: string | null
+  unavailableReason?: string | null
 }
 
 type ROAnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
@@ -315,9 +329,12 @@ function comparisonText(metric?: ComparisonMetric, formatter: (value: number) =>
 
 function deltaText(metric?: ComparisonMetric) {
   if (!metric) return 'vs LY'
+  if (metric.comparisonStatus === 'not_comparable') return metric.comparisonLabel || 'Not comparable'
+  if (metric.comparisonStatus === 'source_missing') return 'Source missing'
+  if (metric.comparisonStatus === 'period_mismatch') return 'Period differs'
   if (metric.ly <= 0 && metric.cy > 0) return 'New vs LY'
   if (metric.ly <= 0 && metric.cy <= 0) return 'No LY data'
-  return `${formatDelta(metric.deltaPct)} vs LY`
+  return metric.deltaPct === null ? 'Not comparable' : `${formatDelta(metric.deltaPct)} vs LY`
 }
 
 function growthFromValues(cy: number, ly: number) {
@@ -673,7 +690,7 @@ function SnapshotTile({
   comparison?: {
     lyText: string
     deltaText: string
-    deltaPct: number
+    deltaPct: number | null
   }
   positiveIsGood?: boolean
   tone?: 'good' | 'watch' | 'risk' | 'neutral'
@@ -698,7 +715,9 @@ function SnapshotTile({
           <span className="truncate text-slate-600">{comparison.lyText}</span>
           <span className={cn(
             'shrink-0 rounded-full px-2 py-0.5',
-            comparison.deltaText === 'No LY data' || comparison.deltaText === 'Insufficient history'
+            comparison.deltaPct === null
+              || comparison.deltaText === 'No LY data'
+              || comparison.deltaText === 'Insufficient history'
               ? 'bg-slate-100 text-slate-500'
               : deltaClass(comparison.deltaPct, positiveIsGood)
           )}>
@@ -1457,6 +1476,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
   const serviceRowsByMetric = buildServiceTypeRowsByMetric(roAnalysisTableData)
   const roBillingTrendRows = getMetricTrend(roAnalysisTrendData, billingTrendMetric)
   const snapshotHealth = buildBusinessSnapshotHealth(data)
+  const hasCompleteBillingCoverage = data.meta.dealerCoverage?.primary?.hasCompleteCoverage !== false
   const lySnapshotRevenue = data.comparison?.revenue.ly || 0
   const executiveCards = [
     {
@@ -1464,7 +1484,8 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
       cy: formatCurrency(data.workshopSnapshot.totalRevenue),
       ly: data.comparison ? formatCurrency(data.comparison.workshopRevenue.ly) : 'Loading',
       growth: data.comparison ? data.comparison.workshopRevenue.deltaPct : null,
-      status: data.comparison && data.comparison.workshopRevenue.deltaPct >= 0 ? 'GOOD' : 'WATCH',
+      status: data.comparison?.workshopRevenue.deltaPct != null
+        && data.comparison.workshopRevenue.deltaPct >= 0 ? 'GOOD' : 'WATCH',
     },
     {
       title: 'Open RO',
@@ -1481,8 +1502,8 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
       growth: data.comparison ? data.comparison.complaintsTotal.deltaPct : null,
       status: (() => {
         const growthValue = data.comparison?.complaintsTotal.deltaPct
-        if (data.kpis.complaintsOpen > 0 || (growthValue !== undefined && growthValue >= 200)) return 'CRITICAL'
-        if (growthValue !== undefined && growthValue > 0) return 'WATCH'
+        if (data.kpis.complaintsOpen > 0 || (growthValue != null && growthValue >= 200)) return 'CRITICAL'
+        if (growthValue != null && growthValue > 0) return 'WATCH'
         return 'GOOD'
       })(),
       positiveIsGood: false,
@@ -1510,13 +1531,13 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               <span className="rounded-full border border-blue-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-700">LY {lyPeriodLabel}</span>
               <span className={cn(
                 'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest',
-                snapshotHealth.overallGrowth === null
+                !hasCompleteBillingCoverage || snapshotHealth.overallGrowth === null
                   ? 'border-slate-200 bg-white text-slate-500'
                   : snapshotHealth.overallGrowth >= 0
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                   : 'border-rose-200 bg-rose-50 text-rose-700'
               )}>
-                Overall {snapshotHealth.overallGrowth === null ? 'N/A' : formatDelta(snapshotHealth.overallGrowth)}
+                Overall {!hasCompleteBillingCoverage || snapshotHealth.overallGrowth === null ? 'N/A' : formatDelta(snapshotHealth.overallGrowth)}
               </span>
             </div>
             <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Business Snapshot</h2>
@@ -1527,13 +1548,29 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
           </div>
         </div>
 
+        {data.meta.sourceWarnings && data.meta.sourceWarnings.length > 0 && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900">
+            {data.meta.sourceWarnings.join(' ')}
+          </div>
+        )}
+
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <BusinessHealthCard
-            health={snapshotHealth}
-            cyRevenue={data.kpis.revenue}
-            lyRevenue={lySnapshotRevenue}
-            onClick={() => setHealthDialogOpen(true)}
-          />
+          {hasCompleteBillingCoverage ? (
+            <BusinessHealthCard
+              health={snapshotHealth}
+              cyRevenue={data.kpis.revenue}
+              lyRevenue={lySnapshotRevenue}
+              onClick={() => setHealthDialogOpen(true)}
+            />
+          ) : (
+            <div className="min-h-[104px] rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-widest">Business Health</p>
+              <p className="mt-2 text-3xl font-black">N/A</p>
+              <p className="mt-2 text-[11px] font-bold">
+                {data.meta.dealerCoverage?.primary?.comparisonLabel || 'Incomplete CY source coverage'}
+              </p>
+            </div>
+          )}
           <SnapshotTile
               icon={TrendingUp}
               label="Revenue"
@@ -1542,7 +1579,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               comparison={{
                 lyText: comparisonText(data.comparison?.revenue, formatCurrency),
                 deltaText: deltaText(data.comparison?.revenue),
-                deltaPct: data.comparison?.revenue.deltaPct || 0,
+                deltaPct: data.comparison?.revenue.deltaPct ?? null,
               }}
               tone="good"
             />
@@ -1554,7 +1591,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               comparison={{
                 lyText: comparisonText(data.comparison?.labour, formatCurrency),
                 deltaText: deltaText(data.comparison?.labour),
-                deltaPct: data.comparison?.labour.deltaPct || 0,
+                deltaPct: data.comparison?.labour.deltaPct ?? null,
               }}
               tone="neutral"
             />
@@ -1566,7 +1603,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               comparison={{
                 lyText: comparisonText(data.comparison?.parts, formatCurrency),
                 deltaText: deltaText(data.comparison?.parts),
-                deltaPct: data.comparison?.parts.deltaPct || 0,
+                deltaPct: data.comparison?.parts.deltaPct ?? null,
               }}
               tone="neutral"
             />
@@ -1578,7 +1615,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               comparison={{
                 lyText: comparisonText(data.comparison?.totalJc),
                 deltaText: deltaText(data.comparison?.totalJc),
-                deltaPct: data.comparison?.totalJc.deltaPct || 0,
+                deltaPct: data.comparison?.totalJc.deltaPct ?? null,
               }}
               tone="neutral"
             />
@@ -1590,7 +1627,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               comparison={{
                 lyText: comparisonText(data.comparison?.avgBilling, formatCurrency),
                 deltaText: deltaText(data.comparison?.avgBilling),
-                deltaPct: data.comparison?.avgBilling.deltaPct || 0,
+                deltaPct: data.comparison?.avgBilling.deltaPct ?? null,
               }}
               tone="neutral"
             />
@@ -1626,7 +1663,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               comparison={{
                 lyText: comparisonText(data.comparison?.workshopVasAmount, formatCurrency),
                 deltaText: deltaText(data.comparison?.workshopVasAmount),
-                deltaPct: data.comparison?.workshopVasAmount.deltaPct || 0,
+                deltaPct: data.comparison?.workshopVasAmount.deltaPct ?? null,
               }}
               tone="watch"
             />
@@ -1638,7 +1675,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
               comparison={{
                 lyText: data.comparison && data.comparison.openRo.ly > 0 ? `LY ${formatNumber(data.comparison.openRo.ly)}` : 'Limited history',
                 deltaText: data.comparison && data.comparison.openRo.ly > 0 ? deltaText(data.comparison.openRo) : 'No LY data',
-                deltaPct: data.comparison?.openRo.deltaPct || 0,
+                deltaPct: data.comparison?.openRo.deltaPct ?? null,
               }}
               positiveIsGood={false}
               tone={data.kpis.openOver15 > 0 ? 'watch' : 'good'}
