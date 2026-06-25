@@ -1,7 +1,9 @@
 import path from 'path'
+import { readFile } from 'fs/promises'
 import ExcelJS from 'exceljs'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import {
@@ -29,6 +31,7 @@ type ServiceCategory = 'Free Service' | 'Paid Service' | 'Running Repair' | 'Acc
 const CATEGORIES: ServiceCategory[] = ['Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair']
 const VERSION = 'hyundai-service-dashboard-v4'
 const TEMPLATE = path.join(process.cwd(), 'templates', 'platinum', 'service-dashboard-template.xlsx')
+let templateBufferPromise: Promise<Uint8Array> | null = null
 
 function rows(value: unknown): Row[] {
   return Array.isArray(value) ? value as Row[] : []
@@ -84,20 +87,36 @@ function emptyCategories() {
   return Object.fromEntries(CATEGORIES.map((category) => [category, { today: 0, mtd: 0 }])) as ServiceDashboardMetrics['intake']
 }
 
+async function loadTemplateBuffer() {
+  if (!templateBufferPromise) {
+    templateBufferPromise = readFile(TEMPLATE)
+  }
+  return templateBufferPromise
+}
+
 async function exists(table: string) {
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${table}`}) IS NOT NULL AS exists`)
-  return Boolean(rows(result)[0]?.exists)
+  return await analyticsTableExists(table)
+}
+
+function cacheKey(kind: 'latest-date' | 'metrics' | 'preview', date: string, dealerCode: DealerFilter) {
+  return `hyundai:service-dashboard:${kind}:${VERSION}:${dealerCode || 'all'}:${date}`
 }
 
 async function resolveDate(requested: string | null, dealerCode: DealerFilter) {
   const parsed = parseDate(requested)
   if (parsed) return parsed
-  const result = await db.execute(sql`
-    SELECT MAX(bill_date)::text AS max_date
-    FROM hyundai_ro_billing_report
-    WHERE bill_date IS NOT NULL ${roDealerFilter(dealerCode)}
-  `)
-  return parseDate(String(rows(result)[0]?.max_date || '')) || new Date().toISOString().slice(0, 10)
+  return getCachedData(
+    cacheKey('latest-date', 'latest', dealerCode),
+    async () => {
+      const result = await db.execute(sql`
+        SELECT MAX(bill_date)::text AS max_date
+        FROM hyundai_ro_billing_report
+        WHERE bill_date IS NOT NULL ${roDealerFilter(dealerCode)}
+      `)
+      return parseDate(String(rows(result)[0]?.max_date || '')) || new Date().toISOString().slice(0, 10)
+    },
+    CACHE_TTL.DASHBOARD,
+  )
 }
 
 async function fetchIntake(startDate: string, endDate: string, dealerCode: DealerFilter) {
@@ -312,10 +331,6 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
   }
 }
 
-function cacheKey(kind: 'metrics' | 'preview', date: string, dealerCode: DealerFilter) {
-  return `hyundai:service-dashboard:${kind}:${VERSION}:${dealerCode || 'all'}:${date}`
-}
-
 async function metrics(endDate: string | null, dealerCode: DealerFilter) {
   const resolved = await resolveDate(endDate, dealerCode)
   return getCachedData(cacheKey('metrics', resolved, dealerCode), () => buildMetrics(resolved, dealerCode), CACHE_TTL.DASHBOARD)
@@ -324,7 +339,7 @@ async function metrics(endDate: string | null, dealerCode: DealerFilter) {
 async function workbook(endDate: string | null, dealerCode: DealerFilter) {
   const dashboardMetrics = await metrics(endDate, dealerCode)
   const book = new ExcelJS.Workbook()
-  await book.xlsx.readFile(TEMPLATE)
+  await book.xlsx.load(await loadTemplateBuffer() as any)
   book.worksheets.filter((sheet) => sheet.name !== 'Service Dashboard').forEach((sheet) => book.removeWorksheet(sheet.id))
   const sheet = book.getWorksheet('Service Dashboard') || book.worksheets[0]
   if (!sheet) throw new Error('Hyundai Service Dashboard template sheet is missing')

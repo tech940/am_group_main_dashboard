@@ -3,6 +3,7 @@ import 'server-only'
 import { createHash } from 'crypto'
 import { sql, type SQL } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
 import {
   hyundaiActiveBillSql,
@@ -344,8 +345,7 @@ function dealerPredicate(dealerExpression: SQL, filters: HyundaiDateFilters) {
 }
 
 async function tableExists(tableName: string) {
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-  return Boolean(resultRows(result)[0]?.exists)
+  return await analyticsTableExists(tableName)
 }
 
 function numeric(value: unknown) {

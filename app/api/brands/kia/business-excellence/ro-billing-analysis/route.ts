@@ -34,6 +34,7 @@ type DataRow = Record<string, unknown>
 type PeriodKey = 'td' | 'mtd' | 'qtd' | 'ytd'
 
 const RO_ANALYSIS_TYPES: AnalysisType[] = ['load', 'labour', 'parts', 'lab_per_veh', 'part_per_veh']
+const HAS_DAILY_SUMMARY_V2 = false
 
 type PeriodMetric = {
   cy: number
@@ -620,10 +621,6 @@ function measureFiscalRow(row: FiscalAggregateRow, analysisType: AnalysisType) {
   return load > 0 ? parts / load : 0
 }
 
-async function hasDailySummaryV2() {
-  return false
-}
-
 function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: AnalysisType) {
   const combineRows = (sourceRows: WorkTypeAggregateRow[]): WorkTypeAggregateRow => {
     const combined = {
@@ -784,7 +781,7 @@ function buildFiscalTrendRows(rows: FiscalAggregateRow[], analysisType: Analysis
 
 async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
   const useDailySummary = false
-  const result = await db.execute(useDailySummary && (await hasDailySummaryV2()) && !dealerCode ? sql`
+  const result = await db.execute(useDailySummary && HAS_DAILY_SUMMARY_V2 && !dealerCode ? sql`
     WITH fiscal AS (
       SELECT
         CASE
@@ -921,7 +918,7 @@ async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date, deal
 }
 
 async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, dealerCode: DealerFilter = null): Promise<AdvisorLeaderboardRow[]> {
-  const result = await db.execute((await hasDailySummaryV2()) && !dealerCode ? sql`
+  const result = await db.execute(HAS_DAILY_SUMMARY_V2 && !dealerCode ? sql`
     WITH advisor_totals AS (
       SELECT
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS name,

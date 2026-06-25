@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -26,6 +27,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+const RESPONSE_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
 
 const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const tableExistsCache = new Map<string, boolean>()
@@ -148,61 +150,66 @@ async function tableExists(tableName: string) {
     return tableExistsCache.get(tableName)!
   }
 
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-  const exists = Boolean(resultRows(result)[0]?.exists)
+  const exists = await analyticsTableExists(tableName)
   tableExistsCache.set(tableName, exists)
   return exists
 }
 
 async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  if (dealerCode) return false
-  if (!(await tableExists('workshop_performance_jc_summary_v1'))) return false
+  return getCachedData(
+    `kia:business-excellence:workshop-summary-usable:v1:${dealerCode || 'all'}:${startDate}:${endDate}`,
+    async () => {
+      if (dealerCode) return false
+      if (!(await tableExists('workshop_performance_jc_summary_v1'))) return false
 
-  const result = await db.execute(sql`
-    WITH summary AS (
-      SELECT
-        COUNT(DISTINCT jc_key)::int AS total_jc,
-        COALESCE(SUM(labour_amount), 0)::numeric AS labour,
-        COALESCE(SUM(part_amount), 0)::numeric AS parts
-      FROM workshop_performance_jc_summary_v1
-      WHERE report_date >= ${startDate}::date
-        AND report_date < (${endDate}::date + INTERVAL '1 day')
-    ),
-    raw AS (
-      SELECT
-        COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
-        COALESCE(labour_amt, 0)::numeric AS labour,
-        COALESCE(part_amt, 0)::numeric AS parts
-      FROM ro_billing_report
-      WHERE bill_date >= ${startDate}::date
-        AND bill_date < (${endDate}::date + INTERVAL '1 day')
-        AND ${kiaActiveBillStatusSql()}
-        AND ${kiaActiveServiceCategoryFilter()}
-    ),
-    raw_dedup AS (
-      SELECT
-        jc_key,
-        (ARRAY_AGG(labour ORDER BY ABS(labour) DESC))[1] AS labour,
-        (ARRAY_AGG(parts ORDER BY ABS(parts) DESC))[1] AS parts
-      FROM raw
-      GROUP BY jc_key
-    ),
-    raw_totals AS (
-      SELECT
-        COUNT(*)::int AS total_jc,
-        COALESCE(SUM(labour), 0)::numeric AS labour,
-        COALESCE(SUM(parts), 0)::numeric AS parts
-      FROM raw_dedup
-    )
-    SELECT
-      summary.total_jc = raw_totals.total_jc
-      AND ABS(summary.labour - raw_totals.labour) < 0.01
-      AND ABS(summary.parts - raw_totals.parts) < 0.01 AS usable
-    FROM summary
-    CROSS JOIN raw_totals
-  `)
+      const result = await db.execute(sql`
+        WITH summary AS (
+          SELECT
+            COUNT(DISTINCT jc_key)::int AS total_jc,
+            COALESCE(SUM(labour_amount), 0)::numeric AS labour,
+            COALESCE(SUM(part_amount), 0)::numeric AS parts
+          FROM workshop_performance_jc_summary_v1
+          WHERE report_date >= ${startDate}::date
+            AND report_date < (${endDate}::date + INTERVAL '1 day')
+        ),
+        raw AS (
+          SELECT
+            COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
+            COALESCE(labour_amt, 0)::numeric AS labour,
+            COALESCE(part_amt, 0)::numeric AS parts
+          FROM ro_billing_report
+          WHERE bill_date >= ${startDate}::date
+            AND bill_date < (${endDate}::date + INTERVAL '1 day')
+            AND ${kiaActiveBillStatusSql()}
+            AND ${kiaActiveServiceCategoryFilter()}
+        ),
+        raw_dedup AS (
+          SELECT
+            jc_key,
+            (ARRAY_AGG(labour ORDER BY ABS(labour) DESC))[1] AS labour,
+            (ARRAY_AGG(parts ORDER BY ABS(parts) DESC))[1] AS parts
+          FROM raw
+          GROUP BY jc_key
+        ),
+        raw_totals AS (
+          SELECT
+            COUNT(*)::int AS total_jc,
+            COALESCE(SUM(labour), 0)::numeric AS labour,
+            COALESCE(SUM(parts), 0)::numeric AS parts
+          FROM raw_dedup
+        )
+        SELECT
+          summary.total_jc = raw_totals.total_jc
+          AND ABS(summary.labour - raw_totals.labour) < 0.01
+          AND ABS(summary.parts - raw_totals.parts) < 0.01 AS usable
+        FROM summary
+        CROSS JOIN raw_totals
+      `)
 
-  return Boolean(resultRows(result)[0]?.usable)
+      return Boolean(resultRows(result)[0]?.usable)
+    },
+    CACHE_TTL_SECONDS,
+  )
 }
 
 async function fetchServiceSummary(startDate: string, endDate: string, advisor: string | null = null, dealerCode: DealerFilter = null): Promise<ServiceAggregate[]> {
@@ -813,7 +820,6 @@ async function buildWorkshopPayload(
     lyServiceRows,
     lyAddonRows,
     coreServiceRows,
-    coreAddonRows,
   ] = await Promise.all([
     fetchServiceSummary(startDate, endDate, advisor, dealerCode),
     fetchAddonSummary(startDate, endDate, advisor, dealerCode),
@@ -824,7 +830,6 @@ async function buildWorkshopPayload(
     fetchServiceSummary(lyStart, lyEnd, advisor, dealerCode),
     fetchAddonSummary(lyStart, lyEnd, advisor, dealerCode),
     fetchCoreServiceSummary(startDate, endDate, advisor, dealerCode),
-    fetchCoreAddonSummary(startDate, endDate, advisor, dealerCode),
   ])
 
   const addonTotals = summarizeAddons(addonRows)
@@ -847,6 +852,15 @@ async function buildWorkshopPayload(
     rsaCount: lyAuxiliaryCounts.rsaCount,
     mcpCount: lyAuxiliaryCounts.mcpCount,
   })
+  const coreAddonRows = advisor
+    ? [{
+        serviceType: 'Others',
+        ...summarizeAddons(addonRows),
+      }]
+    : [{
+        serviceType: 'Others',
+        ...addonTotals,
+      }]
   const coreAddonTotals = summarizeAddons(coreAddonRows)
   const coreRows = buildRows(coreServiceRows, coreAddonRows)
   const coreTotalRow = buildTotalRow(coreRows, coreAddonTotals, {
@@ -925,7 +939,9 @@ export async function GET(request: Request) {
     )
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(data), timing.serverTiming)
+    return withServerTiming(NextResponse.json(data, {
+      headers: { 'Cache-Control': RESPONSE_CACHE_CONTROL },
+    }), timing.serverTiming)
   } catch (error) {
     timer.finish()
     console.error('Failed to build Workshop Performance:', error)

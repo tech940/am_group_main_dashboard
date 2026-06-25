@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import {
   getKiaDealerFilterValues,
   normalizeKiaDealerCode,
@@ -70,8 +71,7 @@ export function numericText(column: ReturnType<typeof sql.raw>) {
 }
 
 export async function tableExists(tableName: string) {
-  return db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-    .then((result) => Boolean(resultRows(result)[0]?.exists))
+  return await analyticsTableExists(tableName)
 }
 
 export function activeBillStatusSql(alias = '') {

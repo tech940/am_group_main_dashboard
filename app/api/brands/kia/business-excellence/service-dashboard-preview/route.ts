@@ -7,6 +7,7 @@ import { buildKiaServiceDashboardPreview } from '@/lib/kia/service-dashboard-exp
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+const PREVIEW_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
 
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-service-dashboard-preview')
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
     const timing = timer.finish()
     const response = NextResponse.json(preview, {
       headers: {
-        'Cache-Control': 'no-store',
+        'Cache-Control': PREVIEW_CACHE_CONTROL,
       },
     })
 

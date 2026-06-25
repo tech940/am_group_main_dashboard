@@ -1,5 +1,5 @@
-import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { analyticsTableExists } from './table-exists'
 import type { AnalyticsProvider, AnalyticsQueryResult } from './types'
 
 function normalizeRows(result: unknown): AnalyticsQueryResult {
@@ -26,11 +26,7 @@ export function createPostgresAnalyticsProvider(): AnalyticsProvider {
       return normalizeRows(result)
     },
     async tableExists(tableName) {
-      const result = await db.execute(sql`
-        SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists
-      `)
-      const rows = normalizeRows(result).rows
-      return Boolean(rows[0]?.exists)
+      return await analyticsTableExists(tableName)
     },
   }
 }

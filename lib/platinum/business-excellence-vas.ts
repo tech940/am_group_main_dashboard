@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { analyticsDb } from '@/lib/analytics/db'
+import { analyticsTableColumnSet } from '@/lib/analytics/table-columns'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { platinumSourceDealerFilter } from '@/lib/platinum/dealer-filter'
 import {
   PLATINUM_VAS_IDENTIFIER_VERSION,
@@ -54,22 +56,14 @@ function numericText(column: ReturnType<typeof sql.raw>) {
 async function tableExists(tableName: string) {
   if (tableExistsCache.has(tableName)) return tableExistsCache.get(tableName)!
 
-  const result = await analyticsDb.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-  const exists = Boolean(resultRows(result)[0]?.exists)
+  const exists = await analyticsTableExists(tableName)
   tableExistsCache.set(tableName, exists)
   return exists
 }
 
 async function tableColumns(tableName: string) {
   if (tableColumnsCache.has(tableName)) return tableColumnsCache.get(tableName)!
-
-  const result = await analyticsDb.execute(sql`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = ${tableName}
-  `)
-  const columns = new Set(resultRows(result).map((row) => String(row.column_name || '')))
+  const columns = await analyticsTableColumnSet(tableName)
   tableColumnsCache.set(tableName, columns)
   return columns
 }

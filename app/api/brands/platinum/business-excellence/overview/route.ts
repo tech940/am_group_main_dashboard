@@ -2,6 +2,8 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableHasColumn } from '@/lib/analytics/table-columns'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -43,6 +45,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+const RESPONSE_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
 
 const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 const tableExistsCache = new Map<string, boolean>()
@@ -279,25 +282,18 @@ function rsaDedupKpiSql(startDate: string, endDate: string) {
 async function tableExists(tableName: string) {
   if (tableExistsCache.has(tableName)) return tableExistsCache.get(tableName)!
 
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-  const exists = Boolean(resultRows(result)[0]?.exists)
+  const exists = await analyticsTableExists(tableName)
   tableExistsCache.set(tableName, exists)
   return exists
 }
 
 async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
   if (!(await tableExists('am_platinum_workshop_performance_jc_summary_v2'))) return false
+  if (!(await analyticsTableHasColumn('am_platinum_workshop_performance_jc_summary_v2', 'ro_key'))) return false
 
   const result = await db.execute(sql`
     SELECT
-      EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'am_platinum_workshop_performance_jc_summary_v2'
-          AND column_name = 'ro_key'
-      )
-      AND (
+      (
         SELECT MIN(report_date)::date <= ${startDate}::date
           AND MAX(report_date)::date >= ${endDate}::date
         FROM am_platinum_workshop_performance_jc_summary_v2
@@ -1731,6 +1727,8 @@ export async function GET(request: Request) {
     return withApiDiagnostics(NextResponse.json({
       ...data,
       lastUpdatedAt: new Date().toISOString(),
+    }, {
+      headers: { 'Cache-Control': RESPONSE_CACHE_CONTROL },
     }), timing.serverTiming, data)
   } catch (error) {
     timer.finish()

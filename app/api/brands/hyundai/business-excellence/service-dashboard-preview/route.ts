@@ -7,6 +7,7 @@ import { buildHyundaiServiceDashboardPreview } from '@/lib/hyundai/service-dashb
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+const PREVIEW_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
 
 export async function GET(request: Request) {
   const timer = createApiTimer('hyundai-service-dashboard-preview')
@@ -19,7 +20,9 @@ export async function GET(request: Request) {
       dealerCode: normalizeHyundaiDealerCode(searchParams.get('dealer_code')),
     }))
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(preview, { headers: { 'Cache-Control': 'no-store' } }), timing.serverTiming)
+    return withServerTiming(NextResponse.json(preview, {
+      headers: { 'Cache-Control': PREVIEW_CACHE_CONTROL },
+    }), timing.serverTiming)
   } catch (error) {
     timer.finish()
     console.error('Failed to preview Hyundai Service Dashboard:', error)

@@ -2,6 +2,8 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableColumnSet, analyticsTableHasColumn } from '@/lib/analytics/table-columns'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -38,6 +40,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+const RESPONSE_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
 
 const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 const tableExistsCache = new Map<string, boolean>()
@@ -258,22 +261,14 @@ async function tableExists(tableName: string) {
     return tableExistsCache.get(tableName)!
   }
 
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-  const exists = Boolean(resultRows(result)[0]?.exists)
+  const exists = await analyticsTableExists(tableName)
   tableExistsCache.set(tableName, exists)
   return exists
 }
 
 async function tableColumns(tableName: string) {
   if (tableColumnsCache.has(tableName)) return tableColumnsCache.get(tableName)!
-
-  const result = await db.execute(sql`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = ${tableName}
-  `)
-  const columns = new Set(resultRows(result).map((row) => String(row.column_name)))
+  const columns = await analyticsTableColumnSet(tableName)
   tableColumnsCache.set(tableName, columns)
   return columns
 }
@@ -312,27 +307,27 @@ function operationCountExpression(columns: Set<string>) {
 }
 
 async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, dealerCode: DealerFilter = null) {
-  if (!(await tableExists('am_platinum_workshop_performance_jc_summary_v2'))) return false
+  return getCachedData(
+    `platinum:business-excellence:workshop-summary-usable:v1:${dealerCode || 'all'}:${startDate}:${endDate}`,
+    async () => {
+      if (!(await tableExists('am_platinum_workshop_performance_jc_summary_v2'))) return false
+      if (!(await analyticsTableHasColumn('am_platinum_workshop_performance_jc_summary_v2', 'ro_key'))) return false
 
-  const result = await db.execute(sql`
-    SELECT
-      EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'am_platinum_workshop_performance_jc_summary_v2'
-          AND column_name = 'ro_key'
-      )
-      AND (
-        SELECT MIN(report_date)::date <= ${startDate}::date
-          AND MAX(report_date)::date >= ${endDate}::date
-        FROM am_platinum_workshop_performance_jc_summary_v2
-        WHERE 1 = 1
-          ${workshopSummaryDealerWhere(dealerCode)}
-      ) AS usable
-  `)
+      const result = await db.execute(sql`
+        SELECT
+          (
+            SELECT MIN(report_date)::date <= ${startDate}::date
+              AND MAX(report_date)::date >= ${endDate}::date
+            FROM am_platinum_workshop_performance_jc_summary_v2
+            WHERE 1 = 1
+              ${workshopSummaryDealerWhere(dealerCode)}
+          ) AS usable
+      `)
 
-  return Boolean(resultRows(result)[0]?.usable)
+      return Boolean(resultRows(result)[0]?.usable)
+    },
+    CACHE_TTL_SECONDS,
+  )
 }
 
 function workshopSummaryDealerWhere(dealerCode: DealerFilter) {
@@ -1517,7 +1512,9 @@ export async function GET(request: Request) {
     )
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(data), timing.serverTiming)
+    return withServerTiming(NextResponse.json(data, {
+      headers: { 'Cache-Control': RESPONSE_CACHE_CONTROL },
+    }), timing.serverTiming)
   } catch (error) {
     timer.finish()
     console.error('Failed to build Workshop Performance:', error)

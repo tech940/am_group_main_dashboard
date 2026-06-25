@@ -3,6 +3,7 @@ import 'server-only'
 import { createHash } from 'node:crypto'
 import { and, eq, isNull } from 'drizzle-orm'
 import { cookies } from 'next/headers'
+import { cache } from 'react'
 import { db } from '@/lib/db'
 import { findAuthUserBySupabaseId } from '@/lib/db/auth-client'
 import { users } from '@/lib/db/schema'
@@ -288,7 +289,7 @@ async function getCachedAppUserBySupabaseId(supabaseId: string) {
   }
 }
 
-export async function getAuthenticatedAppUser() {
+const getAuthenticatedAppUserCached = cache(async () => {
   const supabaseId = await getSupabaseUserId()
   if (!supabaseId) return null
 
@@ -299,4 +300,8 @@ export async function getAuthenticatedAppUser() {
   }
 
   return appUser satisfies AppUser
+})
+
+export async function getAuthenticatedAppUser() {
+  return await getAuthenticatedAppUserCached()
 }

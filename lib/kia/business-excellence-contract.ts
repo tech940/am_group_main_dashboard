@@ -2,6 +2,8 @@ import { eq, sql } from 'drizzle-orm'
 import { analyticsDb } from '@/lib/analytics/db'
 import { db } from '@/lib/db'
 import { dashboardSettings } from '@/lib/db/schema'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 import {
   getKiaDealerFilterValues,
   normalizeKiaDealerCode,
@@ -143,17 +145,23 @@ function normalizeHolidayDates(value: unknown) {
 }
 
 export async function getKiaBusinessExcellenceHolidays() {
-  try {
-    const rows = await db
-      .select({ value: dashboardSettings.value })
-      .from(dashboardSettings)
-      .where(eq(dashboardSettings.key, KIA_BUSINESS_EXCELLENCE_HOLIDAYS_KEY))
-      .limit(1)
-    const configured = normalizeHolidayDates(rows[0]?.value)
-    return configured.length > 0 ? configured : DEFAULT_KIA_HOLIDAYS
-  } catch {
-    return DEFAULT_KIA_HOLIDAYS
-  }
+  return getCachedData(
+    kiaBusinessExcellenceCacheKey('holidays', 'default'),
+    async () => {
+      try {
+        const rows = await db
+          .select({ value: dashboardSettings.value })
+          .from(dashboardSettings)
+          .where(eq(dashboardSettings.key, KIA_BUSINESS_EXCELLENCE_HOLIDAYS_KEY))
+          .limit(1)
+        const configured = normalizeHolidayDates(rows[0]?.value)
+        return configured.length > 0 ? configured : DEFAULT_KIA_HOLIDAYS
+      } catch {
+        return DEFAULT_KIA_HOLIDAYS
+      }
+    },
+    CACHE_TTL.DASHBOARD
+  )
 }
 
 export function countKiaCompletedWorkingDays(
@@ -221,27 +229,33 @@ export async function fetchKiaBillingSourceMetadata(
   endDate: string,
   dealerCode: KiaBusinessExcellenceDealerFilter,
 ) {
-  const rows = await analyticsDb.execute(sql`
-    SELECT
-      COUNT(DISTINCT COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text))::int AS row_count,
-      MAX(bill_date)::text AS latest_available_date
-    FROM ro_billing_report
-    WHERE bill_date >= ${startDate}::date
-      AND bill_date < (${endDate}::date + INTERVAL '1 day')
-      AND ${kiaActiveBillStatusSql()}
-      AND ${kiaActiveServiceCategoryFilter()}
-      ${kiaRoBillingDealerFilter(dealerCode)}
-  `)
-  const row = kiaResultRows(rows)[0] || {}
-  const workingDays = await getKiaWorkingDayContext(startDate, endDate)
-  return buildKiaSourceMetadata({
-    dealerCode,
-    dateBasis: 'bill_date',
-    startDate,
-    endDate,
-    rowCount: kiaNumberValue(row.row_count),
-    latestAvailableDate: row.latest_available_date ? String(row.latest_available_date) : null,
-    deduplicationMode: 'bill_no -> ro_no -> id; largest absolute billed value',
-    ...workingDays,
-  })
+  return getCachedData(
+    kiaBusinessExcellenceCacheKey('source-metadata', `${startDate}:${endDate}:${dealerCode || 'all'}`),
+    async () => {
+      const rows = await analyticsDb.execute(sql`
+        SELECT
+          COUNT(DISTINCT COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text))::int AS row_count,
+          MAX(bill_date)::text AS latest_available_date
+        FROM ro_billing_report
+        WHERE bill_date >= ${startDate}::date
+          AND bill_date < (${endDate}::date + INTERVAL '1 day')
+          AND ${kiaActiveBillStatusSql()}
+          AND ${kiaActiveServiceCategoryFilter()}
+          ${kiaRoBillingDealerFilter(dealerCode)}
+      `)
+      const row = kiaResultRows(rows)[0] || {}
+      const workingDays = await getKiaWorkingDayContext(startDate, endDate)
+      return buildKiaSourceMetadata({
+        dealerCode,
+        dateBasis: 'bill_date',
+        startDate,
+        endDate,
+        rowCount: kiaNumberValue(row.row_count),
+        latestAvailableDate: row.latest_available_date ? String(row.latest_available_date) : null,
+        deduplicationMode: 'bill_no -> ro_no -> id; largest absolute billed value',
+        ...workingDays,
+      })
+    },
+    CACHE_TTL.DASHBOARD
+  )
 }

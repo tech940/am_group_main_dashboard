@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableColumnSet } from '@/lib/analytics/table-columns'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
+const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 type FreshnessSource = {
   table: string
   label: string
@@ -45,14 +49,7 @@ function normalizeReportKey(value: string | null) {
 }
 
 async function readColumns(table: string) {
-  const rows = await db.execute(sql`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = ${table}
-  `) as Array<{ column_name: string }>
-
-  return new Set(rows.map((row) => row.column_name))
+  return await analyticsTableColumnSet(table)
 }
 
 function resolveDealerColumn(columns: Set<string>) {
@@ -101,25 +98,34 @@ export async function GET(request: Request) {
     const dealerCode = normalizeKiaDealerCode(searchParams.get('dealer_code'))
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
-    const sourceFreshness = (await timer.time('freshness-db', async () => {
-      const settled = await Promise.allSettled(sources.map((source) => readSourceFreshness(source, dealerCode)))
-      return settled
-        .map((result) => result.status === 'fulfilled' ? result.value : null)
-        .filter((item): item is NonNullable<typeof item> => Boolean(item))
-    }))
+    const data = await timer.time('response-cache', () => getCachedData(
+      `kia:business-excellence:freshness:v2:${reportKey}:${dealerCode || 'all'}`,
+      async () => {
+        const sourceFreshness = await timer.time('freshness-db', async () => {
+          const settled = await Promise.allSettled(sources.map((source) => readSourceFreshness(source, dealerCode)))
+          return settled
+            .map((result) => result.status === 'fulfilled' ? result.value : null)
+            .filter((item): item is NonNullable<typeof item> => Boolean(item))
+        })
 
-    const sourceUpdatedAt = sourceFreshness
-      .map((source) => source.sourceUpdatedAt)
-      .filter((value): value is string => Boolean(value))
-      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null
+        const sourceUpdatedAt = sourceFreshness
+          .map((source) => source.sourceUpdatedAt)
+          .filter((value): value is string => Boolean(value))
+          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null
+
+        return {
+          report: reportKey,
+          dealerCode,
+          sourceUpdatedAt,
+          sources: sourceFreshness,
+          lastUpdatedAt: new Date().toISOString(),
+        }
+      },
+      CACHE_TTL_SECONDS
+    ))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json({
-      report: reportKey,
-      dealerCode,
-      sourceUpdatedAt,
-      sources: sourceFreshness,
-    }), timing.serverTiming)
+    return withServerTiming(NextResponse.json(data), timing.serverTiming)
   } catch (error) {
     timer.finish()
     console.error('Failed to read KIA Business Excellence freshness:', error)

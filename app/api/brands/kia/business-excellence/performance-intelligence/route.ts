@@ -16,6 +16,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+const RESPONSE_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
 
 const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 
@@ -467,7 +468,9 @@ export async function GET(request: Request) {
       : getCachedData(cacheKey, buildReport, CACHE_TTL_SECONDS))
 
     const { serverTiming } = timer.finish()
-    return withServerTiming(NextResponse.json(data), serverTiming)
+    return withServerTiming(NextResponse.json(data, {
+      headers: { 'Cache-Control': RESPONSE_CACHE_CONTROL },
+    }), serverTiming)
   } catch (error) {
     timer.finish()
     console.error('Error building performance intelligence report:', error)

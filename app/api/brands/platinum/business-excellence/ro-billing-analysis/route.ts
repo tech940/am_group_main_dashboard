@@ -40,6 +40,7 @@ type DataRow = Record<string, unknown>
 type PeriodKey = 'td' | 'mtd' | 'qtd' | 'ytd'
 
 const RO_ANALYSIS_TYPES: AnalysisType[] = ['load', 'labour', 'parts', 'lab_per_veh', 'part_per_veh']
+const HAS_DAILY_SUMMARY_V2 = false
 
 type PeriodMetric = {
   cy: number
@@ -582,8 +583,6 @@ type CancelledBillingSummary = {
   rows: CancelledBillingRow[]
 }
 
-let hasRoBillingDailySummaryV2: boolean | null = null
-
 function numberValue(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value || 0)
   return Number.isFinite(parsed) ? parsed : 0
@@ -638,11 +637,6 @@ function measureFiscalRow(row: FiscalAggregateRow, analysisType: AnalysisType) {
   if (analysisType === 'parts') return parts
   if (analysisType === 'lab_per_veh') return load > 0 ? labour / load : 0
   return load > 0 ? parts / load : 0
-}
-
-async function hasDailySummaryV2() {
-  hasRoBillingDailySummaryV2 = false
-  return hasRoBillingDailySummaryV2
 }
 
 function aggregateRowsToStats(rows: WorkTypeAggregateRow[], analysisType: AnalysisType) {
@@ -807,7 +801,7 @@ function buildFiscalTrendRows(rows: FiscalAggregateRow[], analysisType: Analysis
 
 async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
   const useDailySummary = false
-  const result = await db.execute(useDailySummary && (await hasDailySummaryV2()) && !dealerCode ? sql`
+  const result = await db.execute(useDailySummary && HAS_DAILY_SUMMARY_V2 && !dealerCode ? sql`
     WITH fiscal AS (
       SELECT
         CASE
@@ -907,7 +901,7 @@ async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date, deal
   }
 }
 async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, dealerCode: DealerFilter = null): Promise<AdvisorLeaderboardRow[]> {
-  const result = await db.execute((await hasDailySummaryV2()) && !dealerCode ? sql`
+  const result = await db.execute(HAS_DAILY_SUMMARY_V2 && !dealerCode ? sql`
     WITH advisor_totals AS (
       SELECT
         COALESCE(NULLIF(service_advisor, ''), 'Unspecified') AS name,
@@ -1346,6 +1340,42 @@ function createBaseRowsCacheKey(startDate?: Date, endDate?: Date, dealerCode: De
   return `platinum:business-excellence:ro-billing:base-rows:v11:${startDate ? toDateInputValue(startDate) : 'all'}:${endDate ? toDateInputValue(endDate) : 'all'}:${dealerCode || 'all'}`
 }
 
+async function getPreparedBaseRows({
+  startDate,
+  endDate,
+  dealerCode,
+}: {
+  startDate?: Date
+  endDate?: Date
+  dealerCode?: DealerFilter
+}) {
+  const baseRowsCacheKey = createBaseRowsCacheKey(startDate, endDate, dealerCode)
+
+  return getCachedData(
+    `${baseRowsCacheKey}:prepared:v1`,
+    async () => {
+      const sheetData = await getCachedData(
+        baseRowsCacheKey,
+        () => fetchRows({ startDate, endDate, dealerCode }),
+        CACHE_TTL_SECONDS
+      )
+      const rowsWithBillDate = (Array.isArray(sheetData.rows) ? sheetData.rows : []).filter((row) => !!parseBillDate(row))
+
+      return {
+        id: sheetData.id,
+        brand: sheetData.brand,
+        sheetName: sheetData.sheetName,
+        uploadedAt: sheetData.uploadedAt,
+        totalRows: sheetData.totalRows,
+        rowsWithBillDate,
+        rowsWithBillDateCount: rowsWithBillDate.length,
+        filterOptions: buildFilterOptions(rowsWithBillDate),
+      }
+    },
+    CACHE_TTL_SECONDS
+  )
+}
+
 function createCacheKey(searchParams: URLSearchParams) {
   const stableParams = Array.from(searchParams.entries())
     .sort(([a], [b]) => a.localeCompare(b))
@@ -1739,21 +1769,19 @@ export async function GET(request: Request) {
       const windowEnds = Object.values(windows).flatMap((period) => [period.cyEnd, period.lyEnd])
       const relationalStart = view === 'fy' ? undefined : new Date(Math.min(...windowStarts.map((date) => date.getTime()), startDate.getTime()))
       const relationalEnd = view === 'fy' ? undefined : new Date(Math.max(...windowEnds.map((date) => date.getTime()), endDate.getTime()))
-      const baseRowsCacheKey = createBaseRowsCacheKey(relationalStart, relationalEnd, dealerCode)
-      const sheetData = await timer.time('base-rows', () => getCachedData(
-        baseRowsCacheKey,
-        () => fetchRows({ startDate: relationalStart, endDate: relationalEnd, dealerCode }),
-        CACHE_TTL_SECONDS
-      ))
-      const allRows = Array.isArray(sheetData.rows) ? sheetData.rows : []
-      const rowsWithBillDate = allRows.filter((row) => !!parseBillDate(row))
+      const preparedBaseRows = await timer.time('prepared-base-rows', () => getPreparedBaseRows({
+        startDate: relationalStart,
+        endDate: relationalEnd,
+        dealerCode,
+      }))
+      const rowsWithBillDate = preparedBaseRows.rowsWithBillDate
       const filteredRows = applyFilters(rowsWithBillDate, searchParams)
       const baseResponse = {
         sheet: {
-          id: sheetData.id,
-          brand: sheetData.brand,
-          sheetName: sheetData.sheetName,
-          uploadedAt: sheetData.uploadedAt,
+          id: preparedBaseRows.id,
+          brand: preparedBaseRows.brand,
+          sheetName: preparedBaseRows.sheetName,
+          uploadedAt: preparedBaseRows.uploadedAt,
         },
         analysisType,
         dateBasis: 'Bill Date',
@@ -1761,10 +1789,10 @@ export async function GET(request: Request) {
           startDate: toDateInputValue(startDate),
           endDate: toDateInputValue(endDate),
         },
-        filterOptions: buildFilterOptions(rowsWithBillDate),
+        filterOptions: preparedBaseRows.filterOptions,
         rowCounts: {
-          totalRows: sheetData.totalRows,
-          rowsWithBillDate: rowsWithBillDate.length,
+          totalRows: preparedBaseRows.totalRows,
+          rowsWithBillDate: preparedBaseRows.rowsWithBillDateCount,
           filteredRows: filteredRows.length,
         },
         meta: baseFastResponse.meta,

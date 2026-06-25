@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -23,6 +24,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+const RESPONSE_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
 
 const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const tableExistsCache = new Map<string, boolean>()
@@ -392,8 +394,7 @@ function rsaDedupKpiSql(startDate: string, endDate: string) {
 async function tableExists(tableName: string) {
   if (tableExistsCache.has(tableName)) return tableExistsCache.get(tableName)!
 
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-  const exists = Boolean(resultRows(result)[0]?.exists)
+  const exists = await analyticsTableExists(tableName)
   tableExistsCache.set(tableName, exists)
   return exists
 }
@@ -1425,7 +1426,9 @@ export async function GET(request: Request) {
       ))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(data), timing.serverTiming)
+    return withServerTiming(NextResponse.json(data, {
+      headers: { 'Cache-Control': RESPONSE_CACHE_CONTROL },
+    }), timing.serverTiming)
   } catch (error) {
     timer.finish()
     console.error('Failed to build Business Excellence overview:', error)

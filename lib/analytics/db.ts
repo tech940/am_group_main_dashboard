@@ -1,4 +1,5 @@
 import { getAnalyticsProvider } from './index'
+import { analyticsTableExists } from './table-exists'
 
 /**
  * Drop-in analytics database executor for dashboard API routes and lib modules.
@@ -9,7 +10,7 @@ export const analyticsDb = {
     const result = await getAnalyticsProvider().execute(query)
     return result.rows
   },
-  tableExists: (tableName: string) => getAnalyticsProvider().tableExists(tableName),
+  tableExists: (tableName: string) => analyticsTableExists(tableName),
 }
 
 export async function analyticsExecute<T = Record<string, unknown>>(query: unknown): Promise<T[]> {

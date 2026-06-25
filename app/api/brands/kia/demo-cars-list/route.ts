@@ -2,6 +2,8 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableColumnSet } from '@/lib/analytics/table-columns'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData, invalidateCachePattern } from '@/lib/redis/cache-utils'
@@ -61,19 +63,11 @@ function getFilters(searchParams: URLSearchParams): DemoCarsFilters {
 }
 
 async function tableExists(tableName: string) {
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-  return Boolean(resultRows(result)[0]?.exists)
+  return await analyticsTableExists(tableName)
 }
 
 async function getTableColumns(tableName: string) {
-  const result = await db.execute(sql`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = ${tableName}
-  `)
-
-  return new Set(resultRows(result).map((row) => String(row.column_name || '').trim()).filter(Boolean))
+  return await analyticsTableColumnSet(tableName)
 }
 
 async function ensureDemoVehicleDetailsSchema() {

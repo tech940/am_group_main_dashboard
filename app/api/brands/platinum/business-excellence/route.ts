@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableColumns } from '@/lib/analytics/table-columns'
 import { getCachedData, invalidateCachePattern } from '@/lib/redis/cache-utils'
 import { CACHE_KEYS, CACHE_TTL } from '@/lib/redis/client'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
@@ -133,51 +134,59 @@ function roBillingStatsSql(table: BusinessExcellenceTable, startDate?: string | 
   `
 }
 
-async function getColumns(table: BusinessExcellenceTable) {
-  const rows = await db.execute(sql`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = ${table.table}
-    ORDER BY ordinal_position
-  `)
+async function getRoBillingStats(table: BusinessExcellenceTable, startDate?: string | null, endDate?: string | null, dealerCode?: string | null) {
+  return getCachedData(
+    `${CACHE_KEYS.BUSINESS_EXCELLENCE}:ro-billing-stats:v1:${table.slug}:start:${startDate || 'none'}:end:${endDate || 'none'}:dealer:${dealerCode || 'all'}`,
+    async () => {
+      const statsRows = await db.execute(roBillingStatsSql(table, startDate, endDate, dealerCode))
+      const stats = statsRows[0]
+      return {
+        uploadedAt: stats?.uploadedAt || null,
+        totalRows: Number(stats?.totalRows || 0),
+      }
+    },
+    CACHE_TTL_SECONDS
+  )
+}
 
-  return rows.map((row) => String(row.column_name))
+async function getColumns(table: BusinessExcellenceTable) {
+  return await analyticsTableColumns(table.table)
 }
 
 async function getTableMetadata(table: BusinessExcellenceTable) {
-  const [columns, stats] = await Promise.all([
-    getColumns(table),
-    db.execute(sql`
-      SELECT
-        COUNT(*)::int AS "totalRows",
-        MAX(uploaded_at) AS "uploadedAt"
-      FROM ${tableSql(table)}
-    `),
-  ])
+  return getCachedData(
+    `${CACHE_KEYS.BUSINESS_EXCELLENCE}:table-metadata:v1:${table.slug}`,
+    async () => {
+      const [columns, stats] = await Promise.all([
+        getColumns(table),
+        getRoBillingStats(table),
+      ])
 
-  return {
-    id: table.slug,
-    brand: 'platinum',
-    sheetName: table.sheetName,
-    tableName: table.table,
-    columns,
-    uploadedAt: stats[0]?.uploadedAt || null,
-    totalRows: Number(stats[0]?.totalRows || 0),
-  }
+      return {
+        id: table.slug,
+        brand: 'platinum',
+        sheetName: table.sheetName,
+        tableName: table.table,
+        columns,
+        uploadedAt: stats.uploadedAt,
+        totalRows: stats.totalRows,
+      }
+    },
+    CACHE_TTL_SECONDS
+  )
 }
 
 async function fetchMetadata() {
   const table = BUSINESS_EXCELLENCE_TABLES[0]
-  const statsRows = await db.execute(roBillingStatsSql(table))
-  const stats = statsRows[0]
+  const stats = await getRoBillingStats(table)
   return [{
     id: table.slug,
     brand: 'platinum',
     sheetName: table.sheetName,
     tableName: table.table,
     columns: RO_BILLING_PROJECTED_COLUMNS,
-    uploadedAt: stats?.uploadedAt || null,
-    totalRows: Number(stats?.totalRows || 0),
+    uploadedAt: stats.uploadedAt,
+    totalRows: stats.totalRows,
   }]
 }
 
@@ -236,11 +245,10 @@ async function fetchTableRows({
   }
 
   if (table.slug === 'am_platinum_ro_billing_report') {
-    const [statsRows, rowsResult] = await Promise.all([
-      db.execute(roBillingStatsSql(table, startDate, endDate, dealerCode)),
+    const [stats, rowsResult] = await Promise.all([
+      getRoBillingStats(table, startDate, endDate, dealerCode),
       db.execute(roBillingProjectedRowsSql(table, selectedLimit, selectedOffset, startDate, endDate, dealerCode)),
     ])
-    const stats = statsRows[0]
 
     return {
       id: table.slug,
@@ -248,8 +256,8 @@ async function fetchTableRows({
       sheetName: table.sheetName,
       tableName: table.table,
       columns: RO_BILLING_PROJECTED_COLUMNS,
-      uploadedAt: stats?.uploadedAt || null,
-      totalRows: Number(stats?.totalRows || 0),
+      uploadedAt: stats.uploadedAt,
+      totalRows: stats.totalRows,
       page,
       limit: selectedLimit,
       rows: rowsResult,

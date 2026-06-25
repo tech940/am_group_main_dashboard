@@ -1,7 +1,9 @@
 import path from 'path'
+import { readFile } from 'fs/promises'
 import ExcelJS from 'exceljs'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import {
@@ -44,6 +46,7 @@ const SERVICE_DASHBOARD_TEMPLATE = path.join(
   'platinum',
   'service-dashboard-template.xlsx',
 )
+let templateBufferPromise: Promise<Uint8Array> | null = null
 
 function resultRows(result: unknown): NumericRow[] {
   return Array.isArray(result) ? result as NumericRow[] : []
@@ -61,6 +64,10 @@ function parseDateInput(value: string | null | undefined) {
 
 function monthStart(value: string) {
   return `${value.slice(0, 7)}-01`
+}
+
+function cacheKey(kind: 'latest-date' | 'metrics' | 'preview', endDate: string, dealerCode: DealerFilter) {
+  return `platinum:service-dashboard:${kind}:${PLATINUM_SERVICE_DASHBOARD_VERSION}:${dealerCode || 'all'}:${endDate}`
 }
 
 function serviceCategorySql(column = 'work_type') {
@@ -88,22 +95,34 @@ function emptyCategoryCounts() {
   ) as ServiceDashboardMetrics['intake']
 }
 
+async function loadTemplateBuffer() {
+  if (!templateBufferPromise) {
+    templateBufferPromise = readFile(SERVICE_DASHBOARD_TEMPLATE)
+  }
+  return templateBufferPromise
+}
+
 async function tableExists(tableName: string) {
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-  return Boolean(resultRows(result)[0]?.exists)
+  return await analyticsTableExists(tableName)
 }
 
 async function resolveExportDate(requested: string | null, dealerCode: DealerFilter) {
   const parsed = parseDateInput(requested)
   if (parsed) return parsed
-  const result = await db.execute(sql`
-    SELECT MAX(bill_date)::text AS max_date
-    FROM am_platinum_ro_billing_report
-    WHERE bill_date IS NOT NULL
-      ${platinumRoBillingDealerFilter(dealerCode)}
-  `)
-  return parseDateInput(String(resultRows(result)[0]?.max_date || ''))
-    || new Date().toISOString().slice(0, 10)
+  return getCachedData(
+    cacheKey('latest-date', 'latest', dealerCode),
+    async () => {
+      const result = await db.execute(sql`
+        SELECT MAX(bill_date)::text AS max_date
+        FROM am_platinum_ro_billing_report
+        WHERE bill_date IS NOT NULL
+          ${platinumRoBillingDealerFilter(dealerCode)}
+      `)
+      return parseDateInput(String(resultRows(result)[0]?.max_date || ''))
+        || new Date().toISOString().slice(0, 10)
+    },
+    CACHE_TTL.DASHBOARD,
+  )
 }
 
 async function fetchIntake(startDate: string, endDate: string, dealerCode: DealerFilter) {
@@ -479,10 +498,6 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
   }
 }
 
-function cacheKey(kind: 'metrics' | 'preview', endDate: string, dealerCode: DealerFilter) {
-  return `platinum:service-dashboard:${kind}:${PLATINUM_SERVICE_DASHBOARD_VERSION}:${dealerCode || 'all'}:${endDate}`
-}
-
 async function getMetrics(endDate: string | null, dealerCode: DealerFilter) {
   const resolvedEndDate = await resolveExportDate(endDate, dealerCode)
   return getCachedData(
@@ -495,7 +510,7 @@ async function getMetrics(endDate: string | null, dealerCode: DealerFilter) {
 async function buildWorkbook(endDate: string | null, dealerCode: DealerFilter) {
   const metrics = await getMetrics(endDate, dealerCode)
   const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.readFile(SERVICE_DASHBOARD_TEMPLATE)
+  await workbook.xlsx.load(await loadTemplateBuffer() as any)
   workbook.worksheets
     .filter((worksheet) => worksheet.name !== 'Service Dashboard')
     .forEach((worksheet) => workbook.removeWorksheet(worksheet.id))

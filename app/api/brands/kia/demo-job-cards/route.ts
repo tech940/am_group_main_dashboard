@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
+import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData, invalidateCachePattern } from '@/lib/redis/cache-utils'
@@ -43,8 +44,7 @@ function positiveInteger(value: string | null, fallback: number, max = MAX_PAGE_
 }
 
 async function tableExists(tableName: string) {
-  const result = await db.execute(sql`SELECT to_regclass(${`public.${tableName}`}) IS NOT NULL AS exists`)
-  return Boolean(resultRows(result)[0]?.exists)
+  return await analyticsTableExists(tableName)
 }
 
 function getFilters(searchParams: URLSearchParams): DemoFilters {

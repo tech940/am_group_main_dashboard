@@ -1,4 +1,5 @@
 import path from 'path'
+import { readFile } from 'fs/promises'
 import ExcelJS from 'exceljs'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
@@ -43,6 +44,7 @@ type NumericRow = Record<string, unknown>
 const SERVICE_DASHBOARD_TEMPLATE = path.join(process.cwd(), 'templates', 'kia', 'service-dashboard-template.xlsx')
 const SERVICE_DASHBOARD_CACHE_VERSION = 'v3'
 const SERVICE_CATEGORIES = ['Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair'] as const
+let templateBufferPromise: Promise<Uint8Array> | null = null
 
 type ServiceCategory = typeof SERVICE_CATEGORIES[number]
 
@@ -166,6 +168,13 @@ function emptyCategoryCounts(): Record<ServiceCategory, CountPair> {
   }, {} as Record<ServiceCategory, CountPair>)
 }
 
+async function loadTemplateBuffer() {
+  if (!templateBufferPromise) {
+    templateBufferPromise = readFile(SERVICE_DASHBOARD_TEMPLATE)
+  }
+  return templateBufferPromise
+}
+
 function engineOilPartCodeMatchSql(partNoColumn: string, opPartCodeColumn: string) {
   const prefixes = KIA_ENGINE_OIL_PART_CODES.map((code) => code.replace(/'/g, "''"))
   const prefixMatches = prefixes
@@ -183,6 +192,10 @@ function syntheticOilMatchSql(descriptionColumn: string) {
     ${descriptionColumn} ~ '(^|[^a-z])synthetic([^a-z]|$)'
     AND ${descriptionColumn} !~ '(synthetic[[:space:]-]*filter|transmission|gear)'
   )`)
+}
+
+function serviceDashboardCacheKey(kind: 'latest-date' | 'metrics' | 'preview', endDate: string | null, dealerCode: DealerFilter) {
+  return `kia:service-dashboard:${kind}:${SERVICE_DASHBOARD_CACHE_VERSION}:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${dealerCode || 'all'}:${endDate || 'latest'}`
 }
 
 async function fetchEngineOilQtyByPeriod(period: OperationAnalysisPeriod, dealerCode: DealerFilter) {
@@ -224,15 +237,20 @@ async function fetchEngineOilQtyByPeriod(period: OperationAnalysisPeriod, dealer
 
 async function resolveExportDate(requestedEndDate: string | null, dealerCode: DealerFilter) {
   if (requestedEndDate) return requestedEndDate
+  return getCachedData(
+    serviceDashboardCacheKey('latest-date', 'latest', dealerCode),
+    async () => {
+      const result = await db.execute(sql`
+        SELECT MAX(bill_date)::text AS max_date
+        FROM ro_billing_report
+        WHERE bill_date IS NOT NULL
+          ${roBillingDealerFilter(dealerCode)}
+      `)
 
-  const result = await db.execute(sql`
-    SELECT MAX(bill_date)::text AS max_date
-    FROM ro_billing_report
-    WHERE bill_date IS NOT NULL
-      ${roBillingDealerFilter(dealerCode)}
-  `)
-
-  return parseDateInput(String(resultRows(result)[0]?.max_date || '')) || toDateInputValue(new Date())
+      return parseDateInput(String(resultRows(result)[0]?.max_date || '')) || toDateInputValue(new Date())
+    },
+    CACHE_TTL.DASHBOARD,
+  )
 }
 
 async function fetchIntakeCounts(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
@@ -787,10 +805,6 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
 export const buildServiceDashboardMetrics = buildMetrics
 export const buildLiveServiceDashboardMetrics = buildLiveMetrics
 
-function serviceDashboardCacheKey(kind: 'metrics' | 'preview', endDate: string | null, dealerCode: DealerFilter) {
-  return `kia:service-dashboard:${kind}:${SERVICE_DASHBOARD_CACHE_VERSION}:${KIA_BUSINESS_EXCELLENCE_CACHE_VERSION}:${dealerCode || 'all'}:${endDate || 'latest'}`
-}
-
 export async function getCachedServiceDashboardMetrics(
   endDate?: string | null,
   dealerCode?: DealerFilter,
@@ -1157,7 +1171,7 @@ export async function buildKiaServiceDashboardWorkbook({
   const normalizedEndDate = parseDateInput(endDate || null)
   const metrics = await getCachedServiceDashboardMetrics(normalizedEndDate, dealerCode || null)
   const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.readFile(SERVICE_DASHBOARD_TEMPLATE)
+  await workbook.xlsx.load(await loadTemplateBuffer() as any)
 
   workbook.worksheets
     .filter((worksheet) => worksheet.name !== 'Service Dashboard')
