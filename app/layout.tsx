@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { SidebarProvider } from "@/context/sidebar-context";
 import { DashboardQueryProvider } from "@/components/providers/query-provider";
+import { ActivityTracker } from "@/components/providers/activity-tracker";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -46,6 +48,9 @@ export default function RootLayout({
         />
         <DashboardQueryProvider>
           <SidebarProvider>
+            <Suspense fallback={null}>
+              <ActivityTracker />
+            </Suspense>
             {children}
           </SidebarProvider>
         </DashboardQueryProvider>

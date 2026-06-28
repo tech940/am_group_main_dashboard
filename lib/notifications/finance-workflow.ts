@@ -41,6 +41,8 @@ interface NotificationRecipient {
   role: UserRole
 }
 
+type NotificationLoaders = ReturnType<typeof createNotificationLoaders>
+
 function getActorName(actor: NotificationActor) {
   return actor.fullName || actor.email || 'A team member'
 }
@@ -80,8 +82,30 @@ async function getUserById(userId: string | null | undefined) {
   return user || null
 }
 
-async function getRelevantFinanceHeads(order: FinanceOrderRecord) {
-  const creator = await getUserById(order.createdBy)
+function createNotificationLoaders() {
+  const activeUsersByRoleCache = new Map<string, Promise<NotificationRecipient[]>>()
+  const userByIdCache = new Map<string, Promise<NotificationRecipient | null>>()
+
+  return {
+    getActiveUsersByRole(role: UserRole, branch?: string | null) {
+      const key = `${role}:${branch || 'all'}`
+      if (!activeUsersByRoleCache.has(key)) {
+        activeUsersByRoleCache.set(key, getActiveUsersByRole(role, branch))
+      }
+      return activeUsersByRoleCache.get(key)!
+    },
+    getUserById(userId: string | null | undefined) {
+      if (!userId) return Promise.resolve(null)
+      if (!userByIdCache.has(userId)) {
+        userByIdCache.set(userId, getUserById(userId))
+      }
+      return userByIdCache.get(userId)!
+    },
+  }
+}
+
+async function getRelevantFinanceHeads(order: FinanceOrderRecord, loaders: NotificationLoaders) {
+  const creator = await loaders.getUserById(order.createdBy)
 
   if (creator?.role === 'finance_head') {
     return [creator]
@@ -100,7 +124,7 @@ async function getRelevantFinanceHeads(order: FinanceOrderRecord) {
     .limit(1)
 
   if (historyUser?.performedBy) {
-    const financeHead = await getUserById(historyUser.performedBy)
+    const financeHead = await loaders.getUserById(historyUser.performedBy)
 
     if (financeHead?.role === 'finance_head') {
       return [financeHead]
@@ -116,47 +140,48 @@ function dedupeRecipients(recipients: NotificationRecipient[]) {
 
 async function resolveRecipients(event: FinanceWorkflowNotificationEvent, order: FinanceOrderRecord) {
   const branch = getOrderBranchValue(order)
+  const loaders = createNotificationLoaders()
 
   switch (event) {
     case 'finance_order_submitted':
-      return getActiveUsersByRole('accounts', branch)
+      return loaders.getActiveUsersByRole('accounts', branch)
     case 'accounts_verified':
-      return getActiveUsersByRole('ea', branch)
+      return loaders.getActiveUsersByRole('ea', branch)
     case 'accounts_denied':
     case 'accounts_held': {
       const [admins, financeHeads, creator] = await Promise.all([
-        getActiveUsersByRole('admin'),
-        getRelevantFinanceHeads(order),
-        getUserById(order.createdBy),
+        loaders.getActiveUsersByRole('admin'),
+        getRelevantFinanceHeads(order, loaders),
+        loaders.getUserById(order.createdBy),
       ])
       return dedupeRecipients([...admins, ...financeHeads, ...(creator ? [creator] : [])])
     }
     case 'ea_approved':
-      return getActiveUsersByRole('md', branch)
+      return loaders.getActiveUsersByRole('md', branch)
     case 'ea_denied':
     case 'ea_held': {
       const [admins, financeHeads, creator] = await Promise.all([
-        getActiveUsersByRole('admin'),
-        getRelevantFinanceHeads(order),
-        getUserById(order.createdBy),
+        loaders.getActiveUsersByRole('admin'),
+        getRelevantFinanceHeads(order, loaders),
+        loaders.getUserById(order.createdBy),
       ])
       return dedupeRecipients([...admins, ...financeHeads, ...(creator ? [creator] : [])])
     }
     case 'md_denied':
     case 'md_held': {
       const [admins, branchEaUsers, financeHeads, creator] = await Promise.all([
-        getActiveUsersByRole('admin'),
-        getActiveUsersByRole('ea', branch),
-        getRelevantFinanceHeads(order),
-        getUserById(order.createdBy),
+        loaders.getActiveUsersByRole('admin'),
+        loaders.getActiveUsersByRole('ea', branch),
+        getRelevantFinanceHeads(order, loaders),
+        loaders.getUserById(order.createdBy),
       ])
       return dedupeRecipients([...admins, ...branchEaUsers, ...financeHeads, ...(creator ? [creator] : [])])
     }
     case 'md_approved': {
       const [financeHeads, admins, creator] = await Promise.all([
-        getRelevantFinanceHeads(order),
-        getActiveUsersByRole('admin'),
-        getUserById(order.createdBy),
+        getRelevantFinanceHeads(order, loaders),
+        loaders.getActiveUsersByRole('admin'),
+        loaders.getUserById(order.createdBy),
       ])
       return dedupeRecipients([...financeHeads, ...admins, ...(creator ? [creator] : [])])
     }

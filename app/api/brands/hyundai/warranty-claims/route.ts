@@ -13,8 +13,10 @@ import {
   warrantyRecordKey,
   WARRANTY_STATUS_ORDER,
   hyundaiWarrantyBaseCacheKey,
+  claimListYtpExistsSql,
   claimListActionJoinSql,
   ytpActionJoinSql,
+  warrantyRecentActionSql,
 } from '@/lib/hyundai/warranty-claims'
 import {
   HYUNDAI_WARRANTY_ALLOWED_DEALERS,
@@ -106,8 +108,9 @@ async function fetchSourceRows(source: HyundaiWarrantySource) {
       main_op, part_desc, total_amt, labour, part, sublet, igst, cgst, sgst,
       approve_amount_by_hmi, invoice_no, part_type, pdctn_date, uploaded_at,
       source_dealer_code
-    FROM hyundai_warranty_claim_list
+    FROM hyundai_warranty_claim_list l
     WHERE ${dealerFilter}
+      AND ${claimListYtpExistsSql}
   `))
 }
 
@@ -126,17 +129,27 @@ type ActionSummaries = {
   satisfactionKeysByRowId: Set<string>
 }
 
+type CachedActionSummaries = {
+  remarkCountsByRowId: Array<[string, number]>
+  latestByRowId: Array<[string, RawRow]>
+  satisfactionKeysByRowId: string[]
+}
+
 function rowSatisfactionKey(rowId: string, requirementCode: unknown, statusSnapshot: unknown) {
   return `${rowId}|${normalizedText(requirementCode)}|${normalizedText(statusSnapshot)}`
 }
 
 async function fetchActionSummaries(source: HyundaiWarrantySource): Promise<ActionSummaries> {
+  const cached = await getCachedData(
+    `${warrantyCacheKey(source)}:actions`,
+    async (): Promise<CachedActionSummaries> => {
   if (source === 'claim_list') {
     const [countRows, latestRows, satisfactionRows] = await Promise.all([
       db.execute(sql`
         SELECT l.id::text AS source_row_id, COUNT(a.id)::int AS remark_count
         FROM hyundai_warranty_claim_actions a
         INNER JOIN hyundai_warranty_claim_list l ON ${claimListActionJoinSql}
+        WHERE ${warrantyRecentActionSql}
         GROUP BY l.id
       `),
       db.execute(sql`
@@ -145,12 +158,14 @@ async function fetchActionSummaries(source: HyundaiWarrantySource): Promise<Acti
           a.created_by_name, a.created_by_role, a.created_at
         FROM hyundai_warranty_claim_actions a
         INNER JOIN hyundai_warranty_claim_list l ON ${claimListActionJoinSql}
+        WHERE ${warrantyRecentActionSql}
         ORDER BY l.id, a.created_at DESC
       `),
       db.execute(sql`
         SELECT l.id::text AS source_row_id, a.requirement_code, a.status_snapshot
         FROM hyundai_warranty_claim_actions a
         INNER JOIN hyundai_warranty_claim_list l ON ${claimListActionJoinSql}
+        WHERE ${warrantyRecentActionSql}
         GROUP BY l.id, a.requirement_code, a.status_snapshot
       `),
     ])
@@ -174,7 +189,11 @@ async function fetchActionSummaries(source: HyundaiWarrantySource): Promise<Acti
       ))
     })
 
-    return { remarkCountsByRowId, latestByRowId, satisfactionKeysByRowId }
+    return {
+      remarkCountsByRowId: Array.from(remarkCountsByRowId.entries()),
+      latestByRowId: Array.from(latestByRowId.entries()),
+      satisfactionKeysByRowId: Array.from(satisfactionKeysByRowId),
+    }
   }
 
   const [countRows, latestRows, satisfactionRows] = await Promise.all([
@@ -182,6 +201,7 @@ async function fetchActionSummaries(source: HyundaiWarrantySource): Promise<Acti
       SELECT y.id::text AS source_row_id, COUNT(a.id)::int AS remark_count
       FROM hyundai_warranty_claim_actions a
       INNER JOIN hyundai_warranty_claim_ytp y ON ${ytpActionJoinSql}
+      WHERE ${warrantyRecentActionSql}
       GROUP BY y.id
     `),
     db.execute(sql`
@@ -190,12 +210,14 @@ async function fetchActionSummaries(source: HyundaiWarrantySource): Promise<Acti
         a.created_by_name, a.created_by_role, a.created_at
       FROM hyundai_warranty_claim_actions a
       INNER JOIN hyundai_warranty_claim_ytp y ON ${ytpActionJoinSql}
+      WHERE ${warrantyRecentActionSql}
       ORDER BY y.id, a.created_at DESC
     `),
     db.execute(sql`
       SELECT y.id::text AS source_row_id, a.requirement_code, a.status_snapshot
       FROM hyundai_warranty_claim_actions a
       INNER JOIN hyundai_warranty_claim_ytp y ON ${ytpActionJoinSql}
+      WHERE ${warrantyRecentActionSql}
       GROUP BY y.id, a.requirement_code, a.status_snapshot
     `),
   ])
@@ -219,7 +241,20 @@ async function fetchActionSummaries(source: HyundaiWarrantySource): Promise<Acti
     ))
   })
 
-  return { remarkCountsByRowId, latestByRowId, satisfactionKeysByRowId }
+  return {
+    remarkCountsByRowId: Array.from(remarkCountsByRowId.entries()),
+    latestByRowId: Array.from(latestByRowId.entries()),
+    satisfactionKeysByRowId: Array.from(satisfactionKeysByRowId),
+  }
+    },
+    WARRANTY_CACHE_TTL_SECONDS,
+  )
+
+  return {
+    remarkCountsByRowId: new Map(cached.remarkCountsByRowId),
+    latestByRowId: new Map(cached.latestByRowId),
+    satisfactionKeysByRowId: new Set(cached.satisfactionKeysByRowId),
+  }
 }
 
 type WarrantyBaseCache = {
@@ -560,12 +595,13 @@ export async function GET(request: Request) {
       row.r_o_no, row.vin, row.claim_no, row.campaign_no, row.part_desc,
     ].map(text).join(' ').toLowerCase()
     if (search && !haystack.includes(search)) return false
+    if (row.compliance === 'complete') return false
     if (locationDealerCodes?.size && !locationDealerCodes.has(row.dealerCode)) return false
     if (dealerSet.length && !dealerSet.includes(row.dealerCode)) return false
     if (statusSet.length && !statusSet.includes(row.status.toUpperCase())) return false
     if (claimType && text(row.claim_type).toUpperCase() !== claimType) return false
+    if (sla === 'complete') return false
     if (sla === 'action_required' && row.compliance !== 'action_required') return false
-    if (sla === 'complete' && row.compliance !== 'complete') return false
     if (sla === 'within_sla' && row.requirement.required) return false
     if (includeDateRange && startDate && (!row.businessDate || row.businessDate < startDate)) return false
     if (includeDateRange && endDate && (!row.businessDate || row.businessDate > endDate)) return false

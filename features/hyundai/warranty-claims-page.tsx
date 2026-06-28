@@ -509,7 +509,9 @@ export function HyundaiWarrantyClaimsPage({ source, brand = 'hyundai' }: { sourc
   )
 
   useEffect(() => {
-    if (!isFetching && !isPending) setFilterFetchPending(false)
+    if (isFetching || isPending) return
+    const timeoutId = window.setTimeout(() => setFilterFetchPending(false), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [isFetching, isPending])
 
   const historyQuery = useQuery<HistoryPayload>({
@@ -654,7 +656,7 @@ export function HyundaiWarrantyClaimsPage({ source, brand = 'hyundai' }: { sourc
           <KpiCard label="Action Required" value={number(data?.summary.overdueActions)} helper="Missing current SLA response" icon={AlertTriangle} warning={Boolean(data?.summary.overdueActions)} />
           {!isYtp && <KpiCard label="Docket Proof" value={number(data?.summary.suspenseProofPending)} helper="Suspense evidence pending" icon={FileImage} warning={Boolean(data?.summary.suspenseProofPending)} />}
           {!isYtp && <KpiCard label="Unresolved" value={number(data?.summary.unresolved)} helper="Not accepted, denied or cancelled" icon={Clock3} />}
-          {isYtp && <KpiCard label="Compliant" value={number((data?.summary.total || 0) - (data?.summary.overdueActions || 0))} helper="Within SLA or remarked" icon={CheckCircle2} />}
+          {isYtp && <KpiCard label="Compliant" value={number((data?.summary.total || 0) - (data?.summary.overdueActions || 0))} helper="Within SLA" icon={CheckCircle2} />}
         </section>
         ))}
 
@@ -702,7 +704,6 @@ export function HyundaiWarrantyClaimsPage({ source, brand = 'hyundai' }: { sourc
                 <SelectFilter label="SLA" value={draftFilters.sla} onChange={(value) => updateDraftFilter('sla', value)}>
                   <option value="">All SLA states</option>
                   <option value="action_required">Action required</option>
-                  <option value="complete">Remark completed</option>
                   <option value="within_sla">Within SLA</option>
                 </SelectFilter>
                 <SelectFilter label="Claim Type" value={draftFilters.claimType} onChange={(value) => updateDraftFilter('claimType', value)}>

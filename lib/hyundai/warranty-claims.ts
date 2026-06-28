@@ -101,8 +101,52 @@ export function warrantyRecordKey(source: HyundaiWarrantySource, row: Record<str
 }
 
 export function hyundaiWarrantyBaseCacheKey(source: HyundaiWarrantySource) {
-  return `hyundai:warranty:${source}:base`
+  return `hyundai:warranty:${source}:base:v2`
 }
+
+export const warrantyRecentActionSql = sql`a.created_at >= now() - interval '1 month'`
+
+export const claimListYtpExistsSql = sql`
+  EXISTS (
+    SELECT 1
+    FROM hyundai_warranty_claim_ytp y
+    WHERE CASE
+      WHEN COALESCE(UPPER(TRIM(y.source_dealer_code)), '') = 'N6824' THEN 'N6250'
+      ELSE COALESCE(UPPER(TRIM(y.source_dealer_code)), '')
+    END = CASE
+      WHEN COALESCE(UPPER(TRIM(l.source_dealer_code)), '') = 'N6824' THEN 'N6250'
+      ELSE COALESCE(UPPER(TRIM(l.source_dealer_code)), '')
+    END
+      AND (
+        (
+          COALESCE(UPPER(TRIM(y.r_o_no)), '') <> ''
+          AND COALESCE(UPPER(TRIM(l.r_o_no)), '') <> ''
+          AND COALESCE(UPPER(TRIM(y.r_o_no)), '') = COALESCE(UPPER(TRIM(l.r_o_no)), '')
+          AND (
+            (
+              COALESCE(UPPER(TRIM(y.vin)), '') <> ''
+              AND COALESCE(UPPER(TRIM(l.vin)), '') <> ''
+              AND COALESCE(UPPER(TRIM(y.vin)), '') = COALESCE(UPPER(TRIM(l.vin)), '')
+            )
+            OR (
+              COALESCE(UPPER(TRIM(y.claim_type)), '') <> ''
+              AND COALESCE(UPPER(TRIM(l.claim_type)), '') <> ''
+              AND COALESCE(UPPER(TRIM(y.claim_type)), '') = COALESCE(UPPER(TRIM(l.claim_type)), '')
+            )
+            OR COALESCE(UPPER(TRIM(y.vin)), '') = ''
+            OR COALESCE(UPPER(TRIM(l.vin)), '') = ''
+            OR COALESCE(UPPER(TRIM(y.claim_type)), '') = ''
+            OR COALESCE(UPPER(TRIM(l.claim_type)), '') = ''
+          )
+        )
+        OR (
+          COALESCE(UPPER(TRIM(y.vin)), '') <> ''
+          AND COALESCE(UPPER(TRIM(l.vin)), '') <> ''
+          AND COALESCE(UPPER(TRIM(y.vin)), '') = COALESCE(UPPER(TRIM(l.vin)), '')
+        )
+      )
+  )
+`
 
 export const claimListActionJoinSql = sql`
   a.source_type = 'claim_list'
@@ -188,8 +232,9 @@ async function findClaimListRecordById(sourceRowId: string) {
   const result = await db.execute(sql`
     SELECT id, claim_no, claim_date, status, source_dealer_code,
       r_o_no, r_o_date, vin, claim_type
-    FROM hyundai_warranty_claim_list
-    WHERE id::text = ${sourceRowId}
+    FROM hyundai_warranty_claim_list l
+    WHERE l.id::text = ${sourceRowId}
+      AND ${claimListYtpExistsSql}
     LIMIT 1
   `)
   return resultRows(result)[0] || null
@@ -201,8 +246,9 @@ async function findClaimListRecordByKey(recordKey: string) {
   const result = await db.execute(sql`
     SELECT id, claim_no, claim_date, status, source_dealer_code,
       r_o_no, r_o_date, vin, claim_type
-    FROM hyundai_warranty_claim_list
-    WHERE COALESCE(UPPER(TRIM(claim_no)), '') = ${normalizedText(claimNo)}
+    FROM hyundai_warranty_claim_list l
+    WHERE COALESCE(UPPER(TRIM(l.claim_no)), '') = ${normalizedText(claimNo)}
+      AND ${claimListYtpExistsSql}
     LIMIT 1
   `)
   return resultRows(result)[0] || null

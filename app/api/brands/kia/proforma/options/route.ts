@@ -7,15 +7,56 @@ import { kiaPriceDetails } from '@/lib/db/schema'
 import { canApproveKiaProformaForUser } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 import { requirePermission } from '@/lib/permissions/service'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 
 export const dynamic = 'force-dynamic'
 
-function rows(result: unknown) {
-  if (Array.isArray(result)) return result as Record<string, unknown>[]
-  if (result && typeof result === 'object' && 'rows' in result && Array.isArray((result as { rows?: unknown }).rows)) {
-    return (result as { rows: Record<string, unknown>[] }).rows
-  }
-  return []
+function normalizedValue(value: unknown) {
+  return String(value || '').trim()
+}
+
+function distinctSorted(values: Iterable<string>) {
+  return Array.from(new Set(Array.from(values).map((value) => value.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))
+}
+
+async function loadKiaOptionsData() {
+  return getCachedData('kia:proforma:options:data', async () => {
+    const priceRows = await db
+      .select()
+      .from(kiaPriceDetails)
+      .where(sql`LEFT(model, 2) <> '__'`)
+      .orderBy(asc(kiaPriceDetails.model), asc(kiaPriceDetails.trimDescription))
+
+    const models = distinctSorted(priceRows.map((row) => normalizedValue(row.model)))
+    const trims = priceRows
+      .filter((row) => normalizedValue(row.trimDescription))
+      .map((row) => ({
+        model: normalizedValue(row.model),
+        trim_description: normalizedValue(row.trimDescription),
+      }))
+
+    const banks = priceRows
+      .map((row) => ({
+        bank_name: normalizedValue(row.bankName) || normalizedValue(row.hyp),
+        bank_branch: normalizedValue(row.bankBranch),
+      }))
+      .filter((row) => row.bank_name)
+      .filter((row, index, source) => source.findIndex((candidate) => (
+        candidate.bank_name === row.bank_name && candidate.bank_branch === row.bank_branch
+      )) === index)
+      .sort((a, b) => a.bank_name.localeCompare(b.bank_name) || a.bank_branch.localeCompare(b.bank_branch))
+
+    const insuranceCompanies = distinctSorted(priceRows.map((row) => normalizedValue(row.insuranceCompany)))
+
+    return {
+      prices: priceRows,
+      models,
+      trims,
+      banks,
+      insuranceCompanies,
+    }
+  }, CACHE_TTL.DASHBOARD)
 }
 
 export async function GET() {
@@ -30,18 +71,7 @@ export async function GET() {
     const profile = await ensureKiaUserProfile(appUser)
     if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const [priceRows, modelRows, trimRows, bankRows, insuranceRows] = await Promise.all([
-      db.select().from(kiaPriceDetails).where(sql`LEFT(model, 2) <> '__'`).orderBy(asc(kiaPriceDetails.model), asc(kiaPriceDetails.trimDescription)),
-      db.execute(sql`SELECT DISTINCT model FROM kia_price_details WHERE NULLIF(TRIM(model), '') IS NOT NULL AND LEFT(model, 2) <> '__' ORDER BY model`),
-      db.execute(sql`SELECT DISTINCT model, trim_description FROM kia_price_details WHERE NULLIF(TRIM(trim_description), '') IS NOT NULL AND LEFT(model, 2) <> '__' ORDER BY model, trim_description`),
-      db.execute(sql`
-        SELECT DISTINCT COALESCE(NULLIF(TRIM(bank_name), ''), NULLIF(TRIM(hyp), '')) AS bank_name, bank_branch
-        FROM kia_price_details
-        WHERE COALESCE(NULLIF(TRIM(bank_name), ''), NULLIF(TRIM(hyp), '')) IS NOT NULL
-        ORDER BY bank_name, bank_branch
-      `),
-      db.execute(sql`SELECT DISTINCT insurance_company FROM kia_price_details WHERE NULLIF(TRIM(insurance_company), '') IS NOT NULL ORDER BY insurance_company`),
-    ])
+    const optionsData = await loadKiaOptionsData()
 
     return NextResponse.json({
       currentUser: {
@@ -52,11 +82,7 @@ export async function GET() {
         isApprover: await canApproveKiaProformaForUser(appUser, profile.approver),
       },
       profile,
-      prices: priceRows,
-      models: rows(modelRows).map((row) => String(row.model || '')).filter(Boolean),
-      trims: rows(trimRows),
-      banks: rows(bankRows),
-      insuranceCompanies: rows(insuranceRows).map((row) => String(row.insurance_company || '')).filter(Boolean),
+      ...optionsData,
     })
   } catch (error) {
     console.error('Error in GET /api/brands/kia/proforma/options:', error)

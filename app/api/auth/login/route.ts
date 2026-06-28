@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
+import { logUserActivity } from '@/lib/activity/user-activity'
 import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
@@ -29,7 +30,9 @@ export async function POST(request: NextRequest) {
 
     const [appUser] = await db
       .select({
+        id: users.id,
         role: users.role,
+        brand: users.brand,
       })
       .from(users)
       .where(and(
@@ -39,13 +42,31 @@ export async function POST(request: NextRequest) {
       ))
       .limit(1)
 
+    const redirectTo = appUser?.role === 'finance_head'
+      ? '/finance-orders'
+      : appUser?.role === 'md'
+        ? '/purchase-orders'
+        : '/dashboard'
+
+    await logUserActivity({
+      actor: {
+        id: appUser?.id || null,
+        supabaseId: data.user.id,
+        email: data.user.email || email,
+        brand: appUser?.brand || null,
+      },
+      eventType: 'login',
+      routePath: '/auth/login',
+      sectionKey: 'auth/login',
+      metadata: {
+        redirectTo,
+      },
+      request,
+    })
+
     return NextResponse.json({
       success: true,
-      redirectTo: appUser?.role === 'finance_head'
-        ? '/finance-orders'
-        : appUser?.role === 'md'
-          ? '/purchase-orders'
-          : '/dashboard',
+      redirectTo,
     })
   } catch (error) {
     console.error('Error in POST /api/auth/login:', error)

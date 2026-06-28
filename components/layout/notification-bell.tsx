@@ -39,6 +39,10 @@ type NotificationRowShape = {
   action_url?: string | null
   purchaseOrderId?: string | null
   purchase_order_id?: string | null
+  entityType?: string | null
+  entity_type?: string | null
+  entityId?: string | null
+  entity_id?: string | null
   referenceNumber?: string | null
   reference_number?: string | null
   workflowStage?: string | null
@@ -75,6 +79,8 @@ function normalizeNotification(raw: NotificationRowShape): AppNotification {
     type: raw.type,
     actionUrl: raw.actionUrl || raw.action_url || null,
     purchaseOrderId: raw.purchaseOrderId || raw.purchase_order_id || null,
+    entityType: raw.entityType || raw.entity_type || null,
+    entityId: raw.entityId || raw.entity_id || null,
     referenceNumber: raw.referenceNumber || raw.reference_number || null,
     workflowStage: raw.workflowStage || raw.workflow_stage || null,
     targetRole: raw.targetRole || raw.target_role || null,

@@ -41,6 +41,8 @@ interface NotificationRecipient {
   role: UserRole
 }
 
+type NotificationLoaders = ReturnType<typeof createNotificationLoaders>
+
 const STAGE_LABELS: Record<string, string> = {
   initial_submission: 'Initial Submission',
   vendor_information: 'Vendor Information',
@@ -101,12 +103,35 @@ async function getUserById(userId: string | null | undefined) {
   return user || null
 }
 
+function createNotificationLoaders() {
+  const activeUsersByRoleCache = new Map<string, Promise<NotificationRecipient[]>>()
+  const userByIdCache = new Map<string, Promise<NotificationRecipient | null>>()
+
+  return {
+    getActiveUsersByRole(role: UserRole, branch?: string | null) {
+      const key = `${role}:${branch || 'all'}`
+      if (!activeUsersByRoleCache.has(key)) {
+        activeUsersByRoleCache.set(key, getActiveUsersByRole(role, branch))
+      }
+      return activeUsersByRoleCache.get(key)!
+    },
+    getUserById(userId: string | null | undefined) {
+      if (!userId) return Promise.resolve(null)
+      if (!userByIdCache.has(userId)) {
+        userByIdCache.set(userId, getUserById(userId))
+      }
+      return userByIdCache.get(userId)!
+    },
+  }
+}
+
 async function addAssignedRecipientForRoles(
   recipients: NotificationRecipient[],
   order: PurchaseOrderRecord,
-  roles: UserRole[]
+  roles: UserRole[],
+  loaders: NotificationLoaders,
 ) {
-  const assignedUser = await getUserById(order.assignedTo)
+  const assignedUser = await loaders.getUserById(order.assignedTo)
 
   if (!assignedUser || !roles.includes(assignedUser.role)) {
     return recipients
@@ -115,8 +140,8 @@ async function addAssignedRecipientForRoles(
   return dedupeRecipients([...recipients, assignedUser])
 }
 
-async function getRelevantPurchaseManagers(order: PurchaseOrderRecord) {
-  const assignedUser = await getUserById(order.assignedTo)
+async function getRelevantPurchaseManagers(order: PurchaseOrderRecord, loaders: NotificationLoaders) {
+  const assignedUser = await loaders.getUserById(order.assignedTo)
 
   if (assignedUser?.role === 'purchase_manager') {
     return [assignedUser]
@@ -135,14 +160,14 @@ async function getRelevantPurchaseManagers(order: PurchaseOrderRecord) {
     .limit(1)
 
   if (historyUser?.performedBy) {
-    const user = await getUserById(historyUser.performedBy)
+    const user = await loaders.getUserById(historyUser.performedBy)
 
     if (user) {
       return [user]
     }
   }
 
-  return getActiveUsersByRole('purchase_manager')
+  return loaders.getActiveUsersByRole('purchase_manager')
 }
 
 function dedupeRecipients(recipients: NotificationRecipient[]) {
@@ -150,23 +175,25 @@ function dedupeRecipients(recipients: NotificationRecipient[]) {
 }
 
 async function resolveRecipients(event: WorkflowNotificationEvent, order: PurchaseOrderRecord) {
+  const loaders = createNotificationLoaders()
+
   switch (event) {
     case 'initial_submission_submitted':
-      return addAssignedRecipientForRoles(await getActiveUsersByRole('ea', order.brand), order, ['ea'])
+      return addAssignedRecipientForRoles(await loaders.getActiveUsersByRole('ea', order.brand), order, ['ea'], loaders)
     case 'vendor_information_submitted':
-      return addAssignedRecipientForRoles(await getActiveUsersByRole('ea', order.brand), order, ['ea'])
+      return addAssignedRecipientForRoles(await loaders.getActiveUsersByRole('ea', order.brand), order, ['ea'], loaders)
     case 'ea_approved':
-      return addAssignedRecipientForRoles(await getActiveUsersByRole('md', order.brand), order, ['md'])
+      return addAssignedRecipientForRoles(await loaders.getActiveUsersByRole('md', order.brand), order, ['md'], loaders)
     case 'md_approved':
-      return getRelevantPurchaseManagers(order)
+      return getRelevantPurchaseManagers(order, loaders)
     case 'grn_submitted':
-      return addAssignedRecipientForRoles(await getActiveUsersByRole('accounts'), order, ['accounts'])
+      return addAssignedRecipientForRoles(await loaders.getActiveUsersByRole('accounts'), order, ['accounts'], loaders)
     case 'ea_held': {
       const [admins, branchMdUsers, purchaseManagers, originalSubmitter] = await Promise.all([
-        getActiveUsersByRole('admin'),
-        getActiveUsersByRole('md', order.brand),
-        getRelevantPurchaseManagers(order),
-        getUserById(order.createdBy),
+        loaders.getActiveUsersByRole('admin'),
+        loaders.getActiveUsersByRole('md', order.brand),
+        getRelevantPurchaseManagers(order, loaders),
+        loaders.getUserById(order.createdBy),
       ])
 
       return dedupeRecipients([
@@ -179,10 +206,10 @@ async function resolveRecipients(event: WorkflowNotificationEvent, order: Purcha
     case 'md_denied':
     case 'md_held': {
       const [admins, branchEaUsers, purchaseManagers, originalSubmitter] = await Promise.all([
-        getActiveUsersByRole('admin'),
-        getActiveUsersByRole('ea', order.brand),
-        getRelevantPurchaseManagers(order),
-        getUserById(order.createdBy),
+        loaders.getActiveUsersByRole('admin'),
+        loaders.getActiveUsersByRole('ea', order.brand),
+        getRelevantPurchaseManagers(order, loaders),
+        loaders.getUserById(order.createdBy),
       ])
 
       return dedupeRecipients([
@@ -194,10 +221,10 @@ async function resolveRecipients(event: WorkflowNotificationEvent, order: Purcha
     }
     case 'ea_denied': {
       const [admins, branchMdUsers, purchaseManagers, originalSubmitter] = await Promise.all([
-        getActiveUsersByRole('admin'),
-        getActiveUsersByRole('md', order.brand),
-        getRelevantPurchaseManagers(order),
-        getUserById(order.createdBy),
+        loaders.getActiveUsersByRole('admin'),
+        loaders.getActiveUsersByRole('md', order.brand),
+        getRelevantPurchaseManagers(order, loaders),
+        loaders.getUserById(order.createdBy),
       ])
 
       return dedupeRecipients([

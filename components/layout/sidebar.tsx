@@ -16,6 +16,7 @@ import {
   KeyRound,
   Lock,
   ShoppingCart,
+  Banknote,
   Landmark,
   Loader2
 } from 'lucide-react'
@@ -53,6 +54,7 @@ const brandNavigation = [
         name: 'Sales',
         key: 'sales',
         submenus: [
+          { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
         ],
@@ -187,11 +189,13 @@ const alwaysVisibleBrandKeys = new Set<string>()
 const sidebarPermissionByHref: Record<string, string> = {
   '/purchase-orders': 'purchase_orders.view',
   '/finance-orders': 'finance_orders.view',
+  '/petty-cash': 'petty_cash.view',
   '/am-finance': 'am_finance.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',
   '/brands/kia/service-appointment': 'kia.service_appointment.view',
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
   '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
+  '/brands/kia/sales-report': 'kia.sales_report.view',
   '/brands/kia/proforma': 'kia.proforma.view',
   '/brands/kia/insurance': 'kia.insurance.view',
   '/brands/hyundai/business-excellence/overview': 'hyundai.business_excellence.view',
@@ -244,6 +248,7 @@ export function Sidebar() {
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
   const { userRole, canAccessAdmin, isSuperAdmin, userBrand, loading } = useUserRole()
   const canAccessFinanceOrders = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'accounts', 'finance_head'].includes(userRole || '')
+  const canAccessPettyCash = ['admin', 'super_admin', 'branch_admin', 'ea', 'md', 'accounts'].includes(userRole || '')
   const canAccessAmFinance = ['admin', 'super_admin', 'ceo', 'md', 'ea'].includes(userRole || '')
 
   useEffect(() => {
@@ -494,6 +499,55 @@ export function Sidebar() {
                     {!collapsed && (
                       <>
                         <span className="flex-1 text-left text-sm">Finance Orders</span>
+                        <Lock className="h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                ))}
+
+                {(canAccessPettyCash || permissionMap) && (hasPermission('petty_cash.view') ? (
+                  <Link
+                    href="/petty-cash"
+                    target="_blank"
+                    rel="noreferrer"
+                    prefetch={false}
+                    onClick={handleSidebarLinkClick}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
+                      pathname === '/petty-cash'
+                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
+                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
+                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                    )}
+                  >
+                    <div className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      pathname === '/petty-cash' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
+                    )}>
+                      <Banknote className={cn(
+                        "h-4.5 w-4.5 transition-colors",
+                        pathname === '/petty-cash' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
+                      )} />
+                    </div>
+                    {!collapsed && (
+                      <span className="flex-1 text-left text-sm">Petty Cash</span>
+                    )}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={showLockedSectionMessage}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl bg-white/10 text-indigo-50/65 transition-all duration-200 outline-none cursor-pointer group border-l-4 border-transparent pl-3',
+                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                    )}
+                  >
+                    <div className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-white/12">
+                      <Banknote className="h-4.5 w-4.5" />
+                    </div>
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1 text-left text-sm">Petty Cash</span>
                         <Lock className="h-4 w-4" />
                       </>
                     )}

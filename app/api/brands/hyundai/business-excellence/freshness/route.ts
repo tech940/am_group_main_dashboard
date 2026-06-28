@@ -8,12 +8,11 @@ import {
   normalizeHyundaiDealerCode,
 } from '@/lib/hyundai/dealer-branch'
 import { getCachedData } from '@/lib/redis/cache-utils'
-import { CACHE_TTL } from '@/lib/redis/client'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
-const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
+const CACHE_TTL_SECONDS = 60
 
 type FreshnessSource = {
   table: string
@@ -210,7 +209,7 @@ export async function GET(request: Request) {
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
     const data = await timer.time('response-cache', () => getCachedData(
-      `hyundai:business-excellence:freshness:v2:${reportKey}:${dealerCode || 'all'}`,
+      `hyundai:business-excellence:freshness:v3:${reportKey}:${dealerCode || 'all'}`,
       async () => {
         const sourceFreshness = await readSourceFreshness(sources, dealerCode)
         const sourceUpdatedAt = sourceFreshness
@@ -230,7 +229,13 @@ export async function GET(request: Request) {
     ))
 
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(data), timing.serverTiming)
+    return withServerTiming(NextResponse.json(data, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+      },
+    }), timing.serverTiming)
   } catch (error) {
     timer.finish()
     console.error('Failed to read Hyundai Business Excellence freshness:', error)

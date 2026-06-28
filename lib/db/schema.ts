@@ -12,6 +12,10 @@ export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['submitt
 export const financeOrderStageEnum = pgEnum('finance_order_stage', ['finance_head_submission', 'accounts_verification', 'ea_approval', 'md_approval', 'completed'])
 export const financeOrderStatusEnum = pgEnum('finance_order_status', ['draft', 'awaiting_accounts_verification', 'accounts_verified', 'accounts_denied', 'accounts_on_hold', 'awaiting_ea_approval', 'ea_approved', 'ea_denied', 'ea_on_hold', 'awaiting_md_approval', 'md_approved', 'md_denied', 'md_on_hold', 'completed', 'cancelled'])
 export const paymentModeEnum = pgEnum('payment_mode', ['cash', 'cheque', 'bank_transfer', 'upi', 'credit_card', 'other'])
+export const pettyCashRequestStatusEnum = pgEnum('petty_cash_request_status', ['draft', 'submitted', 'ea_pending', 'ea_approved', 'ea_on_hold', 'ea_rejected', 'md_pending', 'md_approved', 'md_on_hold', 'md_rejected', 'accounts_pending', 'accounts_on_hold', 'approved', 'rejected', 'cancelled'])
+export const pettyCashExpenseStatusEnum = pgEnum('petty_cash_expense_status', ['pending', 'ea_approved', 'ea_rejected', 'md_approved', 'md_rejected', 'accounts_pending', 'approved', 'rejected', 'cancelled'])
+export const pettyCashAllocationStatusEnum = pgEnum('petty_cash_allocation_status', ['active', 'closed', 'cancelled'])
+export const pettyCashLedgerEntryTypeEnum = pgEnum('petty_cash_ledger_entry_type', ['allocation', 'expense', 'adjustment', 'closure'])
 
 // Users table (extends Supabase auth.users)
 export const users = pgTable('users', {
@@ -273,6 +277,8 @@ export const notifications = pgTable('notifications', {
   type: text('type').notNull(), // 'info', 'success', 'warning', 'error'
   actionUrl: text('action_url'),
   purchaseOrderId: uuid('purchase_order_id'),
+  entityType: text('entity_type'),
+  entityId: uuid('entity_id'),
   referenceNumber: text('reference_number'),
   workflowStage: text('workflow_stage'),
   targetRole: roleEnum('target_role'),
@@ -284,6 +290,7 @@ export const notifications = pgTable('notifications', {
 }, (table) => ({
   notificationsUserReadCreatedIdx: index('notifications_user_read_created_idx').on(table.userId, table.isRead, table.createdAt),
   notificationsPurchaseOrderIdx: index('notifications_purchase_order_idx').on(table.purchaseOrderId),
+  notificationsEntityIdx: index('notifications_entity_idx').on(table.entityType, table.entityId),
   notificationsUserDedupeIdx: uniqueIndex('notifications_user_dedupe_idx').on(table.userId, table.dedupeKey),
 }))
 
@@ -299,6 +306,34 @@ export const activityLogs = pgTable('activity_logs', {
   userAgent: text('user_agent'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
+
+export const userActivityEvents = pgTable('user_activity_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  supabaseId: text('supabase_id'),
+  email: text('email'),
+  sessionId: text('session_id'),
+  eventType: text('event_type').notNull(),
+  routePath: text('route_path'),
+  routeQuery: text('route_query'),
+  pageTitle: text('page_title'),
+  brand: text('brand'),
+  module: text('module'),
+  sectionKey: text('section_key'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  userActivityEventsUserCreatedIdx: index('user_activity_events_user_created_idx').on(table.userId, table.createdAt),
+  userActivityEventsSupabaseCreatedIdx: index('user_activity_events_supabase_created_idx').on(table.supabaseId, table.createdAt),
+  userActivityEventsEmailCreatedIdx: index('user_activity_events_email_created_idx').on(table.email, table.createdAt),
+  userActivityEventsTypeCreatedIdx: index('user_activity_events_type_created_idx').on(table.eventType, table.createdAt),
+  userActivityEventsBrandCreatedIdx: index('user_activity_events_brand_created_idx').on(table.brand, table.createdAt),
+  userActivityEventsModuleCreatedIdx: index('user_activity_events_module_created_idx').on(table.module, table.createdAt),
+  userActivityEventsSectionCreatedIdx: index('user_activity_events_section_created_idx').on(table.sectionKey, table.createdAt),
+  userActivityEventsSessionCreatedIdx: index('user_activity_events_session_created_idx').on(table.sessionId, table.createdAt),
+}))
 
 // Dashboard Settings table
 export const dashboardSettings = pgTable('dashboard_settings', {
@@ -480,6 +515,201 @@ export const financeOrderComments = pgTable('finance_order_comments', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 }, (table) => ({
   financeOrderCommentsOrderIdx: index('finance_order_comments_order_idx').on(table.financeOrderId),
+}))
+
+export type PettyCashRequestFormData = {
+  employeeId?: string | null
+  location?: string | null
+  dealerCode?: string | null
+  dealerName?: string | null
+  department?: string | null
+  advanceType?: string | null
+  previousAdvance?: string | null
+  typeOfPayment?: string | null
+  remarks?: string | null
+  uploadBillUrls?: string[]
+  uploadDocumentUrls?: string[]
+}
+
+export type PettyCashExpenseFormData = {
+  date?: string | null
+  particulars?: string | null
+  department?: string | null
+  vendorName?: string | null
+  receivedBy?: string | null
+  purposeOfExpense?: string | null
+  balanceEntered?: string | null
+  remarks?: string | null
+  uploadBillUrls?: string[]
+}
+
+export const pettyCashCategories = pgTable('petty_cash_categories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  slug: text('slug').unique().notNull(),
+  description: text('description'),
+  isActive: boolean('is_active').default(true).notNull(),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pettyCashCategoriesSlugIdx: uniqueIndex('petty_cash_categories_slug_idx').on(table.slug),
+  pettyCashCategoriesActiveIdx: index('petty_cash_categories_active_idx').on(table.isActive, table.sortOrder),
+}))
+
+export const pettyCashRequests = pgTable('petty_cash_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  requestNumber: text('request_number').unique().notNull(),
+  branchId: text('branch_id').notNull(),
+  status: pettyCashRequestStatusEnum('status').default('draft').notNull(),
+  currentStage: text('current_stage').default('draft').notNull(),
+  requestedByName: text('requested_by_name').notNull(),
+  requestedByEmail: text('requested_by_email').notNull(),
+  department: text('department'),
+  categoryId: uuid('category_id').references(() => pettyCashCategories.id, { onDelete: 'set null' }),
+  requestedAmount: decimal('requested_amount', { precision: 14, scale: 2 }).notNull(),
+  allocatedAmount: decimal('allocated_amount', { precision: 14, scale: 2 }),
+  purpose: text('purpose').notNull(),
+  requestForm: jsonb('request_form').$type<PettyCashRequestFormData>().default({}).notNull(),
+  supportingFiles: jsonb('supporting_files').$type<string[]>().default([]).notNull(),
+  eaApprovedBy: uuid('ea_approved_by').references(() => users.id),
+  eaApprovedAt: timestamp('ea_approved_at', { withTimezone: true }),
+  eaRemarks: text('ea_remarks'),
+  mdApprovedBy: uuid('md_approved_by').references(() => users.id),
+  mdApprovedAt: timestamp('md_approved_at', { withTimezone: true }),
+  mdRemarks: text('md_remarks'),
+  accountsApprovedBy: uuid('accounts_approved_by').references(() => users.id),
+  accountsApprovedAt: timestamp('accounts_approved_at', { withTimezone: true }),
+  accountsRemarks: text('accounts_remarks'),
+  rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+  rejectedBy: uuid('rejected_by').references(() => users.id),
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  pettyCashRequestsBranchStatusCreatedIdx: index('petty_cash_requests_branch_status_created_idx').on(table.branchId, table.status, table.createdAt),
+  pettyCashRequestsCreatedByIdx: index('petty_cash_requests_created_by_idx').on(table.createdBy, table.createdAt),
+  pettyCashRequestsCategoryIdx: index('petty_cash_requests_category_idx').on(table.categoryId),
+  pettyCashRequestsNumberIdx: uniqueIndex('petty_cash_requests_number_idx').on(table.requestNumber),
+}))
+
+export const pettyCashAllocations = pgTable('petty_cash_allocations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  allocationNumber: text('allocation_number').unique().notNull(),
+  requestId: uuid('request_id').references(() => pettyCashRequests.id, { onDelete: 'restrict' }).notNull(),
+  branchId: text('branch_id').notNull(),
+  allocatedTo: uuid('allocated_to').references(() => users.id).notNull(),
+  allocatedBy: uuid('allocated_by').references(() => users.id).notNull(),
+  allocatedAmount: decimal('allocated_amount', { precision: 14, scale: 2 }).notNull(),
+  spentAmount: decimal('spent_amount', { precision: 14, scale: 2 }).default('0').notNull(),
+  status: pettyCashAllocationStatusEnum('status').default('active').notNull(),
+  notes: text('notes'),
+  allocatedAt: timestamp('allocated_at', { withTimezone: true }).defaultNow().notNull(),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pettyCashAllocationsBranchStatusCreatedIdx: index('petty_cash_allocations_branch_status_created_idx').on(table.branchId, table.status, table.createdAt),
+  pettyCashAllocationsAllocatedToStatusIdx: index('petty_cash_allocations_allocated_to_status_idx').on(table.allocatedTo, table.status),
+  pettyCashAllocationsRequestIdx: uniqueIndex('petty_cash_allocations_request_idx').on(table.requestId),
+  pettyCashAllocationsNumberIdx: uniqueIndex('petty_cash_allocations_number_idx').on(table.allocationNumber),
+  pettyCashAllocationsOneActiveIdx: uniqueIndex('petty_cash_allocations_one_active_idx').on(table.branchId, table.allocatedTo).where(sql`${table.status} = 'active'`),
+}))
+
+export const pettyCashExpenses = pgTable('petty_cash_expenses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  expenseNumber: text('expense_number').unique().notNull(),
+  allocationId: uuid('allocation_id').references(() => pettyCashAllocations.id, { onDelete: 'restrict' }).notNull(),
+  branchId: text('branch_id').notNull(),
+  status: pettyCashExpenseStatusEnum('status').default('pending').notNull(),
+  currentStage: text('current_stage').default('ea_approval').notNull(),
+  expenseDate: date('expense_date').notNull(),
+  particulars: text('particulars').notNull(),
+  department: text('department'),
+  categoryId: uuid('category_id').references(() => pettyCashCategories.id, { onDelete: 'set null' }),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  vendorName: text('vendor_name'),
+  receivedBy: text('received_by'),
+  purpose: text('purpose').notNull(),
+  expenseForm: jsonb('expense_form').$type<PettyCashExpenseFormData>().default({}).notNull(),
+  billFiles: jsonb('bill_files').$type<string[]>().default([]).notNull(),
+  eaApprovedBy: uuid('ea_approved_by').references(() => users.id),
+  eaApprovedAt: timestamp('ea_approved_at', { withTimezone: true }),
+  eaRemarks: text('ea_remarks'),
+  mdApprovedBy: uuid('md_approved_by').references(() => users.id),
+  mdApprovedAt: timestamp('md_approved_at', { withTimezone: true }),
+  mdRemarks: text('md_remarks'),
+  accountsApprovedBy: uuid('accounts_approved_by').references(() => users.id),
+  accountsApprovedAt: timestamp('accounts_approved_at', { withTimezone: true }),
+  accountsRemarks: text('accounts_remarks'),
+  rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+  rejectedBy: uuid('rejected_by').references(() => users.id),
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  pettyCashExpensesBranchStatusCreatedIdx: index('petty_cash_expenses_branch_status_created_idx').on(table.branchId, table.status, table.createdAt),
+  pettyCashExpensesAllocationStatusCreatedIdx: index('petty_cash_expenses_allocation_status_created_idx').on(table.allocationId, table.status, table.createdAt),
+  pettyCashExpensesCreatedByIdx: index('petty_cash_expenses_created_by_idx').on(table.createdBy, table.createdAt),
+  pettyCashExpensesRequestCategoryIdx: index('petty_cash_expenses_category_idx').on(table.categoryId),
+  pettyCashExpensesNumberIdx: uniqueIndex('petty_cash_expenses_number_idx').on(table.expenseNumber),
+}))
+
+export const pettyCashExpenseAttachments = pgTable('petty_cash_expense_attachments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  expenseId: uuid('expense_id').references(() => pettyCashExpenses.id, { onDelete: 'cascade' }).notNull(),
+  fileName: text('file_name').notNull(),
+  filePath: text('file_path').notNull(),
+  fileUrl: text('file_url'),
+  fileSize: integer('file_size').notNull(),
+  mimeType: text('mime_type').notNull(),
+  uploadedBy: uuid('uploaded_by').references(() => users.id).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pettyCashExpenseAttachmentsExpenseIdx: index('petty_cash_expense_attachments_expense_idx').on(table.expenseId, table.createdAt),
+}))
+
+export const pettyCashApprovalHistory = pgTable('petty_cash_approval_history', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  entityType: text('entity_type').notNull(),
+  requestId: uuid('request_id').references(() => pettyCashRequests.id, { onDelete: 'cascade' }),
+  expenseId: uuid('expense_id').references(() => pettyCashExpenses.id, { onDelete: 'cascade' }),
+  action: text('action').notNull(),
+  stage: text('stage').notNull(),
+  performedBy: uuid('performed_by').references(() => users.id).notNull(),
+  userRole: text('user_role').notNull(),
+  remarks: text('remarks'),
+  previousStatus: text('previous_status'),
+  newStatus: text('new_status'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pettyCashApprovalHistoryRequestIdx: index('petty_cash_approval_history_request_idx').on(table.requestId, table.createdAt),
+  pettyCashApprovalHistoryExpenseIdx: index('petty_cash_approval_history_expense_idx').on(table.expenseId, table.createdAt),
+  pettyCashApprovalHistoryActorIdx: index('petty_cash_approval_history_actor_idx').on(table.performedBy, table.createdAt),
+}))
+
+export const pettyCashLedgerEntries = pgTable('petty_cash_ledger_entries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  allocationId: uuid('allocation_id').references(() => pettyCashAllocations.id, { onDelete: 'restrict' }).notNull(),
+  requestId: uuid('request_id').references(() => pettyCashRequests.id, { onDelete: 'set null' }),
+  expenseId: uuid('expense_id').references(() => pettyCashExpenses.id, { onDelete: 'set null' }),
+  branchId: text('branch_id').notNull(),
+  entryType: pettyCashLedgerEntryTypeEnum('entry_type').notNull(),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  balanceAfter: decimal('balance_after', { precision: 14, scale: 2 }).notNull(),
+  description: text('description').notNull(),
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pettyCashLedgerAllocationCreatedIdx: index('petty_cash_ledger_allocation_created_idx').on(table.allocationId, table.createdAt),
+  pettyCashLedgerBranchCreatedIdx: index('petty_cash_ledger_branch_created_idx').on(table.branchId, table.createdAt),
+  pettyCashLedgerExpenseIdx: uniqueIndex('petty_cash_ledger_expense_idx').on(table.expenseId).where(sql`${table.expenseId} IS NOT NULL`),
 }))
 
 export const financeSheet = pgTable('finance_sheet', {
@@ -897,6 +1127,10 @@ export const usersRelations = relations(users, ({ many }) => ({
   attachments: many(attachments),
   notifications: many(notifications),
   activityLogs: many(activityLogs),
+  userActivityEvents: many(userActivityEvents),
+  pettyCashRequests: many(pettyCashRequests),
+  pettyCashAllocations: many(pettyCashAllocations),
+  pettyCashExpenses: many(pettyCashExpenses),
 }))
 
 export const vehiclesRelations = relations(vehicles, ({ many }) => ({
@@ -1060,6 +1294,105 @@ export const financeOrderCommentsRelations = relations(financeOrderComments, ({ 
   }),
   user: one(users, {
     fields: [financeOrderComments.userId],
+    references: [users.id],
+  }),
+}))
+
+export const pettyCashCategoriesRelations = relations(pettyCashCategories, ({ many }) => ({
+  requests: many(pettyCashRequests),
+  expenses: many(pettyCashExpenses),
+}))
+
+export const pettyCashRequestsRelations = relations(pettyCashRequests, ({ one, many }) => ({
+  creator: one(users, {
+    fields: [pettyCashRequests.createdBy],
+    references: [users.id],
+  }),
+  category: one(pettyCashCategories, {
+    fields: [pettyCashRequests.categoryId],
+    references: [pettyCashCategories.id],
+  }),
+  allocation: many(pettyCashAllocations),
+  history: many(pettyCashApprovalHistory),
+  ledgerEntries: many(pettyCashLedgerEntries),
+}))
+
+export const pettyCashAllocationsRelations = relations(pettyCashAllocations, ({ one, many }) => ({
+  request: one(pettyCashRequests, {
+    fields: [pettyCashAllocations.requestId],
+    references: [pettyCashRequests.id],
+  }),
+  allocatedToUser: one(users, {
+    fields: [pettyCashAllocations.allocatedTo],
+    references: [users.id],
+  }),
+  allocatedByUser: one(users, {
+    fields: [pettyCashAllocations.allocatedBy],
+    references: [users.id],
+  }),
+  expenses: many(pettyCashExpenses),
+  ledgerEntries: many(pettyCashLedgerEntries),
+}))
+
+export const pettyCashExpensesRelations = relations(pettyCashExpenses, ({ one, many }) => ({
+  allocation: one(pettyCashAllocations, {
+    fields: [pettyCashExpenses.allocationId],
+    references: [pettyCashAllocations.id],
+  }),
+  creator: one(users, {
+    fields: [pettyCashExpenses.createdBy],
+    references: [users.id],
+  }),
+  category: one(pettyCashCategories, {
+    fields: [pettyCashExpenses.categoryId],
+    references: [pettyCashCategories.id],
+  }),
+  attachments: many(pettyCashExpenseAttachments),
+  history: many(pettyCashApprovalHistory),
+  ledgerEntries: many(pettyCashLedgerEntries),
+}))
+
+export const pettyCashExpenseAttachmentsRelations = relations(pettyCashExpenseAttachments, ({ one }) => ({
+  expense: one(pettyCashExpenses, {
+    fields: [pettyCashExpenseAttachments.expenseId],
+    references: [pettyCashExpenses.id],
+  }),
+  uploader: one(users, {
+    fields: [pettyCashExpenseAttachments.uploadedBy],
+    references: [users.id],
+  }),
+}))
+
+export const pettyCashApprovalHistoryRelations = relations(pettyCashApprovalHistory, ({ one }) => ({
+  request: one(pettyCashRequests, {
+    fields: [pettyCashApprovalHistory.requestId],
+    references: [pettyCashRequests.id],
+  }),
+  expense: one(pettyCashExpenses, {
+    fields: [pettyCashApprovalHistory.expenseId],
+    references: [pettyCashExpenses.id],
+  }),
+  actor: one(users, {
+    fields: [pettyCashApprovalHistory.performedBy],
+    references: [users.id],
+  }),
+}))
+
+export const pettyCashLedgerEntriesRelations = relations(pettyCashLedgerEntries, ({ one }) => ({
+  allocation: one(pettyCashAllocations, {
+    fields: [pettyCashLedgerEntries.allocationId],
+    references: [pettyCashAllocations.id],
+  }),
+  request: one(pettyCashRequests, {
+    fields: [pettyCashLedgerEntries.requestId],
+    references: [pettyCashRequests.id],
+  }),
+  expense: one(pettyCashExpenses, {
+    fields: [pettyCashLedgerEntries.expenseId],
+    references: [pettyCashExpenses.id],
+  }),
+  creator: one(users, {
+    fields: [pettyCashLedgerEntries.createdBy],
     references: [users.id],
   }),
 }))

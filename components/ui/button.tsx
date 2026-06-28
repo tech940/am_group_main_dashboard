@@ -9,11 +9,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "border border-[color-mix(in_srgb,var(--dashboard-action-bg)_55%,transparent)] bg-[var(--dashboard-action-bg)] text-[var(--dashboard-action-fg)] shadow-sm hover:bg-[var(--dashboard-action-hover)] disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none",
+        default: "app-primary-action border border-[color-mix(in_srgb,var(--dashboard-action-bg)_55%,transparent)] bg-[var(--dashboard-action-bg)] text-[var(--dashboard-action-fg)] shadow-sm hover:bg-[var(--dashboard-action-hover)] disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline:
-          "border border-[var(--dashboard-primary-border)] bg-white text-[var(--dashboard-primary)] shadow-sm hover:bg-[var(--dashboard-primary-soft)] hover:text-[var(--dashboard-action-bg)] disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none",
+          "app-outline-action border border-[var(--dashboard-primary-border)] bg-white text-[var(--dashboard-primary)] shadow-sm hover:bg-[var(--dashboard-primary-soft)] hover:text-[var(--dashboard-action-bg)] disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",

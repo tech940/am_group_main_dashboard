@@ -7,6 +7,8 @@ export interface AppNotification {
   type: NotificationLevel
   actionUrl: string | null
   purchaseOrderId: string | null
+  entityType: string | null
+  entityId: string | null
   referenceNumber: string | null
   workflowStage: string | null
   targetRole: string | null

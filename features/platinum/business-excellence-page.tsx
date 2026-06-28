@@ -1619,12 +1619,18 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   const freshnessQuery = useQuery<BusinessFreshnessResponse>({
     queryKey: ['business-excellence', 'freshness', freshnessQueryString],
     queryFn: async () => {
-      const response = await fetch(`/api/brands/platinum/business-excellence/freshness?${freshnessQueryString}`)
+      const response = await fetch(`/api/brands/platinum/business-excellence/freshness?${freshnessQueryString}`, {
+        cache: 'no-store',
+        headers: {
+          'cache-control': 'no-cache',
+        },
+      })
       logApiTimings(response, 'business-excellence-freshness')
       return await readPlatinumJson<BusinessFreshnessResponse>(response, 'Business Excellence freshness')
     },
     enabled: freshnessReady,
-    staleTime: DASHBOARD_STALE_TIME_MS,
+    staleTime: 60 * 1000,
+    refetchOnMount: 'always',
     retry: 1,
   })
 

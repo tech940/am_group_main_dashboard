@@ -724,7 +724,7 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date, compariso
     ),
     dedup AS (
       SELECT bill_key, ro_key, bill_date, labour_amt, part_amt
-      FROM ranked
+      FROM ranked_rows
       WHERE row_rank = 1
     )
     SELECT
@@ -905,7 +905,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
     ),
     dedup AS (
       SELECT service_advisor AS name, bill_key, ro_key, labour_amt, part_amt, total_amt
-      FROM ranked_rows
+      FROM ranked
       WHERE row_rank = 1
     ),
     advisor_totals AS (
@@ -1236,7 +1236,7 @@ function createCacheKey(searchParams: URLSearchParams) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}:${value}`)
     .join('|')
-  return `hyundai:business-excellence:ro-billing:v28:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `hyundai:business-excellence:ro-billing:v29:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function normalizeGroupBy(value: string) {

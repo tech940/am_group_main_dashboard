@@ -493,9 +493,19 @@ function normalizeSheetKey(value: string) {
     .replace(/^_+|_+$/g, '')
 }
 
-async function fetchJsonWithTimeout<T>(url: string, label: string, timeoutMs = 12000) {
+async function fetchJsonWithTimeout<T>(
+  url: string,
+  label: string,
+  timeoutMs = 12000,
+  init?: RequestInit,
+) {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const signal = init?.signal
+    ? AbortSignal.any([init.signal, timeoutSignal])
+    : timeoutSignal
   const response = await fetch(url, {
-    signal: AbortSignal.timeout(timeoutMs),
+    ...init,
+    signal,
   })
   logApiTimings(response, label)
   if (!response.ok) {
@@ -1602,11 +1612,19 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
     queryFn: async () => {
       return await fetchJsonWithTimeout<BusinessFreshnessResponse>(
         `/api/brands/hyundai/business-excellence/freshness?${freshnessQueryString}`,
-        'business-excellence-freshness'
+        'business-excellence-freshness',
+        12000,
+        {
+          cache: 'no-store',
+          headers: {
+            'cache-control': 'no-cache',
+          },
+        }
       )
     },
     enabled: Boolean(activeTab || initialReportName),
-    staleTime: DASHBOARD_STALE_TIME_MS,
+    staleTime: 60 * 1000,
+    refetchOnMount: 'always',
     retry: 1,
   })
 
@@ -1876,7 +1894,16 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === HYUNDAI_COMPLAINTS_REPORT || activeTab === SERVICE_DASHBOARD_REPORT) {
+      if (
+        activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT
+        || activeTab === EXECUTIVE_DASHBOARD_REPORT
+        || activeTab === WORKSHOP_PERFORMANCE_REPORT
+        || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET
+        || activeTab === OPEN_RO_REPORT
+        || activeTab === HYUNDAI_COMPLAINTS_REPORT
+        || activeTab === HYUNDAI_SOT_REPORT
+        || activeTab === SERVICE_DASHBOARD_REPORT
+      ) {
         setFetchingRows(null)
         return
       }

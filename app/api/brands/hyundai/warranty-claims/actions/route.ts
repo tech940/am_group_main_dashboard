@@ -12,6 +12,7 @@ import {
   hyundaiWarrantyBaseCacheKey,
   claimListActionJoinSql,
   ytpActionJoinSql,
+  warrantyRecentActionSql,
   type HyundaiWarrantySource,
 } from '@/lib/hyundai/warranty-claims'
 import { isAllowedHyundaiWarrantyDealer } from '@/lib/hyundai/warranty-dealers'
@@ -75,6 +76,7 @@ export async function GET(request: Request) {
         FROM hyundai_warranty_claim_actions a
         INNER JOIN hyundai_warranty_claim_list l ON ${claimListActionJoinSql}
         WHERE l.id::text = ${resolvedRowId}
+          AND ${warrantyRecentActionSql}
         ORDER BY a.created_at DESC
       `))
     : resultRows(await db.execute(sql`
@@ -83,6 +85,7 @@ export async function GET(request: Request) {
         FROM hyundai_warranty_claim_actions a
         INNER JOIN hyundai_warranty_claim_ytp y ON ${ytpActionJoinSql}
         WHERE y.id::text = ${resolvedRowId}
+          AND ${warrantyRecentActionSql}
         ORDER BY a.created_at DESC
       `))
   const actionIds = actions.map((action) => String(action.id))
