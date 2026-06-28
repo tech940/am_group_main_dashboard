@@ -419,11 +419,11 @@ export function Sidebar() {
                       pathname === '/purchase-orders'
                         ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
                         : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
-                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
                     )}
                   >
                     <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
                       pathname === '/purchase-orders' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
                     )}>
                       <ShoppingCart className={cn(
@@ -432,7 +432,7 @@ export function Sidebar() {
                       )} />
                     </div>
                     {!collapsed && (
-                      <span className="flex-1 text-left text-sm">Purchase Orders</span>
+                      <span className="flex-1 text-left text-[13px]">Purchase Orders</span>
                     )}
                   </Link>
                 ) : (
@@ -441,15 +441,15 @@ export function Sidebar() {
                     onClick={showLockedSectionMessage}
                   className={cn(
                     'flex items-center gap-3 rounded-xl bg-white/10 text-indigo-50/65 transition-all duration-200 outline-none cursor-pointer group border-l-4 border-transparent pl-3',
-                    collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                    collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
                   )}
                   >
-                    <div className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-white/12">
+                    <div className="flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg bg-white/12">
                       <ShoppingCart className="h-4.5 w-4.5" />
                     </div>
                     {!collapsed && (
                       <>
-                        <span className="flex-1 text-left text-sm">Purchase Orders</span>
+                        <span className="flex-1 text-left text-[13px]">Purchase Orders</span>
                         <Lock className="h-4 w-4" />
                       </>
                     )}
@@ -468,11 +468,11 @@ export function Sidebar() {
                       pathname === '/finance-orders'
                         ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
                         : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
-                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
                     )}
                   >
                     <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
                       pathname === '/finance-orders' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
                     )}>
                       <Landmark className={cn(
@@ -481,7 +481,7 @@ export function Sidebar() {
                       )} />
                     </div>
                     {!collapsed && (
-                      <span className="flex-1 text-left text-sm">Finance Orders</span>
+                      <span className="flex-1 text-left text-[13px]">Finance Orders</span>
                     )}
                   </Link>
                 ) : (
@@ -490,15 +490,15 @@ export function Sidebar() {
                     onClick={showLockedSectionMessage}
                     className={cn(
                       'flex items-center gap-3 rounded-xl bg-white/10 text-indigo-50/65 transition-all duration-200 outline-none cursor-pointer group border-l-4 border-transparent pl-3',
-                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
                     )}
                   >
-                    <div className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-white/12">
+                    <div className="flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg bg-white/12">
                       <Landmark className="h-4.5 w-4.5" />
                     </div>
                     {!collapsed && (
                       <>
-                        <span className="flex-1 text-left text-sm">Finance Orders</span>
+                        <span className="flex-1 text-left text-[13px]">Finance Orders</span>
                         <Lock className="h-4 w-4" />
                       </>
                     )}
@@ -517,11 +517,11 @@ export function Sidebar() {
                       pathname === '/petty-cash'
                         ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
                         : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
-                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
                     )}
                   >
                     <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
                       pathname === '/petty-cash' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
                     )}>
                       <Banknote className={cn(
@@ -530,7 +530,7 @@ export function Sidebar() {
                       )} />
                     </div>
                     {!collapsed && (
-                      <span className="flex-1 text-left text-sm">Petty Cash</span>
+                      <span className="flex-1 text-left text-[13px]">Petty Cash</span>
                     )}
                   </Link>
                 ) : (
@@ -539,15 +539,15 @@ export function Sidebar() {
                     onClick={showLockedSectionMessage}
                     className={cn(
                       'flex items-center gap-3 rounded-xl bg-white/10 text-indigo-50/65 transition-all duration-200 outline-none cursor-pointer group border-l-4 border-transparent pl-3',
-                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
                     )}
                   >
-                    <div className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-white/12">
+                    <div className="flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg bg-white/12">
                       <Banknote className="h-4.5 w-4.5" />
                     </div>
                     {!collapsed && (
                       <>
-                        <span className="flex-1 text-left text-sm">Petty Cash</span>
+                        <span className="flex-1 text-left text-[13px]">Petty Cash</span>
                         <Lock className="h-4 w-4" />
                       </>
                     )}
@@ -566,11 +566,11 @@ export function Sidebar() {
                       pathname === '/am-finance'
                         ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
                         : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
-                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'w-full py-3 pr-3'
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
                     )}
                   >
                     <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
                       pathname === '/am-finance' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
                     )}>
                       <Landmark className={cn(
@@ -579,7 +579,7 @@ export function Sidebar() {
                       )} />
                     </div>
                     {!collapsed && (
-                      <span className="flex-1 text-left text-sm">AM Finance</span>
+                      <span className="flex-1 text-left text-[13px]">AM Finance</span>
                     )}
                   </Link>
                 )}
@@ -595,11 +595,11 @@ export function Sidebar() {
                         : canAccessAdmin
                           ? 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-indigo-100/80 cursor-pointer group pl-3'
                           : 'bg-white/10 border-l-4 border-transparent text-indigo-50/45 opacity-60 cursor-not-allowed pl-3',
-                      collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'py-3 pr-3'
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'py-2.5 pr-3'
                     )}
                   >
                     <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
                       (openAdmin || pathname?.startsWith('/admin')) ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
                     )}>
                       <Shield className={cn(
@@ -609,7 +609,7 @@ export function Sidebar() {
                     </div>
                     {!collapsed && (
                       <>
-                        <span className="flex-1 text-left text-sm">Admin Panel</span>
+                        <span className="flex-1 text-left text-[13px]">Admin Panel</span>
                         {!canAccessAdmin ? (
                           <Lock className="h-4 w-4 text-slate-500" />
                         ) : (
@@ -629,7 +629,7 @@ export function Sidebar() {
                         prefetch={false}
                         onClick={handleSidebarLinkClick}
                         className={cn(
-                          'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
+                          'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-[11px] font-medium shadow-sm transition-all',
                           pathname?.startsWith('/admin')
                             ? 'border-l-2 border-emerald-100 text-white font-semibold'
                             : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
@@ -642,7 +642,7 @@ export function Sidebar() {
                         href="/admin?tab=access"
                         prefetch={false}
                         onClick={handleSidebarLinkClick}
-                        className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2.5 text-xs font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
+                        className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2 text-[11px] font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
                       >
                         <KeyRound className="h-3.5 w-3.5" />
                         Access Control
@@ -653,7 +653,7 @@ export function Sidebar() {
                           prefetch={false}
                           onClick={handleSidebarLinkClick}
                           className={cn(
-                            'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
+                            'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-[11px] font-medium shadow-sm transition-all',
                             pathname?.startsWith('/admin')
                               ? 'border-l-2 border-emerald-100 text-white font-semibold'
                               : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
@@ -668,7 +668,7 @@ export function Sidebar() {
                           href="/admin?tab=settings"
                           prefetch={false}
                           onClick={handleSidebarLinkClick}
-                          className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2.5 text-xs font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
+                          className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2 text-[11px] font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
                         >
                           <Settings className="h-3.5 w-3.5" />
                           Dashboard Settings
@@ -703,14 +703,14 @@ export function Sidebar() {
                           'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none relative w-full',
                           (isOpen || isActive)
                             ? 'bg-white/22 border-l-4 border-indigo-100 text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
-                            : canOpenBrand
+                          : canOpenBrand
                               ? 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-indigo-100/80 cursor-pointer group pl-3'
                               : 'bg-white/10 border-l-4 border-transparent text-indigo-50/45 opacity-60 cursor-not-allowed pl-3',
-                          collapsed ? 'h-12 w-12 justify-center p-0 mx-auto border-l-0' : 'py-3 pr-3'
+                          collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'py-2.5 pr-3'
                         )}
                       >
                         <div className={cn(
-                          "h-8 w-8 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0 transition-all",
+                          "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center overflow-hidden rounded-lg transition-all",
                           (isOpen || isActive) ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20",
                           brand.logoContainerClassName
                         )}>
@@ -727,7 +727,7 @@ export function Sidebar() {
                         {!collapsed && (
                           <>
                             <span className={cn(
-                              "flex-1 text-left text-sm transition-colors",
+                              "flex-1 text-left text-[13px] transition-colors",
                               (isOpen || isActive) ? "text-white" : "text-indigo-50/85 group-hover:text-white"
                             )}>{brand.name}</span>
                             {brand.comingSoon ? (
@@ -769,7 +769,7 @@ export function Sidebar() {
                                     <button
                                       type="button"
                                       onClick={showLockedSectionMessage}
-                                      className="flex w-full items-center gap-2 rounded-lg border border-white/15 bg-white/8 px-3 py-2 text-left text-[11px] font-black uppercase tracking-[0.16em] text-indigo-50/65 shadow-sm transition-all hover:bg-white/14"
+                                      className="flex w-full items-center gap-2 rounded-lg border border-white/15 bg-white/8 px-3 py-1.5 text-left text-[10px] font-black uppercase tracking-[0.16em] text-indigo-50/65 shadow-sm transition-all hover:bg-white/14"
                                     >
                                       <Shield className="h-3.5 w-3.5" />
                                       <span className="flex-1">{section.name}</span>
@@ -783,7 +783,7 @@ export function Sidebar() {
                                       prefetch={false}
                                       onClick={handleSidebarLinkClick}
                                       className={cn(
-                                        'flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-left text-[11px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
+                                        'flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-left text-[10px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
                                         sectionActive
                                           ? 'bg-white/18 text-white'
                                           : 'bg-white/8 text-indigo-50/75 hover:bg-white/14 hover:text-white'
@@ -798,7 +798,7 @@ export function Sidebar() {
                                     type="button"
                                     onClick={() => hasChildren ? toggleBrandSection(sectionKey) : undefined}
                                     className={cn(
-                                      'flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-left text-[11px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
+                                      'flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-left text-[10px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
                                       sectionActive || sectionOpen
                                         ? 'bg-white/18 text-white'
                                         : 'bg-white/8 text-indigo-50/75 hover:bg-white/14 hover:text-white',
@@ -828,7 +828,7 @@ export function Sidebar() {
                                           key={sub.name}
                                           type="button"
                                           onClick={showLockedSectionMessage}
-                                          className="flex w-full items-center justify-between rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2.5 text-left text-xs font-medium text-indigo-50/65 shadow-sm transition-all hover:bg-white/14"
+                                          className="flex w-full items-center justify-between rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2 text-left text-[11px] font-medium text-indigo-50/65 shadow-sm transition-all hover:bg-white/14"
                                         >
                                           {sub.name}
                                           <Lock className="h-3.5 w-3.5" />
@@ -842,7 +842,7 @@ export function Sidebar() {
                                           prefetch={false}
                                           onClick={handleSidebarLinkClick}
                                           className={cn(
-                                            'block rounded-lg bg-white/10 px-3 py-2.5 text-xs font-medium shadow-sm transition-all',
+                                            'block rounded-lg bg-white/10 px-3 py-2 text-[11px] font-medium shadow-sm transition-all',
                                             active
                                               ? 'border-l-2 border-indigo-100 text-white font-semibold'
                                               : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
