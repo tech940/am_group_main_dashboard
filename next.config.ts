@@ -1,11 +1,8 @@
 import type { NextConfig } from "next";
 
-const isDevelopment = process.env.NODE_ENV === 'development'
-
 const nextConfig: NextConfig = {
   compress: true,
   poweredByHeader: false,
-  distDir: isDevelopment ? '.next' : '.next-build',
   allowedDevOrigins: ['localhost', '127.0.0.1', '10.96.175.247'],
   experimental: {
     authInterrupts: true,
