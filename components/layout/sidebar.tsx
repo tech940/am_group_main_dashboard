@@ -67,7 +67,7 @@ const brandNavigation = [
       {
         name: 'Insurance',
         key: 'insurance',
-        href: '/brands/kia/insurance',
+        href: '/kia-insurance-dashboard/performance',
         submenus: [],
       },
     ],
