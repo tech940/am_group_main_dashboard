@@ -5,6 +5,7 @@ import { BASE_PATH } from './utils'
 
 export function transformHtml(content: string): string {
   content = content.replace(/fetch\(\s*['"`]\/api\//g, `fetch('/api/kia-insurance/`)
+  content = content.replace(/cachedFetch\(\s*['"`]\/api\//g, `cachedFetch('/api/kia-insurance/`)
   content = content.replace(/(<a\s[^>]*?href\s*=\s*)["']\//g, `$1"${BASE_PATH}/`)
   content = content.replace(/location\.href\s*=\s*['"]#?['"]/g, `location.href='${BASE_PATH}'`)
   content = content.replace(/location\.href\s*=\s*['"](?!\/\/|\/api|http|\/kia-insurance)[^'"]*['"]/g, (m) => {
@@ -48,6 +49,7 @@ export function serveLandingHtml(): NextResponse {
   const filePath = path.join(process.cwd(), 'kia-insurance-dashboard', 'landing.html')
   let content = fs.readFileSync(filePath, 'utf8')
   content = content.replace(/fetch\(\s*API\s*\+\s*['"`]\/api\//g, `fetch('/api/kia-insurance/`)
+  content = content.replace(/cachedFetch\(\s*API\s*\+\s*['"`]\/api\//g, `cachedFetch('/api/kia-insurance/`)
   content = content.replace(/const API = ''/g, 'const API = ""')
   content = content.replace(/(<a\s[^>]*?href\s*=\s*)["']\//g, `$1"${BASE_PATH}/`)
   content = content.replace(/if\(!t\)\s*\{[^}]*location\.href\s*=\s*['"]#?['"][^}]*\}/g, '')
