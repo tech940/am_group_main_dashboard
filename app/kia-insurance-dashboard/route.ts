@@ -1,7 +1,5 @@
-import { serveLandingHtml } from '@/lib/kia-insurance/html'
-
-export const dynamic = 'force-dynamic'
+import { redirect } from 'next/navigation'
 
 export async function GET() {
-  return serveLandingHtml()
+  redirect('/kia-insurance-dashboard/performance')
 }
