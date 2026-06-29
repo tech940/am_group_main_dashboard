@@ -41,11 +41,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      redirectTo: appUser?.role === 'finance_head'
-        ? '/finance-orders'
-        : appUser?.role === 'md'
-          ? '/purchase-orders'
-          : '/dashboard',
+      redirectTo: email === 'insurance@amkia.in'
+        ? '/kia-insurance-dashboard/performance'
+        : appUser?.role === 'finance_head'
+          ? '/finance-orders'
+          : appUser?.role === 'md'
+            ? '/purchase-orders'
+            : '/dashboard',
     })
   } catch (error) {
     console.error('Error in POST /api/auth/login:', error)
