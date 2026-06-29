@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         : '/dashboard'
 
     if (email === 'insurance@amkia.in') {
-      redirectTo = '/kia-insurance-dashboard/performance'
+      redirectTo = '/kia-insurance-dashboard/performance?token=insurance-auto-access'
     }
 
     await logUserActivity({

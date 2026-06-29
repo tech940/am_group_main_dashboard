@@ -4,12 +4,13 @@ import path from 'path'
 import { BASE_PATH } from './utils'
 
 export function transformHtml(content: string): string {
-  content = content.replace(/const API = ''/g, `const API = '${BASE_PATH}'`)
   content = content.replace(/fetch\(\s*['"`]\/api\//g, `fetch('/api/kia-insurance/`)
   content = content.replace(/(<a\s[^>]*?href\s*=\s*)["']\//g, `$1"${BASE_PATH}/`)
-  content = content.replace(/if\(!t\)\s*\{[^}]*location\.href\s*=\s*['"]\/['"][^}]*\}else\{/g, '{')
-  content = content.replace(/if\(!t\)\s*\{[^}]*location\.href\s*=\s*['"]\/['"][^}]*\}/g, '')
-  content = content.replace(/if\(!v\.valid\)\{[^}]*location\.href\s*=\s*['"]\/['"][^}]*\}else\{/g, '{')
+  content = content.replace(/location\.href\s*=\s*['"]#?['"]/g, `location.href='${BASE_PATH}'`)
+  content = content.replace(/location\.href\s*=\s*['"](?!\/\/|\/api|http|\/kia-insurance)[^'"]*['"]/g, (m) => {
+    if (m.includes(BASE_PATH)) return m
+    return m.replace(/['"][^'"]*['"]$/, `'${BASE_PATH}'`)
+  })
   content = injectNav(content)
   return content
 }
@@ -37,6 +38,18 @@ export function serveHtml(relativePath: string): NextResponse {
   const content = fs.readFileSync(filePath, 'utf8')
   const transformed = transformHtml(content)
   return new NextResponse(transformed, {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  })
+}
+
+export function serveLandingHtml(): NextResponse {
+  const filePath = path.join(process.cwd(), 'kia-insurance-dashboard', 'landing.html')
+  let content = fs.readFileSync(filePath, 'utf8')
+  content = content.replace(/fetch\(\s*API\s*\+\s*['"`]\/api\//g, `fetch('/api/kia-insurance/`)
+  content = content.replace(/const API = ''/g, 'const API = ""')
+  content = content.replace(/(<a\s[^>]*?href\s*=\s*)["']\//g, `$1"${BASE_PATH}/`)
+  content = content.replace(/if\(!t\)\s*\{[^}]*location\.href\s*=\s*['"]#?['"][^}]*\}/g, '')
+  return new NextResponse(content, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
 }

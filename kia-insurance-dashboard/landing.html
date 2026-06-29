@@ -313,7 +313,7 @@ async function checkAuth() {
   const token = localStorage.getItem('authToken');
   if (!token) return;
   try {
-    const r = await fetch(API + '/api/auth/verify', {
+    const r = await fetch('/api/kia-insurance/auth/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token })
     });
@@ -364,7 +364,7 @@ async function doLogin() {
   err.style.display = 'none';
   btn.disabled = true; btn.textContent = 'Signing in...';
   try {
-    const r = await fetch(API + '/api/auth/login', {
+    const r = await fetch('/api/kia-insurance/auth/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: u, password: p })
     });
@@ -420,7 +420,7 @@ async function doChangePw() {
   if (nw !== cf) { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
   if (nw.length < 4) { err.textContent = 'Password min 4 characters'; err.style.display = 'block'; return; }
   try {
-    const r = await fetch(API + '/api/auth/change-password', {
+    const r = await fetch('/api/kia-insurance/auth/change-password', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: localStorage.getItem('authToken'), currentPassword: cur, newPassword: nw })
     });
@@ -450,7 +450,7 @@ function switchTab(tabId, btn) {
 
 async function loadUsers() {
   try {
-    const r = await fetch(API + '/api/auth/admin/users', {
+    const r = await fetch('/api/kia-insurance/auth/admin/users', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: localStorage.getItem('authToken') })
     });
@@ -496,7 +496,7 @@ async function createUser() {
   err.style.display = 'none';
   if (!u || !p) { err.textContent = 'Username and password required'; err.style.display = 'block'; return; }
   try {
-    const res = await fetch(API + '/api/auth/admin/create-user', {
+    const res = await fetch('/api/kia-insurance/auth/admin/create-user', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: localStorage.getItem('authToken'), username: u, password: p, role: r })
     });
@@ -527,7 +527,7 @@ function saveEditUsername() {
 
 async function updateUsername(userId, newUsername) {
   try {
-    const r = await fetch(API + '/api/auth/admin/update-username', {
+    const r = await fetch('/api/kia-insurance/auth/admin/update-username', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: localStorage.getItem('authToken'), userId: String(userId), newUsername: newUsername })
     });
@@ -556,7 +556,7 @@ function saveResetPw() {
   if (!newPw || newPw.length < 4) { alert('Password must be at least 4 characters'); return; }
   var uid = resetPwTarget;
   closeResetPw();
-  fetch(API + '/api/auth/admin/reset-password', {
+  fetch('/api/kia-insurance/auth/admin/reset-password', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: localStorage.getItem('authToken'), userId: String(uid), newPassword: newPw })
   }).then(function(r) { return r.json(); }).then(function(d) {
@@ -577,7 +577,7 @@ function closeDeleteUser() {
 function confirmDeleteUser() {
   var userId = deleteUserTarget;
   closeDeleteUser();
-  fetch(API + '/api/auth/admin/delete-user', {
+  fetch('/api/kia-insurance/auth/admin/delete-user', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: localStorage.getItem('authToken'), userId: String(userId) })
   }).then(function(r) { return r.json(); }).then(function(d) {
@@ -588,7 +588,7 @@ function confirmDeleteUser() {
 
 async function loadActivity() {
   try {
-    const r = await fetch(API + '/api/auth/admin/activity', {
+    const r = await fetch('/api/kia-insurance/auth/admin/activity', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: localStorage.getItem('authToken') })
     });
@@ -610,7 +610,7 @@ async function loadActivity() {
 function logActivity(action, page, details) {
   const token = localStorage.getItem('authToken');
   if (!token) return;
-  fetch(API + '/api/auth/log-activity', {
+  fetch('/api/kia-insurance/auth/log-activity', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token, action, page, details }),
     keepalive: true
