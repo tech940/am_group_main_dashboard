@@ -255,7 +255,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
           >
             {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </button>
-          <NotificationBell userId={user?.id || null} />
+          <NotificationBell userId={user?.id || null} userRole={user?.role || null} />
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

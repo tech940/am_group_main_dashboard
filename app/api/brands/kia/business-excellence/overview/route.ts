@@ -91,7 +91,7 @@ function resultRows(result: unknown): NumericRow[] {
 }
 
 function numericText(column: ReturnType<typeof sql.raw>) {
-  return sql`COALESCE(NULLIF(regexp_replace(${column}::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)`
+  return sql`CASE WHEN regexp_replace(${column}::text, '[^0-9.-]', '', 'g') ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN regexp_replace(${column}::text, '[^0-9.-]', '', 'g')::numeric ELSE 0 END`
 }
 
 function percent(part: number, total: number) {

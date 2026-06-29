@@ -15,6 +15,9 @@ type AuthUserRow = {
 }
 
 type PostgresClient = ReturnType<typeof postgres>
+const AUTH_STATEMENT_TIMEOUT_MS = 5_000
+const AUTH_LOCK_TIMEOUT_MS = 2_000
+const AUTH_IDLE_IN_TRANSACTION_TIMEOUT_MS = 5_000
 
 const globalForAuthDb = globalThis as unknown as {
   authPostgresClient: PostgresClient | undefined
@@ -44,7 +47,11 @@ const authClient = globalForAuthDb.authPostgresClient ?? postgres(authDatabaseUr
   onnotice: () => {},
   connection: {
     application_name: 'main_dashboard_auth',
-    options: '-c statement_timeout=5000',
+    options: [
+      `-c statement_timeout=${AUTH_STATEMENT_TIMEOUT_MS}`,
+      `-c lock_timeout=${AUTH_LOCK_TIMEOUT_MS}`,
+      `-c idle_in_transaction_session_timeout=${AUTH_IDLE_IN_TRANSACTION_TIMEOUT_MS}`,
+    ].join(' '),
   },
 })
 

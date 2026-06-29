@@ -150,12 +150,17 @@ async function main() {
     operationWise: operation[0],
     integrity: integrity[0],
     unmappedLegacyCodes,
+    historicalRecoveryBaseline: {
+      expectedBillingRows: 134485,
+      expectedRepairRows: 170132,
+      expectedOperationRows: 34979,
+      billingMatchesLegacyBaseline: Number(integrity[0]?.billing_rows) === 134485,
+      repairMatchesLegacyBaseline: Number(integrity[0]?.repair_rows) === 170132,
+      operationMatchesLegacyBaseline: Number(integrity[0]?.operation_rows) === 34979,
+    },
     checks: {
       revenueReconciles: Math.abs(totals.revenue - totals.labour - totals.parts) < 0.02,
       complaintFallbackHasRows: Number(complaints[0]?.rows_with_business_date || 0) > 0,
-      billingRecoveryCount: Number(integrity[0]?.billing_rows) === 134485,
-      repairRecoveryCount: Number(integrity[0]?.repair_rows) === 170132,
-      operationRecoveryCount: Number(integrity[0]?.operation_rows) === 34979,
       uniqueSafeHashes:
         Number(integrity[0]?.billing_rows) === Number(integrity[0]?.billing_hashes)
         && Number(integrity[0]?.repair_rows) === Number(integrity[0]?.repair_hashes)

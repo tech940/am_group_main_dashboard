@@ -1,12 +1,34 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { Banknote, CheckCircle2, Clock3, FileText, Loader2, PauseCircle, Plus, RefreshCw, ShieldCheck, TrendingDown, UploadCloud, XCircle } from 'lucide-react'
+import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  Banknote,
+  CheckCircle2,
+  Clock3,
+  FileText,
+  Loader2,
+  PauseCircle,
+  Plus,
+  ReceiptText,
+  RefreshCw,
+  ShieldCheck,
+  TrendingDown,
+  UploadCloud,
+  XCircle,
+} from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -17,10 +39,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { BRANCH_OPTIONS, getBranchLabel } from '@/lib/branches'
+import { getBranchLabel } from '@/lib/branches'
 import {
   PETTY_CASH_DEPARTMENT_OPTIONS,
-  PETTY_CASH_KIA_DEALER_CODES,
   PETTY_CASH_KIA_LOCATION_OPTIONS,
   PETTY_CASH_PAYMENT_TYPES,
   getPettyCashStatusLabel,
@@ -69,8 +90,6 @@ type PettyCashRequest = {
   requested_by_name?: string
   requestedAmount: string
   requested_amount?: string
-  allocatedAmount?: string | null
-  allocated_amount?: string | null
   purpose: string
   department?: string | null
   createdAt: string
@@ -91,7 +110,6 @@ type PettyCashExpense = {
   expenseDate: string
   expense_date?: string
   particulars: string
-  department?: string | null
   amount: string
   vendorName?: string | null
   vendor_name?: string | null
@@ -125,6 +143,7 @@ type DashboardPayload = {
     spentAmount: number
     remainingAmount: number
     canRequestTopUp: boolean
+    canSubmitExpense: boolean
     topUpThreshold: number
     topUpReason: string
     pendingRequestCount: number
@@ -135,33 +154,22 @@ type DashboardPayload = {
 }
 
 type RequestFormState = {
-  branchId: string
-  employeeId: string
   location: string
-  dealerCode: string
-  dealerName: string
   department: string
-  categoryId: string
   advanceType: string
-  previousAdvance: string
   requestedAmount: string
   typeOfPayment: string
   purpose: string
-  remarks: string
 }
 
 type ExpenseFormState = {
   allocationId: string
   expenseDate: string
-  particulars: string
-  department: string
   categoryId: string
   amount: string
   vendorName: string
   receivedBy: string
   purpose: string
-  balanceEntered: string
-  remarks: string
 }
 
 type RequestWorkflowDialogState = {
@@ -170,70 +178,75 @@ type RequestWorkflowDialogState = {
 } | null
 
 const EMPTY_REQUEST_FORM: RequestFormState = {
-  branchId: '',
-  employeeId: '',
   location: '',
-  dealerCode: '',
-  dealerName: '',
   department: '',
-  categoryId: '',
   advanceType: '',
-  previousAdvance: '',
   requestedAmount: '',
   typeOfPayment: '',
   purpose: '',
-  remarks: '',
 }
 
 const EMPTY_EXPENSE_FORM: ExpenseFormState = {
   allocationId: '',
   expenseDate: new Date().toLocaleDateString('en-CA'),
-  particulars: '',
-  department: '',
   categoryId: '',
   amount: '',
   vendorName: '',
   receivedBy: '',
   purpose: '',
-  balanceEntered: '',
-  remarks: '',
 }
 
-const PETTY_CASH_FETCH_TIMEOUT_MS = 15000
-const PETTY_CASH_EXPENSE_DEPARTMENT_OPTIONS = Array.from(new Set(['SALES', 'SERVICE', ...PETTY_CASH_DEPARTMENT_OPTIONS]))
+const PETTY_CASH_FETCH_TIMEOUT_MS = process.env.NODE_ENV === 'development' ? 60000 : 25000
+const PETTY_CASH_FETCH_RETRY_ATTEMPTS = process.env.NODE_ENV === 'development' ? 2 : 1
 
-function getDefaultPettyCashBranch(user?: PettyCashUser | null) {
-  if (user?.brand && user.brand !== 'all' && BRANCH_OPTIONS.some((branch) => branch.value === user.brand)) {
-    return user.brand
-  }
+function isCreatorRole(role: string) {
+  return role === 'admin' || role === 'branch_admin'
+}
 
-  return BRANCH_OPTIONS[0]?.value || ''
+function isApproverRole(role: string) {
+  return role === 'ea' || role === 'md' || role === 'accounts'
+}
+
+function isExpenseFeedRole(role: string) {
+  return role === 'ea' || role === 'md' || role === 'accounts' || role === 'super_admin'
 }
 
 async function fetchJsonWithTimeout<T>(url: string, label: string) {
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), PETTY_CASH_FETCH_TIMEOUT_MS)
+  let lastError: unknown = null
 
-  try {
-    const response = await fetch(url, { cache: 'no-store', signal: controller.signal })
-    const result = await response.json().catch(() => null)
+  for (let attempt = 1; attempt <= PETTY_CASH_FETCH_RETRY_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), PETTY_CASH_FETCH_TIMEOUT_MS)
 
-    if (!response.ok) {
-      const errorMessage = result && typeof result === 'object' && 'error' in result
-        ? String(result.error)
-        : `Unable to load ${label}`
-      throw new Error(errorMessage)
+    try {
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal })
+      const result = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        const errorMessage = result && typeof result === 'object' && 'error' in result
+          ? String(result.error)
+          : `Unable to load ${label}`
+        throw new Error(errorMessage)
+      }
+
+      return result as T
+    } catch (fetchError) {
+      lastError = fetchError
+      const aborted = fetchError instanceof DOMException && fetchError.name === 'AbortError'
+
+      if (!aborted || attempt >= PETTY_CASH_FETCH_RETRY_ATTEMPTS) {
+        if (aborted) {
+          throw new Error(`${label} timed out after ${Math.round(PETTY_CASH_FETCH_TIMEOUT_MS / 1000)} seconds`)
+        }
+
+        throw fetchError
+      }
+    } finally {
+      window.clearTimeout(timeout)
     }
-
-    return result as T
-  } catch (fetchError) {
-    if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
-      throw new Error(`${label} timed out after ${Math.round(PETTY_CASH_FETCH_TIMEOUT_MS / 1000)} seconds`)
-    }
-    throw fetchError
-  } finally {
-    window.clearTimeout(timeout)
   }
+
+  throw lastError instanceof Error ? lastError : new Error(`Unable to load ${label}`)
 }
 
 function formatCurrency(value: string | number | null | undefined) {
@@ -268,10 +281,6 @@ function normalizeBranchId(item: { branchId?: string; branch_id?: string }) {
   return item.branchId || item.branch_id || ''
 }
 
-function normalizeAmount(item: { requestedAmount?: string; requested_amount?: string; amount?: string }) {
-  return item.requestedAmount || item.requested_amount || item.amount || '0'
-}
-
 function normalizeAllocatedAmount(allocation: PettyCashAllocation | null) {
   return allocation?.allocatedAmount || allocation?.allocated_amount || '0'
 }
@@ -283,7 +292,7 @@ function normalizeSpentAmount(allocation: PettyCashAllocation | null) {
 function getStatusVariant(status: string) {
   if (status.includes('rejected') || status === 'rejected') return 'destructive'
   if (status === 'approved' || status === 'active') return 'success'
-  if (status.includes('pending') || status.includes('on_hold') || status === 'pending' || status === 'accounts_pending') return 'warning'
+  if (status.includes('pending') || status.includes('on_hold') || status === 'pending') return 'warning'
   return 'secondary'
 }
 
@@ -291,7 +300,6 @@ function canActOnRequest(userRole: string, request: PettyCashRequest) {
   return (userRole === 'ea' && ['ea_pending', 'ea_on_hold'].includes(request.status))
     || (userRole === 'md' && ['md_pending', 'md_on_hold'].includes(request.status))
     || (userRole === 'accounts' && ['accounts_pending', 'accounts_on_hold'].includes(request.status))
-    || ((userRole === 'admin' || userRole === 'super_admin') && ['ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold'].includes(request.status))
 }
 
 function stageForRequest(request: PettyCashRequest) {
@@ -300,14 +308,28 @@ function stageForRequest(request: PettyCashRequest) {
   return 'accounts'
 }
 
+function getUploadedFileName(fileUrl: string) {
+  try {
+    const pathname = new URL(fileUrl).pathname
+    return decodeURIComponent(pathname.split('/').pop() || 'Uploaded file')
+  } catch {
+    return fileUrl.split('/').pop() || 'Uploaded file'
+  }
+}
+
+function isPreviewableImage(fileUrl: string) {
+  return /\.(png|jpe?g|webp|gif|heic|heif)(\?|$)/i.test(fileUrl)
+}
+
 function PettyCashPageContent() {
   const [payload, setPayload] = useState<DashboardPayload | null>(null)
   const [ledger, setLedger] = useState<PettyCashLedgerEntry[]>([])
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'expenses' | 'ledger'>('overview')
   const [requestForm, setRequestForm] = useState<RequestFormState>(EMPTY_REQUEST_FORM)
   const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(EMPTY_EXPENSE_FORM)
-  const [requestFiles, setRequestFiles] = useState<string[]>([])
   const [expenseFiles, setExpenseFiles] = useState<string[]>([])
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false)
+  const [expenseDialogOpen, setExpenseDialogOpen] = useState(false)
   const [requestWorkflowDialog, setRequestWorkflowDialog] = useState<RequestWorkflowDialogState>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -316,28 +338,21 @@ function PettyCashPageContent() {
   const loadDashboard = useCallback(async () => {
     setLoading(true)
     setError(null)
+
     try {
       const dashboard = await fetchJsonWithTimeout<DashboardPayload>('/api/petty-cash', 'Petty Cash dashboard')
       setPayload(dashboard)
 
       void fetchJsonWithTimeout<{ ledger: PettyCashLedgerEntry[] }>('/api/petty-cash/reports', 'Petty Cash ledger')
-        .then((ledgerPayload) => {
-          setLedger(ledgerPayload.ledger || [])
-        })
+        .then((ledgerPayload) => setLedger(ledgerPayload.ledger || []))
         .catch((ledgerError) => {
           console.warn('Petty Cash ledger load failed', ledgerError)
           setLedger([])
         })
 
-      const defaultBranch = getDefaultPettyCashBranch(dashboard.user)
-      setRequestForm((current) => ({
-        ...current,
-        branchId: current.branchId || defaultBranch,
-      }))
       setExpenseForm((current) => ({
         ...current,
-        allocationId: current.allocationId || dashboard.currentAllocation?.id || '',
-        balanceEntered: current.balanceEntered || String(dashboard.summary.remainingAmount || ''),
+        allocationId: dashboard.currentAllocation?.id || '',
       }))
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load Petty Cash')
@@ -358,18 +373,13 @@ function PettyCashPageContent() {
 
   const refreshDashboardAfterMutation = useCallback(async () => {
     setError(null)
+
     try {
       const dashboard = await fetchJsonWithTimeout<DashboardPayload>('/api/petty-cash', 'Petty Cash dashboard')
       setPayload(dashboard)
-      const defaultBranch = getDefaultPettyCashBranch(dashboard.user)
-      setRequestForm((current) => ({
-        ...current,
-        branchId: current.branchId || defaultBranch,
-      }))
       setExpenseForm((current) => ({
         ...current,
-        allocationId: current.allocationId || dashboard.currentAllocation?.id || '',
-        balanceEntered: current.balanceEntered || String(dashboard.summary.remainingAmount || ''),
+        allocationId: dashboard.currentAllocation?.id || '',
       }))
       void refreshLedger()
     } catch (loadError) {
@@ -382,9 +392,7 @@ function PettyCashPageContent() {
       void loadDashboard()
     }, 0)
 
-    return () => {
-      window.clearTimeout(timer)
-    }
+    return () => window.clearTimeout(timer)
   }, [loadDashboard])
 
   const currentAllocation = payload?.currentAllocation || null
@@ -393,23 +401,23 @@ function PettyCashPageContent() {
   const remainingAmount = payload?.summary.remainingAmount ?? Math.max(0, allocationAmount - spentAmount)
   const spendPercentage = allocationAmount > 0 ? Math.min(100, Math.round((spentAmount / allocationAmount) * 100)) : 0
   const userRole = payload?.user.role || ''
-  const canCreate = ['admin', 'super_admin', 'branch_admin'].includes(userRole)
+  const canCreate = isCreatorRole(userRole)
   const canRequestTopUp = payload?.summary.canRequestTopUp ?? true
+  const canSubmitExpense = payload?.summary.canSubmitExpense ?? false
   const topUpReason = payload?.summary.topUpReason || ''
-
   const categoryOptions = payload?.categories || []
-
   const visibleRequests = useMemo(() => payload?.requests || [], [payload?.requests])
   const visibleExpenses = useMemo(() => payload?.expenses || [], [payload?.expenses])
+  const expenseFeedTitle = userRole === 'accounts' ? 'Branch Expense Ledger Feed' : 'Recent Branch Expenses'
 
-  async function uploadFiles(files: FileList | null, entity: 'request' | 'expense') {
+  const uploadExpenseFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return
 
     const uploaded: string[] = []
     for (const file of Array.from(files)) {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('entity', entity)
+      formData.append('entity', 'expense')
       const response = await fetch('/api/petty-cash/upload', {
         method: 'POST',
         body: formData,
@@ -419,12 +427,8 @@ function PettyCashPageContent() {
       uploaded.push(result.url)
     }
 
-    if (entity === 'request') {
-      setRequestFiles((current) => [...current, ...uploaded])
-    } else {
-      setExpenseFiles((current) => [...current, ...uploaded])
-    }
-  }
+    setExpenseFiles((current) => [...current, ...uploaded])
+  }, [])
 
   async function submitRequest() {
     if (!canRequestTopUp) {
@@ -434,35 +438,28 @@ function PettyCashPageContent() {
 
     setSubmitting(true)
     setError(null)
+
     try {
       const response = await fetch('/api/petty-cash/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          branchId: requestForm.branchId || getDefaultPettyCashBranch(payload?.user),
           requestedAmount: requestForm.requestedAmount,
           purpose: requestForm.purpose,
           department: requestForm.department || null,
-          categoryId: requestForm.categoryId || null,
           requestForm: {
-            employeeId: requestForm.employeeId,
-            location: requestForm.location,
-            dealerCode: requestForm.dealerCode,
-            dealerName: requestForm.dealerName,
-            department: requestForm.department,
-            advanceType: requestForm.advanceType,
-            previousAdvance: requestForm.previousAdvance,
-            typeOfPayment: requestForm.typeOfPayment,
-            remarks: requestForm.remarks,
-            uploadBillUrls: requestFiles,
+            location: requestForm.location || null,
+            department: requestForm.department || null,
+            advanceType: requestForm.advanceType || null,
+            typeOfPayment: requestForm.typeOfPayment || null,
           },
-          supportingFiles: requestFiles,
         }),
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Request submission failed')
-      setRequestForm({ ...EMPTY_REQUEST_FORM, branchId: getDefaultPettyCashBranch(payload?.user) })
-      setRequestFiles([])
+
+      setRequestForm(EMPTY_REQUEST_FORM)
+      setRequestDialogOpen(false)
       await refreshDashboardAfterMutation()
       setActiveTab('requests')
     } catch (submitError) {
@@ -475,6 +472,7 @@ function PettyCashPageContent() {
   async function submitExpense() {
     setSubmitting(true)
     setError(null)
+
     try {
       const response = await fetch('/api/petty-cash/expenses', {
         method: 'POST',
@@ -482,8 +480,6 @@ function PettyCashPageContent() {
         body: JSON.stringify({
           allocationId: expenseForm.allocationId || currentAllocation?.id,
           expenseDate: expenseForm.expenseDate,
-          particulars: expenseForm.particulars,
-          department: expenseForm.department || null,
           categoryId: expenseForm.categoryId || null,
           amount: expenseForm.amount,
           vendorName: expenseForm.vendorName || null,
@@ -491,13 +487,9 @@ function PettyCashPageContent() {
           purpose: expenseForm.purpose,
           expenseForm: {
             date: expenseForm.expenseDate,
-            particulars: expenseForm.particulars,
-            department: expenseForm.department,
-            vendorName: expenseForm.vendorName,
-            receivedBy: expenseForm.receivedBy,
+            vendorName: expenseForm.vendorName || null,
+            receivedBy: expenseForm.receivedBy || null,
             purposeOfExpense: expenseForm.purpose,
-            balanceEntered: expenseForm.balanceEntered,
-            remarks: expenseForm.remarks,
             uploadBillUrls: expenseFiles,
           },
           billFiles: expenseFiles,
@@ -505,8 +497,13 @@ function PettyCashPageContent() {
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Expense submission failed')
-      setExpenseForm({ ...EMPTY_EXPENSE_FORM, allocationId: currentAllocation?.id || '', balanceEntered: String(remainingAmount || '') })
+
+      setExpenseForm({
+        ...EMPTY_EXPENSE_FORM,
+        allocationId: currentAllocation?.id || '',
+      })
       setExpenseFiles([])
+      setExpenseDialogOpen(false)
       await refreshDashboardAfterMutation()
       setActiveTab('expenses')
     } catch (submitError) {
@@ -519,6 +516,7 @@ function PettyCashPageContent() {
   async function applyRequestWorkflow(id: string, stage: string, action: 'approve' | 'reject' | 'hold', remarks = '') {
     setSubmitting(true)
     setError(null)
+
     try {
       const response = await fetch(`/api/petty-cash/requests/${id}/workflow`, {
         method: 'POST',
@@ -567,7 +565,7 @@ function PettyCashPageContent() {
               <p className="text-xs font-black uppercase tracking-[0.24em] text-teal-700">Branch finance control</p>
               <h1 className="mt-1 text-4xl font-black tracking-tight text-slate-950">Petty Cash</h1>
               <p className="mt-1 max-w-3xl text-sm font-semibold text-slate-500">
-                Requests, approvals, allocations, expense bills, and immutable ledger entries in one controlled workflow.
+                Branch-scoped request approval, live allocation tracking, direct expense posting, and an immutable ledger.
               </p>
             </div>
           </div>
@@ -611,16 +609,39 @@ function PettyCashPageContent() {
           remarksRequired={false}
           onConfirm={async (remarks) => {
             if (!requestWorkflowDialog) return
-            await applyRequestWorkflow(requestWorkflowDialog.request.id, stageForRequest(requestWorkflowDialog.request), requestWorkflowDialog.action, remarks)
+            await applyRequestWorkflow(
+              requestWorkflowDialog.request.id,
+              stageForRequest(requestWorkflowDialog.request),
+              requestWorkflowDialog.action,
+              remarks,
+            )
             setRequestWorkflowDialog(null)
           }}
         />
 
-        {userRole === 'super_admin' && (
-          <div className="rounded-3xl border border-teal-100 bg-teal-50/90 px-5 py-4 text-sm font-bold text-teal-900 shadow-sm">
-            Super Admin testing is enabled: submit a request, approve EA, approve MD, approve Accounts, then submit expenses directly against the active allocation.
-          </div>
-        )}
+        <RequestFormDialog
+          open={requestDialogOpen}
+          onOpenChange={setRequestDialogOpen}
+          requestForm={requestForm}
+          setRequestForm={setRequestForm}
+          submitting={submitting}
+          onSubmit={submitRequest}
+        />
+
+        <ExpenseFormDialog
+          open={expenseDialogOpen}
+          onOpenChange={setExpenseDialogOpen}
+          currentAllocation={currentAllocation}
+          categoryOptions={categoryOptions}
+          expenseForm={expenseForm}
+          setExpenseForm={setExpenseForm}
+          expenseFiles={expenseFiles}
+          setExpenseFiles={setExpenseFiles}
+          uploadExpenseFiles={uploadExpenseFiles}
+          setError={setError}
+          submitting={submitting}
+          onSubmit={submitExpense}
+        />
 
         {canCreate && !canRequestTopUp && (
           <div className="rounded-3xl border border-amber-200 bg-amber-50/95 px-5 py-4 text-sm font-bold text-amber-900 shadow-sm">
@@ -629,149 +650,159 @@ function PettyCashPageContent() {
         )}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Card className="rounded-[28px] border-white/80 bg-white/90 shadow-xl shadow-slate-200/60">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Current Allocation</p>
-                <ShieldCheck className="h-5 w-5 text-teal-600" />
-              </div>
-              <p className="mt-4 text-3xl font-black text-slate-950">{formatCurrency(allocationAmount)}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-500">{currentAllocation ? getBranchLabel(normalizeBranchId(currentAllocation)) : 'No active allocation'}</p>
-            </CardContent>
-          </Card>
-          <Card className="rounded-[28px] border-white/80 bg-white/90 shadow-xl shadow-slate-200/60">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Remaining</p>
-                <Banknote className="h-5 w-5 text-emerald-600" />
-              </div>
-              <p className="mt-4 text-3xl font-black text-emerald-700">{formatCurrency(remainingAmount)}</p>
-              <div className="mt-4 h-2 rounded-full bg-slate-100">
-                <div className="h-2 rounded-full bg-slate-950" style={{ width: `${spendPercentage}%` }} />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-[28px] border-white/80 bg-white/90 shadow-xl shadow-slate-200/60">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Spent</p>
-                <TrendingDown className="h-5 w-5 text-orange-600" />
-              </div>
-              <p className="mt-4 text-3xl font-black text-slate-950">{formatCurrency(spentAmount)}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-500">{spendPercentage}% of active allocation</p>
-            </CardContent>
-          </Card>
-          <Card className="rounded-[28px] border-white/80 bg-white/90 shadow-xl shadow-slate-200/60">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Pending</p>
-                <Clock3 className="h-5 w-5 text-blue-600" />
-              </div>
-              <p className="mt-4 text-3xl font-black text-slate-950">{payload.summary.pendingRequestCount + payload.summary.pendingExpenseCount}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-500">requests and expenses need action</p>
-            </CardContent>
-          </Card>
+          <SummaryCard
+            title="Current Allocation"
+            value={formatCurrency(allocationAmount)}
+            meta={currentAllocation ? getBranchLabel(normalizeBranchId(currentAllocation)) : 'No active allocation'}
+            icon={<ShieldCheck className="h-5 w-5 text-teal-600" />}
+          />
+          <SummaryCard
+            title="Remaining"
+            value={formatCurrency(remainingAmount)}
+            meta={`${spendPercentage}% of allocation used`}
+            icon={<Banknote className="h-5 w-5 text-emerald-600" />}
+            accentValueClass="text-emerald-700"
+          />
+          <SummaryCard
+            title="Spent"
+            value={formatCurrency(spentAmount)}
+            meta="Live deducted from active allocation"
+            icon={<TrendingDown className="h-5 w-5 text-orange-600" />}
+          />
+          <SummaryCard
+            title="Pending Requests"
+            value={String(payload.summary.pendingRequestCount)}
+            meta={isApproverRole(userRole) ? 'Awaiting your stage action' : 'Your live request queue'}
+            icon={<Clock3 className="h-5 w-5 text-blue-600" />}
+          />
         </div>
 
         {activeTab === 'overview' && (
-          <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="space-y-6">
             {canCreate && (
               <Card className="rounded-[32px] border-white/80 bg-white/92 shadow-xl shadow-slate-200/60">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-2xl font-black text-slate-950">
-                    <Plus className="h-5 w-5" />
-                    New Petty Cash Request
-                  </CardTitle>
+                  <CardTitle className="text-2xl font-black text-slate-950">Quick Actions</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-2">
-                  <Field label="Branch">
-                    <Select value={requestForm.branchId} onValueChange={(branchId) => setRequestForm((current) => ({ ...current, branchId }))}>
-                      <SelectTrigger><SelectValue placeholder="Select branch" /></SelectTrigger>
-                      <SelectContent>
-                        {BRANCH_OPTIONS.map((branch) => <SelectItem key={branch.value} value={branch.value}>{branch.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Employee ID">
-                    <Input value={requestForm.employeeId} onChange={(event) => setRequestForm((current) => ({ ...current, employeeId: event.target.value }))} />
-                  </Field>
-                  <Field label="Location">
-                    <Select value={requestForm.location} onValueChange={(location) => setRequestForm((current) => ({ ...current, location }))}>
-                      <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
-                      <SelectContent>{PETTY_CASH_KIA_LOCATION_OPTIONS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Dealer Code">
-                    <Select value={requestForm.dealerCode} onValueChange={(dealerCode) => setRequestForm((current) => ({ ...current, dealerCode }))}>
-                      <SelectTrigger><SelectValue placeholder="Select code" /></SelectTrigger>
-                      <SelectContent>{PETTY_CASH_KIA_DEALER_CODES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Dealer Name">
-                    <Input value={requestForm.dealerName} onChange={(event) => setRequestForm((current) => ({ ...current, dealerName: event.target.value }))} placeholder="Type dealer name" />
-                  </Field>
-                  <Field label="Department">
-                    <Select value={requestForm.department} onValueChange={(department) => setRequestForm((current) => ({ ...current, department }))}>
-                      <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
-                      <SelectContent>{PETTY_CASH_DEPARTMENT_OPTIONS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Category">
-                    <Select disabled={categoryOptions.length === 0} value={requestForm.categoryId || undefined} onValueChange={(categoryId) => setRequestForm((current) => ({ ...current, categoryId }))}>
-                      <SelectTrigger><SelectValue placeholder={categoryOptions.length === 0 ? "No categories available" : "Optional category"} /></SelectTrigger>
-                      <SelectContent>{categoryOptions.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Amount">
-                    <Input type="number" value={requestForm.requestedAmount} onChange={(event) => setRequestForm((current) => ({ ...current, requestedAmount: event.target.value }))} />
-                  </Field>
-                  <Field label="Payment Type">
-                    <Select value={requestForm.typeOfPayment} onValueChange={(typeOfPayment) => setRequestForm((current) => ({ ...current, typeOfPayment }))}>
-                      <SelectTrigger><SelectValue placeholder="Select payment type" /></SelectTrigger>
-                      <SelectContent>{PETTY_CASH_PAYMENT_TYPES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Previous Advance">
-                    <Input value={requestForm.previousAdvance} onChange={(event) => setRequestForm((current) => ({ ...current, previousAdvance: event.target.value }))} />
-                  </Field>
-                  <Field label="Purpose" className="md:col-span-2">
-                    <Textarea value={requestForm.purpose} onChange={(event) => setRequestForm((current) => ({ ...current, purpose: event.target.value }))} />
-                  </Field>
-                  <Field label="Remarks" className="md:col-span-2">
-                    <Textarea value={requestForm.remarks} onChange={(event) => setRequestForm((current) => ({ ...current, remarks: event.target.value }))} />
-                  </Field>
-                  <Field label="Upload Bill / Documents" className="md:col-span-2">
-                    <Input type="file" multiple onChange={(event) => uploadFiles(event.target.files, 'request').catch((uploadError) => setError(uploadError.message))} />
-                    <UploadedFileList files={requestFiles} onRemove={(index) => setRequestFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
-                  </Field>
-                  <Button disabled={submitting || !canRequestTopUp} onClick={submitRequest} className="md:col-span-2 rounded-2xl bg-slate-950 py-6 font-black text-white hover:bg-slate-800">
-                    {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                    {canRequestTopUp ? 'Submit Request' : 'Top-up not available yet'}
+                <CardContent className="flex flex-col gap-3 md:flex-row">
+                  <Button
+                    type="button"
+                    disabled={submitting || !canRequestTopUp}
+                    onClick={() => setRequestDialogOpen(true)}
+                    className="rounded-2xl bg-slate-950 px-6 py-6 font-black text-white hover:bg-slate-800"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Petty Cash Request
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={submitting || !canSubmitExpense}
+                    onClick={() => setExpenseDialogOpen(true)}
+                    className="rounded-2xl bg-teal-700 px-6 py-6 font-black text-white hover:bg-teal-800"
+                  >
+                    <UploadCloud className="mr-2 h-4 w-4" />
+                    Submit Expense
                   </Button>
                 </CardContent>
               </Card>
             )}
 
-            <ExpenseForm
-              currentAllocation={currentAllocation}
-              categoryOptions={categoryOptions}
-              expenseForm={expenseForm}
-              setExpenseForm={setExpenseForm}
-              expenseFiles={expenseFiles}
-              setExpenseFiles={setExpenseFiles}
-              uploadFiles={uploadFiles}
-              setError={setError}
-              submitExpense={submitExpense}
-              submitting={submitting}
-              canCreate={canCreate}
-            />
+            {canCreate && (
+              <RecordTable
+                title="Your Pending Requests"
+                emptyText="No pending petty cash requests found."
+                headers={['Request #', 'Branch', 'Requested By', 'Purpose', 'Amount', 'Status', 'Created']}
+                rows={visibleRequests}
+                renderRow={(request) => (
+                  <tr key={request.id} className="border-b border-slate-100">
+                    <td className="px-4 py-3 font-black text-slate-950">{normalizeRequestNumber(request)}</td>
+                    <td className="px-4 py-3">{getBranchLabel(normalizeBranchId(request))}</td>
+                    <td className="px-4 py-3">{request.requestedByName || request.requested_by_name}</td>
+                    <td className="px-4 py-3">{request.purpose}</td>
+                    <td className="px-4 py-3 font-black">{formatCurrency(request.requestedAmount || request.requested_amount)}</td>
+                    <td className="px-4 py-3"><Badge variant={getStatusVariant(request.status)}>{getPettyCashStatusLabel(request.status)}</Badge></td>
+                    <td className="px-4 py-3">{formatDateTime(request.createdAt || request.created_at)}</td>
+                  </tr>
+                )}
+              />
+            )}
+
+            {canCreate && (
+              <RecordTable
+                title="Your Expense History"
+                emptyText="No petty cash expenses posted yet."
+                headers={['Expense #', 'Date', 'Description', 'Vendor', 'Amount', 'Posted At']}
+                rows={visibleExpenses}
+                renderRow={(expense) => (
+                  <tr key={expense.id} className="border-b border-slate-100">
+                    <td className="px-4 py-3 font-black text-slate-950">{normalizeExpenseNumber(expense)}</td>
+                    <td className="px-4 py-3">{expense.expenseDate || expense.expense_date}</td>
+                    <td className="px-4 py-3">{expense.particulars || expense.purpose}</td>
+                    <td className="px-4 py-3">{expense.vendorName || expense.vendor_name || 'N/A'}</td>
+                    <td className="px-4 py-3 font-black">{formatCurrency(expense.amount)}</td>
+                    <td className="px-4 py-3">{formatDateTime(expense.createdAt || expense.created_at)}</td>
+                  </tr>
+                )}
+              />
+            )}
+
+            {isApproverRole(userRole) && (
+              <RecordTable
+                title="Pending Approval Queue"
+                emptyText="No petty cash requests are waiting for your approval."
+                headers={['Request #', 'Branch', 'Requested By', 'Purpose', 'Amount', 'Status', 'Actions']}
+                rows={visibleRequests}
+                renderRow={(request) => (
+                  <tr key={request.id} className="border-b border-slate-100">
+                    <td className="px-4 py-3 font-black text-slate-950">{normalizeRequestNumber(request)}</td>
+                    <td className="px-4 py-3">{getBranchLabel(normalizeBranchId(request))}</td>
+                    <td className="px-4 py-3">{request.requestedByName || request.requested_by_name}</td>
+                    <td className="px-4 py-3">{request.purpose}</td>
+                    <td className="px-4 py-3 font-black">{formatCurrency(request.requestedAmount || request.requested_amount)}</td>
+                    <td className="px-4 py-3"><Badge variant={getStatusVariant(request.status)}>{getPettyCashStatusLabel(request.status)}</Badge></td>
+                    <td className="px-4 py-3 text-right">
+                      {canActOnRequest(userRole, request) && (
+                        <ActionButtons
+                          onApprove={() => applyRequestWorkflow(request.id, stageForRequest(request), 'approve')}
+                          onHold={() => setRequestWorkflowDialog({ request, action: 'hold' })}
+                          onReject={() => setRequestWorkflowDialog({ request, action: 'reject' })}
+                          disabled={submitting}
+                        />
+                      )}
+                    </td>
+                  </tr>
+                )}
+              />
+            )}
+
+            {isExpenseFeedRole(userRole) && (
+              <RecordTable
+                title={expenseFeedTitle}
+                emptyText="No petty cash expenses found for this feed."
+                headers={['Expense #', 'Branch', 'Date', 'Description', 'Vendor', 'Amount', 'Status']}
+                rows={visibleExpenses}
+                renderRow={(expense) => (
+                  <tr key={expense.id} className="border-b border-slate-100">
+                    <td className="px-4 py-3 font-black text-slate-950">{normalizeExpenseNumber(expense)}</td>
+                    <td className="px-4 py-3">{getBranchLabel(normalizeBranchId(expense))}</td>
+                    <td className="px-4 py-3">{expense.expenseDate || expense.expense_date}</td>
+                    <td className="px-4 py-3">{expense.particulars || expense.purpose}</td>
+                    <td className="px-4 py-3">{expense.vendorName || expense.vendor_name || 'N/A'}</td>
+                    <td className="px-4 py-3 font-black">{formatCurrency(expense.amount)}</td>
+                    <td className="px-4 py-3"><Badge variant={getStatusVariant(expense.status)}>{getPettyCashStatusLabel(expense.status)}</Badge></td>
+                  </tr>
+                )}
+              />
+            )}
           </div>
         )}
 
         {activeTab === 'requests' && (
           <RecordTable
-            title="Petty Cash Requests"
-            emptyText="No petty cash requests found."
+            title={isApproverRole(userRole) ? 'Pending Approval Queue' : 'Petty Cash Requests'}
+            emptyText={isApproverRole(userRole)
+              ? 'No petty cash requests are waiting for your approval.'
+              : 'No petty cash requests found.'}
             headers={['Request #', 'Branch', 'Requested By', 'Purpose', 'Amount', 'Status', 'Actions']}
             rows={visibleRequests}
             renderRow={(request) => (
@@ -780,7 +811,7 @@ function PettyCashPageContent() {
                 <td className="px-4 py-3">{getBranchLabel(normalizeBranchId(request))}</td>
                 <td className="px-4 py-3">{request.requestedByName || request.requested_by_name}</td>
                 <td className="px-4 py-3">{request.purpose}</td>
-                <td className="px-4 py-3 font-black">{formatCurrency(normalizeAmount(request))}</td>
+                <td className="px-4 py-3 font-black">{formatCurrency(request.requestedAmount || request.requested_amount)}</td>
                 <td className="px-4 py-3"><Badge variant={getStatusVariant(request.status)}>{getPettyCashStatusLabel(request.status)}</Badge></td>
                 <td className="px-4 py-3 text-right">
                   {canActOnRequest(userRole, request) && (
@@ -799,15 +830,16 @@ function PettyCashPageContent() {
 
         {activeTab === 'expenses' && (
           <RecordTable
-            title="Petty Cash Expenses"
+            title={canCreate ? 'Your Expense History' : expenseFeedTitle}
             emptyText="No petty cash expenses found."
-            headers={['Expense #', 'Date', 'Particulars', 'Vendor', 'Amount', 'Status']}
+            headers={['Expense #', 'Branch', 'Date', 'Description', 'Vendor', 'Amount', 'Status']}
             rows={visibleExpenses}
             renderRow={(expense) => (
               <tr key={expense.id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-black text-slate-950">{normalizeExpenseNumber(expense)}</td>
+                <td className="px-4 py-3">{getBranchLabel(normalizeBranchId(expense))}</td>
                 <td className="px-4 py-3">{expense.expenseDate || expense.expense_date}</td>
-                <td className="px-4 py-3">{expense.particulars}</td>
+                <td className="px-4 py-3">{expense.particulars || expense.purpose}</td>
                 <td className="px-4 py-3">{expense.vendorName || expense.vendor_name || 'N/A'}</td>
                 <td className="px-4 py-3 font-black">{formatCurrency(expense.amount)}</td>
                 <td className="px-4 py-3"><Badge variant={getStatusVariant(expense.status)}>{getPettyCashStatusLabel(expense.status)}</Badge></td>
@@ -838,133 +870,237 @@ function PettyCashPageContent() {
   )
 }
 
-function Field({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
+function SummaryCard({
+  title,
+  value,
+  meta,
+  icon,
+  accentValueClass,
+}: {
+  title: string
+  value: string
+  meta: string
+  icon: ReactNode
+  accentValueClass?: string
+}) {
   return (
-    <div className={className}>
-      <Label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</Label>
-      {children}
-    </div>
+    <Card className="rounded-[28px] border-white/80 bg-white/90 shadow-xl shadow-slate-200/60">
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{title}</p>
+          {icon}
+        </div>
+        <p className={`mt-4 text-3xl font-black text-slate-950 ${accentValueClass || ''}`}>{value}</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500">{meta}</p>
+      </CardContent>
+    </Card>
   )
 }
 
-function ExpenseForm({
+function RequestFormDialog({
+  open,
+  onOpenChange,
+  requestForm,
+  setRequestForm,
+  submitting,
+  onSubmit,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  requestForm: RequestFormState
+  setRequestForm: React.Dispatch<React.SetStateAction<RequestFormState>>
+  submitting: boolean
+  onSubmit: () => Promise<void>
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-[32px] border border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[760px]">
+        <div className="bg-gradient-to-r from-slate-950 to-slate-800 px-6 py-5 text-white">
+          <DialogHeader className="space-y-2 text-left">
+            <DialogTitle className="text-2xl font-black text-white">New Petty Cash Request</DialogTitle>
+            <DialogDescription className="text-sm text-slate-200">
+              Request petty cash for your logged-in branch. Branch and requester identity are pulled automatically from your login.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+        <div className="grid gap-4 px-6 py-6 md:grid-cols-2">
+          <Field label="Location">
+            <Select value={requestForm.location} onValueChange={(location) => setRequestForm((current) => ({ ...current, location }))}>
+              <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
+              <SelectContent>
+                {PETTY_CASH_KIA_LOCATION_OPTIONS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Department">
+            <Select value={requestForm.department} onValueChange={(department) => setRequestForm((current) => ({ ...current, department }))}>
+              <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+              <SelectContent>
+                {PETTY_CASH_DEPARTMENT_OPTIONS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Advance Type">
+            <Input
+              value={requestForm.advanceType}
+              onChange={(event) => setRequestForm((current) => ({ ...current, advanceType: event.target.value }))}
+              placeholder="Enter advance type"
+            />
+          </Field>
+          <Field label="Payment Type">
+            <Select value={requestForm.typeOfPayment} onValueChange={(typeOfPayment) => setRequestForm((current) => ({ ...current, typeOfPayment }))}>
+              <SelectTrigger><SelectValue placeholder="Select payment type" /></SelectTrigger>
+              <SelectContent>
+                {PETTY_CASH_PAYMENT_TYPES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Amount">
+            <Input
+              type="number"
+              value={requestForm.requestedAmount}
+              onChange={(event) => setRequestForm((current) => ({ ...current, requestedAmount: event.target.value }))}
+            />
+          </Field>
+          <Field label="Purpose" className="md:col-span-2">
+            <Textarea
+              value={requestForm.purpose}
+              onChange={(event) => setRequestForm((current) => ({ ...current, purpose: event.target.value }))}
+              rows={5}
+            />
+          </Field>
+        </div>
+        <DialogFooter className="gap-2 border-t border-slate-200 px-6 py-5">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="rounded-2xl" disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={() => void onSubmit()} className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800" disabled={submitting}>
+            {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+            Submit Request
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ExpenseFormDialog({
+  open,
+  onOpenChange,
   currentAllocation,
   categoryOptions,
   expenseForm,
   setExpenseForm,
   expenseFiles,
   setExpenseFiles,
-  uploadFiles,
+  uploadExpenseFiles,
   setError,
-  submitExpense,
   submitting,
-  canCreate,
+  onSubmit,
 }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
   currentAllocation: PettyCashAllocation | null
   categoryOptions: PettyCashCategory[]
   expenseForm: ExpenseFormState
   setExpenseForm: React.Dispatch<React.SetStateAction<ExpenseFormState>>
   expenseFiles: string[]
   setExpenseFiles: React.Dispatch<React.SetStateAction<string[]>>
-  uploadFiles: (files: FileList | null, entity: 'request' | 'expense') => Promise<void>
+  uploadExpenseFiles: (files: FileList | null) => Promise<void>
   setError: React.Dispatch<React.SetStateAction<string | null>>
-  submitExpense: () => Promise<void>
   submitting: boolean
-  canCreate: boolean
+  onSubmit: () => Promise<void>
 }) {
-  if (!canCreate) {
-    return (
-      <Card className="rounded-[32px] border-white/80 bg-white/92 shadow-xl shadow-slate-200/60">
-        <CardContent className="p-8 text-sm font-semibold text-slate-500">
-          Approval users can review requests and expenses from the Requests and Expenses tabs.
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (!currentAllocation) {
-    return (
-      <Card className="rounded-[32px] border-dashed border-slate-300 bg-white/70 shadow-sm">
-        <CardContent className="flex h-full min-h-[320px] flex-col items-center justify-center p-8 text-center">
-          <FileText className="h-10 w-10 text-slate-400" />
-          <h2 className="mt-4 text-2xl font-black text-slate-950">No active allocation yet</h2>
-          <p className="mt-2 max-w-md text-sm font-semibold text-slate-500">
-            Submit a request first. Expense entry unlocks after Accounts creates the active allocation.
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
-    <Card className="rounded-[32px] border-white/80 bg-white/92 shadow-xl shadow-slate-200/60">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-2xl font-black text-slate-950">
-          <TrendingDown className="h-5 w-5" />
-          Submit Expense
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-4 md:grid-cols-2">
-        <Field label="Date">
-          <Input type="date" value={expenseForm.expenseDate} onChange={(event) => setExpenseForm((current) => ({ ...current, expenseDate: event.target.value }))} />
-        </Field>
-        <Field label="Amount">
-          <Input type="number" value={expenseForm.amount} onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))} />
-        </Field>
-        <Field label="Particulars" className="md:col-span-2">
-          <Input value={expenseForm.particulars} onChange={(event) => setExpenseForm((current) => ({ ...current, particulars: event.target.value }))} />
-        </Field>
-        <Field label="Department">
-          <Select value={expenseForm.department} onValueChange={(department) => setExpenseForm((current) => ({ ...current, department }))}>
-            <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
-            <SelectContent>{PETTY_CASH_EXPENSE_DEPARTMENT_OPTIONS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-          </Select>
-        </Field>
-        <Field label="Category">
-          <Select disabled={categoryOptions.length === 0} value={expenseForm.categoryId || undefined} onValueChange={(categoryId) => setExpenseForm((current) => ({ ...current, categoryId }))}>
-            <SelectTrigger><SelectValue placeholder={categoryOptions.length === 0 ? "No categories available" : "Optional category"} /></SelectTrigger>
-            <SelectContent>{categoryOptions.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </Field>
-        <Field label="Vendor Name">
-          <Input value={expenseForm.vendorName} onChange={(event) => setExpenseForm((current) => ({ ...current, vendorName: event.target.value }))} />
-        </Field>
-        <Field label="Received By">
-          <Input value={expenseForm.receivedBy} onChange={(event) => setExpenseForm((current) => ({ ...current, receivedBy: event.target.value }))} />
-        </Field>
-        <Field label="Purpose of Expense" className="md:col-span-2">
-          <Textarea value={expenseForm.purpose} onChange={(event) => setExpenseForm((current) => ({ ...current, purpose: event.target.value }))} />
-        </Field>
-        <Field label="Balance" >
-          <Input value={expenseForm.balanceEntered} onChange={(event) => setExpenseForm((current) => ({ ...current, balanceEntered: event.target.value }))} />
-        </Field>
-        <Field label="Remarks">
-          <Input value={expenseForm.remarks} onChange={(event) => setExpenseForm((current) => ({ ...current, remarks: event.target.value }))} />
-        </Field>
-        <Field label="Upload Bill" className="md:col-span-2">
-          <Input type="file" multiple onChange={(event) => uploadFiles(event.target.files, 'expense').catch((uploadError) => setError(uploadError.message))} />
-          <UploadedFileList files={expenseFiles} onRemove={(index) => setExpenseFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
-        </Field>
-        <Button disabled={submitting} onClick={submitExpense} className="md:col-span-2 rounded-2xl bg-teal-700 py-6 font-black text-white hover:bg-teal-800">
-          {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-          Submit Expense
-        </Button>
-      </CardContent>
-    </Card>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-[32px] border border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[760px]">
+        <div className="bg-gradient-to-r from-teal-700 to-teal-800 px-6 py-5 text-white">
+          <DialogHeader className="space-y-2 text-left">
+            <DialogTitle className="text-2xl font-black text-white">Submit Expense</DialogTitle>
+            <DialogDescription className="text-sm text-teal-50">
+              Post a petty-cash expense directly against your active allocation. The amount is deducted immediately and visible to EA and MD.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+        <div className="grid gap-4 px-6 py-6 md:grid-cols-2">
+          <Field label="Active Allocation">
+            <Input value={currentAllocation?.allocationNumber || 'No active allocation'} disabled />
+          </Field>
+          <Field label="Amount">
+            <Input
+              type="number"
+              value={expenseForm.amount}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
+            />
+          </Field>
+          <Field label="Date">
+            <Input
+              type="date"
+              value={expenseForm.expenseDate}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, expenseDate: event.target.value }))}
+            />
+          </Field>
+          <Field label="Category">
+            <Select
+              disabled={categoryOptions.length === 0}
+              value={expenseForm.categoryId || undefined}
+              onValueChange={(categoryId) => setExpenseForm((current) => ({ ...current, categoryId }))}
+            >
+              <SelectTrigger><SelectValue placeholder={categoryOptions.length === 0 ? 'No categories available' : 'Optional category'} /></SelectTrigger>
+              <SelectContent>
+                {categoryOptions.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Vendor Name">
+            <Input
+              value={expenseForm.vendorName}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, vendorName: event.target.value }))}
+            />
+          </Field>
+          <Field label="Received By">
+            <Input
+              value={expenseForm.receivedBy}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, receivedBy: event.target.value }))}
+            />
+          </Field>
+          <Field label="Purpose of Expense" className="md:col-span-2">
+            <Textarea
+              value={expenseForm.purpose}
+              onChange={(event) => setExpenseForm((current) => ({ ...current, purpose: event.target.value }))}
+              rows={5}
+            />
+          </Field>
+          <Field label="Upload Bill" className="md:col-span-2">
+            <Input
+              type="file"
+              multiple
+              onChange={(event) => uploadExpenseFiles(event.target.files).catch((uploadError) => setError(uploadError.message))}
+            />
+            <UploadedFileList files={expenseFiles} onRemove={(index) => setExpenseFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
+          </Field>
+        </div>
+        <DialogFooter className="gap-2 border-t border-slate-200 px-6 py-5">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="rounded-2xl" disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={() => void onSubmit()} className="rounded-2xl bg-teal-700 font-black text-white hover:bg-teal-800" disabled={submitting}>
+            {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+            Submit Expense
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function getUploadedFileName(fileUrl: string) {
-  try {
-    const pathname = new URL(fileUrl).pathname
-    return decodeURIComponent(pathname.split('/').pop() || 'Uploaded file')
-  } catch {
-    return fileUrl.split('/').pop() || 'Uploaded file'
-  }
-}
-
-function isPreviewableImage(fileUrl: string) {
-  return /\.(png|jpe?g|webp|gif|heic|heif)(\?|$)/i.test(fileUrl)
+function Field({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <div className={className}>
+      <Label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</Label>
+      {children}
+    </div>
+  )
 }
 
 function UploadedFileList({ files, onRemove }: { files: string[]; onRemove: (index: number) => void }) {
@@ -993,7 +1129,17 @@ function UploadedFileList({ files, onRemove }: { files: string[]; onRemove: (ind
   )
 }
 
-function ActionButtons({ onApprove, onHold, onReject, disabled }: { onApprove: () => void; onHold: () => void; onReject: () => void; disabled: boolean }) {
+function ActionButtons({
+  onApprove,
+  onHold,
+  onReject,
+  disabled,
+}: {
+  onApprove: () => void
+  onHold: () => void
+  onReject: () => void
+  disabled: boolean
+}) {
   return (
     <div className="flex flex-wrap justify-end gap-2">
       <Button type="button" size="sm" disabled={disabled} onClick={onApprove} className="rounded-xl bg-emerald-600 font-black text-white hover:bg-emerald-700">
@@ -1012,7 +1158,19 @@ function ActionButtons({ onApprove, onHold, onReject, disabled }: { onApprove: (
   )
 }
 
-function RecordTable<T>({ title, emptyText, headers, rows, renderRow }: { title: string; emptyText: string; headers: string[]; rows: T[]; renderRow: (row: T) => React.ReactNode }) {
+function RecordTable<T>({
+  title,
+  emptyText,
+  headers,
+  rows,
+  renderRow,
+}: {
+  title: string
+  emptyText: string
+  headers: string[]
+  rows: T[]
+  renderRow: (row: T) => ReactNode
+}) {
   return (
     <Card className="rounded-[32px] border-white/80 bg-white/92 shadow-xl shadow-slate-200/60">
       <CardHeader>

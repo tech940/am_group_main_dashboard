@@ -518,28 +518,17 @@ export const financeOrderComments = pgTable('finance_order_comments', {
 }))
 
 export type PettyCashRequestFormData = {
-  employeeId?: string | null
   location?: string | null
-  dealerCode?: string | null
-  dealerName?: string | null
   department?: string | null
   advanceType?: string | null
-  previousAdvance?: string | null
   typeOfPayment?: string | null
-  remarks?: string | null
-  uploadBillUrls?: string[]
-  uploadDocumentUrls?: string[]
 }
 
 export type PettyCashExpenseFormData = {
   date?: string | null
-  particulars?: string | null
-  department?: string | null
   vendorName?: string | null
   receivedBy?: string | null
   purposeOfExpense?: string | null
-  balanceEntered?: string | null
-  remarks?: string | null
   uploadBillUrls?: string[]
 }
 

@@ -37,8 +37,10 @@ export type SalesReportKpi = {
   comparisonValue: number
   formattedComparisonValue: string
   comparisonLabel: string
+  comparisonContext?: string | null
   changePct: number | null
   changeLabel: string
+  trendDirection?: 'higher_is_better' | 'lower_is_better'
 }
 
 export type SalesReportMetricPoint = {

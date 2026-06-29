@@ -19,16 +19,14 @@ export function canAccessPettyCash(role: PettyCashRole | null | undefined) {
 }
 
 export function canCreatePettyCashRequest(role: PettyCashRole | null | undefined) {
-  return role === 'admin' || role === 'super_admin' || role === 'branch_admin'
+  return role === 'admin' || role === 'branch_admin'
 }
 
 export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined) {
-  return role === 'admin' || role === 'super_admin' || role === 'branch_admin'
+  return role === 'admin' || role === 'branch_admin'
 }
 
 export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {
-  if (role === 'admin' || role === 'super_admin') return true
-
   switch (stage) {
     case 'ea_approval':
       return role === 'ea'
@@ -43,7 +41,6 @@ export function canApprovePettyCashStage(role: PettyCashRole | null | undefined,
 
 export function canManagePettyCashBranch(appUser: AppUser, branchId: string | null | undefined) {
   if (!branchId) return false
-  if (appUser.role === 'admin' || appUser.role === 'super_admin') return true
   if (hasAllBranchAccess(appUser.brand)) return true
   return appUser.brand === branchId
 }
@@ -51,18 +48,12 @@ export function canManagePettyCashBranch(appUser: AppUser, branchId: string | nu
 export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unknown> {
   const baseFilters: SQL<unknown>[] = [isNull(pettyCashRequests.deletedAt)]
 
-  if (appUser.role === 'admin' || appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) {
+  if (appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) {
     return and(...baseFilters)!
   }
 
-  if (appUser.role === 'branch_admin') {
-    return and(
-      ...baseFilters,
-      or(
-        eq(pettyCashRequests.createdBy, appUser.id),
-        eq(pettyCashRequests.branchId, appUser.brand || '')
-      )!
-    )!
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
+    return and(...baseFilters, eq(pettyCashRequests.branchId, appUser.brand || ''))!
   }
 
   if (appUser.role === 'ea' || appUser.role === 'md' || appUser.role === 'accounts') {
@@ -75,18 +66,12 @@ export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unkno
 export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unknown> {
   const baseFilters: SQL<unknown>[] = [isNull(pettyCashExpenses.deletedAt)]
 
-  if (appUser.role === 'admin' || appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) {
+  if (appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) {
     return and(...baseFilters)!
   }
 
-  if (appUser.role === 'branch_admin') {
-    return and(
-      ...baseFilters,
-      or(
-        eq(pettyCashExpenses.createdBy, appUser.id),
-        eq(pettyCashExpenses.branchId, appUser.brand || '')
-      )!
-    )!
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
+    return and(...baseFilters, eq(pettyCashExpenses.branchId, appUser.brand || ''))!
   }
 
   if (appUser.role === 'ea' || appUser.role === 'md' || appUser.role === 'accounts') {
@@ -97,11 +82,11 @@ export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unkno
 }
 
 export function getPettyCashAllocationVisibilityFilter(appUser: AppUser): SQL<unknown> {
-  if (appUser.role === 'admin' || appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) {
+  if (appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) {
     return eq(pettyCashAllocations.status, 'active')
   }
 
-  if (appUser.role === 'branch_admin') {
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
     return and(
       eq(pettyCashAllocations.status, 'active'),
       or(

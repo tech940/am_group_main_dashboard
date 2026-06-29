@@ -38,22 +38,16 @@ const optionalText = z.string().trim().max(2000).optional().nullable()
 const uuidSchema = z.string().uuid()
 
 export const createPettyCashRequestSchema = z.object({
-  branchId: z.string().trim(),
   status: z.enum(['draft', 'submitted']).default('submitted'),
   requestedAmount: moneySchema,
   purpose: z.string().trim().min(2).max(2000),
   department: optionalText,
-  categoryId: z.string().uuid().optional().nullable(),
-  requestedByName: optionalText,
   requestForm: z.record(z.string(), z.unknown()).default({}),
-  supportingFiles: z.array(z.string().trim()).default([]),
 })
 
 export const createPettyCashExpenseSchema = z.object({
   allocationId: uuidSchema.optional().nullable(),
   expenseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  particulars: z.string().trim().min(2).max(1000),
-  department: optionalText,
   categoryId: z.string().uuid().optional().nullable(),
   amount: moneySchema,
   vendorName: optionalText,
@@ -160,11 +154,7 @@ function makeReference(prefix: 'PCR' | 'PCA' | 'PCE') {
   return `${prefix}-${datepart}-${random}`
 }
 
-function normalizeBranch(appUser: AppUser, requestedBranch: unknown) {
-  if (typeof requestedBranch === 'string' && isBranchValue(requestedBranch)) {
-    return requestedBranch
-  }
-
+function normalizeBranch(appUser: AppUser) {
   return isBranchValue(appUser.brand) ? appUser.brand : null
 }
 
@@ -176,6 +166,48 @@ function getActor(appUser: AppUser) {
     fullName: appUser.fullName,
     email: appUser.email,
   }
+}
+
+const CREATOR_REQUEST_QUEUE_STATUSES = new Set([
+  'draft',
+  'submitted',
+  'ea_pending',
+  'ea_on_hold',
+  'md_pending',
+  'md_on_hold',
+  'accounts_pending',
+  'accounts_on_hold',
+])
+
+function filterDashboardRequests(appUser: AppUser, requests: Array<Record<string, unknown>>) {
+  if (appUser.role === 'ea') {
+    return requests.filter((request) => ['ea_pending', 'ea_on_hold'].includes(String(request.status || '')))
+  }
+
+  if (appUser.role === 'md') {
+    return requests.filter((request) => ['md_pending', 'md_on_hold'].includes(String(request.status || '')))
+  }
+
+  if (appUser.role === 'accounts') {
+    return requests.filter((request) => ['accounts_pending', 'accounts_on_hold'].includes(String(request.status || '')))
+  }
+
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
+    return requests.filter((request) => (
+      String(request.createdBy || '') === appUser.id
+      && CREATOR_REQUEST_QUEUE_STATUSES.has(String(request.status || ''))
+    ))
+  }
+
+  return requests
+}
+
+function filterDashboardExpenses(appUser: AppUser, expenses: Array<Record<string, unknown>>) {
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
+    return expenses.filter((expense) => String(expense.createdBy || '') === appUser.id)
+  }
+
+  return expenses
 }
 
 async function getUserMap(userIds: string[]) {
@@ -231,10 +263,8 @@ export async function listPettyCashRequests(appUser: AppUser, input: z.input<typ
 
   const whereExpression = and(...filters)
   const offset = (query.page - 1) * query.pageSize
-  const [[{ total }], rows] = await Promise.all([
-    db.select({ total: count() }).from(pettyCashRequests).where(whereExpression),
-    db.select().from(pettyCashRequests).where(whereExpression).orderBy(desc(pettyCashRequests.createdAt)).limit(query.pageSize).offset(offset),
-  ])
+  const [{ total }] = await db.select({ total: count() }).from(pettyCashRequests).where(whereExpression)
+  const rows = await db.select().from(pettyCashRequests).where(whereExpression).orderBy(desc(pettyCashRequests.createdAt)).limit(query.pageSize).offset(offset)
 
   return {
     requests: rows.map((row) => serializeRequest(row)),
@@ -276,10 +306,8 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
 
   const whereExpression = and(...filters)
   const offset = (query.page - 1) * query.pageSize
-  const [[{ total }], rows] = await Promise.all([
-    db.select({ total: count() }).from(pettyCashExpenses).where(whereExpression),
-    db.select().from(pettyCashExpenses).where(whereExpression).orderBy(desc(pettyCashExpenses.createdAt)).limit(query.pageSize).offset(offset),
-  ])
+  const [{ total }] = await db.select({ total: count() }).from(pettyCashExpenses).where(whereExpression)
+  const rows = await db.select().from(pettyCashExpenses).where(whereExpression).orderBy(desc(pettyCashExpenses.createdAt)).limit(query.pageSize).offset(offset)
 
   return {
     expenses: rows.map((row) => serializeExpense(row)),
@@ -301,7 +329,7 @@ export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?:
     filters.push(eq(pettyCashAllocations.branchId, branchId))
   }
 
-  if (appUser.role === 'branch_admin') {
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
     filters.push(eq(pettyCashAllocations.allocatedTo, appUser.id))
   }
 
@@ -328,12 +356,15 @@ export async function getPettyCashDashboard(appUser: AppUser) {
     listPettyCashExpenses(appUser, { page: 1, pageSize: 8, status: 'all' }),
   ])
 
-  const pendingRequestCount = requestsResult.requests.filter((request) => String(request.status).includes('pending') || String(request.status).includes('on_hold')).length
-  const pendingExpenseCount = expensesResult.expenses.filter((expense) => ['pending', 'ea_approved', 'accounts_pending'].includes(String(expense.status))).length
+  const requests = filterDashboardRequests(appUser, requestsResult.requests as Array<Record<string, unknown>>)
+  const expenses = filterDashboardExpenses(appUser, expensesResult.expenses as Array<Record<string, unknown>>)
+  const pendingRequestCount = requests.filter((request) => String(request.status).includes('pending') || String(request.status).includes('on_hold')).length
+  const pendingExpenseCount = 0
   const currentAllocationRecord = currentAllocation as Record<string, unknown> | null
   const allocationAmount = currentAllocationRecord ? parseMoney(currentAllocationRecord.allocatedAmount as string) : 0
   const spentAmount = currentAllocationRecord ? parseMoney(currentAllocationRecord.spentAmount as string) : 0
   const topUpStatus = getTopUpStatus(currentAllocation as PettyCashAllocationRecord | null)
+  const canSubmitExpense = canCreatePettyCashExpense(appUser.role) && Boolean(currentAllocation)
 
   return {
     user: {
@@ -345,19 +376,20 @@ export async function getPettyCashDashboard(appUser: AppUser) {
     },
     categories,
     currentAllocation,
-    requests: requestsResult.requests,
-    expenses: expensesResult.expenses,
+    requests,
+    expenses,
     summary: {
       allocationAmount,
       spentAmount,
       remainingAmount: Math.max(0, allocationAmount - spentAmount),
       canRequestTopUp: topUpStatus.canRequestTopUp,
+      canSubmitExpense,
       topUpThreshold: PETTY_CASH_TOP_UP_THRESHOLD,
       topUpReason: topUpStatus.topUpReason,
       pendingRequestCount,
       pendingExpenseCount,
-      requestCount: requestsResult.pagination.total,
-      expenseCount: expensesResult.pagination.total,
+      requestCount: requests.length,
+      expenseCount: expenses.length,
     },
   }
 }
@@ -368,7 +400,7 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
   }
 
   const input = createPettyCashRequestSchema.parse(rawInput)
-  const branchId = normalizeBranch(appUser, input.branchId)
+  const branchId = normalizeBranch(appUser)
 
   if (!branchId || !canManagePettyCashBranch(appUser, branchId)) {
     throw new Error('Forbidden branch')
@@ -390,14 +422,13 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
       branchId,
       status,
       currentStage,
-      requestedByName: input.requestedByName?.trim() || appUser.fullName,
+      requestedByName: appUser.fullName,
       requestedByEmail: appUser.email,
-      department: input.department || null,
-      categoryId: input.categoryId || null,
+      department: input.department || appUser.department || null,
       requestedAmount: toMoney(input.requestedAmount),
       purpose: input.purpose,
       requestForm: input.requestForm,
-      supportingFiles: input.supportingFiles,
+      supportingFiles: [],
       createdBy: appUser.id,
       submittedAt: status === 'ea_pending' ? new Date() : null,
     })
@@ -465,7 +496,6 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
   }
 
   const now = new Date()
-  const expenseRemarks = typeof input.expenseForm.remarks === 'string' ? input.expenseForm.remarks : null
   const { expense, history } = await db.transaction(async (tx) => {
     const [updatedAllocation] = await tx
       .update(pettyCashAllocations)
@@ -489,8 +519,8 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
       status: 'approved',
       currentStage: 'ledger',
       expenseDate: input.expenseDate,
-      particulars: input.particulars,
-      department: input.department || null,
+      particulars: input.purpose,
+      department: appUser.department || null,
       categoryId: input.categoryId || null,
       amount: toMoney(input.amount),
       vendorName: input.vendorName || null,
@@ -502,7 +532,7 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
       submittedAt: now,
       accountsApprovedBy: appUser.id,
       accountsApprovedAt: now,
-      accountsRemarks: expenseRemarks,
+      accountsRemarks: null,
       updatedAt: now,
     }).returning()
 
@@ -513,7 +543,7 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
       entryType: 'expense',
       amount: toMoney(-input.amount),
       balanceAfter: toMoney(getRemainingBalance(updatedAllocation)),
-      description: `${expense.expenseNumber}: ${expense.particulars}`,
+      description: `${expense.expenseNumber}: ${expense.purpose}`,
       createdBy: appUser.id,
       metadata: {
         expenseNumber: expense.expenseNumber,
@@ -531,7 +561,7 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
       userRole: appUser.role,
       previousStatus: null,
       newStatus: 'approved',
-      remarks: expenseRemarks || input.purpose,
+      remarks: input.purpose,
       metadata: {
         ...input.expenseForm,
         remainingAfter: getRemainingBalance(updatedAllocation),
@@ -619,7 +649,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
     } else {
       const approvedAmount = parseMoney(request.requestedAmount)
 
-      return db.transaction(async (tx) => {
+      const { updatedRequest, history } = await db.transaction(async (tx) => {
         const [updatedRequest] = await tx
           .update(pettyCashRequests)
           .set({
@@ -725,17 +755,19 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
           metadata: { allocatedAmount: toMoney(approvedAmount) },
         }).returning({ id: pettyCashApprovalHistory.id, remarks: pettyCashApprovalHistory.remarks })
 
-        await createPettyCashNotifications({
-          event: 'request_approved',
-          entity: updatedRequest,
-          entityType: 'request',
-          actor: getActor(appUser),
-          historyId: history.id,
-          remarks: history.remarks,
-        })
-
-        return serializeRequest(updatedRequest)
+        return { updatedRequest, history }
       })
+
+      await createPettyCashNotifications({
+        event: 'request_approved',
+        entity: updatedRequest,
+        entityType: 'request',
+        actor: getActor(appUser),
+        historyId: history.id,
+        remarks: history.remarks,
+      })
+
+      return serializeRequest(updatedRequest)
     }
   }
 
@@ -824,7 +856,7 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
       newStatus = 'rejected'
       event = 'expense_rejected'
     } else {
-      return db.transaction(async (tx) => {
+      const { updatedExpense, history } = await db.transaction(async (tx) => {
         const [updatedAllocation] = await tx
           .update(pettyCashAllocations)
           .set({
@@ -880,17 +912,19 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
           metadata: { remainingAfter: getRemainingBalance(updatedAllocation) },
         }).returning({ id: pettyCashApprovalHistory.id, remarks: pettyCashApprovalHistory.remarks })
 
-        await createPettyCashNotifications({
-          event: 'expense_approved',
-          entity: updatedExpense,
-          entityType: 'expense',
-          actor: getActor(appUser),
-          historyId: history.id,
-          remarks: history.remarks,
-        })
-
-        return serializeExpense(updatedExpense)
+        return { updatedExpense, history }
       })
+
+      await createPettyCashNotifications({
+        event: 'expense_approved',
+        entity: updatedExpense,
+        entityType: 'expense',
+        actor: getActor(appUser),
+        historyId: history.id,
+        remarks: history.remarks,
+      })
+
+      return serializeExpense(updatedExpense)
     }
   }
 

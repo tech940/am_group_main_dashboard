@@ -12,6 +12,8 @@ function positiveInteger(value: string | undefined, fallback: number) {
 }
 
 const DB_POOL_MAX = positiveInteger(process.env.DATABASE_POOL_MAX, DEFAULT_POOL_MAX)
+const LOCK_TIMEOUT_MS = positiveInteger(process.env.DATABASE_LOCK_TIMEOUT_MS, 3_000)
+const IDLE_IN_TRANSACTION_TIMEOUT_MS = positiveInteger(process.env.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS, 10_000)
 
 type PostgresClient = ReturnType<typeof postgres>
 type PostgresTransaction = postgres.TransactionSql
@@ -22,6 +24,8 @@ function runInTimedTransaction<T>(
 ) {
   return baseClient.begin(async (tx) => {
     await tx.unsafe(`SET LOCAL statement_timeout TO ${STATEMENT_TIMEOUT_MS}`)
+    await tx.unsafe(`SET LOCAL lock_timeout TO ${LOCK_TIMEOUT_MS}`)
+    await tx.unsafe(`SET LOCAL idle_in_transaction_session_timeout TO ${IDLE_IN_TRANSACTION_TIMEOUT_MS}`)
     return action(tx)
   })
 }
@@ -44,7 +48,11 @@ const baseClient = globalForDb.postgresClient ?? postgres(env.database.url, {
   onnotice: () => {}, // Ignore notices
   connection: {
     application_name: 'main_dashboard',
-    options: `-c statement_timeout=${STATEMENT_TIMEOUT_MS}`,
+    options: [
+      `-c statement_timeout=${STATEMENT_TIMEOUT_MS}`,
+      `-c lock_timeout=${LOCK_TIMEOUT_MS}`,
+      `-c idle_in_transaction_session_timeout=${IDLE_IN_TRANSACTION_TIMEOUT_MS}`,
+    ].join(' '),
   },
 })
 

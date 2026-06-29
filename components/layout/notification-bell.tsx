@@ -26,6 +26,7 @@ import type { AppNotification } from '@/lib/notifications/types'
 
 interface NotificationBellProps {
   userId: string | null
+  userRole?: string | null
 }
 
 type BrowserNotificationPermission = NotificationPermission | 'unsupported'
@@ -91,7 +92,7 @@ function normalizeNotification(raw: NotificationRowShape): AppNotification {
   }
 }
 
-export function NotificationBell({ userId }: NotificationBellProps) {
+export function NotificationBell({ userId, userRole }: NotificationBellProps) {
   const router = useRouter()
   const topLoader = useTopLoader()
   const supabaseRef = useRef(createClient())
@@ -112,6 +113,10 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   const [permission, setPermission] = useState<BrowserNotificationPermission>('unsupported')
 
   const fetchNotificationsData = useCallback(async (attempt = 1): Promise<{ notifications?: NotificationRowShape[]; unreadCount?: number }> => {
+    if (!userId || !userRole || !['ea', 'md', 'purchase_manager'].includes(userRole)) {
+      return { notifications: [], unreadCount: 0 }
+    }
+
     let currentAttempt = attempt
 
     while (currentAttempt <= 3) {
@@ -379,7 +384,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   }, [unlockAudioContext])
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || !userRole || !['ea', 'md', 'purchase_manager'].includes(userRole)) {
       const timer = window.setTimeout(() => {
         setNotifications([])
         setUnreadCount(0)
@@ -423,10 +428,10 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     return () => {
       cancelled = true
     }
-  }, [fetchNotificationsData, userId])
+  }, [fetchNotificationsData, userId, userRole])
 
   useEffect(() => {
-    if (!userId || !('serviceWorker' in navigator)) {
+    if (!userId || !userRole || !['ea', 'md', 'purchase_manager'].includes(userRole) || !('serviceWorker' in navigator)) {
       return
     }
 
@@ -441,7 +446,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     }).catch((error) => {
       console.error('Error registering service worker:', error)
     })
-  }, [userId])
+  }, [userId, userRole])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -463,7 +468,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   }, [])
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || !userRole || !['ea', 'md', 'purchase_manager'].includes(userRole)) {
       return
     }
 
@@ -480,10 +485,10 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         window.clearTimeout(timer)
       }
     }
-  }, [permission, userId])
+  }, [permission, userId, userRole])
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || !userRole || !['ea', 'md', 'purchase_manager'].includes(userRole)) {
       return
     }
 
@@ -549,7 +554,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       stopFallbackPolling()
       void supabase.removeChannel(channel)
     }
-  }, [mergeNotification, reloadNotifications, updateNotification, userId])
+  }, [mergeNotification, reloadNotifications, updateNotification, userId, userRole])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -562,7 +567,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   }, [])
 
   useEffect(() => {
-    if (!userId || typeof window === 'undefined') {
+    if (!userId || !userRole || !['ea', 'md', 'purchase_manager'].includes(userRole) || typeof window === 'undefined') {
       return
     }
 
@@ -577,7 +582,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
       window.removeEventListener('focus', refreshOnFocus)
       document.removeEventListener('visibilitychange', refreshOnFocus)
     }
-  }, [reloadNotifications, userId])
+  }, [reloadNotifications, userId, userRole])
 
   useEffect(() => {
     return () => {

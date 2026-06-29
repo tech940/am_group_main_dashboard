@@ -532,8 +532,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         signal_area,
         uploaded_at
       FROM filtered
+      WHERE status_group <> 'Closed'
       ORDER BY
-        CASE WHEN status_group <> 'Closed' THEN 0 ELSE 1 END,
         resolution_days DESC,
         complaint_date DESC
       LIMIT 150
@@ -721,7 +721,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
     },
     meta: {
       ...HYUNDAI_BE_CALCULATION_META,
-      rowCount: numberValue(kpis.total),
+      rowCount: numberValue(kpis.open),
       detailLimit: 150,
       chunk,
       cacheTtlSeconds: CACHE_TTL_SECONDS,

@@ -380,6 +380,12 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
     }
   }, [detailsLoaded, isDetailLoading, queryString])
 
+  useEffect(() => {
+    if (data && !detailsLoaded && !isDetailLoading) {
+      void fetchComplaintDetails()
+    }
+  }, [data, detailsLoaded, isDetailLoading, fetchComplaintDetails])
+
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const controller = new AbortController()

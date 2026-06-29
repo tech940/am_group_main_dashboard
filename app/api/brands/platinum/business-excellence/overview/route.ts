@@ -101,7 +101,7 @@ function resultRows(result: unknown): NumericRow[] {
 }
 
 function numericText(column: ReturnType<typeof sql.raw>) {
-  return sql`COALESCE(NULLIF(regexp_replace(${column}::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)`
+  return sql`CASE WHEN regexp_replace(${column}::text, '[^0-9.-]', '', 'g') ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN regexp_replace(${column}::text, '[^0-9.-]', '', 'g')::numeric ELSE 0 END`
 }
 
 function percent(part: number, total: number) {
@@ -944,16 +944,25 @@ async function buildOverviewPayload(
   const includeSecondary = chunk === 'secondary' || chunk === 'full'
   const includePrimaryCharts = chunk === 'summary' || includeSecondary
   const includeComparison = true
-  const roSql = roBillingBaseSql(startDate, endDate, dealerCode)
+  const roBillingCoverage = await fetchPlatinumRoBillingCoverage(startDate, endDate, dealerCode)
+  const effectiveRoBillingEndDate = roBillingCoverage.hasDataInRange
+    && roBillingCoverage.latestAvailableDate
+    && roBillingCoverage.latestAvailableDate < endDate
+    ? roBillingCoverage.latestAvailableDate
+    : endDate
+  const roSql = roBillingBaseSql(startDate, effectiveRoBillingEndDate, dealerCode)
   const openSql = openRoBaseSql(startDate, endDate, dealerCode)
   const complaintSql = complaintsBaseSql(startDate, endDate, dealerCode)
   const comparisonRange = resolvePlatinumComparisonRange(startDate, endDate, comparison)
   const lyStartDate = comparisonRange.startDate
   const lyEndDate = comparisonRange.endDate
+  const roComparisonRange = resolvePlatinumComparisonRange(startDate, effectiveRoBillingEndDate, comparison)
+  const lyRoStartDate = roComparisonRange.startDate
+  const lyRoEndDate = roComparisonRange.endDate
   const optionalWarnings: OptionalSourceWarning[] = []
   const lyOpenSql = openRoBaseSql(lyStartDate, lyEndDate, dealerCode)
   const lyComplaintSql = complaintsBaseSql(lyStartDate, lyEndDate, dealerCode)
-  const useRoBillingSummary = await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode)
+  const useRoBillingSummary = await shouldUseWorkshopJcSummary(startDate, effectiveRoBillingEndDate, dealerCode)
 
   const [
     roDailyRows,
@@ -974,14 +983,13 @@ async function buildOverviewPayload(
     lyComplaintKpiRows,
     lyAddonKpisResult,
     lyWorkshopSnapshotResult,
-    roBillingCoverageResult,
     openRoCoverageResult,
     complaintsCoverageResult,
     vasAmountsResult,
   ] = await runWithConcurrency<unknown>([
     () => includePrimaryCharts
       ? useRoBillingSummary
-        ? fetchRoBillingDailyFromSummary(startDate, endDate, dealerCode)
+        ? fetchRoBillingDailyFromSummary(startDate, effectiveRoBillingEndDate, dealerCode)
         : db.execute(sql`
       ${roSql}
       SELECT
@@ -996,7 +1004,7 @@ async function buildOverviewPayload(
       : emptyRows(),
     () => includePrimaryCharts
       ? useRoBillingSummary
-        ? fetchRoBillingMixFromSummary(startDate, endDate, dealerCode)
+        ? fetchRoBillingMixFromSummary(startDate, effectiveRoBillingEndDate, dealerCode)
         : db.execute(sql`
       ${roSql}
       SELECT
@@ -1011,7 +1019,7 @@ async function buildOverviewPayload(
       : emptyRows(),
     () => includeSecondary
       ? useRoBillingSummary
-        ? fetchRoBillingAdvisorFromSummary(startDate, endDate, dealerCode)
+        ? fetchRoBillingAdvisorFromSummary(startDate, effectiveRoBillingEndDate, dealerCode)
         : db.execute(sql`
       ${roSql}
       SELECT
@@ -1146,19 +1154,19 @@ async function buildOverviewPayload(
       'canonical RO billing metrics',
       fetchCanonicalRoBillingMetrics({
         cyStart: startDate,
-        cyEnd: endDate,
-        lyStart: lyStartDate,
-        lyEnd: lyEndDate,
+        cyEnd: effectiveRoBillingEndDate,
+        lyStart: lyRoStartDate,
+        lyEnd: lyRoEndDate,
         dealerCode,
       }),
       {
         sourceAvailable: false,
         cy: { dedupedJc: 0, labour: 0, parts: 0, revenue: 0 },
         ly: { dedupedJc: 0, labour: 0, parts: 0, revenue: 0 },
-        lyRange: comparisonRange,
-        audit: emptyPlatinumRoBillingAudit(startDate, endDate, dealerCode, false, {
-          lyStartDate,
-          lyEndDate,
+        lyRange: roComparisonRange,
+        audit: emptyPlatinumRoBillingAudit(startDate, effectiveRoBillingEndDate, dealerCode, false, {
+          lyStartDate: lyRoStartDate,
+          lyEndDate: lyRoEndDate,
         }),
       },
       optionalWarnings
@@ -1193,12 +1201,6 @@ async function buildOverviewPayload(
       )
       : emptyWorkshopSnapshot(),
     () => includeSecondary ? safeOptional(
-      'RO Billing coverage',
-      fetchPlatinumRoBillingCoverage(startDate, endDate, dealerCode),
-      emptyCoverageValue(dealerCode, 'RO Billing', 'bill_date'),
-      optionalWarnings
-    ) : Promise.resolve(emptyCoverageValue(dealerCode, 'RO Billing', 'bill_date')),
-    () => includeSecondary ? safeOptional(
       'Open RO coverage',
       fetchPlatinumOpenRoCoverage(startDate, endDate, dealerCode),
       emptyCoverageValue(dealerCode, 'Open RO', 'r_o_date'),
@@ -1231,7 +1233,6 @@ async function buildOverviewPayload(
   const lyAddonKpis = lyAddonKpisResult as Awaited<ReturnType<typeof fetchAddonKpis>>
   let lyWorkshopSnapshot = lyWorkshopSnapshotResult as Awaited<ReturnType<typeof fetchWorkshopSnapshot>>
   const roBillingAudit = canonicalMetrics.audit
-  const roBillingCoverage = roBillingCoverageResult as PlatinumDealerCoverage
   const openRoCoverage = openRoCoverageResult as PlatinumDealerCoverage
   const complaintsCoverage = complaintsCoverageResult as PlatinumDealerCoverage
 

@@ -81,6 +81,11 @@ import {
 } from '@/lib/business-excellence/comparison'
 import { EXECUTIVE_TARGETS } from '@/lib/business-excellence/executive-targets'
 import {
+  isMileageServiceTypeLabel,
+  normalizeServiceTypeName,
+  partitionServiceTypeRows,
+} from '@/lib/business-excellence/workshop-classification'
+import {
   HYUNDAI_BRANCH_DEALERS as KIA_BRANCH_DEALERS,
   appendHyundaiDealerCodeParam as appendKiaDealerCodeParam,
   normalizeHyundaiDealerCode as normalizeKiaDealerCode,
@@ -3665,29 +3670,11 @@ function buildExecutiveSyntheticRow(name: string, sourceRows: ROAnalysisRow[]): 
 
 function getExecutiveDisplayBaseRows(response: ROAnalysisResponse | null | undefined, metric: 'load' | 'labour' | 'parts') {
   const topRows = getExecutiveMetricRows(response, metric).filter((row) => row.depth === 0)
-  const normalizeName = (name: string) => name
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ')
-
-  const matchesAny = (row: ROAnalysisRow, names: string[]) => {
-    const normalized = normalizeName(row.name || '')
-    return names.some((name) => normalized === normalizeName(name))
-  }
-
-  const paidNames = ['Paid Service']
-  const freeNames = ['Free Service', 'Free Services', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA First Free Service', 'TMA Second Free Service', 'TMA Third Free Service', 'Sixth Free Service']
-  const runningNames = ['Running Repair', 'Running Repairs']
-  const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop', 'Body Shop', 'Insurance', 'CRASH', 'Accident Repair', 'Body Repair', 'Paint & Body', 'Paint and Body']
-  const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
-
-  const paidRows = topRows.filter((row) => matchesAny(row, paidNames))
-  const freeRows = topRows.filter((row) => matchesAny(row, freeNames))
-  const runningRows = topRows.filter((row) => matchesAny(row, runningNames))
-  const accidentRows = topRows.filter((row) => matchesAny(row, accidentNames))
-  const otherRows = topRows.filter((row) => !matchesAny(row, classifiedNames))
+  const { paidRows, freeRows, runningRows, accidentRows, otherRows } = partitionServiceTypeRows(
+    topRows,
+    (row) => row.name,
+    'hyundai',
+  )
 
   const paid = buildExecutiveSyntheticRow('Paid Service', paidRows)
   const free = buildExecutiveSyntheticRow('Free Services', freeRows)
@@ -4739,11 +4726,8 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
     return serverGrandTotal ? [...sortedManagementRows, serverGrandTotal] : sortedManagementRows
   }
 
-  const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
-  const isMileageServiceLabel = (value: string) => /^(\d{2,3})k$/.test(normalized(value))
   const categoryLabel = (row: WorkshopPerformanceRow) => row.groupType || row.serviceType
-  const hasAny = (value: string, needles: string[]) => needles.some((needle) => normalized(value).includes(needle))
-  const comparable = (value: string) => normalized(value).replace(/\bservices\b/g, 'service').replace(/\brepairs\b/g, 'repair')
+  const comparable = (value: string) => normalizeServiceTypeName(value).replace(/\bservices\b/g, 'service').replace(/\brepairs\b/g, 'repair')
   const distinctChildren = (parentName: string, sourceRows: WorkshopPerformanceRow[]) => {
     const parentKey = comparable(parentName)
     const seen = new Set<string>()
@@ -4756,18 +4740,13 @@ function buildWorkshopDisplayRows(rawRows: WorkshopPerformanceRow[]) {
     })
   }
 
-  const paidRows = rows.filter((row) => hasAny(categoryLabel(row), ['paid service', 'service package']) || /(^|\s)(20|30|40|50|60|70|80|90|100|110|120|130|140|150|160|170)k(\s|$)/.test(normalized(categoryLabel(row))))
-  const freeRows = rows.filter((row) => hasAny(categoryLabel(row), ['free service', 'free services', 'tma first', 'tma second', 'tma third', 'sixth free']))
-  const runningRows = rows.filter((row) => hasAny(categoryLabel(row), ['running repair', 'running repairs']))
-  const accidentRows = rows.filter((row) => hasAny(categoryLabel(row), ['accident', 'accidental repair', 'bodyshop']))
-  const assigned = new Set([...paidRows, ...freeRows, ...runningRows, ...accidentRows])
-  const otherRows = rows.filter((row) => !assigned.has(row))
+  const { paidRows, freeRows, runningRows, accidentRows, otherRows } = partitionServiceTypeRows(rows, categoryLabel, 'hyundai')
 
   const totalJc = Number(serverGrandTotal?.totalJc || 0) || rows.reduce((sum, row) => sum + Number(row.totalJc || 0), 0)
   const totalLabour = Number(serverGrandTotal?.labourAmount || 0) || rows.reduce((sum, row) => sum + Number(row.labourAmount || 0), 0)
   const totals = { jc: totalJc, labour: totalLabour }
   const paid = aggregateWorkshopRows('Paid Service', paidRows, totals)
-  paid.subRows = distinctChildren(paid.serviceType, paidRows).filter((row) => !isMileageServiceLabel(row.serviceType))
+  paid.subRows = distinctChildren(paid.serviceType, paidRows).filter((row) => !isMileageServiceTypeLabel(row.serviceType))
   const free = aggregateWorkshopRows('Free Services', freeRows, totals)
   free.subRows = distinctChildren(free.serviceType, freeRows)
   const running = aggregateWorkshopRows('Running Repairs', runningRows, totals)
@@ -5678,17 +5657,11 @@ function ServiceTypePerformance({
       }
     }
 
-    const nameMatches = (row: ROAnalysisRow, names: string[]) => names.some((name) => row.name.toLowerCase() === name.toLowerCase())
-    const paidNames = ['Paid Service']
-    const freeNames = ['Free Service', 'First Free Service', 'Second Free Service', 'Third Free Service', 'TMA-First Free Service', 'TMA-Second Free Service', 'TMA-Third Free Service', 'Sixth Free Service']
-    const runningNames = ['Running Repair', 'Running Repairs']
-    const accidentNames = ['Accident', 'Accidental Repair', 'Bodyshop', 'Body Shop', 'Insurance', 'CRASH', 'Accident Repair', 'Body Repair', 'Paint & Body', 'Paint and Body']
-    const classifiedNames = [...paidNames, ...freeNames, ...runningNames, ...accidentNames]
-    const paidRows = topRows.filter((row) => nameMatches(row, paidNames))
-    const freeRows = topRows.filter((row) => nameMatches(row, freeNames))
-    const runningRows = topRows.filter((row) => nameMatches(row, runningNames))
-    const accidentRows = topRows.filter((row) => nameMatches(row, accidentNames))
-    const otherRows = topRows.filter((row) => !nameMatches(row, classifiedNames))
+    const { paidRows, freeRows, runningRows, accidentRows, otherRows } = partitionServiceTypeRows(
+      topRows,
+      (row) => row.name,
+      'hyundai',
+    )
 
     const normalizeComparableName = (name: string) => name
       .toLowerCase()

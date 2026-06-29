@@ -47,8 +47,10 @@ type ResolvedMonthContext = {
 }
 
 const KIA_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS = 60 * 10
+const KIA_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS = 60 * 5
 const ALL_DEALERS_CACHE_KEY = '__all__'
 const kiaSalesReportFreshnessFallback = new Map<string, SalesReportFreshnessPayload>()
+const kiaSalesReportSummaryFallback = new Map<string, SalesReportSummaryPayload>()
 
 const TABLES: Record<SourceKey, TableConfig> = {
   enquiry: {
@@ -436,15 +438,31 @@ export async function getKiaSalesReportFreshness(dealerCode?: string | null) {
   }
 }
 
+function buildSummaryCacheKey(year: number, month: number, dealerCode: string | null) {
+  return [year, String(month + 1).padStart(2, '0'), dealerCode || ALL_DEALERS_CACHE_KEY].join(':')
+}
+
 function buildKpi(
   label: string,
   value: number,
   previousValue: number,
   formattedValue = value.toLocaleString('en-IN'),
   formattedComparisonValue = previousValue.toLocaleString('en-IN'),
-  comparisonLabel = 'Previous month'
+  comparisonLabel = 'Previous month',
+  options: {
+    comparisonContext?: string | null
+    trendDirection?: 'higher_is_better' | 'lower_is_better'
+    changeBase?: { current: number; previous: number }
+  } = {}
 ) {
-  const pct = changePct(value, previousValue)
+  const changeCurrent = options.changeBase?.current ?? value
+  const changePrevious = options.changeBase?.previous ?? previousValue
+  const rawPct = changePct(changeCurrent, changePrevious)
+  const pct = rawPct === null
+    ? null
+    : options.trendDirection === 'lower_is_better'
+      ? rawPct * -1
+      : rawPct
   return {
     label,
     value,
@@ -452,8 +470,10 @@ function buildKpi(
     comparisonValue: previousValue,
     formattedComparisonValue,
     comparisonLabel,
+    comparisonContext: options.comparisonContext ?? null,
     changePct: pct,
     changeLabel: formatPercent(pct),
+    trendDirection: options.trendDirection ?? 'higher_is_better',
   } satisfies SalesReportKpi
 }
 
@@ -480,14 +500,13 @@ function aggregateAccessoryByVin(rows: Row[]) {
   return map
 }
 
-export async function getKiaSalesReportSummary(input: {
-  year?: number | null
-  month?: number | null
-  dealerCode?: string | null
-}) {
-  const normalizedDealerCode = normalizeKiaDealerCode(input.dealerCode) || null
-  const resolvedMonth = await resolveMonthContext(input.year, input.month, normalizedDealerCode)
-
+async function buildKiaSalesReportSummary(year: number, month: number, normalizedDealerCode: string | null) {
+  const resolvedMonth = {
+    key: `${year}-${String(month + 1).padStart(2, '0')}`,
+    label: monthLabel(year, month),
+    year,
+    month,
+  } satisfies ResolvedMonthContext
   const previous = previousMonth(resolvedMonth.year, resolvedMonth.month)
   const previousLabel = monthLabel(previous.year, previous.month)
   const [
@@ -528,6 +547,7 @@ export async function getKiaSalesReportSummary(input: {
       const enquiryStatusMap = new Map<string, number>()
       const sourceMap = new Map<string, number>()
       const dealerMap = new Map<string, number>()
+      const dealerSourceMap = new Map<string, Map<string, number>>()
       const temperatureMap = new Map<TemperatureKey, number>([['Hot', 0], ['Warm', 0], ['Cold', 0]])
       const modelMap = new Map<string, number>()
       const modelBySourceMap = new Map<string, Map<string, number>>()
@@ -551,6 +571,8 @@ export async function getKiaSalesReportSummary(input: {
         const date = displayDate(row.enquiry_date)
         increment(sourceMap, source)
         increment(dealerMap, dealer)
+        if (!dealerSourceMap.has(dealer)) dealerSourceMap.set(dealer, new Map())
+        increment(dealerSourceMap.get(dealer) as Map<string, number>, source)
         increment(modelMap, model)
         if (!modelBySourceMap.has(source)) modelBySourceMap.set(source, new Map())
         increment(modelBySourceMap.get(source) as Map<string, number>, model)
@@ -612,6 +634,8 @@ export async function getKiaSalesReportSummary(input: {
       const totalTestDrives = tdRows.length
       const totalAccPerCar = retails > 0 ? accessoriesRevenue / retails : 0
       const previousAccPerCar = previousRetails > 0 ? previousAccessoriesRevenue / previousRetails : 0
+      const lostRatePct = percent(totalLost, totalEnquiries)
+      const previousLostRatePct = percent(previousLostRows.length, previousEnquiryRows.length)
 
       const sourceCards = buildCounts(sourceMap).map((item) => {
         const bookings = bookingsBySource.get(item.name) || 0
@@ -774,7 +798,11 @@ export async function getKiaSalesReportSummary(input: {
             buildKpi('Bookings', totalBookings, previousBookingRows.length, totalBookings.toLocaleString('en-IN'), previousBookingRows.length.toLocaleString('en-IN'), `Vs ${previousLabel}`),
             buildKpi('Retails', retails, previousRetails, retails.toLocaleString('en-IN'), previousRetails.toLocaleString('en-IN'), `Vs ${previousLabel}`),
             buildKpi('Test Drives', totalTestDrives, previousTdRows.length, totalTestDrives.toLocaleString('en-IN'), previousTdRows.length.toLocaleString('en-IN'), `Vs ${previousLabel}`),
-            buildKpi('Lost', totalLost, previousLostRows.length, totalLost.toLocaleString('en-IN'), previousLostRows.length.toLocaleString('en-IN'), `Vs ${previousLabel}`),
+            buildKpi('Lost', totalLost, previousLostRows.length, totalLost.toLocaleString('en-IN'), previousLostRows.length.toLocaleString('en-IN'), `Vs ${previousLabel}`, {
+              trendDirection: 'lower_is_better',
+              changeBase: { current: lostRatePct, previous: previousLostRatePct },
+              comparisonContext: `Loss rate ${lostRatePct.toFixed(1)}% vs ${previousLostRatePct.toFixed(1)}% of enquiries`,
+            }),
             buildKpi('Exchange Opted', exchangeCount, previousExchangeCount, exchangeCount.toLocaleString('en-IN'), previousExchangeCount.toLocaleString('en-IN'), `Vs ${previousLabel}`),
             buildKpi('Acc Revenue', accessoriesRevenue, previousAccessoriesRevenue, formatCurrency(accessoriesRevenue), formatCurrency(previousAccessoriesRevenue), `Vs ${previousLabel}`),
             buildKpi('Acc / Car', totalAccPerCar, previousAccPerCar, formatCurrency(totalAccPerCar), formatCurrency(previousAccPerCar), `Vs ${previousLabel}`),
@@ -827,7 +855,10 @@ export async function getKiaSalesReportSummary(input: {
           })),
           dealerMatrix: buildCounts(dealerMap).map((dealer) => ({
             dealer: dealer.name,
-            values: sourceCards.map((item) => ({ source: item.source, enquiries: item.enquiries })),
+            values: sourceCards.map((item) => ({
+              source: item.source,
+              enquiries: dealerSourceMap.get(dealer.name)?.get(item.source) || 0,
+            })),
           })),
           walkinSpotlight: {
             enquiries: walkinCard?.enquiries || 0,
@@ -846,8 +877,8 @@ export async function getKiaSalesReportSummary(input: {
         },
         lost: {
           totalLost,
-          lostRatePct: percent(totalLost, totalEnquiries),
-          lostRateChangePct: changePct(percent(totalLost, totalEnquiries), percent(previousLostRows.length, previousEnquiryRows.length)),
+          lostRatePct,
+          lostRateChangePct: changePct(lostRatePct, previousLostRatePct),
           reasons: buildCounts(lostReasonMap),
           consultants: buildCounts(lostConsultantMap),
           models: buildCounts(lostModelMap),
@@ -882,6 +913,43 @@ export async function getKiaSalesReportSummary(input: {
           },
         },
       } satisfies SalesReportSummaryPayload
+}
+
+const readCachedKiaSalesReportSummary = unstable_cache(
+  async (year: number, month: number, dealerCodeKey: string) => {
+    const normalizedDealerCode = dealerCodeKey === ALL_DEALERS_CACHE_KEY ? null : dealerCodeKey
+    return await buildKiaSalesReportSummary(year, month, normalizedDealerCode)
+  },
+  ['kia-sales-report-summary-v2'],
+  { revalidate: KIA_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS }
+)
+
+export async function getKiaSalesReportSummary(input: {
+  year?: number | null
+  month?: number | null
+  dealerCode?: string | null
+}) {
+  const normalizedDealerCode = normalizeKiaDealerCode(input.dealerCode) || null
+  const resolvedMonth = await resolveMonthContext(input.year, input.month, normalizedDealerCode)
+  const dealerCacheKey = normalizedDealerCode || ALL_DEALERS_CACHE_KEY
+  const cacheKey = buildSummaryCacheKey(resolvedMonth.year, resolvedMonth.month, normalizedDealerCode)
+
+  try {
+    const payload = await readCachedKiaSalesReportSummary(resolvedMonth.year, resolvedMonth.month, dealerCacheKey)
+    kiaSalesReportSummaryFallback.set(cacheKey, payload)
+    return payload
+  } catch (error) {
+    const fallback = kiaSalesReportSummaryFallback.get(cacheKey)
+    if (fallback) {
+      console.warn('[kia-sales-report:summary] serving last known good snapshot after live read failure', {
+        dealerCode: normalizedDealerCode || 'all',
+        monthKey: resolvedMonth.key,
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return fallback
+    }
+    throw error
+  }
 }
 
 function escapeCsvCell(value: unknown) {

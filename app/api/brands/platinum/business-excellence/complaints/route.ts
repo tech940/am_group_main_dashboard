@@ -87,7 +87,7 @@ function jsonRows(value: unknown): NumericRow[] {
 }
 
 function numericText(column: ReturnType<typeof sql.raw>) {
-  return sql`COALESCE(NULLIF(regexp_replace(${column}::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)`
+  return sql`CASE WHEN regexp_replace(${column}::text, '[^0-9.-]', '', 'g') ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN regexp_replace(${column}::text, '[^0-9.-]', '', 'g')::numeric ELSE 0 END`
 }
 
 function complaintBusinessDateSql() {
@@ -869,8 +869,8 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
         signal_area,
         uploaded_at
       FROM filtered
+      WHERE status_group <> 'Closed'
       ORDER BY
-        CASE WHEN status_group <> 'Closed' THEN 0 ELSE 1 END,
         resolution_days DESC,
         complaint_date DESC
       LIMIT ${filters.pageSize}
@@ -1060,11 +1060,11 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
       sources: options.sources || [],
     },
     meta: {
-      rowCount: numberValue(kpis.total),
+      rowCount: numberValue(kpis.open),
       page: filters.page,
       pageSize: filters.pageSize,
-      totalRows: numberValue(kpis.total),
-      totalPages: Math.max(1, Math.ceil(numberValue(kpis.total) / filters.pageSize)),
+      totalRows: numberValue(kpis.open),
+      totalPages: Math.max(1, Math.ceil(numberValue(kpis.open) / filters.pageSize)),
       detailLimit: filters.pageSize,
       chunk,
       cacheTtlSeconds: CACHE_TTL_SECONDS,
