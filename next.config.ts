@@ -24,9 +24,6 @@ const nextConfig: NextConfig = {
       },
     ]
   },
-  async rewrites() {
-    return []
-  },
 };
 
 export default nextConfig;

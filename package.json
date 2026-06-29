@@ -45,8 +45,7 @@
     "verify:hyundai-dealers": "tsx scripts/verify-hyundai-dealer-registry.ts",
     "verify:hyundai-operations": "tsx scripts/verify-hyundai-operation-metrics.ts",
     "db:repair-hyundai-be": "node scripts/repair-hyundai-business-excellence-data.mjs",
-    "insurance:dashboard": "node kia-insurance-dashboard/server.js",
-    "insurance:dashboard:pm2": "pm2 start kia-insurance-dashboard/server.js --name insurance-dashboard"
+    "warranty:cleanup-remarks": "tsx scripts/cleanup-warranty-remarks.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",
@@ -73,7 +72,6 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
-    "express": "^5.2.1",
     "lucide-react": "^1.14.0",
     "next": "16.2.6",
     "nextjs-toploader": "^3.9.17",

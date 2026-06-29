@@ -42,15 +42,11 @@ export async function POST(request: NextRequest) {
       ))
       .limit(1)
 
-    let redirectTo = appUser?.role === 'finance_head'
+    const redirectTo = appUser?.role === 'finance_head'
       ? '/finance-orders'
       : appUser?.role === 'md'
         ? '/purchase-orders'
         : '/dashboard'
-
-    if (email === 'insurance@amkia.in') {
-      redirectTo = '/kia-insurance-dashboard/performance?token=insurance-auto-access'
-    }
 
     await logUserActivity({
       actor: {
