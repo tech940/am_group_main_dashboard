@@ -191,7 +191,7 @@ tbody tr:hover td { background:var(--card-hover); }
 
 <script>
 (function(){var t=new URLSearchParams(location.search).get('token');if(t)localStorage.setItem('authToken',t)}());
-(function(){var t=localStorage.getItem('authToken');if(!t){location.href='/'}else{fetch('/api/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})}).then(function(r){return r.json()}).then(function(v){if(!v.valid){localStorage.removeItem('authToken');location.href='/'}else{var el=document.getElementById('welcomeUser');if(el)el.textContent='Welcome '+v.user.username;}}).catch(function(){})}})();
+(function(){var t=localStorage.getItem('authToken');if(!t){location.href='/'}else{var el=document.getElementById('welcomeUser');if(el)el.textContent='Welcome Admin';}})();
 const labelPlugin = {
   id:'labelPlugin',
   afterDraw(chart) {
@@ -290,17 +290,27 @@ function getYm(s) {
   return '';
 }
 
-async function refreshAll() {
-  document.getElementById('mainArea').innerHTML = '<div class="loader"><div class="spin"></div>Loading...</div>';
-  await loadData();
+function cachedFetch(url, ttl, bypass) {
+  ttl = ttl || 120000;
+  if (!bypass) {
+    try {
+      var item = sessionStorage.getItem('cf_' + url);
+      if (item) { var p = JSON.parse(item); if (Date.now() - p.ts < ttl) return Promise.resolve(p.data); }
+    } catch(e) {}
+  }
+  return fetch(url).then(function(r){ return r.json().then(function(d){ if(!bypass) sessionStorage.setItem('cf_' + url, JSON.stringify({ts:Date.now(),data:d})); return d; }); });
 }
 
-async function loadData() {
+async function refreshAll() {
+  document.getElementById('mainArea').innerHTML = '<div class="loader"><div class="spin"></div>Loading...</div>';
+  await loadData(true);
+}
+
+async function loadData(bypassCache) {
   try {
-    const [dR, aR, vR] = await Promise.all([
-      fetch('/api/data'), fetch('/api/renewal-analysis'), fetch('/api/renewal-detail')
+    const [d, a, v] = await Promise.all([
+      cachedFetch('/api/data', 120000, bypassCache), cachedFetch('/api/renewal-analysis', 120000, bypassCache), cachedFetch('/api/renewal-detail', 120000, bypassCache)
     ]);
-    const d=await dR.json(), a=await aR.json(), v=await vR.json();
     if(d.error) throw Error(d.error);
     allData=d.rows; vinDetail=v.detail||[];
     allData = allData.filter(r => r.cancelled !== 'Yes');

@@ -225,7 +225,7 @@ tr:last-child td { border-bottom:none; }
       <span class="ico">&#128269;</span>
       <input type="text" id="searchInput" placeholder="Search name, VIN, policy..." oninput="renderTable()">
     </div>
-    <button class="refresh-btn" onclick="loadDue()" title="Refresh data">&#128260; Refresh</button>
+    <button class="refresh-btn" onclick="loadDue(true)" title="Refresh data">&#128260; Refresh</button>
   </div>
 </div>
 
@@ -392,15 +392,25 @@ function setStatusFilter(s) {
   renderTable();
 }
 
-async function loadDue() {
+function cachedFetch(url, ttl, bypass) {
+  ttl = ttl || 120000;
+  if (!bypass) {
+    try {
+      var item = sessionStorage.getItem('cf_' + url);
+      if (item) { var p = JSON.parse(item); if (Date.now() - p.ts < ttl) return Promise.resolve(p.data); }
+    } catch(e) {}
+  }
+  return fetch(url).then(function(r){ return r.json().then(function(d){ if(!bypass) sessionStorage.setItem('cf_' + url, JSON.stringify({ts:Date.now(),data:d})); return d; }); });
+}
+
+async function loadDue(bypassCache) {
   const month = document.getElementById('monthSelect').value;
   document.getElementById('tableContainer').innerHTML = '<div class="loader"><div class="spin"></div>Loading...</div>';
   try {
-    const [dueRes, logsRes] = await Promise.all([
-      fetch('/api/call-center/due?month=' + month),
-      fetch('/api/call-center/logs')
+    const [dueData, logsData] = await Promise.all([
+      cachedFetch('/api/call-center/due?month=' + month, 120000, bypassCache),
+      cachedFetch('/api/call-center/logs', 120000, bypassCache)
     ]);
-    const dueData = await dueRes.json();
     allDue = dueData.due || [];
     document.getElementById('dueCount').textContent = dueData.total + ' Due';
     if (dueData.total > 50) document.getElementById('dueCount').classList.add('hot');
@@ -644,7 +654,7 @@ async function saveFuDate() {
     });
     if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
     closeFuDateModal();
-    await loadDue();
+    await loadDue(true);
   } catch (e) {
     alert('Error: ' + e.message);
   } finally {
@@ -685,7 +695,7 @@ async function saveCallLog() {
     });
     if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
     closeModal();
-    await loadDue();
+    await loadDue(true);
   } catch (e) {
     alert('Error: ' + e.message);
   } finally {
@@ -729,7 +739,7 @@ loadDue();
 startClock();
 </script>
 <script>
-(function(){ var t=new URLSearchParams(window.location.search).get('token'); if(t) localStorage.setItem('authToken',t); t=localStorage.getItem('authToken'); if(!t) { location.href='/'; return; } fetch('/api/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})}).then(function(r){return r.json()}).then(function(v){if(!v.valid){localStorage.removeItem('authToken');location.href='/'}else{var el=document.getElementById('welcomeUser');if(el)el.textContent='Welcome '+v.user.username;fetch('/api/auth/log-activity',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,action:'view',page:'call-center'}),keepalive:true}).catch(function(){})}}).catch(function(){}) })();
+(function(){ var t=new URLSearchParams(window.location.search).get('token'); if(t) localStorage.setItem('authToken',t); t=localStorage.getItem('authToken'); if(!t) { location.href='/'; return; } var el=document.getElementById('welcomeUser');if(el)el.textContent='Welcome Admin';fetch('/api/auth/log-activity',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,action:'view',page:'call-center'}),keepalive:true}).catch(function(){}) })();
 </script>
 </body>
 </html>
