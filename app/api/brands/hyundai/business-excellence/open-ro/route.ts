@@ -82,12 +82,8 @@ function openRoBaseSql(filters: OpenRoFilters) {
         uploaded_at
       FROM hyundai_repair_order_list
       WHERE cancel_date IS NULL
-        AND NOT (
-          LOWER(COALESCE(status::text, '')) ~ '(close|closed|delivered|cancel)'
-          OR LOWER(COALESCE(r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
-          OR LOWER(COALESCE(new_r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
-          OR LOWER(COALESCE(type_of_free_service::text, '')) ~ '(close|closed|delivered|cancel)'
-        )
+        AND LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), NULLIF(TRIM(status::text), ''), NULLIF(TRIM(new_r_o_status::text), ''), '')) = 'open'
+        AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
         AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}
       ORDER BY
@@ -206,7 +202,7 @@ function parseDateInput(value: string | null) {
 
 function cacheKey(filters: OpenRoFilters, chunk: OpenRoChunk) {
   const stableParams = JSON.stringify(filters)
-  return `hyundai:business-excellence:open-ro:v11:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
+  return `hyundai:business-excellence:open-ro:v12:${chunk}:${createHash('sha1').update(stableParams).digest('hex')}`
 }
 
 function buildAlerts(row: OpenRoDetailRow) {
@@ -376,15 +372,11 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
           '-' AS insurance_company_name,
           r_o_date::date AS ro_date
         FROM hyundai_repair_order_list
-        WHERE cancel_date IS NULL
-          AND NOT (
-            LOWER(COALESCE(status::text, '')) ~ '(close|closed|delivered|cancel)'
-            OR LOWER(COALESCE(r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
-            OR LOWER(COALESCE(new_r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
-            OR LOWER(COALESCE(type_of_free_service::text, '')) ~ '(close|closed|delivered|cancel)'
-          )
-          AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
-          ${openRoDealerFilter(filters)}
+      WHERE cancel_date IS NULL
+        AND LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), NULLIF(TRIM(status::text), ''), NULLIF(TRIM(new_r_o_status::text), ''), '')) = 'open'
+        AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
+        AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
+        ${openRoDealerFilter(filters)}
         ORDER BY
           COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
           uploaded_at DESC NULLS LAST,
@@ -396,9 +388,9 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
           insurance_company_name,
           CASE
             WHEN ro_date IS NULL THEN '0-4D'
-            WHEN (CURRENT_DATE - ro_date)::int <= 4 THEN '0-4D'
-            WHEN (CURRENT_DATE - ro_date)::int <= 7 THEN '5-7D'
-            WHEN (CURRENT_DATE - ro_date)::int <= 15 THEN '8-15D'
+            WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 4 THEN '0-4D'
+            WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 7 THEN '5-7D'
+            WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 15 THEN '8-15D'
             ELSE '>15D'
           END AS aging_bucket,
           CASE
@@ -511,7 +503,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       chunk,
       dateRange: { startDate: filters.startDate, endDate: filters.endDate },
       statusDefinition: "LOWER(status) = 'open'",
-      agingDefinition: 'CURRENT_DATE - ro_date',
+      agingDefinition: 'selected_end_date - ro_date',
       promiseDateDefinition: 'COALESCE(revised_promise_date_time, promise_date_time)',
       cacheTtlSeconds: CACHE_TTL_SECONDS,
       comparison: {

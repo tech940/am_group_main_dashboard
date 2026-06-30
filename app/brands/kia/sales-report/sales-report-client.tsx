@@ -188,6 +188,16 @@ function formatDate(value: string | null | undefined) {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+function isInputDate(value: string | null | undefined) {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value))
+}
+
+function formatDateRangeLabel(startDate: string | null | undefined, endDate: string | null | undefined) {
+  if (!isInputDate(startDate) || !isInputDate(endDate)) return null
+  if (startDate === endDate) return formatDate(startDate)
+  return `${formatDate(startDate)} - ${formatDate(endDate)}`
+}
+
 function formatDateTime(value: string | null | undefined) {
   if (!value) return 'NA'
   const date = new Date(value)
@@ -776,6 +786,14 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     const raw = Number(readSingleParam(initialSearchParams.month))
     return Number.isFinite(raw) ? Math.max(0, raw - 1) : null
   })())
+  const [selectedStartDate, setSelectedStartDate] = useState<string>(() => {
+    const raw = readSingleParam(initialSearchParams.startDate)
+    return isInputDate(raw) ? raw as string : ''
+  })
+  const [selectedEndDate, setSelectedEndDate] = useState<string>(() => {
+    const raw = readSingleParam(initialSearchParams.endDate)
+    return isInputDate(raw) ? raw as string : ''
+  })
   const [selectedDealerCode, setSelectedDealerCode] = useState<string | null>(readSingleParam(initialSearchParams.dealer_code) || null)
   const [modelSourceFilter, setModelSourceFilter] = useState('all')
   const [reportSearch, setReportSearch] = useState(readSingleParam(initialSearchParams.search) || '')
@@ -817,13 +835,31 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   ) || freshnessQuery.data?.availableMonths[0]
   const effectiveSelectedYear = effectiveSelectedMonthOption?.year ?? selectedYear
   const effectiveSelectedMonth = effectiveSelectedMonthOption?.month ?? selectedMonth
-  
-  const summaryQuery = useQuery({
-    queryKey: ['kia-sales-report-summary', effectiveSelectedYear, effectiveSelectedMonth, selectedDealerCode || 'all'],
-    enabled: effectiveSelectedYear !== null && effectiveSelectedMonth !== null,
-    queryFn: () => fetchReportJson<SalesReportSummaryPayload>(`/api/brands/kia/sales-report/summary?${buildQueryString({
+  const hasCompleteCustomRange = isInputDate(selectedStartDate) && isInputDate(selectedEndDate)
+  const customRangeLabel = formatDateRangeLabel(selectedStartDate, selectedEndDate)
+  const selectedRangeStart = hasCompleteCustomRange && selectedStartDate <= selectedEndDate ? selectedStartDate : selectedEndDate
+  const selectedRangeEnd = hasCompleteCustomRange && selectedStartDate <= selectedEndDate ? selectedEndDate : selectedStartDate
+  const periodQueryParams = hasCompleteCustomRange
+    ? {
+      startDate: selectedRangeStart,
+      endDate: selectedRangeEnd,
+    }
+    : {
       year: effectiveSelectedYear,
       month: effectiveSelectedMonth !== null ? effectiveSelectedMonth + 1 : null,
+    }
+  const periodReady = hasCompleteCustomRange || (effectiveSelectedYear !== null && effectiveSelectedMonth !== null)
+  
+  const summaryQuery = useQuery({
+    queryKey: [
+      'kia-sales-report-summary',
+      hasCompleteCustomRange ? selectedRangeStart : effectiveSelectedYear,
+      hasCompleteCustomRange ? selectedRangeEnd : effectiveSelectedMonth,
+      selectedDealerCode || 'all',
+    ],
+    enabled: periodReady,
+    queryFn: () => fetchReportJson<SalesReportSummaryPayload>(`/api/brands/kia/sales-report/summary?${buildQueryString({
+      ...periodQueryParams,
       dealer_code: selectedDealerCode,
     })}`, 'kia-sales-report-summary', 25000),
     staleTime: 5 * 60 * 1000,
@@ -838,8 +874,8 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     queryKey: [
       'kia-sales-report-report',
       activeReport,
-      effectiveSelectedYear,
-      effectiveSelectedMonth,
+      hasCompleteCustomRange ? selectedRangeStart : effectiveSelectedYear,
+      hasCompleteCustomRange ? selectedRangeEnd : effectiveSelectedMonth,
       selectedDealerCode || 'all',
       reportSource,
       reportModel,
@@ -850,11 +886,10 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
       reportPage,
       reportPageSize,
     ],
-    enabled: effectiveSelectedYear !== null && effectiveSelectedMonth !== null && activeTab === 'reports' && summaryQuery.isSuccess,
+    enabled: periodReady && activeTab === 'reports' && summaryQuery.isSuccess,
     queryFn: () => fetchReportJson<SalesReportListPayload>(`/api/brands/kia/sales-report/reports?${buildQueryString({
       report: activeReport,
-      year: effectiveSelectedYear,
-      month: effectiveSelectedMonth !== null ? effectiveSelectedMonth + 1 : null,
+      ...periodQueryParams,
       dealer_code: selectedDealerCode,
       source: reportSource,
       model: reportModel,
@@ -877,18 +912,24 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     const params = new URLSearchParams()
     if (activeTab !== 'overview') params.set('tab', activeTab)
     if (activeReport !== 'enquiry') params.set('report', activeReport)
-    if (effectiveSelectedYear !== null) params.set('year', String(effectiveSelectedYear))
-    if (effectiveSelectedMonth !== null) params.set('month', String(effectiveSelectedMonth + 1))
+    if (hasCompleteCustomRange) {
+      params.set('startDate', selectedRangeStart)
+      params.set('endDate', selectedRangeEnd)
+    } else {
+      if (effectiveSelectedYear !== null) params.set('year', String(effectiveSelectedYear))
+      if (effectiveSelectedMonth !== null) params.set('month', String(effectiveSelectedMonth + 1))
+    }
     if (selectedDealerCode) params.set('dealer_code', selectedDealerCode)
 
     startTransition(() => {
       router.replace(params.size ? `${pathname}?${params.toString()}` : pathname, { scroll: false })
     })
-  }, [activeReport, activeTab, effectiveSelectedMonth, effectiveSelectedYear, pathname, router, selectedDealerCode])
+  }, [activeReport, activeTab, effectiveSelectedMonth, effectiveSelectedYear, hasCompleteCustomRange, pathname, router, selectedDealerCode, selectedRangeEnd, selectedRangeStart])
 
   const freshness = freshnessQuery.data
   const summary = summaryQuery.data
   const selectedMonthOption = effectiveSelectedMonthOption
+  const activePeriodLabel = summary?.context.selectedMonthLabel || customRangeLabel || selectedMonthOption?.label || 'Current period'
   const metricOptions = getMetricOptions(summary)
   const visibleColumns = reportQuery.data
     ? (expandedReportColumns[activeReport] ? reportQuery.data.columns : reportQuery.data.defaultVisibleColumns)
@@ -958,8 +999,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     const timeout = window.setTimeout(() => controller.abort(), 20000)
     const response = await fetch(`/api/brands/kia/sales-report/reports?${buildQueryString({
       report: activeReport,
-      year: effectiveSelectedYear,
-      month: effectiveSelectedMonth !== null ? effectiveSelectedMonth + 1 : null,
+      ...periodQueryParams,
       dealer_code: selectedDealerCode,
       source: reportSource,
       model: reportModel,
@@ -985,12 +1025,49 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     if (!month) return
     setSelectedYear(month.year)
     setSelectedMonth(month.month)
+    setSelectedStartDate('')
+    setSelectedEndDate('')
     setReportPage(1)
     setRetailPage(1)
     setLostPage(1)
     setTeamPage(1)
     setHeatmapPage(1)
     setMonthPickerOpen(false)
+  }
+
+  function handleCalendarDateClick(dateKey: string) {
+    if (!availableMonthKeys.has(dateKey.slice(0, 7))) return
+
+    if (!selectedStartDate || (selectedStartDate && selectedEndDate)) {
+      setSelectedStartDate(dateKey)
+      setSelectedEndDate('')
+      setSelectedYear(Number(dateKey.slice(0, 4)))
+      setSelectedMonth(Number(dateKey.slice(5, 7)) - 1)
+      return
+    }
+
+    const start = selectedStartDate <= dateKey ? selectedStartDate : dateKey
+    const end = selectedStartDate <= dateKey ? dateKey : selectedStartDate
+    setSelectedStartDate(start)
+    setSelectedEndDate(end)
+    setSelectedYear(Number(end.slice(0, 4)))
+    setSelectedMonth(Number(end.slice(5, 7)) - 1)
+    setReportPage(1)
+    setRetailPage(1)
+    setLostPage(1)
+    setTeamPage(1)
+    setHeatmapPage(1)
+    setMonthPickerOpen(false)
+  }
+
+  function clearCustomDateRange() {
+    setSelectedStartDate('')
+    setSelectedEndDate('')
+    setReportPage(1)
+    setRetailPage(1)
+    setLostPage(1)
+    setTeamPage(1)
+    setHeatmapPage(1)
   }
 
   function handleReportColumnSort(column: string) {
@@ -1012,10 +1089,10 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     setReportDirection('desc')
   }
 
-  const summaryMonthReady = effectiveSelectedYear !== null && effectiveSelectedMonth !== null
-  const headerLoading = freshnessQuery.isLoading || (summaryMonthReady && summaryQuery.isLoading && !summary)
-  const summarySkeletonVisible = summaryMonthReady && (summaryQuery.isLoading || (summaryQuery.isFetching && !summary))
-  const reportSkeletonVisible = reportQuery.isLoading && !reportQuery.data
+  const summaryMonthReady = periodReady
+  const headerLoading = freshnessQuery.isLoading || freshnessQuery.isFetching || (summaryMonthReady && summaryQuery.isLoading && !summary)
+  const summarySkeletonVisible = summaryMonthReady && (summaryQuery.isLoading || summaryQuery.isFetching)
+  const reportSkeletonVisible = activeTab === 'reports' && (reportQuery.isLoading || reportQuery.isFetching)
   const pageError = freshnessQuery.error || summaryQuery.error
   const availableMonthKeys = new Set((freshness?.availableMonths || []).map((item) => item.key))
   const monthPickerViewLabel = monthPickerView.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
@@ -1047,6 +1124,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
         : 1
     ).padStart(2, '0')}`
     : ''
+  const pendingSingleDate = Boolean(selectedStartDate && !selectedEndDate)
 
   const renderActiveTabSkeleton = () => {
     if (activeTab === 'reports') {
@@ -1198,7 +1276,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                 </p>
                 <div className="mt-1 flex items-center gap-2 text-[28px] font-black text-[#071a2b]">
                   <span className="text-base">🗓️</span>
-                  <span>{selectedMonthOption?.label || 'Loading month...'}</span>
+                  <span>{headerLoading ? 'Loading period...' : activePeriodLabel}</span>
                 </div>
               </div>
               <div className="hidden h-6 w-px bg-[#d6e0ea] lg:block" />
@@ -1216,11 +1294,17 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                 <DropdownMenu
                   open={monthPickerOpen}
                   onOpenChange={(open) => {
-                    setMonthPickerOpen(open)
-                    if (open) {
-                      setMonthPickerView(new Date(
-                        selectedMonthOption?.year ?? today.getFullYear(),
-                        selectedMonthOption?.month ?? today.getMonth(),
+                      setMonthPickerOpen(open)
+                      if (open) {
+                      const anchorDate = selectedEndDate || selectedStartDate
+                      const parsedAnchor = anchorDate ? new Date(`${anchorDate}T00:00:00`) : null
+                        setMonthPickerView(new Date(
+                        parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
+                          ? parsedAnchor.getFullYear()
+                          : selectedMonthOption?.year ?? today.getFullYear(),
+                        parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
+                          ? parsedAnchor.getMonth()
+                          : selectedMonthOption?.month ?? today.getMonth(),
                         1,
                       ))
                     }
@@ -1230,7 +1314,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                     <Button type="button" variant="outline" className="h-12 w-full justify-between rounded-[1rem] border-[#d8e2ec] bg-white px-4 text-[14px] font-semibold text-slate-900 shadow-sm hover:bg-white">
                       <span className="inline-flex items-center gap-2">
                         <CalendarDays className="h-4 w-4 text-slate-400" />
-                        {selectedMonthOption?.label || 'Select month'}
+                        {customRangeLabel || selectedMonthOption?.label || 'Select dates'}
                       </span>
                       <ChevronDown className="h-4 w-4 text-slate-500" />
                     </Button>
@@ -1247,7 +1331,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                           <ChevronLeft className="h-4 w-4" />
                         </button>
                         <div className="text-center">
-                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Select month</p>
+                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Select date range</p>
                           <p className="mt-1 text-[15px] font-black text-slate-950">{monthPickerViewLabel}</p>
                         </div>
                         <button
@@ -1268,7 +1352,10 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
 
                       <div className="grid grid-cols-7 gap-1">
                         {monthPickerDays.map((day) => {
-                          const isSelected = day.dateKey === selectedMonthDateKey
+                          const isSelected = hasCompleteCustomRange
+                            ? day.dateKey === selectedRangeStart || day.dateKey === selectedRangeEnd
+                            : day.dateKey === selectedMonthDateKey || day.dateKey === selectedStartDate
+                          const isInSelectedRange = hasCompleteCustomRange && day.dateKey > selectedRangeStart && day.dateKey < selectedRangeEnd
                           const isToday = day.dateKey === todayDateKey
                           return (
                             <button
@@ -1281,10 +1368,11 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                                 day.isAvailable
                                   ? 'hover:bg-[#edf4fb] hover:text-[#071a2b]'
                                   : 'cursor-not-allowed opacity-35',
+                                isInSelectedRange && 'bg-[#e6f2fb] text-[#071a2b]',
                                 isToday && 'ring-2 ring-[#18a7d0]/50 ring-offset-2',
                                 isSelected && 'bg-[#071a2b] text-white shadow-[0_10px_18px_rgba(7,26,43,0.18)] hover:bg-[#071a2b]'
                               )}
-                              onClick={() => handleMonthChange(day.monthKey)}
+                              onClick={() => handleCalendarDateClick(day.dateKey)}
                             >
                               {day.date.getDate()}
                             </button>
@@ -1294,9 +1382,23 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
 
                       <div className="flex items-center justify-between gap-3 rounded-[1.1rem] border border-[#e4ebf2] bg-[#f8fbfd] px-3 py-2">
                         <div>
-                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Analytics month</p>
-                          <p className="mt-1 text-[13px] font-semibold text-slate-700">Click any available day to load that whole month.</p>
+                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                            {pendingSingleDate ? 'Pick end date' : 'Analytics range'}
+                          </p>
+                          <p className="mt-1 text-[13px] font-semibold text-slate-700">
+                            {customRangeLabel || (selectedStartDate ? `Start: ${formatDate(selectedStartDate)}` : 'Click a start day, then an end day.')}
+                          </p>
                         </div>
+                        {(selectedStartDate || selectedEndDate) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-full border border-[#d8e2ec] bg-white px-3 py-1 text-[11px] font-black text-slate-600 shadow-none hover:bg-white"
+                            onClick={clearCustomDateRange}
+                          >
+                            Clear
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           variant="outline"
@@ -1383,8 +1485,8 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
           {summarySkeletonVisible ? renderActiveTabSkeleton() : (
             <>
           <TabsContent value="overview" className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-              {(summary?.overview.kpis || []).slice(0, 6).map((item, index) => <KpiCard key={item.label} item={item} index={index} />)}
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+              {(summary?.overview.kpis || []).map((item, index) => <KpiCard key={item.label} item={item} index={index} />)}
             </div>
 
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(320px,0.9fr)]">
@@ -1488,7 +1590,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
             </div>
 
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
-              <ChartCard title="Model-wise Enquiry Volume" subtitle={`${selectedMonthOption?.label || 'Current month'} model demand mix`}>
+              <ChartCard title="Model-wise Enquiry Volume" subtitle={`${activePeriodLabel} model demand mix`}>
                 {renderBarChart({
                   data: summary?.overview.topModels || [],
                   xKey: 'name',
@@ -1515,7 +1617,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
 
           <TabsContent value="models" className="space-y-5">
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
-              <ChartCard title="Model-wise Enquiry Volume" subtitle={`${selectedMonthOption?.label || 'Current month'} demand build by model`}>
+              <ChartCard title="Model-wise Enquiry Volume" subtitle={`${activePeriodLabel} demand build by model`}>
                 {renderBarChart({
                   data: summary?.models.items || [],
                   xKey: 'model',
@@ -1677,7 +1779,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
             </div>
 
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
-              <ChartCard title={`Top Consultants — ${selectedMonthOption?.label || 'Current Month'}`} subtitle="All dealerships combined">
+              <ChartCard title={`Top Consultants — ${activePeriodLabel}`} subtitle="All dealerships combined">
                 {renderBarChart({
                   data: summary?.team.comparison || [],
                   xKey: 'consultant',
@@ -1718,7 +1820,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
               </ChartCard>
             </div>
 
-            <ChartCard title={`Consultant Performance Report — ${selectedMonthOption?.label || 'Current Month'}`} subtitle="Enquiry → Test Drive → Booking conversion · Walk-in breakdown">
+            <ChartCard title={`Consultant Performance Report — ${activePeriodLabel}`} subtitle="Enquiry → Test Drive → Booking conversion · Walk-in breakdown">
               {pagedTeamRows.length ? (
                 <>
                 <div className="overflow-hidden rounded-[1.5rem] border border-slate-200">
@@ -1769,7 +1871,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
 
           <TabsContent value="trend" className="space-y-5">
             <ChartCard
-              title={`Daily Enquiry Trend — ${selectedMonthOption?.label || 'Current Month'}`}
+              title={`Daily Enquiry Trend — ${activePeriodLabel}`}
               subtitle={summary?.trend.trendNote || 'Day-by-day enquiry build for the selected month'}
               action={(
                 <Select value={selectedDealerCode || 'all'} onValueChange={(value) => setSelectedDealerCode(value === 'all' ? null : value)}>
@@ -1898,7 +2000,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                 <div className="absolute right-[-70px] top-[-70px] h-60 w-60 rounded-full bg-[#2d2d3f]/80" />
                 <p className="relative text-[11px] font-black uppercase tracking-[0.28em] text-[#ff4264]">Retail Report</p>
                 <h2 className="relative mt-3 text-[34px] font-black uppercase tracking-[0.04em] text-white">
-                  Vehicles Retailed — {selectedMonthOption?.label || 'Current Month'}
+                  Vehicles Retailed — {activePeriodLabel}
                 </h2>
                 <p className="relative mt-3 text-[15px] font-medium text-slate-300">
                   {selectedDealerCode || 'JK402'} · Invoice confirmed retail deliveries

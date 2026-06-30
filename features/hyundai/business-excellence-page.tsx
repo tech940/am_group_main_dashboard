@@ -39,6 +39,7 @@ import { BusinessExcellenceOverview } from '@/features/hyundai/business-excellen
 import { ExecutiveTableShell, type ExecutiveDashboardTableId } from '@/features/business-excellence/executive-table-shell'
 import { OpenRoSection } from '@/features/hyundai/open-ro-section'
 import { KiaComplaintsSection } from '@/features/hyundai/hyundai-complaints-section'
+import { HyundaiSotAnalysisSection } from '@/features/hyundai/sot-analysis-section'
 import { ServiceDashboardPreviewSection } from '@/features/kia/service-dashboard-preview-section'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -2043,28 +2044,6 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                             </Select>
                           </div>
 
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={isAiSummaryLoading || isApplyingFilter}
-                            onClick={() => {
-                              if (aiSummary?.report === selectedSheet.sheetName && !aiSummaryError) {
-                                setShowAiSummary(true)
-                                return
-                              }
-                              void generateAiSummary(selectedSheet.sheetName)
-                            }}
-                            className="h-9 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-black text-violet-700 shadow-sm hover:border-violet-300 hover:bg-violet-100 disabled:opacity-70"
-                          >
-                            {isAiSummaryLoading ? (
-                              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Sparkles className="mr-2 h-3.5 w-3.5" />
-                            )}
-                            {isAiSummaryLoading ? 'Summarising' : 'AI Summary'}
-                          </Button>
-
                           {supportsHealthPanel && (
                             <Button
                               type="button"
@@ -2446,13 +2425,11 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                             />
                           )
                         ) : isSotSheet ? (
-                          <div className="m-4 rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center">
-                            <ShieldAlert className="mx-auto h-10 w-10 text-amber-600" />
-                            <h3 className="mt-4 text-xl font-black text-slate-950">Hyundai SOT source unavailable</h3>
-                            <p className="mx-auto mt-2 max-w-2xl text-sm font-semibold text-slate-600">
-                              No verified Hyundai Trust Package or SOT-equivalent report is connected. MCP is intentionally not substituted because it represents a different business product.
-                            </p>
-                          </div>
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <HyundaiSotAnalysisSection dateFilter={appliedDateFilter as BusinessDateFilterValue | null} dealerCode={selectedDealerCode} />
+                          )
                         ) : isROBillingSheet ? (
                           isApplyingFilter ? (
                             <SheetContentSkeleton />
@@ -5032,6 +5009,8 @@ function WorkshopPerformanceSection({
               const renderRow = (item: WorkshopPerformanceRow, options?: { child?: boolean; parentTotal?: boolean }) => {
                 const isGrandTotal = item.serviceType === 'Grand Total'
                 const isContributionSubtotal = Boolean(options?.parentTotal)
+                const showCoreParentContribution = isCore && (item.serviceType === 'MECH' || item.serviceType === 'MECH TOTAL')
+                const suppressContributionPercent = isContributionSubtotal && !showCoreParentContribution
 
                 return (
                 <tr
@@ -5062,12 +5041,12 @@ function WorkshopPerformanceSection({
                     </div>
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{item.totalJc.toLocaleString('en-IN')}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.totalJcPercent))}>
-                    {isContributionSubtotal ? '-' : formatPercent(item.totalJcPercent)}
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', suppressContributionPercent ? 'text-slate-400' : getPercentToneClass(item.totalJcPercent))}>
+                    {suppressContributionPercent ? '-' : formatPercent(item.totalJcPercent)}
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-black">{formatWorkshopTableMoney(item.labourAmount)}</td>
-                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', isContributionSubtotal ? 'text-slate-400' : getPercentToneClass(item.labourPercent))}>
-                    {isContributionSubtotal ? '-' : formatPercent(item.labourPercent)}
+                  <td className={cn('border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold', suppressContributionPercent ? 'text-slate-400' : getPercentToneClass(item.labourPercent))}>
+                    {suppressContributionPercent ? '-' : formatPercent(item.labourPercent)}
                   </td>
                   <td className="border border-slate-200 px-3 py-2 font-mono text-[11px] font-bold">{formatWorkshopTableMoney(item.labourPerRo)}</td>
                   {!isCore && (
@@ -5883,7 +5862,8 @@ function ServiceTypePerformance({
         queryFn: async () => {
           return await fetchJsonWithTimeout<ROAnalysisResponse>(
             `/api/brands/hyundai/business-excellence/ro-billing-analysis?${queryString}`,
-            `ro-billing-${analysisType}-${view}`
+            `ro-billing-${analysisType}-${view}`,
+            30000
           )
         },
         staleTime: DASHBOARD_STALE_TIME_MS,
@@ -5910,7 +5890,8 @@ function ServiceTypePerformance({
         queryFn: async () => {
           return await fetchJsonWithTimeout<ROAnalysisResponse>(
             `/api/brands/hyundai/business-excellence/ro-billing-analysis?${queryString}`,
-            `ro-billing-${view}-bundle`
+            `ro-billing-${view}-bundle`,
+            30000
           )
         },
         staleTime: DASHBOARD_STALE_TIME_MS,

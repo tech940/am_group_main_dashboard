@@ -46,6 +46,18 @@ type ResolvedMonthContext = {
   month: number
 }
 
+type ResolvedDateContext = ResolvedMonthContext & {
+  startDate: string
+  endDate: string
+  endDateExclusive: string
+  comparisonKey: string
+  comparisonLabel: string
+  comparisonStartDate: string
+  comparisonEndDate: string
+  comparisonEndDateExclusive: string
+  rangeMode: 'month' | 'custom'
+}
+
 const KIA_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS = 60 * 10
 const KIA_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS = 60 * 5
 const ALL_DEALERS_CACHE_KEY = '__all__'
@@ -58,7 +70,7 @@ const TABLES: Record<SourceKey, TableConfig> = {
     label: 'Enquiry Report',
     table: 'kia_enquiry_report',
     dateColumn: 'enquiry_date',
-    dealerColumns: ['dealer_code', 'main_dealer_code', 'dealer_code_2'],
+    dealerColumns: ['dealer_code', 'dealer_code_2', 'main_dealer_code'],
     defaultVisibleColumns: ['enquiry_date', 'enquiry_no', 'name_of_the_customer', 'contact_number', 'model', 'source', 'consultant_name', 'enquiry_status', 'booking_date', 'retail_date', 'lost_reason'],
     searchColumns: ['enquiry_no', 'customer_id', 'name_of_the_customer', 'contact_number', 'model', 'variant', 'consultant_name', 'source', 'enquiry_status', 'lost_reason'],
     sourceColumn: 'source',
@@ -71,7 +83,7 @@ const TABLES: Record<SourceKey, TableConfig> = {
     label: 'Booking Report',
     table: 'kia_booking_report',
     dateColumn: 'booking_date',
-    dealerColumns: ['dealer_code', 'main_dealer', 'dealer_code_2'],
+    dealerColumns: ['dealer_code', 'dealer_code_2', 'main_dealer'],
     defaultVisibleColumns: ['booking_date', 'booking_no', 'name_of_the_customer', 'contact_number', 'model', 'main_source', 'consultant_name', 'status', 'amount_received', 'mode_of_purchase'],
     searchColumns: ['booking_no', 'customer_id', 'name_of_the_customer', 'contact_number', 'model', 'variant', 'consultant_name', 'main_source', 'status'],
     sourceColumn: 'main_source',
@@ -84,7 +96,7 @@ const TABLES: Record<SourceKey, TableConfig> = {
     label: 'Sales Report',
     table: 'kia_sales_report',
     dateColumn: 'delivery_date',
-    dealerColumns: ['dealer_code', 'main_dealer_code', 'dealer_code_2'],
+    dealerColumns: ['dealer_code', 'dealer_code_2', 'main_dealer_code'],
     defaultVisibleColumns: ['delivery_date', 'invoice_date', 'invoice_no', 'registration_name', 'contact_num1', 'model', 'variant', 'color', 'consultant_name', 'source', 'mode_of_purchase', 'dsa_financier', 'ex_showroom_price'],
     searchColumns: ['invoice_no', 'booking_no', 'customerid', 'registration_name', 'contact_num1', 'model', 'variant', 'consultant_name', 'source', 'dsa_financier', 'vin_number', 'vin_no'],
     sourceColumn: 'source',
@@ -169,12 +181,48 @@ function normalizeFinanceMode(row: Row): FinanceModeKey {
   return 'Self-Finance'
 }
 
-function displayDate(value: unknown) {
+function toIsoDate(year: number, month: number, day: number) {
+  const candidate = new Date(Date.UTC(year, month - 1, day))
+  if (
+    candidate.getUTCFullYear() !== year
+    || candidate.getUTCMonth() !== month - 1
+    || candidate.getUTCDate() !== day
+  ) {
+    return null
+  }
+  return candidate.toISOString().slice(0, 10)
+}
+
+function normalizeDateText(value: unknown) {
   const text = safeText(value)
   if (!text) return null
-  const date = new Date(text)
-  if (Number.isNaN(date.getTime())) return text
-  return date.toISOString().slice(0, 10)
+
+  const isoMatch = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (isoMatch) {
+    return toIsoDate(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]))
+  }
+
+  const numericMatch = text.match(/^(\d{1,4})[/-](\d{1,2})[/-](\d{2,4})$/)
+  if (numericMatch) {
+    const left = Number(numericMatch[1])
+    const middle = Number(numericMatch[2])
+    const right = Number(numericMatch[3])
+
+    if (numericMatch[1].length === 4) {
+      return toIsoDate(left, middle, right)
+    }
+
+    const year = numericMatch[3].length === 2 ? 2000 + right : right
+    return toIsoDate(year, middle, left)
+  }
+
+  const parsed = new Date(text)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString().slice(0, 10)
+}
+
+function displayDate(value: unknown) {
+  return normalizeDateText(value)
 }
 
 function toMonthKey(date: Date) {
@@ -192,6 +240,30 @@ function buildMonthWindow(year: number, month: number) {
     startDate: start.toISOString().slice(0, 10),
     endDateExclusive: next.toISOString().slice(0, 10),
   }
+}
+
+function normalizeInputDate(value: string | null | undefined) {
+  const normalized = normalizeDateText(value)
+  return normalized && /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null
+}
+
+function addDaysToIsoDate(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function daysBetweenInclusive(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00Z`).getTime()
+  const end = new Date(`${endDate}T00:00:00Z`).getTime()
+  return Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1)
+}
+
+function formatRangeLabel(startDate: string, endDate: string) {
+  if (startDate === endDate) return new Date(`${startDate}T00:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  const start = new Date(`${startDate}T00:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'UTC' })
+  const end = new Date(`${endDate}T00:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  return `${start} - ${end}`
 }
 
 function previousMonth(year: number, month: number) {
@@ -270,24 +342,27 @@ function getDeliveryDays(row: Row) {
   return diff >= 0 && diff <= 180 ? diff : null
 }
 
-function buildDealerClause(columns: string[], dealerCode: string | null) {
+function buildDirectDealerExpression(columns: string[]) {
+  return `UPPER(TRIM(COALESCE(${columns.map((column) => `NULLIF(${column}::text, '')`).join(', ')}, '')))`
+}
+
+function buildDealerExpression(config: TableConfig) {
+  return buildDirectDealerExpression(config.dealerColumns)
+}
+
+function buildDealerClause(config: TableConfig, dealerCode: string | null) {
   if (!dealerCode) return sql``
-  const expression = `UPPER(TRIM(COALESCE(${columns.map((column) => `NULLIF(${column}, '')`).join(', ')}, '')))`
+  const expression = buildDealerExpression(config)
   return sql.raw(`AND ${expression} = '${dealerCode}'`)
 }
 
-async function queryCurrentAndPreviousMonthRows(config: TableConfig, year: number, month: number, dealerCode: string | null) {
-  const currentWindow = buildMonthWindow(year, month)
-  const previous = previousMonth(year, month)
-  const previousWindow = buildMonthWindow(previous.year, previous.month)
-  const currentKey = `${year}-${String(month + 1).padStart(2, '0')}`
-  const previousKey = `${previous.year}-${String(previous.month + 1).padStart(2, '0')}`
+async function queryCurrentAndPreviousRangeRows(config: TableConfig, context: ResolvedDateContext, dealerCode: string | null) {
   const rows = await analyticsDb.execute(sql`
     SELECT *
     FROM ${sql.raw(config.table)}
-    WHERE ${sql.raw(config.dateColumn)} >= ${previousWindow.startDate}
-      AND ${sql.raw(config.dateColumn)} < ${currentWindow.endDateExclusive}
-      ${buildDealerClause(config.dealerColumns, dealerCode)}
+    WHERE ${sql.raw(config.dateColumn)} >= ${context.comparisonStartDate}
+      AND ${sql.raw(config.dateColumn)} < ${context.endDateExclusive}
+      ${buildDealerClause(config, dealerCode)}
   `)
 
   const currentRows: Row[] = []
@@ -295,17 +370,19 @@ async function queryCurrentAndPreviousMonthRows(config: TableConfig, year: numbe
   for (const row of resultRows(rows)) {
     const date = displayDate(row[config.dateColumn])
     if (!date) continue
-    const rowMonthKey = date.slice(0, 7)
-    if (rowMonthKey === currentKey) {
+    if (date >= context.startDate && date < context.endDateExclusive) {
       currentRows.push(row)
       continue
     }
-    if (rowMonthKey === previousKey) {
+    if (date >= context.comparisonStartDate && date < context.comparisonEndDateExclusive) {
       previousRows.push(row)
     }
   }
 
-  return { currentRows, previousRows }
+  return {
+    currentRows: dedupeRows(config, currentRows),
+    previousRows: dedupeRows(config, previousRows),
+  }
 }
 
 async function querySourceFreshness(config: TableConfig, dealerCode: string | null) {
@@ -318,7 +395,7 @@ async function querySourceFreshness(config: TableConfig, dealerCode: string | nu
       ARRAY_REMOVE(ARRAY_AGG(DISTINCT TO_CHAR(DATE_TRUNC('month', ${sql.raw(config.dateColumn)}), 'YYYY-MM')), NULL) AS available_months
     FROM ${sql.raw(config.table)}
     WHERE ${sql.raw(config.dateColumn)} IS NOT NULL
-      ${buildDealerClause(config.dealerColumns, dealerCode)}
+      ${buildDealerClause(config, dealerCode)}
   `)
   const row = resultRows(rows)[0] || {}
   const availableMonths = Array.isArray(row.available_months)
@@ -389,7 +466,7 @@ const readCachedKiaSalesReportFreshness = unstable_cache(
     const normalizedDealerCode = dealerCodeKey === ALL_DEALERS_CACHE_KEY ? null : dealerCodeKey
     return await buildKiaSalesReportFreshness(normalizedDealerCode)
   },
-  ['kia-sales-report-freshness-v3'],
+  ['kia-sales-report-freshness-v6-jk501-accessories-import'],
   { revalidate: KIA_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS }
 )
 
@@ -417,6 +494,62 @@ async function resolveMonthContext(year: number | null | undefined, month: numbe
   } satisfies ResolvedMonthContext
 }
 
+async function resolveDateContext(input: {
+  year?: number | null
+  month?: number | null
+  startDate?: string | null
+  endDate?: string | null
+  dealerCode?: string | null
+}): Promise<ResolvedDateContext> {
+  const normalizedStartDate = normalizeInputDate(input.startDate)
+  const normalizedEndDate = normalizeInputDate(input.endDate)
+
+  if (normalizedStartDate && normalizedEndDate) {
+    const startDate = normalizedStartDate <= normalizedEndDate ? normalizedStartDate : normalizedEndDate
+    const endDate = normalizedStartDate <= normalizedEndDate ? normalizedEndDate : normalizedStartDate
+    const selectedDate = new Date(`${endDate}T00:00:00Z`)
+    const spanDays = daysBetweenInclusive(startDate, endDate)
+    const comparisonEndDate = addDaysToIsoDate(startDate, -1)
+    const comparisonStartDate = addDaysToIsoDate(comparisonEndDate, -(spanDays - 1))
+
+    return {
+      key: `${startDate}:${endDate}`,
+      label: formatRangeLabel(startDate, endDate),
+      year: selectedDate.getUTCFullYear(),
+      month: selectedDate.getUTCMonth(),
+      startDate,
+      endDate,
+      endDateExclusive: addDaysToIsoDate(endDate, 1),
+      comparisonKey: `${comparisonStartDate}:${comparisonEndDate}`,
+      comparisonLabel: formatRangeLabel(comparisonStartDate, comparisonEndDate),
+      comparisonStartDate,
+      comparisonEndDate,
+      comparisonEndDateExclusive: addDaysToIsoDate(comparisonEndDate, 1),
+      rangeMode: 'custom',
+    }
+  }
+
+  const resolvedMonth = await resolveMonthContext(input.year, input.month, input.dealerCode || null)
+  const previous = previousMonth(resolvedMonth.year, resolvedMonth.month)
+  const currentWindow = buildMonthWindow(resolvedMonth.year, resolvedMonth.month)
+  const previousWindow = buildMonthWindow(previous.year, previous.month)
+  const currentEndDate = addDaysToIsoDate(currentWindow.endDateExclusive, -1)
+  const previousEndDate = addDaysToIsoDate(previousWindow.endDateExclusive, -1)
+
+  return {
+    ...resolvedMonth,
+    startDate: currentWindow.startDate,
+    endDate: currentEndDate,
+    endDateExclusive: currentWindow.endDateExclusive,
+    comparisonKey: `${previous.year}-${String(previous.month + 1).padStart(2, '0')}`,
+    comparisonLabel: monthLabel(previous.year, previous.month),
+    comparisonStartDate: previousWindow.startDate,
+    comparisonEndDate: previousEndDate,
+    comparisonEndDateExclusive: previousWindow.endDateExclusive,
+    rangeMode: 'month',
+  }
+}
+
 export async function getKiaSalesReportFreshness(dealerCode?: string | null) {
   const normalizedDealerCode = normalizeKiaDealerCode(dealerCode) || null
   const cacheKey = normalizedDealerCode || ALL_DEALERS_CACHE_KEY
@@ -438,8 +571,8 @@ export async function getKiaSalesReportFreshness(dealerCode?: string | null) {
   }
 }
 
-function buildSummaryCacheKey(year: number, month: number, dealerCode: string | null) {
-  return [year, String(month + 1).padStart(2, '0'), dealerCode || ALL_DEALERS_CACHE_KEY].join(':')
+function buildSummaryCacheKey(context: ResolvedDateContext, dealerCode: string | null) {
+  return [context.startDate, context.endDate, dealerCode || ALL_DEALERS_CACHE_KEY].join(':')
 }
 
 function buildKpi(
@@ -487,6 +620,159 @@ function increment(map: Map<string, number>, key: string, amount = 1) {
   map.set(key, (map.get(key) || 0) + amount)
 }
 
+function rowCompletenessScore(row: Row) {
+  let score = 0
+  for (const value of Object.values(row)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      score += 1
+      continue
+    }
+    if (safeText(value)) score += 1
+  }
+  return score
+}
+
+function rowTimestampScore(row: Row) {
+  for (const key of ['uploaded_at', 'updated_at', 'created_at']) {
+    const text = safeText(row[key])
+    if (!text) continue
+    const timestamp = new Date(text).getTime()
+    if (!Number.isNaN(timestamp)) return timestamp
+  }
+  return 0
+}
+
+function rowNumericIdScore(row: Row) {
+  for (const key of ['id', 'row_id']) {
+    const value = numberValue(row[key])
+    if (value) return value
+  }
+  return 0
+}
+
+function buildDeduplicationKey(config: TableConfig, row: Row) {
+  if (config.key === 'enquiry') {
+    const enquiryNo = upperText(row.enquiry_no)
+    if (enquiryNo) return `enquiry:${enquiryNo}`
+    return [
+      'enquiry',
+      displayDate(row.enquiry_date) || safeText(row.enquiry_date),
+      upperText(row.customer_id),
+      upperText(row.name_of_the_customer),
+      upperText(row.contact_number),
+      upperText(row.model),
+      upperText(row.consultant_name),
+    ].join('|')
+  }
+
+  if (config.key === 'booking') {
+    const bookingNo = upperText(row.booking_no)
+    if (bookingNo) return `booking:${bookingNo}`
+    return [
+      'booking',
+      displayDate(row.booking_date) || safeText(row.booking_date),
+      upperText(row.customer_id),
+      upperText(row.name_of_the_customer),
+      upperText(row.contact_number),
+      upperText(row.model),
+      upperText(row.consultant_name),
+    ].join('|')
+  }
+
+  if (config.key === 'sales') {
+    const invoiceNo = upperText(row.invoice_no)
+    if (invoiceNo) return `sales:${invoiceNo}`
+    return [
+      'sales',
+      upperText(getFirstText(row, ['vin_number', 'vin_no'])),
+      displayDate(row.delivery_date) || displayDate(row.invoice_date) || safeText(row.delivery_date) || safeText(row.invoice_date),
+      upperText(row.customerid),
+      upperText(row.registration_name),
+      upperText(row.model),
+    ].join('|')
+  }
+
+  return [
+    'accessories',
+    upperText(getFirstText(row, ['csr_bill_no', 'accessories_invoice_no'])),
+    displayDate(row.csr_bill_date) || safeText(row.csr_bill_date),
+    upperText(getFirstText(row, ['vin', 'reg_no'])),
+    upperText(row.accessories_description),
+    numberValue(row.accessories_qty) || numberValue(row.total_accessories_qty) || 1,
+    numberValue(row.accessory_taxable_amount),
+    numberValue(row.tax_amount),
+  ].join('|')
+}
+
+function choosePreferredRow(current: Row, candidate: Row) {
+  const currentTimestamp = rowTimestampScore(current)
+  const candidateTimestamp = rowTimestampScore(candidate)
+  if (candidateTimestamp !== currentTimestamp) return candidateTimestamp > currentTimestamp ? candidate : current
+
+  const currentId = rowNumericIdScore(current)
+  const candidateId = rowNumericIdScore(candidate)
+  if (candidateId !== currentId) return candidateId > currentId ? candidate : current
+
+  const currentCompleteness = rowCompletenessScore(current)
+  const candidateCompleteness = rowCompletenessScore(candidate)
+  return candidateCompleteness > currentCompleteness ? candidate : current
+}
+
+function dedupeRows(config: TableConfig, rows: Row[]) {
+  const unique = new Map<string, Row>()
+  for (const row of rows) {
+    const key = buildDeduplicationKey(config, row)
+    const existing = unique.get(key)
+    unique.set(key, existing ? choosePreferredRow(existing, row) : row)
+  }
+  return Array.from(unique.values())
+}
+
+function normalizeRowForOutput(row: Row, columns: string[]) {
+  const normalized = { ...row }
+  for (const column of columns) {
+    if (!column.includes('date') || column.endsWith('_at')) continue
+    const formatted = displayDate(row[column])
+    if (formatted) normalized[column] = formatted
+  }
+  return normalized
+}
+
+function compareSortValues(left: unknown, right: unknown, column: string) {
+  if (column.includes('date') && !column.endsWith('_at')) {
+    const leftDate = displayDate(left) || ''
+    const rightDate = displayDate(right) || ''
+    return leftDate.localeCompare(rightDate)
+  }
+
+  const leftText = safeText(left)
+  const rightText = safeText(right)
+  const leftNumber = numberValue(left)
+  const rightNumber = numberValue(right)
+  const numericPattern = /^-?[0-9,.\s₹]+$/
+  const leftLooksNumeric = leftText !== '' && numericPattern.test(leftText)
+  const rightLooksNumeric = rightText !== '' && numericPattern.test(rightText)
+
+  if (leftLooksNumeric && rightLooksNumeric) {
+    if (leftNumber === rightNumber) return 0
+    return leftNumber > rightNumber ? 1 : -1
+  }
+
+  return upperText(leftText).localeCompare(upperText(rightText))
+}
+
+function sortRows(rows: Row[], column: string, direction: 'asc' | 'desc') {
+  const multiplier = direction === 'asc' ? 1 : -1
+  return [...rows].sort((left, right) => {
+    const comparison = compareSortValues(left[column], right[column], column)
+    if (comparison !== 0) return comparison * multiplier
+
+    const leftDate = displayDate(left.delivery_date) || displayDate(left.booking_date) || displayDate(left.enquiry_date) || ''
+    const rightDate = displayDate(right.delivery_date) || displayDate(right.booking_date) || displayDate(right.enquiry_date) || ''
+    return rightDate.localeCompare(leftDate)
+  })
+}
+
 function aggregateAccessoryByVin(rows: Row[]) {
   const map = new Map<string, { value: number; count: number }>()
   for (const row of rows) {
@@ -500,25 +786,17 @@ function aggregateAccessoryByVin(rows: Row[]) {
   return map
 }
 
-async function buildKiaSalesReportSummary(year: number, month: number, normalizedDealerCode: string | null) {
-  const resolvedMonth = {
-    key: `${year}-${String(month + 1).padStart(2, '0')}`,
-    label: monthLabel(year, month),
-    year,
-    month,
-  } satisfies ResolvedMonthContext
-  const previous = previousMonth(resolvedMonth.year, resolvedMonth.month)
-  const previousLabel = monthLabel(previous.year, previous.month)
+async function buildKiaSalesReportSummary(context: ResolvedDateContext, normalizedDealerCode: string | null) {
   const [
     enquiryBundle,
     bookingBundle,
     salesBundle,
     accessoryBundle,
   ] = await Promise.all([
-    queryCurrentAndPreviousMonthRows(TABLES.enquiry, resolvedMonth.year, resolvedMonth.month, normalizedDealerCode),
-    queryCurrentAndPreviousMonthRows(TABLES.booking, resolvedMonth.year, resolvedMonth.month, normalizedDealerCode),
-    queryCurrentAndPreviousMonthRows(TABLES.sales, resolvedMonth.year, resolvedMonth.month, normalizedDealerCode),
-    queryCurrentAndPreviousMonthRows(TABLES.accessories, resolvedMonth.year, resolvedMonth.month, normalizedDealerCode),
+    queryCurrentAndPreviousRangeRows(TABLES.enquiry, context, normalizedDealerCode),
+    queryCurrentAndPreviousRangeRows(TABLES.booking, context, normalizedDealerCode),
+    queryCurrentAndPreviousRangeRows(TABLES.sales, context, normalizedDealerCode),
+    queryCurrentAndPreviousRangeRows(TABLES.accessories, context, normalizedDealerCode),
   ])
 
       const enquiryRows = enquiryBundle.currentRows
@@ -543,6 +821,9 @@ async function buildKiaSalesReportSummary(year: number, month: number, normalize
       const accessoryItemCount = accessoryRows.reduce((total, row) => total + (numberValue(row.total_accessories_qty) || numberValue(row.accessories_qty) || 1), 0)
       const retails = salesRows.length
       const previousRetails = previousSalesRows.length
+      const totalRevenue = salesRows.reduce((sum, row) => sum + numberValue(row.ex_showroom_price), 0)
+      const avgPricePerCar = retails > 0 ? totalRevenue / retails : 0
+      const avgPricePerCarWithAccessories = retails > 0 ? (totalRevenue + accessoriesRevenue) / retails : 0
 
       const enquiryStatusMap = new Map<string, number>()
       const sourceMap = new Map<string, number>()
@@ -565,7 +846,7 @@ async function buildKiaSalesReportSummary(year: number, month: number, normalize
       for (const row of enquiryRows) {
         increment(enquiryStatusMap, safeText(row.enquiry_status) || 'Unknown')
         const source = normalizeSource(getFirstText(row, ['source', 'enquiry_source']))
-        const dealer = upperText(getFirstText(row, ['dealer_code', 'main_dealer_code', 'dealer_code_2'])) || 'Unknown'
+        const dealer = upperText(getFirstText(row, TABLES.enquiry.dealerColumns)) || 'Unknown'
         const model = normalizeModel(row.model)
         const consultant = normalizeConsultant(row.consultant_name)
         const date = displayDate(row.enquiry_date)
@@ -636,6 +917,10 @@ async function buildKiaSalesReportSummary(year: number, month: number, normalize
       const previousAccPerCar = previousRetails > 0 ? previousAccessoriesRevenue / previousRetails : 0
       const lostRatePct = percent(totalLost, totalEnquiries)
       const previousLostRatePct = percent(previousLostRows.length, previousEnquiryRows.length)
+      const bookingConversionPct = percent(totalBookings, totalEnquiries)
+      const retailOfEnquiriesPct = percent(retails, totalEnquiries)
+      const testDriveEngagementPct = percent(totalTestDrives, totalEnquiries)
+      const exchangeCustomerPct = percent(exchangeCount, totalEnquiries)
 
       const sourceCards = buildCounts(sourceMap).map((item) => {
         const bookings = bookingsBySource.get(item.name) || 0
@@ -715,8 +1000,10 @@ async function buildKiaSalesReportSummary(year: number, month: number, normalize
 
       const retailKpis = [
         { label: 'Units Retailed', value: retails, formattedValue: retails.toLocaleString('en-IN') },
-        { label: 'Total Revenue', value: salesRows.reduce((sum, row) => sum + numberValue(row.ex_showroom_price), 0), formattedValue: formatLakhs(salesRows.reduce((sum, row) => sum + numberValue(row.ex_showroom_price), 0)) },
-        { label: 'Avg Price / Car', value: retails > 0 ? salesRows.reduce((sum, row) => sum + numberValue(row.ex_showroom_price), 0) / retails : 0, formattedValue: formatLakhs(retails > 0 ? salesRows.reduce((sum, row) => sum + numberValue(row.ex_showroom_price), 0) / retails : 0) },
+        { label: 'Total Revenue', value: totalRevenue, formattedValue: formatLakhs(totalRevenue) },
+        { label: 'Avg Price / Car', value: avgPricePerCar, formattedValue: formatLakhs(avgPricePerCar) },
+        { label: 'Accessories Revenue', value: accessoriesRevenue, formattedValue: formatLakhs(accessoriesRevenue) },
+        { label: 'Avg / Car (with acc)', value: avgPricePerCarWithAccessories, formattedValue: formatLakhs(avgPricePerCarWithAccessories) },
         { label: 'Avg Delivery Days', value: transactions.filter((item) => item.deliveryDays !== null).reduce((sum, item) => sum + (item.deliveryDays || 0), 0) / Math.max(1, transactions.filter((item) => item.deliveryDays !== null).length), formattedValue: `${Math.round(transactions.filter((item) => item.deliveryDays !== null).reduce((sum, item) => sum + (item.deliveryDays || 0), 0) / Math.max(1, transactions.filter((item) => item.deliveryDays !== null).length))} days` },
         { label: 'Exchange Opted', value: salesRows.filter((row) => yesNoValue(row.interested_in_exchange_y_n)).length, formattedValue: salesRows.filter((row) => yesNoValue(row.interested_in_exchange_y_n)).length.toLocaleString('en-IN') },
       ]
@@ -779,33 +1066,54 @@ async function buildKiaSalesReportSummary(year: number, month: number, normalize
       }
 
       const matchedRetailUnits = transactions.filter((item) => item.accessoriesValue > 0).length
+      const sourceAssumptions = [
+        'Lead temperature is derived from booking, retail, test drive, and follow-up signals.',
+        'Average delivery days uses booking-to-delivery gap from sales rows when both dates are present.',
+        'Accessories per car and cross-sell use accessory rows tagged to the selected dealer in the Accessories Counter Sales Report.',
+      ]
+      if (normalizedDealerCode && accessoryRows.length === 0) {
+        sourceAssumptions.push(`Accessories Counter Sales Report has no ${normalizedDealerCode}-tagged rows for ${context.label}; accessory revenue is shown as 0 instead of inferred from weak VIN/customer matches.`)
+      }
 
       return {
         context: {
-          selectedMonthKey: resolvedMonth.key,
-          selectedMonthLabel: resolvedMonth.label,
-          comparisonMonthKey: `${previous.year}-${String(previous.month + 1).padStart(2, '0')}`,
-          comparisonMonthLabel: previousLabel,
+          selectedMonthKey: context.key,
+          selectedMonthLabel: context.label,
+          comparisonMonthKey: context.comparisonKey,
+          comparisonMonthLabel: context.comparisonLabel,
+          startDate: context.startDate,
+          endDate: context.endDate,
+          comparisonStartDate: context.comparisonStartDate,
+          comparisonEndDate: context.comparisonEndDate,
+          rangeMode: context.rangeMode,
         },
-        assumptions: [
-          'Lead temperature is derived from booking, retail, test drive, and follow-up signals.',
-          'Average delivery days uses booking-to-delivery gap from sales rows when both dates are present.',
-          'Accessories per car and cross-sell match accessory rows to retail transactions by VIN.',
-        ],
+        assumptions: sourceAssumptions,
         overview: {
           kpis: [
-            buildKpi('Total Enquiries', totalEnquiries, previousEnquiryRows.length, totalEnquiries.toLocaleString('en-IN'), previousEnquiryRows.length.toLocaleString('en-IN'), `Vs ${previousLabel}`),
-            buildKpi('Bookings', totalBookings, previousBookingRows.length, totalBookings.toLocaleString('en-IN'), previousBookingRows.length.toLocaleString('en-IN'), `Vs ${previousLabel}`),
-            buildKpi('Retails', retails, previousRetails, retails.toLocaleString('en-IN'), previousRetails.toLocaleString('en-IN'), `Vs ${previousLabel}`),
-            buildKpi('Test Drives', totalTestDrives, previousTdRows.length, totalTestDrives.toLocaleString('en-IN'), previousTdRows.length.toLocaleString('en-IN'), `Vs ${previousLabel}`),
-            buildKpi('Lost', totalLost, previousLostRows.length, totalLost.toLocaleString('en-IN'), previousLostRows.length.toLocaleString('en-IN'), `Vs ${previousLabel}`, {
+            buildKpi('Total Enquiries', totalEnquiries, previousEnquiryRows.length, totalEnquiries.toLocaleString('en-IN'), previousEnquiryRows.length.toLocaleString('en-IN'), `Vs ${context.comparisonLabel}`),
+            buildKpi('Bookings', totalBookings, previousBookingRows.length, totalBookings.toLocaleString('en-IN'), previousBookingRows.length.toLocaleString('en-IN'), `Vs ${context.comparisonLabel}`, {
+              comparisonContext: `${bookingConversionPct.toFixed(1)}% conversion`,
+            }),
+            buildKpi('Retails', retails, previousRetails, retails.toLocaleString('en-IN'), previousRetails.toLocaleString('en-IN'), `Vs ${context.comparisonLabel}`, {
+              comparisonContext: `${retailOfEnquiriesPct.toFixed(1)}% of enquiries`,
+            }),
+            buildKpi('Test Drives', totalTestDrives, previousTdRows.length, totalTestDrives.toLocaleString('en-IN'), previousTdRows.length.toLocaleString('en-IN'), `Vs ${context.comparisonLabel}`, {
+              comparisonContext: `${testDriveEngagementPct.toFixed(1)}% engagement`,
+            }),
+            buildKpi('Lost', totalLost, previousLostRows.length, totalLost.toLocaleString('en-IN'), previousLostRows.length.toLocaleString('en-IN'), `Vs ${context.comparisonLabel}`, {
               trendDirection: 'lower_is_better',
               changeBase: { current: lostRatePct, previous: previousLostRatePct },
-              comparisonContext: `Loss rate ${lostRatePct.toFixed(1)}% vs ${previousLostRatePct.toFixed(1)}% of enquiries`,
+              comparisonContext: `${lostRatePct.toFixed(1)}% lost rate`,
             }),
-            buildKpi('Exchange Opted', exchangeCount, previousExchangeCount, exchangeCount.toLocaleString('en-IN'), previousExchangeCount.toLocaleString('en-IN'), `Vs ${previousLabel}`),
-            buildKpi('Acc Revenue', accessoriesRevenue, previousAccessoriesRevenue, formatCurrency(accessoriesRevenue), formatCurrency(previousAccessoriesRevenue), `Vs ${previousLabel}`),
-            buildKpi('Acc / Car', totalAccPerCar, previousAccPerCar, formatCurrency(totalAccPerCar), formatCurrency(previousAccPerCar), `Vs ${previousLabel}`),
+            buildKpi('Exchange Opted', exchangeCount, previousExchangeCount, exchangeCount.toLocaleString('en-IN'), previousExchangeCount.toLocaleString('en-IN'), `Vs ${context.comparisonLabel}`, {
+              comparisonContext: `${exchangeCustomerPct.toFixed(1)}% of customers`,
+            }),
+            buildKpi('Acc Revenue', accessoriesRevenue, previousAccessoriesRevenue, formatCurrency(accessoriesRevenue), formatCurrency(previousAccessoriesRevenue), `Vs ${context.comparisonLabel}`, {
+              comparisonContext: 'total accessories sold',
+            }),
+            buildKpi('Acc / Car', totalAccPerCar, previousAccPerCar, formatCurrency(totalAccPerCar), formatCurrency(previousAccPerCar), `Vs ${context.comparisonLabel}`, {
+              comparisonContext: 'per car retailed',
+            }),
           ],
           enquiryStatus: buildCounts(enquiryStatusMap),
           sourceShare: buildCounts(sourceMap),
@@ -873,7 +1181,7 @@ async function buildKiaSalesReportSummary(year: number, month: number, normalize
         trend: {
           daily,
           weeks,
-          trendNote: `${monthLabel(resolvedMonth.year, resolvedMonth.month)} · Peak: ${trendPeak.day ? `${trendPeak.day} (${trendPeak.enquiries})` : 'N/A'} · Avg: ${trendAverage.toFixed(1)}/day`,
+          trendNote: `${context.label} · Peak: ${trendPeak.day ? `${trendPeak.day} (${trendPeak.enquiries})` : 'N/A'} · Avg: ${trendAverage.toFixed(1)}/day`,
         },
         lost: {
           totalLost,
@@ -918,24 +1226,35 @@ async function buildKiaSalesReportSummary(year: number, month: number, normalize
 const readCachedKiaSalesReportSummary = unstable_cache(
   async (year: number, month: number, dealerCodeKey: string) => {
     const normalizedDealerCode = dealerCodeKey === ALL_DEALERS_CACHE_KEY ? null : dealerCodeKey
-    return await buildKiaSalesReportSummary(year, month, normalizedDealerCode)
+    const context = await resolveDateContext({ year, month, dealerCode: normalizedDealerCode })
+    return await buildKiaSalesReportSummary(context, normalizedDealerCode)
   },
-  ['kia-sales-report-summary-v2'],
+  ['kia-sales-report-summary-v7-jk501-accessories-import'],
   { revalidate: KIA_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS }
 )
 
 export async function getKiaSalesReportSummary(input: {
   year?: number | null
   month?: number | null
+  startDate?: string | null
+  endDate?: string | null
   dealerCode?: string | null
 }) {
   const normalizedDealerCode = normalizeKiaDealerCode(input.dealerCode) || null
-  const resolvedMonth = await resolveMonthContext(input.year, input.month, normalizedDealerCode)
+  const context = await resolveDateContext({
+    year: input.year,
+    month: input.month,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    dealerCode: normalizedDealerCode,
+  })
   const dealerCacheKey = normalizedDealerCode || ALL_DEALERS_CACHE_KEY
-  const cacheKey = buildSummaryCacheKey(resolvedMonth.year, resolvedMonth.month, normalizedDealerCode)
+  const cacheKey = buildSummaryCacheKey(context, normalizedDealerCode)
 
   try {
-    const payload = await readCachedKiaSalesReportSummary(resolvedMonth.year, resolvedMonth.month, dealerCacheKey)
+    const payload = context.rangeMode === 'custom'
+      ? await buildKiaSalesReportSummary(context, normalizedDealerCode)
+      : await readCachedKiaSalesReportSummary(context.year, context.month, dealerCacheKey)
     kiaSalesReportSummaryFallback.set(cacheKey, payload)
     return payload
   } catch (error) {
@@ -943,7 +1262,7 @@ export async function getKiaSalesReportSummary(input: {
     if (fallback) {
       console.warn('[kia-sales-report:summary] serving last known good snapshot after live read failure', {
         dealerCode: normalizedDealerCode || 'all',
-        monthKey: resolvedMonth.key,
+        rangeKey: context.key,
         message: error instanceof Error ? error.message : String(error),
       })
       return fallback
@@ -992,9 +1311,8 @@ function buildOptionalFilter(column: string | undefined, value: string | null | 
   return sql`AND UPPER(TRIM(COALESCE(${sql.raw(column)}::text, ''))) = ${upperText(trimmed)}`
 }
 
-function buildDateClause(config: TableConfig, year: number, month: number) {
-  const { startDate, endDateExclusive } = buildMonthWindow(year, month)
-  return sql`${sql.raw(config.dateColumn)} >= ${startDate} AND ${sql.raw(config.dateColumn)} < ${endDateExclusive}`
+function buildDateClause(config: TableConfig, context: ResolvedDateContext) {
+  return sql`${sql.raw(config.dateColumn)} >= ${context.startDate} AND ${sql.raw(config.dateColumn)} < ${context.endDateExclusive}`
 }
 
 function toColumnLabel(column: string) {
@@ -1008,6 +1326,8 @@ export async function getKiaSalesReportTable(input: {
   report?: string | null
   year?: number | null
   month?: number | null
+  startDate?: string | null
+  endDate?: string | null
   dealerCode?: string | null
   source?: string | null
   model?: string | null
@@ -1021,7 +1341,13 @@ export async function getKiaSalesReportTable(input: {
   const report = normalizeReportKey(input.report)
   const config = TABLES[report]
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
-  const resolvedMonth = await resolveMonthContext(input.year, input.month, dealerCode)
+  const context = await resolveDateContext({
+    year: input.year,
+    month: input.month,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    dealerCode,
+  })
 
   const columns = await analyticsTableColumns(config.table)
   const sortColumn = normalizeSortColumn(config, input.sort || null, columns)
@@ -1031,8 +1357,8 @@ export async function getKiaSalesReportTable(input: {
   const offset = (page - 1) * pageSize
 
   const whereParts = [
-    buildDateClause(config, resolvedMonth.year, resolvedMonth.month),
-    buildDealerClause(config.dealerColumns, dealerCode),
+    buildDateClause(config, context),
+    buildDealerClause(config, dealerCode),
     buildSearchClause(config, safeText(input.search)),
     buildOptionalFilter(config.sourceColumn, input.source),
     buildOptionalFilter(config.modelColumn, input.model),
@@ -1040,27 +1366,24 @@ export async function getKiaSalesReportTable(input: {
   ]
 
   const whereSql = sql.join(whereParts.filter(Boolean), sql` `)
-  const totalRowsResult = await analyticsDb.execute(sql`
-    SELECT COUNT(*)::int AS total_rows
-    FROM ${sql.raw(config.table)}
-    WHERE ${whereSql}
-  `)
-  const totalRows = numberValue(resultRows(totalRowsResult)[0]?.total_rows)
   const rows = await analyticsDb.execute(sql`
     SELECT *
     FROM ${sql.raw(config.table)}
     WHERE ${whereSql}
-    ORDER BY ${sql.raw(sortColumn)} ${sql.raw(direction)}
-    LIMIT ${pageSize}
-    OFFSET ${offset}
   `)
+  const dedupedRows = dedupeRows(config, resultRows(rows))
+  const sortedRows = sortRows(dedupedRows, sortColumn, direction)
+  const totalRows = sortedRows.length
+  const pagedRows = sortedRows
+    .slice(offset, offset + pageSize)
+    .map((row) => normalizeRowForOutput(row, columns))
 
   return {
     report,
     title: config.label,
     columns,
     defaultVisibleColumns: config.defaultVisibleColumns.filter((column) => columns.includes(column)),
-    rows: resultRows(rows),
+    rows: pagedRows,
     pagination: {
       page,
       pageSize,
@@ -1074,6 +1397,8 @@ export async function getKiaSalesReportCsv(input: {
   report?: string | null
   year?: number | null
   month?: number | null
+  startDate?: string | null
+  endDate?: string | null
   dealerCode?: string | null
   source?: string | null
   model?: string | null
@@ -1085,14 +1410,20 @@ export async function getKiaSalesReportCsv(input: {
   const report = normalizeReportKey(input.report)
   const config = TABLES[report]
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
-  const resolvedMonth = await resolveMonthContext(input.year, input.month, dealerCode)
+  const context = await resolveDateContext({
+    year: input.year,
+    month: input.month,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    dealerCode,
+  })
 
   const columns = await analyticsTableColumns(config.table)
   const sortColumn = normalizeSortColumn(config, input.sort || null, columns)
   const direction = normalizeSortDirection(input.direction || null)
   const whereParts = [
-    buildDateClause(config, resolvedMonth.year, resolvedMonth.month),
-    buildDealerClause(config.dealerColumns, dealerCode),
+    buildDateClause(config, context),
+    buildDealerClause(config, dealerCode),
     buildSearchClause(config, safeText(input.search)),
     buildOptionalFilter(config.sourceColumn, input.source),
     buildOptionalFilter(config.modelColumn, input.model),
@@ -1103,16 +1434,16 @@ export async function getKiaSalesReportCsv(input: {
     SELECT *
     FROM ${sql.raw(config.table)}
     WHERE ${whereSql}
-    ORDER BY ${sql.raw(sortColumn)} ${sql.raw(direction)}
     LIMIT 20000
   `)
-  const normalizedRows = resultRows(rows)
+  const normalizedRows = sortRows(dedupeRows(config, resultRows(rows)), sortColumn, direction)
+    .map((row) => normalizeRowForOutput(row, columns))
   const csvLines = [
     columns.map(escapeCsvCell).join(','),
     ...normalizedRows.map((row) => columns.map((column) => escapeCsvCell(row[column])).join(',')),
   ]
   return {
-    fileName: `kia-${report}-${resolvedMonth.key}.csv`,
+    fileName: `kia-${report}-${context.key.replace(/:/g, '_')}.csv`,
     content: csvLines.join('\n'),
   } satisfies SalesReportCsvPayload
 }

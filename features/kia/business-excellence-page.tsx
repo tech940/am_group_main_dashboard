@@ -1950,28 +1950,6 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                             </Select>
                           </div>
 
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={isAiSummaryLoading || isApplyingFilter}
-                            onClick={() => {
-                              if (aiSummary?.report === selectedSheet.sheetName && !aiSummaryError) {
-                                setShowAiSummary(true)
-                                return
-                              }
-                              void generateAiSummary(selectedSheet.sheetName)
-                            }}
-                            className="h-9 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-black text-violet-700 shadow-sm hover:border-violet-300 hover:bg-violet-100 disabled:opacity-70"
-                          >
-                            {isAiSummaryLoading ? (
-                              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Sparkles className="mr-2 h-3.5 w-3.5" />
-                            )}
-                            {isAiSummaryLoading ? 'Summarising' : 'AI Summary'}
-                          </Button>
-
                           {false && usesDateControls && !isOverviewSheet && !isServiceDashboardSheet && (
                             <Button
                               type="button"

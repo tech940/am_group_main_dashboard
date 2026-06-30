@@ -19,6 +19,14 @@ function parseMonthIndex(value: string | null) {
   return Math.floor(parsed) - 1
 }
 
+function parseDate(value: string | null) {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null
+}
+
+function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
+  return role === 'super_admin' || role === 'md'
+}
+
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-sales-report-reports')
 
@@ -27,6 +35,10 @@ export async function GET(request: Request) {
     if (accessResponse) return accessResponse
 
     const appUser = await getAuthenticatedAppUser()
+    if (!isKiaSalesReportRoleAllowed(appUser?.role)) {
+      const timing = timer.finish()
+      return withServerTiming(NextResponse.json({ error: 'Unauthorized' }, { status: 403 }), timing.serverTiming)
+    }
     const permission = await timer.time('permission', () => requirePermission(appUser, 'kia.sales_report.view'))
     if (!permission.allowed) {
       const timing = timer.finish()
@@ -38,6 +50,8 @@ export async function GET(request: Request) {
       report: url.searchParams.get('report'),
       year: parseYear(url.searchParams.get('year')),
       month: parseMonthIndex(url.searchParams.get('month')),
+      startDate: parseDate(url.searchParams.get('startDate')),
+      endDate: parseDate(url.searchParams.get('endDate')),
       dealerCode: url.searchParams.get('dealer_code'),
       source: url.searchParams.get('source'),
       model: url.searchParams.get('model'),

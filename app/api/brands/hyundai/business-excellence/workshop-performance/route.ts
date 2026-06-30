@@ -7,7 +7,6 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
-import { ACCIDENT_ADVISORS } from '@/lib/business-excellence/workshop-classification'
 import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
 import { fetchHyundaiMonthlyOperationMetrics } from '@/lib/hyundai/business-excellence-operations'
 import {
@@ -130,7 +129,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, comparison: ComparisonParams, advisor: string | null, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:workshop-performance:v34:${createHash('sha1')
+  return `hyundai:business-excellence:workshop-performance:v35:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, advisor, dealerCode }))
     .digest('hex')}`
 }
@@ -144,12 +143,16 @@ function roBillingDealerFilter(dealerCode: DealerFilter) {
   return hyundaiRoBillingDealerFilter(dealerCode)
 }
 
-function accidentAdvisorSqlList() {
-  return sql.join(ACCIDENT_ADVISORS.map((advisor) => sql`${advisor.toLowerCase()}`), sql`, `)
-}
-
-function workshopCategoryExpression(columnName = 'service_advisor') {
-  return sql`CASE WHEN LOWER(TRIM(COALESCE(${sql.raw(columnName)}, ''))) IN (${accidentAdvisorSqlList()}) THEN 'Accident' ELSE 'MECH' END`
+function workshopManagementCategoryExpression(primaryColumnName: string, secondaryColumnName?: string) {
+  const primary = sql.raw(primaryColumnName)
+  const secondary = secondaryColumnName ? sql.raw(secondaryColumnName) : sql.raw(primaryColumnName)
+  return sql`
+    CASE
+      WHEN LOWER(CONCAT_WS(' ', COALESCE(${primary}::text, ''), COALESCE(${secondary}::text, ''))) ~ '(accident|accidental|bodyshop|body shop|insurance|crash|body repair|paint)'
+        THEN 'Accident'
+      ELSE 'MECH'
+    END
+  `
 }
 
 function advisorWhereClause(advisor: string | null, columnName = 'service_advisor') {
@@ -192,7 +195,7 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
   const result = await db.execute(await shouldUseWorkshopJcSummary(startDate, endDate, dealerCode) ? sql`
     WITH classified AS (
       SELECT
-        ${workshopCategoryExpression('service_advisor')} AS workshop_category,
+        ${workshopManagementCategoryExpression('group_type', 'service_type')} AS workshop_category,
         jc_key,
         labour_amount,
         part_amount,
@@ -218,7 +221,7 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
     WITH base AS (
       SELECT
         id,
-        ${workshopCategoryExpression('service_advisor')} AS workshop_category,
+        ${workshopManagementCategoryExpression('work_type', 'work_type')} AS workshop_category,
         ${hyundaiRoBillingInvoiceKeySql()} AS invoice_key,
         ${hyundaiRoBillingRoKeySql()} AS ro_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
@@ -230,6 +233,7 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
           ${numericText(sql.raw('labour_disc'))},
           ${numericText(sql.raw('part_disc'))}
         ) AS discount_amount,
+        work_type,
         uploaded_at
       FROM hyundai_ro_billing_report
       WHERE bill_date >= ${startDate}::date

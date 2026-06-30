@@ -1,14 +1,24 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 export interface UserPreference {
   id: string
   userId: string
   preferenceKey: string
-  preferenceValue: Record<string, unknown>
+  preferenceValue: unknown
   createdAt: string
   updatedAt: string
+}
+
+function preferenceValuesEqual(left: unknown, right: unknown) {
+  if (Object.is(left, right)) return true
+
+  try {
+    return JSON.stringify(left) === JSON.stringify(right)
+  } catch {
+    return false
+  }
 }
 
 export function useUserPreferences<T = Record<string, unknown>>(
@@ -18,12 +28,15 @@ export function useUserPreferences<T = Record<string, unknown>>(
   const [value, setValue] = useState<T>(defaultValue)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const defaultValueRef = useRef(defaultValue)
 
   // Load preference on mount
   useEffect(() => {
+    let isActive = true
+
     const loadPreference = async () => {
       try {
-        setLoading(true)
+        if (isActive) setLoading(true)
         const response = await fetch(`/api/user-preferences?key=${encodeURIComponent(key)}`)
         
         if (!response.ok) {
@@ -31,23 +44,32 @@ export function useUserPreferences<T = Record<string, unknown>>(
         }
 
         const data = await response.json()
-        
-        if (data.preference && data.preference.preferenceValue) {
-          setValue(data.preference.preferenceValue as T)
-        } else {
-          setValue(defaultValue)
+
+        const nextValue = data.preference && data.preference.preferenceValue !== undefined
+          ? data.preference.preferenceValue as T
+          : defaultValueRef.current
+
+        if (isActive) {
+          setValue((current) => preferenceValuesEqual(current, nextValue) ? current : nextValue)
+          setError(null)
         }
       } catch (err) {
         console.error('Error loading preference:', err)
-        setError(err instanceof Error ? err.message : 'Unknown error')
-        setValue(defaultValue)
+        if (isActive) {
+          setError(err instanceof Error ? err.message : 'Unknown error')
+          setValue((current) => preferenceValuesEqual(current, defaultValueRef.current) ? current : defaultValueRef.current)
+        }
       } finally {
-        setLoading(false)
+        if (isActive) setLoading(false)
       }
     }
 
-    loadPreference()
-  }, [key, defaultValue])
+    void loadPreference()
+
+    return () => {
+      isActive = false
+    }
+  }, [key])
 
   // Save preference
   const savePreference = useCallback(async (newValue: T) => {
@@ -87,14 +109,14 @@ export function useUserPreferences<T = Record<string, unknown>>(
         throw new Error('Failed to delete preference')
       }
 
-      setValue(defaultValue)
+      setValue((current) => preferenceValuesEqual(current, defaultValueRef.current) ? current : defaultValueRef.current)
       setError(null)
     } catch (err) {
       console.error('Error deleting preference:', err)
       setError(err instanceof Error ? err.message : 'Unknown error')
       throw err
     }
-  }, [key, defaultValue])
+  }, [key])
 
   return {
     value,

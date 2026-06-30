@@ -17,7 +17,7 @@ const HYUNDAI_MODULES: Record<string, HyundaiModuleDefinition> = {
     title: 'Business Excellence',
     permission: 'hyundai.business_excellence.view',
     component: 'business-excellence',
-    report: 'overview',
+    report: 'executive-dashboard',
   },
   'business-excellence/repair-orders': {
     title: 'Repair Orders',

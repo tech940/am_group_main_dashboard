@@ -125,7 +125,14 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
     minDateSql: sql`MIN(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text`,
     maxDateSql: sql`MAX(COALESCE(complaint_date, resolving_date, dealer_resolving_date, close_date))::text`,
   }],
-  sot_analysis: [],
+  sot_analysis: [{
+    table: 'trust_package',
+    label: 'SOT Package',
+    dealerColumn: 'source_dealer_code',
+    fallbackDealerColumns: ['dealer_code'],
+    minDateSql: sql`MIN(reg_date)::text`,
+    maxDateSql: sql`MAX(reg_date)::text`,
+  }],
 }
 
 type FreshnessRow = {
@@ -209,7 +216,7 @@ export async function GET(request: Request) {
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
     const data = await timer.time('response-cache', () => getCachedData(
-      `hyundai:business-excellence:freshness:v3:${reportKey}:${dealerCode || 'all'}`,
+      `hyundai:business-excellence:freshness:v4:${reportKey}:${dealerCode || 'all'}`,
       async () => {
         const sourceFreshness = await readSourceFreshness(sources, dealerCode)
         const sourceUpdatedAt = sourceFreshness

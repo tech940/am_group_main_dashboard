@@ -77,6 +77,31 @@ export function isPettyCashExpenseStatus(value: string): value is PettyCashExpen
   return (PETTY_CASH_EXPENSE_STATUSES as readonly string[]).includes(value)
 }
 
+function stripBrandPrefix(label: string) {
+  return label
+    .replace(/^Hyundai\s+/i, '')
+    .replace(/^Platinum\s+/i, '')
+    .trim()
+}
+
+export function getPettyCashLocationOptions(branchId: string | null | undefined) {
+  const normalizedBranch = String(branchId || '').trim().toLowerCase()
+
+  if (normalizedBranch === 'hyundai') {
+    return HYUNDAI_BRANCH_DEALERS.map((branch) => stripBrandPrefix(branch.label))
+  }
+
+  if (normalizedBranch === 'platinum') {
+    return PLATINUM_BRANCH_DEALERS.map((branch) => stripBrandPrefix(branch.label))
+  }
+
+  if (normalizedBranch === 'kia') {
+    return KIA_BRANCH_DEALERS.map((branch) => branch.label)
+  }
+
+  return ['Main Location']
+}
+
 export function getPettyCashStatusLabel(status: string | null | undefined) {
   if (!status) return 'Unknown'
   return status
@@ -84,3 +109,6 @@ export function getPettyCashStatusLabel(status: string | null | undefined) {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 }
+import { HYUNDAI_BRANCH_DEALERS } from '@/lib/hyundai/dealer-branch'
+import { KIA_BRANCH_DEALERS } from '@/lib/kia/dealer-branch'
+import { PLATINUM_BRANCH_DEALERS } from '@/lib/platinum/dealer-branch'

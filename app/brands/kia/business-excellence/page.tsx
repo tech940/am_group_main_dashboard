@@ -31,5 +31,5 @@ export default async function Page({
   }
 
   const query = dateParams.toString()
-  redirect(`/brands/kia/business-excellence/overview${query ? `?${query}` : ''}`)
+  redirect(`/brands/kia/business-excellence/executive-dashboard${query ? `?${query}` : ''}`)
 }

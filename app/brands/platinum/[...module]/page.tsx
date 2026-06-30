@@ -18,7 +18,7 @@ const PLATINUM_MODULES: Record<string, PlatinumModuleDefinition> = {
     title: 'Business Excellence',
     permission: 'platinum.business_excellence.view',
     component: 'business-excellence',
-    report: 'overview',
+    report: 'executive-dashboard',
   },
   'business-excellence/executive-dashboard': {
     title: 'Executive Dashboard',

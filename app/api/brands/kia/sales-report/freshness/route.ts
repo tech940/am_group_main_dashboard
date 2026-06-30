@@ -8,6 +8,10 @@ import { getKiaSalesReportFreshness } from '@/lib/kia/sales-report'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
+  return role === 'super_admin' || role === 'md'
+}
+
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-sales-report-freshness')
 
@@ -16,6 +20,10 @@ export async function GET(request: Request) {
     if (accessResponse) return accessResponse
 
     const appUser = await getAuthenticatedAppUser()
+    if (!isKiaSalesReportRoleAllowed(appUser?.role)) {
+      const timing = timer.finish()
+      return withServerTiming(NextResponse.json({ error: 'Unauthorized' }, { status: 403 }), timing.serverTiming)
+    }
     const permission = await timer.time('permission', () => requirePermission(appUser, 'kia.sales_report.view'))
     if (!permission.allowed) {
       const timing = timer.finish()

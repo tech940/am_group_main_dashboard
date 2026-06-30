@@ -374,7 +374,15 @@ function EmptyChart() {
   )
 }
 
-export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFilter: SotDateFilter; dealerCode?: string | null }) {
+function SotAnalysisSection({
+  brand,
+  dateFilter,
+  dealerCode,
+}: {
+  brand: 'platinum' | 'hyundai'
+  dateFilter: SotDateFilter
+  dealerCode?: string | null
+}) {
   const [filters, setFilters] = useState<SotFilters>({ model: ALL_VALUE, scheme: ALL_VALUE, department: ALL_VALUE })
   const [expandedChart, setExpandedChart] = useState<{ id: 'trend' | 'model' | 'scheme' | 'department'; title: string } | null>(null)
   const [data, setData] = useState<SotResponse | null>(null)
@@ -393,7 +401,7 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
       setIsLoading(true)
       const params = new URLSearchParams(queryString)
       params.set('chunk', 'summary')
-      const response = await fetch(`/api/brands/platinum/business-excellence/sot?${params.toString()}`)
+      const response = await fetch(`/api/brands/${brand}/business-excellence/sot?${params.toString()}`)
       logApiTimings(response, 'business-excellence-sot')
       setData(await readPlatinumJson<SotResponse>(response, 'SOT analysis'))
       setRegisterLoaded(false)
@@ -404,7 +412,7 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [queryString])
+  }, [brand, queryString])
 
   const fetchRegister = useCallback(async () => {
     if (registerLoaded || isRegisterLoading) return
@@ -414,7 +422,7 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
       params.set('chunk', 'details')
       params.set('page', '1')
       params.set('pageSize', '100')
-      const response = await fetch(`/api/brands/platinum/business-excellence/sot?${params.toString()}`)
+      const response = await fetch(`/api/brands/${brand}/business-excellence/sot?${params.toString()}`)
       logApiTimings(response, 'business-excellence-sot-details')
       const result = await readPlatinumJson<SotResponse>(response, 'SOT register')
       setData((current) => current ? { ...current, rows: result.rows || [] } : current)
@@ -425,7 +433,7 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
     } finally {
       setIsRegisterLoading(false)
     }
-  }, [isRegisterLoading, queryString, registerLoaded])
+  }, [brand, isRegisterLoading, queryString, registerLoaded])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -751,4 +759,12 @@ export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFil
       ) : null}
     </div>
   )
+}
+
+export function PlatinumSotAnalysisSection({ dateFilter, dealerCode }: { dateFilter: SotDateFilter; dealerCode?: string | null }) {
+  return <SotAnalysisSection brand="platinum" dateFilter={dateFilter} dealerCode={dealerCode} />
+}
+
+export function HyundaiSotAnalysisSection({ dateFilter, dealerCode }: { dateFilter: SotDateFilter; dealerCode?: string | null }) {
+  return <SotAnalysisSection brand="hyundai" dateFilter={dateFilter} dealerCode={dealerCode} />
 }

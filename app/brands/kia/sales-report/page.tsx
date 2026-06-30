@@ -8,6 +8,10 @@ export const metadata = {
   description: 'AM Kia sales report analytics and raw source report tables',
 }
 
+function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
+  return role === 'super_admin' || role === 'md'
+}
+
 export default async function KiaSalesReportRoute({
   searchParams,
 }: {
@@ -16,6 +20,7 @@ export default async function KiaSalesReportRoute({
   const access = await getBrandAccess('kia')
   if (!access.appUser) redirect('/auth/login')
   if (!access.allowed) forbidden()
+  if (!isKiaSalesReportRoleAllowed(access.appUser.role)) forbidden()
 
   const permission = await requirePermission(access.appUser, 'kia.sales_report.view')
   if (!permission.allowed) forbidden()

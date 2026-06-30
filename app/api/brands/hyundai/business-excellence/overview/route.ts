@@ -80,6 +80,14 @@ function dateValue(value: unknown) {
   return String(value).slice(0, 10) || null
 }
 
+function dateGapInDays(left: string | null, right: string | null) {
+  if (!left || !right) return Number.POSITIVE_INFINITY
+  const leftDate = new Date(`${left}T00:00:00Z`)
+  const rightDate = new Date(`${right}T00:00:00Z`)
+  if (Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) return Number.POSITIVE_INFINITY
+  return Math.round((rightDate.getTime() - leftDate.getTime()) / 86400000)
+}
+
 function resultRows(result: unknown): NumericRow[] {
   return Array.isArray(result) ? (result as NumericRow[]) : []
 }
@@ -110,7 +118,7 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
 }
 
 function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:overview:v29:${chunk}:${createHash('sha1')
+  return `hyundai:business-excellence:overview:v30:${chunk}:${createHash('sha1')
     .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
     .digest('hex')}`
 }
@@ -155,7 +163,7 @@ async function fetchRoBillingCoverage(startDate: string, endDate: string, dealer
   const row = resultRows(result)[0] || {}
   const latestAvailableDate = dateValue(row.latest_available_date)
   const rowCountInRange = numberValue(row.row_count_in_range)
-  const hasCompleteCoverage = Boolean(latestAvailableDate && latestAvailableDate >= endDate)
+  const hasCompleteCoverage = Boolean(latestAvailableDate && dateGapInDays(latestAvailableDate, endDate) <= 1)
   return {
     dealerCode: dealerCode || 'ALL_LOCATIONS',
     isAllLocations: !dealerCode,
@@ -495,12 +503,8 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
         uploaded_at
       FROM hyundai_repair_order_list
       WHERE cancel_date IS NULL
-        AND NOT (
-          LOWER(COALESCE(status::text, '')) ~ '(close|closed|delivered|cancel)'
-          OR LOWER(COALESCE(r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
-          OR LOWER(COALESCE(new_r_o_status::text, '')) ~ '(close|closed|delivered|cancel)'
-          OR LOWER(COALESCE(type_of_free_service::text, '')) ~ '(close|closed|delivered|cancel)'
-        )
+        AND LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), NULLIF(TRIM(status::text), ''), NULLIF(TRIM(new_r_o_status::text), ''), '')) = 'open'
+        AND r_o_date >= ${startDate}::date
         AND r_o_date < (${endDate}::date + INTERVAL '1 day')
         ${openRoDealerFilter(dealerCode)}
       ORDER BY
@@ -511,11 +515,11 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
     enriched AS (
       SELECT
         *,
-        GREATEST((CURRENT_DATE - ro_date)::int, 0) AS aging_days,
+        GREATEST((COALESCE(${endDate}::date, CURRENT_DATE) - ro_date)::int, 0) AS aging_days,
         CASE
-          WHEN (CURRENT_DATE - ro_date)::int <= 4 THEN '0-4D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 7 THEN '5-7D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 15 THEN '8-15D'
+          WHEN (COALESCE(${endDate}::date, CURRENT_DATE) - ro_date)::int <= 4 THEN '0-4D'
+          WHEN (COALESCE(${endDate}::date, CURRENT_DATE) - ro_date)::int <= 7 THEN '5-7D'
+          WHEN (COALESCE(${endDate}::date, CURRENT_DATE) - ro_date)::int <= 15 THEN '8-15D'
           ELSE '>15D'
         END AS aging_bucket,
         CASE
@@ -532,7 +536,7 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
           ELSE 'Others'
         END AS service_category,
         CASE
-          WHEN promise_date IS NOT NULL AND CURRENT_DATE > promise_date THEN 'Delayed'
+          WHEN promise_date IS NOT NULL AND COALESCE(${endDate}::date, CURRENT_DATE) > promise_date THEN 'Delayed'
           ELSE 'On Track'
         END AS delay_status
       FROM active
@@ -1072,10 +1076,10 @@ async function buildOverviewPayload(
   const effectiveRoBillingCoverage = roBillingCoverage.hasDataInRange && roBillingMaxDate
     ? {
         ...roBillingCoverage,
-        hasCompleteCoverage: roBillingMaxDate >= endDate,
+        hasCompleteCoverage: dateGapInDays(roBillingMaxDate, endDate) <= 1,
         latestAvailableDate: roBillingMaxDate,
-        comparisonStatus: roBillingMaxDate >= endDate ? 'available' : 'not_comparable',
-        comparisonLabel: roBillingMaxDate >= endDate ? null : `CY available through ${roBillingMaxDate}`,
+        comparisonStatus: dateGapInDays(roBillingMaxDate, endDate) <= 1 ? 'available' : 'not_comparable',
+        comparisonLabel: dateGapInDays(roBillingMaxDate, endDate) <= 1 ? null : `CY available through ${roBillingMaxDate}`,
       }
     : roBillingCoverage
   const roBillingComparable = effectiveRoBillingCoverage.hasCompleteCoverage

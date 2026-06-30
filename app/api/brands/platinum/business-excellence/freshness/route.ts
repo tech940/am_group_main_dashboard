@@ -80,7 +80,7 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
     dealerColumn: 'source_dealer_code',
     fallbackDealerColumns: ['dealer', 'dealer_code'],
   }],
-  Platinum_complaints: [{
+  platinum_complaints: [{
     table: 'am_platinum_call_center_complaints',
     label: 'Complaints',
     dealerColumn: 'source_dealer_code',

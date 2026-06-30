@@ -18,14 +18,16 @@ import {
   ShoppingCart,
   Banknote,
   Landmark,
-  Loader2
+  Loader2,
+  Star,
 } from 'lucide-react'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
+import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 
 const HYUNDAI_LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/4/44/Hyundai_Motor_Company_logo.svg'
 
@@ -45,7 +47,7 @@ const brandNavigation = [
         name: 'Service',
         key: 'service',
         submenus: [
-          { name: 'Business Excellence', href: '/brands/kia/business-excellence/overview' },
+          { name: 'Business Excellence', href: '/brands/kia/business-excellence/executive-dashboard' },
           { name: 'Service Appointment', href: '/brands/kia/service-appointment' },
           { name: 'Kia Proforma', href: '/brands/kia/proforma' },
         ],
@@ -87,7 +89,7 @@ const brandNavigation = [
         name: 'Service',
         key: 'service',
         submenus: [
-          { name: 'Business Excellence', href: '/brands/hyundai/business-excellence/overview' },
+          { name: 'Business Excellence', href: '/brands/hyundai/business-excellence/executive-dashboard' },
           { name: 'Service Appointment', href: '/brands/hyundai/service-appointment' },
           { name: 'Hyundai Proforma', href: '/brands/hyundai/proforma' },
           { name: 'Claim YTP', href: '/brands/hyundai/warranty-list' },
@@ -124,7 +126,7 @@ const brandNavigation = [
         name: 'Service',
         key: 'service',
         submenus: [
-          { name: 'Business Excellence', href: '/brands/platinum/business-excellence/overview' },
+          { name: 'Business Excellence', href: '/brands/platinum/business-excellence/executive-dashboard' },
           { name: 'Service Appointment', href: '/brands/platinum/service-appointment' },
           { name: 'Platinum Proforma', href: '/brands/platinum/proforma' },
           { name: 'Claim YTP', href: '/brands/platinum/warranty-list' },
@@ -185,12 +187,14 @@ const brandNavigation = [
 
 const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
 const alwaysVisibleBrandKeys = new Set<string>()
+const DEFAULT_SIDEBAR_FAVOURITES: string[] = []
 
 const sidebarPermissionByHref: Record<string, string> = {
   '/purchase-orders': 'purchase_orders.view',
   '/finance-orders': 'finance_orders.view',
   '/petty-cash': 'petty_cash.view',
   '/am-finance': 'am_finance.view',
+  '/brands/kia/business-excellence/executive-dashboard': 'kia.business_excellence.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',
   '/brands/kia/service-appointment': 'kia.service_appointment.view',
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
@@ -198,6 +202,7 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/kia/sales-report': 'kia.sales_report.view',
   '/brands/kia/proforma': 'kia.proforma.view',
   '/brands/kia/insurance': 'kia.insurance.view',
+  '/brands/hyundai/business-excellence/executive-dashboard': 'hyundai.business_excellence.view',
   '/brands/hyundai/business-excellence/overview': 'hyundai.business_excellence.view',
   '/brands/hyundai/service-appointment': 'hyundai.service_appointment.view',
   '/brands/hyundai/demo-job-cards': 'hyundai.demo_job_cards.view',
@@ -205,6 +210,7 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/hyundai/proforma': 'hyundai.proforma.view',
   '/brands/hyundai/warranty-list': 'hyundai.warranty_list.view',
   '/brands/hyundai/warranty-claim-list': 'hyundai.warranty_claim_list.view',
+  '/brands/platinum/business-excellence/executive-dashboard': 'platinum.business_excellence.view',
   '/brands/platinum/business-excellence/overview': 'platinum.business_excellence.view',
   '/brands/platinum/service-appointment': 'platinum.service_appointment.view',
   '/brands/platinum/demo-job-cards': 'platinum.demo_job_cards.view',
@@ -224,12 +230,17 @@ const sidebarPermissionByHref: Record<string, string> = {
 function isSidebarHrefActive(href: string, pathname: string | null) {
   if (!pathname) return false
   if (href.includes('/business-excellence')) {
-    return pathname.startsWith(href.replace(/\/overview$/, ''))
+    return pathname.startsWith(href.replace(/\/(overview|executive-dashboard)$/, ''))
   }
   if (href.endsWith('/proforma')) {
     return pathname.startsWith(href)
   }
   return pathname === href
+}
+
+function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
+  const normalized = String(role || '').trim().toLowerCase()
+  return normalized === 'super_admin' || normalized === 'md'
 }
 
 function getBrandKey(brandName: string) {
@@ -247,9 +258,15 @@ export function Sidebar() {
   const [signingOut, setSigningOut] = useState(false)
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
   const { userRole, canAccessAdmin, isSuperAdmin, userBrand, loading } = useUserRole()
+  const {
+    value: favouriteHrefsValue,
+    savePreference: saveFavouriteHrefs,
+    loading: favouritesLoading,
+  } = useUserPreferences<string[]>('sidebar_favourites', DEFAULT_SIDEBAR_FAVOURITES)
   const canAccessFinanceOrders = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'accounts', 'finance_head'].includes(userRole || '')
   const canAccessPettyCash = ['admin', 'super_admin', 'branch_admin', 'ea', 'md', 'accounts'].includes(userRole || '')
   const canAccessAmFinance = ['admin', 'super_admin', 'ceo', 'md', 'ea'].includes(userRole || '')
+  const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
   useEffect(() => {
     if (loading || !userRole) return
@@ -279,6 +296,32 @@ export function Sidebar() {
     alert('You do not have access to this section. Please contact your administrator.')
   }
 
+  const isEligibleFavouriteHref = useCallback((href: string) => {
+    return href.startsWith('/brands/')
+  }, [])
+
+  const isSidebarItemVisible = useCallback((href: string, brandKey: string) => {
+    if (href === '/brands/kia/sales-report' && !isKiaSalesReportRoleAllowed(userRole)) {
+      return false
+    }
+
+    const permissionKey = sidebarPermissionByHref[href]
+    const isBrandUser = userBrand === brandKey || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
+    if (permissionKey && !isBrandUser && !hasPermission(permissionKey)) {
+      return false
+    }
+
+    return true
+  }, [userBrand, userRole, permissionMap])
+
+  const toggleFavourite = useCallback(async (href: string) => {
+    if (!isEligibleFavouriteHref(href)) return
+    const next = favouriteHrefs.includes(href)
+      ? favouriteHrefs.filter((item) => item !== href)
+      : [...favouriteHrefs.filter((item) => item !== href), href]
+    await saveFavouriteHrefs(next)
+  }, [favouriteHrefs, isEligibleFavouriteHref, saveFavouriteHrefs])
+
   const canAccessBrand = (brandKey: string) => {
     if (alwaysVisibleBrandKeys.has(brandKey)) return true
     if (hasGlobalAccessRole(userRole)) return true
@@ -307,6 +350,30 @@ export function Sidebar() {
         return aOrder - bOrder
       })
   }, [userBrand, userRole])
+
+  const favouriteItems = useMemo(() => {
+    const itemMap = new Map<string, { href: string; label: string; brandName: string }>()
+    for (const brand of visibleBrands) {
+      for (const section of brand.sections) {
+        if ('href' in section && section.href && isSidebarItemVisible(section.href, brand.key) && isEligibleFavouriteHref(section.href)) {
+          itemMap.set(section.href, { href: section.href, label: section.name, brandName: brand.name })
+        }
+
+        for (const submenu of section.submenus) {
+          if (!isSidebarItemVisible(submenu.href, brand.key) || !isEligibleFavouriteHref(submenu.href)) continue
+          itemMap.set(submenu.href, {
+            href: submenu.href,
+            label: submenu.name,
+            brandName: brand.name,
+          })
+        }
+      }
+    }
+
+    return favouriteHrefs
+      .map((href) => itemMap.get(href))
+      .filter((item): item is { href: string; label: string; brandName: string } => Boolean(item))
+  }, [favouriteHrefs, isEligibleFavouriteHref, isSidebarItemVisible, visibleBrands])
 
   const toggleBrand = (brandName: string) => {
     const brand = availableBrands.find((item) => item.name === brandName)
@@ -680,6 +747,62 @@ export function Sidebar() {
               </nav>
             </div>
 
+            {!collapsed && (
+              <div>
+                <p className="mb-4 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-indigo-50/65">
+                  Favourites
+                </p>
+                {favouritesLoading ? (
+                  <div className="space-y-2 px-2">
+                    {[1, 2, 3].map((item) => (
+                      <div key={item} className="h-10 animate-pulse rounded-xl bg-white/10" />
+                    ))}
+                  </div>
+                ) : favouriteItems.length > 0 ? (
+                  <div className="space-y-2">
+                    {favouriteItems.map((item) => {
+                      const active = isSidebarHrefActive(item.href, pathname)
+                      return (
+                        <div key={item.href} className="flex items-center gap-2">
+                          <Link
+                            href={item.href}
+                            target="_blank"
+                            rel="noreferrer"
+                            prefetch={false}
+                            onClick={handleSidebarLinkClick}
+                            className={cn(
+                              'flex min-h-[2.6rem] flex-1 items-center rounded-xl border-l-4 px-3 py-2 text-left shadow-sm transition-all',
+                              active
+                                ? 'border-white bg-white/22 text-white'
+                                : 'border-transparent bg-white/10 text-indigo-50/85 hover:border-white/70 hover:bg-white/18 hover:text-white'
+                            )}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-[12px] font-semibold">{item.label}</p>
+                              <p className="truncate text-[9px] font-black uppercase tracking-[0.18em] text-indigo-50/60">{item.brandName}</p>
+                            </div>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => void toggleFavourite(item.href)}
+                            className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-amber-300 transition hover:bg-white/18 hover:text-amber-200"
+                            aria-label={`Remove ${item.label} from favourites`}
+                            title="Remove from favourites"
+                          >
+                            <Star className="h-4 w-4 fill-current" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-white/15 bg-white/6 px-4 py-3 text-[11px] font-semibold text-indigo-50/60">
+                    Star any subsection to pin it here.
+                  </div>
+                )}
+              </div>
+            )}
+
             {visibleBrands.length > 0 && (
               <div>
                 {!collapsed && (
@@ -763,7 +886,7 @@ export function Sidebar() {
                               : false
 
                             return (
-                              <div key={section.key} className="space-y-1.5">
+                              <div key={section.key} className="relative space-y-1.5">
                                 {directHref ? (
                                   directLocked ? (
                                     <button
@@ -783,7 +906,7 @@ export function Sidebar() {
                                       prefetch={false}
                                       onClick={handleSidebarLinkClick}
                                       className={cn(
-                                        'flex w-full items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-left text-[10px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
+                                        'flex flex-1 items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-left text-[10px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
                                         sectionActive
                                           ? 'bg-white/18 text-white'
                                           : 'bg-white/8 text-indigo-50/75 hover:bg-white/14 hover:text-white'
@@ -815,9 +938,27 @@ export function Sidebar() {
                                   </button>
                                 )}
 
+                                {directHref && isSidebarItemVisible(directHref, brand.key) && isEligibleFavouriteHref(directHref) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void toggleFavourite(directHref)}
+                                    className={cn(
+                                      'absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg border transition',
+                                      favouriteHrefs.includes(directHref)
+                                        ? 'border-amber-300/50 bg-amber-300/15 text-amber-200'
+                                        : 'border-white/10 bg-white/8 text-indigo-50/55 hover:bg-white/14 hover:text-amber-200'
+                                    )}
+                                    aria-label={favouriteHrefs.includes(directHref) ? `Remove ${section.name} from favourites` : `Add ${section.name} to favourites`}
+                                    title={favouriteHrefs.includes(directHref) ? 'Remove from favourites' : 'Add to favourites'}
+                                  >
+                                    <Star className={cn('h-3.5 w-3.5', favouriteHrefs.includes(directHref) && 'fill-current')} />
+                                  </button>
+                                ) : null}
+
                                 {hasChildren && sectionOpen && (
                                   <div className="ml-4 space-y-1.5 border-l border-white/15 pl-3">
                                     {section.submenus.map((sub) => {
+                                      if (!isSidebarItemVisible(sub.href, brand.key)) return null
                                       const permissionKey = sidebarPermissionByHref[sub.href]
                                       const isBrandUser = userBrand === brand.key || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
                                       const locked = isBrandUser ? false : (permissionKey ? !hasPermission(permissionKey) : false)
@@ -834,22 +975,39 @@ export function Sidebar() {
                                           <Lock className="h-3.5 w-3.5" />
                                         </button>
                                       ) : (
-                                        <Link
-                                          key={sub.name}
-                                          href={sub.href}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          prefetch={false}
-                                          onClick={handleSidebarLinkClick}
-                                          className={cn(
-                                            'block rounded-lg bg-white/10 px-3 py-2 text-[11px] font-medium shadow-sm transition-all',
-                                            active
-                                              ? 'border-l-2 border-indigo-100 text-white font-semibold'
-                                              : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
-                                          )}
-                                        >
-                                          {sub.name}
-                                        </Link>
+                                        <div key={sub.name} className="flex items-center gap-2">
+                                          <Link
+                                            href={sub.href}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            prefetch={false}
+                                            onClick={handleSidebarLinkClick}
+                                            className={cn(
+                                              'block flex-1 rounded-lg bg-white/10 px-3 py-2 text-[11px] font-medium shadow-sm transition-all',
+                                              active
+                                                ? 'border-l-2 border-indigo-100 text-white font-semibold'
+                                                : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
+                                            )}
+                                          >
+                                            {sub.name}
+                                          </Link>
+                                          {isEligibleFavouriteHref(sub.href) ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => void toggleFavourite(sub.href)}
+                                              className={cn(
+                                                'flex h-8 w-8 items-center justify-center rounded-lg border transition',
+                                                favouriteHrefs.includes(sub.href)
+                                                  ? 'border-amber-300/50 bg-amber-300/15 text-amber-200'
+                                                  : 'border-white/10 bg-white/8 text-indigo-50/55 hover:bg-white/14 hover:text-amber-200'
+                                              )}
+                                              aria-label={favouriteHrefs.includes(sub.href) ? `Remove ${sub.name} from favourites` : `Add ${sub.name} to favourites`}
+                                              title={favouriteHrefs.includes(sub.href) ? 'Remove from favourites' : 'Add to favourites'}
+                                            >
+                                              <Star className={cn('h-3.5 w-3.5', favouriteHrefs.includes(sub.href) && 'fill-current')} />
+                                            </button>
+                                          ) : null}
+                                        </div>
                                       )
                                     })}
                                   </div>

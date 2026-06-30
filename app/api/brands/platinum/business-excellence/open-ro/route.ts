@@ -98,13 +98,13 @@ function openRoBaseSql(filters: OpenRoFilters) {
         *,
         CASE
           WHEN ro_date IS NULL THEN 0
-          ELSE GREATEST((CURRENT_DATE - ro_date)::int, 0)
+          ELSE GREATEST((COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int, 0)
         END AS aging_days,
         CASE
           WHEN ro_date IS NULL THEN '0-4D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 4 THEN '0-4D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 7 THEN '5-7D'
-          WHEN (CURRENT_DATE - ro_date)::int <= 15 THEN '8-15D'
+          WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 4 THEN '0-4D'
+          WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 7 THEN '5-7D'
+          WHEN (COALESCE(${filters.endDate}::date, CURRENT_DATE) - ro_date)::int <= 15 THEN '8-15D'
           ELSE '>15D'
         END AS aging_bucket,
         CASE
@@ -513,7 +513,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
         primary: dealerCoverage,
         openRo: dealerCoverage,
       },
-      statusDefinition: "LOWER(status) = 'open'",
+      statusDefinition: "LOWER(r_o_status) = 'open'",
       agingDefinition: 'CURRENT_DATE - ro_date',
       promiseDateDefinition: 'COALESCE(revised_promise_date_time, promise_date_time)',
       cacheTtlSeconds: CACHE_TTL_SECONDS,

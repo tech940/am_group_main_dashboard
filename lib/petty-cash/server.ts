@@ -39,6 +39,7 @@ const uuidSchema = z.string().uuid()
 
 export const createPettyCashRequestSchema = z.object({
   status: z.enum(['draft', 'submitted']).default('submitted'),
+  branchId: z.string().optional().nullable(),
   requestedAmount: moneySchema,
   purpose: z.string().trim().min(2).max(2000),
   department: optionalText,
@@ -348,12 +349,12 @@ export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?:
   }
 }
 
-export async function getPettyCashDashboard(appUser: AppUser) {
+export async function getPettyCashDashboard(appUser: AppUser, branchId?: string | null) {
   const [categories, currentAllocation, requestsResult, expensesResult] = await Promise.all([
     getPettyCashCategories(),
-    getCurrentPettyCashAllocation(appUser),
-    listPettyCashRequests(appUser, { page: 1, pageSize: 8, status: 'all' }),
-    listPettyCashExpenses(appUser, { page: 1, pageSize: 8, status: 'all' }),
+    getCurrentPettyCashAllocation(appUser, branchId),
+    listPettyCashRequests(appUser, { page: 1, pageSize: 8, status: 'all', branchId }),
+    listPettyCashExpenses(appUser, { page: 1, pageSize: 8, status: 'all', branchId }),
   ])
 
   const requests = filterDashboardRequests(appUser, requestsResult.requests as Array<Record<string, unknown>>)
@@ -400,7 +401,8 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
   }
 
   const input = createPettyCashRequestSchema.parse(rawInput)
-  const branchId = normalizeBranch(appUser)
+  const requestedBranchId = input.branchId && isBranchValue(input.branchId) ? input.branchId : null
+  const branchId = requestedBranchId || normalizeBranch(appUser)
 
   if (!branchId || !canManagePettyCashBranch(appUser, branchId)) {
     throw new Error('Forbidden branch')
@@ -650,22 +652,6 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
       const approvedAmount = parseMoney(request.requestedAmount)
 
       const { updatedRequest, history } = await db.transaction(async (tx) => {
-        const [updatedRequest] = await tx
-          .update(pettyCashRequests)
-          .set({
-            status: 'approved',
-            currentStage: 'allocated',
-            allocatedAmount: toMoney(approvedAmount),
-            accountsApprovedBy: appUser.id,
-            accountsApprovedAt: now,
-            accountsRemarks: null,
-            updatedAt: now,
-          })
-          .where(and(eq(pettyCashRequests.id, request.id), eq(pettyCashRequests.status, request.status)))
-          .returning()
-
-        if (!updatedRequest) throw new Error('Request already moved to another stage')
-
         const [activeAllocation] = await tx
           .select()
           .from(pettyCashAllocations)
@@ -676,9 +662,27 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
           ))
           .limit(1)
 
+        const carryForwardAmount = activeAllocation ? getRemainingBalance(activeAllocation) : 0
+        const finalAllocationAmount = approvedAmount + carryForwardAmount
+
+        const [updatedRequest] = await tx
+          .update(pettyCashRequests)
+          .set({
+            status: 'approved',
+            currentStage: 'allocated',
+            allocatedAmount: toMoney(finalAllocationAmount),
+            accountsApprovedBy: appUser.id,
+            accountsApprovedAt: now,
+            accountsRemarks: null,
+            updatedAt: now,
+          })
+          .where(and(eq(pettyCashRequests.id, request.id), eq(pettyCashRequests.status, request.status)))
+          .returning()
+
+        if (!updatedRequest) throw new Error('Request already moved to another stage')
+
         if (activeAllocation) {
-          const remainingBalance = getRemainingBalance(activeAllocation)
-          if (remainingBalance > PETTY_CASH_TOP_UP_THRESHOLD) {
+          if (carryForwardAmount > PETTY_CASH_TOP_UP_THRESHOLD) {
             throw new Error(`Top-up requests unlock when remaining balance is ${toMoney(PETTY_CASH_TOP_UP_THRESHOLD)} or below`)
           }
 
@@ -706,14 +710,15 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
             requestId: request.id,
             branchId: request.branchId,
             entryType: 'closure',
-            amount: toMoney(-remainingBalance),
+            amount: toMoney(-carryForwardAmount),
             balanceAfter: '0.00',
-            description: `Closed previous allocation before ${request.requestNumber} top-up`,
+            description: `Closed previous allocation before ${request.requestNumber} top-up and carried forward remaining balance`,
             createdBy: appUser.id,
             metadata: {
               requestNumber: request.requestNumber,
               closedAllocationNumber: activeAllocation.allocationNumber,
-              remainingClosed: toMoney(remainingBalance),
+              remainingClosed: toMoney(carryForwardAmount),
+              carryForwardAmount: toMoney(carryForwardAmount),
             },
           })
         }
@@ -724,7 +729,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
           branchId: request.branchId,
           allocatedTo: request.createdBy,
           allocatedBy: appUser.id,
-          allocatedAmount: toMoney(approvedAmount),
+          allocatedAmount: toMoney(finalAllocationAmount),
           spentAmount: '0.00',
           status: 'active',
           notes: null,
@@ -735,11 +740,16 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
           requestId: request.id,
           branchId: request.branchId,
           entryType: 'allocation',
-          amount: toMoney(approvedAmount),
-          balanceAfter: toMoney(approvedAmount),
-          description: `Petty cash allocated via ${request.requestNumber}`,
+          amount: toMoney(finalAllocationAmount),
+          balanceAfter: toMoney(finalAllocationAmount),
+          description: activeAllocation
+            ? `Petty cash allocated via ${request.requestNumber} with carry-forward balance`
+            : `Petty cash allocated via ${request.requestNumber}`,
           createdBy: appUser.id,
-          metadata: { requestNumber: request.requestNumber },
+          metadata: {
+            requestNumber: request.requestNumber,
+            carryForwardAmount: toMoney(carryForwardAmount),
+          },
         })
 
         const [history] = await tx.insert(pettyCashApprovalHistory).values({
@@ -752,7 +762,11 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
           remarks: null,
           previousStatus: request.status,
           newStatus: 'approved',
-          metadata: { allocatedAmount: toMoney(approvedAmount) },
+          metadata: {
+            allocatedAmount: toMoney(approvedAmount),
+            finalAllocationAmount: toMoney(finalAllocationAmount),
+            carryForwardAmount: toMoney(carryForwardAmount),
+          },
         }).returning({ id: pettyCashApprovalHistory.id, remarks: pettyCashApprovalHistory.remarks })
 
         return { updatedRequest, history }

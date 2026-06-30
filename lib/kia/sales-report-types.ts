@@ -120,6 +120,11 @@ export type SalesReportSummaryPayload = {
     selectedMonthLabel: string
     comparisonMonthKey: string
     comparisonMonthLabel: string
+    startDate?: string
+    endDate?: string
+    comparisonStartDate?: string
+    comparisonEndDate?: string
+    rangeMode?: 'month' | 'custom'
   }
   assumptions: string[]
   overview: {

@@ -39,11 +39,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { getBranchLabel } from '@/lib/branches'
+import { BRANCH_OPTIONS, getBranchLabel } from '@/lib/branches'
 import {
   PETTY_CASH_DEPARTMENT_OPTIONS,
-  PETTY_CASH_KIA_LOCATION_OPTIONS,
   PETTY_CASH_PAYMENT_TYPES,
+  PETTY_CASH_TOP_UP_THRESHOLD,
+  getPettyCashLocationOptions,
   getPettyCashStatusLabel,
 } from '@/lib/petty-cash/constants'
 
@@ -92,6 +93,8 @@ type PettyCashRequest = {
   requested_amount?: string
   purpose: string
   department?: string | null
+  createdBy?: string
+  created_by?: string
   createdAt: string
   created_at?: string
 }
@@ -116,6 +119,8 @@ type PettyCashExpense = {
   receivedBy?: string | null
   received_by?: string | null
   purpose: string
+  createdBy?: string
+  created_by?: string
   createdAt: string
   created_at?: string
 }
@@ -156,7 +161,6 @@ type DashboardPayload = {
 type RequestFormState = {
   location: string
   department: string
-  advanceType: string
   requestedAmount: string
   typeOfPayment: string
   purpose: string
@@ -180,7 +184,6 @@ type RequestWorkflowDialogState = {
 const EMPTY_REQUEST_FORM: RequestFormState = {
   location: '',
   department: '',
-  advanceType: '',
   requestedAmount: '',
   typeOfPayment: '',
   purpose: '',
@@ -200,11 +203,15 @@ const PETTY_CASH_FETCH_TIMEOUT_MS = process.env.NODE_ENV === 'development' ? 600
 const PETTY_CASH_FETCH_RETRY_ATTEMPTS = process.env.NODE_ENV === 'development' ? 2 : 1
 
 function isCreatorRole(role: string) {
-  return role === 'admin' || role === 'branch_admin'
+  return role === 'admin' || role === 'branch_admin' || role === 'super_admin'
 }
 
 function isApproverRole(role: string) {
   return role === 'ea' || role === 'md' || role === 'accounts'
+}
+
+function canReviewApprovalQueue(role: string) {
+  return isApproverRole(role) || role === 'super_admin'
 }
 
 function isExpenseFeedRole(role: string) {
@@ -297,6 +304,10 @@ function getStatusVariant(status: string) {
 }
 
 function canActOnRequest(userRole: string, request: PettyCashRequest) {
+  if (userRole === 'super_admin') {
+    return ['ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold'].includes(request.status)
+  }
+
   return (userRole === 'ea' && ['ea_pending', 'ea_on_hold'].includes(request.status))
     || (userRole === 'md' && ['md_pending', 'md_on_hold'].includes(request.status))
     || (userRole === 'accounts' && ['accounts_pending', 'accounts_on_hold'].includes(request.status))
@@ -321,6 +332,28 @@ function isPreviewableImage(fileUrl: string) {
   return /\.(png|jpe?g|webp|gif|heic|heif)(\?|$)/i.test(fileUrl)
 }
 
+function validateRequestForm(requestForm: RequestFormState, locationOptions: string[]) {
+  if (!requestForm.location.trim()) return 'Select a location before submitting the petty cash request.'
+  if (!locationOptions.includes(requestForm.location)) return 'Select a valid branch location from the list.'
+
+  const requestedAmount = Number(requestForm.requestedAmount)
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) return 'Enter a valid petty cash request amount.'
+
+  if ((requestForm.purpose || '').trim().length < 5) return 'Request purpose must be at least 5 characters long.'
+  return null
+}
+
+function validateExpenseForm(expenseForm: ExpenseFormState, remainingAmount: number, hasAllocation: boolean) {
+  if (!hasAllocation) return 'No active petty cash allocation is available for expense posting.'
+
+  const amount = Number(expenseForm.amount)
+  if (!Number.isFinite(amount) || amount <= 0) return 'Enter a valid expense amount.'
+  if (amount > remainingAmount) return 'Expense amount cannot be more than the current remaining petty cash balance.'
+
+  if ((expenseForm.purpose || '').trim().length < 5) return 'Expense purpose must be at least 5 characters long.'
+  return null
+}
+
 function PettyCashPageContent() {
   const [payload, setPayload] = useState<DashboardPayload | null>(null)
   const [ledger, setLedger] = useState<PettyCashLedgerEntry[]>([])
@@ -332,60 +365,81 @@ function PettyCashPageContent() {
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false)
   const [requestWorkflowDialog, setRequestWorkflowDialog] = useState<RequestWorkflowDialogState>(null)
   const [loading, setLoading] = useState(true)
+  const [dashboardLoading, setDashboardLoading] = useState(false)
+  const [ledgerLoading, setLedgerLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [demoBranchId, setDemoBranchId] = useState<string>(BRANCH_OPTIONS[0]?.value ?? 'kia')
+  const [dashboardBranchScope, setDashboardBranchScope] = useState<string | null>(null)
+  const [mdQueueScope, setMdQueueScope] = useState<'all' | 'mine'>('all')
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true)
+  const refreshLedger = useCallback(async (allocationId?: string | null) => {
+    setLedgerLoading(true)
+
+    try {
+      const searchParams = new URLSearchParams()
+      if (allocationId) searchParams.set('allocationId', allocationId)
+      const url = searchParams.size > 0 ? `/api/petty-cash/reports?${searchParams.toString()}` : '/api/petty-cash/reports'
+      const ledgerPayload = await fetchJsonWithTimeout<{ ledger: PettyCashLedgerEntry[] }>(url, 'Petty Cash ledger')
+      setLedger(ledgerPayload.ledger || [])
+    } catch (ledgerError) {
+      console.warn('Petty Cash ledger refresh failed', ledgerError)
+      setLedger([])
+    } finally {
+      setLedgerLoading(false)
+    }
+  }, [])
+
+  const loadDashboard = useCallback(async (options?: { branchId?: string | null; preserveData?: boolean }) => {
+    const branchId = options?.branchId ?? null
+    const preserveData = options?.preserveData ?? false
+
+    if (preserveData) {
+      setDashboardLoading(true)
+    } else {
+      setLoading(true)
+    }
+
     setError(null)
 
     try {
-      const dashboard = await fetchJsonWithTimeout<DashboardPayload>('/api/petty-cash', 'Petty Cash dashboard')
+      const searchParams = new URLSearchParams()
+      if (branchId) searchParams.set('branchId', branchId)
+      const url = searchParams.size > 0 ? `/api/petty-cash?${searchParams.toString()}` : '/api/petty-cash'
+      const dashboard = await fetchJsonWithTimeout<DashboardPayload>(url, 'Petty Cash dashboard')
       setPayload(dashboard)
+      setDashboardBranchScope(branchId)
 
-      void fetchJsonWithTimeout<{ ledger: PettyCashLedgerEntry[] }>('/api/petty-cash/reports', 'Petty Cash ledger')
-        .then((ledgerPayload) => setLedger(ledgerPayload.ledger || []))
-        .catch((ledgerError) => {
-          console.warn('Petty Cash ledger load failed', ledgerError)
-          setLedger([])
-        })
+      void refreshLedger(dashboard.currentAllocation?.id || null)
 
       setExpenseForm((current) => ({
         ...current,
         allocationId: dashboard.currentAllocation?.id || '',
       }))
+
+      return dashboard
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load Petty Cash')
+      return null
     } finally {
       setLoading(false)
+      setDashboardLoading(false)
     }
-  }, [])
-
-  const refreshLedger = useCallback(async () => {
-    try {
-      const ledgerPayload = await fetchJsonWithTimeout<{ ledger: PettyCashLedgerEntry[] }>('/api/petty-cash/reports', 'Petty Cash ledger')
-      setLedger(ledgerPayload.ledger || [])
-    } catch (ledgerError) {
-      console.warn('Petty Cash ledger refresh failed', ledgerError)
-      setLedger([])
-    }
-  }, [])
+  }, [refreshLedger])
 
   const refreshDashboardAfterMutation = useCallback(async () => {
     setError(null)
 
     try {
-      const dashboard = await fetchJsonWithTimeout<DashboardPayload>('/api/petty-cash', 'Petty Cash dashboard')
-      setPayload(dashboard)
-      setExpenseForm((current) => ({
-        ...current,
-        allocationId: dashboard.currentAllocation?.id || '',
-      }))
-      void refreshLedger()
+      return await loadDashboard({
+        branchId: payload?.user.role === 'super_admin' ? demoBranchId : null,
+        preserveData: true,
+      })
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to refresh Petty Cash')
+      return null
     }
-  }, [refreshLedger])
+  }, [demoBranchId, loadDashboard, payload?.user.role])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -395,20 +449,45 @@ function PettyCashPageContent() {
     return () => window.clearTimeout(timer)
   }, [loadDashboard])
 
+  useEffect(() => {
+    if (payload?.user.role !== 'super_admin') return
+    if (dashboardBranchScope === demoBranchId) return
+    void loadDashboard({ branchId: demoBranchId, preserveData: true })
+  }, [dashboardBranchScope, demoBranchId, loadDashboard, payload?.user.role])
+
   const currentAllocation = payload?.currentAllocation || null
   const allocationAmount = Number(normalizeAllocatedAmount(currentAllocation))
   const spentAmount = Number(normalizeSpentAmount(currentAllocation))
   const remainingAmount = payload?.summary.remainingAmount ?? Math.max(0, allocationAmount - spentAmount)
   const spendPercentage = allocationAmount > 0 ? Math.min(100, Math.round((spentAmount / allocationAmount) * 100)) : 0
   const userRole = payload?.user.role || ''
+  const userId = payload?.user.id || ''
+  const currentBranchId = userRole === 'super_admin' ? demoBranchId : (payload?.user.brand || '')
   const canCreate = isCreatorRole(userRole)
+  const canReviewQueue = canReviewApprovalQueue(userRole)
   const canRequestTopUp = payload?.summary.canRequestTopUp ?? true
   const canSubmitExpense = payload?.summary.canSubmitExpense ?? false
   const topUpReason = payload?.summary.topUpReason || ''
   const categoryOptions = payload?.categories || []
-  const visibleRequests = useMemo(() => payload?.requests || [], [payload?.requests])
-  const visibleExpenses = useMemo(() => payload?.expenses || [], [payload?.expenses])
+  const allRequests = payload?.requests || []
+  const allExpenses = payload?.expenses || []
+  const creatorRequests = useMemo(() => {
+    if (userRole !== 'super_admin') return allRequests
+    return allRequests.filter((request) => String(request.createdBy || request.created_by || '') === userId)
+  }, [allRequests, userId, userRole])
+  const creatorExpenses = useMemo(() => {
+    if (userRole !== 'super_admin') return allExpenses
+    return allExpenses.filter((expense) => String(expense.createdBy || expense.created_by || '') === userId)
+  }, [allExpenses, userId, userRole])
+  const approvalRequests = useMemo(() => {
+    if ((userRole !== 'md' && userRole !== 'super_admin') || mdQueueScope === 'all') return allRequests
+    return allRequests.filter((request) => normalizeBranchId(request) === currentBranchId)
+  }, [allRequests, currentBranchId, mdQueueScope, userRole])
+  const expenseFeedRows = useMemo(() => allExpenses, [allExpenses])
   const expenseFeedTitle = userRole === 'accounts' ? 'Branch Expense Ledger Feed' : 'Recent Branch Expenses'
+  const showMdScopeToggle = userRole === 'md' || userRole === 'super_admin'
+  const contentLoading = dashboardLoading || ledgerLoading
+  const requestLocationOptions = useMemo(() => getPettyCashLocationOptions(currentBranchId), [currentBranchId])
 
   const uploadExpenseFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -436,6 +515,12 @@ function PettyCashPageContent() {
       return
     }
 
+    const requestValidationError = validateRequestForm(requestForm, requestLocationOptions)
+    if (requestValidationError) {
+      setError(requestValidationError)
+      return
+    }
+
     setSubmitting(true)
     setError(null)
 
@@ -444,13 +529,13 @@ function PettyCashPageContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          branchId: userRole === 'super_admin' ? demoBranchId : null,
           requestedAmount: requestForm.requestedAmount,
           purpose: requestForm.purpose,
           department: requestForm.department || null,
           requestForm: {
             location: requestForm.location || null,
             department: requestForm.department || null,
-            advanceType: requestForm.advanceType || null,
             typeOfPayment: requestForm.typeOfPayment || null,
           },
         }),
@@ -470,6 +555,12 @@ function PettyCashPageContent() {
   }
 
   async function submitExpense() {
+    const expenseValidationError = validateExpenseForm(expenseForm, remainingAmount, Boolean(currentAllocation))
+    if (expenseValidationError) {
+      setError(expenseValidationError)
+      return
+    }
+
     setSubmitting(true)
     setError(null)
 
@@ -525,7 +616,16 @@ function PettyCashPageContent() {
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Workflow update failed')
-      await refreshDashboardAfterMutation()
+      const refreshedDashboard = await refreshDashboardAfterMutation()
+
+      if (stage === 'accounts' && action === 'approve' && refreshedDashboard?.currentAllocation) {
+        setActiveTab('overview')
+        setExpenseForm({
+          ...EMPTY_EXPENSE_FORM,
+          allocationId: refreshedDashboard.currentAllocation.id || '',
+        })
+        setExpenseDialogOpen(true)
+      }
     } catch (workflowError) {
       setError(workflowError instanceof Error ? workflowError.message : 'Workflow update failed')
     } finally {
@@ -533,12 +633,10 @@ function PettyCashPageContent() {
     }
   }
 
-  if (loading) {
+  if (loading && !payload) {
     return (
       <MainLayout>
-        <div className="flex min-h-[70vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
-        </div>
+        <PettyCashDashboardSkeleton />
       </MainLayout>
     )
   }
@@ -569,7 +667,27 @@ function PettyCashPageContent() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {userRole === 'super_admin' && (
+              <div className="min-w-[190px]">
+                <Select
+                  value={demoBranchId}
+                  onValueChange={(value) => {
+                    setDemoBranchId(value)
+                    void loadDashboard({ branchId: value, preserveData: true })
+                  }}
+                >
+                  <SelectTrigger className="rounded-2xl bg-white/90 font-black">
+                    <SelectValue placeholder="Select demo branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BRANCH_OPTIONS.map((branch) => (
+                      <SelectItem key={branch.value} value={branch.value}>{branch.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {(['overview', 'requests', 'expenses', 'ledger'] as const).map((tab) => (
               <Button
                 key={tab}
@@ -581,8 +699,14 @@ function PettyCashPageContent() {
                 {tab}
               </Button>
             ))}
-            <Button type="button" variant="outline" onClick={loadDashboard} className="rounded-2xl bg-white/70 font-black">
-              <RefreshCw className="mr-2 h-4 w-4" />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={contentLoading}
+              onClick={() => void loadDashboard({ branchId: userRole === 'super_admin' ? demoBranchId : null, preserveData: true })}
+              className="rounded-2xl bg-white/70 font-black"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${contentLoading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
           </div>
@@ -622,6 +746,7 @@ function PettyCashPageContent() {
         <RequestFormDialog
           open={requestDialogOpen}
           onOpenChange={setRequestDialogOpen}
+          locationOptions={requestLocationOptions}
           requestForm={requestForm}
           setRequestForm={setRequestForm}
           submitting={submitting}
@@ -645,37 +770,43 @@ function PettyCashPageContent() {
 
         {canCreate && !canRequestTopUp && (
           <div className="rounded-3xl border border-amber-200 bg-amber-50/95 px-5 py-4 text-sm font-bold text-amber-900 shadow-sm">
-            {topUpReason}
+            {topUpReason || `A new petty cash request unlocks only when the remaining balance is Rs ${PETTY_CASH_TOP_UP_THRESHOLD} or lower.`}
           </div>
         )}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard
-            title="Current Allocation"
-            value={formatCurrency(allocationAmount)}
-            meta={currentAllocation ? getBranchLabel(normalizeBranchId(currentAllocation)) : 'No active allocation'}
-            icon={<ShieldCheck className="h-5 w-5 text-teal-600" />}
-          />
-          <SummaryCard
-            title="Remaining"
-            value={formatCurrency(remainingAmount)}
-            meta={`${spendPercentage}% of allocation used`}
-            icon={<Banknote className="h-5 w-5 text-emerald-600" />}
-            accentValueClass="text-emerald-700"
-          />
-          <SummaryCard
-            title="Spent"
-            value={formatCurrency(spentAmount)}
-            meta="Live deducted from active allocation"
-            icon={<TrendingDown className="h-5 w-5 text-orange-600" />}
-          />
-          <SummaryCard
-            title="Pending Requests"
-            value={String(payload.summary.pendingRequestCount)}
-            meta={isApproverRole(userRole) ? 'Awaiting your stage action' : 'Your live request queue'}
-            icon={<Clock3 className="h-5 w-5 text-blue-600" />}
-          />
-        </div>
+        {contentLoading ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => <SummaryCardSkeleton key={`petty-cash-summary-${index}`} />)}
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              title="Current Allocation"
+              value={formatCurrency(allocationAmount)}
+              meta={currentAllocation ? getBranchLabel(normalizeBranchId(currentAllocation)) : 'No active allocation'}
+              icon={<ShieldCheck className="h-5 w-5 text-teal-600" />}
+            />
+            <SummaryCard
+              title="Remaining"
+              value={formatCurrency(remainingAmount)}
+              meta={`${spendPercentage}% of allocation used`}
+              icon={<Banknote className="h-5 w-5 text-emerald-600" />}
+              accentValueClass="text-emerald-700"
+            />
+            <SummaryCard
+              title="Spent"
+              value={formatCurrency(spentAmount)}
+              meta="Live deducted from active allocation"
+              icon={<TrendingDown className="h-5 w-5 text-orange-600" />}
+            />
+            <SummaryCard
+              title="Pending Requests"
+              value={String(payload.summary.pendingRequestCount)}
+              meta={canReviewQueue ? 'Awaiting your stage action' : 'Your live request queue'}
+              icon={<Clock3 className="h-5 w-5 text-blue-600" />}
+            />
+          </div>
+        )}
 
         {activeTab === 'overview' && (
           <div className="space-y-6">
@@ -687,7 +818,7 @@ function PettyCashPageContent() {
                 <CardContent className="flex flex-col gap-3 md:flex-row">
                   <Button
                     type="button"
-                    disabled={submitting || !canRequestTopUp}
+                    disabled={submitting || contentLoading || !canRequestTopUp}
                     onClick={() => setRequestDialogOpen(true)}
                     className="rounded-2xl bg-slate-950 px-6 py-6 font-black text-white hover:bg-slate-800"
                   >
@@ -696,7 +827,7 @@ function PettyCashPageContent() {
                   </Button>
                   <Button
                     type="button"
-                    disabled={submitting || !canSubmitExpense}
+                    disabled={submitting || contentLoading || !canSubmitExpense}
                     onClick={() => setExpenseDialogOpen(true)}
                     className="rounded-2xl bg-teal-700 px-6 py-6 font-black text-white hover:bg-teal-800"
                   >
@@ -712,7 +843,8 @@ function PettyCashPageContent() {
                 title="Your Pending Requests"
                 emptyText="No pending petty cash requests found."
                 headers={['Request #', 'Branch', 'Requested By', 'Purpose', 'Amount', 'Status', 'Created']}
-                rows={visibleRequests}
+                rows={creatorRequests}
+                loading={contentLoading}
                 renderRow={(request) => (
                   <tr key={request.id} className="border-b border-slate-100">
                     <td className="px-4 py-3 font-black text-slate-950">{normalizeRequestNumber(request)}</td>
@@ -732,7 +864,8 @@ function PettyCashPageContent() {
                 title="Your Expense History"
                 emptyText="No petty cash expenses posted yet."
                 headers={['Expense #', 'Date', 'Description', 'Vendor', 'Amount', 'Posted At']}
-                rows={visibleExpenses}
+                rows={creatorExpenses}
+                loading={contentLoading}
                 renderRow={(expense) => (
                   <tr key={expense.id} className="border-b border-slate-100">
                     <td className="px-4 py-3 font-black text-slate-950">{normalizeExpenseNumber(expense)}</td>
@@ -746,12 +879,35 @@ function PettyCashPageContent() {
               />
             )}
 
-            {isApproverRole(userRole) && (
+            {canReviewQueue && (
               <RecordTable
                 title="Pending Approval Queue"
                 emptyText="No petty cash requests are waiting for your approval."
                 headers={['Request #', 'Branch', 'Requested By', 'Purpose', 'Amount', 'Status', 'Actions']}
-                rows={visibleRequests}
+                rows={approvalRequests}
+                loading={contentLoading}
+                toolbar={showMdScopeToggle ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={mdQueueScope === 'all' ? 'default' : 'outline'}
+                      onClick={() => setMdQueueScope('all')}
+                      className={mdQueueScope === 'all' ? 'rounded-xl bg-slate-950 text-white hover:bg-slate-800' : 'rounded-xl bg-white'}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={mdQueueScope === 'mine' ? 'default' : 'outline'}
+                      onClick={() => setMdQueueScope('mine')}
+                      className={mdQueueScope === 'mine' ? 'rounded-xl bg-slate-950 text-white hover:bg-slate-800' : 'rounded-xl bg-white'}
+                    >
+                      For me
+                    </Button>
+                  </div>
+                ) : null}
                 renderRow={(request) => (
                   <tr key={request.id} className="border-b border-slate-100">
                     <td className="px-4 py-3 font-black text-slate-950">{normalizeRequestNumber(request)}</td>
@@ -766,7 +922,7 @@ function PettyCashPageContent() {
                           onApprove={() => applyRequestWorkflow(request.id, stageForRequest(request), 'approve')}
                           onHold={() => setRequestWorkflowDialog({ request, action: 'hold' })}
                           onReject={() => setRequestWorkflowDialog({ request, action: 'reject' })}
-                          disabled={submitting}
+                          disabled={submitting || contentLoading}
                         />
                       )}
                     </td>
@@ -780,7 +936,8 @@ function PettyCashPageContent() {
                 title={expenseFeedTitle}
                 emptyText="No petty cash expenses found for this feed."
                 headers={['Expense #', 'Branch', 'Date', 'Description', 'Vendor', 'Amount', 'Status']}
-                rows={visibleExpenses}
+                rows={expenseFeedRows}
+                loading={contentLoading}
                 renderRow={(expense) => (
                   <tr key={expense.id} className="border-b border-slate-100">
                     <td className="px-4 py-3 font-black text-slate-950">{normalizeExpenseNumber(expense)}</td>
@@ -799,12 +956,35 @@ function PettyCashPageContent() {
 
         {activeTab === 'requests' && (
           <RecordTable
-            title={isApproverRole(userRole) ? 'Pending Approval Queue' : 'Petty Cash Requests'}
-            emptyText={isApproverRole(userRole)
+            title={canReviewQueue ? 'Pending Approval Queue' : 'Petty Cash Requests'}
+            emptyText={canReviewQueue
               ? 'No petty cash requests are waiting for your approval.'
               : 'No petty cash requests found.'}
             headers={['Request #', 'Branch', 'Requested By', 'Purpose', 'Amount', 'Status', 'Actions']}
-            rows={visibleRequests}
+            rows={canReviewQueue ? approvalRequests : creatorRequests}
+            loading={contentLoading}
+            toolbar={showMdScopeToggle && canReviewQueue ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={mdQueueScope === 'all' ? 'default' : 'outline'}
+                  onClick={() => setMdQueueScope('all')}
+                  className={mdQueueScope === 'all' ? 'rounded-xl bg-slate-950 text-white hover:bg-slate-800' : 'rounded-xl bg-white'}
+                >
+                  All
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={mdQueueScope === 'mine' ? 'default' : 'outline'}
+                  onClick={() => setMdQueueScope('mine')}
+                  className={mdQueueScope === 'mine' ? 'rounded-xl bg-slate-950 text-white hover:bg-slate-800' : 'rounded-xl bg-white'}
+                >
+                  For me
+                </Button>
+              </div>
+            ) : null}
             renderRow={(request) => (
               <tr key={request.id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-black text-slate-950">{normalizeRequestNumber(request)}</td>
@@ -819,7 +999,7 @@ function PettyCashPageContent() {
                       onApprove={() => applyRequestWorkflow(request.id, stageForRequest(request), 'approve')}
                       onHold={() => setRequestWorkflowDialog({ request, action: 'hold' })}
                       onReject={() => setRequestWorkflowDialog({ request, action: 'reject' })}
-                      disabled={submitting}
+                      disabled={submitting || contentLoading}
                     />
                   )}
                 </td>
@@ -833,7 +1013,8 @@ function PettyCashPageContent() {
             title={canCreate ? 'Your Expense History' : expenseFeedTitle}
             emptyText="No petty cash expenses found."
             headers={['Expense #', 'Branch', 'Date', 'Description', 'Vendor', 'Amount', 'Status']}
-            rows={visibleExpenses}
+            rows={canCreate ? creatorExpenses : expenseFeedRows}
+            loading={contentLoading}
             renderRow={(expense) => (
               <tr key={expense.id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-black text-slate-950">{normalizeExpenseNumber(expense)}</td>
@@ -854,6 +1035,7 @@ function PettyCashPageContent() {
             emptyText="No ledger entries found."
             headers={['Type', 'Description', 'Amount', 'Balance After', 'Posted At']}
             rows={ledger}
+            loading={contentLoading}
             renderRow={(entry) => (
               <tr key={entry.id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-black capitalize">{(entry.entryType || entry.entry_type || '').replace(/_/g, ' ')}</td>
@@ -897,9 +1079,76 @@ function SummaryCard({
   )
 }
 
+function SkeletonBlock({ className }: { className: string }) {
+  return <div className={`animate-pulse rounded-2xl bg-slate-200/80 ${className}`} />
+}
+
+function SummaryCardSkeleton() {
+  return (
+    <Card className="rounded-[28px] border-white/80 bg-white/90 shadow-xl shadow-slate-200/60">
+      <CardContent className="space-y-4 p-6">
+        <div className="flex items-center justify-between">
+          <SkeletonBlock className="h-3 w-28" />
+          <SkeletonBlock className="h-5 w-5 rounded-full" />
+        </div>
+        <SkeletonBlock className="h-10 w-32" />
+        <SkeletonBlock className="h-4 w-40" />
+      </CardContent>
+    </Card>
+  )
+}
+
+function PettyCashDashboardSkeleton() {
+  return (
+    <div className="min-h-screen space-y-6 bg-[radial-gradient(circle_at_top_left,#ecfeff,transparent_32%),linear-gradient(135deg,#f8fafc,#eef2ff)] p-4 md:p-8">
+      <div className="rounded-[36px] border border-white/80 bg-white/85 p-6 shadow-2xl shadow-slate-200/70 backdrop-blur-xl">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <SkeletonBlock className="h-16 w-16 rounded-3xl" />
+            <div className="space-y-3">
+              <SkeletonBlock className="h-3 w-40" />
+              <SkeletonBlock className="h-10 w-64" />
+              <SkeletonBlock className="h-4 w-80" />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <SkeletonBlock key={index} className="h-11 w-28 rounded-2xl" />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => <SummaryCardSkeleton key={index} />)}
+      </div>
+      <RecordTableSkeleton title="Loading requests" />
+      <RecordTableSkeleton title="Loading expenses" />
+    </div>
+  )
+}
+
+function RecordTableSkeleton({ title }: { title: string }) {
+  return (
+    <Card className="rounded-[32px] border-white/80 bg-white/92 shadow-xl shadow-slate-200/60">
+      <CardHeader>
+        <CardTitle className="text-2xl font-black text-slate-950">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          <SkeletonBlock className="h-11 w-full rounded-2xl" />
+          {Array.from({ length: 5 }).map((_, index) => (
+            <SkeletonBlock key={index} className="h-14 w-full rounded-2xl" />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function RequestFormDialog({
   open,
   onOpenChange,
+  locationOptions,
   requestForm,
   setRequestForm,
   submitting,
@@ -907,6 +1156,7 @@ function RequestFormDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  locationOptions: string[]
   requestForm: RequestFormState
   setRequestForm: React.Dispatch<React.SetStateAction<RequestFormState>>
   submitting: boolean
@@ -914,7 +1164,8 @@ function RequestFormDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-[32px] border border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[760px]">
+      <DialogContent className="max-h-[90vh] overflow-hidden rounded-[20px] border border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[760px]">
+        <div className="flex max-h-[90vh] flex-col">
         <div className="bg-gradient-to-r from-slate-950 to-slate-800 px-6 py-5 text-white">
           <DialogHeader className="space-y-2 text-left">
             <DialogTitle className="text-2xl font-black text-white">New Petty Cash Request</DialogTitle>
@@ -923,33 +1174,27 @@ function RequestFormDialog({
             </DialogDescription>
           </DialogHeader>
         </div>
-        <div className="grid gap-4 px-6 py-6 md:grid-cols-2">
+        <div className="overflow-y-auto px-6 py-6">
+        <div className="grid gap-4 md:grid-cols-2">
           <Field label="Location">
             <Select value={requestForm.location} onValueChange={(location) => setRequestForm((current) => ({ ...current, location }))}>
-              <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
+              <SelectTrigger className="rounded-lg border-slate-200"><SelectValue placeholder="Select location" /></SelectTrigger>
               <SelectContent>
-                {PETTY_CASH_KIA_LOCATION_OPTIONS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                {locationOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
           <Field label="Department">
             <Select value={requestForm.department} onValueChange={(department) => setRequestForm((current) => ({ ...current, department }))}>
-              <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+              <SelectTrigger className="rounded-lg border-slate-200"><SelectValue placeholder="Select department" /></SelectTrigger>
               <SelectContent>
                 {PETTY_CASH_DEPARTMENT_OPTIONS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Advance Type">
-            <Input
-              value={requestForm.advanceType}
-              onChange={(event) => setRequestForm((current) => ({ ...current, advanceType: event.target.value }))}
-              placeholder="Enter advance type"
-            />
-          </Field>
           <Field label="Payment Type">
             <Select value={requestForm.typeOfPayment} onValueChange={(typeOfPayment) => setRequestForm((current) => ({ ...current, typeOfPayment }))}>
-              <SelectTrigger><SelectValue placeholder="Select payment type" /></SelectTrigger>
+              <SelectTrigger className="rounded-lg border-slate-200"><SelectValue placeholder="Select payment type" /></SelectTrigger>
               <SelectContent>
                 {PETTY_CASH_PAYMENT_TYPES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
               </SelectContent>
@@ -960,6 +1205,10 @@ function RequestFormDialog({
               type="number"
               value={requestForm.requestedAmount}
               onChange={(event) => setRequestForm((current) => ({ ...current, requestedAmount: event.target.value }))}
+              className="rounded-lg border-slate-200"
+              min="1"
+              step="0.01"
+              placeholder="Enter request amount"
             />
           </Field>
           <Field label="Purpose" className="md:col-span-2">
@@ -967,18 +1216,22 @@ function RequestFormDialog({
               value={requestForm.purpose}
               onChange={(event) => setRequestForm((current) => ({ ...current, purpose: event.target.value }))}
               rows={5}
+              className="rounded-lg border-slate-200"
+              placeholder="Explain why this petty cash request is needed"
             />
           </Field>
         </div>
-        <DialogFooter className="gap-2 border-t border-slate-200 px-6 py-5">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="rounded-2xl" disabled={submitting}>
+        </div>
+        <DialogFooter className="shrink-0 gap-2 border-t border-slate-200 px-6 py-5">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="rounded-lg" disabled={submitting}>
             Cancel
           </Button>
-          <Button type="button" onClick={() => void onSubmit()} className="rounded-2xl bg-slate-950 font-black text-white hover:bg-slate-800" disabled={submitting}>
+          <Button type="button" onClick={() => void onSubmit()} className="rounded-lg bg-slate-950 font-black text-white hover:bg-slate-800" disabled={submitting}>
             {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
             Submit Request
           </Button>
         </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -1013,7 +1266,8 @@ function ExpenseFormDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-[32px] border border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[760px]">
+      <DialogContent className="max-h-[90vh] overflow-hidden rounded-[20px] border border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[760px]">
+        <div className="flex max-h-[90vh] flex-col">
         <div className="bg-gradient-to-r from-teal-700 to-teal-800 px-6 py-5 text-white">
           <DialogHeader className="space-y-2 text-left">
             <DialogTitle className="text-2xl font-black text-white">Submit Expense</DialogTitle>
@@ -1022,15 +1276,20 @@ function ExpenseFormDialog({
             </DialogDescription>
           </DialogHeader>
         </div>
-        <div className="grid gap-4 px-6 py-6 md:grid-cols-2">
+        <div className="overflow-y-auto px-6 py-6">
+        <div className="grid gap-4 md:grid-cols-2">
           <Field label="Active Allocation">
-            <Input value={currentAllocation?.allocationNumber || 'No active allocation'} disabled />
+            <Input value={currentAllocation?.allocationNumber || 'No active allocation'} disabled className="rounded-lg border-slate-200" />
           </Field>
           <Field label="Amount">
             <Input
               type="number"
               value={expenseForm.amount}
               onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
+              className="rounded-lg border-slate-200"
+              min="1"
+              step="0.01"
+              placeholder="Enter expense amount"
             />
           </Field>
           <Field label="Date">
@@ -1038,6 +1297,7 @@ function ExpenseFormDialog({
               type="date"
               value={expenseForm.expenseDate}
               onChange={(event) => setExpenseForm((current) => ({ ...current, expenseDate: event.target.value }))}
+              className="rounded-lg border-slate-200"
             />
           </Field>
           <Field label="Category">
@@ -1046,7 +1306,7 @@ function ExpenseFormDialog({
               value={expenseForm.categoryId || undefined}
               onValueChange={(categoryId) => setExpenseForm((current) => ({ ...current, categoryId }))}
             >
-              <SelectTrigger><SelectValue placeholder={categoryOptions.length === 0 ? 'No categories available' : 'Optional category'} /></SelectTrigger>
+              <SelectTrigger className="rounded-lg border-slate-200"><SelectValue placeholder={categoryOptions.length === 0 ? 'No categories available' : 'Optional category'} /></SelectTrigger>
               <SelectContent>
                 {categoryOptions.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
               </SelectContent>
@@ -1056,12 +1316,14 @@ function ExpenseFormDialog({
             <Input
               value={expenseForm.vendorName}
               onChange={(event) => setExpenseForm((current) => ({ ...current, vendorName: event.target.value }))}
+              className="rounded-lg border-slate-200"
             />
           </Field>
           <Field label="Received By">
             <Input
               value={expenseForm.receivedBy}
               onChange={(event) => setExpenseForm((current) => ({ ...current, receivedBy: event.target.value }))}
+              className="rounded-lg border-slate-200"
             />
           </Field>
           <Field label="Purpose of Expense" className="md:col-span-2">
@@ -1069,26 +1331,31 @@ function ExpenseFormDialog({
               value={expenseForm.purpose}
               onChange={(event) => setExpenseForm((current) => ({ ...current, purpose: event.target.value }))}
               rows={5}
+              className="rounded-lg border-slate-200"
+              placeholder="Describe what this petty cash amount was used for"
             />
           </Field>
           <Field label="Upload Bill" className="md:col-span-2">
             <Input
               type="file"
               multiple
+              className="rounded-lg border-slate-200"
               onChange={(event) => uploadExpenseFiles(event.target.files).catch((uploadError) => setError(uploadError.message))}
             />
             <UploadedFileList files={expenseFiles} onRemove={(index) => setExpenseFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
           </Field>
         </div>
-        <DialogFooter className="gap-2 border-t border-slate-200 px-6 py-5">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="rounded-2xl" disabled={submitting}>
+        </div>
+        <DialogFooter className="shrink-0 gap-2 border-t border-slate-200 px-6 py-5">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="rounded-lg" disabled={submitting}>
             Cancel
           </Button>
-          <Button type="button" onClick={() => void onSubmit()} className="rounded-2xl bg-teal-700 font-black text-white hover:bg-teal-800" disabled={submitting}>
+          <Button type="button" onClick={() => void onSubmit()} className="rounded-lg bg-teal-700 font-black text-white hover:bg-teal-800" disabled={submitting}>
             {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
             Submit Expense
           </Button>
         </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -1163,21 +1430,33 @@ function RecordTable<T>({
   emptyText,
   headers,
   rows,
+  loading = false,
+  toolbar,
   renderRow,
 }: {
   title: string
   emptyText: string
   headers: string[]
   rows: T[]
+  loading?: boolean
+  toolbar?: ReactNode
   renderRow: (row: T) => ReactNode
 }) {
   return (
     <Card className="rounded-[32px] border-white/80 bg-white/92 shadow-xl shadow-slate-200/60">
-      <CardHeader>
+      <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <CardTitle className="text-2xl font-black text-slate-950">{title}</CardTitle>
+        {toolbar}
       </CardHeader>
       <CardContent>
-        {rows.length === 0 ? (
+        {loading ? (
+          <div className="space-y-3">
+            <SkeletonBlock className="h-11 w-full rounded-2xl" />
+            {Array.from({ length: 5 }).map((_, index) => (
+              <SkeletonBlock key={index} className="h-14 w-full rounded-2xl" />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm font-semibold text-slate-500">
             {emptyText}
           </div>

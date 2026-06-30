@@ -1,16 +1,35 @@
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { hyundaiSourceDealerFilter } from '@/lib/hyundai/dealer-branch'
-import {
-  platinumVasCodeSql,
-  platinumWheelAlignmentCodeSql,
-  platinumWheelBalancingCodeSql,
-} from '@/lib/platinum/vas-identifiers'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 
 type Row = Record<string, unknown>
-const HYUNDAI_VAS_IDENTIFIER_VERSION = 'hyundai-vas-heuristics-2026-06-26-v1'
+const HYUNDAI_VAS_IDENTIFIER_VERSION = 'hyundai-vas-canonical-codes-2026-06-30-v2'
+const HYUNDAI_VAS_CODES = [
+  'A10AAACDVASHR',
+  'A10AAATLVASHR',
+  'A10AATBC000HR',
+  'A10AAECMVASHR',
+  'A10AASPMVASHR',
+  'A10AAECLVASHR',
+  'A10AAISSVASHR',
+  'A10AASPLVASHR',
+  'A10AAECSVASHR',
+  'A10AAATMVASHR',
+  'A10AAATSVASHR',
+  'A10AAACDVASHRAA',
+  'A10AASPSVASHR',
+  'A10AATBC000HRAA',
+  'A10AAECLVASHRAA',
+] as const
+const HYUNDAI_WHEEL_ALIGNMENT_CODES = [
+  'A10AAGM06WHAL',
+  'A10AAGM06WHALAA',
+] as const
+const HYUNDAI_WHEEL_BALANCING_CODES = [
+  'A10AAGM07WHBL',
+] as const
 
 export type HyundaiMonthlyOperationMetrics = {
   available: boolean
@@ -62,29 +81,23 @@ function getMonthRange(dateInput: string) {
 }
 
 function cacheKey(endDate: string, dealerCode: string | null) {
-  return `hyundai:operation-metrics:v2:${endDate}:${dealerCode || 'all'}`
+  return `hyundai:operation-metrics:v3:${endDate}:${dealerCode || 'all'}`
 }
 
-function hyundaiVasCodeSql(codeColumn: ReturnType<typeof sql.raw>, descriptionColumn: ReturnType<typeof sql.raw>) {
-  return sql`(
-    ${platinumVasCodeSql(codeColumn)}
-    OR LOWER(COALESCE(${codeColumn}::text, '')) LIKE 'npn%'
-    OR LOWER(COALESCE(${descriptionColumn}::text, '')) ~ '(engine[[:space:]-]*oil|eoil|coolant|carb[[:space:]]*&[[:space:]]*throttle|throttle[[:space:]-]*cleaner|throttle[[:space:]-]*body[[:space:]-]*carbon|carbon[[:space:]-]*cleaning|rust[[:space:]-]*off|air[[:space:]-]*intake[[:space:]-]*cleaning|ac[[:space:]-]*evaporator[[:space:]-]*cleaning|ac[[:space:]-]*disinfectant|rodent[[:space:]-]*repellent|under[[:space:]-]*body[[:space:]-]*coating|interior[[:space:]-]*enrichment|exterior[[:space:]-]*enrichment|alloy[[:space:]-]*wheel[[:space:]-]*care|engine[[:space:]-]*dressing|service[[:space:]-]*lubrication|silencer[[:space:]-]*coating)'
-  )`
+function codeMatchSql(codeColumn: ReturnType<typeof sql.raw>, codes: readonly string[]) {
+  return sql`UPPER(TRIM(COALESCE(${codeColumn}::text, ''))) IN (${sql.join(codes.map((code) => sql`${code}`), sql`, `)})`
 }
 
-function hyundaiWheelAlignmentSql(codeColumn: ReturnType<typeof sql.raw>, descriptionColumn: ReturnType<typeof sql.raw>) {
-  return sql`(
-    ${platinumWheelAlignmentCodeSql(codeColumn)}
-    OR LOWER(COALESCE(${descriptionColumn}::text, '')) ~ '(wheel[[:space:]-]*alignment|alignment|(^|[^a-z])wa([^a-z]|$))'
-  )`
+function hyundaiVasCodeSql(codeColumn: ReturnType<typeof sql.raw>) {
+  return codeMatchSql(codeColumn, HYUNDAI_VAS_CODES)
 }
 
-function hyundaiWheelBalancingSql(codeColumn: ReturnType<typeof sql.raw>, descriptionColumn: ReturnType<typeof sql.raw>) {
-  return sql`(
-    ${platinumWheelBalancingCodeSql(codeColumn)}
-    OR LOWER(COALESCE(${descriptionColumn}::text, '')) ~ '(wheel[[:space:]-]*balanc|balanc|balance|(^|[^a-z])wb([^a-z]|$))'
-  )`
+function hyundaiWheelAlignmentSql(codeColumn: ReturnType<typeof sql.raw>) {
+  return codeMatchSql(codeColumn, HYUNDAI_WHEEL_ALIGNMENT_CODES)
+}
+
+function hyundaiWheelBalancingSql(codeColumn: ReturnType<typeof sql.raw>) {
+  return codeMatchSql(codeColumn, HYUNDAI_WHEEL_BALANCING_CODES)
 }
 
 export async function fetchHyundaiMonthlyOperationMetrics(
@@ -133,7 +146,6 @@ export async function fetchHyundaiMonthlyOperationMetrics(
     latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
         UPPER(TRIM(COALESCE(source.op_part_code, ''))) AS code,
-        LOWER(CONCAT_WS(' ', source.report_type, source.op_part_code, source.op_part_desc)) AS description,
         COALESCE(source.total_amt, 0)::numeric AS amount,
         COALESCE(source.total_count, 0)::numeric AS quantity
       FROM hyundai_operation_wise_analysis_report source
@@ -149,30 +161,30 @@ export async function fetchHyundaiMonthlyOperationMetrics(
       MIN(period.period_start)::text AS period_start,
       MAX(period.period_end)::text AS period_end,
       COUNT(latest.code)::int AS source_rows,
-      COUNT(*) FILTER (WHERE ${hyundaiVasCodeSql(sql.raw('latest.code'), sql.raw('latest.description'))})::int AS vas_rows,
-      COALESCE(SUM(amount) FILTER (WHERE ${hyundaiVasCodeSql(sql.raw('latest.code'), sql.raw('latest.description'))}), 0)::float AS vas_amount,
-      COALESCE(SUM(quantity) FILTER (WHERE ${hyundaiWheelAlignmentSql(sql.raw('latest.code'), sql.raw('latest.description'))}), 0)::float AS wa_count,
-      COALESCE(SUM(amount) FILTER (WHERE ${hyundaiWheelAlignmentSql(sql.raw('latest.code'), sql.raw('latest.description'))}), 0)::float AS wa_amount,
-      COALESCE(SUM(quantity) FILTER (WHERE ${hyundaiWheelBalancingSql(sql.raw('latest.code'), sql.raw('latest.description'))}), 0)::float AS wb_count,
-      COALESCE(SUM(amount) FILTER (WHERE ${hyundaiWheelBalancingSql(sql.raw('latest.code'), sql.raw('latest.description'))}), 0)::float AS wb_amount,
+      COUNT(*) FILTER (WHERE ${hyundaiVasCodeSql(sql.raw('latest.code'))})::int AS vas_rows,
+      COALESCE(SUM(amount) FILTER (WHERE ${hyundaiVasCodeSql(sql.raw('latest.code'))}), 0)::float AS vas_amount,
+      COALESCE(SUM(quantity) FILTER (WHERE ${hyundaiWheelAlignmentSql(sql.raw('latest.code'))}), 0)::float AS wa_count,
+      COALESCE(SUM(amount) FILTER (WHERE ${hyundaiWheelAlignmentSql(sql.raw('latest.code'))}), 0)::float AS wa_amount,
+      COALESCE(SUM(quantity) FILTER (WHERE ${hyundaiWheelBalancingSql(sql.raw('latest.code'))}), 0)::float AS wb_count,
+      COALESCE(SUM(amount) FILTER (WHERE ${hyundaiWheelBalancingSql(sql.raw('latest.code'))}), 0)::float AS wb_amount,
       COUNT(*) FILTER (
-        WHERE ${hyundaiVasCodeSql(sql.raw('latest.code'), sql.raw('latest.description'))}
-          OR ${hyundaiWheelAlignmentSql(sql.raw('latest.code'), sql.raw('latest.description'))}
-          OR ${hyundaiWheelBalancingSql(sql.raw('latest.code'), sql.raw('latest.description'))}
+        WHERE ${hyundaiVasCodeSql(sql.raw('latest.code'))}
+          OR ${hyundaiWheelAlignmentSql(sql.raw('latest.code'))}
+          OR ${hyundaiWheelBalancingSql(sql.raw('latest.code'))}
       )::int AS classified_rows,
       COUNT(*) FILTER (
         WHERE latest.code <> ''
-          AND NOT (${hyundaiVasCodeSql(sql.raw('latest.code'), sql.raw('latest.description'))})
-          AND NOT (${hyundaiWheelAlignmentSql(sql.raw('latest.code'), sql.raw('latest.description'))})
-          AND NOT (${hyundaiWheelBalancingSql(sql.raw('latest.code'), sql.raw('latest.description'))})
+          AND NOT (${hyundaiVasCodeSql(sql.raw('latest.code'))})
+          AND NOT (${hyundaiWheelAlignmentSql(sql.raw('latest.code'))})
+          AND NOT (${hyundaiWheelBalancingSql(sql.raw('latest.code'))})
       )::int AS unknown_code_rows,
       ARRAY(
         SELECT DISTINCT unknown.code
         FROM latest unknown
         WHERE unknown.code <> ''
-          AND NOT (${hyundaiVasCodeSql(sql.raw('unknown.code'), sql.raw('unknown.description'))})
-          AND NOT (${hyundaiWheelAlignmentSql(sql.raw('unknown.code'), sql.raw('unknown.description'))})
-          AND NOT (${hyundaiWheelBalancingSql(sql.raw('unknown.code'), sql.raw('unknown.description'))})
+          AND NOT (${hyundaiVasCodeSql(sql.raw('unknown.code'))})
+          AND NOT (${hyundaiWheelAlignmentSql(sql.raw('unknown.code'))})
+          AND NOT (${hyundaiWheelBalancingSql(sql.raw('unknown.code'))})
         ORDER BY unknown.code
         LIMIT 25
       ) AS unknown_codes
