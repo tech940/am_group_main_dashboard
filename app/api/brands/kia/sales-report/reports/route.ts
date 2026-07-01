@@ -68,6 +68,7 @@ export async function GET(request: Request) {
       sort: url.searchParams.get('sort'),
       direction: url.searchParams.get('direction'),
       filters,
+      missedFollowups: url.searchParams.get('missedFollowups') === 'true',
     }
 
     if (url.searchParams.get('format') === 'csv') {

@@ -22,6 +22,7 @@ import {
   Target,
   TrendingUp,
   XCircle,
+  Clock,
 } from 'lucide-react'
 import {
   Area,
@@ -41,7 +42,7 @@ import {
 import { MainLayout } from '@/components/layout/main-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
@@ -815,6 +816,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   const [heatmapPage, setHeatmapPage] = useState(1)
   const [expandedReportColumns, setExpandedReportColumns] = useState(REPORT_EXPANDED_DEFAULTS)
   const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({})
+  const [missedFollowupsOnly, setMissedFollowupsOnly] = useState(false)
 
   const deferredReportSearch = useDeferredValue(reportSearch)
   const deferredLostSearch = useDeferredValue(lostSearch)
@@ -887,6 +889,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
       reportPage,
       reportPageSize,
       columnFilters,
+      missedFollowupsOnly,
     ],
     enabled: periodReady && activeTab === 'reports' && summaryQuery.isSuccess,
     queryFn: () => {
@@ -908,6 +911,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
         direction: reportDirection,
         page: reportPage,
         pageSize: reportPageSize,
+        missedFollowups: missedFollowupsOnly ? 'true' : 'false',
         ...filterParams,
       })}`, 'kia-sales-report-reports', 25000)
     },
@@ -922,6 +926,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   // Reset column filters when active report tab, date, or dealer changes
   useEffect(() => {
     setColumnFilters({})
+    setMissedFollowupsOnly(false)
     setReportPage(1)
   }, [activeReport, selectedDealerCode, selectedYear, selectedMonth, selectedStartDate, selectedEndDate])
 
@@ -1031,6 +1036,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
       sort: reportSort,
       direction: reportDirection,
       format: 'csv',
+      missedFollowups: missedFollowupsOnly ? 'true' : 'false',
       ...filterParams,
     })}`, { cache: 'no-store', signal: controller.signal }).finally(() => window.clearTimeout(timeout))
     logApiTimings(response, 'kia-sales-report-export')
@@ -1116,7 +1122,8 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   const summaryMonthReady = periodReady
   const headerLoading = freshnessQuery.isLoading || freshnessQuery.isFetching || (summaryMonthReady && summaryQuery.isLoading && !summary)
   const summarySkeletonVisible = summaryMonthReady && (summaryQuery.isLoading || summaryQuery.isFetching)
-  const reportSkeletonVisible = activeTab === 'reports' && (reportQuery.isLoading || reportQuery.isFetching)
+  const reportSkeletonVisible = activeTab === 'reports' && reportQuery.isLoading
+  const reportRefetching = activeTab === 'reports' && reportQuery.isFetching && !reportQuery.isLoading
   const pageError = freshnessQuery.error || summaryQuery.error
   const availableMonthKeys = new Set((freshness?.availableMonths || []).map((item) => item.key))
   const monthPickerViewLabel = monthPickerView.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
@@ -1509,9 +1516,117 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
           {summarySkeletonVisible ? renderActiveTabSkeleton() : (
             <>
           <TabsContent value="overview" className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5 2xl:grid-cols-5">
               {(summary?.overview.kpis || []).map((item, index) => <KpiCard key={item.label} item={item} index={index} />)}
+              {summary?.missedFollowups ? (
+                <Card className={cn(PRIMARY_SURFACE, 'min-h-[148px] border-rose-100 bg-[#fff5f5] hover:bg-[#ffebeb] transition-colors shadow-sm')}>
+                  <CardContent className="p-4 flex flex-col justify-between h-full">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#c5162f]">Missed Follow-Ups</p>
+                      <div className="mt-3 flex items-center justify-between">
+                        <p className="text-[25px] font-black tracking-tight text-[#071a2b]">{summary.missedFollowups.count.toLocaleString('en-IN')}</p>
+                        <Clock className="h-6 w-6 text-[#c5162f] animate-pulse" />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Action Required</p>
+                      <p className="text-[11px] font-semibold text-slate-600 mt-1">Pending customer outreach</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
             </div>
+
+            {summary?.missedFollowups && summary.missedFollowups.count > 0 ? (
+              <div className="grid gap-5 md:grid-cols-3">
+                <Card className={cn(PRIMARY_SURFACE, 'border-rose-100/50 shadow-md')}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <span className="text-base">👤</span> Missed by Consultant
+                    </CardTitle>
+                    <CardDescription className="text-[11px] text-slate-400">Consultants with pending outreach</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-2">
+                    {summary.missedFollowups.byConsultant.length ? (
+                      summary.missedFollowups.byConsultant.map((item) => {
+                        const total = summary.missedFollowups!.count
+                        const percentVal = total > 0 ? (item.value / total) * 100 : 0
+                        return (
+                          <ProgressMetricRow
+                            key={item.name}
+                            label={item.name}
+                            value={formatNumber(item.value)}
+                            trailing={`(${formatPercent(percentVal)})`}
+                            percent={percentVal}
+                            color="#e11d0f"
+                          />
+                        )
+                      })
+                    ) : (
+                      <EmptyState title="No missed follow-ups" body="All consultants are caught up!" />
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className={cn(PRIMARY_SURFACE, 'border-rose-100/50 shadow-md')}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <span className="text-base">🚗</span> Missed by Model
+                    </CardTitle>
+                    <CardDescription className="text-[11px] text-slate-400">Models with delayed follow-ups</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-2">
+                    {summary.missedFollowups.byModel.length ? (
+                      summary.missedFollowups.byModel.map((item) => {
+                        const total = summary.missedFollowups!.count
+                        const percentVal = total > 0 ? (item.value / total) * 100 : 0
+                        return (
+                          <ProgressMetricRow
+                            key={item.name}
+                            label={item.name}
+                            value={formatNumber(item.value)}
+                            trailing={`(${formatPercent(percentVal)})`}
+                            percent={percentVal}
+                            color="#c5162f"
+                          />
+                        )
+                      })
+                    ) : (
+                      <EmptyState title="No missed follow-ups" body="No vehicle models have pending follow-ups." />
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className={cn(PRIMARY_SURFACE, 'border-rose-100/50 shadow-md')}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <span className="text-base">🔌</span> Missed by Lead Source
+                    </CardTitle>
+                    <CardDescription className="text-[11px] text-slate-400">Sources needing immediate attention</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-2">
+                    {summary.missedFollowups.bySource.length ? (
+                      summary.missedFollowups.bySource.map((item) => {
+                        const total = summary.missedFollowups!.count
+                        const percentVal = total > 0 ? (item.value / total) * 100 : 0
+                        return (
+                          <ProgressMetricRow
+                            key={item.name}
+                            label={item.name}
+                            value={formatNumber(item.value)}
+                            trailing={`(${formatPercent(percentVal)})`}
+                            percent={percentVal}
+                            color="#f07c1a"
+                          />
+                        )
+                      })
+                    ) : (
+                      <EmptyState title="No missed follow-ups" body="All lead sources are fully up to date." />
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            ) : null}
 
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(320px,0.9fr)]">
               <ChartCard title="Enquiry Status" subtitle="Current month pipeline state mix">
@@ -2256,6 +2371,26 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                   <Badge className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-black text-slate-700">
                     {SALES_REPORT_TABLE_PAGE_SIZE} rows / page
                   </Badge>
+                  {activeReport === 'enquiry' && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setMissedFollowupsOnly((prev) => !prev)
+                        setReportPage(1)
+                      }}
+                      className={cn(
+                        "h-8 rounded-full text-[11px] font-bold px-3 transition-all cursor-pointer",
+                        missedFollowupsOnly
+                          ? "bg-[#c5162f] text-white border-[#c5162f] hover:bg-[#c5162f]/90 hover:text-white"
+                          : "border-rose-200 text-[#c5162f] bg-rose-50/50 hover:bg-rose-50 hover:text-rose-800"
+                      )}
+                    >
+                      <Clock className="mr-1.5 h-3.5 w-3.5" />
+                      Missed Follow-Ups
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -2268,7 +2403,10 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                   {reportQuery.error instanceof Error ? reportQuery.error.message : 'Unable to load report'}
                 </div>
               ) : reportQuery.data ? (
-                <div className="mt-4 overflow-hidden rounded-[1.5rem] border border-[#d8e2ec]">
+                <div className={cn(
+                  "mt-4 overflow-hidden rounded-[1.5rem] border border-[#d8e2ec] transition-opacity duration-200",
+                  reportRefetching && "opacity-50 pointer-events-none"
+                )}>
                     <Table className="[&_td]:text-[11px] [&_td]:font-medium [&_th]:text-[10px]">
                     <TableHeader>
                       <TableRow className="border-b-2 border-[#071a2b] bg-white hover:bg-white">

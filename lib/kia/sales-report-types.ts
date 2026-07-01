@@ -193,6 +193,12 @@ export type SalesReportSummaryPayload = {
       matchedRetailUnits: number
     }
   }
+  missedFollowups?: {
+    count: number
+    byModel: SalesReportMetricPoint[]
+    byConsultant: SalesReportMetricPoint[]
+    bySource: SalesReportMetricPoint[]
+  } | null
 }
 
 export type SalesReportListPayload = {

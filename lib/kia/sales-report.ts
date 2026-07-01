@@ -4,6 +4,8 @@ import { sql } from 'drizzle-orm'
 import { unstable_cache } from 'next/cache'
 import { analyticsDb } from '@/lib/analytics/db'
 import { analyticsTableColumns } from '@/lib/analytics/table-columns'
+import { getCachedData } from '@/lib/redis/cache-utils'
+import { CACHE_TTL } from '@/lib/redis/client'
 import type {
   FinanceModeKey,
   ReportKey,
@@ -311,6 +313,35 @@ function isLostEnquiry(row: Row) {
     || status.includes('cancel')
     || status.includes('lost')
   )
+}
+
+function isOpenEnquiry(row: Row) {
+  const status = safeText(row.enquiry_status).toLowerCase()
+  return (
+    !isLostEnquiry(row) &&
+    !row.retail_date &&
+    !row.booking_date &&
+    !status.includes('retail') &&
+    !status.includes('booked') &&
+    !status.includes('booking')
+  )
+}
+
+function isMissedFollowupEnquiry(row: Row, todayStr: string) {
+  if (!isOpenEnquiry(row)) return false
+
+  const nextDateVal = row.next_followup_date
+  if (!nextDateVal) return true
+
+  const nextDateStr = nextDateVal instanceof Date
+    ? nextDateVal.toISOString().slice(0, 10)
+    : String(nextDateVal).slice(0, 10)
+
+  if (nextDateStr.toLowerCase() === 'na' || nextDateStr.toLowerCase() === 'null' || !nextDateStr.trim()) {
+    return true
+  }
+
+  return nextDateStr < todayStr
 }
 
 function isTestDriveDone(row: Row) {
@@ -1226,6 +1257,30 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
             matchedRetailUnits,
           },
         },
+        missedFollowups: (() => {
+          const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+          const todayStr = `${todayIST.getFullYear()}-${String(todayIST.getMonth() + 1).padStart(2, '0')}-${String(todayIST.getDate()).padStart(2, '0')}`
+
+          const missedEnquiries = enquiryRows.filter((row) => isMissedFollowupEnquiry(row, todayStr))
+          const missedCount = missedEnquiries.length
+
+          const missedByModelMap = new Map<string, number>()
+          const missedByConsultantMap = new Map<string, number>()
+          const missedBySourceMap = new Map<string, number>()
+
+          for (const row of missedEnquiries) {
+            increment(missedByModelMap, normalizeModel(row.model))
+            increment(missedByConsultantMap, normalizeConsultant(row.consultant_name))
+            increment(missedBySourceMap, normalizeSource(getFirstText(row, ['source', 'enquiry_source'])))
+          }
+
+          return {
+            count: missedCount,
+            byModel: buildCounts(missedByModelMap).slice(0, 5),
+            byConsultant: buildCounts(missedByConsultantMap).slice(0, 5),
+            bySource: buildCounts(missedBySourceMap).slice(0, 5),
+          }
+        })(),
       } satisfies SalesReportSummaryPayload
 }
 
@@ -1344,6 +1399,7 @@ export async function getKiaSalesReportTable(input: {
   page?: string | null
   pageSize?: string | null
   filters?: Record<string, string[]> | null
+  missedFollowups?: boolean | null
 }) {
   const report = normalizeReportKey(input.report)
   const config = TABLES[report]
@@ -1361,70 +1417,91 @@ export async function getKiaSalesReportTable(input: {
   const direction = normalizeSortDirection(input.direction || null)
   const page = normalizePage(input.page || null, 1)
   const pageSize = Math.min(100, normalizePage(input.pageSize || null, 25))
-  const offset = (page - 1) * pageSize
 
-  const whereParts = [
-    buildDateClause(config, context),
-    buildDealerClause(config, dealerCode),
-    buildSearchClause(config, safeText(input.search)),
-    buildOptionalFilter(config.sourceColumn, input.source),
-    buildOptionalFilter(config.modelColumn, input.model),
-    buildOptionalFilter(config.consultantColumn, input.consultant),
-  ]
+  const filterKey = Object.entries(input.filters || {})
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([col, vals]) => `${col}:${(vals || []).join(',')}`)
+    .join('|')
 
-  const whereSql = sql.join(whereParts.filter(Boolean), sql` `)
-  const rows = await analyticsDb.execute(sql`
-    SELECT *
-    FROM ${sql.raw(config.table)}
-    WHERE ${whereSql}
-  `)
-  const dedupedRows = dedupeRows(config, resultRows(rows))
+  const cacheKey = `kia:sales-report:table:${report}:${context.key}:${dealerCode || 'all'}:${input.source || 'all'}:${input.model || 'all'}:${input.consultant || 'all'}:${input.search || ''}:${sortColumn}:${direction}:${page}:${pageSize}:${filterKey}:${input.missedFollowups ? 'true' : 'false'}`
 
-  // Extract unique values from dedupedRows for each column before filters are applied
-  const uniqueValues: Record<string, string[]> = {}
-  for (const col of columns) {
-    const valuesSet = new Set<string>()
-    for (const row of dedupedRows) {
-      const rawVal = row[col]
-      const val = rawVal === null || rawVal === undefined ? '' : String(rawVal).trim()
-      valuesSet.add(val)
-    }
-    uniqueValues[col] = Array.from(valuesSet).sort((a, b) => a.localeCompare(b))
-  }
+  return getCachedData(
+    cacheKey,
+    async () => {
+      const offset = (page - 1) * pageSize
 
-  // Apply column-level filters
-  let filteredRows = dedupedRows
-  if (input.filters && Object.keys(input.filters).length > 0) {
-    filteredRows = dedupedRows.filter((row) => {
-      return Object.entries(input.filters!).every(([col, selectedVals]) => {
-        if (!selectedVals || selectedVals.length === 0) return true
-        const rawVal = row[col]
-        const val = rawVal === null || rawVal === undefined ? '' : String(rawVal).trim()
-        return selectedVals.includes(val)
-      })
-    })
-  }
+      const whereParts = [
+        buildDateClause(config, context),
+        buildDealerClause(config, dealerCode),
+        buildSearchClause(config, safeText(input.search)),
+        buildOptionalFilter(config.sourceColumn, input.source),
+        buildOptionalFilter(config.modelColumn, input.model),
+        buildOptionalFilter(config.consultantColumn, input.consultant),
+      ]
 
-  const sortedRows = sortRows(filteredRows, sortColumn, direction)
-  const totalRows = sortedRows.length
-  const pagedRows = sortedRows
-    .slice(offset, offset + pageSize)
-    .map((row) => normalizeRowForOutput(row, columns))
+      const whereSql = sql.join(whereParts.filter(Boolean), sql` `)
+      const rows = await analyticsDb.execute(sql`
+        SELECT *
+        FROM ${sql.raw(config.table)}
+        WHERE ${whereSql}
+      `)
+      const dedupedRows = dedupeRows(config, resultRows(rows))
 
-  return {
-    report,
-    title: config.label,
-    columns,
-    defaultVisibleColumns: config.defaultVisibleColumns.filter((column) => columns.includes(column)),
-    rows: pagedRows,
-    uniqueValues,
-    pagination: {
-      page,
-      pageSize,
-      totalRows,
-      totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
+      // Extract unique values from dedupedRows for each column before filters/missedFollowups are applied
+      const uniqueValues: Record<string, string[]> = {}
+      for (const col of columns) {
+        const valuesSet = new Set<string>()
+        for (const row of dedupedRows) {
+          const rawVal = row[col]
+          const val = rawVal === null || rawVal === undefined ? '' : String(rawVal).trim()
+          valuesSet.add(val)
+        }
+        uniqueValues[col] = Array.from(valuesSet).sort((a, b) => a.localeCompare(b))
+      }
+
+      // Filter for missed follow ups
+      let filteredRows = dedupedRows
+      if (input.missedFollowups && report === 'enquiry') {
+        const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+        const todayStr = `${todayIST.getFullYear()}-${String(todayIST.getMonth() + 1).padStart(2, '0')}-${String(todayIST.getDate()).padStart(2, '0')}`
+        filteredRows = dedupedRows.filter((row) => isMissedFollowupEnquiry(row, todayStr))
+      }
+
+      // Apply column-level filters
+      if (input.filters && Object.keys(input.filters).length > 0) {
+        filteredRows = filteredRows.filter((row) => {
+          return Object.entries(input.filters!).every(([col, selectedVals]) => {
+            if (!selectedVals || selectedVals.length === 0) return true
+            const rawVal = row[col]
+            const val = rawVal === null || rawVal === undefined ? '' : String(rawVal).trim()
+            return selectedVals.includes(val)
+          })
+        })
+      }
+
+      const sortedRows = sortRows(filteredRows, sortColumn, direction)
+      const totalRows = sortedRows.length
+      const pagedRows = sortedRows
+        .slice(offset, offset + pageSize)
+        .map((row) => normalizeRowForOutput(row, columns))
+
+      return {
+        report,
+        title: config.label,
+        columns,
+        defaultVisibleColumns: config.defaultVisibleColumns.filter((column) => columns.includes(column)),
+        rows: pagedRows,
+        uniqueValues,
+        pagination: {
+          page,
+          pageSize,
+          totalRows,
+          totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
+        },
+      } satisfies SalesReportListPayload
     },
-  } satisfies SalesReportListPayload
+    CACHE_TTL.SHORT
+  )
 }
 
 export async function getKiaSalesReportCsv(input: {
@@ -1441,6 +1518,7 @@ export async function getKiaSalesReportCsv(input: {
   sort?: string | null
   direction?: string | null
   filters?: Record<string, string[]> | null
+  missedFollowups?: boolean | null
 }) {
   const report = normalizeReportKey(input.report)
   const config = TABLES[report]
@@ -1473,10 +1551,17 @@ export async function getKiaSalesReportCsv(input: {
   `)
   const dedupedRows = dedupeRows(config, resultRows(rows))
 
-  // Apply column-level filters
+  // Filter for missed follow ups
   let filteredRows = dedupedRows
+  if (input.missedFollowups && report === 'enquiry') {
+    const todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+    const todayStr = `${todayIST.getFullYear()}-${String(todayIST.getMonth() + 1).padStart(2, '0')}-${String(todayIST.getDate()).padStart(2, '0')}`
+    filteredRows = dedupedRows.filter((row) => isMissedFollowupEnquiry(row, todayStr))
+  }
+
+  // Apply column-level filters
   if (input.filters && Object.keys(input.filters).length > 0) {
-    filteredRows = dedupedRows.filter((row) => {
+    filteredRows = filteredRows.filter((row) => {
       return Object.entries(input.filters!).every(([col, selectedVals]) => {
         if (!selectedVals || selectedVals.length === 0) return true
         const rawVal = row[col]
