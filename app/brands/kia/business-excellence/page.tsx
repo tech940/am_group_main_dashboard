@@ -31,5 +31,8 @@ export default async function Page({
   }
 
   const query = dateParams.toString()
-  redirect(`/brands/kia/business-excellence/executive-dashboard${query ? `?${query}` : ''}`)
+  const role = access.appUser?.role
+  const canAccessExecutive = ['super_admin', 'ceo', 'md', 'ea'].includes(String(role || '').trim().toLowerCase())
+  const defaultReport = canAccessExecutive ? 'executive-dashboard' : 'overview'
+  redirect(`/brands/kia/business-excellence/${defaultReport}${query ? `?${query}` : ''}`)
 }

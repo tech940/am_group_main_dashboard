@@ -1439,6 +1439,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   const queryClient = useQueryClient()
   const initialReportName = getBusinessExcellenceReportName(initialReport)
   const [savedSheets] = useState<SavedSheetMetadata[]>(BUSINESS_EXCELLENCE_REPORTS)
+  const reportOptions = useMemo(() => getBusinessExcellenceReportOptions(savedSheets, currentUserRole), [currentUserRole, savedSheets])
   const [loadedRows, setLoadedRows] = useState<LoadedRows>({})
   const loading = false
   const [fetchingRows, setFetchingRows] = useState<string | null>(null)
@@ -1501,6 +1502,19 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
     return () => window.clearTimeout(timeout)
   }, [activeTab, initialReportName, queryDateFilterKey])
+
+  useEffect(() => {
+    if (activeTab && reportOptions.length > 0) {
+      const selectedSheet = reportOptions.find((s) => s.sheetName === activeTab)
+      if (!selectedSheet) {
+        const fallbackSheet = reportOptions.find((s) => s.sheetName === BUSINESS_EXCELLENCE_OVERVIEW_REPORT) || reportOptions[0]
+        if (fallbackSheet) {
+          setActiveTab(fallbackSheet.sheetName)
+          router.replace(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(fallbackSheet.sheetName), appliedDateFilter, selectedDealerCode))
+        }
+      }
+    }
+  }, [activeTab, reportOptions, router, appliedDateFilter, selectedDealerCode])
 
   const activeDateLabel = useMemo(() => {
     if (!appliedDateFilter) {
@@ -1835,7 +1849,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
     router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(sheetName), appliedDateFilter, nextDealerCode))
   }
 
-  const reportOptions = useMemo(() => getBusinessExcellenceReportOptions(savedSheets, currentUserRole), [currentUserRole, savedSheets])
+
 
   return (
     <MainLayout title="Business Excellence" subtitle="AM Kia Performance Analytics">
