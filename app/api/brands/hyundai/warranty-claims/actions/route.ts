@@ -188,7 +188,10 @@ export async function POST(request: Request) {
         })))
       }
     })
-    await invalidateCache(hyundaiWarrantyBaseCacheKey(source))
+    await Promise.all([
+      invalidateCache(hyundaiWarrantyBaseCacheKey(source)),
+      invalidateCache(`${hyundaiWarrantyBaseCacheKey(source)}:actions`),
+    ])
     return NextResponse.json({
       id: actionId,
       message: 'Remarks saved successfully',

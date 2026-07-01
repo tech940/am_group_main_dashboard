@@ -57,6 +57,7 @@ const brandNavigation = [
         key: 'sales',
         submenus: [
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
+          { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
         ],
@@ -201,6 +202,7 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
   '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
   '/brands/kia/sales-report': 'kia.sales_report.view',
+  '/brands/kia/stock-report': 'kia.stock_report.view',
   '/brands/kia/proforma': 'kia.proforma.view',
   '/brands/kia/insurance': 'kia.insurance.view',
   '/brands/hyundai/business-excellence': 'hyundai.business_excellence.view',
@@ -304,7 +306,7 @@ export function Sidebar() {
   }, [])
 
   const isSidebarItemVisible = useCallback((href: string, brandKey: string) => {
-    if (href === '/brands/kia/sales-report' && !isKiaSalesReportRoleAllowed(userRole)) {
+    if ((href === '/brands/kia/sales-report' || href === '/brands/kia/stock-report') && !isKiaSalesReportRoleAllowed(userRole)) {
       return false
     }
 

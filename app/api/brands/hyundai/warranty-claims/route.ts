@@ -618,12 +618,20 @@ export async function GET(request: Request) {
     const slaA = a.compliance === 'action_required' ? 0 : 1
     const slaB = b.compliance === 'action_required' ? 0 : 1
     if (slaA !== slaB) return slaA - slaB
-    // Secondary: existing sort logic
+
+    // If sorting by date_asc, respect it
     if (sort === 'date_asc') return text(a.businessDate).localeCompare(text(b.businessDate))
+    // If sorting by amount_desc, respect it
     if (sort === 'amount_desc') return num(b.total_amt) - num(a.total_amt)
-    if (sort === 'age_desc') return b.requirement.ageDays - a.requirement.ageDays
+
+    // Otherwise, default to severity sorting: ageDays descending (most overdue first)
+    const ageDiff = b.requirement.ageDays - a.requirement.ageDays
+    if (ageDiff !== 0) return ageDiff
+
+    // Fallback to businessDate descending
     return text(b.businessDate).localeCompare(text(a.businessDate))
   })
+
 
   const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize')) || 25))
   const page = Math.max(1, Number(searchParams.get('page')) || 1)

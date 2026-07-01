@@ -188,7 +188,10 @@ export async function POST(request: Request) {
         })))
       }
     })
-    await invalidateCache(platinumWarrantyBaseCacheKey(source))
+    await Promise.all([
+      invalidateCache(platinumWarrantyBaseCacheKey(source)),
+      invalidateCache(`${platinumWarrantyBaseCacheKey(source)}:actions`),
+    ])
     return NextResponse.json({
       id: actionId,
       message: 'Remarks saved successfully',

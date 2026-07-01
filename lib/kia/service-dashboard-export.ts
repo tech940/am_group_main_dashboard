@@ -7,6 +7,7 @@ import { db as postgresDb } from '@/lib/db'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import {
+  DEFAULT_KIA_DEALER_CODE,
   KIA_ENGINE_OIL_PART_CODES,
   type KiaDealerCode,
 } from '@/lib/kia/dealer-branch'
@@ -42,11 +43,15 @@ type DealerFilter = KiaDealerCode | null
 type NumericRow = Record<string, unknown>
 
 const SERVICE_DASHBOARD_TEMPLATE = path.join(process.cwd(), 'templates', 'kia', 'service-dashboard-template.xlsx')
-const SERVICE_DASHBOARD_CACHE_VERSION = 'v3'
+const SERVICE_DASHBOARD_CACHE_VERSION = 'v4'
 const SERVICE_CATEGORIES = ['Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair'] as const
 let templateBufferPromise: Promise<Uint8Array> | null = null
 
 type ServiceCategory = typeof SERVICE_CATEGORIES[number]
+
+function resolveServiceDashboardDealerCode(dealerCode: DealerFilter): KiaDealerCode {
+  return dealerCode || DEFAULT_KIA_DEALER_CODE
+}
 
 type CountPair = {
   today: number
@@ -742,18 +747,19 @@ async function fetchStoredServiceDashboardSnapshot(
 }
 
 async function buildLiveMetrics(endDate: string | null, dealerCode: DealerFilter): Promise<ServiceDashboardMetrics> {
-  const exportDate = await resolveExportDate(endDate, dealerCode)
+  const effectiveDealerCode = resolveServiceDashboardDealerCode(dealerCode)
+  const exportDate = await resolveExportDate(endDate, effectiveDealerCode)
   const monthStart = getMonthStart(exportDate)
 
   const [intake, pending, revenue, addons, operations, oil, vasAmount, bodyshopPnaCases, workingDays] = await Promise.all([
-    fetchIntakeCounts(monthStart, exportDate, dealerCode),
-    fetchPendingCounts(monthStart, exportDate, dealerCode),
-    fetchRevenueAndDelivered(monthStart, exportDate, dealerCode),
-    fetchAddonCounts(monthStart, exportDate, dealerCode),
-    fetchOperationMetrics(monthStart, exportDate, dealerCode),
-    fetchOilMetrics(monthStart, exportDate, dealerCode),
-    fetchVasAmount(monthStart, exportDate, dealerCode),
-    fetchBodyshopPnaCases(exportDate, dealerCode),
+    fetchIntakeCounts(monthStart, exportDate, effectiveDealerCode),
+    fetchPendingCounts(monthStart, exportDate, effectiveDealerCode),
+    fetchRevenueAndDelivered(monthStart, exportDate, effectiveDealerCode),
+    fetchAddonCounts(monthStart, exportDate, effectiveDealerCode),
+    fetchOperationMetrics(monthStart, exportDate, effectiveDealerCode),
+    fetchOilMetrics(monthStart, exportDate, effectiveDealerCode),
+    fetchVasAmount(monthStart, exportDate, effectiveDealerCode),
+    fetchBodyshopPnaCases(exportDate, effectiveDealerCode),
     getKiaWorkingDayContext(monthStart, exportDate),
   ])
   const deliveredCount = SERVICE_CATEGORIES.reduce(
@@ -773,7 +779,7 @@ async function buildLiveMetrics(endDate: string | null, dealerCode: DealerFilter
     vasAmount,
     bodyshopPnaCases,
     sourceMetadata: buildKiaSourceMetadata({
-      dealerCode,
+      dealerCode: effectiveDealerCode,
       dateBasis: 'ro_date intake; bill_date delivered/revenue; open RO status as-of end date',
       startDate: monthStart,
       endDate: exportDate,
@@ -789,17 +795,18 @@ async function buildLiveMetrics(endDate: string | null, dealerCode: DealerFilter
 }
 
 async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): Promise<ServiceDashboardMetrics> {
+  const effectiveDealerCode = resolveServiceDashboardDealerCode(dealerCode)
   const requestedDate = parseDateInput(endDate)
   if (requestedDate) {
-    const requestedSnapshot = await fetchStoredServiceDashboardSnapshot(requestedDate, dealerCode)
+    const requestedSnapshot = await fetchStoredServiceDashboardSnapshot(requestedDate, effectiveDealerCode)
     if (requestedSnapshot) return requestedSnapshot
   }
 
-  const exportDate = await resolveExportDate(endDate, dealerCode)
-  const resolvedSnapshot = await fetchStoredServiceDashboardSnapshot(exportDate, dealerCode)
+  const exportDate = await resolveExportDate(endDate, effectiveDealerCode)
+  const resolvedSnapshot = await fetchStoredServiceDashboardSnapshot(exportDate, effectiveDealerCode)
   if (resolvedSnapshot) return resolvedSnapshot
 
-  return buildLiveMetrics(exportDate, dealerCode)
+  return buildLiveMetrics(exportDate, effectiveDealerCode)
 }
 
 export const buildServiceDashboardMetrics = buildMetrics
@@ -809,10 +816,11 @@ export async function getCachedServiceDashboardMetrics(
   endDate?: string | null,
   dealerCode?: DealerFilter,
 ) {
-  const resolvedEndDate = await resolveExportDate(endDate || null, dealerCode || null)
+  const effectiveDealerCode = resolveServiceDashboardDealerCode(dealerCode || null)
+  const resolvedEndDate = await resolveExportDate(endDate || null, effectiveDealerCode)
   return getCachedData(
-    serviceDashboardCacheKey('metrics', resolvedEndDate, dealerCode || null),
-    () => buildMetrics(resolvedEndDate, dealerCode || null),
+    serviceDashboardCacheKey('metrics', resolvedEndDate, effectiveDealerCode),
+    () => buildMetrics(resolvedEndDate, effectiveDealerCode),
     CACHE_TTL.DASHBOARD,
   )
 }
@@ -1169,7 +1177,8 @@ export async function buildKiaServiceDashboardWorkbook({
   dealerCode?: DealerFilter
 }) {
   const normalizedEndDate = parseDateInput(endDate || null)
-  const metrics = await getCachedServiceDashboardMetrics(normalizedEndDate, dealerCode || null)
+  const effectiveDealerCode = resolveServiceDashboardDealerCode(dealerCode || null)
+  const metrics = await getCachedServiceDashboardMetrics(normalizedEndDate, effectiveDealerCode)
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(await loadTemplateBuffer() as any)
 
@@ -1232,10 +1241,11 @@ export async function buildKiaServiceDashboardPreview({
   endDate?: string | null
   dealerCode?: DealerFilter
 }): Promise<KiaServiceDashboardPreview> {
-  const resolvedEndDate = await resolveExportDate(endDate || null, dealerCode || null)
+  const effectiveDealerCode = resolveServiceDashboardDealerCode(dealerCode || null)
+  const resolvedEndDate = await resolveExportDate(endDate || null, effectiveDealerCode)
   return getCachedData(
-    serviceDashboardCacheKey('preview', resolvedEndDate, dealerCode || null),
-    () => buildKiaServiceDashboardPreviewUncached({ endDate: resolvedEndDate, dealerCode }),
+    serviceDashboardCacheKey('preview', resolvedEndDate, effectiveDealerCode),
+    () => buildKiaServiceDashboardPreviewUncached({ endDate: resolvedEndDate, dealerCode: effectiveDealerCode }),
     CACHE_TTL.DASHBOARD,
   )
 }

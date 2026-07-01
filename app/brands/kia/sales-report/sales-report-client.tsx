@@ -376,6 +376,15 @@ function ChartCard({
   )
 }
 
+function SectionHeading({ title, description }: { title: string; description?: string }) {
+  return (
+    <div className="mb-4 mt-6">
+      <h2 className="text-xl font-black tracking-tight text-slate-900 md:text-2xl">{title}</h2>
+      {description && <p className="text-sm font-semibold text-slate-500 mt-1">{description}</p>}
+    </div>
+  )
+}
+
 function KpiCard({
   item,
   index,
@@ -807,6 +816,8 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   const [reportConsultant, setReportConsultant] = useState('all')
   const [monthPickerOpen, setMonthPickerOpen] = useState(false)
   const [monthPickerView, setMonthPickerView] = useState(() => new Date())
+  const [pendingStartDate, setPendingStartDate] = useState('')
+  const [pendingEndDate, setPendingEndDate] = useState('')
   const [lostDialogOpen, setLostDialogOpen] = useState(false)
   const [lostSearch, setLostSearch] = useState('')
   const [lostPage, setLostPage] = useState(1)
@@ -1057,6 +1068,8 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     setSelectedMonth(month.month)
     setSelectedStartDate('')
     setSelectedEndDate('')
+    setPendingStartDate('')
+    setPendingEndDate('')
     setReportPage(1)
     setRetailPage(1)
     setLostPage(1)
@@ -1065,23 +1078,29 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     setMonthPickerOpen(false)
   }
 
+  // Writes to pending (draft) state only — no API trigger until Apply is clicked
   function handleCalendarDateClick(dateKey: string) {
     if (!availableMonthKeys.has(dateKey.slice(0, 7))) return
 
-    if (!selectedStartDate || (selectedStartDate && selectedEndDate)) {
-      setSelectedStartDate(dateKey)
-      setSelectedEndDate('')
-      setSelectedYear(Number(dateKey.slice(0, 4)))
-      setSelectedMonth(Number(dateKey.slice(5, 7)) - 1)
+    if (!pendingStartDate || (pendingStartDate && pendingEndDate)) {
+      setPendingStartDate(dateKey)
+      setPendingEndDate('')
       return
     }
 
-    const start = selectedStartDate <= dateKey ? selectedStartDate : dateKey
-    const end = selectedStartDate <= dateKey ? dateKey : selectedStartDate
-    setSelectedStartDate(start)
-    setSelectedEndDate(end)
-    setSelectedYear(Number(end.slice(0, 4)))
-    setSelectedMonth(Number(end.slice(5, 7)) - 1)
+    const start = pendingStartDate <= dateKey ? pendingStartDate : dateKey
+    const end = pendingStartDate <= dateKey ? dateKey : pendingStartDate
+    setPendingStartDate(start)
+    setPendingEndDate(end)
+  }
+
+  // Commits the pending range to the real query state
+  function applyCustomDateRange() {
+    if (!pendingStartDate || !pendingEndDate) return
+    setSelectedStartDate(pendingStartDate)
+    setSelectedEndDate(pendingEndDate)
+    setSelectedYear(Number(pendingEndDate.slice(0, 4)))
+    setSelectedMonth(Number(pendingEndDate.slice(5, 7)) - 1)
     setReportPage(1)
     setRetailPage(1)
     setLostPage(1)
@@ -1091,6 +1110,8 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   }
 
   function clearCustomDateRange() {
+    setPendingStartDate('')
+    setPendingEndDate('')
     setSelectedStartDate('')
     setSelectedEndDate('')
     setReportPage(1)
@@ -1155,7 +1176,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
         : 1
     ).padStart(2, '0')}`
     : ''
-  const pendingSingleDate = Boolean(selectedStartDate && !selectedEndDate)
+
 
   const renderActiveTabSkeleton = () => {
     if (activeTab === 'reports') {
@@ -1327,18 +1348,21 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                   onOpenChange={(open) => {
                       setMonthPickerOpen(open)
                       if (open) {
-                      const anchorDate = selectedEndDate || selectedStartDate
-                      const parsedAnchor = anchorDate ? new Date(`${anchorDate}T00:00:00`) : null
+                        // Initialise pending states from committed values each time picker opens
+                        setPendingStartDate(selectedStartDate)
+                        setPendingEndDate(selectedEndDate)
+                        const anchorDate = selectedEndDate || selectedStartDate
+                        const parsedAnchor = anchorDate ? new Date(`${anchorDate}T00:00:00`) : null
                         setMonthPickerView(new Date(
-                        parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
-                          ? parsedAnchor.getFullYear()
-                          : selectedMonthOption?.year ?? today.getFullYear(),
-                        parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
-                          ? parsedAnchor.getMonth()
-                          : selectedMonthOption?.month ?? today.getMonth(),
-                        1,
-                      ))
-                    }
+                          parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
+                            ? parsedAnchor.getFullYear()
+                            : selectedMonthOption?.year ?? today.getFullYear(),
+                          parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
+                            ? parsedAnchor.getMonth()
+                            : selectedMonthOption?.month ?? today.getMonth(),
+                          1,
+                        ))
+                      }
                   }}
                 >
                   <DropdownMenuTrigger asChild>
@@ -1383,10 +1407,17 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
 
                       <div className="grid grid-cols-7 gap-1">
                         {monthPickerDays.map((day) => {
-                          const isSelected = hasCompleteCustomRange
-                            ? day.dateKey === selectedRangeStart || day.dateKey === selectedRangeEnd
-                            : day.dateKey === selectedMonthDateKey || day.dateKey === selectedStartDate
-                          const isInSelectedRange = hasCompleteCustomRange && day.dateKey > selectedRangeStart && day.dateKey < selectedRangeEnd
+                          const hasPendingRange = isInputDate(pendingStartDate) && isInputDate(pendingEndDate)
+                          const pendingRangeStart = hasPendingRange && pendingStartDate <= pendingEndDate ? pendingStartDate : pendingEndDate
+                          const pendingRangeEnd = hasPendingRange && pendingStartDate <= pendingEndDate ? pendingEndDate : pendingStartDate
+                          const isSelected = hasPendingRange
+                            ? day.dateKey === pendingRangeStart || day.dateKey === pendingRangeEnd
+                            : !hasCompleteCustomRange
+                              ? day.dateKey === selectedMonthDateKey || day.dateKey === pendingStartDate
+                              : day.dateKey === selectedRangeStart || day.dateKey === selectedRangeEnd
+                          const isInSelectedRange = hasPendingRange
+                            ? day.dateKey > pendingRangeStart && day.dateKey < pendingRangeEnd
+                            : hasCompleteCustomRange && day.dateKey > selectedRangeStart && day.dateKey < selectedRangeEnd
                           const isToday = day.dateKey === todayDateKey
                           return (
                             <button
@@ -1411,42 +1442,63 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                         })}
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 rounded-[1.1rem] border border-[#e4ebf2] bg-[#f8fbfd] px-3 py-2">
-                        <div>
+                      <div className="space-y-2">
+                        {/* Range status label */}
+                        <div className="rounded-[1.1rem] border border-[#e4ebf2] bg-[#f8fbfd] px-3 py-2">
                           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                            {pendingSingleDate ? 'Pick end date' : 'Analytics range'}
+                            {pendingStartDate && !pendingEndDate ? 'Pick end date' : 'Date range'}
                           </p>
                           <p className="mt-1 text-[13px] font-semibold text-slate-700">
-                            {customRangeLabel || (selectedStartDate ? `Start: ${formatDate(selectedStartDate)}` : 'Click a start day, then an end day.')}
+                            {pendingStartDate && pendingEndDate
+                              ? `${formatDate(pendingStartDate)} – ${formatDate(pendingEndDate)}`
+                              : pendingStartDate
+                                ? `Start: ${formatDate(pendingStartDate)}`
+                                : 'Click a start day, then an end day.'}
                           </p>
                         </div>
-                        {(selectedStartDate || selectedEndDate) && (
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2">
                           <Button
                             type="button"
                             variant="outline"
-                            className="rounded-full border border-[#d8e2ec] bg-white px-3 py-1 text-[11px] font-black text-slate-600 shadow-none hover:bg-white"
-                            onClick={clearCustomDateRange}
+                            className={cn(
+                              'flex-1 rounded-full border px-3 py-1 text-[11px] font-black shadow-none',
+                              availableMonthKeys.has(todayMonthKey)
+                                ? 'border-[#18a7d0]/35 bg-white text-[#0f5e97] hover:bg-white'
+                                : 'border-[#d8e2ec] bg-white text-slate-400 hover:bg-white'
+                            )}
+                            onClick={() => {
+                              if (!availableMonthKeys.has(todayMonthKey)) return
+                              handleMonthChange(todayMonthKey)
+                            }}
+                            disabled={!availableMonthKeys.has(todayMonthKey)}
                           >
-                            Clear
+                            Current month
                           </Button>
-                        )}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className={cn(
-                            'rounded-full border px-3 py-1 text-[11px] font-black shadow-none',
-                            availableMonthKeys.has(todayMonthKey)
-                              ? 'border-[#18a7d0]/35 bg-white text-[#0f5e97] hover:bg-white'
-                              : 'border-[#d8e2ec] bg-white text-slate-400 hover:bg-white'
+                          {(pendingStartDate || pendingEndDate || selectedStartDate || selectedEndDate) && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-black text-rose-500 shadow-none hover:bg-rose-50"
+                              onClick={clearCustomDateRange}
+                            >
+                              Clear
+                            </Button>
                           )}
-                          onClick={() => {
-                            if (!availableMonthKeys.has(todayMonthKey)) return
-                            handleMonthChange(todayMonthKey)
-                          }}
-                          disabled={!availableMonthKeys.has(todayMonthKey)}
-                        >
-                          Current month
-                        </Button>
+                          <Button
+                            type="button"
+                            disabled={!(pendingStartDate && pendingEndDate)}
+                            className={cn(
+                              'rounded-full px-4 py-1 text-[11px] font-black shadow-none',
+                              pendingStartDate && pendingEndDate
+                                ? 'bg-[#071a2b] text-white hover:bg-[#071a2b]/90'
+                                : 'cursor-not-allowed bg-slate-200 text-slate-400'
+                            )}
+                            onClick={applyCustomDateRange}
+                          >
+                            Apply
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </DropdownMenuContent>
@@ -1516,6 +1568,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
           {summarySkeletonVisible ? renderActiveTabSkeleton() : (
             <>
           <TabsContent value="overview" className="space-y-5">
+            <SectionHeading title="Key Performance Metrics" description="Core enquiry, booking and conversion figures for the selected period" />
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5 2xl:grid-cols-5">
               {(summary?.overview.kpis || []).map((item, index) => <KpiCard key={item.label} item={item} index={index} />)}
               {summary?.missedFollowups ? (
@@ -1538,6 +1591,8 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
             </div>
 
             {summary?.missedFollowups && summary.missedFollowups.count > 0 ? (
+              <>
+              <SectionHeading title="Missed Follow-Up Breakdown" description="Consultants, models and lead sources with pending customer outreach" />
               <div className="grid gap-5 md:grid-cols-3">
                 <Card className={cn(PRIMARY_SURFACE, 'border-rose-100/50 shadow-md')}>
                   <CardHeader className="pb-2">
@@ -1626,8 +1681,10 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                   </CardContent>
                 </Card>
               </div>
+              </>
             ) : null}
 
+            <SectionHeading title="Pipeline & Engagement Analysis" description="Enquiry status breakdown, lead sources, dealer distribution, temperature and test-drive engagement" />
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(320px,0.9fr)]">
               <ChartCard title="Enquiry Status" subtitle="Current month pipeline state mix">
                 {renderPieChart(summary?.overview.enquiryStatus || [])}
@@ -1706,6 +1763,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
               </ChartCard>
             </div>
 
+            <SectionHeading title="Lead Source & Model Performance" description="Per-source enquiry share and conversion rate, alongside model-wise demand ranking" />
             <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
               {(summary?.overview.sourceCards || []).map((card, index) => (
                 <Card key={card.source} className={cn(PRIMARY_SURFACE, card.highlightWalkIn ? 'border-[#f4d5ac] bg-[#fff8ef]' : '')}>

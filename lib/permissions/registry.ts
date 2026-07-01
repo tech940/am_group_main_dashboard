@@ -218,11 +218,19 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'kia.stock_report',
+    name: 'Stock Report',
+    parentKey: 'kia.sales',
+    description: 'AM KIA vehicle stock analytics workspace and purchase report table.',
+    sortOrder: 38,
+    actions: ['view'],
+  },
+  {
     key: 'kia.h_promise',
     name: 'H Promise',
     parentKey: 'kia',
     description: 'AM KIA H Promise department modules.',
-    sortOrder: 38,
+    sortOrder: 39,
     actions: ['view'],
   },
   {
@@ -776,6 +784,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.service_appointment',
     'kia.demo_cars_list',
     'kia.sales_report',
+    'kia.stock_report',
     'kia.proforma',
     'kia.insurance',
     ...hyundaiPlatinumExecutiveGroups,
