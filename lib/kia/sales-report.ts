@@ -417,7 +417,7 @@ async function getDealerOptions() {
   return KIA_BRANCH_DEALERS.map((dealer) => dealer.dealerCode)
 }
 
-async function buildKiaSalesReportFreshness(normalizedDealerCode: string | null) {
+export async function buildKiaSalesReportFreshness(normalizedDealerCode: string | null) {
   const [sources, dealerOptions] = await Promise.all([
     Promise.all(Object.values(TABLES).map((config) => querySourceFreshness(config, normalizedDealerCode))),
     getDealerOptions(),
@@ -429,6 +429,12 @@ async function buildKiaSalesReportFreshness(normalizedDealerCode: string | null)
       if (!availableMonthMap.has(monthKey)) availableMonthMap.set(monthKey, new Set())
       availableMonthMap.get(monthKey)?.add(source.key)
     }
+  }
+
+  const today = new Date()
+  const todayKey = toMonthKey(today)
+  if (!availableMonthMap.has(todayKey)) {
+    availableMonthMap.set(todayKey, new Set())
   }
 
   const availableMonths = Array.from(availableMonthMap.entries())
