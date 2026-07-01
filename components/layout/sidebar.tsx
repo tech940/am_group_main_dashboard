@@ -475,281 +475,6 @@ export function Sidebar() {
           collapsed ? "px-0" : "px-4"
         )}>
           <div className="space-y-10">
-            <div className="mt-[-20px]">
-              <nav className="space-y-2">
-                {hasPermission('purchase_orders.view') ? (
-                  <Link
-                    href="/purchase-orders"
-                    target="_blank"
-                    rel="noreferrer"
-                    prefetch={false}
-                    onClick={handleSidebarLinkClick}
-                    className={cn(
-                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
-                      pathname === '/purchase-orders'
-                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
-                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
-                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
-                    )}
-                  >
-                    <div className={cn(
-                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
-                      pathname === '/purchase-orders' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
-                    )}>
-                      <ShoppingCart className={cn(
-                        "h-4.5 w-4.5 transition-colors",
-                        pathname === '/purchase-orders' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
-                      )} />
-                    </div>
-                    {!collapsed && (
-                      <span className="flex-1 text-left text-[13px]">Purchase Orders</span>
-                    )}
-                  </Link>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={showLockedSectionMessage}
-                  className={cn(
-                    'flex items-center gap-3 rounded-xl bg-white/10 text-indigo-50/65 transition-all duration-200 outline-none cursor-pointer group border-l-4 border-transparent pl-3',
-                    collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
-                  )}
-                  >
-                    <div className="flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg bg-white/12">
-                      <ShoppingCart className="h-4.5 w-4.5" />
-                    </div>
-                    {!collapsed && (
-                      <>
-                        <span className="flex-1 text-left text-[13px]">Purchase Orders</span>
-                        <Lock className="h-4 w-4" />
-                      </>
-                    )}
-                  </button>
-                )}
-
-                {(canAccessFinanceOrders || permissionMap) && (hasPermission('finance_orders.view') ? (
-                  <Link
-                    href="/finance-orders"
-                    target="_blank"
-                    rel="noreferrer"
-                    prefetch={false}
-                    onClick={handleSidebarLinkClick}
-                    className={cn(
-                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
-                      pathname === '/finance-orders'
-                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
-                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
-                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
-                    )}
-                  >
-                    <div className={cn(
-                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
-                      pathname === '/finance-orders' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
-                    )}>
-                      <Landmark className={cn(
-                        "h-4.5 w-4.5 transition-colors",
-                        pathname === '/finance-orders' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
-                      )} />
-                    </div>
-                    {!collapsed && (
-                      <span className="flex-1 text-left text-[13px]">Finance Orders</span>
-                    )}
-                  </Link>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={showLockedSectionMessage}
-                    className={cn(
-                      'flex items-center gap-3 rounded-xl bg-white/10 text-indigo-50/65 transition-all duration-200 outline-none cursor-pointer group border-l-4 border-transparent pl-3',
-                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
-                    )}
-                  >
-                    <div className="flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg bg-white/12">
-                      <Landmark className="h-4.5 w-4.5" />
-                    </div>
-                    {!collapsed && (
-                      <>
-                        <span className="flex-1 text-left text-[13px]">Finance Orders</span>
-                        <Lock className="h-4 w-4" />
-                      </>
-                    )}
-                  </button>
-                ))}
-
-                {(canAccessPettyCash || permissionMap) && (hasPermission('petty_cash.view') ? (
-                  <Link
-                    href="/petty-cash"
-                    target="_blank"
-                    rel="noreferrer"
-                    prefetch={false}
-                    onClick={handleSidebarLinkClick}
-                    className={cn(
-                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
-                      pathname === '/petty-cash'
-                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
-                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
-                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
-                    )}
-                  >
-                    <div className={cn(
-                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
-                      pathname === '/petty-cash' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
-                    )}>
-                      <Banknote className={cn(
-                        "h-4.5 w-4.5 transition-colors",
-                        pathname === '/petty-cash' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
-                      )} />
-                    </div>
-                    {!collapsed && (
-                      <span className="flex-1 text-left text-[13px]">Petty Cash</span>
-                    )}
-                  </Link>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={showLockedSectionMessage}
-                    className={cn(
-                      'flex items-center gap-3 rounded-xl bg-white/10 text-indigo-50/65 transition-all duration-200 outline-none cursor-pointer group border-l-4 border-transparent pl-3',
-                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
-                    )}
-                  >
-                    <div className="flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg bg-white/12">
-                      <Banknote className="h-4.5 w-4.5" />
-                    </div>
-                    {!collapsed && (
-                      <>
-                        <span className="flex-1 text-left text-[13px]">Petty Cash</span>
-                        <Lock className="h-4 w-4" />
-                      </>
-                    )}
-                  </button>
-                ))}
-
-                {canAccessAmFinance && (
-                  <Link
-                    href="/am-finance"
-                    target="_blank"
-                    rel="noreferrer"
-                    prefetch={false}
-                    onClick={handleSidebarLinkClick}
-                    className={cn(
-                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
-                      pathname === '/am-finance'
-                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
-                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
-                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
-                    )}
-                  >
-                    <div className={cn(
-                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
-                      pathname === '/am-finance' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
-                    )}>
-                      <Landmark className={cn(
-                        "h-4.5 w-4.5 transition-colors",
-                        pathname === '/am-finance' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
-                      )} />
-                    </div>
-                    {!collapsed && (
-                      <span className="flex-1 text-left text-[13px]">AM Finance</span>
-                    )}
-                  </Link>
-                )}
-
-                <div className="space-y-2">
-                  <button
-                    onClick={toggleAdmin}
-                    disabled={!canAccessAdmin}
-                    className={cn(
-                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none w-full relative',
-                      (openAdmin || pathname?.startsWith('/admin'))
-                        ? 'bg-white/22 border-l-4 border-emerald-100 text-white font-semibold shadow-sm shadow-emerald-950/10 pl-3'
-                        : canAccessAdmin
-                          ? 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-indigo-100/80 cursor-pointer group pl-3'
-                          : 'bg-white/10 border-l-4 border-transparent text-indigo-50/45 opacity-60 cursor-not-allowed pl-3',
-                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'py-2.5 pr-3'
-                    )}
-                  >
-                    <div className={cn(
-                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
-                      (openAdmin || pathname?.startsWith('/admin')) ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
-                    )}>
-                      <Shield className={cn(
-                        "h-4.5 w-4.5 transition-colors",
-                        (openAdmin || pathname?.startsWith('/admin')) ? "text-white" : "text-indigo-50/85 group-hover:text-white"
-                      )} />
-                    </div>
-                    {!collapsed && (
-                      <>
-                        <span className="flex-1 text-left text-[13px]">Admin Panel</span>
-                        {!canAccessAdmin ? (
-                          <Lock className="h-4 w-4 text-slate-500" />
-                        ) : (
-                          <ChevronDown className={cn(
-                            "h-4 w-4 transition-transform duration-300",
-                            openAdmin ? "rotate-180 text-white" : "text-indigo-50/70"
-                          )} />
-                        )}
-                      </>
-                    )}
-                  </button>
-
-                  {!collapsed && openAdmin && (
-                    <div className="ml-4 space-y-1.5 border-l-2 border-white/20 pl-4 animate-in slide-in-from-top-2 duration-200">
-                      <Link
-                        href="/admin?tab=users"
-                        prefetch={false}
-                        onClick={handleSidebarLinkClick}
-                        className={cn(
-                          'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-[11px] font-medium shadow-sm transition-all',
-                          pathname?.startsWith('/admin')
-                            ? 'border-l-2 border-emerald-100 text-white font-semibold'
-                            : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
-                        )}
-                      >
-                        <Users className="h-3.5 w-3.5" />
-                        User Management
-                      </Link>
-                      <Link
-                        href="/admin?tab=access"
-                        prefetch={false}
-                        onClick={handleSidebarLinkClick}
-                        className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2 text-[11px] font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
-                      >
-                        <KeyRound className="h-3.5 w-3.5" />
-                        Access Control
-                      </Link>
-                      {isSuperAdmin && (
-                        <Link
-                          href="/admin?tab=branch-admins"
-                          prefetch={false}
-                          onClick={handleSidebarLinkClick}
-                          className={cn(
-                            'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-[11px] font-medium shadow-sm transition-all',
-                            pathname?.startsWith('/admin')
-                              ? 'border-l-2 border-emerald-100 text-white font-semibold'
-                              : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
-                          )}
-                        >
-                          <KeyRound className="h-3.5 w-3.5" />
-                          Branch Admins
-                        </Link>
-                      )}
-                      {isSuperAdmin && (
-                        <Link
-                          href="/admin?tab=settings"
-                          prefetch={false}
-                          onClick={handleSidebarLinkClick}
-                          className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2 text-[11px] font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
-                        >
-                          <Settings className="h-3.5 w-3.5" />
-                          Dashboard Settings
-                        </Link>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </nav>
-            </div>
-
             {!collapsed && (
               <div>
                 <p className="mb-4 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-indigo-50/65">
@@ -805,6 +530,220 @@ export function Sidebar() {
                 )}
               </div>
             )}
+            <div className="mt-[-20px]">
+              <nav className="space-y-2">
+                {hasPermission('purchase_orders.view') && (
+                  <Link
+                    href="/purchase-orders"
+                    target="_blank"
+                    rel="noreferrer"
+                    prefetch={false}
+                    onClick={handleSidebarLinkClick}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
+                      pathname === '/purchase-orders'
+                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
+                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
+                    )}
+                  >
+                    <div className={cn(
+                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
+                      pathname === '/purchase-orders' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
+                    )}>
+                      <ShoppingCart className={cn(
+                        "h-4.5 w-4.5 transition-colors",
+                        pathname === '/purchase-orders' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
+                      )} />
+                    </div>
+                    {!collapsed && (
+                      <span className="flex-1 text-left text-[13px]">Purchase Orders</span>
+                    )}
+                  </Link>
+                )}
+
+                {(canAccessFinanceOrders || permissionMap) && hasPermission('finance_orders.view') && (
+                  <Link
+                    href="/finance-orders"
+                    target="_blank"
+                    rel="noreferrer"
+                    prefetch={false}
+                    onClick={handleSidebarLinkClick}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
+                      pathname === '/finance-orders'
+                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
+                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
+                    )}
+                  >
+                    <div className={cn(
+                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
+                      pathname === '/finance-orders' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
+                    )}>
+                      <Landmark className={cn(
+                        "h-4.5 w-4.5 transition-colors",
+                        pathname === '/finance-orders' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
+                      )} />
+                    </div>
+                    {!collapsed && (
+                      <span className="flex-1 text-left text-[13px]">Finance Orders</span>
+                    )}
+                  </Link>
+                )}
+
+                {(canAccessPettyCash || permissionMap) && hasPermission('petty_cash.view') && (
+                  <Link
+                    href="/petty-cash"
+                    target="_blank"
+                    rel="noreferrer"
+                    prefetch={false}
+                    onClick={handleSidebarLinkClick}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
+                      pathname === '/petty-cash'
+                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
+                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
+                    )}
+                  >
+                    <div className={cn(
+                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
+                      pathname === '/petty-cash' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
+                    )}>
+                      <Banknote className={cn(
+                        "h-4.5 w-4.5 transition-colors",
+                        pathname === '/petty-cash' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
+                      )} />
+                    </div>
+                    {!collapsed && (
+                      <span className="flex-1 text-left text-[13px]">Petty Cash</span>
+                    )}
+                  </Link>
+                )}
+
+                {canAccessAmFinance && (
+                  <Link
+                    href="/am-finance"
+                    target="_blank"
+                    rel="noreferrer"
+                    prefetch={false}
+                    onClick={handleSidebarLinkClick}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none cursor-pointer group',
+                      pathname === '/am-finance'
+                        ? 'bg-white/22 border-l-4 border-white text-white font-semibold shadow-sm shadow-indigo-950/10 pl-3'
+                        : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-white/70 pl-3',
+                      collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'w-full py-2.5 pr-3'
+                    )}
+                  >
+                    <div className={cn(
+                      "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
+                      pathname === '/am-finance' ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
+                    )}>
+                      <Landmark className={cn(
+                        "h-4.5 w-4.5 transition-colors",
+                        pathname === '/am-finance' ? "text-white" : "text-indigo-50/85 group-hover:text-white"
+                      )} />
+                    </div>
+                    {!collapsed && (
+                      <span className="flex-1 text-left text-[13px]">AM Finance</span>
+                    )}
+                  </Link>
+                )}
+
+                {canAccessAdmin && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={toggleAdmin}
+                      className={cn(
+                        'flex items-center gap-3 rounded-xl transition-all duration-200 outline-none w-full relative',
+                        (openAdmin || pathname?.startsWith('/admin'))
+                          ? 'bg-white/22 border-l-4 border-emerald-100 text-white font-semibold shadow-sm shadow-emerald-950/10 pl-3'
+                          : 'bg-white/10 border-l-4 border-transparent text-indigo-50/85 hover:bg-white/18 hover:text-white hover:border-indigo-100/80 cursor-pointer group pl-3',
+                        collapsed ? 'h-10 w-10 justify-center p-0 mx-auto border-l-0' : 'py-2.5 pr-3'
+                      )}
+                    >
+                      <div className={cn(
+                        "flex h-[1.875rem] w-[1.875rem] flex-shrink-0 items-center justify-center rounded-lg transition-all",
+                        (openAdmin || pathname?.startsWith('/admin')) ? "bg-white/20" : "bg-white/12 group-hover:bg-white/20"
+                      )}>
+                        <Shield className={cn(
+                          "h-4.5 w-4.5 transition-colors",
+                          (openAdmin || pathname?.startsWith('/admin')) ? "text-white" : "text-indigo-50/85 group-hover:text-white"
+                        )} />
+                      </div>
+                      {!collapsed && (
+                        <>
+                          <span className="flex-1 text-left text-[13px]">Admin Panel</span>
+                          <ChevronDown className={cn(
+                            "h-4 w-4 transition-transform duration-300",
+                            openAdmin ? "rotate-180 text-white" : "text-indigo-50/70"
+                          )} />
+                        </>
+                      )}
+                    </button>
+
+                    {!collapsed && openAdmin && (
+                      <div className="ml-4 space-y-1.5 border-l-2 border-white/20 pl-4 animate-in slide-in-from-top-2 duration-200">
+                        <Link
+                          href="/admin?tab=users"
+                          prefetch={false}
+                          onClick={handleSidebarLinkClick}
+                          className={cn(
+                            'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-[11px] font-medium shadow-sm transition-all',
+                            pathname?.startsWith('/admin')
+                              ? 'border-l-2 border-emerald-100 text-white font-semibold'
+                              : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
+                          )}
+                        >
+                          <Users className="h-3.5 w-3.5" />
+                          User Management
+                        </Link>
+                        <Link
+                          href="/admin?tab=access"
+                          prefetch={false}
+                          onClick={handleSidebarLinkClick}
+                          className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2 text-[11px] font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                          Access Control
+                        </Link>
+                        {isSuperAdmin && (
+                          <Link
+                            href="/admin?tab=branch-admins"
+                            prefetch={false}
+                            onClick={handleSidebarLinkClick}
+                            className={cn(
+                              'flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-[11px] font-medium shadow-sm transition-all',
+                              pathname?.startsWith('/admin')
+                                ? 'border-l-2 border-emerald-100 text-white font-semibold'
+                                : 'border-l-2 border-transparent text-indigo-50/85 hover:border-indigo-100/80 hover:bg-white/18 hover:text-white'
+                            )}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Branch Admins
+                          </Link>
+                        )}
+                        {isSuperAdmin && (
+                          <Link
+                            href="/admin?tab=settings"
+                            prefetch={false}
+                            onClick={handleSidebarLinkClick}
+                            className="flex items-center gap-2 rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2 text-[11px] font-medium text-indigo-50/85 shadow-sm transition-all hover:border-indigo-100/80 hover:bg-white/18 hover:text-white"
+                          >
+                            <Settings className="h-3.5 w-3.5" />
+                            Dashboard Settings
+                          </Link>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </nav>
+            </div>
+
+
 
             {visibleBrands.length > 0 && (
               <div>
@@ -878,9 +817,6 @@ export function Sidebar() {
                             const sectionKey = `${brand.key}:${section.key}`
                             const sectionOpen = openBrandSections.has(sectionKey)
                             const directHref = 'href' in section ? section.href : undefined
-                            const sectionActive = directHref
-                              ? isSidebarHrefActive(directHref, pathname)
-                              : section.submenus.some((sub) => isSidebarHrefActive(sub.href, pathname))
                             const hasChildren = section.submenus.length > 0
                             const directPermissionKey = directHref ? sidebarPermissionByHref[directHref] : undefined
                             const isBrandUser = userBrand === brand.key || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
@@ -888,37 +824,40 @@ export function Sidebar() {
                               ? !hasPermission(directPermissionKey)
                               : false
 
+                            if (directHref && directLocked) return null
+
+                            const visibleSubmenus = section.submenus.filter((sub) => {
+                              if (!isSidebarItemVisible(sub.href, brand.key)) return false
+                              const permissionKey = sidebarPermissionByHref[sub.href]
+                              const subLocked = isBrandUser ? false : (permissionKey ? !hasPermission(permissionKey) : false)
+                              return !subLocked
+                            })
+
+                            if (hasChildren && visibleSubmenus.length === 0) return null
+
+                            const sectionActive = directHref
+                              ? isSidebarHrefActive(directHref, pathname)
+                              : visibleSubmenus.some((sub) => isSidebarHrefActive(sub.href, pathname))
+
                             return (
                               <div key={section.key} className="relative space-y-1.5">
                                 {directHref ? (
-                                  directLocked ? (
-                                    <button
-                                      type="button"
-                                      onClick={showLockedSectionMessage}
-                                      className="flex w-full items-center gap-2 rounded-lg border border-white/15 bg-white/8 px-3 py-1.5 text-left text-[10px] font-black uppercase tracking-[0.16em] text-indigo-50/65 shadow-sm transition-all hover:bg-white/14"
-                                    >
-                                      <Shield className="h-3.5 w-3.5" />
-                                      <span className="flex-1">{section.name}</span>
-                                      <Lock className="h-3.5 w-3.5" />
-                                    </button>
-                                  ) : (
-                                    <Link
-                                      href={directHref}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      prefetch={false}
-                                      onClick={handleSidebarLinkClick}
-                                      className={cn(
-                                        'flex flex-1 items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-left text-[10px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
-                                        sectionActive
-                                          ? 'bg-white/18 text-white'
-                                          : 'bg-white/8 text-indigo-50/75 hover:bg-white/14 hover:text-white'
-                                      )}
-                                    >
-                                      <Shield className="h-3.5 w-3.5" />
-                                      <span className="flex-1">{section.name}</span>
-                                    </Link>
-                                  )
+                                  <Link
+                                    href={directHref}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    prefetch={false}
+                                    onClick={handleSidebarLinkClick}
+                                    className={cn(
+                                      'flex flex-1 items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-left text-[10px] font-black uppercase tracking-[0.16em] shadow-sm transition-all',
+                                      sectionActive
+                                        ? 'bg-white/18 text-white'
+                                        : 'bg-white/8 text-indigo-50/75 hover:bg-white/14 hover:text-white'
+                                    )}
+                                  >
+                                    <Shield className="h-3.5 w-3.5" />
+                                    <span className="flex-1">{section.name}</span>
+                                  </Link>
                                 ) : (
                                   <button
                                     type="button"
@@ -960,24 +899,9 @@ export function Sidebar() {
 
                                 {hasChildren && sectionOpen && (
                                   <div className="ml-4 space-y-1.5 border-l border-white/15 pl-3">
-                                    {section.submenus.map((sub) => {
-                                      if (!isSidebarItemVisible(sub.href, brand.key)) return null
-                                      const permissionKey = sidebarPermissionByHref[sub.href]
-                                      const isBrandUser = userBrand === brand.key || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
-                                      const locked = isBrandUser ? false : (permissionKey ? !hasPermission(permissionKey) : false)
+                                    {visibleSubmenus.map((sub) => {
                                       const active = isSidebarHrefActive(sub.href, pathname)
-
-                                      return locked ? (
-                                        <button
-                                          key={sub.name}
-                                          type="button"
-                                          onClick={showLockedSectionMessage}
-                                          className="flex w-full items-center justify-between rounded-lg border-l-2 border-transparent bg-white/10 px-3 py-2 text-left text-[11px] font-medium text-indigo-50/65 shadow-sm transition-all hover:bg-white/14"
-                                        >
-                                          {sub.name}
-                                          <Lock className="h-3.5 w-3.5" />
-                                        </button>
-                                      ) : (
+                                      return (
                                         <div key={sub.name} className="flex items-center gap-2">
                                           <Link
                                             href={sub.href}
