@@ -224,7 +224,7 @@ async function readCurrentRows(dealerCode: string | null) {
         *,
         ${DEALER_SQL} AS dealer_code,
         ${VALUE_SQL} AS stock_value,
-        COALESCE(NULLIF(regexp_replace(stock_age::text, '[^0-9.-]', '', 'g'), '')::numeric, GREATEST((CURRENT_DATE - COALESCE(grn_date, departure_date, order_date, CURRENT_DATE))::int, 0)) AS age_days
+        GREATEST((CURRENT_DATE - COALESCE(grn_date, departure_date, order_date, CURRENT_DATE))::int, 0) AS age_days
       FROM ${sql.raw(TABLE)}
       WHERE COALESCE(NULLIF(TRIM(vin_no), ''), id::text) IS NOT NULL
         ${dealerClause(dealerCode)}
@@ -298,7 +298,7 @@ export async function getKiaStockReportSummary(input: {
   const fallback = await latestMonthFallback()
   const context = resolveDateContext(input, fallback)
   const dateMode = normalizeDateMode(input.dateMode)
-  const cacheKey = `kia:stock-report:summary:v1:${context.key}:${dealerCode || 'all'}:${dateMode}`
+  const cacheKey = `kia:stock-report:summary:v2:${context.key}:${dealerCode || 'all'}:${dateMode}`
   return getCachedData(cacheKey, async () => {
     const currentRows = await readCurrentRows(dealerCode)
     const currentVehicles = currentRows.map(normalizeVehicle)
@@ -522,7 +522,7 @@ export async function getKiaStockReportTable(input: {
 }): Promise<KiaStockReportPayload> {
   const page = normalizePage(input.page, 1)
   const pageSize = Math.min(100, normalizePage(input.pageSize, 10))
-  const cacheKey = `kia:stock-report:table:v1:${JSON.stringify({ ...input, page, pageSize })}`
+  const cacheKey = `kia:stock-report:table:v2:${JSON.stringify({ ...input, page, pageSize })}`
   return getCachedData(cacheKey, async () => {
     const { filters: _filters, ...readInput } = input
     const { columns, rows: fetchedRows } = await readReportRows(readInput)
