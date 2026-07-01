@@ -199,8 +199,8 @@ function complaintsDealerFilter(dealerCode: DealerFilter) {
 function openRoDealerFilter(dealerCode: DealerFilter) {
   return hyundaiSourceDealerFilter(
     dealerCode,
-    sql.raw('dealer'),
-    [sql.raw('source_dealer_code'), sql.raw('dealer_code'), sql.raw('dlr_no')]
+    sql.raw('source_dealer_code'),
+    [sql.raw('dealer_code'), sql.raw('dealer_code_2'), sql.raw('dlr_no'), sql.raw('dealer_name')]
   )
 }
 
@@ -488,12 +488,13 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
 }
 
 function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
+  const openRoDealerKey = sql`COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), NULLIF(dealer_code_2, ''), NULLIF(dlr_no, ''), NULLIF(dealer_name, ''), '-')`
   return sql`
     WITH active AS (
       SELECT DISTINCT ON (
-        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text)
+        ${openRoDealerKey} || ':' || COALESCE(NULLIF(r_o_no, ''), id::text)
       )
-        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
+        ${openRoDealerKey} || ':' || COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
         r_o_date::date AS ro_date,
         svc_adv AS service_adv,
         work_type,
@@ -508,7 +509,7 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
         AND r_o_date < (${endDate}::date + INTERVAL '1 day')
         ${openRoDealerFilter(dealerCode)}
       ORDER BY
-        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
+        ${openRoDealerKey} || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
         uploaded_at DESC NULLS LAST,
         id DESC
     ),
@@ -1436,6 +1437,11 @@ export async function GET(request: Request) {
   } catch (error) {
     timer.finish()
     console.error('Failed to build Business Excellence overview:', error)
-    return NextResponse.json({ error: 'Failed to build Business Excellence overview' }, { status: 500 })
+    const detail = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({
+      error: process.env.NODE_ENV === 'production'
+        ? 'Failed to build Business Excellence overview'
+        : `Failed to build Business Excellence overview: ${detail}`,
+    }, { status: 500 })
   }
 }

@@ -39,7 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { BRANCH_OPTIONS, getBranchLabel } from '@/lib/branches'
+import { getBranchLabel } from '@/lib/branches'
 import {
   PETTY_CASH_DEPARTMENT_OPTIONS,
   PETTY_CASH_PAYMENT_TYPES,
@@ -203,7 +203,7 @@ const PETTY_CASH_FETCH_TIMEOUT_MS = process.env.NODE_ENV === 'development' ? 600
 const PETTY_CASH_FETCH_RETRY_ATTEMPTS = process.env.NODE_ENV === 'development' ? 2 : 1
 
 function isCreatorRole(role: string) {
-  return role === 'admin' || role === 'branch_admin' || role === 'super_admin'
+  return role === 'admin' || role === 'branch_admin'
 }
 
 function isApproverRole(role: string) {
@@ -211,7 +211,7 @@ function isApproverRole(role: string) {
 }
 
 function canReviewApprovalQueue(role: string) {
-  return isApproverRole(role) || role === 'super_admin'
+  return isApproverRole(role)
 }
 
 function isExpenseFeedRole(role: string) {
@@ -304,10 +304,6 @@ function getStatusVariant(status: string) {
 }
 
 function canActOnRequest(userRole: string, request: PettyCashRequest) {
-  if (userRole === 'super_admin') {
-    return ['ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold'].includes(request.status)
-  }
-
   return (userRole === 'ea' && ['ea_pending', 'ea_on_hold'].includes(request.status))
     || (userRole === 'md' && ['md_pending', 'md_on_hold'].includes(request.status))
     || (userRole === 'accounts' && ['accounts_pending', 'accounts_on_hold'].includes(request.status))
@@ -369,8 +365,6 @@ function PettyCashPageContent() {
   const [ledgerLoading, setLedgerLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [demoBranchId, setDemoBranchId] = useState<string>(BRANCH_OPTIONS[0]?.value ?? 'kia')
-  const [dashboardBranchScope, setDashboardBranchScope] = useState<string | null>(null)
   const [mdQueueScope, setMdQueueScope] = useState<'all' | 'mine'>('all')
 
   const refreshLedger = useCallback(async (allocationId?: string | null) => {
@@ -408,7 +402,6 @@ function PettyCashPageContent() {
       const url = searchParams.size > 0 ? `/api/petty-cash?${searchParams.toString()}` : '/api/petty-cash'
       const dashboard = await fetchJsonWithTimeout<DashboardPayload>(url, 'Petty Cash dashboard')
       setPayload(dashboard)
-      setDashboardBranchScope(branchId)
 
       void refreshLedger(dashboard.currentAllocation?.id || null)
 
@@ -432,14 +425,13 @@ function PettyCashPageContent() {
 
     try {
       return await loadDashboard({
-        branchId: payload?.user.role === 'super_admin' ? demoBranchId : null,
         preserveData: true,
       })
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to refresh Petty Cash')
       return null
     }
-  }, [demoBranchId, loadDashboard, payload?.user.role])
+  }, [loadDashboard])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -449,20 +441,13 @@ function PettyCashPageContent() {
     return () => window.clearTimeout(timer)
   }, [loadDashboard])
 
-  useEffect(() => {
-    if (payload?.user.role !== 'super_admin') return
-    if (dashboardBranchScope === demoBranchId) return
-    void loadDashboard({ branchId: demoBranchId, preserveData: true })
-  }, [dashboardBranchScope, demoBranchId, loadDashboard, payload?.user.role])
-
   const currentAllocation = payload?.currentAllocation || null
   const allocationAmount = Number(normalizeAllocatedAmount(currentAllocation))
   const spentAmount = Number(normalizeSpentAmount(currentAllocation))
   const remainingAmount = payload?.summary.remainingAmount ?? Math.max(0, allocationAmount - spentAmount)
   const spendPercentage = allocationAmount > 0 ? Math.min(100, Math.round((spentAmount / allocationAmount) * 100)) : 0
   const userRole = payload?.user.role || ''
-  const userId = payload?.user.id || ''
-  const currentBranchId = userRole === 'super_admin' ? demoBranchId : (payload?.user.brand || '')
+  const currentBranchId = payload?.user.brand || ''
   const canCreate = isCreatorRole(userRole)
   const canReviewQueue = canReviewApprovalQueue(userRole)
   const canRequestTopUp = payload?.summary.canRequestTopUp ?? true
@@ -472,20 +457,18 @@ function PettyCashPageContent() {
   const allRequests = payload?.requests || []
   const allExpenses = payload?.expenses || []
   const creatorRequests = useMemo(() => {
-    if (userRole !== 'super_admin') return allRequests
-    return allRequests.filter((request) => String(request.createdBy || request.created_by || '') === userId)
-  }, [allRequests, userId, userRole])
+    return allRequests
+  }, [allRequests])
   const creatorExpenses = useMemo(() => {
-    if (userRole !== 'super_admin') return allExpenses
-    return allExpenses.filter((expense) => String(expense.createdBy || expense.created_by || '') === userId)
-  }, [allExpenses, userId, userRole])
+    return allExpenses
+  }, [allExpenses])
   const approvalRequests = useMemo(() => {
-    if ((userRole !== 'md' && userRole !== 'super_admin') || mdQueueScope === 'all') return allRequests
+    if (userRole !== 'md' || mdQueueScope === 'all') return allRequests
     return allRequests.filter((request) => normalizeBranchId(request) === currentBranchId)
   }, [allRequests, currentBranchId, mdQueueScope, userRole])
   const expenseFeedRows = useMemo(() => allExpenses, [allExpenses])
   const expenseFeedTitle = userRole === 'accounts' ? 'Branch Expense Ledger Feed' : 'Recent Branch Expenses'
-  const showMdScopeToggle = userRole === 'md' || userRole === 'super_admin'
+  const showMdScopeToggle = userRole === 'md'
   const contentLoading = dashboardLoading || ledgerLoading
   const requestLocationOptions = useMemo(() => getPettyCashLocationOptions(currentBranchId), [currentBranchId])
 
@@ -529,7 +512,6 @@ function PettyCashPageContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          branchId: userRole === 'super_admin' ? demoBranchId : null,
           requestedAmount: requestForm.requestedAmount,
           purpose: requestForm.purpose,
           department: requestForm.department || null,
@@ -668,26 +650,6 @@ function PettyCashPageContent() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {userRole === 'super_admin' && (
-              <div className="min-w-[190px]">
-                <Select
-                  value={demoBranchId}
-                  onValueChange={(value) => {
-                    setDemoBranchId(value)
-                    void loadDashboard({ branchId: value, preserveData: true })
-                  }}
-                >
-                  <SelectTrigger className="rounded-2xl bg-white/90 font-black">
-                    <SelectValue placeholder="Select demo branch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BRANCH_OPTIONS.map((branch) => (
-                      <SelectItem key={branch.value} value={branch.value}>{branch.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
             {(['overview', 'requests', 'expenses', 'ledger'] as const).map((tab) => (
               <Button
                 key={tab}
@@ -703,7 +665,7 @@ function PettyCashPageContent() {
               type="button"
               variant="outline"
               disabled={contentLoading}
-              onClick={() => void loadDashboard({ branchId: userRole === 'super_admin' ? demoBranchId : null, preserveData: true })}
+              onClick={() => void loadDashboard({ preserveData: true })}
               className="rounded-2xl bg-white/70 font-black"
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${contentLoading ? 'animate-spin' : ''}`} />

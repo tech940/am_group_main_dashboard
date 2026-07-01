@@ -1,4 +1,4 @@
-import { and, eq, isNull, or } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { AppUser } from '@/lib/auth/app-user'
 import { hasAllBranchAccess } from '@/lib/branches'
@@ -19,16 +19,14 @@ export function canAccessPettyCash(role: PettyCashRole | null | undefined) {
 }
 
 export function canCreatePettyCashRequest(role: PettyCashRole | null | undefined) {
-  return role === 'admin' || role === 'branch_admin' || role === 'super_admin'
+  return role === 'admin' || role === 'branch_admin'
 }
 
 export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined) {
-  return role === 'admin' || role === 'branch_admin' || role === 'super_admin'
+  return role === 'admin' || role === 'branch_admin'
 }
 
 export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {
-  if (role === 'super_admin') return true
-
   switch (stage) {
     case 'ea_approval':
       return role === 'ea'
@@ -95,10 +93,8 @@ export function getPettyCashAllocationVisibilityFilter(appUser: AppUser): SQL<un
   if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
     return and(
       eq(pettyCashAllocations.status, 'active'),
-      or(
-        eq(pettyCashAllocations.allocatedTo, appUser.id),
-        eq(pettyCashAllocations.branchId, appUser.brand || '')
-      )!
+      eq(pettyCashAllocations.allocatedTo, appUser.id),
+      eq(pettyCashAllocations.branchId, appUser.brand || '')
     )!
   }
 
@@ -109,20 +105,19 @@ export function getPettyCashAllocationVisibilityFilter(appUser: AppUser): SQL<un
 }
 
 export function canReadPettyCashRequest(appUser: AppUser, request: Pick<PettyCashRequestRecord, 'branchId' | 'createdBy'>) {
-  if (appUser.role === 'admin' || appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) return true
+  if (appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) return true
   if (appUser.role === 'md') return true
   if (request.createdBy === appUser.id) return true
   return canAccessPettyCash(appUser.role) && appUser.brand === request.branchId
 }
 
 export function canReadPettyCashExpense(appUser: AppUser, expense: Pick<PettyCashExpenseRecord, 'branchId' | 'createdBy'>) {
-  if (appUser.role === 'admin' || appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) return true
+  if (appUser.role === 'super_admin' || hasAllBranchAccess(appUser.brand)) return true
   if (expense.createdBy === appUser.id) return true
   return canAccessPettyCash(appUser.role) && appUser.brand === expense.branchId
 }
 
 export function canUsePettyCashAllocation(appUser: AppUser, allocation: Pick<PettyCashAllocationRecord, 'branchId' | 'allocatedTo' | 'status'>) {
   if (allocation.status !== 'active') return false
-  if (appUser.role === 'admin' || appUser.role === 'super_admin') return true
   return allocation.allocatedTo === appUser.id && appUser.brand === allocation.branchId
 }

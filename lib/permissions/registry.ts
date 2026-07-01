@@ -755,7 +755,6 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.demo_job_cards',
     'kia.service_appointment',
     'kia.demo_cars_list',
-    'kia.sales_report',
     'kia.proforma',
     'kia.insurance',
     ...hyundaiPlatinumExecutiveGroups,
@@ -795,7 +794,6 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.demo_job_cards',
     'kia.service_appointment',
     'kia.demo_cars_list',
-    'kia.sales_report',
     'kia.proforma',
     'kia.insurance',
     'purchase_orders',
@@ -817,15 +815,15 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
   ],
   manager: [
-    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales_report', 'kia.proforma', 'kia.insurance'], ['view', 'approve']),
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma', 'kia.insurance'], ['view', 'approve']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   technician: [
-    ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales_report', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   viewer: [
-    ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales_report', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
 }

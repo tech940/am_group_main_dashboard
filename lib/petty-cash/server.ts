@@ -322,6 +322,8 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
 }
 
 export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?: string | null) {
+  if (appUser.role === 'super_admin' && !branchId) return null
+
   const filters = [getPettyCashAllocationVisibilityFilter(appUser)]
 
   if (branchId && branchId !== 'all') {
@@ -401,8 +403,7 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
   }
 
   const input = createPettyCashRequestSchema.parse(rawInput)
-  const requestedBranchId = input.branchId && isBranchValue(input.branchId) ? input.branchId : null
-  const branchId = requestedBranchId || normalizeBranch(appUser)
+  const branchId = normalizeBranch(appUser)
 
   if (!branchId || !canManagePettyCashBranch(appUser, branchId)) {
     throw new Error('Forbidden branch')

@@ -1965,7 +1965,6 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
               const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet || isSotSheet
               const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
               const supportsHealthPanel = false
-              const branchOptions = [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
                 : ''
@@ -1990,28 +1989,6 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                               <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
                                 Updated: {freshnessQuery.isLoading && !freshnessQuery.data ? 'Checking...' : freshnessQuery.isError ? 'Not available' : formatBusinessFreshness(freshnessQuery.data?.sourceUpdatedAt)}
                               </span>
-                              <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-slate-200 bg-slate-50/80 p-2 shadow-sm" aria-label="Business Excellence branch filter">
-                                {branchOptions.map((branch) => {
-                                  const isActive = branch.dealerCode
-                                    ? selectedDealerCode === branch.dealerCode
-                                    : !normalizeKiaDealerCode(selectedDealerCode)
-                                  return (
-                                    <button
-                                      key={branch.dealerCode || 'all-locations'}
-                                      type="button"
-                                      onClick={() => handleDealerChange(branch.dealerCode)}
-                                      className={cn(
-                                        'min-w-[9.75rem] rounded-2xl border px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] leading-tight transition',
-                                        isActive
-                                          ? 'border-[var(--dashboard-action-bg)] bg-[var(--dashboard-action-bg)] text-white shadow-sm'
-                                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
-                                      )}
-                                    >
-                                      {branch.label}
-                                    </button>
-                                  )
-                                })}
-                              </div>
                               {activeComparisonText && (
                                 <span className="rounded-full border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] px-3 py-1.5 text-[10px] font-black text-[var(--dashboard-action-bg)]">
                                   {activeComparisonText}
@@ -4089,7 +4066,7 @@ function BusinessExecutiveDashboard({
         })),
       }
     },
-    enabled: Boolean(expandedExecutiveTable),
+    enabled: true,
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
 
