@@ -15,7 +15,7 @@ import {
   type ServiceDashboardMetrics,
 } from '@/lib/kia/service-dashboard-export'
 import { fetchHyundaiMonthlyOperationMetrics } from '@/lib/hyundai/business-excellence-operations'
-import { getHyundaiDealerCodes, hyundaiSourceDealerFilter } from '@/lib/hyundai/dealer-branch'
+import { getHyundaiDealerCodes, hyundaiSourceDealerFilter, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
 import {
   HYUNDAI_BE_CALCULATION_META,
   hyundaiActiveBillSql,
@@ -291,7 +291,7 @@ async function buildMetrics(endDate: string | null, dealerCode: DealerFilter): P
     'Bodyshop PNA is N/A because the Hyundai RO source has no validated PNA field.',
     ...addons.warnings,
     ...(!operations.available ? ['No Hyundai Operation Wise snapshot exists for the selected month.'] : []),
-    ...(operations.available && operations.classifiedRows === 0
+    ...(operations.available && operations.classifiedRows === 0 && normalizeHyundaiDealerCode(dealerCode) !== 'JAMMU'
       ? ['Hyundai Operation Wise snapshot contains no classified VAS/WA/WB rows; zeroes are source-incomplete, not verified business zeroes.']
       : []),
   ]

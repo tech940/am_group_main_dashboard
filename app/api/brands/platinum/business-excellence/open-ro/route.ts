@@ -8,6 +8,7 @@ import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumOpenRoCoverage } from '@/lib/platinum/business-excellence-coverage'
+import { platinumSourceDealerFilter, platinumSourceDealerSql } from '@/lib/platinum/dealer-filter'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -35,20 +36,11 @@ type OpenRoFilters = {
 type OpenRoChunk = 'summary' | 'details' | 'full'
 
 function openRoDealerFilter(filters: OpenRoFilters) {
-  if (!filters.dealerCode) return sql``
-
-  return sql`AND COALESCE(
-    NULLIF(NULLIF(UPPER(TRIM(COALESCE(am_platinum_repair_order_list.source_dealer_code, ''))), ''), 'ACTIVE'),
-    NULLIF(UPPER(TRIM(COALESCE(am_platinum_repair_order_list.dealer, ''))), '')
-  ) = ${filters.dealerCode}`
+  return platinumSourceDealerFilter(filters.dealerCode, sql.raw('am_platinum_repair_order_list.dlr_no'))
 }
 
 function openRoDealerKeySql() {
-  return sql`COALESCE(
-    NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-    NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), ''),
-    'UNMAPPED'
-  )`
+  return sql`COALESCE(${platinumSourceDealerSql(sql.raw('dlr_no'))}, 'UNMAPPED')`
 }
 
 function openRoBaseSql(filters: OpenRoFilters) {

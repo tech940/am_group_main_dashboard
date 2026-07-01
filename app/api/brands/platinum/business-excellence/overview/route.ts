@@ -152,12 +152,7 @@ function complaintsDealerFilter(dealerCode: DealerFilter) {
 }
 
 function openRoDealerFilter(dealerCode: DealerFilter) {
-  return dealerCode
-    ? sql`AND COALESCE(
-        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-        NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), '')
-      ) = ${dealerCode}`
-    : sql``
+  return platinumSourceDealerFilter(dealerCode, sql.raw('dlr_no'))
 }
 
 function complaintBusinessDateSql() {
@@ -929,7 +924,7 @@ async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit = 3) 
   return results
 }
 
-async function buildOverviewPayload(
+export async function buildOverviewPayload(
   startDate: string,
   endDate: string,
   chunk: OverviewChunk = 'summary',

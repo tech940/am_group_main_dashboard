@@ -1538,7 +1538,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
   const [appliedDateFilter, setAppliedDateFilter] = useState<BusinessDateFilter>(null)
   const [selectedDealerCode, setSelectedDealerCode] = useState<string | null>(() => {
     const normalized = normalizeKiaDealerCode(searchParams.get('dealer_code'))
-    return normalized || null
+    return normalized || 'JAMMU'
   })
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
   const [showDateControls, setShowDateControls] = useState(false)
@@ -1555,7 +1555,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
     const params = new URLSearchParams(queryDateFilterKey)
     const hasDateParams = params.has('startDate') || params.has('endDate') || params.has('compareStartDate') || params.has('compareEndDate') || params.get('periodMode') === 'year' || params.has('year')
     const timeout = window.setTimeout(() => {
-      setSelectedDealerCode(normalizeKiaDealerCode(params.get('dealer_code')) || null)
+      setSelectedDealerCode(normalizeKiaDealerCode(params.get('dealer_code')) || 'JAMMU')
       if (!hasDateParams) {
         setSelectedPreset('mtd')
         setSelectedYear(null)
@@ -1732,7 +1732,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
   }, [activeTab, initialReportName, router, selectedDealerCode])
 
   const handleDealerChange = useCallback((dealerCode: string | null) => {
-    const nextDealerCode = normalizeKiaDealerCode(dealerCode) || null
+    const nextDealerCode = normalizeKiaDealerCode(dealerCode) || 'JAMMU'
     setSelectedDealerCode(nextDealerCode)
     router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), appliedDateFilter, nextDealerCode), { scroll: false })
   }, [activeTab, appliedDateFilter, initialReportName, router])
@@ -1938,7 +1938,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
   const handleTabChange = (sheetName: string) => {
     const nextDealerCode = sheetName === EXECUTIVE_DASHBOARD_REPORT
       ? normalizeKiaDealerCode(searchParams.get('dealer_code'))
-      : normalizeKiaDealerCode(selectedDealerCode)
+      : normalizeKiaDealerCode(selectedDealerCode) || 'JAMMU'
     setSelectedDealerCode(nextDealerCode)
     router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(sheetName), appliedDateFilter, nextDealerCode))
   }
@@ -1982,6 +1982,9 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
                 : ''
+              const branchOptions = isExecutiveDashboardSheet
+                ? [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
+                : KIA_BRANCH_DEALERS
 
               return (
                 <div className="animate-in slide-in-from-bottom-4 duration-500">
@@ -2003,6 +2006,28 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                               <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-600">
                                 Updated: {freshnessQuery.isLoading && !freshnessQuery.data ? 'Checking...' : freshnessQuery.isError ? 'Not available' : formatBusinessFreshness(freshnessQuery.data?.sourceUpdatedAt)}
                               </span>
+                              <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm" aria-label="Business Excellence branch filter">
+                                {branchOptions.map((branch) => {
+                                  const isActive = branch.dealerCode
+                                    ? selectedDealerCode === branch.dealerCode
+                                    : !normalizeKiaDealerCode(selectedDealerCode)
+                                  return (
+                                    <button
+                                      key={branch.dealerCode || 'all-locations'}
+                                      type="button"
+                                      onClick={() => handleDealerChange(branch.dealerCode)}
+                                      className={cn(
+                                        'rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest transition',
+                                        isActive
+                                          ? 'bg-[var(--dashboard-action-bg)] text-white shadow-sm'
+                                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                                      )}
+                                    >
+                                      {branch.label}
+                                    </button>
+                                  )
+                                })}
+                              </div>
                               {activeComparisonText && (
                                 <span className="rounded-full border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] px-3 py-1.5 text-[10px] font-black text-[var(--dashboard-action-bg)]">
                                   {activeComparisonText}

@@ -43,7 +43,7 @@ type DealerFilter = KiaDealerCode | null
 type NumericRow = Record<string, unknown>
 
 const SERVICE_DASHBOARD_TEMPLATE = path.join(process.cwd(), 'templates', 'kia', 'service-dashboard-template.xlsx')
-const SERVICE_DASHBOARD_CACHE_VERSION = 'v4'
+const SERVICE_DASHBOARD_CACHE_VERSION = 'v5'
 const SERVICE_CATEGORIES = ['Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair'] as const
 let templateBufferPromise: Promise<Uint8Array> | null = null
 
@@ -319,7 +319,8 @@ async function fetchIntakeCounts(monthStart: string, exportDate: string, dealerC
 }
 
 async function fetchRevenueAndDelivered(monthStart: string, exportDate: string, dealerCode: DealerFilter) {
-  const result = await db.execute(sql`
+  const [result, operationalSupplementResult] = await Promise.all([
+    db.execute(sql`
     WITH raw AS (
       SELECT
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
@@ -360,7 +361,51 @@ async function fetchRevenueAndDelivered(monthStart: string, exportDate: string, 
     FROM dedup
     WHERE service_category IN ('Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair')
     GROUP BY service_category
-  `)
+  `),
+    db.execute(sql`
+      WITH billed AS (
+        SELECT DISTINCT COALESCE(NULLIF(ro_no, ''), NULLIF(bill_no, ''), id::text) AS jc_key
+        FROM ro_billing_report
+        WHERE bill_date >= ${monthStart}::date
+          AND bill_date < (${exportDate}::date + INTERVAL '1 day')
+          AND ${activeBillStatusSql()}
+          ${roBillingDealerFilter(dealerCode)}
+      ),
+      operational AS (
+        SELECT DISTINCT ON (COALESCE(NULLIF(o.r_o_no, ''), o.id::text))
+          COALESCE(NULLIF(o.r_o_no, ''), o.id::text) AS jc_key,
+          o.ro_date::date AS report_date,
+          ${serviceCategoryExpression('o.work_type', 'o.service_type')} AS service_category,
+          LOWER(TRIM(COALESCE(o.ro_sub_status, ''))) AS ro_sub_status,
+          o.uploaded_at,
+          o.id
+        FROM open_ro_yearly o
+        WHERE o.ro_date >= ${monthStart}::date
+          AND o.ro_date < (${exportDate}::date + INTERVAL '1 day')
+          AND LOWER(COALESCE(o.status, '')) = 'open'
+          AND LOWER(TRIM(COALESCE(o.ro_sub_status, ''))) IN ('final inspection', 'work ended')
+          ${openRoDealerFilter(dealerCode, 'o')}
+        ORDER BY COALESCE(NULLIF(o.r_o_no, ''), o.id::text), o.uploaded_at DESC NULLS LAST, o.id DESC
+      ),
+      supplement AS (
+        SELECT *
+        FROM operational o
+        WHERE o.ro_sub_status = 'work ended'
+          OR NOT EXISTS (
+            SELECT 1
+            FROM billed b
+            WHERE b.jc_key = o.jc_key
+          )
+      )
+      SELECT
+        service_category,
+        COUNT(*) FILTER (WHERE report_date = ${exportDate}::date)::int AS today_count,
+        COUNT(*)::int AS mtd_count
+      FROM supplement
+      WHERE service_category IN ('Free Service', 'Paid Service', 'Running Repair', 'Accidental Repair')
+      GROUP BY service_category
+    `),
+  ])
 
   const delivered = emptyCategoryCounts()
   const totals = {
@@ -400,6 +445,14 @@ async function fetchRevenueAndDelivered(monthStart: string, exportDate: string, 
     totals.mechanicalLabour.mtd += labour.mtd
     totals.mechanicalParts.today += parts.today
     totals.mechanicalParts.mtd += parts.mtd
+  })
+
+  resultRows(operationalSupplementResult).forEach((row) => {
+    const category = String(row.service_category || '') as ServiceCategory
+    if (!SERVICE_CATEGORIES.includes(category)) return
+
+    delivered[category].today += numberValue(row.today_count)
+    delivered[category].mtd += numberValue(row.mtd_count)
   })
 
   return { delivered, ...totals }

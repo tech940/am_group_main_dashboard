@@ -31,7 +31,26 @@ const readAnalyticsTableColumns = unstable_cache(
 )
 
 export async function analyticsTableColumns(tableName: string) {
-  return await readAnalyticsTableColumns(tableName)
+  try {
+    return await readAnalyticsTableColumns(tableName)
+  } catch (err: any) {
+    if (err?.message?.includes('incrementalCache missing')) {
+      const normalized = tableName.trim()
+      if (!normalized) return [] as string[]
+      const result = await db.execute(sql`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = ${normalized}
+        ORDER BY ordinal_position
+      `)
+      if (!Array.isArray(result)) return [] as string[]
+      return result
+        .map((row) => String((row as ColumnRow).column_name || '').trim())
+        .filter(Boolean)
+    }
+    throw err
+  }
 }
 
 export async function analyticsTableColumnSet(tableName: string) {

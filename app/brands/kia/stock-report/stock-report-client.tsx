@@ -39,7 +39,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { logApiTimings } from '@/lib/api/client-timing'
 import { cn } from '@/lib/utils'
@@ -48,7 +47,6 @@ import type {
   KiaStockFreshnessPayload,
   KiaStockReportPayload,
   KiaStockSummaryPayload,
-  KiaStockTab,
 } from '@/lib/kia/stock-report-types'
 
 function isInputDate(value: string | null | undefined) {
@@ -70,14 +68,16 @@ function formatDateRangeLabel(startDate: string | null | undefined, endDate: str
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
 
-const PAGE_TABS: Array<{ key: KiaStockTab; label: string }> = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'models', label: 'Models' },
-  { key: 'dealers', label: 'Dealers' },
-  { key: 'movement', label: 'Movement' },
+const STOCK_SECTIONS = [
   { key: 'aging', label: 'Aging' },
-  { key: 'reports', label: 'Reports' },
-]
+  { key: 'interest', label: 'Interest' },
+  { key: 'turns', label: 'Turns' },
+  { key: 'mix', label: 'Mix' },
+  { key: 'supply', label: 'Supply' },
+  { key: 'reorder', label: 'Reorder' },
+  { key: 'aged', label: 'Aged 90+' },
+  { key: 'explorer', label: 'Explorer' },
+] as const
 
 const DATE_MODE_OPTIONS: Array<{ value: KiaStockDateMode; label: string }> = [
   { value: 'grn_date', label: 'GRN date' },
@@ -127,9 +127,9 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 function formatMoney(value: number) {
-  if (Math.abs(value) >= 10000000) return `Rs ${(value / 10000000).toFixed(2)}Cr`
-  if (Math.abs(value) >= 100000) return `Rs ${(value / 100000).toFixed(2)}L`
-  return `Rs ${Math.round(value).toLocaleString('en-IN')}`
+  if (Math.abs(value) >= 10000000) return `₹${(value / 10000000).toFixed(2)}Cr`
+  if (Math.abs(value) >= 100000) return `₹${(value / 100000).toFixed(1)}L`
+  return `₹${Math.round(value).toLocaleString('en-IN')}`
 }
 
 function toColumnLabel(column: string) {
@@ -259,25 +259,7 @@ export function SectionHeading({ title, description }: { title: string; descript
 export function KiaStockReportPage({ initialSearchParams }: { initialSearchParams: SearchParamsInput }) {
   const router = useRouter()
   const pathname = usePathname()
-  const [activeTab, setActiveTab] = useState<KiaStockTab>((firstParam(initialSearchParams, 'tab') as KiaStockTab) || 'overview')
-  const [selectedYear, setSelectedYear] = useState<number | null>((() => {
-    const raw = Number(firstParam(initialSearchParams, 'year'))
-    return Number.isFinite(raw) ? raw : null
-  })())
-  const [selectedMonth, setSelectedMonth] = useState<number | null>((() => {
-    const raw = Number(firstParam(initialSearchParams, 'month'))
-    return Number.isFinite(raw) ? Math.max(0, raw - 1) : null
-  })())
-  const [selectedStartDate, setSelectedStartDate] = useState<string>(() => {
-    const raw = firstParam(initialSearchParams, 'startDate')
-    return isInputDate(raw) ? raw as string : ''
-  })
-  const [selectedEndDate, setSelectedEndDate] = useState<string>(() => {
-    const raw = firstParam(initialSearchParams, 'endDate')
-    return isInputDate(raw) ? raw as string : ''
-  })
   const [selectedDealer, setSelectedDealer] = useState(firstParam(initialSearchParams, 'dealer_code') || 'all')
-  const [dateMode, setDateMode] = useState<KiaStockDateMode>((firstParam(initialSearchParams, 'dateMode') as KiaStockDateMode) || 'grn_date')
   const [status, setStatus] = useState(firstParam(initialSearchParams, 'status') || 'all')
   const [model, setModel] = useState(firstParam(initialSearchParams, 'model') || 'all')
   const [search, setSearch] = useState(firstParam(initialSearchParams, 'search') || '')
@@ -285,11 +267,6 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({})
   const [reportSort, setReportSort] = useState(firstParam(initialSearchParams, 'sort') || '')
   const [reportDirection, setReportDirection] = useState<'asc' | 'desc'>((firstParam(initialSearchParams, 'direction') || 'desc') === 'asc' ? 'asc' : 'desc')
-
-  const [monthPickerOpen, setMonthPickerOpen] = useState(false)
-  const [monthPickerView, setMonthPickerView] = useState(() => new Date())
-  const [pendingStartDate, setPendingStartDate] = useState('')
-  const [pendingEndDate, setPendingEndDate] = useState('')
 
   const deferredSearch = useDeferredValue(search)
 
@@ -299,61 +276,21 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
     staleTime: 60_000,
   })
 
-  // Set default month if none is selected
-  useEffect(() => {
-    if (selectedYear === null && selectedMonth === null && !selectedStartDate && !selectedEndDate) {
-      const firstMonth = freshnessQuery.data?.availableMonths[0]
-      if (firstMonth) {
-        setSelectedYear(firstMonth.year)
-        setSelectedMonth(firstMonth.month)
-      }
-    }
-  }, [freshnessQuery.data, selectedMonth, selectedYear, selectedStartDate, selectedEndDate])
-
-  const effectiveSelectedMonthOption = freshnessQuery.data?.availableMonths.find(
-    (item) => item.year === selectedYear && item.month === selectedMonth
-  ) || freshnessQuery.data?.availableMonths[0]
-  const effectiveSelectedYear = effectiveSelectedMonthOption?.year ?? selectedYear
-  const effectiveSelectedMonth = effectiveSelectedMonthOption?.month ?? selectedMonth
-  const hasCompleteCustomRange = isInputDate(selectedStartDate) && isInputDate(selectedEndDate)
-  const customRangeLabel = formatDateRangeLabel(selectedStartDate, selectedEndDate)
-  const selectedRangeStart = hasCompleteCustomRange && selectedStartDate <= selectedEndDate ? selectedStartDate : selectedEndDate
-  const selectedRangeEnd = hasCompleteCustomRange && selectedStartDate <= selectedEndDate ? selectedEndDate : selectedStartDate
-  const periodQueryParams = hasCompleteCustomRange
-    ? {
-        startDate: selectedRangeStart,
-        endDate: selectedRangeEnd,
-      }
-    : {
-        year: effectiveSelectedYear,
-        month: effectiveSelectedMonth !== null ? effectiveSelectedMonth + 1 : null,
-      }
-  const periodReady = hasCompleteCustomRange || (effectiveSelectedYear !== null && effectiveSelectedMonth !== null)
-
   const summaryQuery = useQuery({
     queryKey: [
       'kia-stock-report-summary',
-      hasCompleteCustomRange ? selectedRangeStart : effectiveSelectedYear,
-      hasCompleteCustomRange ? selectedRangeEnd : effectiveSelectedMonth,
       selectedDealer,
-      dateMode,
     ],
     queryFn: () => fetchJson<KiaStockSummaryPayload>(`/api/brands/kia/stock-report/summary?${buildQueryString({
-      ...periodQueryParams,
       dealer_code: selectedDealer,
-      dateMode,
     })}`, 'kia-stock-report-summary'),
-    enabled: periodReady,
     staleTime: 30_000,
   })
 
   const reportQuery = useQuery({
     queryKey: [
       'kia-stock-report-table',
-      hasCompleteCustomRange ? selectedRangeStart : effectiveSelectedYear,
-      hasCompleteCustomRange ? selectedRangeEnd : effectiveSelectedMonth,
       selectedDealer,
-      dateMode,
       status,
       model,
       deferredSearch,
@@ -370,9 +307,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
         }
       })
       return fetchJson<KiaStockReportPayload>(`/api/brands/kia/stock-report/reports?${buildQueryString({
-        ...periodQueryParams,
         dealer_code: selectedDealer,
-        dateMode,
         status,
         model,
         search: deferredSearch,
@@ -383,28 +318,18 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
         ...filterParams,
       })}`, 'kia-stock-report-reports')
     },
-    enabled: activeTab === 'reports' && periodReady,
     staleTime: 15_000,
   })
 
-  // Reset column filters when date or dealer changes
+  // Reset column filters when dealer changes
   useEffect(() => {
     setColumnFilters({})
     setPage(1)
-  }, [selectedDealer, selectedYear, selectedMonth, selectedStartDate, selectedEndDate])
+  }, [selectedDealer])
 
   useEffect(() => {
     const params = new URLSearchParams()
-    if (activeTab !== 'overview') params.set('tab', activeTab)
-    if (hasCompleteCustomRange) {
-      params.set('startDate', selectedRangeStart)
-      params.set('endDate', selectedRangeEnd)
-    } else {
-      if (effectiveSelectedYear !== null) params.set('year', String(effectiveSelectedYear))
-      if (effectiveSelectedMonth !== null) params.set('month', String(effectiveSelectedMonth + 1))
-    }
     if (selectedDealer !== 'all') params.set('dealer_code', selectedDealer)
-    if (dateMode !== 'grn_date') params.set('dateMode', dateMode)
     if (status !== 'all') params.set('status', status)
     if (model !== 'all') params.set('model', model)
     if (search) params.set('search', search)
@@ -413,7 +338,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
     startTransition(() => {
       router.replace(params.size ? `${pathname}?${params.toString()}` : pathname, { scroll: false })
     })
-  }, [activeTab, effectiveSelectedMonth, effectiveSelectedYear, hasCompleteCustomRange, pathname, router, selectedDealer, selectedRangeEnd, selectedRangeStart, dateMode, status, model, search, page])
+  }, [pathname, router, selectedDealer, status, model, search, page])
 
   const isLoadingSummary = summaryQuery.isLoading || summaryQuery.isFetching || !summaryQuery.data
   const summary = summaryQuery.data
@@ -427,6 +352,10 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
     reportQuery.refetch()
   }
 
+  const scrollToSection = (section: string) => {
+    document.getElementById(`stock-${section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   const handleExport = async () => {
     const filterParams: Record<string, string> = {}
     Object.entries(columnFilters).forEach(([col, vals]) => {
@@ -435,9 +364,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
       }
     })
     const response = await fetch(`/api/brands/kia/stock-report/reports?${buildQueryString({
-      ...periodQueryParams,
       dealer_code: selectedDealer,
-      dateMode,
       status,
       model,
       search,
@@ -454,83 +381,38 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
     link.click()
     URL.revokeObjectURL(url)
   }
-
-  function handleMonthChange(key: string) {
-    const month = freshnessQuery.data?.availableMonths.find((item) => item.key === key)
-    if (!month) return
-    setSelectedYear(month.year)
-    setSelectedMonth(month.month)
-    setSelectedStartDate('')
-    setSelectedEndDate('')
-    setPendingStartDate('')
-    setPendingEndDate('')
-    setPage(1)
-    setMonthPickerOpen(false)
-  }
-
-  function handleCalendarDateClick(dateKey: string) {
-    if (!availableMonthKeys.has(dateKey.slice(0, 7))) return
-
-    if (!pendingStartDate || (pendingStartDate && pendingEndDate)) {
-      setPendingStartDate(dateKey)
-      setPendingEndDate('')
-      return
-    }
-
-    const start = pendingStartDate <= dateKey ? pendingStartDate : dateKey
-    const end = pendingStartDate <= dateKey ? dateKey : pendingStartDate
-    setPendingStartDate(start)
-    setPendingEndDate(end)
-  }
-
-  function applyCustomDateRange() {
-    if (!pendingStartDate || !pendingEndDate) return
-    setSelectedStartDate(pendingStartDate)
-    setSelectedEndDate(pendingEndDate)
-    setSelectedYear(Number(pendingEndDate.slice(0, 4)))
-    setSelectedMonth(Number(pendingEndDate.slice(5, 7)) - 1)
-    setPage(1)
-    setMonthPickerOpen(false)
-  }
-
-  function clearCustomDateRange() {
-    setPendingStartDate('')
-    setPendingEndDate('')
-    setSelectedStartDate('')
-    setSelectedEndDate('')
-    setPage(1)
-  }
-
-  const availableMonthKeys = new Set((freshnessQuery.data?.availableMonths || []).map((item) => item.key))
-  const monthPickerViewLabel = monthPickerView.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-  const monthPickerGridStart = (() => {
-    const monthStart = new Date(monthPickerView.getFullYear(), monthPickerView.getMonth(), 1)
-    const gridStart = new Date(monthStart)
-    gridStart.setDate(monthStart.getDate() - monthStart.getDay())
-    return gridStart
-  })()
-  const monthPickerDays = Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(monthPickerGridStart)
-    date.setDate(monthPickerGridStart.getDate() + index)
-    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  const kpiValue = (label: string) => summary?.overview.kpis.find((item) => item.label === label)?.value || 0
+  const availableStock = kpiValue('Available Stock')
+  const stockValue = kpiValue('Stock Value')
+  const avgStockAge = kpiValue('Avg Stock Age')
+  const soldThisMonth = summary?.movement.monthly[0]?.retail || 0
+  const agedRows = summary?.aging.rows || []
+  const aged90Rows = agedRows.filter((row) => row.stockAge >= 90)
+  const aged90Value = aged90Rows.reduce((sum, row) => sum + row.stockValue, 0)
+  const interestRate = 10
+  const interestAccrued = agedRows.reduce((sum, row) => sum + ((row.stockValue * interestRate) / 100 / 365) * row.stockAge, 0)
+  const monthlyCarrying = (stockValue * interestRate) / 100 / 12
+  const dailyAgedBleed = aged90Rows.reduce((sum, row) => sum + (row.stockValue * interestRate) / 100 / 365, 0)
+  const daysOfSupply = soldThisMonth > 0 ? Math.round((availableStock / Math.max(1, soldThisMonth)) * 30) : 0
+  const stockByModel = summary?.overview.modelMix || []
+  const modelCards = summary?.models.cards || []
+  const explorerRows = report?.rows || []
+  const ageBandRows = [
+    { name: '0-30d', min: 0, max: 30, color: '#238f5a' },
+    { name: '31-60d', min: 31, max: 60, color: '#6da94a' },
+    { name: '61-90d', min: 61, max: 90, color: '#e3aa2f' },
+    { name: '91-120d', min: 91, max: 120, color: '#df7828' },
+    { name: '120+d', min: 121, max: Infinity, color: '#c73b32' },
+  ].map((band) => {
+    const rows = agedRows.filter((row) => row.stockAge >= band.min && row.stockAge <= band.max)
     return {
-      date,
-      dateKey: `${monthKey}-${String(date.getDate()).padStart(2, '0')}`,
-      monthKey,
-      inCurrentMonth: date.getMonth() === monthPickerView.getMonth(),
-      isAvailable: availableMonthKeys.has(monthKey),
+      ...band,
+      units: rows.length,
+      value: rows.reduce((sum, row) => sum + row.stockValue, 0),
     }
   })
-  const today = new Date()
-  const todayMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
-  const todayDateKey = `${todayMonthKey}-${String(today.getDate()).padStart(2, '0')}`
-  const selectedMonthDateKey = effectiveSelectedMonthOption
-    ? `${effectiveSelectedMonthOption.year}-${String(effectiveSelectedMonthOption.month + 1).padStart(2, '0')}-${String(
-      effectiveSelectedMonthOption.year === today.getFullYear() && effectiveSelectedMonthOption.month === today.getMonth()
-        ? today.getDate()
-        : 1
-    ).padStart(2, '0')}`
-    : ''
+  const fastestModels = [...modelCards].sort((a, b) => b.units - a.units).slice(0, 4)
+  const slowestModels = [...modelCards].sort((a, b) => b.avgAge - a.avgAge).slice(0, 4)
 
   return (
     <MainLayout title="Stock Report" subtitle="AM Kia stock analytics workspace">
@@ -546,172 +428,12 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                 Current unsold vehicle stock, transit pipeline, stock value, model mix, dealer split, and purchase report drill-downs.
               </p>
               <p className="mt-3 text-sm font-black uppercase tracking-[0.2em] text-slate-500">
-                {formatDateTime(summary?.context.updatedAt || freshnessQuery.data?.sourceUpdatedAt)}
+                {formatDateTime(freshnessQuery.data?.sourceUpdatedAt)}
               </p>
             </div>
             <div className="rounded-[1.5rem] border border-white/70 bg-white/85 p-4 shadow-inner">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <span className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">Month</span>
-                  <DropdownMenu
-                    open={monthPickerOpen}
-                    onOpenChange={(open) => {
-                      setMonthPickerOpen(open)
-                      if (open) {
-                        setPendingStartDate(selectedStartDate)
-                        setPendingEndDate(selectedEndDate)
-                        const anchorDate = selectedEndDate || selectedStartDate
-                        const parsedAnchor = anchorDate ? new Date(`${anchorDate}T00:00:00`) : null
-                        setMonthPickerView(new Date(
-                          parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
-                            ? parsedAnchor.getFullYear()
-                            : effectiveSelectedMonthOption?.year ?? today.getFullYear(),
-                          parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
-                            ? parsedAnchor.getMonth()
-                            : effectiveSelectedMonthOption?.month ?? today.getMonth(),
-                          1,
-                        ))
-                      }
-                    }}
-                  >
-                    <DropdownMenuTrigger asChild>
-                      <Button type="button" variant="outline" className="h-12 w-full justify-between rounded-2xl border-[#d5dfea] bg-white px-4 text-[14px] font-bold text-slate-900 shadow-sm hover:bg-white">
-                        <span className="inline-flex items-center gap-2">
-                          <CalendarDays className="h-4 w-4 text-slate-400" />
-                          {customRangeLabel || effectiveSelectedMonthOption?.label || 'Select dates'}
-                        </span>
-                        <ChevronDown className="h-4 w-4 text-slate-500" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-[340px] rounded-[1.5rem] border border-[#d8e2ec] bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <button
-                            type="button"
-                            className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d8e2ec] bg-white text-slate-600 transition hover:border-[#071a2b]/35 hover:text-[#071a2b]"
-                            onClick={() => setMonthPickerView((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
-                            aria-label="Previous month"
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                          </button>
-                          <div className="text-center">
-                            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Select date range</p>
-                            <p className="mt-1 text-[15px] font-black text-slate-950">{monthPickerViewLabel}</p>
-                          </div>
-                          <button
-                            type="button"
-                            className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d8e2ec] bg-white text-slate-600 transition hover:border-[#071a2b]/35 hover:text-[#071a2b]"
-                            onClick={() => setMonthPickerView((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
-                            aria-label="Next month"
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-                            <div key={`${day}-${index}`} className="py-1">{day}</div>
-                          ))}
-                        </div>
-
-                        <div className="grid grid-cols-7 gap-1">
-                          {monthPickerDays.map((day) => {
-                            const hasPendingRange = isInputDate(pendingStartDate) && isInputDate(pendingEndDate)
-                            const pendingRangeStart = hasPendingRange && pendingStartDate <= pendingEndDate ? pendingStartDate : pendingEndDate
-                            const pendingRangeEnd = hasPendingRange && pendingStartDate <= pendingEndDate ? pendingEndDate : pendingStartDate
-                            const isSelected = hasPendingRange
-                              ? day.dateKey === pendingRangeStart || day.dateKey === pendingRangeEnd
-                              : !hasCompleteCustomRange
-                                ? day.dateKey === selectedMonthDateKey || day.dateKey === pendingStartDate
-                                : day.dateKey === selectedRangeStart || day.dateKey === selectedRangeEnd
-                            const isInSelectedRange = hasPendingRange
-                              ? day.dateKey > pendingRangeStart && day.dateKey < pendingRangeEnd
-                              : hasCompleteCustomRange && day.dateKey > selectedRangeStart && day.dateKey < selectedRangeEnd
-                            const isToday = day.dateKey === todayDateKey
-                            return (
-                              <button
-                                key={day.dateKey}
-                                type="button"
-                                disabled={!day.isAvailable}
-                                className={cn(
-                                  'flex h-10 items-center justify-center rounded-xl text-[12px] font-black transition',
-                                  day.inCurrentMonth ? 'text-slate-700' : 'text-slate-300',
-                                  day.isAvailable
-                                    ? 'hover:bg-[#edf4fb] hover:text-[#071a2b]'
-                                    : 'cursor-not-allowed opacity-35',
-                                  isInSelectedRange && 'bg-[#e6f2fb] text-[#071a2b]',
-                                  isToday && 'ring-2 ring-[#18a7d0]/50 ring-offset-2',
-                                  isSelected && 'bg-[#071a2b] text-white shadow-[0_10px_18px_rgba(7,26,43,0.18)] hover:bg-[#071a2b]'
-                                )}
-                                onClick={() => handleCalendarDateClick(day.dateKey)}
-                              >
-                                {day.date.getDate()}
-                              </button>
-                            )
-                          })}
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="rounded-[1.1rem] border border-[#e4ebf2] bg-[#f8fbfd] px-3 py-2">
-                            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                              {pendingStartDate && !pendingEndDate ? 'Pick end date' : 'Date range'}
-                            </p>
-                            <p className="mt-1 text-[13px] font-semibold text-slate-700">
-                              {pendingStartDate && pendingEndDate
-                                ? `${formatDate(pendingStartDate)} – ${formatDate(pendingEndDate)}`
-                                : pendingStartDate
-                                  ? `Start: ${formatDate(pendingStartDate)}`
-                                  : 'Click a start day, then an end day.'}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className={cn(
-                                'flex-1 rounded-full border px-3 py-1 text-[11px] font-black shadow-none',
-                                availableMonthKeys.has(todayMonthKey)
-                                  ? 'border-[#18a7d0]/35 bg-white text-[#0f5e97] hover:bg-white'
-                                  : 'border-[#d8e2ec] bg-white text-slate-400 hover:bg-white'
-                              )}
-                              onClick={() => {
-                                if (!availableMonthKeys.has(todayMonthKey)) return
-                                handleMonthChange(todayMonthKey)
-                              }}
-                              disabled={!availableMonthKeys.has(todayMonthKey)}
-                            >
-                              Current month
-                            </Button>
-                            {(pendingStartDate || pendingEndDate || selectedStartDate || selectedEndDate) && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                className="rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-black text-rose-500 shadow-none hover:bg-rose-50"
-                                onClick={clearCustomDateRange}
-                              >
-                                Clear
-                              </Button>
-                            )}
-                            <Button
-                              type="button"
-                              disabled={!(pendingStartDate && pendingEndDate)}
-                              className={cn(
-                                'rounded-full px-4 py-1 text-[11px] font-black shadow-none',
-                                pendingStartDate && pendingEndDate
-                                  ? 'bg-[#071a2b] text-white hover:bg-[#071a2b]/90'
-                                  : 'cursor-not-allowed bg-slate-200 text-slate-400'
-                              )}
-                              onClick={applyCustomDateRange}
-                            >
-                              Apply
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <label className="space-y-2">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="flex-1 min-w-[200px] space-y-2">
                   <span className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">Dealer</span>
                   <Select value={selectedDealer} onValueChange={(value) => { setSelectedDealer(value); setPage(1) }}>
                     <SelectTrigger className="h-12 rounded-2xl bg-white font-bold"><SelectValue placeholder="All dealers" /></SelectTrigger>
@@ -721,16 +443,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                     </SelectContent>
                   </Select>
                 </label>
-                <label className="space-y-2">
-                  <span className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">Date mode</span>
-                  <Select value={dateMode} onValueChange={(value) => { setDateMode(value as KiaStockDateMode); setPage(1) }}>
-                    <SelectTrigger className="h-12 rounded-2xl bg-white font-bold"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {DATE_MODE_OPTIONS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </label>
-                <Button onClick={handleRefresh} className="mt-7 h-12 rounded-2xl bg-[#071a2b] font-black text-white hover:bg-[#102b46]">
+                <Button onClick={handleRefresh} className="h-12 rounded-2xl bg-[#071a2b] font-black text-white hover:bg-[#102b46] px-6">
                   <RefreshCw className={cn('mr-2 h-4 w-4', (summaryQuery.isFetching || freshnessQuery.isFetching) && 'animate-spin')} /> Refresh
                 </Button>
               </div>
@@ -738,225 +451,276 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
           </div>
         </section>
 
-        <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value as KiaStockTab) }} className="mt-6">
-          <TabsList className="flex h-auto flex-wrap justify-start gap-3 rounded-[2rem] border border-[#bfd0e4] bg-white/75 p-3">
-            {PAGE_TABS.map((tab) => (
-              <TabsTrigger key={tab.key} value={tab.key} className="rounded-2xl px-6 py-3 text-sm font-black data-[state=active]:bg-[#071a2b] data-[state=active]:text-white">
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        <div className="sticky top-0 z-20 mt-6 flex h-auto flex-wrap justify-start gap-3 border-y border-[#c9d5e2] bg-[#edf3f9]/95 px-2 py-3 backdrop-blur">
+          {STOCK_SECTIONS.map((section) => (
+            <button
+              key={section.key}
+              type="button"
+              onClick={() => scrollToSection(section.key)}
+              className="border-b-2 border-transparent px-3 py-3 text-[13px] font-black text-slate-600 transition hover:border-[#caa144] hover:text-slate-950"
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
 
-          <TabsContent value="overview" className="mt-6 space-y-6">
-            {isLoadingSummary ? (
-               <>
-                 <div className="grid gap-4 md:grid-cols-3"><SkeletonBlock className="h-36" /><SkeletonBlock className="h-36" /><SkeletonBlock className="h-36" /></div>
-                 <SkeletonBlock className="h-96" />
-               </>
-            ) : summary ? (
-              <>
-                <SectionHeading title="Key Inventory Metrics" description="Current summary of available stock, pipeline, and average age" />
-                <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-                  {summary.overview.kpis.map((kpi, index) => (
-                    <Card key={kpi.label} className={cn(SURFACE, 'border-t-[5px]')} style={{ borderTopColor: COLORS[index % COLORS.length] }}>
-                      <CardContent className="p-5">
-                        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">{kpi.label}</p>
-                        <p className="mt-4 text-3xl font-black text-slate-950">{kpi.formattedValue}</p>
-                        <p className="mt-2 text-xs font-bold text-slate-500">{kpi.helper}</p>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+        {isLoadingSummary ? (
+          <div className="mt-6 space-y-5">
+            <div className="grid gap-4 md:grid-cols-4"><SkeletonBlock className="h-32" /><SkeletonBlock className="h-32" /><SkeletonBlock className="h-32" /><SkeletonBlock className="h-32" /></div>
+            <SkeletonBlock className="h-72" />
+            <SkeletonBlock className="h-96" />
+          </div>
+        ) : summary ? (
+          <div className="mt-6 space-y-8 text-[14px] text-slate-700">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                { label: 'Units in stock', value: availableStock, helper: `live vehicles at ${selectedDealer === 'all' ? 'all dealers' : selectedDealer}`, dark: true },
+                { label: 'Inventory value', value: formatMoney(stockValue), helper: 'landed cost incl GST · purchase report', dark: true },
+                { label: 'Avg days in stock', value: `${avgStockAge}d`, helper: 'current available stock age' },
+                { label: 'Retailed this month', value: soldThisMonth, helper: summary.context.selectedMonthLabel },
+                { label: 'Lot days of supply', value: `${daysOfSupply}d`, helper: `${availableStock} units ÷ daily sales rate`, dark: true },
+                { label: 'Inventory turns', value: soldThisMonth ? `${((soldThisMonth * 12) / Math.max(1, availableStock)).toFixed(1)}x/yr` : '0x/yr', helper: 'run-rate' },
+                { label: 'Aged 60+ days', value: agedRows.filter((row) => row.stockAge >= 60).length, helper: `${availableStock ? Math.round((agedRows.filter((row) => row.stockAge >= 60).length / availableStock) * 100) : 0}% of lot` },
+                { label: 'Aged 90+ days', value: aged90Rows.length, helper: `${formatMoney(aged90Value)} frozen` },
+              ].map((item, index) => (
+                <Card key={item.label} className={cn('rounded-[1.2rem] border bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)]', item.dark && 'bg-[#18283e] text-white', index >= 6 && 'border-l-4 border-l-[#d33d34]')}>
+                  <CardContent className="p-5">
+                    <p className={cn('text-[11px] font-black uppercase tracking-[0.12em]', item.dark ? 'text-slate-300' : 'text-slate-500')}>{item.label}</p>
+                    <p className={cn('mt-3 text-[28px] font-black leading-none', item.dark ? 'text-white' : 'text-slate-950')}>{item.value}</p>
+                    <p className={cn('mt-2 text-[13px] font-semibold', item.dark ? 'text-slate-300' : 'text-slate-500')}>{item.helper}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
 
-                <SectionHeading title="Stock Mix & Distribution" description="Analysis of current inventory by status, model mix, dealer location, and aging buckets" />
-                <div className="grid gap-6 xl:grid-cols-2">
-                  <DonutPanel title="Status Mix" subtitle="Only available stock contributes to stock KPIs" data={summary.overview.statusMix} />
-                  <BarPanel title="Model Mix" subtitle="Current available stock by model" data={summary.overview.modelMix} />
-                  <BarPanel title="Dealer Split" subtitle="Dealer-level available stock" data={summary.overview.dealerSplit} />
-                  <BarPanel title="Aging Buckets" subtitle="Current stock age distribution" data={summary.overview.agingBuckets} />
-                </div>
-
-                <SectionHeading title="Stock Highlights" description="Detailed list of high value and slow moving inventory requiring attention" />
-                <div className="grid gap-6 xl:grid-cols-2">
-                  <VehicleTable title="High Value Stock" rows={summary.overview.highValue} />
-                  <VehicleTable title="Slow Moving Stock" rows={summary.overview.slowMoving} />
-                </div>
-              </>
-            ) : null}
-          </TabsContent>
-
-          <TabsContent value="models" className="mt-6 space-y-6">
-            {isLoadingSummary ? <SkeletonBlock className="h-96" /> : summary ? (
-              <>
-                <div className="grid gap-5 xl:grid-cols-3">
-                  {summary.models.cards.map((card, index) => (
-                    <Card key={card.model} className={cn(SURFACE, 'border-t-[5px]')} style={{ borderTopColor: COLORS[index % COLORS.length] }}>
-                      <CardHeader>
-                        <CardTitle className="text-xl font-black text-slate-950">{card.model}</CardTitle>
-                        <p className="text-sm font-semibold text-slate-500">{card.units} units · avg age {card.avgAge}D · {formatMoney(card.stockValue)}</p>
-                      </CardHeader>
-                      <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-                        <div>
-                          <p className="mb-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Variants</p>
-                          {card.variants.map((item) => <div key={item.name} className="mb-2 flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold"><span>{item.name}</span><span>{item.value}</span></div>)}
+            <section id="stock-aging" className="scroll-mt-24">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">01</span>Inventory aging</h2>
+                <p className="text-[15px] font-semibold text-slate-400">Stock age = days since KIN invoice. Click any band to see vehicles in it.</p>
+              </div>
+              <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                <CardContent className="space-y-4 p-7">
+                  {ageBandRows.map((band) => {
+                    const pct = availableStock ? (band.units / availableStock) * 100 : 0
+                    const showInside = pct >= 15
+                    return (
+                      <div key={band.name} className="grid grid-cols-[86px_1fr_90px] items-center gap-4">
+                        <span className="text-[15px] font-black text-slate-600">{band.name}</span>
+                        <div className="relative flex items-center h-8 rounded-md bg-slate-100 w-full overflow-hidden">
+                          <div 
+                            className="h-full rounded-md transition-all duration-500" 
+                            style={{ width: `${pct}%`, backgroundColor: band.color }} 
+                          />
+                          <span 
+                            className={cn(
+                              "absolute text-[13px] font-black transition-all duration-500",
+                              showInside 
+                                ? "left-3 text-white" 
+                                : "text-slate-700"
+                            )}
+                            style={showInside ? undefined : { left: `${pct + 3}%` }}
+                          >
+                            {band.units}
+                          </span>
                         </div>
-                        <div>
-                          <p className="mb-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Colors</p>
-                          {card.colors.map((item) => <div key={item.name} className="mb-2 flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold"><span>{item.name}</span><span>{item.value}</span></div>)}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </>
-            ) : null}
-          </TabsContent>
+                        <span className="text-right text-[15px] font-bold text-slate-400">{formatMoney(band.value)}</span>
+                      </div>
+                    )
+                  })}
+                </CardContent>
+              </Card>
+            </section>
 
-          <TabsContent value="dealers" className="mt-6">
-            {isLoadingSummary ? <SkeletonBlock className="h-96" /> : summary ? (
-              <Card className={SURFACE}>
-                <CardHeader><CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[#c5162f]">Dealer Stock Position</CardTitle></CardHeader>
-                <CardContent className="overflow-x-auto">
-                  <Table>
-                    <TableHeader><TableRow className="bg-[#071a2b] hover:bg-[#071a2b]">{['Dealer', 'Available', 'Free', 'Transit', 'Value', 'Avg Age'].map((heading) => <TableHead key={heading} className="text-white">{heading}</TableHead>)}</TableRow></TableHeader>
-                    <TableBody>
-                      {summary.dealers.rows.map((row) => (
-                        <TableRow key={row.dealer} className="text-sm">
-                          <TableCell className="font-black text-[#c5162f]">{row.dealer}</TableCell>
-                          <TableCell className="font-black">{row.total}</TableCell>
-                          <TableCell>{row.freeStock}</TableCell>
-                          <TableCell>{row.inTransit}</TableCell>
-                          <TableCell>{formatMoney(row.stockValue)}</TableCell>
-                          <TableCell>{row.avgAge}D</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
+            <section id="stock-interest" className="scroll-mt-24">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">02</span>Interest accrued to date</h2>
+                <p className="text-[15px] font-semibold text-slate-400">Floor-plan interest already spent carrying today&apos;s stock</p>
+              </div>
+              <div className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
+                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                  <CardContent className="grid gap-3 p-6 sm:grid-cols-2">
+                    {[
+                      { label: 'Interest accrued to date', value: formatMoney(interestAccrued), dark: true },
+                      { label: 'Of which on 90+ day stock', value: formatMoney(aged90Rows.reduce((sum, row) => sum + ((row.stockValue * interestRate) / 100 / 365) * row.stockAge, 0)) },
+                      { label: 'Carrying cost / month · whole lot', value: formatMoney(monthlyCarrying) },
+                      { label: 'Daily bleed · aged 90+', value: formatMoney(dailyAgedBleed) },
+                    ].map((item) => (
+                      <div key={item.label} className={cn('rounded-xl border border-[#dbe4ee] p-5', item.dark ? 'bg-[#552019] text-white' : 'bg-slate-50')}>
+                        <p className="text-[26px] font-black">{item.value}</p>
+                        <p className={cn('mt-2 text-[11px] font-black uppercase tracking-[0.1em]', item.dark ? 'text-rose-100' : 'text-slate-500')}>{item.label}</p>
+                      </div>
+                    ))}
+                    <p className="col-span-full border-t border-dashed border-slate-300 pt-3 text-[13px] font-semibold text-slate-500">
+                      At {interestRate.toFixed(2)}%/yr on {formatMoney(stockValue)} of landed stock.
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                  <CardHeader><CardTitle className="text-[18px] font-black">Interest accrued by aging band</CardTitle><CardDescription>Where the carrying cost has actually gone</CardDescription></CardHeader>
+                  <CardContent className="space-y-3">
+                    {ageBandRows.map((band) => {
+                      const value = (band.value * interestRate) / 100 / 365 * Math.max(1, band.min || 15)
+                      const pct = interestAccrued ? (value / interestAccrued) * 100 : 0
+                      const showInside = pct >= 25
+                      return (
+                        <div key={band.name} className="grid grid-cols-[70px_1fr_42px] items-center gap-3 text-[13px] font-bold">
+                          <span>{band.name}</span>
+                          <div className="relative flex items-center h-7 rounded-md bg-slate-100 w-full overflow-hidden">
+                            <div 
+                              className="h-full rounded-md transition-all duration-500" 
+                              style={{ width: `${pct}%`, backgroundColor: band.color }} 
+                            />
+                            <span 
+                              className={cn(
+                                "absolute text-[11px] font-black tracking-wider whitespace-nowrap transition-all duration-500",
+                                showInside 
+                                  ? "left-3 text-white" 
+                                  : "text-slate-700"
+                              )}
+                              style={showInside ? undefined : { left: `${pct + 2}%` }}
+                            >
+                              {formatMoney(value)}
+                            </span>
+                          </div>
+                          <span className="text-slate-400">
+                            {interestAccrued ? Math.round(pct) : 0}%
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </CardContent>
+                </Card>
+              </div>
+            </section>
+
+            <section id="stock-turns" className="scroll-mt-24">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">03</span>Inventory turns & days of supply</h2>
+                <p className="text-[15px] font-semibold text-slate-400">How fast the whole lot converts to sales</p>
+              </div>
+              <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
+                <BarPanel title="Monthly retail trend" subtitle="Units delivered by selected period" data={summary.movement.monthly.slice(0, 8).reverse().map((row) => ({ name: row.month.slice(5), value: row.retail }))} />
+                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                  <CardHeader><CardTitle className="text-[18px] font-black">Lot velocity</CardTitle><CardDescription>Run-rate from recent sales</CardDescription></CardHeader>
+                  <CardContent className="grid gap-3 sm:grid-cols-3">
+                    {[
+                      [`${daysOfSupply}d`, 'Days of supply on lot'],
+                      [soldThisMonth ? `${((soldThisMonth * 12) / Math.max(1, availableStock)).toFixed(1)}x` : '0x', 'Annualized turns'],
+                      [soldThisMonth, 'Sold · 30 days'],
+                      [summary.movement.monthly.slice(0, 3).reduce((sum, row) => sum + row.retail, 0), 'Sold · 90 days'],
+                      [summary.movement.monthly.slice(0, 12).reduce((sum, row) => sum + row.retail, 0), 'Sold · 12 months'],
+                    ].map(([value, label], index) => <div key={label} className={cn('rounded-xl border border-[#dbe4ee] p-4', index === 0 && 'bg-[#18283e] text-white')}><p className="text-[26px] font-black">{value}</p><p className="mt-2 text-[11px] font-black uppercase text-slate-500">{label}</p></div>)}
+                  </CardContent>
+                </Card>
+              </div>
+            </section>
+
+            <section id="stock-mix" className="scroll-mt-24">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">04</span>Inventory mix</h2>
+                <p className="text-[15px] font-semibold text-slate-400">What the {availableStock} units are made of</p>
+              </div>
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ['By model', stockByModel],
+                  ['By status', summary.overview.statusMix],
+                  ['By dealer', summary.overview.dealerSplit],
+                  ['By colour', summary.models.colorMix],
+                ].map(([title, items]) => (
+                  <Card key={title as string} className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                    <CardHeader><CardTitle className="text-[18px] font-black">{title as string}</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      {(items as Array<{ name: string; value: number }>).slice(0, 6).map((item) => <div key={item.name} className="grid grid-cols-[110px_1fr_30px] items-center gap-3 text-[14px]"><span className="font-semibold text-slate-500">{item.name}</span><span className="h-2 rounded-full bg-slate-100"><span className="block h-2 rounded-full bg-[#18283e]" style={{ width: `${Math.max(6, (item.value / Math.max(1, availableStock)) * 100)}%` }} /></span><span className="font-black">{item.value}</span></div>)}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+
+            <section id="stock-supply" className="scroll-mt-24">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">05</span>Days of supply — the stocking engine</h2>
+                <p className="text-[15px] font-semibold text-slate-400">Current stock ÷ daily sales rate. Healthy band 21–45 days.</p>
+              </div>
+              <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                <CardContent className="space-y-5 p-7">
+                  {modelCards.slice(0, 5).map((card) => {
+                    const supply = soldThisMonth ? Math.round((card.units / Math.max(1, soldThisMonth / 30))) : 0
+                    const statusText = supply < 21 ? 'RUNNING DRY' : supply > 90 ? 'OVERSTOCKED' : 'HEALTHY'
+                    return <div key={card.model} className="grid grid-cols-[190px_1fr_140px] items-center gap-5 border-b border-slate-200 pb-4 last:border-0"><div><p className="text-[16px] font-black text-slate-900">{card.model}</p><p className="text-[13px] font-semibold text-slate-500">{card.units} in stock</p></div><div className="relative h-3 rounded-full bg-slate-100"><span className="absolute left-[23%] top-0 h-3 w-[22%] bg-emerald-100" /><span className="absolute top-[-9px] h-8 w-1 rounded bg-[#c83d34]" style={{ left: `${Math.min(96, supply)}%` }} /></div><div className="text-right"><span className={cn('rounded-lg px-3 py-2 text-[13px] font-black', statusText === 'HEALTHY' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-[#c73b32]')}>{statusText}</span><p className="mt-2 text-[12px] font-semibold text-slate-500">{supply}d supply</p></div></div>
+                  })}
+                </CardContent>
+              </Card>
+            </section>
+
+            <section id="stock-reorder" className="scroll-mt-24">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">06</span>Reorder & clear</h2>
+                <p className="text-[15px] font-semibold text-slate-400">Where to chase supply vs. where to free up cash</p>
+              </div>
+              <div className="grid gap-5 xl:grid-cols-2">
+                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                  <CardHeader><CardTitle className="text-[18px] font-black text-emerald-700">▲ Fast movers — protect availability</CardTitle><CardDescription>Ranked by current stock concentration</CardDescription></CardHeader>
+                  <CardContent className="space-y-4">{fastestModels.map((card, index) => <div key={card.model} className="border-b border-slate-200 pb-4 last:border-0"><div className="flex justify-between"><p className="font-black"><span className="mr-3 rounded-md bg-[#18283e] px-2 py-1 text-white">{index + 1}</span>{card.model}</p><p className="font-black">{card.units} units</p></div><p className="mt-1 text-[13px] font-semibold text-slate-500">Protect availability; review fast-selling trims weekly.</p></div>)}</CardContent>
+                </Card>
+                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                  <CardHeader><CardTitle className="text-[18px] font-black text-[#c73b32]">▼ Slow movers — free the cash</CardTitle><CardDescription>High age against weak recent movement</CardDescription></CardHeader>
+                  <CardContent className="space-y-4">{slowestModels.map((card) => <div key={card.model} className="border-b border-slate-200 pb-4 last:border-0"><div className="flex justify-between"><p className="font-black">{card.model}</p><p className="font-black">{card.avgAge}d avg</p></div><p className="mt-1 text-[13px] font-semibold text-slate-500">{card.units} stock · cut fresh orders and push exchange/discount focus.</p></div>)}</CardContent>
+                </Card>
+              </div>
+            </section>
+
+            <section id="stock-aged" className="scroll-mt-24">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">07</span>Aged inventory action list — 90+ days</h2>
+                <p className="text-[15px] font-semibold text-slate-400">{aged90Rows.length} units · {formatMoney(aged90Value)} capital frozen</p>
+              </div>
+              <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                <CardContent className="overflow-x-auto p-4">
+                  <Table className="[&_td]:py-3 [&_td]:text-[14px] [&_th]:text-[12px]">
+                    <TableHeader><TableRow>{['Age', 'Model', 'Variant', 'Colour', 'VIN', 'In stock', 'Value', 'Suggested action'].map((heading) => <TableHead key={heading} className="font-black uppercase tracking-[0.08em] text-slate-500">{heading}</TableHead>)}</TableRow></TableHeader>
+                    <TableBody>{agedRows.map((row) => <TableRow key={row.rowKey}><TableCell><span className={cn('rounded-full px-3 py-1 text-white', row.stockAge > 120 ? 'bg-[#c73b32]' : 'bg-[#e17a29]')}>{row.stockAge}d</span></TableCell><TableCell className="font-black">{row.model}</TableCell><TableCell>{row.variant}</TableCell><TableCell>{row.color}</TableCell><TableCell className="font-mono text-[12px]">{row.vin || '-'}</TableCell><TableCell>{formatDate(row.grnDate || row.departureDate)}</TableCell><TableCell>{formatMoney(row.stockValue)}</TableCell><TableCell className="text-slate-500">Liquidate: max discount + exchange + staff/fleet offer</TableCell></TableRow>)}</TableBody>
                   </Table>
                 </CardContent>
               </Card>
-            ) : null}
-          </TabsContent>
+            </section>
 
-          <TabsContent value="movement" className="mt-6 space-y-6">
-            {isLoadingSummary ? <SkeletonBlock className="h-96" /> : summary ? (
-              <div className="grid gap-6 xl:grid-cols-2">
-                <BarPanel title="Daily Movement" subtitle={`${summary.context.selectedMonthLabel} by ${DATE_MODE_OPTIONS.find((item) => item.value === summary.context.dateMode)?.label}`} data={summary.movement.arrivals} />
-                <DonutPanel title="Period Status Counts" subtitle="All statuses are shown here for movement context" data={summary.movement.statusCounts} />
-                <Card className={cn(SURFACE, 'xl:col-span-2')}>
-                  <CardHeader><CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[#c5162f]">Monthly Movement</CardTitle></CardHeader>
-                  <CardContent className="overflow-x-auto">
-                    <Table>
-                      <TableHeader><TableRow className="bg-[#071a2b] hover:bg-[#071a2b]">{['Month', 'Available statuses', 'Retail', 'Transfers', 'Test Drive'].map((heading) => <TableHead key={heading} className="text-white">{heading}</TableHead>)}</TableRow></TableHeader>
-                      <TableBody>{summary.movement.monthly.map((row) => <TableRow key={row.month}><TableCell className="font-black">{row.month}</TableCell><TableCell>{row.arrivals}</TableCell><TableCell>{row.retail}</TableCell><TableCell>{row.transfers}</TableCell><TableCell>{row.testDrive}</TableCell></TableRow>)}</TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
+            <section id="stock-explorer" className="scroll-mt-24">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">08</span>Stock explorer</h2>
+                <p className="text-[15px] font-semibold text-slate-400">Filter, search and sort the live lot</p>
               </div>
-            ) : null}
-          </TabsContent>
-
-          <TabsContent value="aging" className="mt-6 space-y-6">
-            {isLoadingSummary ? <SkeletonBlock className="h-96" /> : summary ? (
-              <div className="grid gap-6 xl:grid-cols-2">
-                <BarPanel title="Aging Distribution" subtitle="Current available stock age buckets" data={summary.aging.buckets} />
-                <Card className={SURFACE}>
-                  <CardHeader><CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[#c5162f]">Oldest Average Age By Model</CardTitle></CardHeader>
-                  <CardContent className="space-y-2">
-                    {summary.aging.byModel.slice(0, 10).map((item) => <div key={item.model} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 font-bold"><span>{item.model}</span><span>{item.avgAge}D · {item.units} units</span></div>)}
-                  </CardContent>
-                </Card>
-                <div className="xl:col-span-2"><VehicleTable title="Oldest Vehicles" rows={summary.aging.rows} /></div>
-              </div>
-            ) : null}
-          </TabsContent>
-
-          <TabsContent value="reports" className="mt-6 space-y-4">
-            <Card className={SURFACE}>
-              <CardContent className="grid gap-3 p-4 md:grid-cols-[1fr_180px_180px_auto]">
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Search VIN, model, variant, customer..." className="h-12 rounded-2xl bg-white pl-11 font-semibold" />
-                </div>
-                <Select value={status} onValueChange={(value) => { setStatus(value); setPage(1) }}>
-                  <SelectTrigger className="h-12 rounded-2xl bg-white font-bold"><SelectValue placeholder="Status" /></SelectTrigger>
-                  <SelectContent><SelectItem value="all">All statuses</SelectItem>{(freshnessQuery.data?.statusOptions || []).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-                </Select>
-                <Select value={model} onValueChange={(value) => { setModel(value); setPage(1) }}>
-                  <SelectTrigger className="h-12 rounded-2xl bg-white font-bold"><SelectValue placeholder="Model" /></SelectTrigger>
-                  <SelectContent><SelectItem value="all">All models</SelectItem>{modelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-                </Select>
-                <Button onClick={handleExport} className="h-12 rounded-2xl bg-[#071a2b] font-black text-white hover:bg-[#102b46]"><Download className="mr-2 h-4 w-4" /> Export</Button>
-              </CardContent>
-            </Card>
-
-            <Card className={SURFACE}>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[#c5162f]">Purchase Report Rows</CardTitle>
-                  <p className="mt-1 text-sm font-semibold text-slate-500">10 rows per page · date mode: {DATE_MODE_OPTIONS.find((item) => item.value === dateMode)?.label}</p>
-                </div>
-                {reportQuery.isFetching ? <Loader2 className="h-5 w-5 animate-spin text-[#c5162f]" /> : null}
-              </CardHeader>
-              <CardContent>
-                {reportQuery.isLoading ? <SkeletonBlock className="h-96" /> : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <Table className="[&_td]:text-[11px] [&_td]:font-medium [&_th]:text-[10px]">
-                        <TableHeader>
-                          <TableRow className="border-b-2 border-[#071a2b] bg-white hover:bg-white">
-                            {displayedColumns.map((column) => (
-                              <TableHead key={column} className="px-4 py-2 text-[10px] font-black text-[#25303b]">
-                                <ColumnFilterDropdown
-                                  column={column}
-                                  label={toColumnLabel(column)}
-                                  uniqueValues={reportQuery.data?.uniqueValues?.[column] || []}
-                                  activeFilters={columnFilters[column] || []}
-                                  onApply={(values) => {
-                                    setColumnFilters((prev) => ({
-                                      ...prev,
-                                      [column]: values,
-                                    }))
-                                    setPage(1)
-                                  }}
-                                  onSort={(direction) => {
-                                    setReportSort(column)
-                                    setReportDirection(direction)
-                                    setPage(1)
-                                  }}
-                                  isSortedAsc={reportSort === column && reportDirection === 'asc'}
-                                  isSortedDesc={reportSort === column && reportDirection === 'desc'}
-                                />
-                              </TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {(report?.rows || []).map((row, rowIndex) => (
-                            <TableRow key={`${row.id || row.vin_no || rowIndex}-${rowIndex}`} className="odd:bg-[#f6f9fd] even:bg-white text-[12px]">
-                              {displayedColumns.map((column) => (
-                                <TableCell key={column} className="max-w-[220px] truncate font-semibold text-slate-700" title={String(row[column] ?? '')}>
-                                  {String(row[column] ?? '-')}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                          {!report?.rows?.length ? <TableRow><TableCell colSpan={displayedColumns.length || 1} className="py-10 text-center font-bold text-slate-500">No report rows found.</TableCell></TableRow> : null}
-                        </TableBody>
-                      </Table>
+              <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                <CardContent className="space-y-5 p-5">
+                  <div className="grid gap-3 xl:grid-cols-[1fr_150px_150px_auto]">
+                    <div className="relative">
+                      <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="search VIN / variant..." className="h-11 rounded-xl bg-white pl-11 font-semibold" />
                     </div>
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                      <p className="text-sm font-bold text-slate-500">Page {report?.pagination.page || 1} of {report?.pagination.totalPages || 1} · {report?.pagination.totalRows || 0} rows</p>
-                      <div className="flex gap-2">
-                        <Button variant="outline" disabled={(report?.pagination.page || 1) <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-2xl bg-white font-black">Previous</Button>
-                        <Button variant="outline" disabled={(report?.pagination.page || 1) >= (report?.pagination.totalPages || 1)} onClick={() => setPage((p) => p + 1)} className="rounded-2xl bg-white font-black">Next</Button>
+                    <Select value={status} onValueChange={(value) => { setStatus(value); setPage(1) }}><SelectTrigger className="h-11 rounded-xl bg-white font-bold"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{(freshnessQuery.data?.statusOptions || []).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
+                    <Select value={model} onValueChange={(value) => { setModel(value); setPage(1) }}><SelectTrigger className="h-11 rounded-xl bg-white font-bold"><SelectValue placeholder="Model" /></SelectTrigger><SelectContent><SelectItem value="all">All models</SelectItem>{modelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
+                    <Button onClick={handleExport} className="h-11 rounded-xl bg-[#071a2b] font-black text-white hover:bg-[#102b46]"><Download className="mr-2 h-4 w-4" /> Export</Button>
+                  </div>
+                  <p className="text-[14px] font-semibold text-slate-500">Showing {explorerRows.length} of {report?.pagination.totalRows || 0} units · {formatMoney(stockValue)} landed</p>
+                  {reportQuery.isLoading ? <SkeletonBlock className="h-96" /> : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <Table className="[&_td]:text-[13px] [&_th]:text-[11px]">
+                          <TableHeader><TableRow>{displayedColumns.map((column) => <TableHead key={column} className="border-b-2 border-slate-300 font-black uppercase tracking-[0.08em] text-slate-500"><ColumnFilterDropdown column={column} label={toColumnLabel(column)} uniqueValues={reportQuery.data?.uniqueValues?.[column] || []} activeFilters={columnFilters[column] || []} onApply={(values) => { setColumnFilters((prev) => ({ ...prev, [column]: values })); setPage(1) }} onSort={(direction) => { setReportSort(column); setReportDirection(direction); setPage(1) }} isSortedAsc={reportSort === column && reportDirection === 'asc'} isSortedDesc={reportSort === column && reportDirection === 'desc'} /></TableHead>)}</TableRow></TableHeader>
+                          <TableBody>{explorerRows.map((row, rowIndex) => <TableRow key={`${row.id || row.vin_no || rowIndex}-${rowIndex}`} className="odd:bg-[#f6f9fd] even:bg-white">{displayedColumns.map((column) => <TableCell key={column} className="max-w-[220px] truncate font-semibold text-slate-700" title={String(row[column] ?? '')}>{String(row[column] ?? '-')}</TableCell>)}</TableRow>)}{!explorerRows.length ? <TableRow><TableCell colSpan={displayedColumns.length || 1} className="py-10 text-center font-bold text-slate-500">No report rows found.</TableCell></TableRow> : null}</TableBody>
+                        </Table>
                       </div>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-bold text-slate-500">Page {report?.pagination.page || 1} of {report?.pagination.totalPages || 1}</p>
+                        <div className="flex gap-2"><Button variant="outline" disabled={(report?.pagination.page || 1) <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-2xl bg-white font-black">Previous</Button><Button variant="outline" disabled={(report?.pagination.page || 1) >= (report?.pagination.totalPages || 1)} onClick={() => setPage((p) => p + 1)} className="rounded-2xl bg-white font-black">Next</Button></div>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+          </div>
+        ) : null}
 
         {summaryQuery.error ? (
           <div className="mt-6 rounded-[1.5rem] border border-rose-200 bg-rose-50 p-4 font-bold text-rose-700">

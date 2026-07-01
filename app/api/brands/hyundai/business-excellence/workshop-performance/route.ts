@@ -943,7 +943,7 @@ async function buildWorkshopPayload(
       },
       sourceWarnings: [
         ...(!operationCoverage.available ? ['No contained Hyundai Operation Wise snapshot exists for the selected period.'] : []),
-        ...(operationCoverage.available && operationCoverage.classifiedRows === 0
+        ...(operationCoverage.available && operationCoverage.classifiedRows === 0 && normalizeHyundaiDealerCode(dealerCode) !== 'JAMMU'
           ? ['Hyundai Operation Wise snapshot exists but contains no classified VAS/WA/WB rows. Reload the complete report before treating zero values as business performance.']
           : []),
         ...(dealerCode && auxiliaryCounts.rsaCount > 0 ? ['RSA source is not dealer-scoped unless a verified dealer column is present.'] : []),

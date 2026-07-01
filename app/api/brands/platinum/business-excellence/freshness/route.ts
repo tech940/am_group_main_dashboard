@@ -36,8 +36,7 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
     {
       table: 'am_platinum_repair_order_list',
       label: 'Open RO',
-      dealerColumn: 'source_dealer_code',
-      fallbackDealerColumns: ['dealer', 'dealer_code'],
+      dealerColumn: 'dlr_no',
     },
     { table: 'am_platinum_call_center_complaints', label: 'Complaints', dealerColumn: 'source_dealer_code' },
     { table: 'am_platinum_operation_wise_analysis_report', label: 'Operation Analysis', dealerColumn: 'source_dealer_code' },
@@ -77,8 +76,7 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
   open_ro_repair_orders: [{
     table: 'am_platinum_repair_order_list',
     label: 'Open RO',
-    dealerColumn: 'source_dealer_code',
-    fallbackDealerColumns: ['dealer', 'dealer_code'],
+    dealerColumn: 'dlr_no',
   }],
   platinum_complaints: [{
     table: 'am_platinum_call_center_complaints',

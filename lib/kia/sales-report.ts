@@ -320,10 +320,7 @@ function isOpenEnquiry(row: Row) {
   return (
     !isLostEnquiry(row) &&
     !row.retail_date &&
-    !row.booking_date &&
-    !status.includes('retail') &&
-    !status.includes('booked') &&
-    !status.includes('booking')
+    !status.includes('retail')
   )
 }
 

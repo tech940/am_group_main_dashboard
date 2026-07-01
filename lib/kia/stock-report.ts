@@ -238,7 +238,7 @@ async function readCurrentRows(dealerCode: string | null) {
 
 export async function getKiaStockReportFreshness(dealerCode?: string | null): Promise<KiaStockFreshnessPayload> {
   const normalizedDealerCode = normalizeKiaDealerCode(dealerCode) || null
-  return getCachedData(`kia:stock-report:freshness:v1:${normalizedDealerCode || 'all'}`, async () => {
+  return getCachedData(`kia:stock-report:freshness:v2:${normalizedDealerCode || 'all'}`, async () => {
     const [summaryRow, monthRows, dealerRows, statusRows] = await Promise.all([
       analyticsDb.execute(sql`
         SELECT COUNT(*)::int AS row_count, MIN(${DATE_SQL}) AS min_date, MAX(${DATE_SQL}) AS max_date, MAX(uploaded_at) AS source_updated_at
@@ -298,7 +298,7 @@ export async function getKiaStockReportSummary(input: {
   const fallback = await latestMonthFallback()
   const context = resolveDateContext(input, fallback)
   const dateMode = normalizeDateMode(input.dateMode)
-  const cacheKey = `kia:stock-report:summary:v2:${context.key}:${dealerCode || 'all'}:${dateMode}`
+  const cacheKey = `kia:stock-report:summary:v3:${dealerCode || 'all'}`
   return getCachedData(cacheKey, async () => {
     const currentRows = await readCurrentRows(dealerCode)
     const currentVehicles = currentRows.map(normalizeVehicle)
@@ -471,12 +471,7 @@ function normalizeRowForOutput(row: Row, columns: string[]) {
 }
 
 async function readReportRows(input: {
-  year?: number | null
-  month?: number | null
-  startDate?: string | null
-  endDate?: string | null
   dealerCode?: string | null
-  dateMode?: string | null
   status?: string | null
   model?: string | null
   search?: string | null
@@ -484,33 +479,34 @@ async function readReportRows(input: {
   direction?: string | null
 }) {
   const columns = await analyticsTableColumns(TABLE)
-  const fallback = await latestMonthFallback()
-  const context = resolveDateContext(input, fallback)
-  const dateMode = normalizeDateMode(input.dateMode)
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
-  const sortColumn = normalizeSortColumn(input.sort, columns, dateMode)
+  const sortColumn = normalizeSortColumn(input.sort, columns, 'grn_date')
   const direction = sortDirection(input.direction)
   const filteredRows = rows(await analyticsDb.execute(sql`
+    WITH latest AS (
+      SELECT DISTINCT ON (COALESCE(NULLIF(TRIM(vin_no), ''), id::text))
+        *,
+        ${DEALER_SQL} AS dealer_code,
+        ${VALUE_SQL} AS stock_value,
+        GREATEST((CURRENT_DATE - COALESCE(grn_date, departure_date, order_date, CURRENT_DATE))::int, 0) AS age_days
+      FROM ${sql.raw(TABLE)}
+      WHERE COALESCE(NULLIF(TRIM(vin_no), ''), id::text) IS NOT NULL
+        ${dealerClause(dealerCode)}
+      ORDER BY COALESCE(NULLIF(TRIM(vin_no), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
+    )
     SELECT *
-    FROM ${sql.raw(TABLE)}
-    WHERE TRUE
-      ${dealerClause(dealerCode)}
-      ${dateClause(dateMode, context.startDate, context.endDateExclusive)}
+    FROM latest
+    WHERE ${AVAILABLE_STATUS_SQL}
       ${selectedFiltersClause(input)}
       ${searchClause(safeText(input.search))}
     ORDER BY ${sql.raw(sortColumn)} ${sql.raw(direction)}, id DESC
     LIMIT 20000
   `))
-  return { columns, rows: filteredRows, context, sortColumn, direction }
+  return { columns, rows: filteredRows, sortColumn, direction }
 }
 
 export async function getKiaStockReportTable(input: {
-  year?: number | null
-  month?: number | null
-  startDate?: string | null
-  endDate?: string | null
   dealerCode?: string | null
-  dateMode?: string | null
   status?: string | null
   model?: string | null
   search?: string | null
@@ -522,7 +518,7 @@ export async function getKiaStockReportTable(input: {
 }): Promise<KiaStockReportPayload> {
   const page = normalizePage(input.page, 1)
   const pageSize = Math.min(100, normalizePage(input.pageSize, 10))
-  const cacheKey = `kia:stock-report:table:v2:${JSON.stringify({ ...input, page, pageSize })}`
+  const cacheKey = `kia:stock-report:table:v3:${JSON.stringify({ ...input, page, pageSize })}`
   return getCachedData(cacheKey, async () => {
     const { filters: _filters, ...readInput } = input
     const { columns, rows: fetchedRows } = await readReportRows(readInput)
@@ -574,12 +570,7 @@ function escapeCsvCell(value: unknown) {
 }
 
 export async function getKiaStockReportCsv(input: {
-  year?: number | null
-  month?: number | null
-  startDate?: string | null
-  endDate?: string | null
   dealerCode?: string | null
-  dateMode?: string | null
   status?: string | null
   model?: string | null
   search?: string | null
@@ -588,7 +579,7 @@ export async function getKiaStockReportCsv(input: {
   filters?: Record<string, string[]> | null
 }): Promise<KiaStockCsvPayload> {
   const { filters: _csvFilters, ...readCsvInput } = input
-  const { columns, rows: fetchedRows, context } = await readReportRows(readCsvInput)
+  const { columns, rows: fetchedRows } = await readReportRows(readCsvInput)
   let filteredRows = fetchedRows
   if (input.filters && Object.keys(input.filters).length > 0) {
     filteredRows = fetchedRows.filter((row) => {
@@ -602,7 +593,7 @@ export async function getKiaStockReportCsv(input: {
   }
   const outputRows = filteredRows.map((row) => normalizeRowForOutput(row, columns))
   return {
-    fileName: `kia-stock-report-${context.key.replace(/:/g, '_')}.csv`,
+    fileName: `kia-stock-report-${new Date().toISOString().slice(0, 10)}.csv`,
     content: [
       columns.map(escapeCsvCell).join(','),
       ...outputRows.map((row) => columns.map((column) => escapeCsvCell(row[column])).join(',')),

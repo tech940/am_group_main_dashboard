@@ -145,8 +145,7 @@ async function fetchIntake(startDate: string, endDate: string, dealerCode: Deale
 
       SELECT
         COALESCE(${platinumSourceDealerSql(
-          sql.raw('source_dealer_code'),
-          [sql.raw('dealer')],
+          sql.raw('dlr_no')
         )}, 'UNMAPPED') || ':' || COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text) AS ro_key,
         r_o_date::date AS report_date,
         ${serviceCategorySql('work_type')} AS category,
@@ -158,8 +157,7 @@ async function fetchIntake(startDate: string, endDate: string, dealerCode: Deale
         AND LOWER(COALESCE(r_o_status, '')) = 'open'
         ${platinumSourceDealerFilter(
           dealerCode,
-          sql.raw('source_dealer_code'),
-          [sql.raw('dealer')],
+          sql.raw('dlr_no')
         )}
     ),
     dedup AS (
@@ -252,8 +250,7 @@ async function fetchPending(endDate: string, dealerCode: DealerFilter) {
     WITH latest AS (
       SELECT DISTINCT ON (
         COALESCE(${platinumSourceDealerSql(
-          sql.raw('source_dealer_code'),
-          [sql.raw('dealer')],
+          sql.raw('dlr_no')
         )}, 'UNMAPPED'),
         COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text)
       )
@@ -265,13 +262,11 @@ async function fetchPending(endDate: string, dealerCode: DealerFilter) {
         AND LOWER(COALESCE(r_o_status, '')) = 'open'
         ${platinumSourceDealerFilter(
           dealerCode,
-          sql.raw('source_dealer_code'),
-          [sql.raw('dealer')],
+          sql.raw('dlr_no')
         )}
       ORDER BY
         COALESCE(${platinumSourceDealerSql(
-          sql.raw('source_dealer_code'),
-          [sql.raw('dealer')],
+          sql.raw('dlr_no')
         )}, 'UNMAPPED'),
         COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text),
         uploaded_at DESC NULLS LAST,

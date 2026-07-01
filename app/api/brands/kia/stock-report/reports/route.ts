@@ -8,20 +8,7 @@ import { getKiaStockReportCsv, getKiaStockReportTable } from '@/lib/kia/stock-re
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-function parseYear(value: string | null) {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed >= 2000 ? Math.floor(parsed) : null
-}
 
-function parseMonthIndex(value: string | null) {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 12) return null
-  return Math.floor(parsed) - 1
-}
-
-function parseDate(value: string | null) {
-  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null
-}
 
 function isKiaStockReportRoleAllowed(role: string | null | undefined) {
   return role === 'super_admin' || role === 'md'
@@ -56,12 +43,7 @@ export async function GET(request: Request) {
     }
 
     const params = {
-      year: parseYear(url.searchParams.get('year')),
-      month: parseMonthIndex(url.searchParams.get('month')),
-      startDate: parseDate(url.searchParams.get('startDate')),
-      endDate: parseDate(url.searchParams.get('endDate')),
       dealerCode: url.searchParams.get('dealer_code'),
-      dateMode: url.searchParams.get('dateMode'),
       status: url.searchParams.get('status'),
       model: url.searchParams.get('model'),
       search: url.searchParams.get('search'),

@@ -29,7 +29,7 @@ const FILTER_COLUMNS = {
 } as const
 
 type AnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
-type AnalysisView = 'table' | 'trend' | 'fy' | 'analytics' | 'revenue' | 'leaderboard'
+type AnalysisView = 'table' | 'trend' | 'fy' | 'analytics' | 'revenue' | 'leaderboard' | 'technician'
 type DataRow = Record<string, unknown>
 type PeriodKey = 'td' | 'mtd' | 'qtd' | 'ytd'
 
@@ -541,6 +541,17 @@ type AdvisorLeaderboardRow = {
   contribution: number
 }
 
+type TechnicianReportRow = {
+  name: string
+  dealer_code: string
+  load: number
+  labour: number
+  labour_disc: number
+  labour_per_ro: number
+  discount_per_ro: number
+  discount_pct: number
+}
+
 type CancelledBillingRow = {
   billKey: string
   billNo: string
@@ -1037,6 +1048,81 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
   }))
 }
 
+async function fetchTechnicianReportRows(
+  startDate: Date,
+  endDate: Date,
+  dealerCode: DealerFilter = null,
+): Promise<TechnicianReportRow[]> {
+  const result = await db.execute(sql`
+    WITH dedup AS (
+      SELECT
+        technician AS name,
+        dealer_code,
+        bill_key,
+        (ARRAY_AGG(labour_amt ORDER BY ABS(labour_amt) DESC))[1] AS labour_amt,
+        (ARRAY_AGG(labour_disc ORDER BY ABS(labour_disc) DESC))[1] AS labour_disc
+      FROM (
+        SELECT
+          COALESCE(NULLIF(technician, ''), 'Unspecified') AS technician,
+          COALESCE(NULLIF(dealer_code, ''), 'Unspecified') AS dealer_code,
+          COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
+          COALESCE(labour_amt, 0)::numeric AS labour_amt,
+          (CASE WHEN TRIM(labour_disc) ~ '^-?[0-9]+(\.[0-9]+)?$' THEN TRIM(labour_disc)::numeric ELSE 0 END) AS labour_disc
+        FROM ro_billing_report
+        WHERE bill_date >= ${toDateInputValue(startDate)}::date
+          AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
+          AND ${activeBillStatusSql()}
+          AND ${activeServiceCategoryFilter()}
+          ${roBillingDealerFilter(dealerCode)}
+      ) base
+      GROUP BY technician, dealer_code, bill_key
+    ),
+    technician_totals AS (
+      SELECT
+        name,
+        dealer_code,
+        COUNT(DISTINCT bill_key)::int AS load,
+        COALESCE(SUM(labour_amt), 0)::float AS labour,
+        COALESCE(SUM(labour_disc), 0)::float AS labour_disc
+      FROM dedup
+      WHERE name <> 'Unspecified'
+      GROUP BY name, dealer_code
+    )
+    SELECT
+      name,
+      dealer_code,
+      load,
+      labour,
+      labour_disc,
+      CASE WHEN load > 0 THEN labour / load ELSE 0 END::float AS labour_per_ro,
+      CASE WHEN load > 0 THEN labour_disc / load ELSE 0 END::float AS discount_per_ro,
+      CASE WHEN labour > 0 THEN (labour_disc / labour) * 100 ELSE 0 END::float AS discount_pct
+    FROM technician_totals
+    ORDER BY dealer_code ASC, labour DESC, load DESC, name ASC
+    LIMIT 1000
+  `)
+
+  return ((result as unknown as Array<{
+    name: string
+    dealer_code: string
+    load: number
+    labour: number
+    labour_disc: number
+    labour_per_ro: number
+    discount_per_ro: number
+    discount_pct: number
+  }>) || []).map((row) => ({
+    name: row.name || 'Unspecified',
+    dealer_code: row.dealer_code || 'Unspecified',
+    load: numberValue(row.load),
+    labour: numberValue(row.labour),
+    labour_disc: numberValue(row.labour_disc),
+    labour_per_ro: numberValue(row.labour_per_ro),
+    discount_per_ro: numberValue(row.discount_per_ro),
+    discount_pct: numberValue(row.discount_pct),
+  }))
+}
+
 async function resolveTdAnchorDate(endDate: Date) {
   return startOfDay(endDate)
 }
@@ -1170,7 +1256,9 @@ async function fetchRows({ startDate, endDate, dealerCode }: { startDate?: Date;
           bill_status,
           pick_drop,
           avg_rating,
-          uploaded_at
+          uploaded_at,
+          labour_disc,
+          dealer_code
         FROM ro_billing_report
         WHERE bill_date BETWEEN ${toDateInputValue(startDate!)}::date AND ${toDateInputValue(endDate!)}::date
           AND ${activeBillStatusSql()}
@@ -1194,7 +1282,9 @@ async function fetchRows({ startDate, endDate, dealerCode }: { startDate?: Date;
           bill_status,
           pick_drop,
           avg_rating,
-          uploaded_at
+          uploaded_at,
+          labour_disc,
+          dealer_code
         FROM ro_billing_report
         WHERE bill_date IS NOT NULL
           AND ${activeBillStatusSql()}
@@ -1354,7 +1444,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Invalid analysis type' }, { status: 400 })
     }
 
-    if (!['table', 'trend', 'fy', 'analytics', 'revenue', 'leaderboard'].includes(view)) {
+    if (!['table', 'trend', 'fy', 'analytics', 'revenue', 'leaderboard', 'technician'].includes(view)) {
       return NextResponse.json({ error: 'Invalid analysis view' }, { status: 400 })
     }
 
@@ -1526,6 +1616,18 @@ export async function GET(request: Request) {
           advisorLeaderboard,
         }
       }
+      if (view === 'technician' && groupBy === 'work_type' && !hasFilters) {
+        const technicianReport = await timer.time('technician-report-sql-summary', () => fetchTechnicianReportRows(startDate, endDate, dealerCode))
+        return {
+          ...baseFastResponse,
+          rowCounts: {
+            totalRows: 0,
+            rowsWithBillDate: 0,
+            filteredRows: technicianReport.length,
+          },
+          technicianReport,
+        }
+      }
       if (view === 'fy' && groupBy === 'work_type' && !hasFilters) {
         const aggregateRows = await timer.time('fy-trend-sql-summary', () => fetchFiscalAggregateRows(dealerCode))
         if (batchMetrics) {
@@ -1663,6 +1765,49 @@ export async function GET(request: Request) {
             })
             .sort((a, b) => b.revenue - a.revenue || b.load - a.load || a.name.localeCompare(b.name))
             .slice(0, 100),
+        }
+      }
+      if (view === 'technician') {
+        const technicianBuckets = new Map<string, { load: Set<string>; labour: number; labourDisc: number; dealerCode: string }>()
+        filteredRows.forEach((row) => {
+          const date = parseBillDate(row)
+          if (!date || !inWindow(date, startDate, endDate)) return
+          const tech = row.technician as string || 'Unspecified'
+          if (tech === 'Unspecified') return
+          const dealer = row.dealer_code as string || 'Unspecified'
+          const billKey = String(row.bill_no || row.ro_no || row.id || '')
+          if (!billKey) return
+
+          const key = `${tech}::${dealer}`
+          if (!technicianBuckets.has(key)) {
+            technicianBuckets.set(key, { load: new Set<string>(), labour: 0, labourDisc: 0, dealerCode: dealer })
+          }
+          const bucket = technicianBuckets.get(key)!
+          bucket.load.add(billKey)
+          bucket.labour += Number(row.labour_amt || 0)
+          bucket.labourDisc += Number(row.labour_disc || 0)
+        })
+
+        return {
+          ...baseResponse,
+          technicianReport: Array.from(technicianBuckets.entries())
+            .map(([key, bucket]) => {
+              const [name] = key.split('::')
+              const load = bucket.load.size
+              const labour = bucket.labour
+              const labourDisc = bucket.labourDisc
+              return {
+                name,
+                dealer_code: bucket.dealerCode,
+                load,
+                labour,
+                labour_disc: labourDisc,
+                labour_per_ro: load > 0 ? labour / load : 0,
+                discount_per_ro: load > 0 ? labourDisc / load : 0,
+                discount_pct: labour > 0 ? (labourDisc / labour) * 100 : 0,
+              }
+            })
+            .sort((a, b) => a.dealer_code.localeCompare(b.dealer_code) || b.labour - a.labour || a.name.localeCompare(b.name))
         }
       }
 

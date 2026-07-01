@@ -2388,7 +2388,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
 // Wrapper component that uses pre-fetched data or fetches if not available
 type ROAnalysisType = 'load' | 'labour' | 'parts' | 'lab_per_veh' | 'part_per_veh'
-type ROAnalysisView = 'table' | 'trend' | 'calendar' | 'fy' | 'analytics' | 'revenue' | 'leaderboard' | 'intelligence'
+type ROAnalysisView = 'table' | 'trend' | 'calendar' | 'fy' | 'analytics' | 'revenue' | 'leaderboard' | 'intelligence' | 'technician'
 type DailyProgressMetric = 'all' | 'revenue' | 'labour' | 'parts' | 'load'
 type PeriodKey = 'td' | 'mtd' | 'qtd' | 'ytd'
 
@@ -2400,6 +2400,17 @@ type SalesLeaderboardRow = {
   revenue: number
   averageBilling: number
   contribution: number
+}
+
+type TechnicianReportRow = {
+  name: string
+  dealer_code: string
+  load: number
+  labour: number
+  labour_disc: number
+  labour_per_ro: number
+  discount_per_ro: number
+  discount_pct: number
 }
 
 type ROAnalysisMetric = {
@@ -2462,6 +2473,7 @@ type ROAnalysisResponse = {
   fyTrends: Array<{ fy: string; value: number }>
   distribution: Array<{ name: string; value: number }>
   advisorLeaderboard?: SalesLeaderboardRow[]
+  technicianReport?: TechnicianReportRow[]
   byMetric?: Partial<Record<ROAnalysisType, ROAnalysisResponse>>
   cancelledSummary?: CancelledBillingSummary
   filterOptions: Record<string, string[]>
@@ -5439,6 +5451,7 @@ function ServiceTypePerformance({
   const [serverFyByMetric, setServerFyByMetric] = useState<Partial<Record<ROAnalysisType, ROAnalysisResponse>>>({})
   const [serverAnalyticsSummary, setServerAnalyticsSummary] = useState<ROAnalysisResponse['analyticsSummary'] | null>(null)
   const [serverLeaderboard, setServerLeaderboard] = useState<SalesLeaderboardRow[]>([])
+  const [serverTechnicianReport, setServerTechnicianReport] = useState<TechnicianReportRow[]>([])
   const [cancelledSummary, setCancelledSummary] = useState<CancelledBillingSummary | null>(null)
   const [isServerViewLoading, setIsServerViewLoading] = useState(false)
   const [isServerTableLoading, setIsServerTableLoading] = useState(true)
@@ -5727,7 +5740,7 @@ function ServiceTypePerformance({
     }
   }, [convertServerTableRows, dateFilter, dealerCode, derivePerVehicleRows, queryClient, roAnalysisTypes])
 
-  const fetchAnalysisSummary = useCallback(async (analysisType: ROAnalysisType, view: 'trend' | 'fy' | 'analytics' | 'leaderboard') => {
+  const fetchAnalysisSummary = useCallback(async (analysisType: ROAnalysisType, view: 'trend' | 'fy' | 'analytics' | 'leaderboard' | 'technician') => {
     const range = view === 'trend' ? getROTrendDateRange(dateFilter) : getDefaultRODateRange(dateFilter)
     const params = new URLSearchParams({
       brand: 'kia',
@@ -5783,7 +5796,7 @@ function ServiceTypePerformance({
   useEffect(() => {
     let isActive = true
     async function fetchActiveSummaryView() {
-      if (viewMode !== 'trend' && !showRoCalendarDialog && viewMode !== 'fy' && viewMode !== 'analytics' && viewMode !== 'leaderboard') return
+      if (viewMode !== 'trend' && !showRoCalendarDialog && viewMode !== 'fy' && viewMode !== 'analytics' && viewMode !== 'leaderboard' && viewMode !== 'technician') return
       try {
         setIsServerViewLoading(true)
         if (viewMode === 'trend' || showRoCalendarDialog) {
@@ -5807,7 +5820,7 @@ function ServiceTypePerformance({
               ...prev,
               ...(trendBundle.byMetric || {}),
             }))
-            setServerAnalyticsSummary(analyticsResult.analyticsSummary || null)
+        setServerAnalyticsSummary(analyticsResult.analyticsSummary || null)
           }
           return
         }
@@ -5816,6 +5829,14 @@ function ServiceTypePerformance({
           const result = await fetchAnalysisSummary('load', 'leaderboard')
           if (isActive) {
             setServerLeaderboard(result.advisorLeaderboard || [])
+          }
+          return
+        }
+
+        if (viewMode === 'technician') {
+          const result = await fetchAnalysisSummary('load', 'technician')
+          if (isActive) {
+            setServerTechnicianReport(result.technicianReport || [])
           }
           return
         }
@@ -7445,6 +7466,17 @@ function ServiceTypePerformance({
                 <Users className="h-3.5 w-3.5" /> Leaderboard
               </button>
               <button
+                onClick={() => setViewMode('technician')}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
+                  viewMode === 'technician'
+                    ? "app-primary-action"
+                    : "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <Users className="h-3.5 w-3.5" /> Technician
+              </button>
+              <button
                 onClick={() => setViewMode('intelligence')}
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition-all",
@@ -8097,6 +8129,155 @@ function ServiceTypePerformance({
                             </tr>
                             )
                           })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : viewMode === 'technician' ? (
+              <div className="bg-slate-50 p-6 lg:p-8">
+                <div className="mb-6 rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Service Team Performance</p>
+                      <h3 className="text-2xl font-black tracking-tight text-slate-950">Technician Wise Load + Labour Report</h3>
+                      <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
+                        Detailed summary of repair orders opened, labour revenue generated, discounts given, and averages per repair order.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {isServerViewLoading && serverTechnicianReport.length === 0 ? (
+                  <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
+                    <div className="mb-5 h-7 w-72 animate-pulse rounded-full bg-slate-100" />
+                    <div className="space-y-3">
+                      {Array.from({ length: 8 }).map((_, index) => (
+                        <div key={index} className="grid grid-cols-[72px_1fr_1.5fr_repeat(6,1fr)] gap-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+                          {Array.from({ length: 9 }).map((__, cellIndex) => (
+                            <div key={cellIndex} className="h-5 animate-pulse rounded-full bg-slate-200/80" />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : serverTechnicianReport.length === 0 ? (
+                  <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center shadow-xl shadow-slate-200/50">
+                    <Users className="mx-auto mb-4 h-10 w-10 text-slate-300" />
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-400">No technician data available for this date window.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
+                    <div className="max-h-[720px] overflow-auto">
+                      <table className="w-full min-w-[1100px] border-collapse text-left">
+                        <thead className="sticky top-0 z-10 bg-slate-900 text-white">
+                          <tr>
+                            {[
+                              'SR. NO.',
+                              'Outlet Name',
+                              'Technician name',
+                              'Repair Order Opened',
+                              'Labour Revenue Generated',
+                              'Labour Discount Given',
+                              'Labour per RO',
+                              'Labour Discount Per RO',
+                              '%age Labour Discount'
+                            ].map((heading) => (
+                              <th key={heading} className="px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white border-b border-slate-700">
+                                {heading}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {(() => {
+                            const groups: Record<string, TechnicianReportRow[]> = {}
+                            serverTechnicianReport.forEach((row) => {
+                              const outlet = row.dealer_code || 'Unknown'
+                              if (!groups[outlet]) groups[outlet] = []
+                              groups[outlet].push(row)
+                            })
+
+                            const outlets = Object.keys(groups).sort()
+                            let serialNum = 1
+
+                            let grandTotalLoad = 0
+                            let grandTotalLabour = 0
+                            let grandTotalDiscount = 0
+
+                            const rowsJSX: React.ReactNode[] = []
+
+                            outlets.forEach((outlet) => {
+                              const techs = [...groups[outlet]].sort((a, b) => b.labour - a.labour)
+
+                              let subTotalLoad = 0
+                              let subTotalLabour = 0
+                              let subTotalDiscount = 0
+
+                              techs.forEach((tech) => {
+                                subTotalLoad += tech.load
+                                subTotalLabour += tech.labour
+                                subTotalDiscount += tech.labour_disc
+
+                                grandTotalLoad += tech.load
+                                grandTotalLabour += tech.labour
+                                grandTotalDiscount += tech.labour_disc
+
+                                rowsJSX.push(
+                                  <tr key={`tech-${tech.name}-${tech.dealer_code}`} className="transition hover:bg-slate-50/80">
+                                    <td className="px-4 py-3 text-xs font-semibold text-slate-500">{serialNum++}</td>
+                                    <td className="px-4 py-3 text-xs font-black text-slate-950">{outlet}</td>
+                                    <td className="px-4 py-3 text-xs font-bold text-slate-900">{tech.name}</td>
+                                    <td className="px-4 py-3 text-xs font-mono font-bold text-slate-800">{tech.load.toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono font-bold text-slate-900">{Math.round(tech.labour).toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono text-slate-600">{Math.round(tech.labour_disc).toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono text-slate-700">{Math.round(tech.labour_per_ro).toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono text-slate-600">{Math.round(tech.discount_per_ro).toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono font-bold text-slate-900">{Math.round(tech.discount_pct)}%</td>
+                                  </tr>
+                                )
+                              })
+
+                              const subTotalLabPerRo = subTotalLoad > 0 ? subTotalLabour / subTotalLoad : 0
+                              const subTotalDiscPerRo = subTotalLoad > 0 ? subTotalDiscount / subTotalLoad : 0
+                              const subTotalDiscPct = subTotalLabour > 0 ? (subTotalDiscount / subTotalLabour) * 100 : 0
+
+                              rowsJSX.push(
+                                <tr key={`subtotal-${outlet}`} className="bg-slate-100 border-y border-slate-200/80 font-black">
+                                  <td className="px-4 py-3 text-xs"></td>
+                                  <td className="px-4 py-3 text-xs text-slate-950 font-black">{outlet}</td>
+                                  <td className="px-4 py-3 text-xs text-slate-950 font-black">{outlet} Sub Total</td>
+                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{subTotalLoad.toLocaleString('en-IN')}</td>
+                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalLabour).toLocaleString('en-IN')}</td>
+                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalDiscount).toLocaleString('en-IN')}</td>
+                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalLabPerRo).toLocaleString('en-IN')}</td>
+                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalDiscPerRo).toLocaleString('en-IN')}</td>
+                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalDiscPct)}%</td>
+                                </tr>
+                              )
+                            })
+
+                            const grandLabPerRo = grandTotalLoad > 0 ? grandTotalLabour / grandTotalLoad : 0
+                            const grandDiscPerRo = grandTotalLoad > 0 ? grandTotalDiscount / grandTotalLoad : 0
+                            const grandDiscPct = grandTotalLabour > 0 ? (grandTotalDiscount / grandTotalLabour) * 100 : 0
+
+                            rowsJSX.push(
+                              <tr key="grand-total" className="bg-slate-200 border-t-2 border-slate-300 font-black text-slate-950">
+                                <td className="px-4 py-3 text-xs">TOTAL</td>
+                                <td className="px-4 py-3 text-xs">Total</td>
+                                <td className="px-4 py-3 text-xs">Total</td>
+                                <td className="px-4 py-3 text-xs font-mono">{grandTotalLoad.toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandTotalLabour).toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandTotalDiscount).toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandLabPerRo).toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandDiscPerRo).toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandDiscPct)}%</td>
+                              </tr>
+                            )
+
+                            return rowsJSX
+                          })()}
                         </tbody>
                       </table>
                     </div>

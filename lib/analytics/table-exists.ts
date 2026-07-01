@@ -25,5 +25,18 @@ const readAnalyticsTableExists = unstable_cache(
 )
 
 export async function analyticsTableExists(tableName: string) {
-  return await readAnalyticsTableExists(tableName)
+  try {
+    return await readAnalyticsTableExists(tableName)
+  } catch (err: any) {
+    if (err?.message?.includes('incrementalCache missing')) {
+      const normalized = tableName.trim()
+      if (!normalized) return false
+      const result = await db.execute(sql`
+        SELECT to_regclass(${`public.${normalized}`}) IS NOT NULL AS exists
+      `)
+      if (!Array.isArray(result)) return false
+      return Boolean((result[0] as ExistsRow | undefined)?.exists)
+    }
+    throw err
+  }
 }
