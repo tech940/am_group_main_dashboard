@@ -201,6 +201,7 @@ export type SalesReportListPayload = {
   columns: string[]
   defaultVisibleColumns: string[]
   rows: Record<string, unknown>[]
+  uniqueValues: Record<string, string[]>
   pagination: {
     page: number
     pageSize: number

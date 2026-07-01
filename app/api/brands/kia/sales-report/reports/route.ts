@@ -46,6 +46,14 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url)
+    const filters: Record<string, string[]> = {}
+    for (const [key, value] of url.searchParams.entries()) {
+      if (key.startsWith('filter_') && value) {
+        const columnName = key.slice(7)
+        filters[columnName] = value.split(',').map(decodeURIComponent)
+      }
+    }
+
     const params = {
       report: url.searchParams.get('report'),
       year: parseYear(url.searchParams.get('year')),
@@ -59,6 +67,7 @@ export async function GET(request: Request) {
       search: url.searchParams.get('search'),
       sort: url.searchParams.get('sort'),
       direction: url.searchParams.get('direction'),
+      filters,
     }
 
     if (url.searchParams.get('format') === 'csv') {

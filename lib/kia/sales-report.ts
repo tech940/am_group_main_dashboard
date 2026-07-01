@@ -1343,6 +1343,7 @@ export async function getKiaSalesReportTable(input: {
   direction?: string | null
   page?: string | null
   pageSize?: string | null
+  filters?: Record<string, string[]> | null
 }) {
   const report = normalizeReportKey(input.report)
   const config = TABLES[report]
@@ -1378,7 +1379,33 @@ export async function getKiaSalesReportTable(input: {
     WHERE ${whereSql}
   `)
   const dedupedRows = dedupeRows(config, resultRows(rows))
-  const sortedRows = sortRows(dedupedRows, sortColumn, direction)
+
+  // Extract unique values from dedupedRows for each column before filters are applied
+  const uniqueValues: Record<string, string[]> = {}
+  for (const col of columns) {
+    const valuesSet = new Set<string>()
+    for (const row of dedupedRows) {
+      const rawVal = row[col]
+      const val = rawVal === null || rawVal === undefined ? '' : String(rawVal).trim()
+      valuesSet.add(val)
+    }
+    uniqueValues[col] = Array.from(valuesSet).sort((a, b) => a.localeCompare(b))
+  }
+
+  // Apply column-level filters
+  let filteredRows = dedupedRows
+  if (input.filters && Object.keys(input.filters).length > 0) {
+    filteredRows = dedupedRows.filter((row) => {
+      return Object.entries(input.filters!).every(([col, selectedVals]) => {
+        if (!selectedVals || selectedVals.length === 0) return true
+        const rawVal = row[col]
+        const val = rawVal === null || rawVal === undefined ? '' : String(rawVal).trim()
+        return selectedVals.includes(val)
+      })
+    })
+  }
+
+  const sortedRows = sortRows(filteredRows, sortColumn, direction)
   const totalRows = sortedRows.length
   const pagedRows = sortedRows
     .slice(offset, offset + pageSize)
@@ -1390,6 +1417,7 @@ export async function getKiaSalesReportTable(input: {
     columns,
     defaultVisibleColumns: config.defaultVisibleColumns.filter((column) => columns.includes(column)),
     rows: pagedRows,
+    uniqueValues,
     pagination: {
       page,
       pageSize,
@@ -1412,6 +1440,7 @@ export async function getKiaSalesReportCsv(input: {
   search?: string | null
   sort?: string | null
   direction?: string | null
+  filters?: Record<string, string[]> | null
 }) {
   const report = normalizeReportKey(input.report)
   const config = TABLES[report]
@@ -1442,7 +1471,22 @@ export async function getKiaSalesReportCsv(input: {
     WHERE ${whereSql}
     LIMIT 20000
   `)
-  const normalizedRows = sortRows(dedupeRows(config, resultRows(rows)), sortColumn, direction)
+  const dedupedRows = dedupeRows(config, resultRows(rows))
+
+  // Apply column-level filters
+  let filteredRows = dedupedRows
+  if (input.filters && Object.keys(input.filters).length > 0) {
+    filteredRows = dedupedRows.filter((row) => {
+      return Object.entries(input.filters!).every(([col, selectedVals]) => {
+        if (!selectedVals || selectedVals.length === 0) return true
+        const rawVal = row[col]
+        const val = rawVal === null || rawVal === undefined ? '' : String(rawVal).trim()
+        return selectedVals.includes(val)
+      })
+    })
+  }
+
+  const normalizedRows = sortRows(filteredRows, sortColumn, direction)
     .map((row) => normalizeRowForOutput(row, columns))
   const csvLines = [
     columns.map(escapeCsvCell).join(','),

@@ -814,6 +814,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   const [teamPage, setTeamPage] = useState(1)
   const [heatmapPage, setHeatmapPage] = useState(1)
   const [expandedReportColumns, setExpandedReportColumns] = useState(REPORT_EXPANDED_DEFAULTS)
+  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({})
 
   const deferredReportSearch = useDeferredValue(reportSearch)
   const deferredLostSearch = useDeferredValue(lostSearch)
@@ -885,21 +886,31 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
       reportDirection,
       reportPage,
       reportPageSize,
+      columnFilters,
     ],
     enabled: periodReady && activeTab === 'reports' && summaryQuery.isSuccess,
-    queryFn: () => fetchReportJson<SalesReportListPayload>(`/api/brands/kia/sales-report/reports?${buildQueryString({
-      report: activeReport,
-      ...periodQueryParams,
-      dealer_code: selectedDealerCode,
-      source: reportSource,
-      model: reportModel,
-      consultant: reportConsultant,
-      search: deferredReportSearch,
-      sort: reportSort,
-      direction: reportDirection,
-      page: reportPage,
-      pageSize: reportPageSize,
-    })}`, 'kia-sales-report-reports', 25000),
+    queryFn: () => {
+      const filterParams: Record<string, string> = {}
+      Object.entries(columnFilters).forEach(([col, vals]) => {
+        if (vals && vals.length > 0) {
+          filterParams[`filter_${col}`] = vals.map(encodeURIComponent).join(',')
+        }
+      })
+      return fetchReportJson<SalesReportListPayload>(`/api/brands/kia/sales-report/reports?${buildQueryString({
+        report: activeReport,
+        ...periodQueryParams,
+        dealer_code: selectedDealerCode,
+        source: reportSource,
+        model: reportModel,
+        consultant: reportConsultant,
+        search: deferredReportSearch,
+        sort: reportSort,
+        direction: reportDirection,
+        page: reportPage,
+        pageSize: reportPageSize,
+        ...filterParams,
+      })}`, 'kia-sales-report-reports', 25000)
+    },
     staleTime: 2 * 60 * 1000,
     gcTime: 20 * 60 * 1000,
     retry: 1,
@@ -907,6 +918,12 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     refetchOnReconnect: false,
     placeholderData: (previousData) => previousData,
   })
+
+  // Reset column filters when active report tab, date, or dealer changes
+  useEffect(() => {
+    setColumnFilters({})
+    setReportPage(1)
+  }, [activeReport, selectedDealerCode, selectedYear, selectedMonth, selectedStartDate, selectedEndDate])
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -997,6 +1014,12 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   async function handleCsvExport() {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 20000)
+    const filterParams: Record<string, string> = {}
+    Object.entries(columnFilters).forEach(([col, vals]) => {
+      if (vals && vals.length > 0) {
+        filterParams[`filter_${col}`] = vals.map(encodeURIComponent).join(',')
+      }
+    })
     const response = await fetch(`/api/brands/kia/sales-report/reports?${buildQueryString({
       report: activeReport,
       ...periodQueryParams,
@@ -1008,6 +1031,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
       sort: reportSort,
       direction: reportDirection,
       format: 'csv',
+      ...filterParams,
     })}`, { cache: 'no-store', signal: controller.signal }).finally(() => window.clearTimeout(timeout))
     logApiTimings(response, 'kia-sales-report-export')
     if (!response.ok) {
@@ -2249,11 +2273,27 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                     <TableHeader>
                       <TableRow className="border-b-2 border-[#071a2b] bg-white hover:bg-white">
                         {visibleColumns.map((column) => (
-                          <TableHead key={column} className="px-4 py-3 text-[10px] font-black text-[#25303b]">
-                            <button type="button" className="inline-flex items-center gap-1 text-left" onClick={() => handleReportColumnSort(column)}>
-                              <span>{toColumnLabel(column)}</span>
-                              <ArrowDownUp className="h-3.5 w-3.5" />
-                            </button>
+                          <TableHead key={column} className="px-4 py-2 text-[10px] font-black text-[#25303b]">
+                            <ColumnFilterDropdown
+                              column={column}
+                              label={toColumnLabel(column)}
+                              uniqueValues={reportQuery.data?.uniqueValues?.[column] || []}
+                              activeFilters={columnFilters[column] || []}
+                              onApply={(values) => {
+                                setColumnFilters((prev) => ({
+                                  ...prev,
+                                  [column]: values,
+                                }))
+                                setReportPage(1)
+                              }}
+                              onSort={(direction) => {
+                                setReportSort(column)
+                                setReportDirection(direction)
+                                setReportPage(1)
+                              }}
+                              isSortedAsc={reportSort === column && reportDirection === 'asc'}
+                              isSortedDesc={reportSort === column && reportDirection === 'desc'}
+                            />
                           </TableHead>
                         ))}
                       </TableRow>
@@ -2350,3 +2390,220 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     </MainLayout>
   )
 }
+
+interface ColumnFilterDropdownProps {
+  column: string
+  label: string
+  uniqueValues: string[]
+  activeFilters: string[]
+  onApply: (values: string[]) => void
+  onSort: (direction: 'asc' | 'desc') => void
+  isSortedAsc: boolean
+  isSortedDesc: boolean
+}
+
+function ColumnFilterDropdown({
+  label,
+  uniqueValues = [],
+  activeFilters = [],
+  onApply,
+  onSort,
+  isSortedAsc,
+  isSortedDesc,
+}: ColumnFilterDropdownProps) {
+  const [open, setOpen] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [tempChecked, setTempChecked] = useState<string[]>([])
+
+  // Sync state on dropdown open
+  useEffect(() => {
+    if (open) {
+      setTempChecked(activeFilters)
+      setSearchText('')
+    }
+  }, [open, activeFilters])
+
+  // Filter values matching search term
+  const filteredValues = uniqueValues.filter((val) => {
+    const displayVal = val === '' ? 'blanks' : val
+    return displayVal.toLowerCase().includes(searchText.toLowerCase())
+  })
+
+  const isAllSelected = filteredValues.length > 0 && filteredValues.every((val) => tempChecked.includes(val))
+
+  const handleSelectAllChange = () => {
+    if (isAllSelected) {
+      // Uncheck all visible items
+      setTempChecked((prev) => prev.filter((val) => !filteredValues.includes(val)))
+    } else {
+      // Check all visible items
+      setTempChecked((prev) => {
+        const next = [...prev]
+        filteredValues.forEach((val) => {
+          if (!next.includes(val)) next.push(val)
+        })
+        return next
+      })
+    }
+  }
+
+  const handleCheckboxChange = (val: string) => {
+    setTempChecked((prev) =>
+      prev.includes(val) ? prev.filter((item) => item !== val) : [...prev, val]
+    )
+  }
+
+  const handleApply = () => {
+    onApply(tempChecked)
+    setOpen(false)
+  }
+
+  const handleClear = () => {
+    onApply([])
+    setOpen(false)
+  }
+
+  const hasActiveFilter = activeFilters.length > 0
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex items-center gap-1.5 text-left font-black tracking-wide transition rounded-md px-1.5 py-0.5 hover:bg-slate-100/80 outline-none focus:ring-1 focus:ring-[#071a2b]/20 cursor-pointer select-none",
+            hasActiveFilter && "text-[#c5162f] bg-rose-50 hover:bg-rose-100/70"
+          )}
+        >
+          <span>{label}</span>
+          <span className="flex items-center gap-0.5">
+            {isSortedAsc && <ChevronDown className="h-3 w-3 rotate-180 text-[#c5162f]" />}
+            {isSortedDesc && <ChevronDown className="h-3 w-3 text-[#c5162f]" />}
+            {hasActiveFilter ? (
+              <Filter className="h-3 w-3 fill-current text-[#c5162f]" />
+            ) : (
+              (!isSortedAsc && !isSortedDesc) && <ChevronDown className="h-3.5 w-3.5 text-slate-400 opacity-60" />
+            )}
+          </span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        sideOffset={6}
+        className="w-64 bg-[#071a2b] text-white border-[#122130] shadow-xl rounded-[1.2rem] p-3 flex flex-col focus:outline-none"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
+        {/* Sort Section */}
+        <button
+          type="button"
+          onClick={() => {
+            onSort('asc')
+            setOpen(false)
+          }}
+          className="flex items-center gap-2.5 w-full text-left rounded-lg px-2.5 py-2 text-[12px] font-semibold text-slate-300 hover:text-white hover:bg-[#122130] transition cursor-pointer"
+        >
+          <span className="text-[10px] border border-slate-500 rounded px-1 py-0.5 font-bold">A-Z</span>
+          <span>Sort A to Z</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onSort('desc')
+            setOpen(false)
+          }}
+          className="flex items-center gap-2.5 w-full text-left rounded-lg px-2.5 py-2 text-[12px] font-semibold text-slate-300 hover:text-white hover:bg-[#122130] transition cursor-pointer"
+        >
+          <span className="text-[10px] border border-slate-500 rounded px-1 py-0.5 font-bold">Z-A</span>
+          <span>Sort Z to A</span>
+        </button>
+
+        <div className="my-1.5 border-t border-slate-700/50" />
+
+        {/* Clear Filter Section */}
+        <button
+          type="button"
+          disabled={!hasActiveFilter}
+          onClick={handleClear}
+          className={cn(
+            "flex items-center gap-2.5 w-full text-left rounded-lg px-2.5 py-2 text-[12px] font-semibold transition",
+            hasActiveFilter
+              ? "text-rose-400 hover:text-rose-300 hover:bg-[#122130] cursor-pointer"
+              : "text-slate-500 cursor-not-allowed opacity-50"
+          )}
+        >
+          <XCircle className="h-4 w-4" />
+          <span>Clear Filter from &quot;{label}&quot;</span>
+        </button>
+
+        <div className="my-1.5 border-t border-slate-700/50" />
+
+        {/* Search Input Box */}
+        <div className="relative mb-2 px-0.5">
+          <Search className="absolute left-2.5 top-2.5 h-3 w-3 text-slate-400" />
+          <Input
+            type="text"
+            placeholder="Search"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="h-8 pl-8 pr-3 text-[11px] bg-[#122130] border-slate-700 text-white rounded-lg focus-visible:ring-1 focus-visible:ring-rose-500 focus-visible:ring-offset-0 focus-visible:border-slate-600 placeholder-slate-400 shadow-inner"
+            onKeyDown={(e) => e.stopPropagation()} // Stop propagation to prevent radix from closing
+          />
+        </div>
+
+        {/* Scrollable Checkbox List */}
+        <div className="max-h-44 overflow-y-auto space-y-1 px-0.5 pr-1 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+          {filteredValues.length > 0 && (
+            <label className="flex items-center gap-2 px-1.5 py-1 hover:bg-[#122130] rounded cursor-pointer text-[12px] text-slate-300 hover:text-white select-none transition">
+              <input
+                type="checkbox"
+                checked={isAllSelected}
+                onChange={handleSelectAllChange}
+                className="rounded border-slate-700 bg-transparent text-[#c5162f] focus:ring-0 focus:ring-offset-0 h-3.5 w-3.5 cursor-pointer accent-[#c5162f]"
+              />
+              <span className="font-semibold text-slate-200">(Select All)</span>
+            </label>
+          )}
+          {filteredValues.length === 0 ? (
+            <div className="text-center py-4 text-[11px] text-slate-400 italic">
+              No matches found
+            </div>
+          ) : (
+            filteredValues.map((val) => (
+              <label key={val} className="flex items-center gap-2 px-1.5 py-1 hover:bg-[#122130] rounded cursor-pointer text-[12px] text-slate-300 hover:text-white select-none transition">
+                <input
+                  type="checkbox"
+                  checked={tempChecked.includes(val)}
+                  onChange={() => handleCheckboxChange(val)}
+                  className="rounded border-slate-700 bg-transparent text-[#c5162f] focus:ring-0 focus:ring-offset-0 h-3.5 w-3.5 cursor-pointer accent-[#c5162f]"
+                />
+                <span>{val === '' ? '(Blanks)' : val}</span>
+              </label>
+            ))
+          )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex justify-end gap-1.5 mt-2 pt-2 border-t border-slate-700/50">
+          <Button
+            size="sm"
+            variant="ghost"
+            type="button"
+            className="h-7 px-2.5 text-[11px] font-semibold text-slate-400 hover:text-white hover:bg-transparent"
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            type="button"
+            className="h-7 px-3.5 text-[11px] font-bold bg-[#c5162f] text-white hover:bg-[#c5162f]/90 rounded-lg shadow-sm"
+            onClick={handleApply}
+          >
+            OK
+          </Button>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
