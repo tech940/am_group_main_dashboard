@@ -267,7 +267,7 @@ async function readCurrentRows(dealerCode: string | null) {
   return rows(await analyticsDb.execute(sql`
     WITH latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text))
-        sm.id,
+        sm.id::text AS id,
         sm.vin_number,
         sm.vin_number AS vin_no,
         sm.order_dealer,
@@ -313,7 +313,7 @@ async function readCurrentRows(dealerCode: string | null) {
       UNION ALL
 
       SELECT
-        ls.id,
+        ls.id::text AS id,
         ls.vin_number,
         ls.vin_number AS vin_no,
         COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS order_dealer,
@@ -764,7 +764,7 @@ async function readReportRows(input: {
   const filteredRows = rows(await analyticsDb.execute(sql`
     WITH latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text))
-        sm.id,
+        sm.id::text AS id,
         sm.order_dealer AS dealer,
         sm.stock_status,
         sm.model,
@@ -806,7 +806,7 @@ async function readReportRows(input: {
       UNION ALL
 
       SELECT
-        ls.id,
+        ls.id::text AS id,
         COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS dealer,
         COALESCE(NULLIF(TRIM(ls.stock_status_at_mark), ''), 'Free Stock') AS stock_status,
         COALESCE(NULLIF(TRIM(ls.model), ''), 'Unknown') AS model,
