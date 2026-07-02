@@ -510,6 +510,13 @@ function formatBusinessFreshness(value?: string | null) {
   })} IST`
 }
 
+function formatBusinessFreshnessShort(value?: string | null) {
+  if (!value) return 'Not available'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Not available'
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
 function SmartTrendValueLabel({
   x,
   y,
@@ -2023,6 +2030,17 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                           )}
                         </div>
                       </div>
+
+                      {freshnessQuery.data?.sources && freshnessQuery.data.sources.length > 0 && (
+                        <div className="mt-3.5 flex flex-wrap gap-2 border-t border-slate-100 pt-3 items-center">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">Data Freshness:</span>
+                          {freshnessQuery.data.sources.map((src) => (
+                            <span key={src.table} className="rounded-full border border-slate-200/80 bg-slate-50/65 px-2.5 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-800 transition" title={`Table: ${src.table} (${(src.rowCount ?? 0).toLocaleString()} rows)`}>
+                              {src.label}: <span className="font-extrabold text-slate-700">{formatBusinessFreshnessShort(src.sourceUpdatedAt)}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </CardHeader>
                     <Dialog open={showAiSummary} onOpenChange={setShowAiSummary}>
                       <DialogContent className="max-h-[88vh] overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[980px]">

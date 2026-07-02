@@ -357,6 +357,38 @@ export const businessExcellenceData = pgTable('business_excellence_am_kia_new', 
   uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 })
 
+export const kiaStockLocalStatuses = pgTable('kia_stock_local_statuses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  vinNumber: text('vin_number').unique().notNull(),
+  localStatus: text('local_status').notNull(),
+  dealerCode: text('dealer_code'),
+  model: text('model'),
+  variant: text('variant'),
+  color: text('color'),
+  engineNo: text('engine_no'),
+  kinInvoiceNo: text('kin_invoice_no'),
+  kinInvoiceDate: text('kin_invoice_date'),
+  orderNo: text('order_no'),
+  stockStatusAtMark: text('stock_status_at_mark'),
+  stockLocation: text('stock_location'),
+  bookingNo: text('booking_no'),
+  customerId: text('customer_id'),
+  customerName: text('customer_name'),
+  basicPrice: decimal('basic_price', { precision: 14, scale: 2 }),
+  vehicleSnapshot: jsonb('vehicle_snapshot').$type<Record<string, unknown>>().default({}).notNull(),
+  sourceUploadedAt: timestamp('source_uploaded_at', { withTimezone: true }),
+  notes: text('notes'),
+  markedBy: uuid('marked_by').references(() => users.id),
+  markedByName: text('marked_by_name'),
+  markedByRole: text('marked_by_role'),
+  markedAt: timestamp('marked_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaStockLocalStatusesVinIdx: uniqueIndex('kia_stock_local_statuses_vin_idx').on(table.vinNumber),
+  kiaStockLocalStatusesStatusMarkedIdx: index('kia_stock_local_statuses_status_marked_idx').on(table.localStatus, table.markedAt),
+  kiaStockLocalStatusesDealerStatusIdx: index('kia_stock_local_statuses_dealer_status_idx').on(table.dealerCode, table.localStatus),
+}))
+
 export type PurchaseOrderVendorOption = {
   key: 'vendorA' | 'vendorB' | 'vendorC'
   label: string

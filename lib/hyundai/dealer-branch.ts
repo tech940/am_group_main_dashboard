@@ -20,7 +20,7 @@ export type HyundaiDealerCode = (typeof HYUNDAI_BRANCH_DEALERS)[number]['dealerC
 export function normalizeHyundaiDealerCode(value: string | null | undefined): HyundaiDealerCode | null {
   const normalized = String(value || '').trim().toUpperCase()
   if (!normalized || normalized === 'ALL' || normalized === 'ALL_LOCATIONS') return null
-  if (normalized === 'JAMMU' || normalized === 'HYUNDAI_JAMMU') return 'JAMMU'
+  if (normalized === 'JAMMU' || normalized === 'HYUNDAI_JAMMU' || normalized === 'JK402') return 'JAMMU'
   if (normalized === 'AKHNOOR' || normalized === 'HYUNDAI_AKHNOOR') return 'AKHNOOR'
   if (normalized === 'KATHUA' || normalized === 'HYUNDAI_KATHUA') return 'KATHUA'
   if (normalized === 'RS_PURA' || normalized === 'RSPURA' || normalized === 'HYUNDAI_RS_PURA') return 'RS_PURA'
@@ -30,6 +30,7 @@ export function normalizeHyundaiDealerCode(value: string | null | undefined): Hy
     || normalized === 'HYUNDAI_BILLAWAR'
     || normalized === 'UDHAMPUR'
     || normalized === 'HYUNDAI_UDHAMPUR'
+    || normalized === 'JK501'
   ) return 'BILLAWAR'
 
   const branch = HYUNDAI_BRANCH_DEALERS.find((item) => item.dealerCodes.some((code) => code === normalized))
@@ -53,12 +54,12 @@ export function hyundaiSourceDealerSql(
 
   return sql`
     CASE
-      WHEN ${resolved} IN ('N5203', 'N5216') THEN 'JAMMU'
+      WHEN ${resolved} IN ('N5203', 'N5216', 'JK402') THEN 'JAMMU'
       WHEN ${resolved} IN ('N5701', 'N6844') THEN 'AKHNOOR'
       WHEN ${resolved} IN ('N5804', 'N6845') THEN 'KATHUA'
       WHEN ${resolved} IN ('N6815', 'N6846') THEN 'RS_PURA'
       WHEN ${resolved} IN ('N6819', 'N6847') THEN 'VIJAYPUR'
-      WHEN ${resolved} IN ('N6826', 'N6828', 'N6848') THEN 'BILLAWAR'
+      WHEN ${resolved} IN ('N6826', 'N6828', 'N6848', 'JK501') THEN 'BILLAWAR'
       WHEN UPPER(TRIM(COALESCE(${sourceColumn}::text, ''))) = 'ACTIVE' THEN 'JAMMU'
       ELSE ${resolved}
     END

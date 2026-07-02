@@ -287,6 +287,7 @@ async function fetchFallbackSummaryVas(
         ${dealerWhere}
       GROUP BY period_start, period_end
       ORDER BY
+        (SUM(period_rows) > 10) DESC,
         period_end DESC,
         period_start DESC
       LIMIT 1
@@ -382,6 +383,7 @@ async function fetchBestEffortOperationVas(
       ${operationDealerFilter(dealerCode)}
     GROUP BY report_period_start::date, report_period_end::date
     ORDER BY
+      (COUNT(*) > 100) DESC,
       report_period_end::date DESC,
       report_period_start::date DESC
     LIMIT 1

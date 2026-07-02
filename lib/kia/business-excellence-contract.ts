@@ -10,7 +10,7 @@ import {
   type KiaDealerCode,
 } from '@/lib/kia/dealer-branch'
 
-export const KIA_BUSINESS_EXCELLENCE_CACHE_VERSION = 'v40'
+export const KIA_BUSINESS_EXCELLENCE_CACHE_VERSION = 'v41'
 export const KIA_BUSINESS_EXCELLENCE_HOLIDAYS_KEY = 'kiaBusinessExcellenceHolidays'
 
 const DEFAULT_KIA_HOLIDAYS = ['2026-06-05']
@@ -116,9 +116,7 @@ export function kiaComplaintDealerFilter(dealerCode: KiaBusinessExcellenceDealer
 
 export function kiaOpenRoActiveStateSql(alias = '') {
   return sql`
-    LOWER(TRIM(COALESCE(${sql.raw(`${alias}status`)}::text, ''))) = 'open'
-    AND LOWER(TRIM(COALESCE(${sql.raw(`${alias}ro_sub_status`)}::text, '')))
-      NOT IN ('closed', 'final inspection', 'ready', 'ready for delivery')
+    LOWER(TRIM(COALESCE(${sql.raw(`${alias}status`)}::text, ''))) IN ('open', 'close', 'closed')
   `
 }
 

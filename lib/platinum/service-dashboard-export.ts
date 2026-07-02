@@ -295,6 +295,7 @@ async function fetchOperations(startDate: string, endDate: string, dealerCode: D
         ${platinumSourceDealerFilter(dealerCode)}
       GROUP BY report_period_start::date, report_period_end::date
       ORDER BY
+        (COUNT(*) > 100) DESC,
         report_period_end::date DESC,
         report_period_start::date DESC
       LIMIT 1

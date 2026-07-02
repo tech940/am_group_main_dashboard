@@ -226,6 +226,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'kia.stock_management',
+    name: 'Stock Management',
+    parentKey: 'kia.sales',
+    description: 'AM KIA local stock status management for BBND and Retail vehicles.',
+    sortOrder: 39,
+    actions: ['view', 'edit', 'audit'],
+  },
+  {
     key: 'kia.h_promise',
     name: 'H Promise',
     parentKey: 'kia',
@@ -785,6 +793,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.demo_cars_list',
     'kia.sales_report',
     'kia.stock_report',
+    'kia.stock_management',
     'kia.proforma',
     'kia.insurance',
     ...hyundaiPlatinumExecutiveGroups,
@@ -824,7 +833,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
   ],
   manager: [
-    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma', 'kia.insurance'], ['view', 'approve']),
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.proforma', 'kia.insurance'], ['view', 'edit', 'approve']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   technician: [

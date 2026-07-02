@@ -35,9 +35,8 @@ type OpenRoChunk = 'summary' | 'details' | 'full'
 function openRoDealerFilter(filters: OpenRoFilters) {
   return hyundaiSourceDealerFilter(
     filters.dealerCode,
-    sql.raw('hyundai_repair_order_list.dealer'),
+    sql.raw('hyundai_repair_order_list.source_dealer_code'),
     [
-      sql.raw('hyundai_repair_order_list.source_dealer_code'),
       sql.raw('hyundai_repair_order_list.dealer_code'),
       sql.raw('hyundai_repair_order_list.dlr_no')
     ]
@@ -48,10 +47,10 @@ function openRoBaseSql(filters: OpenRoFilters) {
   return sql`
     WITH active AS (
       SELECT DISTINCT ON (
-        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text)
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text)
       )
         id,
-        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text) AS ro_key,
         r_o_no,
         r_o_date::date AS ro_date,
         reg_no,
@@ -87,7 +86,7 @@ function openRoBaseSql(filters: OpenRoFilters) {
         AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}
       ORDER BY
-        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
+        COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
         uploaded_at DESC NULLS LAST,
         id DESC
     ),
@@ -364,7 +363,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
     includeSummary ? db.execute(sql`
       WITH active AS (
         SELECT DISTINCT ON (
-          COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text)
+          COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text)
         )
           svc_adv AS service_adv,
           work_type,
@@ -378,7 +377,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
         AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}
         ORDER BY
-          COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
+          COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, ''), '-') || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
           uploaded_at DESC NULLS LAST,
           id DESC
       ),

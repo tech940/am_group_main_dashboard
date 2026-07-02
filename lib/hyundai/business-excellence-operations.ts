@@ -81,7 +81,7 @@ function getMonthRange(dateInput: string) {
 }
 
 function cacheKey(endDate: string, dealerCode: string | null) {
-  return `hyundai:operation-metrics:v3:${endDate}:${dealerCode || 'all'}`
+  return `hyundai:operation-metrics:v4:${endDate}:${dealerCode || 'all'}`
 }
 
 function codeMatchSql(codeColumn: ReturnType<typeof sql.raw>, codes: readonly string[]) {
@@ -139,6 +139,7 @@ export async function fetchHyundaiMonthlyOperationMetrics(
         ${dealerFilter(dealerCode)}
       GROUP BY report_period_start::date, report_period_end::date
       ORDER BY
+        (COUNT(*) > 100) DESC,
         report_period_end::date DESC,
         report_period_start::date DESC
       LIMIT 1

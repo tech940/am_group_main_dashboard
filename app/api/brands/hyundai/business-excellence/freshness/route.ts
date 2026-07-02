@@ -45,8 +45,8 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
     {
       table: 'hyundai_repair_order_list',
       label: 'Open RO',
-      dealerColumn: 'dealer',
-      fallbackDealerColumns: ['source_dealer_code', 'dealer_code', 'dlr_no'],
+      dealerColumn: 'source_dealer_code',
+      fallbackDealerColumns: ['dealer_code', 'dlr_no'],
       minDateSql: sql`MIN(r_o_date)::text`,
       maxDateSql: sql`MAX(r_o_date)::text`,
     },
@@ -112,8 +112,8 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
   open_ro_repair_orders: [{
     table: 'hyundai_repair_order_list',
     label: 'Open RO',
-    dealerColumn: 'dealer',
-    fallbackDealerColumns: ['source_dealer_code', 'dealer_code', 'dlr_no'],
+    dealerColumn: 'source_dealer_code',
+    fallbackDealerColumns: ['dealer_code', 'dlr_no'],
     minDateSql: sql`MIN(r_o_date)::text`,
     maxDateSql: sql`MAX(r_o_date)::text`,
   }],
@@ -146,12 +146,16 @@ type FreshnessRow = {
 }
 
 function normalizeReportKey(value: string | null) {
-  return String(value || 'business_excellence_overview')
+  const normalized = String(value || 'business_excellence_overview')
     .trim()
     .toLowerCase()
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
+
+  if (normalized === 'service_dashboard') return 'hyundai_ro_billing_report'
+  if (normalized.includes('sot_analysis')) return 'sot_analysis'
+  return normalized
 }
 
 function buildFreshnessSelect(source: FreshnessSource, dealerCode: string | null) {
@@ -216,7 +220,7 @@ export async function GET(request: Request) {
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
     const data = await timer.time('response-cache', () => getCachedData(
-      `hyundai:business-excellence:freshness:v4:${reportKey}:${dealerCode || 'all'}`,
+      `hyundai:business-excellence:freshness:v6:${reportKey}:${dealerCode || 'all'}`,
       async () => {
         const sourceFreshness = await readSourceFreshness(sources, dealerCode)
         const sourceUpdatedAt = sourceFreshness

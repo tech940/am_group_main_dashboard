@@ -87,6 +87,7 @@ export type KiaStockSummaryPayload = {
     agingBuckets: KiaStockMetricPoint[]
     highValue: KiaStockVehicleRow[]
     slowMoving: KiaStockVehicleRow[]
+    totalInterestAccrued?: number
   }
   models: {
     cards: KiaStockModelCard[]
@@ -105,6 +106,11 @@ export type KiaStockSummaryPayload = {
     buckets: KiaStockMetricPoint[]
     byModel: Array<{ model: string; avgAge: number; units: number }>
     rows: KiaStockVehicleRow[]
+    rows90Plus?: Array<KiaStockVehicleRow & { interestAccrued: number; carryingCostMonth: number }>
+  }
+  trims?: {
+    fastest: Array<{ model: string; variant: string; stockCount: number; salesCount90d: number; avgAge: number; stockValue: number }>
+    slowest: Array<{ model: string; variant: string; stockCount: number; salesCount90d: number; avgAge: number; stockValue: number }>
   }
 }
 

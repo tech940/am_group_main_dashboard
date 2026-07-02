@@ -3,12 +3,14 @@ import { analyticsDb as db } from '@/lib/analytics/db'
 import type { KiaDealerCode } from '@/lib/kia/dealer-branch'
 import {
   activeBillStatusSql,
+  getMonthStart,
   numberValue,
   numericText,
   resultRows,
   roBillingDealerFilter,
   serviceCategoryExpression,
 } from '@/lib/kia/service-dashboard-metrics'
+import { buildServiceDashboardMetrics } from '@/lib/kia/service-dashboard-export'
 
 export const KIA_SERVICE_CATEGORIES = [
   'Free Service',
@@ -42,6 +44,10 @@ function emptyDeliveredByCategory() {
     accumulator[category] = 0
     return accumulator
   }, {} as Record<KiaServiceCategory, number>)
+}
+
+function isServiceDashboardMonthWindow(startDate: string, endDate: string) {
+  return startDate === getMonthStart(endDate)
 }
 
 export function deriveDeliveredBillingKpis(input: {
@@ -79,6 +85,22 @@ export async function fetchDeliveredBillingKpis(
   endDate: string,
   dealerCode: KiaServiceDealerFilter = null,
 ): Promise<DeliveredBillingKpis> {
+  if (isServiceDashboardMonthWindow(startDate, endDate)) {
+    const metrics = await buildServiceDashboardMetrics(endDate, dealerCode)
+    const deliveredByCategory = emptyDeliveredByCategory()
+    KIA_SERVICE_CATEGORIES.forEach((category) => {
+      deliveredByCategory[category] = metrics.revenue.delivered[category]?.mtd ?? 0
+    })
+
+    return deriveDeliveredBillingKpis({
+      deliveredByCategory,
+      labour: metrics.revenue.mechanicalLabour.mtd + metrics.revenue.bodyshopLabour.mtd,
+      parts: metrics.revenue.mechanicalParts.mtd + metrics.revenue.bodyshopParts.mtd,
+      minBillDate: metrics.monthStart,
+      maxBillDate: metrics.exportDate,
+    })
+  }
+
   const result = await db.execute(sql`
     WITH raw AS (
       SELECT

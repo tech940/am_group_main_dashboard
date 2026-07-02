@@ -74,6 +74,7 @@ const STOCK_SECTIONS = [
   { key: 'turns', label: 'Turns' },
   { key: 'mix', label: 'Mix' },
   { key: 'supply', label: 'Supply' },
+  { key: 'by-model', label: 'Model & Trim' },
   { key: 'reorder', label: 'Reorder' },
   { key: 'aged', label: 'Aged 90+' },
   { key: 'explorer', label: 'Explorer' },
@@ -129,6 +130,10 @@ function formatDateTime(value: string | null | undefined) {
 function formatMoney(value: number) {
   if (Math.abs(value) >= 10000000) return `₹${(value / 10000000).toFixed(2)}Cr`
   if (Math.abs(value) >= 100000) return `₹${(value / 100000).toFixed(1)}L`
+  return `₹${Math.round(value).toLocaleString('en-IN')}`
+}
+
+function formatMoneyExpanded(value: number) {
   return `₹${Math.round(value).toLocaleString('en-IN')}`
 }
 
@@ -267,6 +272,9 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({})
   const [reportSort, setReportSort] = useState(firstParam(initialSearchParams, 'sort') || '')
   const [reportDirection, setReportDirection] = useState<'asc' | 'desc'>((firstParam(initialSearchParams, 'direction') || 'desc') === 'asc' ? 'asc' : 'desc')
+  const [fastMovingMode, setFastMovingMode] = useState<'models' | 'trims'>('models')
+  const [slowMovingMode, setSlowMovingMode] = useState<'models' | 'trims'>('models')
+  const [viewMode, setViewMode] = useState<'dashboard' | 'explorer'>('dashboard')
 
   const deferredSearch = useDeferredValue(search)
 
@@ -387,13 +395,19 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const avgStockAge = kpiValue('Avg Stock Age')
   const soldThisMonth = summary?.movement.monthly[0]?.retail || 0
   const agedRows = summary?.aging.rows || []
+  const rows90Plus = summary?.aging?.rows90Plus || []
   const aged90Rows = agedRows.filter((row) => row.stockAge >= 90)
   const aged90Value = aged90Rows.reduce((sum, row) => sum + row.stockValue, 0)
   const interestRate = 10
-  const interestAccrued = agedRows.reduce((sum, row) => sum + ((row.stockValue * interestRate) / 100 / 365) * row.stockAge, 0)
+  const interestAccrued = summary?.overview.totalInterestAccrued ?? agedRows.reduce((sum, row) => sum + ((row.stockValue * interestRate) / 100 / 365) * row.stockAge, 0)
   const monthlyCarrying = (stockValue * interestRate) / 100 / 12
   const dailyAgedBleed = aged90Rows.reduce((sum, row) => sum + (row.stockValue * interestRate) / 100 / 365, 0)
-  const daysOfSupply = soldThisMonth > 0 ? Math.round((availableStock / Math.max(1, soldThisMonth)) * 30) : 0
+
+  const retailed90 = summary?.movement?.monthly?.slice(0, 3).reduce((sum, row) => sum + row.retail, 0) || 0
+  const avgDailySales = retailed90 / 90
+  const daysOfSupply = avgDailySales > 0 ? Math.round(availableStock / avgDailySales) : 0
+  const annualizedTurns = avgDailySales > 0 ? ((avgDailySales * 365) / Math.max(1, availableStock)).toFixed(1) : '0'
+
   const stockByModel = summary?.overview.modelMix || []
   const modelCards = summary?.models.cards || []
   const explorerRows = report?.rows || []
@@ -409,6 +423,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
       ...band,
       units: rows.length,
       value: rows.reduce((sum, row) => sum + row.stockValue, 0),
+      interestAccrued: rows.reduce((sum, row) => sum + ((row.stockValue * interestRate) / 100 / 365) * row.stockAge, 0),
     }
   })
   const fastestModels = [...modelCards].sort((a, b) => b.units - a.units).slice(0, 4)
@@ -451,17 +466,34 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
           </div>
         </section>
 
-        <div className="sticky top-0 z-20 mt-6 flex h-auto flex-wrap justify-start gap-3 border-y border-[#c9d5e2] bg-[#edf3f9]/95 px-2 py-3 backdrop-blur">
-          {STOCK_SECTIONS.map((section) => (
-            <button
-              key={section.key}
-              type="button"
-              onClick={() => scrollToSection(section.key)}
-              className="border-b-2 border-transparent px-3 py-3 text-[13px] font-black text-slate-600 transition hover:border-[#caa144] hover:text-slate-950"
-            >
-              {section.label}
-            </button>
-          ))}
+        <div className="sticky top-0 z-20 mt-6 flex h-auto flex-wrap justify-between items-center border-y border-[#c9d5e2] bg-[#edf3f9]/95 px-4 py-1 backdrop-blur shadow-sm">
+          <div className="flex flex-wrap gap-2">
+            {STOCK_SECTIONS.map((section) => {
+              const isActive = (section.key as string) === 'explorer' 
+                ? viewMode === 'explorer' 
+                : (viewMode === 'dashboard' && (section.key as string) !== 'explorer')
+              return (
+                <button
+                  key={section.key}
+                  type="button"
+                  onClick={() => {
+                    if ((section.key as string) === 'explorer') {
+                      setViewMode('explorer')
+                    } else {
+                      setViewMode('dashboard')
+                      setTimeout(() => scrollToSection(section.key), 50)
+                    }
+                  }}
+                  className={cn(
+                    "border-b-2 px-3 py-3 text-[13px] font-black transition hover:border-[#caa144] hover:text-slate-950",
+                    isActive ? "border-[#caa144] text-slate-950" : "border-transparent text-slate-600"
+                  )}
+                >
+                  {section.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {isLoadingSummary ? (
@@ -472,7 +504,9 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
           </div>
         ) : summary ? (
           <div className="mt-6 space-y-8 text-[14px] text-slate-700">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {viewMode === 'dashboard' ? (
+              <>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {[
                 { label: 'Units in stock', value: availableStock, helper: `live vehicles at ${selectedDealer === 'all' ? 'all dealers' : selectedDealer}`, dark: true },
                 { label: 'Inventory value', value: formatMoney(stockValue), helper: 'landed cost incl GST · purchase report', dark: true },
@@ -540,10 +574,10 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                 <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
                   <CardContent className="grid gap-3 p-6 sm:grid-cols-2">
                     {[
-                      { label: 'Interest accrued to date', value: formatMoney(interestAccrued), dark: true },
-                      { label: 'Of which on 90+ day stock', value: formatMoney(aged90Rows.reduce((sum, row) => sum + ((row.stockValue * interestRate) / 100 / 365) * row.stockAge, 0)) },
-                      { label: 'Carrying cost / month · whole lot', value: formatMoney(monthlyCarrying) },
-                      { label: 'Daily bleed · aged 90+', value: formatMoney(dailyAgedBleed) },
+                      { label: 'Interest accrued to date', value: formatMoneyExpanded(interestAccrued), dark: true },
+                      { label: 'Of which on 90+ day stock', value: formatMoneyExpanded(aged90Rows.reduce((sum, row) => sum + ((row.stockValue * interestRate) / 100 / 365) * row.stockAge, 0)) },
+                      { label: 'Carrying cost / month · whole lot', value: formatMoneyExpanded(monthlyCarrying) },
+                      { label: 'Daily bleed · aged 90+', value: formatMoneyExpanded(dailyAgedBleed) },
                     ].map((item) => (
                       <div key={item.label} className={cn('rounded-xl border border-[#dbe4ee] p-5', item.dark ? 'bg-[#552019] text-white' : 'bg-slate-50')}>
                         <p className="text-[26px] font-black">{item.value}</p>
@@ -551,7 +585,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                       </div>
                     ))}
                     <p className="col-span-full border-t border-dashed border-slate-300 pt-3 text-[13px] font-semibold text-slate-500">
-                      At {interestRate.toFixed(2)}%/yr on {formatMoney(stockValue)} of landed stock.
+                      At {interestRate.toFixed(2)}%/yr on {formatMoneyExpanded(stockValue)} of landed stock.
                     </p>
                   </CardContent>
                 </Card>
@@ -559,7 +593,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                   <CardHeader><CardTitle className="text-[18px] font-black">Interest accrued by aging band</CardTitle><CardDescription>Where the carrying cost has actually gone</CardDescription></CardHeader>
                   <CardContent className="space-y-3">
                     {ageBandRows.map((band) => {
-                      const value = (band.value * interestRate) / 100 / 365 * Math.max(1, band.min || 15)
+                      const value = band.interestAccrued
                       const pct = interestAccrued ? (value / interestAccrued) * 100 : 0
                       const showInside = pct >= 25
                       return (
@@ -579,7 +613,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                               )}
                               style={showInside ? undefined : { left: `${pct + 2}%` }}
                             >
-                              {formatMoney(value)}
+                              {formatMoneyExpanded(value)}
                             </span>
                           </div>
                           <span className="text-slate-400">
@@ -653,19 +687,171 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
               </Card>
             </section>
 
-            <section id="stock-reorder" className="scroll-mt-24">
+            <section id="stock-by-model" className="scroll-mt-24">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">06</span>Stock by model & trim</h2>
+                <p className="text-[15px] font-semibold text-slate-400">Detailed stock levels and trim mix by vehicle model</p>
+              </div>
+              <div className="grid gap-5 md:grid-cols-2">
+                {modelCards.map((card) => (
+                  <Card key={card.model} className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm hover:shadow-md transition">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="text-[20px] font-black text-slate-900">{card.model}</CardTitle>
+                          <CardDescription className="font-semibold text-slate-500">{formatMoney(card.stockValue)} total capital</CardDescription>
+                        </div>
+                        <Badge className="bg-[#18283e] text-white hover:bg-[#18283e] rounded-lg px-3 py-1 font-black text-[13px]">
+                          {card.units} Units
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4 rounded-xl bg-slate-50 p-3.5 text-center">
+                        <div>
+                          <p className="text-[11px] font-black uppercase text-slate-500">Avg Stock Age</p>
+                          <p className="mt-1 text-[20px] font-black text-slate-900">{card.avgAge} days</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-black uppercase text-slate-500">Free / In-Transit</p>
+                          <p className="mt-1 text-[20px] font-black text-slate-900">{card.freeStock} / {card.inTransit}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-2.5">Stock by Trim</p>
+                        <div className="space-y-2">
+                          {card.variants.map((trim) => (
+                            <div key={trim.name} className="grid grid-cols-[160px_1fr_30px] items-center gap-3 text-[13px]">
+                              <span className="font-semibold text-slate-600 truncate" title={trim.name}>{trim.name}</span>
+                              <span className="h-2.5 rounded-full bg-slate-100 relative overflow-hidden">
+                                <span className="absolute left-0 top-0 h-full rounded-full bg-[#caa144]" style={{ width: `${(trim.value / card.units) * 100}%` }} />
+                              </span>
+                              <span className="font-black text-slate-800 text-right">{trim.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+
+             <section id="stock-reorder" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
                 <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">06</span>Reorder & clear</h2>
                 <p className="text-[15px] font-semibold text-slate-400">Where to chase supply vs. where to free up cash</p>
               </div>
               <div className="grid gap-5 xl:grid-cols-2">
                 <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
-                  <CardHeader><CardTitle className="text-[18px] font-black text-emerald-700">▲ Fast movers — protect availability</CardTitle><CardDescription>Ranked by current stock concentration</CardDescription></CardHeader>
-                  <CardContent className="space-y-4">{fastestModels.map((card, index) => <div key={card.model} className="border-b border-slate-200 pb-4 last:border-0"><div className="flex justify-between"><p className="font-black"><span className="mr-3 rounded-md bg-[#18283e] px-2 py-1 text-white">{index + 1}</span>{card.model}</p><p className="font-black">{card.units} units</p></div><p className="mt-1 text-[13px] font-semibold text-slate-500">Protect availability; review fast-selling trims weekly.</p></div>)}</CardContent>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <div>
+                      <CardTitle className="text-[18px] font-black text-emerald-700">▲ Fast movers — protect availability</CardTitle>
+                      <CardDescription>Ranked by recent sales/stock concentration</CardDescription>
+                    </div>
+                    <div className="flex rounded-lg bg-slate-100 p-1">
+                      <button 
+                        type="button" 
+                        onClick={() => setFastMovingMode('models')} 
+                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', fastMovingMode === 'models' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}
+                      >
+                        Models
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setFastMovingMode('trims')} 
+                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', fastMovingMode === 'trims' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}
+                      >
+                        Trims
+                      </button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {fastMovingMode === 'models' ? (
+                      fastestModels.map((card, index) => (
+                        <div key={card.model} className="border-b border-slate-200 pb-4 last:border-0">
+                          <div className="flex justify-between">
+                            <p className="font-black">
+                              <span className="mr-3 rounded-md bg-[#18283e] px-2 py-1 text-white">{index + 1}</span>
+                              {card.model}
+                            </p>
+                            <p className="font-black">{card.units} units</p>
+                          </div>
+                          <p className="mt-1 text-[13px] font-semibold text-slate-500">Protect availability; review fast-selling trims weekly.</p>
+                        </div>
+                      ))
+                    ) : (
+                      (summary.trims?.fastest || []).map((trim, index) => (
+                        <div key={`${trim.model}-${trim.variant}`} className="border-b border-slate-200 pb-4 last:border-0">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-black text-slate-900">
+                                <span className="mr-3 rounded-md bg-[#18283e] px-2 py-0.5 text-white text-[12px]">{index + 1}</span>
+                                {trim.variant}
+                              </p>
+                              <p className="mt-1 text-[12px] font-bold text-slate-400">{trim.model}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-black text-emerald-700">{trim.salesCount90d} sold (90d)</p>
+                              <p className="mt-0.5 text-[12px] font-semibold text-slate-500">{trim.stockCount} in stock</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
                 </Card>
                 <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
-                  <CardHeader><CardTitle className="text-[18px] font-black text-[#c73b32]">▼ Slow movers — free the cash</CardTitle><CardDescription>High age against weak recent movement</CardDescription></CardHeader>
-                  <CardContent className="space-y-4">{slowestModels.map((card) => <div key={card.model} className="border-b border-slate-200 pb-4 last:border-0"><div className="flex justify-between"><p className="font-black">{card.model}</p><p className="font-black">{card.avgAge}d avg</p></div><p className="mt-1 text-[13px] font-semibold text-slate-500">{card.units} stock · cut fresh orders and push exchange/discount focus.</p></div>)}</CardContent>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <div>
+                      <CardTitle className="text-[18px] font-black text-[#c73b32]">▼ Slow movers — free the cash</CardTitle>
+                      <CardDescription>High age against weak recent movement</CardDescription>
+                    </div>
+                    <div className="flex rounded-lg bg-slate-100 p-1">
+                      <button 
+                        type="button" 
+                        onClick={() => setSlowMovingMode('models')} 
+                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', slowMovingMode === 'models' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}
+                      >
+                        Models
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setSlowMovingMode('trims')} 
+                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', slowMovingMode === 'trims' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}
+                      >
+                        Trims
+                      </button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {slowMovingMode === 'models' ? (
+                      slowestModels.map((card) => (
+                        <div key={card.model} className="border-b border-slate-200 pb-4 last:border-0">
+                          <div className="flex justify-between">
+                            <p className="font-black">{card.model}</p>
+                            <p className="font-black">{card.avgAge}d avg</p>
+                          </div>
+                          <p className="mt-1 text-[13px] font-semibold text-slate-500">{card.units} stock · cut fresh orders and push exchange/discount focus.</p>
+                        </div>
+                      ))
+                    ) : (
+                      (summary.trims?.slowest || []).map((trim) => (
+                        <div key={`${trim.model}-${trim.variant}`} className="border-b border-slate-200 pb-4 last:border-0">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-black text-slate-900">{trim.variant}</p>
+                              <p className="mt-1 text-[12px] font-bold text-slate-400">{trim.model} · {trim.stockCount} in stock</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-black text-rose-700">{trim.avgAge}d avg age</p>
+                              <p className="mt-0.5 text-[12px] font-semibold text-slate-500">{trim.salesCount90d} sold (90d)</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
                 </Card>
               </div>
             </section>
@@ -673,19 +859,54 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
             <section id="stock-aged" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
                 <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">07</span>Aged inventory action list — 90+ days</h2>
-                <p className="text-[15px] font-semibold text-slate-400">{aged90Rows.length} units · {formatMoney(aged90Value)} capital frozen</p>
+                <p className="text-[15px] font-semibold text-slate-400">
+                  {rows90Plus.length} units · {formatMoneyExpanded(rows90Plus.reduce((sum, r) => sum + r.stockValue, 0))} capital frozen
+                </p>
               </div>
               <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
                 <CardContent className="overflow-x-auto p-4">
                   <Table className="[&_td]:py-3 [&_td]:text-[14px] [&_th]:text-[12px]">
-                    <TableHeader><TableRow>{['Age', 'Model', 'Variant', 'Colour', 'VIN', 'In stock', 'Value', 'Suggested action'].map((heading) => <TableHead key={heading} className="font-black uppercase tracking-[0.08em] text-slate-500">{heading}</TableHead>)}</TableRow></TableHeader>
-                    <TableBody>{agedRows.map((row) => <TableRow key={row.rowKey}><TableCell><span className={cn('rounded-full px-3 py-1 text-white', row.stockAge > 120 ? 'bg-[#c73b32]' : 'bg-[#e17a29]')}>{row.stockAge}d</span></TableCell><TableCell className="font-black">{row.model}</TableCell><TableCell>{row.variant}</TableCell><TableCell>{row.color}</TableCell><TableCell className="font-mono text-[12px]">{row.vin || '-'}</TableCell><TableCell>{formatDate(row.grnDate || row.departureDate)}</TableCell><TableCell>{formatMoney(row.stockValue)}</TableCell><TableCell className="text-slate-500">Liquidate: max discount + exchange + staff/fleet offer</TableCell></TableRow>)}</TableBody>
+                    <TableHeader>
+                      <TableRow>
+                        {['Age', 'Model', 'Variant', 'Colour', 'VIN', 'In stock', 'Value', 'Carrying Cost (MO)', 'Interest Accrued', 'Suggested action'].map((heading) => (
+                          <TableHead key={heading} className="font-black uppercase tracking-[0.08em] text-slate-500">{heading}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows90Plus.map((row) => (
+                        <TableRow key={row.rowKey}>
+                          <TableCell>
+                            <span className={cn('rounded-full px-3 py-1 text-white font-black', row.stockAge > 120 ? 'bg-[#c73b32]' : 'bg-[#e17a29]')}>
+                              {row.stockAge}d
+                            </span>
+                          </TableCell>
+                          <TableCell className="font-black text-slate-900">{row.model}</TableCell>
+                          <TableCell className="font-semibold text-slate-700">{row.variant}</TableCell>
+                          <TableCell className="text-slate-600">{row.color}</TableCell>
+                          <TableCell className="font-mono text-[12px]">{row.vin || '-'}</TableCell>
+                          <TableCell className="text-slate-600">{formatDate(row.grnDate || row.departureDate)}</TableCell>
+                          <TableCell className="font-black text-slate-900">{formatMoneyExpanded(row.stockValue)}</TableCell>
+                          <TableCell className="font-bold text-slate-700">{formatMoneyExpanded(row.carryingCostMonth)}</TableCell>
+                          <TableCell className="font-black text-red-700">{formatMoneyExpanded(row.interestAccrued)}</TableCell>
+                          <TableCell className="text-slate-500 font-medium">Liquidate: max discount + exchange</TableCell>
+                        </TableRow>
+                      ))}
+                      {!rows90Plus.length ? (
+                        <TableRow>
+                          <TableCell colSpan={10} className="py-10 text-center font-bold text-slate-500">
+                            No 90+ days aged vehicles currently in stock.
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </TableBody>
                   </Table>
                 </CardContent>
               </Card>
             </section>
-
-            <section id="stock-explorer" className="scroll-mt-24">
+          </>
+        ) : (
+          <section id="stock-explorer" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
                 <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">08</span>Stock explorer</h2>
                 <p className="text-[15px] font-semibold text-slate-400">Filter, search and sort the live lot</p>
@@ -707,7 +928,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                       <div className="overflow-x-auto">
                         <Table className="[&_td]:text-[13px] [&_th]:text-[11px]">
                           <TableHeader><TableRow>{displayedColumns.map((column) => <TableHead key={column} className="border-b-2 border-slate-300 font-black uppercase tracking-[0.08em] text-slate-500"><ColumnFilterDropdown column={column} label={toColumnLabel(column)} uniqueValues={reportQuery.data?.uniqueValues?.[column] || []} activeFilters={columnFilters[column] || []} onApply={(values) => { setColumnFilters((prev) => ({ ...prev, [column]: values })); setPage(1) }} onSort={(direction) => { setReportSort(column); setReportDirection(direction); setPage(1) }} isSortedAsc={reportSort === column && reportDirection === 'asc'} isSortedDesc={reportSort === column && reportDirection === 'desc'} /></TableHead>)}</TableRow></TableHeader>
-                          <TableBody>{explorerRows.map((row, rowIndex) => <TableRow key={`${row.id || row.vin_no || rowIndex}-${rowIndex}`} className="odd:bg-[#f6f9fd] even:bg-white">{displayedColumns.map((column) => <TableCell key={column} className="max-w-[220px] truncate font-semibold text-slate-700" title={String(row[column] ?? '')}>{String(row[column] ?? '-')}</TableCell>)}</TableRow>)}{!explorerRows.length ? <TableRow><TableCell colSpan={displayedColumns.length || 1} className="py-10 text-center font-bold text-slate-500">No report rows found.</TableCell></TableRow> : null}</TableBody>
+                          <TableBody>{explorerRows.map((row, rowIndex) => <TableRow key={`${row.id || row.vin_no || rowIndex}-${rowIndex}`} className="odd:bg-[#f8fafc] even:bg-white hover:bg-slate-50/80 transition">{displayedColumns.map((column) => <TableCell key={column} className="whitespace-nowrap font-semibold text-slate-700" title={String(row[column] ?? '')}>{String(row[column] ?? '-')}</TableCell>)}</TableRow>)}{!explorerRows.length ? <TableRow><TableCell colSpan={displayedColumns.length || 1} className="py-10 text-center font-bold text-slate-500">No report rows found.</TableCell></TableRow> : null}</TableBody>
                         </Table>
                       </div>
                       <div className="flex items-center justify-between gap-3">
@@ -719,8 +940,9 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                 </CardContent>
               </Card>
             </section>
-          </div>
-        ) : null}
+          )}
+        </div>
+      ) : null}
 
         {summaryQuery.error ? (
           <div className="mt-6 rounded-[1.5rem] border border-rose-200 bg-rose-50 p-4 font-bold text-rose-700">

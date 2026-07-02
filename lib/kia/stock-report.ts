@@ -19,15 +19,24 @@ import type {
 
 type Row = Record<string, unknown>
 
-const TABLE = 'kia_stock_management'
-const AVAILABLE_STATUS_SQL = sql`TRUE`
+const TABLE = 'kia_stock_report'
+const AVAILABLE_STATUS_SQL = sql`LOWER(TRIM(COALESCE(stock_status::text, ''))) IN ('free stock', 'in transit')`
 const VALUE_SQL = sql`COALESCE(
-  NULLIF(NULLIF(regexp_replace(pr.total_invoice_value::text, '[^0-9.-]', '', 'g'), ''), '0')::numeric,
   sm.basic_price,
   pr.basic_price,
-  sm.kin_invoice_amt,
+  NULLIF(regexp_replace(sm.kin_invoice_amt::text, '[^0-9.-]', '', 'g'), '')::numeric,
   0
-)`
+) * 1.36`
+
+function parsedInvoiceDateSql(alias = 'sm.') {
+  const col = `${alias}kin_invoice_date`
+  return sql`CASE
+    WHEN NULLIF(TRIM(${sql.raw(col)}), '') ~ '^\\d{2}/\\d{2}/\\d{4}$' THEN to_date(${sql.raw(col)}, 'DD/MM/YYYY')
+    WHEN NULLIF(TRIM(${sql.raw(col)}), '') ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN to_date(${sql.raw(col)}, 'YYYY-MM-DD')
+    ELSE NULL
+  END`
+}
+
 const DEFAULT_VISIBLE_COLUMNS = [
   'dealer',
   'stock_status',
@@ -196,9 +205,9 @@ function agingBucket(age: number) {
 
 async function latestMonthFallback() {
   const result = rows(await analyticsDb.execute(sql`
-    SELECT EXTRACT(YEAR FROM MAX(COALESCE(kin_invoice_date, sign_off_date)))::int AS year,
-           (EXTRACT(MONTH FROM MAX(COALESCE(kin_invoice_date, sign_off_date)))::int - 1) AS month
-    FROM kia_stock_management
+    SELECT EXTRACT(YEAR FROM MAX(COALESCE(${parsedInvoiceDateSql('')}, sign_off_date)))::int AS year,
+           (EXTRACT(MONTH FROM MAX(COALESCE(${parsedInvoiceDateSql('')}, sign_off_date)))::int - 1) AS month
+    FROM kia_stock_report
   `))[0] || {}
   const year = Number(result.year)
   const month = Number(result.month)
@@ -212,6 +221,12 @@ function dealerClause(dealerCode: string | null) {
   const normalized = normalizeKiaDealerCode(dealerCode) || null
   if (!normalized) return sql``
   return sql`AND UPPER(TRIM(sm.order_dealer)) = ${normalized}`
+}
+
+function activeDealerClause(dealerCode: string | null) {
+  const normalized = normalizeKiaDealerCode(dealerCode) || null
+  if (!normalized) return sql``
+  return sql`AND UPPER(TRIM(COALESCE(dealer_code::text, 'Unknown'))) = ${normalized}`
 }
 
 function purchaseDealerClause(dealerCode: string | null) {
@@ -252,28 +267,95 @@ async function readCurrentRows(dealerCode: string | null) {
   return rows(await analyticsDb.execute(sql`
     WITH latest AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text))
-        sm.*,
+        sm.id,
+        sm.vin_number,
         sm.vin_number AS vin_no,
+        sm.order_dealer,
         sm.order_dealer AS dealer,
-        sm.exterior_color_name AS color,
-        COALESCE(pr.grn_date, sm.kin_invoice_date, sm.created_at::date) AS grn_date,
+        sm.model,
+        sm.variant,
+        sm.exterior_color_name,
+        COALESCE(NULLIF(TRIM(sm.exterior_color_name), ''), 'Unknown') AS color,
+        sm.stock_status,
+        sm.stock_location,
+        sm.blocked,
+        sm.basic_price,
+        sm.kin_invoice_amt,
+        sm.engine_no,
+        sm.remarks,
+        sm.uploaded_at,
+        sm.booking_no,
+        sm.cust_name,
+        sm.sign_off_date,
+        sm.kin_invoice_date,
+        sm.created_at,
+        COALESCE(pr.grn_date, ${parsedInvoiceDateSql()}, sm.created_at::date) AS grn_date,
         COALESCE(pr.departure_date, sm.sign_off_date) AS departure_date,
-        COALESCE(pr.order_date, sm.kin_invoice_date) AS order_date,
+        COALESCE(pr.order_date, ${parsedInvoiceDateSql()}) AS order_date,
         pr.retail_date,
         COALESCE(NULLIF(pr.total_invoice_value, '0'), sm.basic_price::text, pr.basic_price::text, sm.kin_invoice_amt::text) AS total_invoice_value,
         COALESCE(NULLIF(TRIM(sm.order_dealer), ''), 'Unknown') AS dealer_code,
         ${VALUE_SQL} AS stock_value,
-        GREATEST((CURRENT_DATE - COALESCE(sm.kin_invoice_date, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS age_days,
-        GREATEST((CURRENT_DATE - COALESCE(sm.kin_invoice_date, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS stock_age
-      FROM kia_stock_management sm
+        GREATEST((CURRENT_DATE - COALESCE(${parsedInvoiceDateSql()}, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS age_days,
+        GREATEST((CURRENT_DATE - COALESCE(${parsedInvoiceDateSql()}, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS stock_age
+    FROM kia_stock_report sm
       LEFT JOIN kia_purchase_report pr ON sm.vin_number = pr.vin_no
+      LEFT JOIN kia_stock_local_statuses ksl ON ksl.vin_number = sm.vin_number
       WHERE COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text) IS NOT NULL
+        AND COALESCE(ksl.local_status, '') <> 'retail'
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
+    ),
+    active_stock AS (
+      SELECT *
+      FROM latest
+
+      UNION ALL
+
+      SELECT
+        ls.id,
+        ls.vin_number,
+        ls.vin_number AS vin_no,
+        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS order_dealer,
+        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS dealer,
+        COALESCE(NULLIF(TRIM(ls.model), ''), 'Unknown') AS model,
+        COALESCE(NULLIF(TRIM(ls.variant), ''), 'Unknown') AS variant,
+        COALESCE(NULLIF(TRIM(ls.color), ''), 'Unknown') AS exterior_color_name,
+        COALESCE(NULLIF(TRIM(ls.color), ''), 'Unknown') AS color,
+        COALESCE(NULLIF(TRIM(ls.stock_status_at_mark), ''), 'Free Stock') AS stock_status,
+        COALESCE(NULLIF(TRIM(ls.stock_location), ''), '-') AS stock_location,
+        NULL::text AS blocked,
+        ls.basic_price,
+        NULL::text AS kin_invoice_amt,
+        COALESCE(NULLIF(TRIM(ls.engine_no), ''), '') AS engine_no,
+        COALESCE(NULLIF(TRIM(ls.notes), ''), 'BBND saved snapshot') AS remarks,
+        ls.source_uploaded_at AS uploaded_at,
+        COALESCE(NULLIF(TRIM(ls.booking_no), ''), '') AS booking_no,
+        COALESCE(NULLIF(TRIM(ls.customer_name), ''), '') AS cust_name,
+        NULL::date AS sign_off_date,
+        COALESCE(NULLIF(TRIM(ls.kin_invoice_date), ''), '') AS kin_invoice_date,
+        ls.marked_at AS created_at,
+        NULL::date AS grn_date,
+        NULL::date AS departure_date,
+        NULL::date AS order_date,
+        NULL::date AS retail_date,
+        ls.basic_price::text AS total_invoice_value,
+        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS dealer_code,
+        COALESCE(ls.basic_price, 0)::numeric * 1.36 AS stock_value,
+        GREATEST(COALESCE(NULLIF(regexp_replace((ls.vehicle_snapshot->>'stock_age')::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)::int, 0) AS age_days,
+        GREATEST(COALESCE(NULLIF(regexp_replace((ls.vehicle_snapshot->>'stock_age')::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)::int, 0) AS stock_age
+      FROM kia_stock_local_statuses ls
+      WHERE ls.local_status = 'bbnd'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM latest d
+          WHERE d.vin_number = ls.vin_number
+        )
     )
     SELECT *
-    FROM latest
+    FROM active_stock
     WHERE ${AVAILABLE_STATUS_SQL}
+      ${activeDealerClause(dealerCode)}
   `))
 }
 
@@ -282,32 +364,32 @@ export async function getKiaStockReportFreshness(dealerCode?: string | null): Pr
   const freshnessDealerClause = normalizedDealerCode
     ? sql`AND UPPER(TRIM(COALESCE(NULLIF(TRIM(order_dealer), ''), 'Unknown'))) = ${normalizedDealerCode}`
     : sql``
-  return getCachedData(`kia:stock-report:freshness:v5:${normalizedDealerCode || 'all'}`, async () => {
+  return getCachedData(`kia:stock-report:freshness:v9:${normalizedDealerCode || 'all'}`, async () => {
     const [summaryRow, monthRows, dealerRows, statusRows] = await Promise.all([
       analyticsDb.execute(sql`
         SELECT COUNT(*)::int AS row_count,
-               MIN(COALESCE(kin_invoice_date, sign_off_date)) AS min_date,
-               MAX(COALESCE(kin_invoice_date, sign_off_date)) AS max_date,
+               MIN(COALESCE(${parsedInvoiceDateSql('')}, sign_off_date)) AS min_date,
+               MAX(COALESCE(${parsedInvoiceDateSql('')}, sign_off_date)) AS max_date,
                MAX(uploaded_at) AS source_updated_at
-        FROM kia_stock_management
+        FROM kia_stock_report
         WHERE TRUE ${freshnessDealerClause}
       `),
       analyticsDb.execute(sql`
-        SELECT DISTINCT EXTRACT(YEAR FROM COALESCE(kin_invoice_date, sign_off_date))::int AS year,
-                        (EXTRACT(MONTH FROM COALESCE(kin_invoice_date, sign_off_date))::int - 1) AS month
-        FROM kia_stock_management
-        WHERE COALESCE(kin_invoice_date, sign_off_date) IS NOT NULL ${freshnessDealerClause}
+        SELECT DISTINCT EXTRACT(YEAR FROM COALESCE(${parsedInvoiceDateSql('')}, sign_off_date))::int AS year,
+                        (EXTRACT(MONTH FROM COALESCE(${parsedInvoiceDateSql('')}, sign_off_date))::int - 1) AS month
+        FROM kia_stock_report
+        WHERE COALESCE(${parsedInvoiceDateSql('')}, sign_off_date) IS NOT NULL ${freshnessDealerClause}
         ORDER BY year DESC, month DESC
       `),
       analyticsDb.execute(sql`
         SELECT DISTINCT UPPER(TRIM(COALESCE(NULLIF(TRIM(order_dealer), ''), 'Unknown'))) AS dealer
-        FROM kia_stock_management
+        FROM kia_stock_report
         WHERE order_dealer IS NOT NULL
         ORDER BY dealer
       `),
       analyticsDb.execute(sql`
         SELECT DISTINCT COALESCE(NULLIF(TRIM(stock_status), ''), 'Unknown') AS status
-        FROM kia_stock_management
+        FROM kia_stock_report
         ORDER BY status
       `),
     ])
@@ -328,7 +410,7 @@ export async function getKiaStockReportFreshness(dealerCode?: string | null): Pr
       maxDate: isoDate(summary.max_date),
       rowCount: Number(summary.row_count) || 0,
       availableMonths,
-      dealerOptions: rows(dealerRows).map((row) => safeText(row.dealer)).filter(Boolean),
+      dealerOptions: Array.from(new Set(rows(dealerRows).map((row) => safeText(row.dealer)).filter(Boolean))),
       statusOptions: rows(statusRows).map((row) => safeText(row.status)).filter(Boolean),
     }
   }, CACHE_TTL.MEDIUM)
@@ -346,7 +428,7 @@ export async function getKiaStockReportSummary(input: {
   const fallback = await latestMonthFallback()
   const context = resolveDateContext(input, fallback)
   const dateMode = normalizeDateMode(input.dateMode)
-  const cacheKey = `kia:stock-report:summary:v9:${dealerCode || 'all'}`
+  const cacheKey = `kia:stock-report:summary:v13:${dealerCode || 'all'}`
   return getCachedData(cacheKey, async () => {
     const currentRows = await readCurrentRows(dealerCode)
     const currentVehicles = currentRows.map(normalizeVehicle)
@@ -398,7 +480,7 @@ export async function getKiaStockReportSummary(input: {
       agingModelRows.set(vehicle.model, agingModel)
     }
 
-    const [movementStatus, movementMonthly, movementDaily, salesReportMonthly] = await Promise.all([
+    const [movementStatus, movementMonthly, movementDaily, salesReportMonthly, sales90dResult, trimSalesResult] = await Promise.all([
       analyticsDb.execute(sql`
         SELECT COALESCE(NULLIF(TRIM(stock_status), ''), 'Unknown') AS name, COUNT(*)::int AS value
         FROM kia_purchase_report
@@ -468,6 +550,21 @@ export async function getKiaStockReportSummary(input: {
         WHERE booking_date IS NOT NULL ${salesReportDealerClause(dealerCode)}
         GROUP BY 1
       `),
+      analyticsDb.execute(sql`
+        SELECT COUNT(*)::int AS cnt
+        FROM kia_sales_report
+        WHERE booking_date >= CURRENT_DATE - INTERVAL '90 days'
+          AND booking_date IS NOT NULL
+          ${salesReportDealerClause(dealerCode)}
+      `),
+      analyticsDb.execute(sql`
+        SELECT UPPER(TRIM(model)) AS model, UPPER(TRIM(variant)) AS variant, COUNT(*)::int AS sales_count
+        FROM kia_sales_report
+        WHERE booking_date >= CURRENT_DATE - INTERVAL '90 days'
+          AND booking_date IS NOT NULL
+          ${salesReportDealerClause(dealerCode)}
+        GROUP BY 1, 2
+      `),
     ])
 
     const salesMap = new Map<string, number>()
@@ -477,7 +574,82 @@ export async function getKiaStockReportSummary(input: {
       }
     }
 
-    const updatedRow = rows(await analyticsDb.execute(sql`SELECT MAX(uploaded_at) AS updated_at FROM kia_stock_management sm WHERE TRUE ${dealerClause(dealerCode)}`))[0] || {}
+    const retailed90 = Number(rows(sales90dResult)[0]?.cnt) || 0
+    const trimSalesMap = new Map<string, number>()
+    for (const r of rows(trimSalesResult)) {
+      const key = `${safeText(r.model).toUpperCase().trim()}|${safeText(r.variant).toUpperCase().trim()}`
+      trimSalesMap.set(key, Number(r.sales_count) || 0)
+    }
+
+    const trimStockMap = new Map<string, { model: string; variant: string; stock_count: number; age_sum: number; value_sum: number }>()
+    for (const vehicle of currentVehicles) {
+      const key = `${vehicle.model.toUpperCase().trim()}|${vehicle.variant.toUpperCase().trim()}`
+      const existing = trimStockMap.get(key) || {
+        model: vehicle.model,
+        variant: vehicle.variant,
+        stock_count: 0,
+        age_sum: 0,
+        value_sum: 0,
+      }
+      existing.stock_count += 1
+      existing.age_sum += vehicle.stockAge
+      existing.value_sum += vehicle.stockValue
+      trimStockMap.set(key, existing)
+    }
+
+    const trimsList = Array.from(trimStockMap.entries()).map(([key, stockInfo]) => {
+      const salesCount = trimSalesMap.get(key) || 0
+      const avgAge = stockInfo.stock_count > 0 ? Math.round(stockInfo.age_sum / stockInfo.stock_count) : 0
+      return {
+        model: stockInfo.model,
+        variant: stockInfo.variant,
+        stockCount: stockInfo.stock_count,
+        salesCount90d: salesCount,
+        avgAge,
+        stockValue: stockInfo.value_sum,
+      }
+    })
+
+    const processedKeys = new Set(trimStockMap.keys())
+    for (const r of rows(trimSalesResult)) {
+      const key = `${safeText(r.model).toUpperCase().trim()}|${safeText(r.variant).toUpperCase().trim()}`
+      if (!processedKeys.has(key)) {
+        trimsList.push({
+          model: safeText(r.model),
+          variant: safeText(r.variant),
+          stockCount: 0,
+          salesCount90d: Number(r.sales_count) || 0,
+          avgAge: 0,
+          stockValue: 0,
+        })
+      }
+    }
+
+    const interestRate = 10
+    const totalInterestAccrued = currentVehicles.reduce((sum, row) => sum + ((row.stockValue * interestRate) / 100 / 365) * row.stockAge, 0)
+    const rows90Plus = currentVehicles
+      .filter((vehicle) => vehicle.stockAge >= 90)
+      .map((vehicle) => ({
+        ...vehicle,
+        interestAccrued: ((vehicle.stockValue * interestRate) / 100 / 365) * vehicle.stockAge,
+        carryingCostMonth: (vehicle.stockValue * interestRate) / 100 / 12,
+      }))
+      .sort((a, b) => b.stockAge - a.stockAge)
+
+    const fastestTrims = [...trimsList]
+      .filter((t) => t.salesCount90d > 0)
+      .sort((a, b) => b.salesCount90d - a.salesCount90d)
+      .slice(0, 5)
+
+    const slowestTrims = [...trimsList]
+      .filter((t) => t.stockCount > 0)
+      .sort((a, b) => {
+        if (a.salesCount90d !== b.salesCount90d) return a.salesCount90d - b.salesCount90d
+        return b.avgAge - a.avgAge
+      })
+      .slice(0, 5)
+
+    const updatedRow = rows(await analyticsDb.execute(sql`SELECT MAX(uploaded_at) AS updated_at FROM kia_stock_report sm WHERE TRUE ${dealerClause(dealerCode)}`))[0] || {}
 
     return {
       context: {
@@ -504,6 +676,7 @@ export async function getKiaStockReportSummary(input: {
         agingBuckets: ['0-15D', '16-30D', '31-60D', '61-90D', '90D+'].map((name) => ({ name, value: agingMap.get(name) || 0 })),
         highValue: [...currentVehicles].sort((a, b) => b.stockValue - a.stockValue).slice(0, 10),
         slowMoving: [...currentVehicles].sort((a, b) => b.stockAge - a.stockAge).slice(0, 10),
+        totalInterestAccrued,
       },
       models: {
         cards: Array.from(modelRows.entries()).map(([model, value]) => ({
@@ -544,6 +717,11 @@ export async function getKiaStockReportSummary(input: {
         buckets: ['0-15D', '16-30D', '31-60D', '61-90D', '90D+'].map((name) => ({ name, value: agingMap.get(name) || 0 })),
         byModel: Array.from(agingModelRows.entries()).map(([model, value]) => ({ model, units: value.units, avgAge: value.units ? Math.round(value.ageTotal / value.units) : 0 })).sort((a, b) => b.avgAge - a.avgAge),
         rows: [...currentVehicles].sort((a, b) => b.stockAge - a.stockAge).slice(0, 10),
+        rows90Plus,
+      },
+      trims: {
+        fastest: fastestTrims,
+        slowest: slowestTrims,
       },
     }
   }, CACHE_TTL.SHORT)
@@ -604,24 +782,69 @@ async function readReportRows(input: {
         sm.cust_name,
         sm.order_dealer AS main_dealer,
         sm.order_dealer AS order_dealer,
-        COALESCE(pr.grn_date, sm.kin_invoice_date, sm.created_at::date) AS grn_date,
+        COALESCE(pr.grn_date, ${parsedInvoiceDateSql()}, sm.created_at::date) AS grn_date,
         COALESCE(pr.departure_date, sm.sign_off_date) AS departure_date,
-        COALESCE(pr.order_date, sm.kin_invoice_date) AS order_date,
+        COALESCE(pr.order_date, ${parsedInvoiceDateSql()}) AS order_date,
         pr.retail_date,
         COALESCE(NULLIF(pr.total_invoice_value, '0'), sm.basic_price::text, pr.basic_price::text, sm.kin_invoice_amt::text) AS total_invoice_value,
         COALESCE(NULLIF(TRIM(sm.order_dealer), ''), 'Unknown') AS dealer_code,
         ${VALUE_SQL} AS stock_value,
-        GREATEST((CURRENT_DATE - COALESCE(sm.kin_invoice_date, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS age_days,
-        GREATEST((CURRENT_DATE - COALESCE(sm.kin_invoice_date, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS stock_age
-      FROM kia_stock_management sm
+        GREATEST((CURRENT_DATE - COALESCE(${parsedInvoiceDateSql()}, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS age_days,
+        GREATEST((CURRENT_DATE - COALESCE(${parsedInvoiceDateSql()}, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS stock_age
+      FROM kia_stock_report sm
       LEFT JOIN kia_purchase_report pr ON sm.vin_number = pr.vin_no
+      LEFT JOIN kia_stock_local_statuses ksl ON ksl.vin_number = sm.vin_number
       WHERE COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text) IS NOT NULL
+        AND COALESCE(ksl.local_status, '') <> 'retail'
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
+    ),
+    active_stock AS (
+      SELECT *
+      FROM latest
+
+      UNION ALL
+
+      SELECT
+        ls.id,
+        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS dealer,
+        COALESCE(NULLIF(TRIM(ls.stock_status_at_mark), ''), 'Free Stock') AS stock_status,
+        COALESCE(NULLIF(TRIM(ls.model), ''), 'Unknown') AS model,
+        COALESCE(NULLIF(TRIM(ls.variant), ''), 'Unknown') AS variant,
+        COALESCE(NULLIF(TRIM(ls.color), ''), 'Unknown') AS color,
+        ls.vin_number AS vin_no,
+        COALESCE(NULLIF(TRIM(ls.stock_location), ''), '-') AS stock_location,
+        NULL::text AS blocked,
+        ls.basic_price,
+        NULL::text AS kin_invoice_amt,
+        COALESCE(NULLIF(TRIM(ls.engine_no), ''), '') AS engine_no,
+        COALESCE(NULLIF(TRIM(ls.notes), ''), 'BBND saved snapshot') AS remarks,
+        ls.source_uploaded_at AS uploaded_at,
+        COALESCE(NULLIF(TRIM(ls.booking_no), ''), '') AS booking_no,
+        COALESCE(NULLIF(TRIM(ls.customer_name), ''), '') AS cust_name,
+        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS main_dealer,
+        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS order_dealer,
+        NULL::date AS grn_date,
+        NULL::date AS departure_date,
+        NULL::date AS order_date,
+        NULL::date AS retail_date,
+        ls.basic_price::text AS total_invoice_value,
+        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS dealer_code,
+        COALESCE(ls.basic_price, 0)::numeric * 1.36 AS stock_value,
+        GREATEST(COALESCE(NULLIF(regexp_replace((ls.vehicle_snapshot->>'stock_age')::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)::int, 0) AS age_days,
+        GREATEST(COALESCE(NULLIF(regexp_replace((ls.vehicle_snapshot->>'stock_age')::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)::int, 0) AS stock_age
+      FROM kia_stock_local_statuses ls
+      WHERE ls.local_status = 'bbnd'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM latest d
+          WHERE d.vin_number = ls.vin_number
+        )
     )
     SELECT *
-    FROM latest
+    FROM active_stock
     WHERE ${AVAILABLE_STATUS_SQL}
+      ${activeDealerClause(dealerCode)}
       ${selectedFiltersClause(input)}
       ${searchClause(safeText(input.search))}
     ORDER BY ${sql.raw(sortColumn)} ${sql.raw(direction)}, id DESC
@@ -643,7 +866,7 @@ export async function getKiaStockReportTable(input: {
 }): Promise<KiaStockReportPayload> {
   const page = normalizePage(input.page, 1)
   const pageSize = Math.min(100, normalizePage(input.pageSize, 10))
-  const cacheKey = `kia:stock-report:table:v5:${JSON.stringify({ ...input, page, pageSize })}`
+  const cacheKey = `kia:stock-report:table:v8:${JSON.stringify({ ...input, page, pageSize })}`
   return getCachedData(cacheKey, async () => {
     const { filters: _filters, ...readInput } = input
     const { columns, rows: fetchedRows } = await readReportRows(readInput)

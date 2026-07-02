@@ -40,12 +40,15 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
 }
 
 function normalizeReportKey(value: string | null) {
-  return String(value || 'business_excellence_overview')
+  const normalized = String(value || 'business_excellence_overview')
     .trim()
     .toLowerCase()
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
+
+  if (normalized === 'service_dashboard') return 'ro_billing_report'
+  return normalized
 }
 
 async function readColumns(table: string) {
@@ -99,7 +102,7 @@ export async function GET(request: Request) {
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
     const data = await timer.time('response-cache', () => getCachedData(
-      `kia:business-excellence:freshness:v2:${reportKey}:${dealerCode || 'all'}`,
+      `kia:business-excellence:freshness:v3:${reportKey}:${dealerCode || 'all'}`,
       async () => {
         const sourceFreshness = await timer.time('freshness-db', async () => {
           const settled = await Promise.allSettled(sources.map((source) => readSourceFreshness(source, dealerCode)))

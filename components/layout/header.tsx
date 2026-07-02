@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { NotificationBell } from '@/components/layout/notification-bell'
+// import { NotificationBell } from '@/components/layout/notification-bell' // disabled for now
 
 const THEME_CHANGE_EVENT = 'dashboard-theme-change'
 const ACCENT_CHANGE_EVENT = 'dashboard-accent-change'
@@ -255,7 +255,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
           >
             {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </button>
-          <NotificationBell userId={user?.id || null} userRole={user?.role || null} />
+          {/* NotificationBell disabled for now — will be re-enabled later */}
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
