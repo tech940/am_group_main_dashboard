@@ -7,12 +7,9 @@ import {
   hyundaiSourceDealerSql,
   normalizeHyundaiDealerCode,
 } from '@/lib/hyundai/dealer-branch'
-import { getCachedData } from '@/lib/redis/cache-utils'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
-
-const CACHE_TTL_SECONDS = 60
 
 type FreshnessSource = {
   table: string
@@ -219,25 +216,21 @@ export async function GET(request: Request) {
     const dealerCode = normalizeHyundaiDealerCode(searchParams.get('dealer_code'))
     const sources = REPORT_SOURCES[reportKey] || REPORT_SOURCES.business_excellence_overview
 
-    const data = await timer.time('response-cache', () => getCachedData(
-      `hyundai:business-excellence:freshness:v6:${reportKey}:${dealerCode || 'all'}`,
-      async () => {
-        const sourceFreshness = await readSourceFreshness(sources, dealerCode)
-        const sourceUpdatedAt = sourceFreshness
-          .map((source) => source.sourceUpdatedAt)
-          .filter((value): value is string => Boolean(value))
-          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null
+    const data = await timer.time('freshness-query', async () => {
+      const sourceFreshness = await readSourceFreshness(sources, dealerCode)
+      const sourceUpdatedAt = sourceFreshness
+        .map((source) => source.sourceUpdatedAt)
+        .filter((value): value is string => Boolean(value))
+        .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null
 
-        return {
-          report: reportKey,
-          dealerCode,
-          sourceUpdatedAt,
-          sources: sourceFreshness,
-          lastUpdatedAt: new Date().toISOString(),
-        }
-      },
-      CACHE_TTL_SECONDS
-    ))
+      return {
+        report: reportKey,
+        dealerCode,
+        sourceUpdatedAt,
+        sources: sourceFreshness,
+        lastUpdatedAt: new Date().toISOString(),
+      }
+    })
 
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data, {
