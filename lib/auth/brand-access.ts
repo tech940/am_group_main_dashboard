@@ -9,6 +9,9 @@ export function canAccessBrand(appUser: AppUser | null, brand: BranchValue) {
   if (!appUser) return false
   if (isSuperAdminRole(appUser.role) || hasGlobalAccessRole(appUser.role)) return true
   if (hasAllBranchAccess(appUser.brand)) return true
+  if (appUser.brand && appUser.brand.includes(',')) {
+    return appUser.brand.split(',').map(b => b.trim()).includes(brand)
+  }
   return appUser.brand === brand
 }
 

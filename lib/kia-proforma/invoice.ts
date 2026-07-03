@@ -31,6 +31,8 @@ export type KiaProformaInvoiceRow = {
   totalCustomerCost: string | number
   grandTotalCost: string | number
   location?: string | null
+  documentTitle?: string | null
+  disclaimerLines?: string[] | null
 }
 
 type PdfPage = {
@@ -396,8 +398,17 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
     y -= 13
   })
   y -= 8
-  center(y, 'PROFORMA INVOICE', 9, true)
+  center(y, text(row.documentTitle) || 'PROFORMA INVOICE', 9, true)
   y -= 22
+
+  if (row.disclaimerLines?.length) {
+    ensure(48)
+    rect(margin, y - 40, width - margin * 2, 40)
+    row.disclaimerLines.slice(0, 3).forEach((line, index) => {
+      textAt(margin + 8, y - 13 - (index * 11), line, 8, index === 0)
+    })
+    y -= 52
+  }
 
   const infoRows = [
     [`PROFORMA INVOICE NO. ${row.id.slice(0, 8).toUpperCase()}`, `DATE: ${dateLabel(row.proformaDate)}`],

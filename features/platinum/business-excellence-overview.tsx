@@ -1815,7 +1815,7 @@ export function BusinessExcellenceOverview({ dateFilter, dealerCode }: { dateFil
           )}
           <SnapshotTile
               icon={TrendingUp}
-              label="Revenue"
+              label="Total Revenue (inc Labour + Parts)"
               value={formatCurrency(data.kpis.revenue)}
               meta={`Through ${latestBillingDate}`}
               comparison={{

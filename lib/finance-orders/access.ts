@@ -71,6 +71,18 @@ function getFinanceBranchFilter(appUser: AppUser) {
   if (hasAllBranchAccess(appUser.brand)) return null
 
   const branch = appUser.brand || ''
+  if (branch.includes(',')) {
+    const branches = branch.split(',').map(b => b.trim())
+    const branchConditions = branches.flatMap(b => {
+      const branchLabel = getUserBranchLabel(b)
+      return [
+        eq(financeOrders.dealer, b),
+        eq(financeOrders.dealer, branchLabel)
+      ]
+    })
+    return or(...branchConditions)
+  }
+
   const branchLabel = getUserBranchLabel(branch)
   return or(
     eq(financeOrders.dealer, branch),
@@ -106,6 +118,14 @@ export function canReadFinanceOrder(appUser: AppUser, order: Pick<FinanceOrderRe
     (appUser.role === 'ceo' || appUser.role === 'md' || appUser.role === 'ea' || appUser.role === 'accounts')
     && !hasAllBranchAccess(appUser.brand)
   ) {
+    const branch = appUser.brand || ''
+    if (branch.includes(',')) {
+      const branches = branch.split(',').map(b => b.trim())
+      return branches.some(b => {
+        const branchLabel = getUserBranchLabel(b)
+        return order.dealer === b || order.dealer === branchLabel
+      })
+    }
     const branchLabel = getUserBranchLabel(appUser.brand)
     return order.dealer === appUser.brand || order.dealer === branchLabel
   }

@@ -122,6 +122,9 @@ const ROLE_LABELS: Record<string, string> = {
   manager: 'Manager',
   technician: 'Technician',
   viewer: 'Employee / Viewer',
+  service_manager: 'Service Manager',
+  general_manager: 'General Manager',
+  sales_head: 'Sales Head',
 }
 
 const TAB_DEFINITIONS: Array<{
@@ -139,7 +142,14 @@ const TAB_DEFINITIONS: Array<{
 ]
 
 function branchLabel(branch: string | null) {
+  if (!branch) return 'Unassigned'
   if (branch === 'all') return 'All Branches'
+  if (branch.includes(',')) {
+    return branch
+      .split(',')
+      .map((b) => BRANCH_OPTIONS.find((item) => item.value === b.trim())?.label || b)
+      .join(', ')
+  }
   return BRANCH_OPTIONS.find((item) => item.value === branch)?.label || 'Unassigned'
 }
 
@@ -155,6 +165,72 @@ function StatCard({ label, value, icon: Icon }: { label: string; value: number; 
       </CardContent>
     </Card>
   )
+}
+
+function BranchSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const currentValues = value ? value.split(',').map((v) => v.trim()) : [];
+  const isAll = currentValues.includes('all');
+
+  const toggleBranch = (branchVal: string) => {
+    if (branchVal === 'all') {
+      onChange('all');
+      return;
+    }
+
+    let nextValues = isAll ? [] : [...currentValues];
+    if (nextValues.includes(branchVal)) {
+      nextValues = nextValues.filter((v) => v !== branchVal);
+    } else {
+      nextValues.push(branchVal);
+    }
+
+    if (nextValues.length === 0) {
+      onChange('');
+    } else if (nextValues.length === BRANCH_OPTIONS.length) {
+      onChange('all');
+    } else {
+      onChange(nextValues.join(','));
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200 p-3 bg-slate-50">
+      <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+        <input
+          type="checkbox"
+          id="branch-all"
+          checked={isAll}
+          onChange={() => toggleBranch('all')}
+          className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+        />
+        <label htmlFor="branch-all" className="text-xs font-semibold text-slate-700">All Branches</label>
+      </div>
+      <div className="grid grid-cols-2 gap-2 pt-1">
+        {BRANCH_OPTIONS.map((branch) => {
+          const checked = isAll || currentValues.includes(branch.value);
+          return (
+            <div key={branch.value} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id={`branch-${branch.value}`}
+                checked={checked}
+                disabled={isAll}
+                onChange={() => toggleBranch(branch.value)}
+                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <label htmlFor={`branch-${branch.value}`} className="text-xs text-slate-600 font-medium">{branch.label}</label>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function AdminConsole() {
@@ -185,7 +261,7 @@ export function AdminConsole() {
   const [selectedUserId, setSelectedUserId] = useState(searchParams.get('user') || '')
   const [permissionChanges, setPermissionChanges] = useState<Record<string, boolean | null>>({})
   const [editUser, setEditUser] = useState<ManagedUser | null>(null)
-  const [editForm, setEditForm] = useState({ fullName: '', role: '', brand: '', department: '', phoneNumber: '' })
+  const [editForm, setEditForm] = useState({ fullName: '', email: '', password: '', role: '', brand: '', department: '', phoneNumber: '' })
 
   const activeTab = useMemo(() => {
     const definition = TAB_DEFINITIONS.find((item) => item.key === requestedTab)
@@ -295,6 +371,8 @@ export function AdminConsole() {
     setEditUser(user)
     setEditForm({
       fullName: user.fullName,
+      email: user.email,
+      password: '',
       role: user.role,
       brand: user.brand || '',
       department: user.department || '',
@@ -318,6 +396,8 @@ export function AdminConsole() {
           ...(capabilities?.authority === 'super_admin' ? {
             role: editForm.role,
             brand: editForm.brand,
+            email: editForm.email,
+            ...(editForm.password ? { password: editForm.password } : {}),
           } : {}),
         }),
       })
@@ -643,7 +723,7 @@ export function AdminConsole() {
             </div>
           )}
           {createStep === 2 && (
-            <div className="grid gap-4 py-3">
+            <div className="grid gap-4 py-3 max-h-[60vh] overflow-y-auto pr-2">
               <div>
                 <Label>Role</Label>
                 <Select value={createForm.role} onValueChange={(value) => setCreateForm((current) => ({ ...current, role: value }))}>
@@ -652,14 +732,11 @@ export function AdminConsole() {
                 </Select>
               </div>
               <div>
-                <Label>Branch</Label>
+                <Label className="mb-1.5 block">Branch(es)</Label>
                 {capabilities?.authority === 'branch_admin'
                   ? <Input value={branchLabel(capabilities.branch)} disabled />
                   : (
-                    <Select value={createForm.brand} onValueChange={(value) => setCreateForm((current) => ({ ...current, brand: value }))}>
-                      <SelectTrigger><SelectValue placeholder="Select branch" /></SelectTrigger>
-                      <SelectContent>{USER_BRANCH_OPTIONS.map((branch) => <SelectItem key={branch.value} value={branch.value}>{branch.label}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <BranchSelector value={createForm.brand} onChange={(value) => setCreateForm((current) => ({ ...current, brand: value }))} />
                   )}
               </div>
               <div><Label>Department</Label><Input value={createForm.department} onChange={(event) => setCreateForm((current) => ({ ...current, department: event.target.value }))} /></div>
@@ -692,10 +769,18 @@ export function AdminConsole() {
                 : 'Update role, branch, and profile details.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-3">
-            <div><Label>Full name</Label><Input value={editForm.fullName} onChange={(event) => setEditForm((current) => ({ ...current, fullName: event.target.value }))} /></div>
+          <div className="grid gap-4 py-3 max-h-[60vh] overflow-y-auto pr-2">
+            {capabilities?.authority === 'super_admin' ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Full name</Label><Input value={editForm.fullName} onChange={(event) => setEditForm((current) => ({ ...current, fullName: event.target.value }))} /></div>
+                <div><Label>Email</Label><Input type="email" value={editForm.email} onChange={(event) => setEditForm((current) => ({ ...current, email: event.target.value }))} /></div>
+              </div>
+            ) : (
+              <div><Label>Full name</Label><Input value={editForm.fullName} onChange={(event) => setEditForm((current) => ({ ...current, fullName: event.target.value }))} /></div>
+            )}
+            
             {capabilities?.authority === 'super_admin' && (
-              <>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Role</Label>
                   <Select value={editForm.role} onValueChange={(value) => setEditForm((current) => ({ ...current, role: value }))}>
@@ -704,16 +789,23 @@ export function AdminConsole() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Branch</Label>
-                  <Select value={editForm.brand} onValueChange={(value) => setEditForm((current) => ({ ...current, brand: value }))}>
-                    <SelectTrigger><SelectValue placeholder="Select branch" /></SelectTrigger>
-                    <SelectContent>{USER_BRANCH_OPTIONS.map((branch) => <SelectItem key={branch.value} value={branch.value}>{branch.label}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <Label>New Password (optional override)</Label>
+                  <Input type="password" placeholder="Leave blank to keep current" value={editForm.password} onChange={(event) => setEditForm((current) => ({ ...current, password: event.target.value }))} />
                 </div>
-              </>
+              </div>
             )}
-            <div><Label>Department</Label><Input value={editForm.department} onChange={(event) => setEditForm((current) => ({ ...current, department: event.target.value }))} /></div>
-            <div><Label>Phone</Label><Input value={editForm.phoneNumber} onChange={(event) => setEditForm((current) => ({ ...current, phoneNumber: event.target.value }))} /></div>
+
+            {capabilities?.authority === 'super_admin' && (
+              <div>
+                <Label className="mb-1.5 block">Branch(es)</Label>
+                <BranchSelector value={editForm.brand} onChange={(value) => setEditForm((current) => ({ ...current, brand: value }))} />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Department</Label><Input value={editForm.department} onChange={(event) => setEditForm((current) => ({ ...current, department: event.target.value }))} /></div>
+              <div><Label>Phone</Label><Input value={editForm.phoneNumber} onChange={(event) => setEditForm((current) => ({ ...current, phoneNumber: event.target.value }))} /></div>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>

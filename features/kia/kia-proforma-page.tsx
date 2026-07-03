@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Bar,
@@ -18,7 +19,13 @@ import {
   YAxis,
 } from 'recharts'
 import {
+  ArrowLeft,
   BarChart3,
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
   Columns3,
   FileText,
   Filter,
@@ -27,8 +34,10 @@ import {
   Save,
   Search,
   ShieldCheck,
+  Upload,
   WalletCards,
 } from 'lucide-react'
+import { KiaBookingsClient } from '@/app/brands/kia/bookings/kia-bookings-client'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -37,10 +46,16 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { calculateKiaProformaPricing, getKiaBankOptions } from '@/lib/kia-proforma/pricing'
 
 export type KiaProformaSection =
+  | 'bookings'
   | 'generate'
   | 'all'
   | 'finance-remarks'
@@ -138,6 +153,15 @@ type OptionsPayload = {
   trims: { model: string; trim_description: string }[]
   banks: { bank_name: string; bank_branch: string | null }[]
   insuranceCompanies: string[]
+}
+
+type PriceImportSummary = {
+  sheetName: string
+  totalRowsProcessed: number
+  importedRows: number
+  failedRows: number
+  failures: { rowNumber: number; reason: string }[]
+  durationMs: number
 }
 
 type FormState = {
@@ -442,17 +466,86 @@ function useProformas(mode: string, enabled = true) {
   return { rows, loading, error, search, setSearch, page, setPage, pagination, financeStatus, setFinanceStatus, reload }
 }
 
-const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: string; approverOnly?: boolean }[] = [
-  { section: 'generate', label: 'Generate Proforma', href: '/brands/kia/proforma' },
+const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: string; approverOnly?: boolean; hideFromNav?: boolean }[] = [
+  { section: 'bookings', label: 'Booking CRM', href: '/brands/kia/proforma/bookings' },
+  { section: 'generate', label: 'Generate Proforma', href: '/brands/kia/proforma/generate', hideFromNav: true },
   { section: 'all', label: 'All Proforma Details', href: '/brands/kia/proforma/all-proforma-details' },
-  { section: 'finance-remarks', label: 'Finance Remarks', href: '/brands/kia/proforma/finance-remarks' },
+  { section: 'finance-remarks', label: 'Finance Remarks', href: '/brands/kia/proforma/finance-remarks', hideFromNav: true },
   { section: 'pending-approval', label: 'Pending Approval', href: '/brands/kia/proforma/pending-approval', approverOnly: true },
   { section: 'analytics', label: 'Hyp / Ins Analytics', href: '/brands/kia/proforma/hyp-ins-analytics' },
   { section: 'insights', label: 'Business Insights', href: '/brands/kia/proforma/business-insights' },
 ]
 
-function ModuleHeader({ section, profile, isApprover }: { section: KiaProformaSection; profile?: KiaProfile | null; isApprover: boolean }) {
+function PriceDetailsUploadPanel({ onImported }: { onImported: () => void }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [summary, setSummary] = useState<PriceImportSummary | null>(null)
+  const [error, setError] = useState('')
+
+  async function upload() {
+    if (!file) {
+      setError('Choose the KIA price details workbook first.')
+      return
+    }
+    setUploading(true)
+    setError('')
+    setSummary(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch('/api/brands/kia/proforma/price-details/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || 'Failed to import price details')
+      setSummary(payload.summary)
+      setFile(null)
+      onImported()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import price details')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--dashboard-action-bg)]">Price Master Upload</p>
+          <p className="mt-1 text-sm font-semibold text-slate-600">Imports only the <span className="font-black text-slate-900">PRICE DETAILS</span> sheet and replaces the current KIA price master.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            type="file"
+            accept=".xlsx,.xls,.xlsm"
+            onChange={(event) => setFile(event.target.files?.[0] || null)}
+            className="h-11 w-72 rounded-xl border-slate-200 bg-white text-sm font-semibold"
+            disabled={uploading}
+          />
+          <Button type="button" onClick={upload} disabled={uploading || !file} className={cn('h-11 rounded-xl', proformaPrimaryButton)}>
+            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+            Replace Prices
+          </Button>
+        </div>
+      </div>
+      {error && <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">{error}</p>}
+      {summary && (
+        <div className="mt-3 grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-800 md:grid-cols-4">
+          <span>Sheet: {summary.sheetName}</span>
+          <span>Processed: {summary.totalRowsProcessed}</span>
+          <span>Imported: {summary.importedRows}</span>
+          <span>Failed: {summary.failedRows} · {(summary.durationMs / 1000).toFixed(1)}s</span>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ModuleHeader({ section, profile, isApprover, onPricesImported }: { section: KiaProformaSection; profile?: KiaProfile | null; isApprover: boolean; onPricesImported: () => void }) {
   const titles: Record<KiaProformaSection, { title: string; subtitle: string; icon: React.ReactNode }> = {
+    bookings: { title: 'Booking CRM', subtitle: 'Manage customer bookings, stock allocations, and finance workflows.', icon: <ClipboardList className="h-5 w-5" /> },
     generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: <FileText className="h-5 w-5" /> },
     all: { title: 'All Proforma Details', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: <Columns3 className="h-5 w-5" /> },
     'finance-remarks': { title: 'Finance Remarks', subtitle: 'Update finance status and remarks against every proforma.', icon: <WalletCards className="h-5 w-5" /> },
@@ -474,16 +567,10 @@ function ModuleHeader({ section, profile, isApprover }: { section: KiaProformaSe
             <p className="mt-1 max-w-3xl text-sm font-semibold text-slate-600">{current.subtitle}</p>
           </div>
         </div>
-        {profile && (
-          <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-right shadow-sm">
-            <p className="text-xs font-black text-slate-950">{profile.consultantName}</p>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{profile.dealerLocation || 'AM Kia'} / {profile.employeeCode || 'No emp code'}</p>
-          </div>
-        )}
       </div>
       <nav className="mt-5 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-2">
         {PROFORMA_NAV_ITEMS
-          .filter((item) => !item.approverOnly || isApprover)
+          .filter((item) => (!item.approverOnly || isApprover) && !item.hideFromNav)
           .map((item) => (
             <Link
               key={item.section}
@@ -499,14 +586,45 @@ function ModuleHeader({ section, profile, isApprover }: { section: KiaProformaSe
             </Link>
           ))}
       </nav>
+      {section === 'bookings' && (
+        <div className="mt-4">
+          <PriceDetailsUploadPanel onImported={onPricesImported} />
+        </div>
+      )}
     </section>
   )
 }
 
-function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSaved: () => void }) {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM)
+type BookingPrefill = {
+  bookingId: string
+  bookingNumber?: string
+  customerName?: string
+  customerPhone?: string
+  customerEmail?: string
+  model?: string
+  variant?: string
+  color?: string
+  consultantName?: string
+}
+
+function GenerateProforma({ options, onSaved, bookingPrefill }: { options: OptionsPayload; onSaved: () => void; bookingPrefill?: BookingPrefill | null }) {
+  const [form, setForm] = useState<FormState>(() => {
+    if (!bookingPrefill) return EMPTY_FORM
+    // Map booking fields to proforma FormState
+    const prefilled: FormState = {
+      ...EMPTY_FORM,
+      customerName: bookingPrefill.customerName || '',
+      mobileNumber: (bookingPrefill.customerPhone || '').replace(/\D/g, '').slice(0, 10),
+      customerEmail: bookingPrefill.customerEmail || '',
+      modelName: bookingPrefill.model || '',
+      trimDescription: bookingPrefill.variant || '',
+      vehicleColor: bookingPrefill.color || '',
+    }
+    return prefilled
+  })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  const [quoteSending, setQuoteSending] = useState(false)
   const editablePrices = form.customerType === 'CSD' || form.customerType === 'Bharat Series'
   const filteredTrims = useMemo(() => {
     return options.trims.filter((trim) => !form.modelName || trim.model === form.modelName).map((trim) => trim.trim_description)
@@ -620,19 +738,30 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
     return Object.keys(next).length === 0
   }
 
+  const router = useRouter()
+
   async function submit() {
     if (!validate()) return
     setSaving(true)
     try {
+      const payload = {
+        ...form,
+        totalCustomerCost: totals.totalCustomerCost,
+        grandTotalCost: totals.grandTotalCost,
+        bookingId: bookingPrefill?.bookingId || undefined,
+      }
       const response = await fetch('/api/brands/kia/proforma', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...form, totalCustomerCost: totals.totalCustomerCost, grandTotalCost: totals.grandTotalCost }),
+        body: JSON.stringify(payload),
       })
       if (!response.ok) throw new Error('Failed to save proforma')
       setForm(EMPTY_FORM)
       onSaved()
       alert('Proforma saved and sent to approval queue.')
+      if (bookingPrefill) {
+        router.push(`/brands/kia/bookings?bookingId=${bookingPrefill.bookingId}`)
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to save proforma')
     } finally {
@@ -640,17 +769,61 @@ function GenerateProforma({ options, onSaved }: { options: OptionsPayload; onSav
     }
   }
 
+  async function emailQuote() {
+    if (!validate()) return
+    setQuoteSending(true)
+    try {
+      const payload = {
+        ...form,
+        totalCustomerCost: totals.totalCustomerCost,
+        grandTotalCost: totals.grandTotalCost,
+      }
+      const response = await fetch('/api/brands/kia/proforma/quote', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Failed to send quote')
+      alert('Quote PDF emailed to the customer.')
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to send quote')
+    } finally {
+      setQuoteSending(false)
+    }
+  }
+
   return (
     <section className="rounded-[2rem] border border-slate-200 bg-white/88 p-5 shadow-xl shadow-slate-900/5">
+      {bookingPrefill && (
+        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-sky-600 text-white">
+            <ArrowLeft className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-700">Pre-filled from Booking</p>
+            <p className="mt-0.5 text-sm font-semibold text-sky-800">
+              {bookingPrefill.bookingNumber ? `#${bookingPrefill.bookingNumber} · ` : ''}{bookingPrefill.customerName || 'Customer'} · {bookingPrefill.model || 'Vehicle'}
+            </p>
+            <p className="mt-0.5 text-xs font-semibold text-sky-600">Review the pre-filled fields, complete any missing information, then save the proforma.</p>
+          </div>
+        </div>
+      )}
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">Customer Proforma</p>
           <h2 className="text-xl font-black text-slate-950">Pricing and customer details</h2>
         </div>
-        <Button onClick={submit} disabled={saving} className={cn('rounded-xl', proformaPrimaryButton)}>
-          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Save Proforma
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button onClick={emailQuote} disabled={quoteSending || saving} variant="outline" className={cn('rounded-xl', proformaOutlineButton)}>
+            {quoteSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+            Email Quote
+          </Button>
+          <Button onClick={submit} disabled={saving || quoteSending} className={cn('rounded-xl', proformaPrimaryButton)}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Save Proforma
+          </Button>
+        </div>
       </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-2">
@@ -736,12 +909,10 @@ function FilterBar({
   setSelectedColumn,
   selectedValues,
   setSelectedValues,
-  selectedDates,
-  setSelectedDates,
-  selectedMonths,
-  setSelectedMonths,
-  selectedYears,
-  setSelectedYears,
+  startDate,
+  setStartDate,
+  endDate,
+  setEndDate,
   financeDate,
   setFinanceDate,
   bankFilter,
@@ -757,12 +928,10 @@ function FilterBar({
   setSelectedColumn: (value: string) => void
   selectedValues: Set<string>
   setSelectedValues: (value: Set<string>) => void
-  selectedDates: Set<string>
-  setSelectedDates: (value: Set<string>) => void
-  selectedMonths: Set<string>
-  setSelectedMonths: (value: Set<string>) => void
-  selectedYears: Set<string>
-  setSelectedYears: (value: Set<string>) => void
+  startDate: string
+  setStartDate: (value: string) => void
+  endDate: string
+  setEndDate: (value: string) => void
   financeDate?: string
   setFinanceDate?: (value: string) => void
   bankFilter?: string
@@ -774,9 +943,6 @@ function FilterBar({
     if (!selectedColumn) return []
     return Array.from(new Set(rows.map((row) => proformaColumnValue(row, selectedColumn) || '-'))).sort()
   }, [rows, selectedColumn])
-  const dates = useMemo(() => Array.from(new Set(rows.map((row) => dateKey(row.proformaDate)).filter(Boolean))).sort().reverse(), [rows])
-  const months = useMemo(() => Array.from(new Set(rows.map((row) => monthKey(row.proformaDate)).filter(Boolean))).sort().reverse(), [rows])
-  const years = useMemo(() => Array.from(new Set(rows.map((row) => yearKey(row.proformaDate)).filter(Boolean))).sort().reverse(), [rows])
   const banks = useMemo(() => Array.from(new Set(rows.map((row) => row.bankName).filter(Boolean))).sort(), [rows])
   const toggleSet = (set: Set<string>, value: string, setter: (value: Set<string>) => void) => {
     const next = new Set(set)
@@ -784,6 +950,81 @@ function FilterBar({
     else next.add(value)
     setter(next)
   }
+
+  // Local state for calendar picker view and pending selections
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false)
+  const [monthPickerView, setMonthPickerView] = useState(() => new Date())
+  const [pendingStartDate, setPendingStartDate] = useState(startDate)
+  const [pendingEndDate, setPendingEndDate] = useState(endDate)
+
+  // Sync pending selection when parent values change (e.g. on clear)
+  useEffect(() => {
+    setPendingStartDate(startDate)
+    setPendingEndDate(endDate)
+  }, [startDate, endDate])
+
+  const today = new Date()
+  const todayMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+  const todayDateKey = `${todayMonthKey}-${String(today.getDate()).padStart(2, '0')}`
+
+  const monthPickerViewLabel = monthPickerView.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  
+  const monthPickerGridStart = (() => {
+    const monthStart = new Date(monthPickerView.getFullYear(), monthPickerView.getMonth(), 1)
+    const gridStart = new Date(monthStart)
+    gridStart.setDate(monthStart.getDate() - monthStart.getDay())
+    return gridStart
+  })()
+  
+  const monthPickerDays = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(monthPickerGridStart)
+    date.setDate(monthPickerGridStart.getDate() + index)
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    return {
+      date,
+      dateKey: `${monthKey}-${String(date.getDate()).padStart(2, '0')}`,
+      monthKey,
+      inCurrentMonth: date.getMonth() === monthPickerView.getMonth(),
+      isAvailable: true,
+    }
+  })
+
+  const hasCompleteCustomRange = startDate && endDate
+  const customRangeLabel = startDate && endDate 
+    ? (startDate === endDate ? formatDate(startDate) : `${formatDate(startDate)} - ${formatDate(endDate)}`) 
+    : null
+
+  const selectedRangeStart = hasCompleteCustomRange && startDate <= endDate ? startDate : endDate
+  const selectedRangeEnd = hasCompleteCustomRange && startDate <= endDate ? endDate : startDate
+
+  function handleCalendarDateClick(dateKey: string) {
+    if (!pendingStartDate || (pendingStartDate && pendingEndDate)) {
+      setPendingStartDate(dateKey)
+      setPendingEndDate('')
+    } else {
+      const start = pendingStartDate <= dateKey ? pendingStartDate : dateKey
+      const end = pendingStartDate <= dateKey ? dateKey : pendingStartDate
+      setPendingStartDate(start)
+      setPendingEndDate(end)
+    }
+  }
+
+  function applyCustomDateRange() {
+    if (pendingStartDate && pendingEndDate) {
+      setStartDate(pendingStartDate)
+      setEndDate(pendingEndDate)
+      setMonthPickerOpen(false)
+    }
+  }
+
+  function clearCustomDateRange() {
+    setPendingStartDate('')
+    setPendingEndDate('')
+    setStartDate('')
+    setEndDate('')
+    setMonthPickerOpen(false)
+  }
+
   return (
     <div className="space-y-3 rounded-3xl border border-slate-200 bg-white/82 p-3 shadow-sm">
       <div className="flex flex-wrap items-center gap-3">
@@ -794,6 +1035,164 @@ function FilterBar({
         {mode === 'finance-remarks' && setFinanceDate && (
           <Input type="date" value={financeDate || ''} onChange={(event) => setFinanceDate(event.target.value)} className="h-11 w-44 rounded-2xl border-slate-200 bg-white/80 font-bold" />
         )}
+        
+        {mode !== 'pending-approval' && (
+          <DropdownMenu
+            open={monthPickerOpen}
+            onOpenChange={(open) => {
+              setMonthPickerOpen(open)
+              if (open) {
+                setPendingStartDate(startDate)
+                setPendingEndDate(endDate)
+                const anchorDate = endDate || startDate
+                const parsedAnchor = anchorDate ? new Date(`${anchorDate}T00:00:00`) : null
+                setMonthPickerView(new Date(
+                  parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
+                    ? parsedAnchor.getFullYear()
+                    : today.getFullYear(),
+                  parsedAnchor && !Number.isNaN(parsedAnchor.getTime())
+                    ? parsedAnchor.getMonth()
+                    : today.getMonth(),
+                  1,
+                ))
+              }
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" className={cn('h-11 justify-between rounded-2xl border-slate-200 bg-white px-4 text-xs font-black shadow-sm text-slate-800 hover:bg-slate-50 min-w-[200px]', proformaOutlineButton)}>
+                <span className="inline-flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-slate-400" />
+                  {customRangeLabel || 'All Dates'}
+                </span>
+                <ChevronDown className="ml-1 h-4 w-4 text-slate-500" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-[340px] rounded-[1.5rem] border border-[#d8e2ec] bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.12)] z-50">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-[#c8102e]/35 hover:text-[#c8102e]"
+                    onClick={() => setMonthPickerView((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
+                    aria-label="Previous month"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <div className="text-center">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Select date range</p>
+                    <p className="mt-1 text-[15px] font-black text-slate-950">{monthPickerViewLabel}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-[#c8102e]/35 hover:text-[#c8102e]"
+                    onClick={() => setMonthPickerView((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
+                    aria-label="Next month"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+                    <div key={`${day}-${index}`} className="py-1">{day}</div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-7 gap-1">
+                  {monthPickerDays.map((day) => {
+                    const hasPendingRange = pendingStartDate && pendingEndDate
+                    const pendingRangeStart = hasPendingRange && pendingStartDate <= pendingEndDate ? pendingStartDate : pendingEndDate
+                    const pendingRangeEnd = hasPendingRange && pendingStartDate <= pendingEndDate ? pendingEndDate : pendingStartDate
+                    
+                    const isSelected = hasPendingRange
+                      ? day.dateKey === pendingRangeStart || day.dateKey === pendingRangeEnd
+                      : !hasCompleteCustomRange
+                        ? day.dateKey === pendingStartDate
+                        : day.dateKey === selectedRangeStart || day.dateKey === selectedRangeEnd
+                    
+                    const isInSelectedRange = hasPendingRange
+                      ? day.dateKey > pendingRangeStart && day.dateKey < pendingRangeEnd
+                      : hasCompleteCustomRange && day.dateKey > selectedRangeStart && day.dateKey < selectedRangeEnd
+                    
+                    const isToday = day.dateKey === todayDateKey
+                    
+                    return (
+                      <button
+                        key={day.dateKey}
+                        type="button"
+                        className={cn(
+                          'flex h-10 items-center justify-center rounded-xl text-[12px] font-black transition',
+                          day.inCurrentMonth ? 'text-slate-700' : 'text-slate-300',
+                          'hover:bg-slate-100 hover:text-slate-900',
+                          isInSelectedRange && 'bg-red-50 text-[#c8102e]',
+                          isToday && 'ring-2 ring-[#c8102e]/50 ring-offset-2',
+                          isSelected && 'bg-[#c8102e] text-white shadow-[0_10px_18px_rgba(200,16,46,0.18)] hover:bg-[#c8102e] hover:text-white'
+                        )}
+                        onClick={() => handleCalendarDateClick(day.dateKey)}
+                      >
+                        {day.date.getDate()}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="rounded-[1.1rem] border border-slate-100 bg-slate-50/50 px-3 py-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                      {pendingStartDate && !pendingEndDate ? 'Pick end date' : 'Date range'}
+                    </p>
+                    <p className="mt-1 text-[13px] font-semibold text-slate-700">
+                      {pendingStartDate && pendingEndDate
+                        ? `${formatDate(pendingStartDate)} – ${formatDate(pendingEndDate)}`
+                        : pendingStartDate
+                          ? `Start: ${formatDate(pendingStartDate)}`
+                          : 'Click a start day, then an end day.'}
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1 rounded-full border px-3 py-1 text-[11px] font-black shadow-none border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                      onClick={() => {
+                        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+                        setPendingStartDate(todayStr)
+                        setPendingEndDate(todayStr)
+                      }}
+                    >
+                      Today
+                    </Button>
+                    {(pendingStartDate || pendingEndDate || startDate || endDate) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-black text-rose-500 shadow-none hover:bg-rose-50"
+                        onClick={clearCustomDateRange}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      disabled={!(pendingStartDate && pendingEndDate)}
+                      className={cn(
+                        'rounded-full px-4 py-1 text-[11px] font-black shadow-none',
+                        pendingStartDate && pendingEndDate
+                          ? 'bg-[#c8102e] text-white hover:bg-red-700'
+                          : 'cursor-not-allowed bg-slate-200 text-slate-400'
+                      )}
+                      onClick={applyCustomDateRange}
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
         <Select value={selectedColumn || 'none'} onValueChange={(value) => { setSelectedColumn(value === 'none' ? '' : value); setSelectedValues(new Set()) }}>
           <SelectTrigger className={cn('h-11 w-56 rounded-2xl', proformaOutlineButton)}><Filter className="mr-2 h-4 w-4" /><SelectValue placeholder="Filter By Column" /></SelectTrigger>
           <SelectContent>{[{ key: 'none', label: 'Filter By Column' }, ...TABLE_COLUMNS.filter((col) => col.key !== 'index')].map((col) => <SelectItem key={String(col.key)} value={String(col.key)}>{col.label}</SelectItem>)}</SelectContent>
@@ -808,13 +1207,6 @@ function FilterBar({
           <RotateCcw className="mr-2 h-4 w-4" />Clear All
         </Button>
       </div>
-      {mode !== 'pending-approval' && (
-        <div className="grid gap-3 lg:grid-cols-3">
-          {mode === 'all' && <ChecklistPanel title="Proforma Date" items={dates.map((value) => ({ value, label: formatDate(value) }))} selected={selectedDates} onToggle={(value) => toggleSet(selectedDates, value, setSelectedDates)} />}
-          <ChecklistPanel title="Month" items={months.map((value) => ({ value, label: monthLabel(value) }))} selected={selectedMonths} onToggle={(value) => toggleSet(selectedMonths, value, setSelectedMonths)} />
-          <ChecklistPanel title="Year" items={years.map((value) => ({ value, label: value }))} selected={selectedYears} onToggle={(value) => toggleSet(selectedYears, value, setSelectedYears)} />
-        </div>
-      )}
       {selectedColumn && <ChecklistPanel title="Column values" items={values.map((value) => ({ value, label: value }))} selected={selectedValues} onToggle={(value) => toggleSet(selectedValues, value, setSelectedValues)} />}
     </div>
   )
@@ -955,9 +1347,8 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const { rows, loading, error, search, setSearch, page, setPage, financeStatus, setFinanceStatus, reload } = useProformas(queryMode, true)
   const [selectedColumn, setSelectedColumn] = useState('')
   const [selectedValues, setSelectedValues] = useState<Set<string>>(new Set())
-  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
-  const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set())
-  const [selectedYears, setSelectedYears] = useState<Set<string>>(new Set())
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [financeDate, setFinanceDate] = useState('')
   const [bankFilter, setBankFilter] = useState('')
   const columnStorageKey = `kia-proforma:hidden-columns:${options.currentUser.id}:${mode}`
@@ -979,14 +1370,13 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     return rows.filter((row) => {
       if (selectedColumn && selectedValues.size > 0 && !selectedValues.has(proformaColumnValue(row, selectedColumn) || '-')) return false
       const rowDate = dateKey(row.proformaDate)
-      if (mode === 'all' && selectedDates.size > 0 && !selectedDates.has(rowDate)) return false
+      if (startDate && rowDate < startDate) return false
+      if (endDate && rowDate > endDate) return false
       if (isFinance && financeDate && rowDate !== financeDate) return false
-      if (selectedMonths.size > 0 && !selectedMonths.has(monthKey(row.proformaDate))) return false
-      if (selectedYears.size > 0 && !selectedYears.has(yearKey(row.proformaDate))) return false
       if (isFinance && financeStatus === 'Current month' && bankFilter && row.bankName !== bankFilter) return false
       return true
     })
-  }, [bankFilter, financeDate, financeStatus, isFinance, mode, rows, selectedColumn, selectedDates, selectedMonths, selectedValues, selectedYears])
+  }, [bankFilter, financeDate, financeStatus, isFinance, rows, selectedColumn, selectedValues, startDate, endDate])
   const totalClientPages = Math.max(1, Math.ceil(filteredRows.length / PROFORMA_TABLE_PAGE_SIZE))
   const currentClientPage = Math.min(page, totalClientPages)
   const pagedRows = filteredRows.slice((currentClientPage - 1) * PROFORMA_TABLE_PAGE_SIZE, currentClientPage * PROFORMA_TABLE_PAGE_SIZE)
@@ -995,9 +1385,8 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     setSearch('')
     setSelectedColumn('')
     setSelectedValues(new Set())
-    setSelectedDates(new Set())
-    setSelectedMonths(new Set())
-    setSelectedYears(new Set())
+    setStartDate('')
+    setEndDate('')
     setFinanceDate('')
     setBankFilter('')
     if (isFinance) setFinanceStatus('all')
@@ -1072,12 +1461,10 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
         setSelectedColumn={setSelectedColumn}
         selectedValues={selectedValues}
         setSelectedValues={setSelectedValues}
-        selectedDates={selectedDates}
-        setSelectedDates={setSelectedDates}
-        selectedMonths={selectedMonths}
-        setSelectedMonths={setSelectedMonths}
-        selectedYears={selectedYears}
-        setSelectedYears={setSelectedYears}
+        startDate={startDate}
+        setStartDate={(value) => { setStartDate(value); setPage(1) }}
+        endDate={endDate}
+        setEndDate={(value) => { setEndDate(value); setPage(1) }}
         financeDate={financeDate}
         setFinanceDate={setFinanceDate}
         bankFilter={bankFilter}
@@ -1323,8 +1710,41 @@ function PieCard({ title, data }: { title: string; data: { name: string; value: 
   )
 }
 
+function useBookingPrefill(bookingId: string | null) {
+  const [prefill, setPrefill] = useState<BookingPrefill | null>(null)
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    if (!bookingId) { setPrefill(null); return }
+    setLoading(true)
+    fetch(`/api/brands/kia/bookings/${bookingId}`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (!data?.booking) return
+        const b = data.booking
+        setPrefill({
+          bookingId,
+          bookingNumber: b.bookingNumber,
+          customerName: b.customerName,
+          customerPhone: b.customerPhone,
+          customerEmail: b.customerEmail,
+          model: b.model,
+          variant: b.variant,
+          color: b.colorPreference || b.color,
+          consultantName: b.consultantName,
+        })
+      })
+      .catch(() => setPrefill(null))
+      .finally(() => setLoading(false))
+  }, [bookingId])
+  return { prefill, loading }
+}
+
 export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
-  const { data: options, loading, error, reload } = useOptions()
+  const searchParams = useSearchParams()
+  const bookingId = searchParams.get('bookingId')
+  const { data: options, loading: optionsLoading, error, reload } = useOptions()
+  const { prefill: bookingPrefill, loading: prefillLoading } = useBookingPrefill(bookingId)
+  const loading = optionsLoading || (Boolean(bookingId) && prefillLoading)
   const approverOnly = section === 'pending-approval'
   if (loading) {
     return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="space-y-4"><div className="h-32 animate-pulse rounded-[2rem] bg-white/70" /><div className="h-96 animate-pulse rounded-[2rem] bg-white/70" /></div></MainLayout>
@@ -1339,8 +1759,9 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
   return (
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
       <div className="kia-proforma-shell space-y-5">
-        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} />
-        {section === 'generate' && <GenerateProforma options={options} onSaved={reload} />}
+        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} onPricesImported={reload} />
+        {section === 'bookings' && <KiaBookingsClient initialSearchParams={{}} embedMode={true} />}
+        {section === 'generate' && <GenerateProforma options={options} onSaved={reload} bookingPrefill={bookingPrefill} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}
         {section === 'finance-remarks' && <DetailsView options={options} mode="finance-remarks" />}
         {section === 'pending-approval' && <DetailsView options={options} mode="pending-approval" />}

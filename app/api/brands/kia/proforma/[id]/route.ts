@@ -3,7 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { kiaProformas } from '@/lib/db/schema'
+import { kiaProformas, kiaBookings, kiaBookingActivity } from '@/lib/db/schema'
 import { canApproveKiaProformaForUser } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 import { serializeUtcTimestampFields } from '@/lib/date-time'
@@ -57,6 +57,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const body = await request.json().catch(() => ({})) as Record<string, unknown>
     const action = text(body.action)
     const updates: Record<string, unknown> = { updatedAt: new Date() }
+    let isApproved = false
 
     if (action === 'finance') {
       const permission = await requirePermission(appUser, 'kia.proforma.edit')
@@ -78,6 +79,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         updates.approvalStatus = `NOT APPROVED | ${failures.map((item) => `${item.label} - ${item.reason || 'No reason specified'}`).join(' | ')}`
       } else {
         updates.approvalStatus = 'APPROVED'
+        isApproved = true
         const pdfUrl = await saveKiaProformaPdf(row)
         updates.linkPreview = pdfUrl || row.linkPreview || `/api/brands/kia/proforma/${id}/preview`
       }
@@ -96,6 +98,37 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       .set(updates)
       .where(eq(kiaProformas.id, id))
       .returning()
+
+    if (isApproved) {
+      // Find linked booking
+      const [linkedBooking] = await db
+        .select()
+        .from(kiaBookings)
+        .where(and(eq(kiaBookings.proformaId, id), isNull(kiaBookings.deletedAt)))
+        .limit(1)
+
+      if (linkedBooking) {
+        await db
+          .update(kiaBookings)
+          .set({
+            status: 'proforma_generated',
+            updatedAt: new Date(),
+            updatedBy: appUser.id,
+          })
+          .where(eq(kiaBookings.id, linkedBooking.id))
+
+        // Create booking timeline activity
+        await db.insert(kiaBookingActivity).values({
+          bookingId: linkedBooking.id,
+          activityType: 'proforma',
+          title: 'Proforma Approved',
+          description: `Proforma approved by ${profile.consultantName || appUser.fullName || appUser.email}`,
+          actorUserId: appUser.id,
+          actorName: appUser.fullName,
+          actorRole: appUser.role,
+        })
+      }
+    }
 
     return NextResponse.json({ row: serialize(updated as Record<string, unknown>) })
   } catch (error) {

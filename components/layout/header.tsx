@@ -23,15 +23,11 @@ const ACCENT_STORAGE_KEY = 'dashboard-accent'
 
 const ACCENT_OPTIONS = [
   { id: 'skydash', label: 'Skydash', colors: ['#4B49AC', '#98BDFF', '#7DA0FA', '#7978E9', '#F3797E'] },
-  { id: 'staradmin', label: 'StarAdmin', colors: ['#F29F67', '#1E1E2C', '#3B8FF3', '#34B1AA', '#E0B50F'] },
-  { id: 'breeze', label: 'Breeze', colors: ['#423A8E', '#00CCCD', '#FFC107', '#DC3545', '#198754', '#0D6EFD'] },
   { id: 'corona', label: 'Corona', colors: ['#191C24', '#AF1763', '#0D6EFD', '#198754', '#0DCAF0', '#AB2E3C', '#FFC107'] },
-  { id: 'purple', label: 'Purple', colors: ['#A05AFF', '#1BCFB4', '#4BCBEB', '#FE9496', '#9E58FF'] },
-  { id: 'midnight', label: 'Midnight', colors: ['#0F172A', '#38BDF8', '#A855F7', '#22C55E', '#F59E0B', '#F43F5E'] },
   { id: 'executive-navy', label: 'Executive Navy', colors: ['#031430', '#0B2A55', '#D4AF37', '#E8EEF7', '#38BDF8', '#00E97E'] },
-  { id: 'executive-dark', label: 'Executive Dark', theme: 'dark', colors: ['#0F172A', '#1E293B', '#3B82F6', '#22C55E', '#F59E0B', '#EF4444', '#F8FAFC'] },
-  { id: 'clean-corporate', label: 'Clean Corporate', theme: 'light', colors: ['#F8FAFC', '#FFFFFF', '#2563EB', '#14B8A6', '#16A34A', '#F59E0B', '#DC2626'] },
-  { id: 'modern-luxury', label: 'Modern Luxury', theme: 'light', colors: ['#FAFAF9', '#FFFFFF', '#7C3AED', '#06B6D4', '#22C55E', '#EAB308', '#EF4444'] },
+  { id: 'minimal-slate', label: 'Minimal Slate', colors: ['#475569', '#64748B', '#94A3B8', '#CBD5E1', '#E2E8F0'] },
+  { id: 'minimal-sage', label: 'Minimal Sage', colors: ['#4F6554', '#718E7A', '#90A997', '#B0C4B5', '#D1DDD5'] },
+  { id: 'minimal-sand', label: 'Minimal Sand', colors: ['#736050', '#947F6E', '#B5A497', '#D6CBC4', '#E6E1DA'] },
 ] as const
 
 type AccentId = typeof ACCENT_OPTIONS[number]['id']
@@ -161,19 +157,8 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   }
 
   const setAccentColor = (accent: AccentId) => {
-    const option = ACCENT_OPTIONS.find((item) => item.id === accent)
-    const preferredTheme = option && 'theme' in option ? option.theme : undefined
-
     document.documentElement.setAttribute('data-dashboard-accent', accent)
     window.localStorage.setItem(ACCENT_STORAGE_KEY, accent)
-
-    if (preferredTheme) {
-      const useDarkTheme = preferredTheme === 'dark'
-      document.documentElement.classList.toggle('dark', useDarkTheme)
-      window.localStorage.setItem('dashboard-theme', preferredTheme)
-      window.dispatchEvent(new Event(THEME_CHANGE_EVENT))
-    }
-
     window.dispatchEvent(new Event(ACCENT_CHANGE_EVENT))
   }
 

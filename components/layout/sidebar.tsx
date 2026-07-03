@@ -58,7 +58,6 @@ const brandNavigation = [
         submenus: [
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
-          { name: 'Stock Management', href: '/brands/kia/stock-management' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
         ],
@@ -204,7 +203,7 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
   '/brands/kia/sales-report': 'kia.sales_report.view',
   '/brands/kia/stock-report': 'kia.stock_report.view',
-  '/brands/kia/stock-management': 'kia.stock_management.view',
+  '/brands/kia/bookings': 'kia.bookings.view',
   '/brands/kia/proforma': 'kia.proforma.view',
   '/brands/kia/insurance': 'kia.insurance.view',
   '/brands/hyundai/business-excellence': 'hyundai.business_excellence.view',

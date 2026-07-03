@@ -41,5 +41,12 @@ export function getUserBranchLabel(value: string | null | undefined) {
     return ALL_BRANCH_OPTION.label
   }
 
+  if (value && value.includes(',')) {
+    return value
+      .split(',')
+      .map((val) => getBranchLabel(val.trim()))
+      .join(', ')
+  }
+
   return getBranchLabel(value)
 }

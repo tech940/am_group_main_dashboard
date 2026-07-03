@@ -9,6 +9,7 @@ export const metadata = {
 }
 
 const SECTION_MAP: Record<string, KiaProformaSection> = {
+  bookings: 'bookings',
   generate: 'generate',
   'all-proforma-details': 'all',
   'finance-remarks': 'finance-remarks',
@@ -24,8 +25,10 @@ export default async function Page({ params }: { params: Promise<{ section: stri
 
   const { section } = await params
   const resolved = SECTION_MAP[section]
-  if (!resolved) redirect('/brands/kia/proforma/generate')
-  const permissionKey = resolved === 'pending-approval'
+  if (!resolved) redirect('/brands/kia/proforma/bookings')
+  const permissionKey = resolved === 'bookings'
+      ? 'kia.bookings.view'
+      : resolved === 'pending-approval'
       ? 'kia.proforma.approve'
       : 'kia.proforma.view'
   const permission = await requirePermission(access.appUser, permissionKey)

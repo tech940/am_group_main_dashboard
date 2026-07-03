@@ -234,11 +234,19 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'edit', 'audit'],
   },
   {
+    key: 'kia.bookings',
+    name: 'Bookings CRM',
+    parentKey: 'kia.sales',
+    description: 'AM KIA customer booking, proforma, vehicle allocation, and delivery workflow.',
+    sortOrder: 40,
+    actions: ['view', 'create', 'edit', 'audit'],
+  },
+  {
     key: 'kia.h_promise',
     name: 'H Promise',
     parentKey: 'kia',
     description: 'AM KIA H Promise department modules.',
-    sortOrder: 39,
+    sortOrder: 41,
     actions: ['view'],
   },
   {
@@ -246,7 +254,7 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     name: 'Insurance',
     parentKey: 'kia',
     description: 'AM KIA insurance operations and reporting section.',
-    sortOrder: 39,
+    sortOrder: 42,
     actions: ['view'],
   },
   {
@@ -708,6 +716,9 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   manager: 'Manager',
   technician: 'Technician',
   viewer: 'Employee',
+  service_manager: 'Service Manager',
+  general_manager: 'General Manager',
+  sales_head: 'Sales Head',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -794,6 +805,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.sales_report',
     'kia.stock_report',
     'kia.stock_management',
+    'kia.bookings',
     'kia.proforma',
     'kia.insurance',
     ...hyundaiPlatinumExecutiveGroups,
@@ -830,10 +842,11 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   accounts: [
     ...keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),
     ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia.bookings'], ['view', 'edit', 'audit']),
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
   ],
   manager: [
-    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.proforma', 'kia.insurance'], ['view', 'edit', 'approve']),
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit', 'approve']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   technician: [
@@ -841,7 +854,19 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['am_finance'], ['view']),
   ],
   viewer: [
-    ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.bookings', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  service_manager: [
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.insurance', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  general_manager: [
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'kia.insurance', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  sales_head: [
+    ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
 }

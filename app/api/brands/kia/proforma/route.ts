@@ -3,7 +3,7 @@ import { and, count, desc, eq, gte, ilike, lte, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { kiaProformas } from '@/lib/db/schema'
+import { kiaProformas, kiaBookings, kiaBookingActivity } from '@/lib/db/schema'
 import { canApproveKiaProformaForUser, getKiaProformaVisibilityFilter } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile, touchKiaUserProfile } from '@/lib/kia-proforma/server'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
@@ -196,10 +196,38 @@ export async function POST(request: NextRequest) {
     const errors = validatePayload(body)
     if (Object.keys(errors).length > 0) return NextResponse.json({ errors }, { status: 400 })
 
-    const [created] = await db
-      .insert(kiaProformas)
-      .values(buildValues(body, appUser, profile))
-      .returning()
+    const bookingId = readText(body, 'bookingId')
+
+    const created = await db.transaction(async (tx) => {
+      const [proforma] = await tx
+        .insert(kiaProformas)
+        .values(buildValues(body, appUser, profile))
+        .returning()
+
+      if (bookingId) {
+        // Link to booking. The status will update to proforma_generated when approved.
+        await tx
+          .update(kiaBookings)
+          .set({
+            proformaId: proforma.id,
+            updatedAt: new Date(),
+            updatedBy: appUser.id,
+          })
+          .where(eq(kiaBookings.id, bookingId))
+
+        // Create booking timeline activity
+        await tx.insert(kiaBookingActivity).values({
+          bookingId,
+          activityType: 'proforma',
+          title: 'Proforma generated & linked',
+          description: `Linked proforma ${proforma.id.slice(0, 8).toUpperCase()} (pending manager approval)`,
+          actorUserId: appUser.id,
+          actorName: appUser.fullName,
+          actorRole: appUser.role,
+        })
+      }
+      return proforma
+    })
 
     await touchKiaUserProfile(appUser.email)
     return NextResponse.json({ row: serialize(created as Record<string, unknown>) }, { status: 201 })

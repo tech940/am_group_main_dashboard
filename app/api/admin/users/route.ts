@@ -49,7 +49,22 @@ function normalizeOptionalString(value: unknown) {
 
 function normalizeRequestedBranch(value: unknown) {
   if (value === null || value === undefined || value === '') return null
-  return isUserBranchValue(value) ? value : undefined
+  if (Array.isArray(value)) {
+    const vals = value.filter(v => typeof v === 'string' && isUserBranchValue(v))
+    if (vals.length === 0) return undefined
+    if (vals.includes('all')) return 'all'
+    return vals.join(',')
+  }
+  if (typeof value === 'string') {
+    if (value.includes(',')) {
+      const vals = value.split(',').map(v => v.trim()).filter(isUserBranchValue)
+      if (vals.length === 0) return undefined
+      if (vals.includes('all')) return 'all'
+      return vals.join(',')
+    }
+    return isUserBranchValue(value) ? value : undefined
+  }
+  return undefined
 }
 
 function publicUser(user: typeof users.$inferSelect, actor: AppUser) {
@@ -359,6 +374,8 @@ export async function PUT(request: Request) {
     if (typeof body.phoneNumber === 'string' || body.phoneNumber === null) updates.phoneNumber = normalizeOptionalString(body.phoneNumber)
     if (typeof body.isActive === 'boolean') updates.isActive = body.isActive
 
+    const authUpdates: Record<string, unknown> = {}
+
     if (actorCapabilities.authority === 'super_admin') {
       if (typeof body.role === 'string') {
         if (!VALID_ROLES.includes(body.role as AppUser['role']) || !canAssignRole(actor, body.role as AppUser['role'])) {
@@ -383,11 +400,16 @@ export async function PUT(request: Request) {
         if (duplicate.length) return NextResponse.json({ error: 'User with this email already exists.' }, { status: 409 })
         updates.email = email
       }
+      if (typeof body.password === 'string' && body.password) {
+        if (body.password.length < 6) {
+          return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 })
+        }
+        authUpdates.password = body.password
+      }
     } else if ('role' in body || 'brand' in body || 'email' in body) {
       return NextResponse.json({ error: 'Branch Admin cannot change role, branch, or login email.' }, { status: 403 })
     }
 
-    const authUpdates: Record<string, unknown> = {}
     if (updates.email && updates.email !== existing.email) {
       authUpdates.email = updates.email
       authUpdates.email_confirm = true

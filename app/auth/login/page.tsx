@@ -2,13 +2,52 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck, KeyRound, Sparkles } from 'lucide-react'
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  Car,
+  Building2,
+  Tag,
+  Settings,
+  BarChart2,
+  LayoutGrid,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-const AM_GROUP_LOGO_URL = 'https://amgroupind.com/wp-content/uploads/2023/06/logo-1.png'
-const BACKGROUND_IMAGE_URL = '/assets/login_bg_car.png'
+const AM_GROUP_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.jpeg'
+
+// Service nodes arranged around the orbital diagram
+const ORBIT_NODES = [
+  { label: 'Service AI',    icon: Car,        color: '#22c55e', bg: '#dcfce7', angle: 90  },
+  { label: 'Retail AI',     icon: Tag,        color: '#a855f7', bg: '#f3e8ff', angle: 30  },
+  { label: 'Accounting AI', icon: LayoutGrid, color: '#22c55e', bg: '#dcfce7', angle: 330 },
+  { label: 'Analytics AI',  icon: BarChart2,  color: '#f97316', bg: '#ffedd5', angle: 270 },
+  { label: 'Parts AI',      icon: Settings,   color: '#3b82f6', bg: '#dbeafe', angle: 210 },
+  { label: 'Inventory AI',  icon: Building2,  color: '#3b82f6', bg: '#dbeafe', angle: 150 },
+]
+
+function polarToXY(angleDeg: number, r: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180
+  const x = r * Math.cos(rad)
+  const y = r * Math.sin(rad)
+  return {
+    x: Math.round(x * 1000) / 1000,
+    y: Math.round(y * 1000) / 1000,
+  }
+}
+
+function getTranslateStyle(x: number, y: number) {
+  const xSign = x >= 0 ? '+' : '-'
+  const ySign = y >= 0 ? '+' : '-'
+  const xVal = Math.abs(x).toFixed(3)
+  const yVal = Math.abs(y).toFixed(3)
+  return `translate(calc(-50% ${xSign} ${xVal}px), calc(-50% ${ySign} ${yVal}px))`
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -27,9 +66,7 @@ export default function LoginPage() {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       })
       const result = await response.json().catch(() => null)
@@ -46,191 +83,272 @@ export default function LoginPage() {
       setError('Connection failed. Please check your network and try again.')
       console.error(err)
     } finally {
-      if (shouldResetLoading) {
-        setLoading(false)
-      }
+      if (shouldResetLoading) setLoading(false)
     }
   }
 
   return (
-    <main className="relative min-h-screen w-full flex items-center justify-center p-4 overflow-hidden font-sans">
-      
-      {/* Dynamic Background Image of sleek car */}
-      <div 
-        className="absolute inset-0 bg-cover bg-center transition-transform duration-[20s] scale-105 animate-pulse" 
-        style={{ 
-          backgroundImage: `url(${BACKGROUND_IMAGE_URL})`,
-          animationDuration: '10s'
-        }} 
-      />
-
-      {/* Layer 1: Soft Dark Blur Overlay to blend colors */}
-      <div className="absolute inset-0 bg-slate-950/20 pointer-events-none" />
-
-      {/* Layer 2: Soft tint overlay without blur to keep background image sharp and visible */}
-      <div className="absolute inset-0 bg-gradient-to-tr from-teal-50/10 via-transparent to-blue-50/10 pointer-events-none" />
-
-      {/* Subtle Dot Grid Overlay for technical texture */}
-      <div className="absolute inset-0 bg-[radial-gradient(rgba(148,163,184,0.12)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
-
-      {/* Centered Glassmorphic Card */}
-      <div className="relative z-10 w-full max-w-[480px] bg-white/90 backdrop-blur-2xl border border-white/80 rounded-[20px] shadow-[0_30px_100px_rgba(15,118,110,0.18)] p-8 sm:p-10 transition-all duration-300">
-        
-        {/* Header Branding */}
-        <div className="flex flex-col items-center text-center space-y-4 mb-8">
-          <div className="flex h-14 w-28 items-center justify-center rounded-none bg-slate-900 border border-slate-800 p-2.5 shadow-md">
-            <img
-              src={AM_GROUP_LOGO_URL}
-              alt="AM Group Logo"
-              className="h-10 w-full object-contain"
-            />
-          </div>
-          <div className="space-y-1">
-            <div className="flex items-center justify-center gap-1.5 text-[9px] font-black text-teal-600 uppercase tracking-[0.25em]">
-              <Sparkles className="h-3 w-3" />
-              Motors Operations
-            </div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Welcome Back</h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Access the secure dashboard management console
-            </p>
-          </div>
-        </div>
-
-        {/* Error Notification */}
-        {error && (
-          <div className="mb-6 rounded-2xl border border-rose-100 bg-rose-50/50 p-4 text-xs font-semibold text-rose-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* Form */}
-        <form onSubmit={handleLogin} autoComplete="off" className="space-y-5">
-          
-          {/* Email Input */}
-          <div className="space-y-2">
-            <Label htmlFor="email" className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-              Corporate Email
-            </Label>
-            <div className="relative group">
-              <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-teal-600" />
-              <Input
-                id="email"
-                type="email"
-                autoComplete="off"
-                autoCapitalize="none"
-                autoCorrect="off"
-                placeholder="name@amgroupind.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-                disabled={loading}
-                className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 pl-11 text-sm text-slate-900 placeholder-slate-400 shadow-none focus:border-teal-500 focus:bg-white focus:ring-1 focus:ring-teal-500/30 transition-all font-medium"
-              />
-            </div>
-          </div>
-
-          {/* Password Input */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password" className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                Security Password
-              </Label>
-              <span className="text-[10px] font-extrabold text-teal-600 uppercase tracking-wider flex items-center gap-1">
-                <KeyRound className="h-3 w-3" />
-                Secure
-              </span>
-            </div>
-            <div className="relative group">
-              <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-teal-600" />
-              <Input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="off"
-                placeholder="••••••••••••"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-                disabled={loading}
-                className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 pl-11 pr-12 text-sm text-slate-900 placeholder-slate-400 shadow-none focus:border-teal-500 focus:bg-white focus:ring-1 focus:ring-teal-500/30 transition-all font-medium"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((current) => !current)}
-                disabled={loading}
-                className="absolute right-3.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:text-teal-600 hover:bg-slate-100 transition-colors disabled:cursor-not-allowed"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                title={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Sign In Button */}
-          <Button
-            type="submit"
-            disabled={loading}
-            className="h-12 w-full mt-2 rounded-2xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-sm font-black text-white transition-all hover:scale-[1.01] hover:shadow-[0_8px_25px_rgba(13,148,136,0.18)] select-none"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-white" />
-                Connecting...
-              </span>
-            ) : (
-              <span className="flex items-center justify-center gap-1.5">
-                Sign In
-                <ArrowRight className="h-4 w-4" />
-              </span>
-            )}
-          </Button>
-        </form>
-
-        {/* Security Audit Tip Panel */}
-        <div className="mt-8 rounded-2xl border border-slate-100 bg-slate-50/40 p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600 border border-teal-100/50 shadow-sm">
-              <ShieldCheck className="h-4.5 w-4.5" />
-            </div>
-            <div className="space-y-0.5">
-              <p className="text-xs font-black text-slate-800">Protected Workspace</p>
-              <p className="text-[11px] leading-relaxed text-slate-500 font-medium">
-                Authorized credentials only. Access activities are logged and monitored.
-              </p>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Elegant Footer Signature */}
-      <div className="absolute bottom-4 left-0 right-0 text-center text-[10px] font-bold text-slate-500 uppercase tracking-widest pointer-events-none z-10">
-        AM Group Operations Portal
-      </div>
-
-    </main>
-  )
-}
-
-function AlertCircle(props: React.ComponentProps<'svg'>) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
+    <div
+      className="min-h-screen w-full flex items-stretch font-sans"
+      style={{ background: 'linear-gradient(135deg, #eef0fb 0%, #f0f4ff 50%, #e8edf9 100%)' }}
     >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="12" />
-      <line x1="12" y1="16" x2="12.01" y2="16" />
-    </svg>
+      {/* ─── Left: Orbital Diagram ─────────────────────────────────── */}
+      <div className="hidden lg:flex flex-col flex-1 relative overflow-hidden p-10">
+        {/* Top-left logo */}
+        <div className="flex items-center gap-2.5 z-10 relative">
+          <img src={AM_GROUP_LOGO_URL} alt="AM Group" className="h-9 w-auto object-contain" />
+          <span className="text-sm font-black text-slate-800 tracking-wide uppercase">AM Group</span>
+        </div>
+
+        {/* Decorative background circles */}
+        <div
+          className="absolute"
+          style={{
+            width: 500,
+            height: 500,
+            borderRadius: '50%',
+            border: '1px solid rgba(148,163,184,0.12)',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+          }}
+        />
+        <div
+          className="absolute"
+          style={{
+            width: 700,
+            height: 700,
+            borderRadius: '50%',
+            border: '1px solid rgba(148,163,184,0.08)',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+          }}
+        />
+
+        {/* Corner circuit decorations */}
+        <svg className="absolute bottom-0 left-0 opacity-10" width="200" height="200" viewBox="0 0 200 200">
+          <circle cx="0" cy="200" r="120" fill="none" stroke="#6366f1" strokeWidth="1" />
+          <circle cx="0" cy="200" r="80"  fill="none" stroke="#6366f1" strokeWidth="1" />
+          <circle cx="0" cy="200" r="40"  fill="none" stroke="#6366f1" strokeWidth="1" />
+        </svg>
+        <svg className="absolute top-0 right-0 opacity-10" width="160" height="160" viewBox="0 0 160 160">
+          <circle cx="160" cy="0" r="100" fill="none" stroke="#6366f1" strokeWidth="1" />
+          <circle cx="160" cy="0" r="60"  fill="none" stroke="#6366f1" strokeWidth="1" />
+        </svg>
+
+        {/* Center orbital */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="relative" style={{ width: 480, height: 480 }}>
+            {/* Outer orbit ring */}
+            <div
+              className="absolute inset-0 rounded-full"
+              style={{ border: '1.5px solid rgba(148,163,184,0.2)' }}
+            />
+            {/* Inner orbit ring */}
+            <div
+              className="absolute rounded-full"
+              style={{
+                border: '1.5px solid rgba(148,163,184,0.15)',
+                inset: 80,
+              }}
+            />
+
+            {/* Connection lines */}
+            <svg className="absolute inset-0" width="480" height="480" viewBox="0 0 480 480">
+              {ORBIT_NODES.map((node) => {
+                const outer = polarToXY(node.angle, 220)
+                const inner = polarToXY(node.angle, 80)
+                return (
+                  <line
+                    key={node.label}
+                    x1={240 + outer.x}
+                    y1={240 + outer.y}
+                    x2={240 + inner.x}
+                    y2={240 + inner.y}
+                    stroke="rgba(148,163,184,0.25)"
+                    strokeWidth="1"
+                    strokeDasharray="4 4"
+                  />
+                )
+              })}
+            </svg>
+
+            {/* Center badge */}
+            <div
+              className="absolute flex flex-col items-center justify-center bg-white rounded-full shadow-lg"
+              style={{
+                width: 160,
+                height: 160,
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+              }}
+            >
+              <img src={AM_GROUP_LOGO_URL} alt="AM Group" className="h-27 w-29 object-contain" />
+            </div>
+
+            {/* Orbit nodes */}
+            {ORBIT_NODES.map((node) => {
+              const pos = polarToXY(node.angle, 220)
+              const Icon = node.icon
+              return (
+                <div
+                  key={node.label}
+                  className="absolute flex flex-col items-center gap-1.5"
+                  style={{
+                    left: '50%',
+                    top: '50%',
+                    transform: getTranslateStyle(pos.x, pos.y),
+                  }}
+                >
+                  <div
+                    className="flex items-center justify-center rounded-2xl shadow-sm"
+                    style={{
+                      width: 52,
+                      height: 52,
+                      background: node.bg,
+                    }}
+                  >
+                    <Icon style={{ color: node.color }} className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">{node.label}</span>
+                </div>
+              )
+            })}
+
+            {/* Accent dots */}
+            {[
+              { angle: 60,  r: 270, color: '#22c55e' },
+              { angle: 180, r: 265, color: '#6366f1' },
+              { angle: 300, r: 260, color: '#f97316' },
+              { angle: 240, r: 195, color: '#a855f7' },
+              { angle: 0,   r: 185, color: '#3b82f6' },
+            ].map((dot, i) => {
+              const p = polarToXY(dot.angle, dot.r)
+              return (
+                <div
+                  key={i}
+                  className="absolute rounded-full"
+                  style={{
+                    width: 7,
+                    height: 7,
+                    background: dot.color,
+                    left: '50%',
+                    top: '50%',
+                    transform: getTranslateStyle(p.x, p.y),
+                  }}
+                />
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Right: Login Form ──────────────────────────────────────── */}
+      <div className="flex items-center justify-center w-full lg:w-auto lg:min-w-[480px] xl:min-w-[520px] px-6 py-10 lg:px-14">
+        <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-[0_8px_48px_rgba(0,0,0,0.08)] p-8 sm:p-10">
+
+          {/* Badge */}
+          <div className="mb-5">
+            <span className="inline-block rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              AM Group Dashboard
+            </span>
+          </div>
+
+          {/* Heading */}
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-tight">
+            Welcome back
+          </h1>
+          <p className="mt-2 text-sm text-slate-400 font-medium leading-relaxed">
+            Sign in to manage your operations across all branches.
+          </p>
+
+          {/* Error */}
+          {error && (
+            <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs font-semibold text-rose-600 flex items-start gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+              <span className="mt-0.5">⚠</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleLogin} autoComplete="off" className="mt-7 space-y-5">
+            {/* Email */}
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-[11px] font-extrabold uppercase tracking-widest text-slate-400">
+                Email
+              </Label>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300" />
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  placeholder="your.email@amgroupind.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="h-11 rounded-xl border-slate-200 bg-white pl-11 text-sm text-slate-800 placeholder-slate-300 focus:border-green-400 focus:ring-1 focus:ring-green-400/30 transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Password */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="text-[11px] font-extrabold uppercase tracking-widest text-slate-400">
+                  Password
+                </Label>
+                <span className="text-xs font-semibold text-green-500 cursor-pointer hover:text-green-600 transition-colors">
+                  Forgot password?
+                </span>
+              </div>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300" />
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="off"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="h-11 rounded-xl border-slate-200 bg-white pl-11 pr-12 text-sm text-slate-800 placeholder-slate-300 focus:border-green-400 focus:ring-1 focus:ring-green-400/30 transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  disabled={loading}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:text-slate-600 transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Sign In Button */}
+            <Button
+              type="submit"
+              disabled={loading}
+              className="h-11 w-full rounded-xl text-sm font-black text-white shadow-md transition-all hover:scale-[1.01] hover:shadow-lg select-none"
+              style={{
+                background: 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)',
+              }}
+            >
+              <span className="flex items-center justify-center gap-2">
+                {loading ? 'Signing in...' : 'Sign In'}
+                {!loading && <ArrowRight className="h-4 w-4" />}
+              </span>
+            </Button>
+          </form>
+
+        </div>
+      </div>
+    </div>
   )
 }

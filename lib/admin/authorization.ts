@@ -23,7 +23,14 @@ export const PROTECTED_ROLES = new Set<AppUser['role']>([
   'purchase_manager',
   'finance_head',
 ])
-export const BRANCH_ASSIGNABLE_ROLES = new Set<AppUser['role']>(['manager', 'technician', 'viewer'])
+export const BRANCH_ASSIGNABLE_ROLES = new Set<AppUser['role']>([
+  'manager',
+  'technician',
+  'viewer',
+  'service_manager',
+  'general_manager',
+  'sales_head'
+])
 
 export type AdminActorCapabilities = {
   authority: 'super_admin' | 'branch_admin'
@@ -88,6 +95,12 @@ export function resolveManagedBranch(actor: AppUser, requestedBranch: string | n
   if (!capabilities) return undefined
   if (capabilities.authority === 'branch_admin') return capabilities.branch
   if (!requestedBranch || requestedBranch === 'all' || isBranchValue(requestedBranch)) return requestedBranch
+  
+  if (requestedBranch.includes(',')) {
+    const branches = requestedBranch.split(',').map((b) => b.trim())
+    if (branches.every(isBranchValue)) return requestedBranch
+  }
+  
   return undefined
 }
 

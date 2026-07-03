@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'super_admin', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer'])
+export const roleEnum = pgEnum('role', ['admin', 'super_admin', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -1424,3 +1424,148 @@ export const userPreferencesRelations = relations(userPreferences, ({ one }) => 
     references: [users.id],
   }),
 }))
+
+// Kia Bookings Table
+export const kiaBookings = pgTable('kia_bookings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingNumber: text('booking_number').unique().notNull(),
+  status: text('status').default('booking_created').notNull(),
+  dealerCode: text('dealer_code').notNull(),
+  customerName: text('customer_name').notNull(),
+  customerPhone: text('customer_phone').notNull(),
+  customerEmail: text('customer_email'),
+  customerAddress: text('customer_address'),
+  model: text('model').notNull(),
+  variant: text('variant').notNull(),
+  color: text('color'),
+  fuelType: text('fuel_type'),
+  consultantName: text('consultant_name').notNull(),
+  consultantEmail: text('consultant_email'),
+  source: text('source'),
+  financeRequired: boolean('finance_required').default(false).notNull(),
+  bankName: text('bank_name'),
+  loanAmount: decimal('loan_amount', { precision: 14, scale: 2 }).default('0').notNull(),
+  deliveryTargetDate: text('delivery_target_date'), // text date representation, e.g. YYYY-MM-DD
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  proformaId: uuid('proforma_id').references(() => kiaProformas.id),
+  financeOrderId: uuid('finance_order_id').references(() => financeOrders.id),
+  allocatedVin: text('allocated_vin'),
+  notes: text('notes'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+})
+
+// Kia Booking Activity / Timeline Table
+export const kiaBookingActivity = pgTable('kia_booking_activity', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id).notNull(),
+  activityType: text('activity_type').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  beforeValue: jsonb('before_value').$type<Record<string, unknown>>(),
+  afterValue: jsonb('after_value').$type<Record<string, unknown>>(),
+  actorUserId: uuid('actor_user_id').references(() => users.id),
+  actorName: text('actor_name'),
+  actorRole: text('actor_role'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// Kia Vehicle Allocations Table
+export const kiaVehicleAllocations = pgTable('kia_vehicle_allocations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id).notNull(),
+  vinNumber: text('vin_number').notNull(),
+  dealerCode: text('dealer_code'),
+  model: text('model'),
+  variant: text('variant'),
+  color: text('color'),
+  engineNo: text('engine_no'),
+  stockSource: text('stock_source').default('dms').notNull(),
+  vehicleSnapshot: jsonb('vehicle_snapshot').$type<Record<string, unknown>>().default({}).notNull(),
+  allocationStatus: text('allocation_status').default('temporary').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  paymentConfirmedAt: timestamp('payment_confirmed_at', { withTimezone: true }),
+  paymentConfirmedBy: uuid('payment_confirmed_by').references(() => users.id),
+  paymentReference: text('payment_reference'),
+  allocatedBy: uuid('allocated_by').references(() => users.id).notNull(),
+  allocatedAt: timestamp('allocated_at', { withTimezone: true }).defaultNow().notNull(),
+  releasedBy: uuid('released_by').references(() => users.id),
+  releasedAt: timestamp('released_at', { withTimezone: true }),
+  releaseReason: text('release_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// Kia Vehicle Transfers Table
+export const kiaVehicleTransfers = pgTable('kia_vehicle_transfers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id).notNull(),
+  vinNumber: text('vin_number'),
+  fromDealerCode: text('from_dealer_code'),
+  toDealerCode: text('to_dealer_code').notNull(),
+  transferStatus: text('transfer_status').default('requested').notNull(),
+  requestedBy: uuid('requested_by').references(() => users.id).notNull(),
+  requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  notes: text('notes'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// Drizzle Relations for Bookings
+export const kiaBookingsRelations = relations(kiaBookings, ({ one, many }) => ({
+  proforma: one(kiaProformas, {
+    fields: [kiaBookings.proformaId],
+    references: [kiaProformas.id],
+  }),
+  financeOrder: one(financeOrders, {
+    fields: [kiaBookings.financeOrderId],
+    references: [financeOrders.id],
+  }),
+  creator: one(users, {
+    fields: [kiaBookings.createdBy],
+    references: [users.id],
+  }),
+  activities: many(kiaBookingActivity),
+  allocations: many(kiaVehicleAllocations),
+  transfers: many(kiaVehicleTransfers),
+}))
+
+export const kiaBookingActivityRelations = relations(kiaBookingActivity, ({ one }) => ({
+  booking: one(kiaBookings, {
+    fields: [kiaBookingActivity.bookingId],
+    references: [kiaBookings.id],
+  }),
+  performer: one(users, {
+    fields: [kiaBookingActivity.actorUserId],
+    references: [users.id],
+  }),
+}))
+
+export const kiaVehicleAllocationsRelations = relations(kiaVehicleAllocations, ({ one }) => ({
+  booking: one(kiaBookings, {
+    fields: [kiaVehicleAllocations.bookingId],
+    references: [kiaBookings.id],
+  }),
+  allocator: one(users, {
+    fields: [kiaVehicleAllocations.allocatedBy],
+    references: [users.id],
+  }),
+}))
+
+export const kiaVehicleTransfersRelations = relations(kiaVehicleTransfers, ({ one }) => ({
+  booking: one(kiaBookings, {
+    fields: [kiaVehicleTransfers.bookingId],
+    references: [kiaBookings.id],
+  }),
+  performer: one(users, {
+    fields: [kiaVehicleTransfers.requestedBy],
+    references: [users.id],
+  }),
+}))
+

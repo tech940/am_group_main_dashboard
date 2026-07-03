@@ -8160,9 +8160,6 @@ function ServiceTypePerformance({
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Service Team Performance</p>
                       <h3 className="text-2xl font-black tracking-tight text-slate-950">Technician Wise Load + Labour Report</h3>
-                      <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
-                        Detailed summary of repair orders opened, labour revenue generated, discounts given, and averages per repair order.
-                      </p>
                     </div>
                   </div>
                 </div>
@@ -8261,19 +8258,21 @@ function ServiceTypePerformance({
                               const subTotalDiscPerRo = subTotalLoad > 0 ? subTotalDiscount / subTotalLoad : 0
                               const subTotalDiscPct = subTotalLabour > 0 ? (subTotalDiscount / subTotalLabour) * 100 : 0
 
-                              rowsJSX.push(
-                                <tr key={`subtotal-${outlet}`} className="bg-slate-100 border-y border-slate-200/80 font-black">
-                                  <td className="px-4 py-3 text-xs"></td>
-                                  <td className="px-4 py-3 text-xs text-slate-950 font-black">{outlet}</td>
-                                  <td className="px-4 py-3 text-xs text-slate-950 font-black">{outlet} Sub Total</td>
-                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{subTotalLoad.toLocaleString('en-IN')}</td>
-                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalLabour).toLocaleString('en-IN')}</td>
-                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalDiscount).toLocaleString('en-IN')}</td>
-                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalLabPerRo).toLocaleString('en-IN')}</td>
-                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalDiscPerRo).toLocaleString('en-IN')}</td>
-                                  <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalDiscPct)}%</td>
-                                </tr>
-                              )
+                              if (outlets.length > 1) {
+                                rowsJSX.push(
+                                  <tr key={`subtotal-${outlet}`} className="bg-slate-100 border-y border-slate-200/80 font-black">
+                                    <td className="px-4 py-3 text-xs"></td>
+                                    <td className="px-4 py-3 text-xs text-slate-950 font-black">{outlet}</td>
+                                    <td className="px-4 py-3 text-xs text-slate-950 font-black">{outlet} Sub Total</td>
+                                    <td className="px-4 py-3 text-xs font-mono text-slate-950">{subTotalLoad.toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalLabour).toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalDiscount).toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalLabPerRo).toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalDiscPerRo).toLocaleString('en-IN')}</td>
+                                    <td className="px-4 py-3 text-xs font-mono text-slate-950">{Math.round(subTotalDiscPct)}%</td>
+                                  </tr>
+                                )
+                              }
                             })
 
                             const grandLabPerRo = grandTotalLoad > 0 ? grandTotalLabour / grandTotalLoad : 0
@@ -8281,16 +8280,16 @@ function ServiceTypePerformance({
                             const grandDiscPct = grandTotalLabour > 0 ? (grandTotalDiscount / grandTotalLabour) * 100 : 0
 
                             rowsJSX.push(
-                              <tr key="grand-total" className="bg-slate-200 border-t-2 border-slate-300 font-black text-slate-950">
-                                <td className="px-4 py-3 text-xs">TOTAL</td>
-                                <td className="px-4 py-3 text-xs">Total</td>
-                                <td className="px-4 py-3 text-xs">Total</td>
-                                <td className="px-4 py-3 text-xs font-mono">{grandTotalLoad.toLocaleString('en-IN')}</td>
-                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandTotalLabour).toLocaleString('en-IN')}</td>
-                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandTotalDiscount).toLocaleString('en-IN')}</td>
-                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandLabPerRo).toLocaleString('en-IN')}</td>
-                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandDiscPerRo).toLocaleString('en-IN')}</td>
-                                <td className="px-4 py-3 text-xs font-mono">{Math.round(grandDiscPct)}%</td>
+                              <tr key="grand-total" className="bg-indigo-50/90 border-t-2 border-indigo-200 font-black text-slate-950 hover:bg-indigo-100/90 transition-colors">
+                                <td className="px-4 py-3 text-xs text-indigo-900 font-black">TOTAL</td>
+                                <td className="px-4 py-3 text-xs"></td>
+                                <td className="px-4 py-3 text-xs"></td>
+                                <td className="px-4 py-3 text-xs font-mono text-indigo-950">{grandTotalLoad.toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono text-indigo-950">{Math.round(grandTotalLabour).toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono text-indigo-950">{Math.round(grandTotalDiscount).toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono text-indigo-950">{Math.round(grandLabPerRo).toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono text-indigo-950">{Math.round(grandDiscPerRo).toLocaleString('en-IN')}</td>
+                                <td className="px-4 py-3 text-xs font-mono text-indigo-950">{Math.round(grandDiscPct)}%</td>
                               </tr>
                             )
 
