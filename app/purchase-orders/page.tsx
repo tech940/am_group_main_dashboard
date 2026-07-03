@@ -704,7 +704,7 @@ function PurchaseOrdersPageContent() {
 
       if (isApprovalRole(userRole)) {
         params.set('approvalFilter', approvalFilter)
-        if (userRole === 'md' && approvalBranchFilter !== 'all') {
+        if (userRole === 'md' && approvalFilter !== 'all' && approvalBranchFilter !== 'all') {
           params.set('branchFilter', approvalBranchFilter)
         }
       }
@@ -1321,6 +1321,9 @@ function PurchaseOrdersPageContent() {
 
   const setApprovalFilterPreference = (filter: ApprovalFilter) => {
     setPurchaseOrderPage(1)
+    if (userRole === 'md' && filter === 'all') {
+      setApprovalBranchFilter('all')
+    }
     void saveViewMode({
       ...viewMode,
       approvalFilter: filter,

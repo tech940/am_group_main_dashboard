@@ -1,11 +1,8 @@
-import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { getCachedData } from '@/lib/redis/cache-utils'
-import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import {
   getHyundaiDealerCodes,
@@ -24,9 +21,8 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
-const RESPONSE_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
+const RESPONSE_CACHE_CONTROL = 'no-store, no-cache, must-revalidate'
 
-const CACHE_TTL_SECONDS = CACHE_TTL.DASHBOARD
 const tableExistsCache = new Map<string, boolean>()
 
 type NumericRow = Record<string, unknown>
@@ -115,12 +111,6 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
     comparisonStartDate: parseDateInput(searchParams.get('comparisonStartDate')),
     comparisonEndDate: parseDateInput(searchParams.get('comparisonEndDate')),
   }
-}
-
-function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `hyundai:business-excellence:overview:v31:${chunk}:${createHash('sha1')
-    .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
-    .digest('hex')}`
 }
 
 function activeBillStatusSql() {
@@ -488,6 +478,7 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
 }
 
 function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
+  void startDate
   const openRoDealerKey = sql`COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), NULLIF(dealer_code_2, ''), NULLIF(dlr_no, ''), NULLIF(dealer_name, ''), '-')`
   return sql`
     WITH active AS (
@@ -505,8 +496,6 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
       FROM hyundai_repair_order_list
       WHERE cancel_date IS NULL
         AND LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), NULLIF(TRIM(status::text), ''), NULLIF(TRIM(new_r_o_status::text), ''), '')) = 'open'
-        AND r_o_date >= ${startDate}::date
-        AND r_o_date < (${endDate}::date + INTERVAL '1 day')
         ${openRoDealerFilter(dealerCode)}
       ORDER BY
         ${openRoDealerKey} || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),
@@ -1326,7 +1315,7 @@ async function buildOverviewPayload(
     meta: {
       ...HYUNDAI_BE_CALCULATION_META,
       chunk,
-      cacheTtlSeconds: CACHE_TTL_SECONDS,
+      cacheTtlSeconds: 0,
       periodScope: {
         startDate,
         endDate,
@@ -1417,18 +1406,11 @@ export async function GET(request: Request) {
   const endDate = parseDateInput(searchParams.get('endDate')) || defaults.endDate
   const chunkParam = searchParams.get('chunk')
   const chunk: OverviewChunk = chunkParam === 'secondary' || chunkParam === 'full' ? chunkParam : 'summary'
-  const skipCache = searchParams.get('skipCache') === 'true'
   const comparison = getComparisonParams(searchParams)
   const dealerCode = normalizeHyundaiDealerCode(searchParams.get('dealer_code')) || null
 
   try {
-    const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildOverviewPayload(startDate, endDate, chunk, comparison, dealerCode)
-      : getCachedData(
-        cacheKey(startDate, endDate, chunk, comparison, dealerCode),
-        () => buildOverviewPayload(startDate, endDate, chunk, comparison, dealerCode),
-        CACHE_TTL_SECONDS
-      ))
+    const data = await timer.time('db', () => buildOverviewPayload(startDate, endDate, chunk, comparison, dealerCode))
 
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data, {

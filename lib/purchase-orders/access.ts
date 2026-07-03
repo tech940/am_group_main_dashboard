@@ -102,9 +102,9 @@ export function getPurchaseOrderListVisibilityFilter(appUser: AppUser): SQL<unkn
   switch (appUser.role) {
     case 'admin':
     case 'super_admin':
+    case 'md':
       return and(...baseFilters)!
     case 'purchase_manager':
-    case 'md':
       return and(
         ...baseFilters,
         ...(branchFilter ? [branchFilter] : [])
@@ -151,6 +151,7 @@ export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrder
 
     switch (appUser.role) {
     case 'md':
+      return true
     case 'purchase_manager':
       return branchMatches
     case 'ea':

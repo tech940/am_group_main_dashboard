@@ -1,12 +1,9 @@
-import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { analyticsTableHasColumn } from '@/lib/analytics/table-columns'
 import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { getCachedData } from '@/lib/redis/cache-utils'
-import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumWorkshopVasAmount, fetchPlatinumWorkshopVasAmounts } from '@/lib/platinum/business-excellence-vas'
@@ -45,9 +42,8 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
-const RESPONSE_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
+const RESPONSE_CACHE_CONTROL = 'no-store, no-cache, must-revalidate'
 
-const CACHE_TTL_SECONDS = CACHE_TTL.PLATINUM
 const tableExistsCache = new Map<string, boolean>()
 
 type NumericRow = Record<string, unknown>
@@ -124,12 +120,6 @@ function getComparisonParams(searchParams: URLSearchParams): ComparisonParams {
     comparisonStartDate: parseDateInput(searchParams.get('comparisonStartDate')),
     comparisonEndDate: parseDateInput(searchParams.get('comparisonEndDate')),
   }
-}
-
-function cacheKey(startDate: string, endDate: string, chunk: OverviewChunk, comparison: ComparisonParams, dealerCode: DealerFilter) {
-  return `platinum:business-excellence:overview:v47:${chunk}:${createHash('sha1')
-    .update(JSON.stringify({ startDate, endDate, comparison, dealerCode }))
-    .digest('hex')}`
 }
 
 function activeBillStatusSql() {
@@ -436,6 +426,7 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
 }
 
 function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
+  void startDate
   return sql`
     WITH active AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text))
@@ -449,8 +440,6 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
         uploaded_at
       FROM am_platinum_repair_order_list
       WHERE LOWER(COALESCE(r_o_status, '')) = 'open'
-        AND r_o_date >= ${startDate}::date
-        AND r_o_date < (${endDate}::date + INTERVAL '1 day')
         ${openRoDealerFilter(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
@@ -1606,7 +1595,7 @@ export async function buildOverviewPayload(
     ],
     meta: {
       chunk,
-      cacheTtlSeconds: CACHE_TTL_SECONDS,
+      cacheTtlSeconds: 0,
       calculation: PLATINUM_BE_CALCULATION_META,
       periodScope: {
         startDate,
@@ -1706,18 +1695,11 @@ export async function GET(request: Request) {
   const endDate = parseDateInput(searchParams.get('endDate')) || defaults.endDate
   const chunkParam = searchParams.get('chunk')
   const chunk: OverviewChunk = chunkParam === 'secondary' || chunkParam === 'full' ? chunkParam : 'summary'
-  const skipCache = searchParams.get('skipCache') === 'true'
   const comparison = getComparisonParams(searchParams)
   const dealerCode = normalizePlatinumDealerCode(searchParams.get('dealer_code')) || null
 
   try {
-    const data = await timer.time(skipCache ? 'db' : 'response-cache', () => skipCache
-      ? buildOverviewPayload(startDate, endDate, chunk, comparison, dealerCode)
-      : getCachedData(
-        cacheKey(startDate, endDate, chunk, comparison, dealerCode),
-        () => buildOverviewPayload(startDate, endDate, chunk, comparison, dealerCode),
-        CACHE_TTL_SECONDS
-      ))
+    const data = await timer.time('db', () => buildOverviewPayload(startDate, endDate, chunk, comparison, dealerCode))
 
     const timing = timer.finish()
     return withApiDiagnostics(NextResponse.json({

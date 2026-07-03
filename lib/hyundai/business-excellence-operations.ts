@@ -1,8 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { hyundaiSourceDealerFilter } from '@/lib/hyundai/dealer-branch'
-import { getCachedData } from '@/lib/redis/cache-utils'
-import { CACHE_TTL } from '@/lib/redis/client'
 
 type Row = Record<string, unknown>
 const HYUNDAI_VAS_IDENTIFIER_VERSION = 'hyundai-vas-canonical-codes-2026-06-30-v2'
@@ -80,10 +78,6 @@ function getMonthRange(dateInput: string) {
   }
 }
 
-function cacheKey(endDate: string, dealerCode: string | null) {
-  return `hyundai:operation-metrics:v4:${endDate}:${dealerCode || 'all'}`
-}
-
 function codeMatchSql(codeColumn: ReturnType<typeof sql.raw>, codes: readonly string[]) {
   return sql`UPPER(TRIM(COALESCE(${codeColumn}::text, ''))) IN (${sql.join(codes.map((code) => sql`${code}`), sql`, `)})`
 }
@@ -125,12 +119,9 @@ export async function fetchHyundaiMonthlyOperationMetrics(
 
   const { monthStart, nextMonthStart } = getMonthRange(endDate)
 
-  return getCachedData(
-    cacheKey(endDate, dealerCode),
-    async () => {
-      let result: unknown
-      try {
-        result = await db.execute(sql`
+  let result: unknown
+  try {
+    result = await db.execute(sql`
     WITH candidate_period AS (
       SELECT report_period_start::date AS period_start, report_period_end::date AS period_end
       FROM hyundai_operation_wise_analysis_report
@@ -192,35 +183,32 @@ export async function fetchHyundaiMonthlyOperationMetrics(
     FROM candidate_period period
     LEFT JOIN latest ON TRUE
     `)
-      } catch (error) {
-        const code = String((error as { cause?: { code?: unknown }; code?: unknown })?.cause?.code
-          || (error as { code?: unknown })?.code
-          || '')
-        if (code === '42703' || code === '42P01') return empty()
-        throw error
-      }
+  } catch (error) {
+    const code = String((error as { cause?: { code?: unknown }; code?: unknown })?.cause?.code
+      || (error as { code?: unknown })?.code
+      || '')
+    if (code === '42703' || code === '42P01') return empty()
+    throw error
+  }
 
-      const row = rows(result)[0] || {}
-      const periodStart = dateValue(row.period_start)
-      return {
-        available: Boolean(periodStart),
-        periodStart,
-        periodEnd: dateValue(row.period_end),
-        vasAmount: numberValue(row.vas_amount),
-        vasRows: numberValue(row.vas_rows),
-        waCount: numberValue(row.wa_count),
-        waAmount: numberValue(row.wa_amount),
-        wbCount: numberValue(row.wb_count),
-        wbAmount: numberValue(row.wb_amount),
-        sourceRows: numberValue(row.source_rows),
-        classifiedRows: numberValue(row.classified_rows),
-        unknownCodeRows: numberValue(row.unknown_code_rows),
-        unknownCodes: Array.isArray(row.unknown_codes)
-          ? row.unknown_codes.map(String)
-          : [],
-        identifierVersion: HYUNDAI_VAS_IDENTIFIER_VERSION,
-      }
-    },
-    CACHE_TTL.DASHBOARD,
-  )
+  const row = rows(result)[0] || {}
+  const periodStart = dateValue(row.period_start)
+  return {
+    available: Boolean(periodStart),
+    periodStart,
+    periodEnd: dateValue(row.period_end),
+    vasAmount: numberValue(row.vas_amount),
+    vasRows: numberValue(row.vas_rows),
+    waCount: numberValue(row.wa_count),
+    waAmount: numberValue(row.wa_amount),
+    wbCount: numberValue(row.wb_count),
+    wbAmount: numberValue(row.wb_amount),
+    sourceRows: numberValue(row.source_rows),
+    classifiedRows: numberValue(row.classified_rows),
+    unknownCodeRows: numberValue(row.unknown_code_rows),
+    unknownCodes: Array.isArray(row.unknown_codes)
+      ? row.unknown_codes.map(String)
+      : [],
+    identifierVersion: HYUNDAI_VAS_IDENTIFIER_VERSION,
+  }
 }
