@@ -192,13 +192,6 @@ export default function LoginPage() {
               />
             ))}
           </div>
-
-          <div className="absolute bottom-10 left-10 z-10 flex items-center gap-3 rounded-3xl border border-white/80 bg-white/58 px-5 py-4 shadow-[0_16px_40px_rgba(15,23,42,0.06)] backdrop-blur xl:left-14">
-            <PackageCheck className="h-5 w-5 text-sky-500" />
-            <p className="text-sm font-semibold text-slate-600">
-              One secure dashboard for every branch, brand, and workflow.
-            </p>
-          </div>
         </div>
 
         <div className="relative flex w-full items-center justify-center px-5 py-8 sm:px-8 lg:w-[520px] lg:px-10 xl:w-[600px]">
@@ -310,19 +303,6 @@ export default function LoginPage() {
               <span className="h-px flex-1 bg-slate-200" />
             </div>
 
-            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-500 ring-1 ring-emerald-100">
-                  <ShieldCheck className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="text-sm font-black text-slate-950">Secure & Reliable</p>
-                  <p className="mt-1 text-sm font-medium leading-6 text-slate-500">
-                    Protected by enterprise-grade authentication and encrypted connections.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </section>
