@@ -1569,3 +1569,25 @@ export const kiaVehicleTransfersRelations = relations(kiaVehicleTransfers, ({ on
   }),
 }))
 
+// Kia Quotes Table
+export const kiaQuotes = pgTable('kia_quotes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  customerName: text('customer_name').notNull(),
+  customerPhone: text('customer_phone').notNull(),
+  customerEmail: text('customer_email').notNull(),
+  vehicle: text('vehicle').notNull(),
+  budget: decimal('budget', { precision: 14, scale: 2 }).default('0').notNull(),
+  price: decimal('price', { precision: 14, scale: 2 }).default('0').notNull(),
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const kiaQuotesRelations = relations(kiaQuotes, ({ one }) => ({
+  creator: one(users, {
+    fields: [kiaQuotes.createdBy],
+    references: [users.id],
+  }),
+}))
+
+

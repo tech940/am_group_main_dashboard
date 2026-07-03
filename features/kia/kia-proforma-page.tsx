@@ -624,7 +624,6 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
-  const [quoteSending, setQuoteSending] = useState(false)
   const editablePrices = form.customerType === 'CSD' || form.customerType === 'Bharat Series'
   const filteredTrims = useMemo(() => {
     return options.trims.filter((trim) => !form.modelName || trim.model === form.modelName).map((trim) => trim.trim_description)
@@ -769,29 +768,6 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
     }
   }
 
-  async function emailQuote() {
-    if (!validate()) return
-    setQuoteSending(true)
-    try {
-      const payload = {
-        ...form,
-        totalCustomerCost: totals.totalCustomerCost,
-        grandTotalCost: totals.grandTotalCost,
-      }
-      const response = await fetch('/api/brands/kia/proforma/quote', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Failed to send quote')
-      alert('Quote PDF emailed to the customer.')
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to send quote')
-    } finally {
-      setQuoteSending(false)
-    }
-  }
 
   return (
     <section className="rounded-[2rem] border border-slate-200 bg-white/88 p-5 shadow-xl shadow-slate-900/5">
@@ -815,11 +791,7 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
           <h2 className="text-xl font-black text-slate-950">Pricing and customer details</h2>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button onClick={emailQuote} disabled={quoteSending || saving} variant="outline" className={cn('rounded-xl', proformaOutlineButton)}>
-            {quoteSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-            Email Quote
-          </Button>
-          <Button onClick={submit} disabled={saving || quoteSending} className={cn('rounded-xl', proformaPrimaryButton)}>
+          <Button onClick={submit} disabled={saving} className={cn('rounded-xl', proformaPrimaryButton)}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Proforma
           </Button>

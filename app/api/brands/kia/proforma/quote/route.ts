@@ -5,6 +5,8 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { requirePermission } from '@/lib/permissions/service'
 import { ensureKiaUserProfile, touchKiaUserProfile } from '@/lib/kia-proforma/server'
 import { buildKiaProformaPdf, type KiaProformaInvoiceRow } from '@/lib/kia-proforma/invoice'
+import { db } from '@/lib/db'
+import { kiaQuotes } from '@/lib/db/schema'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -18,13 +20,6 @@ function readText(body: Record<string, unknown>, key: string) {
 function readAmount(body: Record<string, unknown>, key: string) {
   const parsed = Number(String(body[key] ?? '0').replace(/,/g, ''))
   return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00'
-}
-
-function readDate(body: Record<string, unknown>, key: string) {
-  const value = readText(body, key)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date()
-  const date = new Date(`${value}T00:00:00+05:30`)
-  return Number.isNaN(date.getTime()) ? new Date() : date
 }
 
 function getMailerTransport() {
@@ -42,34 +37,41 @@ function getMailerTransport() {
 }
 
 function buildQuoteRow(body: Record<string, unknown>, location: string | null): KiaProformaInvoiceRow {
+  const budget = readAmount(body, 'budget')
+  const price = readAmount(body, 'price')
+  const customerName = readText(body, 'customerName')
+  const customerPhone = readText(body, 'customerPhone')
+  const customerEmail = readText(body, 'customerEmail')
+  const vehicle = readText(body, 'vehicle')
+
   return {
     id: `KIA-QUOTE-${Date.now()}`,
-    proformaDate: readDate(body, 'proformaDate'),
-    customerName: readText(body, 'customerName'),
-    mobileNumber: readText(body, 'mobileNumber'),
-    customerAddress: readText(body, 'customerAddress'),
-    customerEmail: readText(body, 'customerEmail'),
-    modelName: readText(body, 'modelName'),
-    trimDescription: readText(body, 'trimDescription'),
-    fuelType: readText(body, 'fuelType'),
-    vehicleColor: readText(body, 'vehicleColor'),
-    bankName: readText(body, 'bankName') || 'Not selected',
-    bankBranch: readText(body, 'bankBranch'),
-    insuranceCompany: readText(body, 'insuranceCompany'),
-    exShowroom: readAmount(body, 'exShowroom'),
-    tcsValue: readAmount(body, 'tcsValue'),
-    registrationCharges: readAmount(body, 'registrationCharges'),
-    insuranceValue: readAmount(body, 'insuranceValue'),
-    fastagValue: readAmount(body, 'fastagValue'),
-    accessoriesKit: readAmount(body, 'accessoriesKit'),
-    extWarranty: readAmount(body, 'extWarranty'),
-    cashDiscount: readAmount(body, 'cashDiscount'),
-    exchangeValue: readAmount(body, 'exchangeValue'),
-    bookingAmount: readAmount(body, 'bookingAmount'),
-    govtEmployeeDiscount: readAmount(body, 'govtEmployeeDiscount'),
-    additionalDiscount: readAmount(body, 'additionalDiscount'),
-    totalCustomerCost: readAmount(body, 'totalCustomerCost'),
-    grandTotalCost: readAmount(body, 'grandTotalCost'),
+    proformaDate: new Date(),
+    customerName,
+    mobileNumber: customerPhone,
+    customerAddress: 'Not provided',
+    customerEmail,
+    modelName: vehicle,
+    trimDescription: '-',
+    fuelType: '-',
+    vehicleColor: '-',
+    bankName: 'Not selected',
+    bankBranch: '',
+    insuranceCompany: '',
+    exShowroom: price,
+    tcsValue: '0.00',
+    registrationCharges: '0.00',
+    insuranceValue: '0.00',
+    fastagValue: '0.00',
+    accessoriesKit: '0.00',
+    extWarranty: '0.00',
+    cashDiscount: '0.00',
+    exchangeValue: '0.00',
+    bookingAmount: '0.00',
+    govtEmployeeDiscount: '0.00',
+    additionalDiscount: '0.00',
+    totalCustomerCost: budget,
+    grandTotalCost: budget,
     location,
     documentTitle: 'PRICE QUOTATION',
     disclaimerLines: [
@@ -82,10 +84,10 @@ function buildQuoteRow(body: Record<string, unknown>, location: string | null): 
 
 function validateQuote(body: Record<string, unknown>) {
   const errors: Record<string, string> = {}
-  ;['customerName', 'mobileNumber', 'customerEmail', 'modelName', 'trimDescription', 'vehicleColor'].forEach((key) => {
+  ;['customerName', 'customerPhone', 'customerEmail', 'vehicle', 'budget', 'price'].forEach((key) => {
     if (!readText(body, key)) errors[key] = 'Required'
   })
-  if (!/^\d{10}$/.test(readText(body, 'mobileNumber'))) errors.mobileNumber = 'Mobile number must be 10 digits'
+  if (!/^\d{10}$/.test(readText(body, 'customerPhone'))) errors.customerPhone = 'Mobile number must be 10 digits'
   if (!EMAIL_PATTERN.test(readText(body, 'customerEmail'))) errors.customerEmail = 'Enter a valid email'
   return errors
 }
@@ -106,41 +108,65 @@ export async function POST(request: NextRequest) {
     const errors = validateQuote(body)
     if (Object.keys(errors).length > 0) return NextResponse.json({ errors }, { status: 400 })
 
-    const row = buildQuoteRow(body, profile.dealerLocation || appUser.brand || 'kia')
-    const pdf = buildKiaProformaPdf(row)
-    const transport = getMailerTransport()
-    const fromName = process.env.REPORT_MAIL_FROM_NAME || 'AM KIA'
-    const mailUser = process.env.REPORT_MAIL_GMAIL_USER || ''
-    const to = row.customerEmail.trim().toLowerCase()
-
-    const info = await transport.sendMail({
-      from: `"${fromName}" <${mailUser}>`,
-      to,
-      subject: `AM KIA Price Quotation - ${row.modelName} ${row.trimDescription}`,
-      text: [
-        `Dear ${row.customerName},`,
-        '',
-        'Please find attached your AM KIA price quotation.',
-        '',
-        'This is only a price quotation and not a booking confirmation, tax invoice, or final allocation document.',
-        'Vehicle prices, schemes, availability, and taxes are subject to change at the time of booking/invoicing.',
-      ].join('\n'),
-      html: `
-        <p>Dear <strong>${row.customerName}</strong>,</p>
-        <p>Please find attached your AM KIA price quotation.</p>
-        <p><strong>Important:</strong> This is only a price quotation and not a booking confirmation, tax invoice, or final allocation document. Vehicle prices, schemes, availability, and taxes are subject to change at the time of booking/invoicing.</p>
-      `,
-      attachments: [{
-        filename: `AM-KIA-Quote-${row.modelName.replace(/\s+/g, '-')}-${Date.now()}.pdf`,
-        content: pdf,
-        contentType: 'application/pdf',
-      }],
+    // Save quote to PostgreSQL database using drizzle
+    await db.insert(kiaQuotes).values({
+      customerName: readText(body, 'customerName'),
+      customerPhone: readText(body, 'customerPhone'),
+      customerEmail: readText(body, 'customerEmail'),
+      vehicle: readText(body, 'vehicle'),
+      budget: readAmount(body, 'budget'),
+      price: readAmount(body, 'price'),
+      createdBy: appUser.id,
     })
 
+    const row = buildQuoteRow(body, profile.dealerLocation || appUser.brand || 'kia')
+    const pdf = buildKiaProformaPdf(row)
+
+    let emailSent = false
+    try {
+      const transport = getMailerTransport()
+      const fromName = process.env.REPORT_MAIL_FROM_NAME || 'AM KIA'
+      const mailUser = process.env.REPORT_MAIL_GMAIL_USER || ''
+      const to = row.customerEmail.trim().toLowerCase()
+
+      await transport.sendMail({
+        from: `"${fromName}" <${mailUser}>`,
+        to,
+        subject: `AM KIA Price Quotation - ${row.modelName}`,
+        text: [
+          `Dear ${row.customerName},`,
+          '',
+          'Please find attached your AM KIA price quotation.',
+          '',
+          'This is only a price quotation and not a booking confirmation, tax invoice, or final allocation document.',
+          'Vehicle prices, schemes, availability, and taxes are subject to change at the time of booking/invoicing.',
+        ].join('\n'),
+        html: `
+          <p>Dear <strong>${row.customerName}</strong>,</p>
+          <p>Please find attached your AM KIA price quotation.</p>
+          <p><strong>Important:</strong> This is only a price quotation and not a booking confirmation, tax invoice, or final allocation document. Vehicle prices, schemes, availability, and taxes are subject to change at the time of booking/invoicing.</p>
+        `,
+        attachments: [{
+          filename: `AM-KIA-Quote-${row.modelName.replace(/\s+/g, '-')}-${Date.now()}.pdf`,
+          content: pdf,
+          contentType: 'application/pdf',
+        }],
+      })
+      emailSent = true
+    } catch (e) {
+      console.warn('Failed to email quote PDF, will download only:', e)
+    }
+
     await touchKiaUserProfile(appUser.email)
-    return NextResponse.json({ ok: true, messageId: info.messageId, accepted: info.accepted, rejected: info.rejected })
+    
+    return NextResponse.json({ 
+      ok: true, 
+      emailSent,
+      pdf: pdf.toString('base64'),
+      filename: `AM-KIA-Quote-${row.modelName.replace(/\s+/g, '-')}-${Date.now()}.pdf`
+    })
   } catch (error) {
     console.error('Error in POST /api/brands/kia/proforma/quote:', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to send quote' }, { status: 500 })
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to save and download quote' }, { status: 500 })
   }
 }

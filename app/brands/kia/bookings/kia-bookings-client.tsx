@@ -822,6 +822,7 @@ export function KiaBookingsClient({ initialSearchParams, embedMode = false }: { 
   const [consultant, setConsultant] = useState(firstParam(initialSearchParams, 'consultant', ALL_VALUE))
   const [page, setPage] = useState(Number(firstParam(initialSearchParams, 'page', '1')) || 1)
   const [createOpen, setCreateOpen] = useState(false)
+  const [quoteOpen, setQuoteOpen] = useState(false)
   const [createTab, setCreateTab] = useState<(typeof CREATE_TABS)[number]>('Customer')
   const [createForm, setCreateForm] = useState<CreateBookingForm>(() => initialCreateForm())
   const [formError, setFormError] = useState('')
@@ -1110,6 +1111,9 @@ export function KiaBookingsClient({ initialSearchParams, embedMode = false }: { 
                 <Button className="h-11 rounded-2xl bg-slate-950 px-5 font-black text-white hover:bg-slate-800" onClick={() => setCreateOpen(true)}>
                   <Plus className="h-4 w-4" /> New Booking
                 </Button>
+                <Button variant="outline" className="h-11 rounded-2xl bg-white px-5 font-black text-slate-800 border-slate-200 shadow-sm hover:bg-slate-50" onClick={() => setQuoteOpen(true)}>
+                  <FileText className="mr-2 h-4 w-4" /> Email Quote
+                </Button>
                 <Button variant="outline" className="h-11 rounded-2xl bg-white px-5 font-black" onClick={() => listQuery.refetch()} disabled={listQuery.isFetching}>
                   <RefreshCw className={cn('h-4 w-4', listQuery.isFetching && 'animate-spin')} /> Refresh
                 </Button>
@@ -1192,7 +1196,7 @@ export function KiaBookingsClient({ initialSearchParams, embedMode = false }: { 
                             router.push(`/brands/kia/proforma/generate?bookingId=${row.id}`)
                           }}
                         >
-                          Generate
+                          Generate Proforma
                         </Button>
                       )}
                     </TableCell>
@@ -1224,6 +1228,12 @@ export function KiaBookingsClient({ initialSearchParams, embedMode = false }: { 
         onTabChange={setCreateTab}
         onChange={updateCreateForm}
         onSubmit={submitCreate}
+      />
+
+      <EmailQuoteDialog
+        open={quoteOpen}
+        onOpenChange={setQuoteOpen}
+        modelOptions={bookingModelOptions}
       />
 
       <Dialog open={Boolean(selectedBookingId)} onOpenChange={(open) => { if (!open) closeBooking() }}>
@@ -1740,5 +1750,197 @@ function ActionCard({ title, icon: Icon, value, status, action, disabled, onClic
         {disabled && <Loader2 className="h-4 w-4 animate-spin" />} {action}
       </Button>
     </section>
+  )
+}
+
+interface EmailQuoteForm {
+  customerName: string
+  customerPhone: string
+  customerEmail: string
+  vehicle: string
+  budget: string
+  price: string
+}
+
+const EMPTY_QUOTE_FORM: EmailQuoteForm = {
+  customerName: '',
+  customerPhone: '',
+  customerEmail: '',
+  vehicle: '',
+  budget: '',
+  price: '',
+}
+
+function EmailQuoteDialog({
+  open,
+  onOpenChange,
+  modelOptions,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  modelOptions: string[]
+}) {
+  const [form, setForm] = useState<EmailQuoteForm>(EMPTY_QUOTE_FORM)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const update = <K extends keyof EmailQuoteForm>(key: K, value: EmailQuoteForm[K]) => {
+    setForm((current) => ({ ...current, [key]: value }))
+    if (errors[key]) {
+      setErrors((current) => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    }
+  }
+
+  const validate = () => {
+    const nextErrors: Record<string, string> = {}
+    if (!form.customerName.trim()) nextErrors.customerName = 'Customer Name is required'
+    
+    if (!form.customerPhone.trim()) {
+      nextErrors.customerPhone = 'Mobile number is required'
+    } else if (!/^\d{10}$/.test(form.customerPhone.replace(/\D/g, ''))) {
+      nextErrors.customerPhone = 'Mobile number must be 10 digits'
+    }
+
+    if (!form.customerEmail.trim()) {
+      nextErrors.customerEmail = 'Email is required'
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail.trim())) {
+      nextErrors.customerEmail = 'Enter a valid email address'
+    }
+
+    if (!form.vehicle) nextErrors.vehicle = 'Please select a vehicle'
+    
+    if (!form.budget.trim()) {
+      nextErrors.budget = 'Budget is required'
+    } else if (isNaN(Number(form.budget.replace(/,/g, '')))) {
+      nextErrors.budget = 'Enter a valid number'
+    }
+
+    if (!form.price.trim()) {
+      nextErrors.price = 'Price is required'
+    } else if (isNaN(Number(form.price.replace(/,/g, '')))) {
+      nextErrors.price = 'Enter a valid number'
+    }
+
+    setErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!validate()) return
+    setIsSubmitting(true)
+    try {
+      const response = await fetch('/api/brands/kia/proforma/quote', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...form,
+          customerPhone: form.customerPhone.replace(/\D/g, ''),
+          budget: Number(form.budget.replace(/,/g, '')),
+          price: Number(form.price.replace(/,/g, '')),
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to submit quote')
+
+      const pdfBytesStr = data.pdf
+      const filename = data.filename || 'AM-KIA-Quotation.pdf'
+      const binaryString = atob(pdfBytesStr)
+      const len = binaryString.length
+      const bytes = new Uint8Array(len)
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+      const blob = new Blob([bytes], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.click()
+      window.URL.revokeObjectURL(url)
+
+      alert('Quote generated, saved in database, and downloaded successfully!')
+      setForm(EMPTY_QUOTE_FORM)
+      onOpenChange(false)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const vehicles = modelOptions.length > 0 ? modelOptions : ['CARENS', 'CARNIVAL', 'EV6', 'SELTOS', 'SONET', 'SYROS']
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl overflow-hidden rounded-[2rem] p-0 bg-white">
+        <form onSubmit={handleSubmit} className="flex flex-col">
+          <DialogHeader className="relative border-b border-slate-100 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-6 text-white">
+            <div className="absolute bottom-0 left-0 h-[3px] w-full bg-gradient-to-r from-red-600 via-[#c8102e] to-rose-500" />
+            <DialogTitle className="text-2xl font-black tracking-tight text-white">Create Price Quotation</DialogTitle>
+            <DialogDescription className="mt-1 font-semibold text-slate-300/80">Enter basic details to save quote to database and download the quote PDF.</DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 p-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Customer Name <span className="text-red-500 font-bold">*</span></Label>
+                <Input className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-slate-50/50 font-bold focus:border-[#c8102e] focus:bg-white focus:ring-2 focus:ring-[#c8102e]/10 transition-all" value={form.customerName} onChange={(e) => update('customerName', e.target.value)} placeholder="e.g. John Doe" />
+                {errors.customerName && <p className="mt-1 text-xs font-semibold text-red-500">{errors.customerName}</p>}
+              </div>
+
+              <div>
+                <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Mobile Number <span className="text-red-500 font-bold">*</span></Label>
+                <Input className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-slate-50/50 font-bold focus:border-[#c8102e] focus:bg-white focus:ring-2 focus:ring-[#c8102e]/10 transition-all" inputMode="numeric" maxLength={10} value={form.customerPhone} onChange={(e) => update('customerPhone', e.target.value.replace(/\D/g, ''))} placeholder="10-digit mobile number" />
+                {errors.customerPhone && <p className="mt-1 text-xs font-semibold text-red-500">{errors.customerPhone}</p>}
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Customer Email <span className="text-red-500 font-bold">*</span></Label>
+              <Input className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-slate-50/50 font-bold focus:border-[#c8102e] focus:bg-white focus:ring-2 focus:ring-[#c8102e]/10 transition-all" type="email" value={form.customerEmail} onChange={(e) => update('customerEmail', e.target.value)} placeholder="name@domain.com" />
+              {errors.customerEmail && <p className="mt-1 text-xs font-semibold text-red-500">{errors.customerEmail}</p>}
+            </div>
+
+            <div>
+              <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Vehicle <span className="text-red-500 font-bold">*</span></Label>
+              <Select value={form.vehicle} onValueChange={(val) => update('vehicle', val)}>
+                <SelectTrigger className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-slate-50/50 font-bold focus:border-[#c8102e] focus:bg-white focus:ring-2 focus:ring-[#c8102e]/10 transition-all"><SelectValue placeholder="Select vehicle model" /></SelectTrigger>
+                <SelectContent>
+                  {vehicles.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {errors.vehicle && <p className="mt-1 text-xs font-semibold text-red-500">{errors.vehicle}</p>}
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Vehicle Price <span className="text-red-500 font-bold">*</span></Label>
+                <Input className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-slate-50/50 font-bold focus:border-[#c8102e] focus:bg-white focus:ring-2 focus:ring-[#c8102e]/10 transition-all" inputMode="numeric" value={form.price} onChange={(e) => update('price', e.target.value)} placeholder="Ex-showroom price" />
+                {errors.price && <p className="mt-1 text-xs font-semibold text-red-500">{errors.price}</p>}
+              </div>
+
+              <div>
+                <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Total Customer Budget <span className="text-red-500 font-bold">*</span></Label>
+                <Input className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-slate-50/50 font-bold focus:border-[#c8102e] focus:bg-white focus:ring-2 focus:ring-[#c8102e]/10 transition-all" inputMode="numeric" value={form.budget} onChange={(e) => update('budget', e.target.value)} placeholder="Total customer budget" />
+                {errors.budget && <p className="mt-1 text-xs font-semibold text-red-500">{errors.budget}</p>}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-slate-100 bg-slate-50 p-4">
+            <Button type="button" variant="outline" className="rounded-xl border-slate-200 font-bold text-slate-700 hover:bg-slate-100" onClick={() => onOpenChange(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button type="submit" className="rounded-xl bg-[#c8102e] text-white hover:bg-red-700 font-black" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+              Generate & Download Quote
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
