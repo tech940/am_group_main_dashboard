@@ -704,7 +704,7 @@ function PurchaseOrdersPageContent() {
 
       if (isApprovalRole(userRole)) {
         params.set('approvalFilter', approvalFilter)
-        if (userRole === 'md' && approvalFilter !== 'all' && approvalBranchFilter !== 'all') {
+        if (userRole === 'md' && approvalBranchFilter !== 'all') {
           params.set('branchFilter', approvalBranchFilter)
         }
       }
