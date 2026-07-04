@@ -8,7 +8,7 @@ import { canUserAccessPermission } from '@/lib/permissions/service'
 
 type KiaProformaRole = AppUser['role']
 
-export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'manager'] as const
+export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba', 'manager'] as const
 
 export function canAccessKiaProforma(role: KiaProformaRole | null | undefined) {
   return Boolean(role)
@@ -25,7 +25,7 @@ export async function canApproveKiaProformaForUser(appUser: AppUser, profileAppr
 
 export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = false): SQL<unknown> {
   const base = [isNull(kiaProformas.deletedAt)]
-  const isBackOffice = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'manager', 'accounts', 'viewer', 'service_manager', 'purchase_manager'].includes(appUser.role)
+  const isBackOffice = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba', 'manager', 'accounts', 'viewer', 'service_manager', 'purchase_manager'].includes(appUser.role)
   if (canApprove || isBackOffice) return and(...base)!
   return and(...base, eq(kiaProformas.loginEmail, appUser.email))!
 }

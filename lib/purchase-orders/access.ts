@@ -9,7 +9,7 @@ type PurchaseOrderRole = AppUser['role']
 
 const CREATOR_ROLES: PurchaseOrderRole[] = ['admin', 'super_admin', 'purchase_manager']
 const EA_ROLES: PurchaseOrderRole[] = ['admin', 'super_admin', 'ea']
-const MD_ROLES: PurchaseOrderRole[] = ['admin', 'super_admin', 'md']
+const MD_ROLES: PurchaseOrderRole[] = ['admin', 'super_admin', 'md', 'eba']
 const ACCOUNTS_ROLES: PurchaseOrderRole[] = ['admin', 'super_admin', 'accounts']
 
 export const PURCHASE_ORDER_STATUSES = [
@@ -64,7 +64,7 @@ export function canApproveEa(role: PurchaseOrderRole | null | undefined) {
 }
 
 export function canApproveMd(role: PurchaseOrderRole | null | undefined) {
-  return role === 'admin' || role === 'super_admin' || role === 'md'
+  return role === 'admin' || role === 'super_admin' || role === 'md' || role === 'eba'
 }
 
 export function canSubmitGrn(role: PurchaseOrderRole | null | undefined) {
@@ -103,6 +103,7 @@ export function getPurchaseOrderListVisibilityFilter(appUser: AppUser): SQL<unkn
     case 'admin':
     case 'super_admin':
     case 'md':
+    case 'eba':
       return and(...baseFilters)!
     case 'purchase_manager':
       return and(
@@ -151,6 +152,7 @@ export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrder
 
     switch (appUser.role) {
     case 'md':
+    case 'eba':
       return true
     case 'purchase_manager':
       return branchMatches
@@ -200,6 +202,8 @@ export function getPurchaseOrderRoleLabel(role: PurchaseOrderRole | null | undef
       return 'EA'
     case 'md':
       return 'MD'
+    case 'eba':
+      return 'EBA'
     case 'accounts':
       return 'Accounts'
     case 'manager':
@@ -220,6 +224,8 @@ export function getRoleQueueTitle(role: PurchaseOrderRole | null | undefined) {
     case 'ea':
       return 'Awaiting EA Approval'
     case 'md':
+      return 'Pending MD Approval'
+    case 'eba':
       return 'Pending MD Approval'
     case 'accounts':
       return 'Accounts Processing'

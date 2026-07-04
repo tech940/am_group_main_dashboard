@@ -3,6 +3,7 @@ import type { SQL } from 'drizzle-orm'
 import type { AppUser } from '@/lib/auth/app-user'
 import { financeOrders } from '@/lib/db/schema'
 import { getUserBranchLabel, hasAllBranchAccess } from '@/lib/branches'
+import { hasGlobalAccessRole } from '@/lib/auth/roles'
 
 type FinanceOrderRecord = typeof financeOrders.$inferSelect
 type FinanceRole = AppUser['role']
@@ -42,7 +43,7 @@ export function isFinanceOrderStage(value: string): value is typeof FINANCE_ORDE
 }
 
 export function canAccessFinanceOrders(role: FinanceRole | null | undefined) {
-  return role === 'admin' || role === 'super_admin' || role === 'ceo' || role === 'md' || role === 'ea' || role === 'accounts' || role === 'finance_head'
+  return role === 'admin' || role === 'super_admin' || role === 'ceo' || role === 'md' || role === 'ea' || role === 'eba' || role === 'accounts' || role === 'finance_head'
 }
 
 export function canCreateFinanceOrders(role: FinanceRole | null | undefined) {
@@ -100,6 +101,7 @@ export function getFinanceOrderVisibilityFilter(appUser: AppUser): SQL<unknown> 
     case 'ceo':
     case 'md':
     case 'ea':
+    case 'eba':
     case 'accounts': {
       const branchFilter = getFinanceBranchFilter(appUser)
       return branchFilter ? and(...baseFilters, branchFilter)! : and(...baseFilters)!
@@ -115,7 +117,7 @@ export function canReadFinanceOrder(appUser: AppUser, order: Pick<FinanceOrderRe
   if (!canAccessFinanceOrders(appUser.role)) return false
   if (appUser.role === 'finance_head') return order.createdBy === appUser.id
   if (
-    (appUser.role === 'ceo' || appUser.role === 'md' || appUser.role === 'ea' || appUser.role === 'accounts')
+    (appUser.role === 'ceo' || appUser.role === 'md' || appUser.role === 'ea' || appUser.role === 'eba' || appUser.role === 'accounts')
     && !hasAllBranchAccess(appUser.brand)
   ) {
     const branch = appUser.brand || ''
@@ -133,21 +135,21 @@ export function canReadFinanceOrder(appUser: AppUser, order: Pick<FinanceOrderRe
 }
 
 export function getFinanceApprovalFilter(role: FinanceRole | null | undefined, filter: string | null) {
-  if (role !== 'ea' && role !== 'md' && role !== 'accounts' && role !== 'admin' && role !== 'super_admin') return null
+  if (role !== 'ea' && role !== 'md' && role !== 'eba' && role !== 'accounts' && role !== 'admin' && role !== 'super_admin') return null
 
   if (filter === 'hold') {
     if (role === 'accounts') return eq(financeOrders.status, 'accounts_on_hold')
-    return role === 'md' ? eq(financeOrders.status, 'md_on_hold') : or(eq(financeOrders.status, 'ea_on_hold'), eq(financeOrders.status, 'md_on_hold'))
+    return role === 'md' || role === 'eba' ? eq(financeOrders.status, 'md_on_hold') : or(eq(financeOrders.status, 'ea_on_hold'), eq(financeOrders.status, 'md_on_hold'))
   }
 
   if (filter === 'rejected') {
     if (role === 'accounts') return eq(financeOrders.status, 'accounts_denied')
-    return role === 'md' ? eq(financeOrders.status, 'md_denied') : or(eq(financeOrders.status, 'ea_denied'), eq(financeOrders.status, 'md_denied'))
+    return role === 'md' || role === 'eba' ? eq(financeOrders.status, 'md_denied') : or(eq(financeOrders.status, 'ea_denied'), eq(financeOrders.status, 'md_denied'))
   }
 
   if (filter === 'approved') {
     if (role === 'accounts') return eq(financeOrders.accountsVerificationStatus, 'received')
-    return role === 'md' ? eq(financeOrders.mdApprovalStatus, 'approved') : eq(financeOrders.eaApprovalStatus, 'approved')
+    return role === 'md' || role === 'eba' ? eq(financeOrders.mdApprovalStatus, 'approved') : eq(financeOrders.eaApprovalStatus, 'approved')
   }
 
   if (filter === 'completed') {
@@ -156,7 +158,7 @@ export function getFinanceApprovalFilter(role: FinanceRole | null | undefined, f
 
   if (filter === 'pending') {
     if (role === 'accounts') return eq(financeOrders.status, 'awaiting_accounts_verification')
-    return role === 'md' ? eq(financeOrders.status, 'awaiting_md_approval') : eq(financeOrders.status, 'awaiting_ea_approval')
+    return role === 'md' || role === 'eba' ? eq(financeOrders.status, 'awaiting_md_approval') : eq(financeOrders.status, 'awaiting_ea_approval')
   }
 
   return null

@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
-  BadgeCheck,
   BarChart3,
   Building2,
   Calculator,
@@ -13,7 +12,6 @@ import {
   EyeOff,
   LockKeyhole,
   Mail,
-  PackageCheck,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -23,13 +21,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+const BRAND_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.jpeg'
+
 const ORBIT_NODES = [
-  { label: 'Service AI', icon: Car, color: '#43d45f', bg: '#ecfff1', angle: 0, ring: 214 },
-  { label: 'Retail AI', icon: Tag, color: '#7c4dff', bg: '#f3eeff', angle: 60, ring: 238 },
-  { label: 'Accounting AI', icon: Calculator, color: '#14b98f', bg: '#eafff7', angle: 125, ring: 224 },
+  { label: 'Service AI', icon: Car, color: '#45d35d', bg: '#effff3', angle: 0, ring: 214 },
+  { label: 'Retail AI', icon: Sparkles, color: '#7c4dff', bg: '#f5efff', angle: 60, ring: 238 },
+  { label: 'Accounting AI', icon: Calculator, color: '#18c88e', bg: '#ecfff8', angle: 125, ring: 224 },
   { label: 'Analytics AI', icon: BarChart3, color: '#f5b400', bg: '#fff8df', angle: 180, ring: 238 },
-  { label: 'Parts AI', icon: Settings, color: '#2389f2', bg: '#eaf4ff', angle: 235, ring: 222 },
-  { label: 'Inventory AI', icon: Building2, color: '#327eea', bg: '#ecf4ff', angle: 300, ring: 238 },
+  { label: 'Parts AI', icon: Settings, color: '#2aa0ff', bg: '#eef7ff', angle: 235, ring: 222 },
+  { label: 'Inventory AI', icon: Building2, color: '#3d7ef2', bg: '#edf4ff', angle: 300, ring: 238 },
 ]
 
 const ORBIT_DOTS = [
@@ -56,17 +56,6 @@ function orbitTransform(angle: number, ring: number) {
   const { x, y } = polarToXY(angle, ring)
 
   return `translate(calc(-50% + ${x.toFixed(2)}px), calc(-50% + ${y.toFixed(2)}px))`
-}
-
-function AmMark({ className = 'h-10 w-24' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 142 54" fill="none" aria-hidden="true">
-      <path d="M7 45L28 9L49 45" stroke="currentColor" strokeWidth="6.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M42 45L63 9L84 45" stroke="currentColor" strokeWidth="6.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M77 45L98 9L135 45" stroke="currentColor" strokeWidth="6.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M33 45H47" stroke="currentColor" strokeWidth="6.5" strokeLinecap="round" />
-    </svg>
-  )
 }
 
 export default function LoginPage() {
@@ -115,17 +104,13 @@ export default function LoginPage() {
 
       <section className="relative mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1420px] flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-white/48 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur-xl lg:min-h-[calc(100vh-3rem)] lg:flex-row">
         <div className="relative hidden min-h-[760px] flex-1 overflow-hidden px-10 py-9 lg:block xl:px-14">
-          <div className="relative z-10 flex items-center gap-4">
-            <div className="flex h-14 w-28 items-center justify-center rounded-2xl bg-white/70 text-slate-950 shadow-[0_16px_36px_rgba(15,23,42,0.06)] ring-1 ring-white">
-              <AmMark className="h-10 w-24" />
-            </div>
-            <div>
-              <p className="text-lg font-black uppercase tracking-[0.08em] text-slate-950">AM Group</p>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Operations Cloud</p>
+          <div className="absolute left-10 top-9 z-30 xl:left-14">
+            <div className="flex items-center justify-center">
+              <img src={BRAND_LOGO_URL} alt="AM Group" className="h-[135px] w-auto object-contain" />
             </div>
           </div>
 
-          <div className="absolute left-1/2 top-[52%] h-[660px] w-[660px] -translate-x-[54%] -translate-y-1/2">
+          <div className="absolute left-[56%] top-[60%] h-[660px] w-[660px] -translate-x-1/2 -translate-y-1/2">
             <div className="absolute left-1/2 top-1/2 h-[620px] w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/70" />
             <div className="absolute left-1/2 top-1/2 h-[466px] w-[466px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/70" />
             <div className="absolute left-1/2 top-1/2 h-[300px] w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-slate-200/80 animate-[spin_120s_linear_infinite]" />
@@ -152,8 +137,7 @@ export default function LoginPage() {
             </svg>
 
             <div className="absolute left-1/2 top-1/2 flex h-52 w-52 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-white bg-white/92 shadow-[0_20px_60px_rgba(15,23,42,0.10),inset_0_1px_0_rgba(255,255,255,0.9)]">
-              <AmMark className="h-20 w-36 text-slate-950" />
-              <span className="mt-1 text-xl font-black uppercase tracking-tight text-slate-950">AM Group</span>
+              <img src={BRAND_LOGO_URL} alt="AM Group" className="h-[90%] w-[90%] rounded-full object-contain" />
             </div>
 
             <div className="absolute inset-0 animate-[spin_120s_linear_infinite]">
@@ -166,14 +150,14 @@ export default function LoginPage() {
                     className="absolute left-1/2 top-1/2"
                     style={{ transform: orbitTransform(node.angle, node.ring) }}
                   >
-                    <div className="flex min-w-28 flex-col items-center gap-3 animate-[spin_120s_linear_infinite_reverse]">
+                    <div className="flex min-w-28 flex-col items-center gap-2.5 animate-[spin_120s_linear_infinite_reverse]">
                       <div
-                        className="flex h-[74px] w-[74px] items-center justify-center rounded-[1.7rem] border border-white bg-white shadow-[0_18px_36px_rgba(15,23,42,0.08)]"
-                        style={{ background: `linear-gradient(145deg, #ffffff 0%, ${node.bg} 100%)` }}
+                        className="flex h-[86px] w-[86px] items-center justify-center rounded-full border border-white/95 bg-white shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 ring-slate-100/70"
+                        style={{ background: `radial-gradient(circle at 30% 30%, #ffffff 0%, ${node.bg} 100%)` }}
                       >
-                        <Icon className="h-9 w-9" style={{ color: node.color }} strokeWidth={2.5} />
+                        <Icon className="h-10 w-10" style={{ color: node.color }} strokeWidth={2.4} />
                       </div>
-                      <span className="rounded-full bg-white/54 px-3 py-1 text-sm font-bold text-slate-950 shadow-sm ring-1 ring-white/80">
+                      <span className="text-[15px] font-semibold tracking-[-0.01em] text-slate-950">
                         {node.label}
                       </span>
                     </div>
@@ -202,21 +186,15 @@ export default function LoginPage() {
           <div className="absolute inset-y-10 left-0 hidden w-px bg-gradient-to-b from-transparent via-slate-200 to-transparent lg:block" />
 
           <div className="w-full max-w-[460px] rounded-[2rem] border border-white/90 bg-white/92 p-6 shadow-[0_28px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:p-9">
-            <div className="mb-8 flex items-center justify-between gap-4 lg:hidden">
-              <div className="flex items-center gap-3">
-                <AmMark className="h-9 w-20 text-slate-950" />
-                <span className="text-sm font-black uppercase tracking-[0.14em] text-slate-950">AM Group</span>
+            <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
+              <img src={BRAND_LOGO_URL} alt="AM Group" className="h-12 w-auto rounded-xl object-contain" />
+            </div>
+
+            <div className="mt-2 flex flex-col items-center text-center">
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#eaf2ff] px-4 py-2 text-xs font-black uppercase tracking-[0.24em] text-[#1f56a8] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                AM Group Dashboard
               </div>
-              <BadgeCheck className="h-5 w-5 text-emerald-500" />
-            </div>
-
-            <div className="inline-flex items-center gap-2 rounded-full bg-[#eaf2ff] px-4 py-2 text-xs font-black uppercase tracking-[0.24em] text-[#1f56a8] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
-              <Sparkles className="h-3.5 w-3.5" />
-              AM Group Dashboard
-            </div>
-
-            <div className="mt-6">
-              <h1 className="text-4xl font-black tracking-[-0.045em] text-[#101936] sm:text-5xl">Welcome back</h1>
+              <h1 className="mt-6 text-4xl font-black tracking-[-0.045em] text-[#101936] sm:text-5xl">Welcome back</h1>
               <p className="mt-4 max-w-sm text-base font-medium leading-7 text-slate-500">
                 Sign in to manage your operations across all branches.
               </p>

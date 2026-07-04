@@ -1,6 +1,6 @@
 # Project Context
 
-Last updated: 2026-06-19
+Last updated: 2026-07-04
 
 ## Project Overview
 
@@ -23,8 +23,9 @@ The application is designed for operational users across Admin, CEO, Purchase Ma
 
 ## Authorization Policy
 
-- `super_admin`, `md`, `ceo`, and `ea` are global operational roles. They can open every non-admin branch and module regardless of the `users.brand` assignment or user-level branch permission overrides.
+- `super_admin`, `md`, `ceo`, `ea`, and `eba` (`Executive Business Administrator`) are global operational roles. They can open every non-admin branch and module regardless of the `users.brand` assignment or user-level branch permission overrides.
 - The Admin Console (`/admin`) and every `/api/admin/*` management capability are restricted to the exact `super_admin` role. MD, CEO, EA, legacy `admin`, and `branch_admin` users must not see or use Admin.
+- `eba` is an executive access role comparable to MD for operational modules, but it is not an Admin Console authority role.
 - `branch_admin` remains a branch-scoped operational role and is not an Admin Console role.
 - The legacy `admin` role must not be treated as an alias for `super_admin`. New privileged accounts should use `super_admin`.
 - Shared role truth lives in `lib/auth/roles.ts`; brand page/API guards use `lib/auth/brand-access.ts`; effective permission snapshots use `lib/permissions/service.ts`; Admin API authority uses `lib/admin/authorization.ts`.
@@ -131,6 +132,7 @@ The active UI direction is a premium glassmorphism dashboard shell:
 - ESLint intentionally ignores `scripts/**` and `public/**`; the dashboard has CommonJS maintenance scripts and service-worker assets that are not part of the Next app source lint surface.
 - Login and Admin User Management create-user password inputs include show/hide password icon buttons so users can reveal passwords while typing when needed.
 - Finance Head is a first-class role in User Management and can be assigned from the admin user form.
+- Login branding now uses the hosted AM Group logo asset from Supabase Storage, removes the older "Welcome back" / "Operations Cloud" copy, keeps the hero/login card centered around a simplified `Dashboard` label, and uses the approved login orbit icon set: Service AI (`Car`), Inventory AI (`Warehouse`), Retail AI (`Tag`), Accounting AI (`Calculator`), Analytics AI (`BarChart3`), and Parts AI (`Cog`).
 - Admin User Management table avatars use the `.admin-user-avatar` class with theme action tokens so initials remain visible on glass table rows.
 
 Important implementation files:

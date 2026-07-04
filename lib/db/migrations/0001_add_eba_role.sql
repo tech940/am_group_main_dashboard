@@ -1,0 +1,7 @@
+DO $$
+BEGIN
+  ALTER TYPE role ADD VALUE IF NOT EXISTS 'eba';
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END
+$$;

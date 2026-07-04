@@ -207,7 +207,7 @@ function isCreatorRole(role: string) {
 }
 
 function isApproverRole(role: string) {
-  return role === 'ea' || role === 'md' || role === 'accounts'
+  return role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts'
 }
 
 function canReviewApprovalQueue(role: string) {
@@ -215,7 +215,7 @@ function canReviewApprovalQueue(role: string) {
 }
 
 function isExpenseFeedRole(role: string) {
-  return role === 'ea' || role === 'md' || role === 'accounts' || role === 'super_admin'
+  return role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts' || role === 'super_admin'
 }
 
 async function fetchJsonWithTimeout<T>(url: string, label: string) {

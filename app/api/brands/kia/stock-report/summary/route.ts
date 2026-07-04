@@ -11,7 +11,7 @@ export const maxDuration = 60
 
 
 function isKiaStockReportRoleAllowed(role: string | null | undefined) {
-  return role === 'super_admin' || role === 'md'
+  return role === 'super_admin' || role === 'md' || role === 'eba'
 }
 
 export async function GET(request: Request) {

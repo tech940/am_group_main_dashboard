@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
-  return role === 'super_admin' || role === 'md'
+  return role === 'super_admin' || role === 'md' || role === 'eba'
 }
 
 export async function GET(request: Request) {

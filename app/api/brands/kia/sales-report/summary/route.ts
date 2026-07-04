@@ -24,7 +24,7 @@ function parseDate(value: string | null) {
 }
 
 function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
-  return role === 'super_admin' || role === 'md'
+  return role === 'super_admin' || role === 'md' || role === 'eba'
 }
 
 export async function GET(request: Request) {

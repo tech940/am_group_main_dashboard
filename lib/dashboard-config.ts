@@ -20,6 +20,7 @@ export const USER_ROLE_OPTIONS = [
   { value: 'finance_head', label: 'Finance Head', color: 'bg-violet-500' },
   { value: 'ea', label: 'EA (Executive Assistant)', color: 'bg-purple-500' },
   { value: 'md', label: 'MD (Managing Director)', color: 'bg-indigo-500' },
+  { value: 'eba', label: 'EBA (Executive Business Administrator)', color: 'bg-cyan-600' },
   { value: 'accounts', label: 'Accounts', color: 'bg-emerald-500' },
   { value: 'manager', label: 'Manager', color: 'bg-teal-500' },
   { value: 'technician', label: 'Technician', color: 'bg-cyan-500' },

@@ -268,7 +268,7 @@ function normalizeRole(role?: string | null) {
 
 function roleCanActAsSalesManager(role?: string | null) {
   const value = normalizeRole(role)
-  return ['super_admin', 'admin', 'manager', 'general_manager', 'sales_head', 'md', 'ea', 'ceo'].includes(value)
+  return ['super_admin', 'admin', 'manager', 'general_manager', 'sales_head', 'md', 'ea', 'ceo', 'eba'].includes(value)
 }
 
 function roleCanActAsAccounts(role?: string | null) {

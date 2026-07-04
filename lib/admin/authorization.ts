@@ -17,6 +17,7 @@ export const PROTECTED_ROLES = new Set<AppUser['role']>([
   'admin',
   'branch_admin',
   'md',
+  'eba',
   'ceo',
   'ea',
   'accounts',

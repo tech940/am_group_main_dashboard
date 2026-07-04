@@ -246,7 +246,7 @@ function isSidebarHrefActive(href: string, pathname: string | null) {
 
 function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
   const normalized = String(role || '').trim().toLowerCase()
-  return normalized === 'super_admin' || normalized === 'md'
+  return normalized === 'super_admin' || normalized === 'md' || normalized === 'eba'
 }
 
 function getBrandKey(brandName: string) {
@@ -269,9 +269,9 @@ export function Sidebar() {
     savePreference: saveFavouriteHrefs,
     loading: favouritesLoading,
   } = useUserPreferences<string[]>('sidebar_favourites', DEFAULT_SIDEBAR_FAVOURITES)
-  const canAccessFinanceOrders = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'accounts', 'finance_head'].includes(userRole || '')
-  const canAccessPettyCash = ['admin', 'super_admin', 'branch_admin', 'ea', 'md', 'accounts'].includes(userRole || '')
-  const canAccessAmFinance = ['admin', 'super_admin', 'ceo', 'md', 'ea'].includes(userRole || '')
+  const canAccessFinanceOrders = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba', 'accounts', 'finance_head'].includes(userRole || '')
+  const canAccessPettyCash = ['admin', 'super_admin', 'branch_admin', 'ea', 'md', 'eba', 'accounts'].includes(userRole || '')
+  const canAccessAmFinance = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba'].includes(userRole || '')
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
   useEffect(() => {

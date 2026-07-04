@@ -23,7 +23,7 @@ export async function GET() {
         activeUsers: sql<number>`count(*) filter (where ${users.isActive} = true)`,
         inactiveUsers: sql<number>`count(*) filter (where ${users.isActive} = false)`,
         administrators: sql<number>`count(*) filter (where ${users.role} in ('admin', 'super_admin', 'branch_admin'))`,
-        protectedUsers: sql<number>`count(*) filter (where ${users.role} in ('admin', 'super_admin', 'branch_admin', 'md', 'ceo', 'ea', 'accounts', 'purchase_manager', 'finance_head'))`,
+        protectedUsers: sql<number>`count(*) filter (where ${users.role} in ('admin', 'super_admin', 'branch_admin', 'md', 'eba', 'ceo', 'ea', 'accounts', 'purchase_manager', 'finance_head'))`,
       }).from(users).where(scope),
       db.select({
         branch: users.brand,
