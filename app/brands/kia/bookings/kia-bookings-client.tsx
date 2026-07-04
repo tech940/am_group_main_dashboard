@@ -218,6 +218,7 @@ const DEFAULT_PAGE_SIZE = 10
 const ALL_VALUE = 'all'
 const PRIMARY_SURFACE = 'rounded-[1.5rem] border border-slate-200 bg-white shadow-sm sm:rounded-[2rem]'
 const INPUT_STYLE = 'h-10 w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-3 text-sm font-semibold text-slate-800 transition-all duration-200 focus:bg-white focus:border-[#c8102e] focus:ring-4 focus:ring-red-50 focus:outline-none sm:h-12 sm:px-4'
+const COMPACT_INPUT_STYLE = 'h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-800 transition-all duration-200 focus:bg-white focus:border-[#c8102e] focus:ring-4 focus:ring-red-50 focus:outline-none'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft',
@@ -406,7 +407,7 @@ function BookingMobileCard({
           <p className="mt-1 truncate text-xs font-bold text-slate-600">{row.customerName}</p>
           <p className="text-[11px] font-semibold text-slate-500">{row.customerPhone}</p>
         </div>
-        <StatusBadge status={row.proformaNumber ? 'proforma_generated' : row.status} />
+        <StatusBadge status={row.status} />
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
         <div>
@@ -941,11 +942,13 @@ export function KiaBookingsClient({
   embedMode = false,
   currentUserRole = 'viewer',
   mode = 'crm',
+  priceOptions,
 }: {
   initialSearchParams: SearchParamsInput
   embedMode?: boolean
   currentUserRole?: string
   mode?: BookingClientMode
+  priceOptions?: ProformaOptionsPayload | null
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -1038,6 +1041,7 @@ export function KiaBookingsClient({
     staleTime: 5 * 60 * 1000,
     retry: 2,
     refetchOnWindowFocus: false,
+    enabled: !priceOptions,
   })
 
   const createMutation = useMutation({
@@ -1144,8 +1148,8 @@ export function KiaBookingsClient({
   })
 
   const data = listQuery.data
-  const priceModels = proformaOptionsQuery.data?.models || []
-  const priceTrims = useMemo(() => proformaOptionsQuery.data?.trims || [], [proformaOptionsQuery.data?.trims])
+  const priceModels = priceOptions?.models || proformaOptionsQuery.data?.models || []
+  const priceTrims = useMemo(() => priceOptions?.trims || proformaOptionsQuery.data?.trims || [], [priceOptions?.trims, proformaOptionsQuery.data?.trims])
   const rows = data?.rows || []
   const filters = data?.filters || { dealers: ['JK402', 'JK501'], models: [], statuses: Object.keys(STATUS_LABELS), consultants: [] }
   const bookingModelOptions = priceModels.length > 0 ? priceModels : filters.models
@@ -1156,6 +1160,11 @@ export function KiaBookingsClient({
       .map((trim) => trim.trim_description)
       .filter(Boolean)))
   }, [createForm.model, priceTrims])
+  const priceBanks = useMemo(() => priceOptions?.banks || proformaOptionsQuery.data?.banks || [], [priceOptions?.banks, proformaOptionsQuery.data?.banks])
+  const bookingBankOptions = useMemo(() => {
+    const names = priceBanks.map((b) => b.bank_name || '').filter(Boolean)
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b))
+  }, [priceBanks])
   const kpis = data?.kpis || {
     today: 0,
     pendingProforma: 0,
@@ -1212,7 +1221,23 @@ export function KiaBookingsClient({
       ['model', 'Model'],
       ['year', 'YEAR'],
       ['variant', 'Variant'],
+      ['color', 'Colour'],
+      ['status', 'Stock Status'],
+      ['managerName', 'Manager Name'],
+      ['tlName', 'Team Leader'],
       ['consultantName', 'Consultant Name'],
+      ['leadSource', 'Lead Source'],
+      ['bookingAmount', 'Booking Amount'],
+      ['bookingDate', 'Booking Date'],
+      ['pmtSource', 'Payment Source'],
+      ['paymentAmount', 'Payment Amount'],
+      ['paymentReceived', 'Payment Received Against Booking'],
+      ['costSheet', 'Cost Sheet'],
+      ['bankFinance', 'Bank / Finance'],
+      ['expectedDeliveryDate', 'Estimated Delivery Date'],
+      ['promiseDate', 'Promise Date'],
+      ['commitment', 'Commitment With Customer'],
+      ['otherDealerDetails', 'Other Dealer Details'],
     ]
     const missing = requiredFields.find(([key]) => !createForm[key]?.trim())
     if (missing) {
@@ -1514,7 +1539,7 @@ export function KiaBookingsClient({
                       <div className="max-w-[220px] truncate text-[11px] text-slate-500">{row.variant}</div>
                     </TableCell>
                     <TableCell className="px-3 py-3 text-xs font-semibold text-slate-600">{row.consultantName}</TableCell>
-                    <TableCell className="px-3 py-3"><StatusBadge status={row.proformaNumber ? 'proforma_generated' : row.status} /></TableCell>
+                    <TableCell className="px-3 py-3"><StatusBadge status={row.status} /></TableCell>
                     <TableCell className="px-3 py-3 text-xs font-semibold text-slate-600">{row.financeOrderNumber || '-'}</TableCell>
                     <TableCell className="px-3 py-3 font-mono text-[11px] text-slate-600">{row.allocatedVin || '-'}</TableCell>
                     <TableCell className="px-3 py-3 text-xs font-semibold text-slate-500">{formatDate(row.updatedAt)}</TableCell>
@@ -1561,6 +1586,7 @@ export function KiaBookingsClient({
         activeTab={createTab}
         modelOptions={bookingModelOptions}
         variantOptions={bookingVariantOptions}
+        bankOptions={bookingBankOptions}
         masterLoading={proformaOptionsQuery.isLoading}
         error={formError || (createMutation.error instanceof Error ? createMutation.error.message : '')}
         isSubmitting={createMutation.isPending}
@@ -1608,56 +1634,56 @@ export function KiaBookingsClient({
       </Dialog>
 
       <Dialog open={Boolean(allotDialogVehicle)} onOpenChange={(open) => !open && setAllotDialogVehicle(null)}>
-        <DialogContent className="max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-5xl overflow-hidden rounded-[1.5rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)]">
-          <DialogHeader className="border-b border-slate-100 bg-[linear-gradient(135deg,#ffffff,#f8fafc)] p-5 sm:p-8">
-            <DialogTitle className="text-2xl font-black tracking-tight text-slate-950 sm:text-4xl">Allot this car</DialogTitle>
-            <DialogDescription className="mt-2 max-w-4xl text-sm font-semibold leading-7 text-slate-500 sm:text-[17px]">
+        <DialogContent className="flex flex-col max-h-[90dvh] w-[calc(100vw-0.75rem)] max-w-2xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_25px_70px_rgba(15,23,42,0.2)]">
+          <DialogHeader className="border-b border-slate-100 bg-[linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-5">
+            <DialogTitle className="text-lg font-black tracking-tight text-slate-950">Allot this car</DialogTitle>
+            <DialogDescription className="mt-1 max-w-xl text-xs font-semibold leading-5 text-slate-500">
               Link this VIN to the selected approved booking. Customer details are pulled from the booking and the 72-hour payment clock starts immediately after allotment.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-5 p-5 sm:p-8">
-            <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 px-5 py-4 text-lg font-semibold leading-8 text-slate-800">
-              <span className="font-black text-slate-950">{allotDialogVehicle?.model}</span> {allotDialogVehicle?.variant} · {allotDialogVehicle?.color || 'Color NA'} · {allotDialogVehicle?.stockAge || 0} days on lot · {allotDialogVehicle?.vinNumber}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-xs font-semibold leading-5 text-slate-800">
+              <span className="font-bold text-slate-950">{allotDialogVehicle?.model}</span> {allotDialogVehicle?.variant} <span className="text-slate-400">·</span> {allotDialogVehicle?.color || 'Color NA'} <span className="text-slate-400">·</span> {allotDialogVehicle?.stockAge || 0} days on lot <span className="text-slate-400">·</span> <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 text-[10px]">{allotDialogVehicle?.vinNumber}</code>
             </div>
-            <div className="grid gap-5 md:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Booking ID</Label>
-                <Input readOnly value={detailQuery.data?.booking.bookingNumber || ''} className={cn(INPUT_STYLE, 'mt-2 bg-slate-50 text-xl tracking-[0.18em]')} />
+                <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Booking ID</Label>
+                <Input readOnly value={detailQuery.data?.booking.bookingNumber || ''} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50 text-[11px] font-mono tracking-wider')} />
               </div>
               <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Customer name (from booking)</Label>
-                <Input readOnly value={detailQuery.data?.booking.customerName || ''} className={cn(INPUT_STYLE, 'mt-2 bg-slate-50')} />
+                <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Customer name (from booking)</Label>
+                <Input readOnly value={detailQuery.data?.booking.customerName || ''} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
               </div>
               <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Contact number (from booking)</Label>
-                <Input readOnly value={detailQuery.data?.booking.customerPhone || ''} className={cn(INPUT_STYLE, 'mt-2 bg-slate-50')} />
+                <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Contact number (from booking)</Label>
+                <Input readOnly value={detailQuery.data?.booking.customerPhone || ''} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
               </div>
               <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Financier</Label>
-                <Input readOnly value={detailQuery.data?.booking.bankName || String(((detailQuery.data?.booking.metadata || {}) as Record<string, unknown>).bankFinance || 'Cash / not decided')} className={cn(INPUT_STYLE, 'mt-2 bg-slate-50')} />
+                <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Financier</Label>
+                <Input readOnly value={detailQuery.data?.booking.bankName || String(((detailQuery.data?.booking.metadata || {}) as Record<string, unknown>).bankFinance || 'Cash / not decided')} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
               </div>
               <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Manager</Label>
-                <Input readOnly value={String(((detailQuery.data?.booking.metadata || {}) as Record<string, unknown>).managerName || '-')} className={cn(INPUT_STYLE, 'mt-2 bg-slate-50')} />
+                <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Manager</Label>
+                <Input readOnly value={String(((detailQuery.data?.booking.metadata || {}) as Record<string, unknown>).managerName || '-')} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
               </div>
               <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Team Leader</Label>
-                <Input readOnly value={String(((detailQuery.data?.booking.metadata || {}) as Record<string, unknown>).tlName || '-')} className={cn(INPUT_STYLE, 'mt-2 bg-slate-50')} />
+                <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Team Leader</Label>
+                <Input readOnly value={String(((detailQuery.data?.booking.metadata || {}) as Record<string, unknown>).tlName || '-')} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
               </div>
               <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Consultant</Label>
-                <Input readOnly value={detailQuery.data?.booking.consultantName || '-'} className={cn(INPUT_STYLE, 'mt-2 bg-slate-50')} />
+                <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Consultant</Label>
+                <Input readOnly value={detailQuery.data?.booking.consultantName || '-'} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
               </div>
               <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Remarks (optional)</Label>
-                <Input readOnly value={String(((detailQuery.data?.booking.metadata || {}) as Record<string, unknown>).commitment || '') || 'Booking details will remain linked in the timeline.'} className={cn(INPUT_STYLE, 'mt-2 bg-slate-50')} />
+                <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Remarks (optional)</Label>
+                <Input readOnly value={String(((detailQuery.data?.booking.metadata || {}) as Record<string, unknown>).commitment || '') || 'Booking details will remain linked in the timeline.'} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
               </div>
             </div>
           </div>
-          <DialogFooter className="grid gap-2 border-t border-slate-100 bg-slate-50 p-4 sm:flex sm:justify-end sm:p-6">
-            <Button type="button" variant="outline" className="h-12 rounded-2xl border-slate-200 bg-white px-6 text-base font-black" onClick={() => setAllotDialogVehicle(null)} disabled={actionMutation.isPending}>Cancel</Button>
-            <Button type="button" className="h-12 rounded-2xl bg-slate-950 px-6 text-base font-black text-white shadow-lg shadow-slate-950/15 hover:bg-slate-800" onClick={confirmAllot} disabled={actionMutation.isPending}>
-              {actionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          <DialogFooter className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-4 py-3 sm:px-5">
+            <Button type="button" variant="outline" className="h-9 rounded-xl border-slate-200 bg-white px-4 text-xs font-black" onClick={() => setAllotDialogVehicle(null)} disabled={actionMutation.isPending}>Cancel</Button>
+            <Button type="button" className="h-9 rounded-xl bg-slate-950 px-4 text-xs font-black text-white shadow-md shadow-slate-950/15 hover:bg-slate-800" onClick={confirmAllot} disabled={actionMutation.isPending}>
+              {actionMutation.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               Allot car
             </Button>
           </DialogFooter>
@@ -1783,6 +1809,7 @@ function CreateBookingDialog({
   activeTab,
   modelOptions,
   variantOptions,
+  bankOptions,
   masterLoading,
   error,
   isSubmitting,
@@ -1796,6 +1823,7 @@ function CreateBookingDialog({
   activeTab: (typeof CREATE_TABS)[number]
   modelOptions: string[]
   variantOptions: string[]
+  bankOptions: string[]
   masterLoading: boolean
   error: string
   isSubmitting: boolean
@@ -1814,7 +1842,7 @@ function CreateBookingDialog({
         <form
           onSubmit={onSubmit}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
               e.preventDefault()
             }
           }}
@@ -2019,7 +2047,7 @@ function CreateBookingDialog({
                   <Select value={form.bankFinance} onValueChange={(val) => onChange('bankFinance', val)}>
                     <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Bank / Finance" /></SelectTrigger>
                     <SelectContent>
-                      {BANKS.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                      {(bankOptions.length > 0 ? bankOptions : BANKS).map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
@@ -2335,14 +2363,14 @@ function BookingDrawer({
                 icon={FileText}
                 value={proforma?.number || 'Not generated'}
                 status={proforma?.status || '-'}
-                action={proforma ? (canActAsSalesManager ? 'Open Pending Proforma' : 'View Proforma Details') : 'Generate Proforma'}
+                action={proforma ? (proformaApproved || !canActAsSalesManager ? 'View Proforma Details' : 'Open Pending Proforma') : 'Generate Proforma'}
                 disabled={actionLoading || (!proforma && !canActAsSalesPerson)}
                 onClick={() => {
                   if (proforma) {
                     router.push(
-                      canActAsSalesManager
-                        ? `/brands/kia/proforma/pending-approval?search=${proforma.number}`
-                        : `/brands/kia/proforma/all-proforma-details?search=${proforma.number}`,
+                      proformaApproved || !canActAsSalesManager
+                        ? `/brands/kia/proforma/all-proforma-details?search=${proforma.number}`
+                        : `/brands/kia/proforma/pending-approval?search=${proforma.number}`,
                     )
                   } else {
                     onAction('proforma')

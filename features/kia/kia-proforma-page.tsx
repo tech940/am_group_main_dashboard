@@ -38,6 +38,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import { KiaBookingsClient } from '@/app/brands/kia/bookings/kia-bookings-client'
+import { KiaStockManagementDashboard } from './kia-stock-management-dashboard'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -1799,8 +1800,10 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
   const bookingId = searchParams.get('bookingId')
   const clientSearchParams = useMemo<Record<string, string>>(() => Object.fromEntries(searchParams.entries()), [searchParams])
   const { data: options, loading: optionsLoading, error, reload } = useOptions(section !== 'generate')
-  const { prefill: bookingPrefill, loading: prefillLoading } = useBookingPrefill(bookingId)
-  const loading = optionsLoading || (Boolean(bookingId) && prefillLoading)
+  const { prefill: bookingPrefill, loading: prefillLoading } = useBookingPrefill(
+    section === 'generate' ? bookingId : null
+  )
+  const loading = optionsLoading || (Boolean(section === 'generate' && bookingId) && prefillLoading)
   const approverOnly = section === 'pending-approval'
   if (loading) {
     return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="space-y-4"><div className="h-32 animate-pulse rounded-[2rem] bg-white/70" /><div className="h-96 animate-pulse rounded-[2rem] bg-white/70" /></div></MainLayout>
@@ -1817,7 +1820,7 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
       <div className="kia-proforma-shell space-y-5">
         <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} onPricesImported={reload} />
         {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} currentUserRole={options.currentUser.role} />}
-        {section === 'stock' && <KiaBookingsClient initialSearchParams={{ ...clientSearchParams, status: clientSearchParams.status || 'all' }} embedMode={true} currentUserRole={options.currentUser.role} mode="stock" />}
+        {section === 'stock' && <KiaStockManagementDashboard />}
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} bookingPrefill={bookingPrefill} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}
         {section === 'finance-remarks' && <DetailsView options={options} mode="finance-remarks" />}

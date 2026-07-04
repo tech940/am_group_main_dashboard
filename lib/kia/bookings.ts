@@ -12,6 +12,7 @@ import {
   kiaStockLocalStatuses,
   kiaVehicleAllocations,
   kiaVehicleTransfers,
+  kiaPriceDetails,
 } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
@@ -385,9 +386,37 @@ export async function generateKiaBookingProforma(id: string, appUser: AppUser) {
     if (!booking) throw new Error('Booking not found')
     if (booking.proformaId) return booking
 
+    const priceDetails = await tx
+      .select()
+      .from(kiaPriceDetails)
+      .where(and(eq(kiaPriceDetails.model, booking.model), eq(kiaPriceDetails.trimDescription, booking.variant)))
+      .limit(1)
+      .then((rows) => rows[0] || null)
+
+    const isCash = (booking.bankName || '').toUpperCase() === 'CASH'
+    const registration = priceDetails
+      ? isCash
+        ? Number(priceDetails.registrationCharges)
+        : Number(priceDetails.registrationCharges) + Number(priceDetails.statutoryCharges)
+      : 0
+
+    const exShowroom = priceDetails ? Number(priceDetails.exShowroomPrice) : 0
+    const tcsValue = priceDetails ? Number(priceDetails.tcs) : 0
+    const insuranceValue = priceDetails ? Number(priceDetails.insurance) : 0
+    const fastagValue = priceDetails ? Number(priceDetails.fastag) : 0
+    const accessoriesKit = priceDetails ? Number(priceDetails.accessoriesKit) : 0
+    const extWarranty = priceDetails ? Number(priceDetails.extendedWarranty4thYear) : 0
+    const insuranceCompany = priceDetails ? priceDetails.insuranceCompany || '' : ''
+
+    const meta = (booking.metadata || {}) as Record<string, unknown>
+    const bookingAmountVal = String(meta.bookingAmount || '0')
+
+    const totalCustomerCost = exShowroom + tcsValue + registration + insuranceValue + fastagValue + accessoriesKit + extWarranty
+    const grandTotalCost = totalCustomerCost - Number(bookingAmountVal)
+
     const [proforma] = await tx.insert(kiaProformas).values({
       proformaDate: new Date(),
-      customerType: 'Individual',
+      customerType: String(meta.customerType || 'Individual'),
       customerName: booking.customerName,
       mobileNumber: booking.customerPhone,
       customerAddress: booking.customerAddress || 'Pending',
@@ -399,6 +428,16 @@ export async function generateKiaBookingProforma(id: string, appUser: AppUser) {
       bankName: booking.bankName || 'Pending',
       vehicleStatus: booking.allocatedVin ? 'Allocated' : 'Pending',
       loanAmount: booking.loanAmount || '0',
+      insuranceCompany: insuranceCompany,
+      exShowroom: exShowroom.toFixed(2),
+      tcsValue: tcsValue.toFixed(2),
+      registrationCharges: registration.toFixed(2),
+      insuranceValue: insuranceValue.toFixed(2),
+      fastagValue: fastagValue.toFixed(2),
+      accessoriesKit: accessoriesKit.toFixed(2),
+      extWarranty: extWarranty.toFixed(2),
+      totalCustomerCost: totalCustomerCost.toFixed(2),
+      grandTotalCost: grandTotalCost.toFixed(2),
       loginEmail: appUser.email,
       consultant: booking.consultantName,
       location: booking.dealerCode,
@@ -551,6 +590,9 @@ export async function allotKiaBookingVehicle(id: string, vinNumber: string, appU
   const normalizedVin = text(vinNumber).toUpperCase()
   if (!normalizedVin) throw new Error('VIN is required')
 
+  const vehicle = await readMatchingVehicle(normalizedVin)
+  if (!vehicle) throw new Error('Vehicle is not available for allocation')
+
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
@@ -565,9 +607,6 @@ export async function allotKiaBookingVehicle(id: string, vinNumber: string, appU
 
     const [activeBooking] = await tx.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
     if (activeBooking) throw new Error('This booking already has an active VIN allocation')
-
-    const vehicle = await readMatchingVehicle(normalizedVin)
-    if (!vehicle) throw new Error('Vehicle is not available for allocation')
 
     const [allocation] = await tx.insert(kiaVehicleAllocations).values({
       bookingId: id,
@@ -742,6 +781,9 @@ export async function requestKiaVehicleTransfer(
   input: { toDealerCode?: string | null; notes?: string | null; vinNumber?: string | null },
   appUser: AppUser,
 ) {
+  const normalizedVin = text(input.vinNumber).toUpperCase()
+  const vehicle = normalizedVin ? await readMatchingVehicle(normalizedVin) : null
+
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
@@ -765,7 +807,6 @@ export async function requestKiaVehicleTransfer(
       .limit(1)
 
     if (!allocation) {
-      const normalizedVin = text(input.vinNumber).toUpperCase()
       if (!normalizedVin) throw new Error('Pick a VIN before requesting a transfer.')
 
       const [activeVin] = await tx
@@ -775,7 +816,6 @@ export async function requestKiaVehicleTransfer(
         .limit(1)
       if (activeVin) throw new Error('This VIN is already allocated to another active booking')
 
-      const vehicle = await readMatchingVehicle(normalizedVin)
       if (!vehicle) throw new Error('Vehicle is not available for transfer')
 
       const [createdAllocation] = await tx
