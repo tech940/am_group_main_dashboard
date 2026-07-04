@@ -128,10 +128,10 @@ export default function LoginPage() {
           <div className="absolute left-1/2 top-[52%] h-[660px] w-[660px] -translate-x-[54%] -translate-y-1/2">
             <div className="absolute left-1/2 top-1/2 h-[620px] w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/70" />
             <div className="absolute left-1/2 top-1/2 h-[466px] w-[466px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/70" />
-            <div className="absolute left-1/2 top-1/2 h-[300px] w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-slate-200/80" />
-            <div className="absolute left-1/2 top-1/2 h-[610px] w-[610px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[conic-gradient(from_110deg,transparent_0deg,rgba(56,189,248,0.32)_32deg,transparent_70deg,transparent_155deg,rgba(34,197,94,0.22)_190deg,transparent_235deg,rgba(99,102,241,0.22)_306deg,transparent_360deg)] opacity-70" />
+            <div className="absolute left-1/2 top-1/2 h-[300px] w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-slate-200/80 animate-[spin_120s_linear_infinite]" />
+            <div className="absolute left-1/2 top-1/2 h-[610px] w-[610px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[conic-gradient(from_110deg,transparent_0deg,rgba(56,189,248,0.32)_32deg,transparent_70deg,transparent_155deg,rgba(34,197,94,0.22)_190deg,transparent_235deg,rgba(99,102,241,0.22)_306deg,transparent_360deg)] opacity-70 animate-[spin_90s_linear_infinite_reverse]" />
 
-            <svg className="absolute inset-0 h-full w-full" viewBox="0 0 660 660" aria-hidden="true">
+            <svg className="absolute inset-0 h-full w-full animate-[spin_120s_linear_infinite]" viewBox="0 0 660 660" aria-hidden="true">
               {ORBIT_NODES.map((node) => {
                 const outer = polarToXY(node.angle, node.ring - 40)
                 const inner = polarToXY(node.angle, 130)
@@ -156,41 +156,45 @@ export default function LoginPage() {
               <span className="mt-1 text-xl font-black uppercase tracking-tight text-slate-950">AM Group</span>
             </div>
 
-            {ORBIT_NODES.map((node) => {
-              const Icon = node.icon
+            <div className="absolute inset-0 animate-[spin_120s_linear_infinite]">
+              {ORBIT_NODES.map((node) => {
+                const Icon = node.icon
 
-              return (
-                <div
-                  key={node.label}
-                  className="absolute left-1/2 top-1/2 flex min-w-28 flex-col items-center gap-3"
-                  style={{ transform: orbitTransform(node.angle, node.ring) }}
-                >
+                return (
                   <div
-                    className="flex h-[74px] w-[74px] items-center justify-center rounded-[1.7rem] border border-white bg-white shadow-[0_18px_36px_rgba(15,23,42,0.08)]"
-                    style={{ background: `linear-gradient(145deg, #ffffff 0%, ${node.bg} 100%)` }}
+                    key={node.label}
+                    className="absolute left-1/2 top-1/2"
+                    style={{ transform: orbitTransform(node.angle, node.ring) }}
                   >
-                    <Icon className="h-9 w-9" style={{ color: node.color }} strokeWidth={2.5} />
+                    <div className="flex min-w-28 flex-col items-center gap-3 animate-[spin_120s_linear_infinite_reverse]">
+                      <div
+                        className="flex h-[74px] w-[74px] items-center justify-center rounded-[1.7rem] border border-white bg-white shadow-[0_18px_36px_rgba(15,23,42,0.08)]"
+                        style={{ background: `linear-gradient(145deg, #ffffff 0%, ${node.bg} 100%)` }}
+                      >
+                        <Icon className="h-9 w-9" style={{ color: node.color }} strokeWidth={2.5} />
+                      </div>
+                      <span className="rounded-full bg-white/54 px-3 py-1 text-sm font-bold text-slate-950 shadow-sm ring-1 ring-white/80">
+                        {node.label}
+                      </span>
+                    </div>
                   </div>
-                  <span className="rounded-full bg-white/54 px-3 py-1 text-sm font-bold text-slate-950 shadow-sm ring-1 ring-white/80">
-                    {node.label}
-                  </span>
-                </div>
-              )
-            })}
+                )
+              })}
 
-            {ORBIT_DOTS.map((dot) => (
-              <span
-                key={`${dot.angle}-${dot.ring}`}
-                className="absolute left-1/2 top-1/2 rounded-full shadow-[0_0_18px_currentColor]"
-                style={{
-                  width: dot.size,
-                  height: dot.size,
-                  backgroundColor: dot.color,
-                  color: dot.color,
-                  transform: orbitTransform(dot.angle, dot.ring),
-                }}
-              />
-            ))}
+              {ORBIT_DOTS.map((dot) => (
+                <span
+                  key={`${dot.angle}-${dot.ring}`}
+                  className="absolute left-1/2 top-1/2 rounded-full shadow-[0_0_18px_currentColor]"
+                  style={{
+                    width: dot.size,
+                    height: dot.size,
+                    backgroundColor: dot.color,
+                    color: dot.color,
+                    transform: orbitTransform(dot.angle, dot.ring),
+                  }}
+                />
+              ))}
+            </div>
           </div>
         </div>
 

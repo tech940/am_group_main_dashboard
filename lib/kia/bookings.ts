@@ -9,6 +9,7 @@ import {
   kiaBookingActivity,
   kiaBookings,
   kiaProformas,
+  kiaStockLocalStatuses,
   kiaVehicleAllocations,
   kiaVehicleTransfers,
 } from '@/lib/db/schema'
@@ -23,6 +24,7 @@ export const KIA_BOOKING_STATUSES = [
   'draft',
   'booking_created',
   'proforma_generated',
+  'on_hold',
   'vehicle_allocated',
   'transfer_requested',
   'finance_pending',
@@ -152,7 +154,7 @@ export async function expireKiaTemporaryAllocations() {
         UPDATE kia_bookings kb
         SET
           allocated_vin = NULL,
-          status = CASE WHEN kb.proforma_id IS NULL THEN 'booking_created' ELSE 'proforma_generated' END,
+          status = 'on_hold',
           updated_at = now()
         FROM expired e
         WHERE kb.id = e.booking_id
@@ -205,11 +207,10 @@ function listFilters(input: BookingListInput) {
 }
 
 export async function getKiaBookingsList(input: BookingListInput) {
-  await expireKiaTemporaryAllocations()
   const { page, pageSize, offset } = pageParams(input)
   const where = listFilters(input)
 
-  const [totalRows, bookingRows, statusRows, dealerRows, modelRows, consultantRows] = await Promise.all([
+  const [totalRows, bookingRows, statusRows, dealerRows, modelRows, consultantRows, todayRows] = await Promise.all([
     db.select({ value: count() }).from(kiaBookings).where(where),
     db.select().from(kiaBookings).where(where).orderBy(desc(kiaBookings.updatedAt), desc(kiaBookings.createdAt)).limit(pageSize).offset(offset),
     db.execute(sql`
@@ -222,12 +223,14 @@ export async function getKiaBookingsList(input: BookingListInput) {
     db.execute(sql`SELECT DISTINCT dealer_code AS value FROM kia_bookings WHERE deleted_at IS NULL AND dealer_code IS NOT NULL ORDER BY dealer_code`),
     db.execute(sql`SELECT DISTINCT model AS value FROM kia_bookings WHERE deleted_at IS NULL AND model IS NOT NULL ORDER BY model`),
     db.execute(sql`SELECT DISTINCT consultant_name AS value FROM kia_bookings WHERE deleted_at IS NULL AND consultant_name IS NOT NULL ORDER BY consultant_name`),
+    db.execute(sql`SELECT count(*)::int AS count FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'`),
   ])
 
   const statusCounts = rows<{ status: string; count: number }>(statusRows).reduce<Record<string, number>>((acc, row) => {
     acc[text(row.status) || 'new'] = Number(row.count) || 0
     return acc
   }, {})
+  const todayCount = Number((rows<{ count: number }>(todayRows))[0]?.count || 0)
 
   return {
     rows: bookingRows,
@@ -238,10 +241,11 @@ export async function getKiaBookingsList(input: BookingListInput) {
       totalPages: Math.max(1, Math.ceil(Number(totalRows[0]?.value || 0) / pageSize)),
     },
     kpis: {
-      total: Object.values(statusCounts).reduce((sum, value) => sum + value, 0),
-      open: Object.entries(statusCounts).filter(([key]) => !['delivered', 'cancelled'].includes(key)).reduce((sum, [, value]) => sum + value, 0),
-      proformaGenerated: statusCounts.proforma_generated || 0,
-      vehicleAllocated: statusCounts.vehicle_allocated || 0,
+      today: todayCount,
+      pendingProforma: statusCounts.booking_created || 0,
+      waitingAllocation: statusCounts.proforma_generated || 0,
+      financePending: statusCounts.vehicle_allocated || 0,
+      readyDelivery: statusCounts.ready_delivery || 0,
       delivered: statusCounts.delivered || 0,
       cancelled: statusCounts.cancelled || 0,
     },
@@ -476,6 +480,9 @@ export async function getKiaBookingMatchingVehicles(id: string) {
   await expireKiaTemporaryAllocations()
   const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
   if (!booking) throw new Error('Booking not found')
+  if (!booking.proformaId) return []
+  const [proforma] = await db.select({ approvalStatus: kiaProformas.approvalStatus }).from(kiaProformas).where(eq(kiaProformas.id, booking.proformaId)).limit(1)
+  if (text(proforma?.approvalStatus).toUpperCase() !== 'APPROVED') return []
 
   const modelPattern = `%${booking.model}%`
   const variantPattern = `%${booking.variant}%`
@@ -547,6 +554,11 @@ export async function allotKiaBookingVehicle(id: string, vinNumber: string, appU
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
+    if (!booking.proformaId) throw new Error('Generate and approve the proforma before vehicle allocation.')
+    const [proforma] = await tx.select({ approvalStatus: kiaProformas.approvalStatus }).from(kiaProformas).where(eq(kiaProformas.id, booking.proformaId)).limit(1)
+    if (text(proforma?.approvalStatus).toUpperCase() !== 'APPROVED') {
+      throw new Error('Vehicle allocation opens only after Sales Manager / Manager approval.')
+    }
 
     const [activeVin] = await tx.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.vinNumber, normalizedVin), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
     if (activeVin) throw new Error('This VIN is already allocated to another active booking')
@@ -624,7 +636,16 @@ export async function releaseKiaBookingVehicle(id: string, reason: string | null
   })
 }
 
-export async function confirmKiaBookingPayment(id: string, input: { reference?: string | null }, appUser: AppUser) {
+export async function confirmKiaBookingPayment(
+  id: string,
+  input: {
+    reference?: string | null
+    invoiceDocumentUrl?: string | null
+    invoiceDocumentPath?: string | null
+    invoiceDocumentName?: string | null
+  },
+  appUser: AppUser,
+) {
   const role = text(appUser.role).toLowerCase()
   const department = text((appUser as AppUser & { department?: string | null }).department).toLowerCase()
   const canConfirm = role === 'accounts' || role === 'super_admin' || department.includes('account')
@@ -644,8 +665,61 @@ export async function confirmKiaBookingPayment(id: string, input: { reference?: 
       updatedAt: new Date(),
     }).where(eq(kiaVehicleAllocations.id, allocation.id)).returning()
 
+    if (allocation.vinNumber) {
+      await tx.insert(kiaStockLocalStatuses).values({
+        vinNumber: allocation.vinNumber,
+        localStatus: 'retail',
+        dealerCode: allocation.dealerCode,
+        model: allocation.model,
+        variant: allocation.variant,
+        color: allocation.color,
+        engineNo: allocation.engineNo,
+        stockStatusAtMark: 'Retail after accounts payment confirmation',
+        bookingNo: booking.bookingNumber,
+        customerName: booking.customerName,
+        vehicleSnapshot: (allocation.vehicleSnapshot || {}) as JsonRecord,
+        notes: input.reference ? `Payment confirmed: ${input.reference}` : 'Payment confirmed by Accounts',
+        markedBy: appUser.id,
+        markedByName: appUser.fullName,
+        markedByRole: appUser.role,
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: kiaStockLocalStatuses.vinNumber,
+        set: {
+          localStatus: 'retail',
+          dealerCode: allocation.dealerCode,
+          model: allocation.model,
+          variant: allocation.variant,
+          color: allocation.color,
+          engineNo: allocation.engineNo,
+          stockStatusAtMark: 'Retail after accounts payment confirmation',
+          bookingNo: booking.bookingNumber,
+          customerName: booking.customerName,
+          vehicleSnapshot: (allocation.vehicleSnapshot || {}) as JsonRecord,
+          notes: input.reference ? `Payment confirmed: ${input.reference}` : 'Payment confirmed by Accounts',
+          markedBy: appUser.id,
+          markedByName: appUser.fullName,
+          markedByRole: appUser.role,
+          markedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      })
+    }
+
     const [updated] = await tx.update(kiaBookings).set({
       status: 'ready_delivery',
+      metadata: {
+        ...((booking.metadata || {}) as JsonRecord),
+        paymentConfirmation: {
+          reference: nullableText(input.reference),
+          invoiceDocumentUrl: nullableText(input.invoiceDocumentUrl),
+          invoiceDocumentPath: nullableText(input.invoiceDocumentPath),
+          invoiceDocumentName: nullableText(input.invoiceDocumentName),
+          confirmedAt: new Date().toISOString(),
+          confirmedBy: appUser.fullName,
+          confirmedByRole: appUser.role,
+        },
+      },
       updatedBy: appUser.id,
       updatedAt: new Date(),
     }).where(eq(kiaBookings.id, id)).returning()
@@ -663,24 +737,103 @@ export async function confirmKiaBookingPayment(id: string, input: { reference?: 
   })
 }
 
-export async function requestKiaVehicleTransfer(id: string, input: { toDealerCode?: string | null; notes?: string | null }, appUser: AppUser) {
+export async function requestKiaVehicleTransfer(
+  id: string,
+  input: { toDealerCode?: string | null; notes?: string | null; vinNumber?: string | null },
+  appUser: AppUser,
+) {
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
     const toDealerCode = normalizeKiaDealerCode(input.toDealerCode) || text(input.toDealerCode).toUpperCase()
     if (!toDealerCode) throw new Error('Target dealer is required')
+    if (!booking.proformaId) throw new Error('Generate the proforma before requesting a transfer.')
+
+    const [proforma] = await tx
+      .select({ approvalStatus: kiaProformas.approvalStatus })
+      .from(kiaProformas)
+      .where(eq(kiaProformas.id, booking.proformaId))
+      .limit(1)
+    if (text(proforma?.approvalStatus).toUpperCase() !== 'APPROVED') {
+      throw new Error('Transfer opens only after Sales Manager / Manager approval.')
+    }
+
+    let [allocation] = await tx
+      .select()
+      .from(kiaVehicleAllocations)
+      .where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt)))
+      .limit(1)
+
+    if (!allocation) {
+      const normalizedVin = text(input.vinNumber).toUpperCase()
+      if (!normalizedVin) throw new Error('Pick a VIN before requesting a transfer.')
+
+      const [activeVin] = await tx
+        .select()
+        .from(kiaVehicleAllocations)
+        .where(and(eq(kiaVehicleAllocations.vinNumber, normalizedVin), isNull(kiaVehicleAllocations.releasedAt)))
+        .limit(1)
+      if (activeVin) throw new Error('This VIN is already allocated to another active booking')
+
+      const vehicle = await readMatchingVehicle(normalizedVin)
+      if (!vehicle) throw new Error('Vehicle is not available for transfer')
+
+      const [createdAllocation] = await tx
+        .insert(kiaVehicleAllocations)
+        .values({
+          bookingId: id,
+          vinNumber: normalizedVin,
+          dealerCode: nullableText(vehicle.dealer_code),
+          model: nullableText(vehicle.model),
+          variant: nullableText(vehicle.variant),
+          color: nullableText(vehicle.color),
+          engineNo: nullableText(vehicle.engine_no),
+          stockSource: text(vehicle.source) || 'dms',
+          vehicleSnapshot: (vehicle.snapshot || {}) as JsonRecord,
+          allocationStatus: 'temporary',
+          expiresAt: new Date(Date.now() + TEMPORARY_ALLOCATION_HOURS * 60 * 60 * 1000),
+          allocatedBy: appUser.id,
+        })
+        .returning()
+
+      allocation = createdAllocation
+
+      await tx
+        .update(kiaBookings)
+        .set({
+          allocatedVin: normalizedVin,
+          status: 'vehicle_allocated',
+          updatedBy: appUser.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(kiaBookings.id, id))
+
+      await addActivity(tx, {
+        bookingId: id,
+        type: 'allocation',
+        title: 'VIN reserved for transfer',
+        description: normalizedVin,
+        after: createdAllocation as unknown as JsonRecord,
+        appUser,
+      })
+    }
 
     const [transfer] = await tx.insert(kiaVehicleTransfers).values({
       bookingId: id,
-      vinNumber: booking.allocatedVin,
-      fromDealerCode: booking.dealerCode,
+      vinNumber: allocation?.vinNumber || booking.allocatedVin,
+      fromDealerCode: allocation?.dealerCode || booking.dealerCode,
       toDealerCode,
       notes: nullableText(input.notes),
       requestedBy: appUser.id,
+      metadata: {
+        source: allocation?.stockSource || 'booking',
+        requestedFromStatus: booking.status,
+      },
     }).returning()
 
     const [updated] = await tx.update(kiaBookings).set({
       status: 'transfer_requested',
+      allocatedVin: allocation?.vinNumber || booking.allocatedVin,
       updatedBy: appUser.id,
       updatedAt: new Date(),
     }).where(eq(kiaBookings.id, id)).returning()
@@ -689,7 +842,7 @@ export async function requestKiaVehicleTransfer(id: string, input: { toDealerCod
       bookingId: id,
       type: 'transfer',
       title: 'Transfer requested',
-      description: `${booking.dealerCode} to ${toDealerCode}`,
+      description: `${allocation?.dealerCode || booking.dealerCode || 'Current outlet'} to ${toDealerCode}`,
       after: transfer as unknown as JsonRecord,
       appUser,
     })

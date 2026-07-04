@@ -25,7 +25,8 @@ export async function canApproveKiaProformaForUser(appUser: AppUser, profileAppr
 
 export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = false): SQL<unknown> {
   const base = [isNull(kiaProformas.deletedAt)]
-  if (canApprove) return and(...base)!
+  const isBackOffice = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'manager', 'accounts', 'viewer', 'service_manager', 'purchase_manager'].includes(appUser.role)
+  if (canApprove || isBackOffice) return and(...base)!
   return and(...base, eq(kiaProformas.loginEmail, appUser.email))!
 }
 

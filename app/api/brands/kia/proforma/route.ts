@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { and, count, desc, eq, gte, ilike, lte, or, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { kiaProformas, kiaBookings, kiaBookingActivity } from '@/lib/db/schema'
-import { canApproveKiaProformaForUser, getKiaProformaVisibilityFilter } from '@/lib/kia-proforma/access'
+import { canApproveKiaProformaForUser, getKiaProformaPendingApprovalFilter, getKiaProformaVisibilityFilter } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile, touchKiaUserProfile } from '@/lib/kia-proforma/server'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { serializeUtcTimestampFields } from '@/lib/date-time'
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
     const filters = [getKiaProformaVisibilityFilter(appUser, isApprover)]
     if (mode === 'pending-approval') {
       if (!isApprover) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      filters.push(sql`${kiaProformas.approvalStatus} <> 'APPROVED'`)
+      filters.push(getKiaProformaPendingApprovalFilter())
     }
     if (financeStatus !== 'all') filters.push(eq(kiaProformas.financeStatus, financeStatus))
     if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) filters.push(gte(kiaProformas.proformaDate, new Date(`${startDate}T00:00:00+05:30`)))
@@ -145,7 +145,8 @@ export async function GET(request: NextRequest) {
         ilike(kiaProformas.insuranceCompany, like),
         ilike(kiaProformas.bankBranch, like),
         ilike(kiaProformas.modelName, like),
-        ilike(kiaProformas.customerEmail, like)
+        ilike(kiaProformas.customerEmail, like),
+        sql`${kiaProformas.id}::text ILIKE ${like}`
       )!)
     }
 
@@ -155,6 +156,24 @@ export async function GET(request: NextRequest) {
       db.select({ value: count() }).from(kiaProformas).where(whereExpression),
       db.select().from(kiaProformas).where(whereExpression).orderBy(desc(kiaProformas.proformaDate), desc(kiaProformas.entryTime)).limit(pageSize).offset(offset),
     ]))
+    const proformaIds = rows.map((row) => row.id)
+    const linkedBookings = proformaIds.length
+      ? await db
+        .select({
+          proformaId: kiaBookings.proformaId,
+          bookingId: kiaBookings.id,
+          bookingNumber: kiaBookings.bookingNumber,
+          bookingStatus: kiaBookings.status,
+        })
+        .from(kiaBookings)
+        .where(and(
+          isNull(kiaBookings.deletedAt),
+          inArray(kiaBookings.proformaId, proformaIds),
+        ))
+      : []
+    const linkedBookingMap = new Map(
+      linkedBookings.map((row) => [row.proformaId, row]),
+    )
 
     const { serverTiming } = timer.finish()
     return withServerTiming(NextResponse.json({
@@ -166,7 +185,12 @@ export async function GET(request: NextRequest) {
         isApprover,
       },
       profile,
-      rows: rows.map((row) => serialize(row as Record<string, unknown>)),
+      rows: rows.map((row) => serialize({
+        ...(row as Record<string, unknown>),
+        linkedBookingId: linkedBookingMap.get(row.id)?.bookingId || null,
+        linkedBookingNumber: linkedBookingMap.get(row.id)?.bookingNumber || null,
+        linkedBookingStatus: linkedBookingMap.get(row.id)?.bookingStatus || null,
+      })),
       pagination: {
         page,
         pageSize,

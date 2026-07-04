@@ -45,7 +45,8 @@ export async function GET(request: NextRequest) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
-  const visibility = await canApproveKiaProformaForUser(appUser, profile.approver)
+  const isBackOffice = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'manager', 'accounts', 'viewer', 'service_manager', 'purchase_manager'].includes(appUser.role)
+  const visibility = (await canApproveKiaProformaForUser(appUser, profile.approver)) || isBackOffice
     ? sql`TRUE`
     : sql`login_email = ${appUser.email}`
   const categoryExpression = type === 'insurance'

@@ -19,6 +19,10 @@ export default async function KiaBookingsRoute({
   const permission = await requirePermission(access.appUser, 'kia.bookings.view')
   if (!permission.allowed) forbidden()
 
+  if (access.appUser.role === 'manager') {
+    redirect('/brands/kia/proforma/pending-approval')
+  }
+
   const resolvedSearchParams = await searchParams
-  return <KiaBookingsClient initialSearchParams={resolvedSearchParams} />
+  return <KiaBookingsClient initialSearchParams={resolvedSearchParams} currentUserRole={access.appUser.role} />
 }

@@ -59,7 +59,7 @@ async function loadKiaOptionsData() {
   }, CACHE_TTL.DASHBOARD)
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const accessResponse = await requireBrandApiAccess('kia')
     if (accessResponse) return accessResponse
@@ -71,6 +71,7 @@ export async function GET() {
     const profile = await ensureKiaUserProfile(appUser)
     if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    const lite = new URL(request.url).searchParams.get('lite') === '1'
     const optionsData = await loadKiaOptionsData()
 
     return NextResponse.json({
@@ -83,6 +84,7 @@ export async function GET() {
       },
       profile,
       ...optionsData,
+      prices: lite ? [] : optionsData.prices,
     })
   } catch (error) {
     console.error('Error in GET /api/brands/kia/proforma/options:', error)

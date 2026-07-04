@@ -15,5 +15,9 @@ export default async function Page() {
   const permission = await requirePermission(access.appUser, 'kia.bookings.view')
   if (!permission.allowed) forbidden()
 
+  if (access.appUser.role === 'manager') {
+    redirect('/brands/kia/proforma/pending-approval')
+  }
+
   return <KiaProformaPage section="bookings" />
 }

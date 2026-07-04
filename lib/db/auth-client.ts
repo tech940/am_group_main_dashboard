@@ -21,6 +21,7 @@ const AUTH_IDLE_IN_TRANSACTION_TIMEOUT_MS = 5_000
 
 const globalForAuthDb = globalThis as unknown as {
   authPostgresClient: PostgresClient | undefined
+  authPostgresClientKey: string | undefined
 }
 
 function authDatabaseUrl() {
@@ -37,7 +38,21 @@ function authDatabaseUrl() {
   return url.toString()
 }
 
-const authClient = globalForAuthDb.authPostgresClient ?? postgres(authDatabaseUrl(), {
+const runtimeAuthDatabaseUrl = authDatabaseUrl()
+const runtimeAuthClientKey = [
+  runtimeAuthDatabaseUrl,
+  AUTH_STATEMENT_TIMEOUT_MS,
+  AUTH_LOCK_TIMEOUT_MS,
+  AUTH_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+].join('|')
+const shouldReuseGlobalAuthClient = globalForAuthDb.authPostgresClient
+  && globalForAuthDb.authPostgresClientKey === runtimeAuthClientKey
+
+if (process.env.NODE_ENV !== 'production' && globalForAuthDb.authPostgresClient && !shouldReuseGlobalAuthClient) {
+  void globalForAuthDb.authPostgresClient.end({ timeout: 1 }).catch(() => null)
+}
+
+const authClient = shouldReuseGlobalAuthClient && globalForAuthDb.authPostgresClient ? globalForAuthDb.authPostgresClient : postgres(runtimeAuthDatabaseUrl, {
   prepare: false,
   ssl: { rejectUnauthorized: false },
   max: 1,
@@ -57,6 +72,7 @@ const authClient = globalForAuthDb.authPostgresClient ?? postgres(authDatabaseUr
 
 if (process.env.NODE_ENV !== 'production') {
   globalForAuthDb.authPostgresClient = authClient
+  globalForAuthDb.authPostgresClientKey = runtimeAuthClientKey
 }
 
 export async function findAuthUserBySupabaseId(supabaseId: string) {

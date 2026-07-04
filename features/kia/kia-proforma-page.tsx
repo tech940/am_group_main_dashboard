@@ -2,7 +2,7 @@
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -56,6 +56,7 @@ import { calculateKiaProformaPricing, getKiaBankOptions } from '@/lib/kia-profor
 
 export type KiaProformaSection =
   | 'bookings'
+  | 'stock'
   | 'generate'
   | 'all'
   | 'finance-remarks'
@@ -102,6 +103,9 @@ type PriceRow = {
 
 type KiaProformaRow = {
   id: string
+  linkedBookingId?: string | null
+  linkedBookingNumber?: string | null
+  linkedBookingStatus?: string | null
   entryTime: string
   proformaDate: string
   customerType: string
@@ -402,7 +406,7 @@ function FormSection({ title, subtitle, children }: { title: string; subtitle: s
   )
 }
 
-function useOptions() {
+function useOptions(lite = false) {
   const [data, setData] = useState<OptionsPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -410,7 +414,7 @@ function useOptions() {
     setLoading(true)
     setError('')
     try {
-      const response = await fetch('/api/brands/kia/proforma/options')
+      const response = await fetch(`/api/brands/kia/proforma/options${lite ? '?lite=1' : ''}`)
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
         throw new Error(payload?.error || `Failed to load Kia Proforma options (${response.status})`)
@@ -421,7 +425,7 @@ function useOptions() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [lite])
   useEffect(() => {
     reload()
   }, [reload])
@@ -468,39 +472,42 @@ function useProformas(mode: string, enabled = true) {
 
 const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: string; approverOnly?: boolean; hideFromNav?: boolean }[] = [
   { section: 'bookings', label: 'Booking CRM', href: '/brands/kia/proforma/bookings' },
+  { section: 'stock', label: 'Stock', href: '/brands/kia/proforma/stock' },
   { section: 'generate', label: 'Generate Proforma', href: '/brands/kia/proforma/generate', hideFromNav: true },
   { section: 'all', label: 'All Proforma Details', href: '/brands/kia/proforma/all-proforma-details' },
   { section: 'finance-remarks', label: 'Finance Remarks', href: '/brands/kia/proforma/finance-remarks', hideFromNav: true },
   { section: 'pending-approval', label: 'Pending Approval', href: '/brands/kia/proforma/pending-approval', approverOnly: true },
-  { section: 'analytics', label: 'Hyp / Ins Analytics', href: '/brands/kia/proforma/hyp-ins-analytics' },
-  { section: 'insights', label: 'Business Insights', href: '/brands/kia/proforma/business-insights' },
 ]
 
+function canSeeBookingsNav(role: string) {
+  return String(role || '').trim().toLowerCase() !== 'manager'
+}
+
 function PriceDetailsUploadPanel({ onImported }: { onImported: () => void }) {
-  const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [summary, setSummary] = useState<PriceImportSummary | null>(null)
   const [error, setError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  async function upload() {
-    if (!file) {
-      setError('Choose the KIA price details workbook first.')
-      return
-    }
+  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const selectedFile = event.target.files?.[0]
+    if (!selectedFile) return
+
     setUploading(true)
     setError('')
     setSummary(null)
     try {
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', selectedFile)
       const response = await fetch('/api/brands/kia/proforma/price-details/upload', {
         method: 'POST',
         body: formData,
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload?.error || 'Failed to import price details')
+      
       setSummary(payload.summary)
-      setFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
       onImported()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to import price details')
@@ -509,30 +516,53 @@ function PriceDetailsUploadPanel({ onImported }: { onImported: () => void }) {
     }
   }
 
+  const triggerFileSelect = () => {
+    fileInputRef.current?.click()
+  }
+
   return (
-    <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--dashboard-action-bg)]">Price Master Upload</p>
-          <p className="mt-1 text-sm font-semibold text-slate-600">Imports only the <span className="font-black text-slate-900">PRICE DETAILS</span> sheet and replaces the current KIA price master.</p>
+    <section className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm sm:rounded-[1.5rem] sm:p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#c8102e]">Price Master Upload</p>
+          <p className="mt-1 text-xs font-semibold leading-5 text-slate-600 sm:text-sm">Imports only the <span className="font-black text-slate-900">PRICE DETAILS</span> sheet and replaces the current KIA price master.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
+        <div className="shrink-0">
+          <input
             type="file"
+            ref={fileInputRef}
             accept=".xlsx,.xls,.xlsm"
-            onChange={(event) => setFile(event.target.files?.[0] || null)}
-            className="h-11 w-72 rounded-xl border-slate-200 bg-white text-sm font-semibold"
+            onChange={handleFileChange}
+            className="hidden"
             disabled={uploading}
           />
-          <Button type="button" onClick={upload} disabled={uploading || !file} className={cn('h-11 rounded-xl', proformaPrimaryButton)}>
-            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-            Replace Prices
+          <Button
+            type="button"
+            onClick={triggerFileSelect}
+            disabled={uploading}
+            className={cn('h-11 rounded-2xl bg-[#c8102e] text-[13px] font-black text-white hover:bg-red-700 border-none px-5 shadow-sm transition-all', uploading && 'opacity-90')}
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Replacing Prices...
+              </>
+            ) : (
+              <>
+                <Upload className="mr-2 h-4 w-4" />
+                Replace Prices
+              </>
+            )}
           </Button>
         </div>
       </div>
-      {error && <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">{error}</p>}
+      {error && (
+        <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+          {error}
+        </p>
+      )}
       {summary && (
-        <div className="mt-3 grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-800 md:grid-cols-4">
+        <div className="mt-3 grid gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-3 text-xs font-bold text-emerald-800 md:grid-cols-4">
           <span>Sheet: {summary.sheetName}</span>
           <span>Processed: {summary.totalRowsProcessed}</span>
           <span>Imported: {summary.importedRows}</span>
@@ -543,9 +573,22 @@ function PriceDetailsUploadPanel({ onImported }: { onImported: () => void }) {
   )
 }
 
-function ModuleHeader({ section, profile, isApprover, onPricesImported }: { section: KiaProformaSection; profile?: KiaProfile | null; isApprover: boolean; onPricesImported: () => void }) {
+function ModuleHeader({
+  section,
+  profile,
+  isApprover,
+  currentUserRole,
+  onPricesImported,
+}: {
+  section: KiaProformaSection
+  profile?: KiaProfile | null
+  isApprover: boolean
+  currentUserRole: string
+  onPricesImported: () => void
+}) {
   const titles: Record<KiaProformaSection, { title: string; subtitle: string; icon: React.ReactNode }> = {
     bookings: { title: 'Booking CRM', subtitle: 'Manage customer bookings, stock allocations, and finance workflows.', icon: <ClipboardList className="h-5 w-5" /> },
+    stock: { title: 'Stock', subtitle: 'Approved bookings, stock matching, VIN reservation, and accounts payment follow-up.', icon: <ClipboardList className="h-5 w-5" /> },
     generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: <FileText className="h-5 w-5" /> },
     all: { title: 'All Proforma Details', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: <Columns3 className="h-5 w-5" /> },
     'finance-remarks': { title: 'Finance Remarks', subtitle: 'Update finance status and remarks against every proforma.', icon: <WalletCards className="h-5 w-5" /> },
@@ -571,6 +614,7 @@ function ModuleHeader({ section, profile, isApprover, onPricesImported }: { sect
       <nav className="mt-5 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-2">
         {PROFORMA_NAV_ITEMS
           .filter((item) => (!item.approverOnly || isApprover) && !item.hideFromNav)
+          .filter((item) => item.section !== 'bookings' || canSeeBookingsNav(currentUserRole))
           .map((item) => (
             <Link
               key={item.section}
@@ -605,6 +649,9 @@ type BookingPrefill = {
   variant?: string
   color?: string
   consultantName?: string
+  bankName?: string | null
+  bankBranch?: string | null
+  bookingAmount?: string | null
 }
 
 function GenerateProforma({ options, onSaved, bookingPrefill }: { options: OptionsPayload; onSaved: () => void; bookingPrefill?: BookingPrefill | null }) {
@@ -619,6 +666,9 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
       modelName: bookingPrefill.model || '',
       trimDescription: bookingPrefill.variant || '',
       vehicleColor: bookingPrefill.color || '',
+      bankName: bookingPrefill.bankName || '',
+      bankBranch: bookingPrefill.bankBranch || '',
+      bookingAmount: bookingPrefill.bookingAmount || '',
     }
     return prefilled
   })
@@ -664,6 +714,18 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
     prefillRegistrationCharges,
     prefillTcsValue,
   ])
+  const lockedFields = useMemo(() => ({
+    customerName: Boolean(bookingPrefill?.customerName),
+    mobileNumber: Boolean(bookingPrefill?.customerPhone),
+    customerEmail: Boolean(bookingPrefill?.customerEmail),
+    modelName: Boolean(bookingPrefill?.model),
+    trimDescription: Boolean(bookingPrefill?.variant),
+    vehicleColor: Boolean(bookingPrefill?.color),
+    bankName: Boolean(bookingPrefill?.bankName),
+    bankBranch: Boolean(bookingPrefill?.bankBranch),
+    bookingAmount: Boolean(bookingPrefill?.bookingAmount),
+    insuranceCompany: Boolean(prefillInsuranceCompany),
+  }), [bookingPrefill, prefillInsuranceCompany])
 
   useEffect(() => {
     const prefill = stablePrefill
@@ -755,11 +817,14 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
         body: JSON.stringify(payload),
       })
       if (!response.ok) throw new Error('Failed to save proforma')
+      const saved = await response.json().catch(() => null) as { row?: { id?: string } } | null
       setForm(EMPTY_FORM)
       onSaved()
       alert('Proforma saved and sent to approval queue.')
-      if (bookingPrefill) {
-        router.push(`/brands/kia/bookings?bookingId=${bookingPrefill.bookingId}`)
+      if (bookingPrefill && saved?.row?.id) {
+        router.push(`/brands/kia/proforma/all-proforma-details?search=${String(saved.row.id).slice(0, 8).toUpperCase()}`)
+      } else if (bookingPrefill) {
+        router.push(`/brands/kia/proforma/all-proforma-details?search=${bookingPrefill.bookingNumber || bookingPrefill.customerName || ''}`)
       }
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to save proforma')
@@ -803,9 +868,9 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Customer Type"><Select value={form.customerType} onValueChange={(value) => update('customerType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['Customer', 'CSD', 'Bharat Series'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Proforma Date"><TextInput type="date" value={form.proformaDate} onChange={(event) => update('proformaDate', event.target.value)} /></Field>
-            <Field label="Customer Name" error={errors.customerName}><TextInput value={form.customerName} onChange={(event) => update('customerName', event.target.value)} /></Field>
-            <Field label="Mobile Number" error={errors.mobileNumber}><TextInput inputMode="numeric" maxLength={10} value={form.mobileNumber} onChange={(event) => update('mobileNumber', event.target.value.replace(/\D/g, '').slice(0, 10))} /></Field>
-            <Field label="Customer Email" error={errors.customerEmail}><TextInput type="email" value={form.customerEmail} onChange={(event) => update('customerEmail', event.target.value)} /></Field>
+            <Field label="Customer Name" error={errors.customerName}><TextInput value={form.customerName} onChange={(event) => update('customerName', event.target.value)} readOnly={lockedFields.customerName} /></Field>
+            <Field label="Mobile Number" error={errors.mobileNumber}><TextInput inputMode="numeric" maxLength={10} value={form.mobileNumber} onChange={(event) => update('mobileNumber', event.target.value.replace(/\D/g, '').slice(0, 10))} readOnly={lockedFields.mobileNumber} /></Field>
+            <Field label="Customer Email" error={errors.customerEmail}><TextInput type="email" value={form.customerEmail} onChange={(event) => update('customerEmail', event.target.value)} readOnly={lockedFields.customerEmail} /></Field>
             <div className="md:col-span-2">
               <Field label="Customer Address" error={errors.customerAddress}><Textarea value={form.customerAddress} onChange={(event) => update('customerAddress', event.target.value)} className="min-h-20 rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 font-semibold shadow-sm focus:border-[var(--dashboard-primary-light)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--dashboard-primary-light)_18%,transparent)]" /></Field>
             </div>
@@ -814,14 +879,14 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
 
         <FormSection title="Vehicle & Bank Insurance" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Model" error={errors.modelName}><DataListInput listId="kia-models" value={form.modelName} onChange={(value) => { update('modelName', value); update('trimDescription', '') }} options={options.models} /></Field>
-            <Field label="Variant / Trim" error={errors.trimDescription}><DataListInput listId="kia-trims" value={form.trimDescription} onChange={(value) => update('trimDescription', value)} onBlur={canonicalizeTrim} options={filteredTrims} /></Field>
-            <Field label="Vehicle Color" error={errors.vehicleColor}><TextInput value={form.vehicleColor} onChange={(event) => update('vehicleColor', event.target.value)} /></Field>
+            <Field label="Model" error={errors.modelName}><DataListInput listId="kia-models" value={form.modelName} onChange={(value) => { update('modelName', value); update('trimDescription', '') }} options={options.models} disabled={lockedFields.modelName} /></Field>
+            <Field label="Variant / Trim" error={errors.trimDescription}><DataListInput listId="kia-trims" value={form.trimDescription} onChange={(value) => update('trimDescription', value)} onBlur={canonicalizeTrim} options={filteredTrims} disabled={lockedFields.trimDescription} /></Field>
+            <Field label="Vehicle Color" error={errors.vehicleColor}><TextInput value={form.vehicleColor} onChange={(event) => update('vehicleColor', event.target.value)} readOnly={lockedFields.vehicleColor} /></Field>
             <Field label="Fuel Type"><Select value={form.fuelType} onValueChange={(value) => update('fuelType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['DIESEL', 'PETROL', 'ELECTRIC'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Bank" error={errors.bankName}><DataListInput listId="kia-banks" value={form.bankName} onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '' }))} onBlur={canonicalizeBank} options={bankOptions} /></Field>
-            <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="kia-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} /></Field>
+            <Field label="Bank" error={errors.bankName}><DataListInput listId="kia-banks" value={form.bankName} onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '' }))} onBlur={canonicalizeBank} options={bankOptions} disabled={lockedFields.bankName} /></Field>
+            <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="kia-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} disabled={lockedFields.bankBranch} /></Field>
             <Field label="Loan Amount"><TextInput type="number" value={form.loanAmount} onChange={(event) => update('loanAmount', event.target.value)} /></Field>
-            <Field label="Insurance Company"><DataListInput listId="kia-insurance" value={form.insuranceCompany} onChange={(value) => update('insuranceCompany', value)} options={options.insuranceCompanies} /></Field>
+            <Field label="Insurance Company"><DataListInput listId="kia-insurance" value={form.insuranceCompany} onChange={(value) => update('insuranceCompany', value)} options={options.insuranceCompanies} disabled={lockedFields.insuranceCompany} /></Field>
             <Field label="Vehicle Status"><Select value={form.vehicleStatus} onValueChange={(value) => update('vehicleStatus', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['IN HOUSE', 'OUT HOUSE'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
           </div>
         </FormSection>
@@ -853,7 +918,7 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
               ['govtEmployeeDiscount', 'Corporate / Govt Discount'],
               ['additionalDiscount', 'Dealer / Additional Adjustment'],
             ].map(([key, label]) => (
-              <Field key={key} label={label}><TextInput type="number" value={form[key as keyof FormState]} onChange={(event) => update(key as keyof FormState, event.target.value)} /></Field>
+              <Field key={key} label={label}><TextInput type="number" value={form[key as keyof FormState]} onChange={(event) => update(key as keyof FormState, event.target.value)} readOnly={key === 'bookingAmount' && lockedFields.bookingAmount} /></Field>
             ))}
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -1315,6 +1380,7 @@ function ProformaTable({
 }
 
 function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' | 'finance-remarks' | 'pending-approval' }) {
+  const router = useRouter()
   const queryMode = mode === 'pending-approval' ? 'pending-approval' : 'all'
   const { rows, loading, error, search, setSearch, page, setPage, financeStatus, setFinanceStatus, reload } = useProformas(queryMode, true)
   const [selectedColumn, setSelectedColumn] = useState('')
@@ -1393,9 +1459,13 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
       body: JSON.stringify({ action: 'approval', checks }),
     })
     if (!response.ok) return alert('Failed to save approval')
+    const approvedBookingId = verifying.linkedBookingId || null
     setVerifying(null)
     setVerifyState({})
     await reload()
+    if (approvedBookingId) {
+      router.push(`/brands/kia/proforma/stock?bookingId=${approvedBookingId}`)
+    }
   }
 
   const financeExtra = isFinance ? (row: KiaProformaRow) => {
@@ -1543,15 +1613,19 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
     addressIntegrity: Record<string, unknown>[]
   }>({ pivot: [], chart: [], distributions: [], consultants: [], modelDistribution: [], fuelDistribution: [], addressIntegrity: [] })
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const reload = useCallback(async () => {
     setLoading(true)
+    setError('')
     try {
       const params = new URLSearchParams({ type, grouping, status, top })
       if (selectedConsultants.size > 0) params.set('consultants', Array.from(selectedConsultants).join(','))
       const response = await fetch(`/api/brands/kia/proforma/analytics?${params}`)
       if (!response.ok) throw new Error('Failed to load analytics')
       setPayload(await response.json())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load analytics')
     } finally {
       setLoading(false)
     }
@@ -1618,6 +1692,11 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
           selected={selectedConsultants}
           onToggle={toggleConsultant}
         />
+      )}
+      {error && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-700 sm:text-sm">
+          {error}
+        </div>
       )}
       {loading ? <div className="h-80 animate-pulse rounded-[2rem] bg-white/70" /> : insights ? (
         <div className="grid gap-4 xl:grid-cols-2">
@@ -1693,6 +1772,7 @@ function useBookingPrefill(bookingId: string | null) {
       .then((data) => {
         if (!data?.booking) return
         const b = data.booking
+        const meta = (b.metadata || {}) as Record<string, unknown>
         setPrefill({
           bookingId,
           bookingNumber: b.bookingNumber,
@@ -1703,6 +1783,9 @@ function useBookingPrefill(bookingId: string | null) {
           variant: b.variant,
           color: b.colorPreference || b.color,
           consultantName: b.consultantName,
+          bankName: b.bankName || String(meta.bankFinance || ''),
+          bankBranch: String(meta.bankBranch || ''),
+          bookingAmount: String(meta.bookingAmount || ''),
         })
       })
       .catch(() => setPrefill(null))
@@ -1714,7 +1797,8 @@ function useBookingPrefill(bookingId: string | null) {
 export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
   const searchParams = useSearchParams()
   const bookingId = searchParams.get('bookingId')
-  const { data: options, loading: optionsLoading, error, reload } = useOptions()
+  const clientSearchParams = useMemo<Record<string, string>>(() => Object.fromEntries(searchParams.entries()), [searchParams])
+  const { data: options, loading: optionsLoading, error, reload } = useOptions(section !== 'generate')
   const { prefill: bookingPrefill, loading: prefillLoading } = useBookingPrefill(bookingId)
   const loading = optionsLoading || (Boolean(bookingId) && prefillLoading)
   const approverOnly = section === 'pending-approval'
@@ -1731,14 +1815,13 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
   return (
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
       <div className="kia-proforma-shell space-y-5">
-        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} onPricesImported={reload} />
-        {section === 'bookings' && <KiaBookingsClient initialSearchParams={{}} embedMode={true} />}
+        <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} onPricesImported={reload} />
+        {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} currentUserRole={options.currentUser.role} />}
+        {section === 'stock' && <KiaBookingsClient initialSearchParams={{ ...clientSearchParams, status: clientSearchParams.status || 'all' }} embedMode={true} currentUserRole={options.currentUser.role} mode="stock" />}
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} bookingPrefill={bookingPrefill} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}
         {section === 'finance-remarks' && <DetailsView options={options} mode="finance-remarks" />}
         {section === 'pending-approval' && <DetailsView options={options} mode="pending-approval" />}
-        {section === 'analytics' && <AnalyticsView userId={options.currentUser.id} />}
-        {section === 'insights' && <AnalyticsView userId={options.currentUser.id} insights />}
       </div>
     </MainLayout>
   )

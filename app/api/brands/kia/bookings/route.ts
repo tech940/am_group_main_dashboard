@@ -46,15 +46,7 @@ export async function GET(request: Request) {
       page: data.pagination.page,
       pageSize: data.pagination.pageSize,
       totalPages: data.pagination.totalPages,
-      kpis: {
-        today: data.kpis.total,
-        pendingProforma: data.kpis.open,
-        waitingAllocation: data.kpis.proformaGenerated,
-        financePending: data.kpis.vehicleAllocated,
-        readyDelivery: 0,
-        delivered: data.kpis.delivered,
-        cancelled: data.kpis.cancelled,
-      },
+      kpis: data.kpis,
       filters: data.filters,
     }
 

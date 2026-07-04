@@ -75,8 +75,10 @@ function clearSessionApiCacheForMutation(input: RequestInfo | URL) {
 async function refreshSessionOnce() {
   if (sessionRefreshPromise) return sessionRefreshPromise
 
-  sessionRefreshPromise = createClient().auth.refreshSession()
-    .then(({ data, error }) => !error && Boolean(data.session))
+  sessionRefreshPromise = Promise.race([
+    createClient().auth.refreshSession().then(({ data, error }) => !error && Boolean(data.session)),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000))
+  ])
     .catch(() => false)
     .finally(() => {
       sessionRefreshPromise = null

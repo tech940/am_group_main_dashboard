@@ -5,17 +5,16 @@ import { requirePermission } from '@/lib/permissions/service'
 
 export const metadata = {
   title: 'Kia Proforma | AM Kia',
-  description: 'Kia proforma generation, approval, finance remarks, and analytics',
+  description: 'Kia proforma generation, approval, and finance remarks',
 }
 
 const SECTION_MAP: Record<string, KiaProformaSection> = {
   bookings: 'bookings',
+  stock: 'stock',
   generate: 'generate',
   'all-proforma-details': 'all',
   'finance-remarks': 'finance-remarks',
   'pending-approval': 'pending-approval',
-  'hyp-ins-analytics': 'analytics',
-  'business-insights': 'insights',
 }
 
 export default async function Page({ params }: { params: Promise<{ section: string }> }) {
@@ -33,6 +32,10 @@ export default async function Page({ params }: { params: Promise<{ section: stri
       : 'kia.proforma.view'
   const permission = await requirePermission(access.appUser, permissionKey)
   if (!permission.allowed) forbidden()
+
+  if (resolved === 'bookings' && access.appUser.role === 'manager') {
+    redirect('/brands/kia/proforma/pending-approval')
+  }
 
   return <KiaProformaPage section={resolved} />
 }

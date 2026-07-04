@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { env } from '@/config/env-config'
+import { fetchWithTimeout } from './fetch-timeout'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -9,6 +10,9 @@ export async function createClient() {
     env.supabase.url,
     env.supabase.anonKey,
     {
+      global: {
+        fetch: fetchWithTimeout(10_000), // Timeout server requests to Supabase after 10 seconds
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll()

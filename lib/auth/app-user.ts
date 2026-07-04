@@ -239,7 +239,9 @@ async function getCachedAppUserBySupabaseId(supabaseId: string) {
 
     let appUser: AppUser | undefined
     try {
-      appUser = await findAppUserBySupabaseId(supabaseId)
+      appUser = process.env.NODE_ENV === 'development'
+        ? await findAppUserBySupabaseIdViaSessionPool(supabaseId)
+        : await findAppUserBySupabaseId(supabaseId)
     } catch (error) {
       if (!isTransientDbConnectionError(error)) {
         throw error
@@ -247,7 +249,9 @@ async function getCachedAppUserBySupabaseId(supabaseId: string) {
 
       try {
         await wait(250)
-        appUser = await findAppUserBySupabaseId(supabaseId)
+        appUser = process.env.NODE_ENV === 'development'
+          ? await findAppUserBySupabaseIdViaRest(supabaseId)
+          : await findAppUserBySupabaseId(supabaseId)
       } catch (retryError) {
         if (isTransientDbConnectionError(retryError)) {
           try {

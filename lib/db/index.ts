@@ -11,7 +11,9 @@ function positiveInteger(value: string | undefined, fallback: number) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
-const DB_POOL_MAX = positiveInteger(process.env.DATABASE_POOL_MAX, DEFAULT_POOL_MAX)
+const DB_POOL_MAX = process.env.NODE_ENV === 'development'
+  ? 1
+  : positiveInteger(process.env.DATABASE_POOL_MAX, DEFAULT_POOL_MAX)
 const LOCK_TIMEOUT_MS = positiveInteger(process.env.DATABASE_LOCK_TIMEOUT_MS, 3_000)
 const IDLE_IN_TRANSACTION_TIMEOUT_MS = positiveInteger(process.env.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS, 10_000)
 
@@ -34,16 +36,57 @@ function runInTimedTransaction<T>(
 // Without this, every hot reload creates a NEW postgres client, leaking connections
 const globalForDb = globalThis as unknown as {
   postgresClient: PostgresClient | undefined
+  postgresClientKey: string | undefined
 }
 
-const baseClient = globalForDb.postgresClient ?? postgres(env.database.url, {
+function databaseUrlForRuntime() {
+  const explicitSessionUrl = process.env.DATABASE_SESSION_URL || process.env.DATABASE_DIRECT_URL
+  if (process.env.NODE_ENV === 'development' && explicitSessionUrl) {
+    return explicitSessionUrl
+  }
+
+  if (process.env.NODE_ENV !== 'development' || process.env.DATABASE_USE_TRANSACTION_POOLER_IN_DEV === 'true') {
+    return env.database.url
+  }
+
+  try {
+    const url = new URL(env.database.url)
+    const isSupabaseTransactionPooler = url.port === '6543' || url.searchParams.get('pgbouncer') === 'true'
+
+    if (isSupabaseTransactionPooler) {
+      url.port = '5432'
+      url.searchParams.delete('pgbouncer')
+      return url.toString()
+    }
+  } catch {
+    // Fall back to the configured URL if it cannot be parsed.
+  }
+
+  return env.database.url
+}
+
+const runtimeDatabaseUrl = databaseUrlForRuntime()
+const runtimeClientKey = [
+  runtimeDatabaseUrl,
+  DB_POOL_MAX,
+  STATEMENT_TIMEOUT_MS,
+  LOCK_TIMEOUT_MS,
+  IDLE_IN_TRANSACTION_TIMEOUT_MS,
+].join('|')
+const shouldReuseGlobalClient = globalForDb.postgresClient && globalForDb.postgresClientKey === runtimeClientKey
+
+if (process.env.NODE_ENV !== 'production' && globalForDb.postgresClient && !shouldReuseGlobalClient) {
+  void globalForDb.postgresClient.end({ timeout: 1 }).catch(() => null)
+}
+
+const baseClient = shouldReuseGlobalClient && globalForDb.postgresClient ? globalForDb.postgresClient : postgres(runtimeDatabaseUrl, {
   prepare: false, // Required for Supabase Transaction Mode pooler (PgBouncer)
   ssl: { rejectUnauthorized: false },
   // Keep enough headroom in the Supabase transaction pool for auth and other
   // app instances. A large per-process pool lets dashboard fan-out starve auth.
   max: DB_POOL_MAX,
-  idle_timeout: 20,
-  connect_timeout: 15,
+  idle_timeout: 10, // Release connections faster when idle
+  connect_timeout: 5, // Fail fast if connections are starved instead of hanging
   max_lifetime: 60 * 30, // 30 minutes - recycle connections periodically
   onnotice: () => {}, // Ignore notices
   connection: {
@@ -65,6 +108,7 @@ const client = Object.assign(
 // In development, store the client on globalThis so HMR reuses it
 if (process.env.NODE_ENV !== 'production') {
   globalForDb.postgresClient = baseClient
+  globalForDb.postgresClientKey = runtimeClientKey
 }
 
 function shouldLogSqlTimings() {
