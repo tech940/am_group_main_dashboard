@@ -342,6 +342,7 @@ export function PurchaseOrderImagePreviewButton({
                   title={`${activeDocument?.label || 'PDF'} preview for ${transactionLabel}`}
                   className="h-[68vh] w-full rounded-2xl bg-white shadow-2xl"
                   onLoad={markLoaded}
+                  onError={markFailed}
                 />
               ) : (
                 <div className="max-w-md rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-xl">

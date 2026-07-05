@@ -329,6 +329,7 @@ export function Sidebar() {
   }, [favouriteHrefs, isEligibleFavouriteHref, saveFavouriteHrefs])
 
   const canAccessBrand = (brandKey: string) => {
+    if (brandKey === 'mg') return false
     if (alwaysVisibleBrandKeys.has(brandKey)) return true
     if (hasGlobalAccessRole(userRole)) return true
     if (!userBrand) return false
@@ -339,6 +340,7 @@ export function Sidebar() {
   const visibleBrands = useMemo(() => {
     return availableBrands
       .filter((brand) => {
+        if (brand.key === 'mg') return true
         if (alwaysVisibleBrandKeys.has(brand.key)) return true
         if (hasGlobalAccessRole(userRole)) return true
         if (!userBrand) return false

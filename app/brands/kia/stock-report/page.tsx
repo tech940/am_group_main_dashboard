@@ -1,7 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
-import { KiaStockReportPage } from './stock-report-client'
 import { getBrandAccess } from '@/lib/auth/brand-access'
 import { requirePermission } from '@/lib/permissions/service'
+import { StockReportWrapper } from './stock-report-wrapper'
 
 export const metadata = {
   title: 'Stock Report | AM Kia',
@@ -26,5 +26,5 @@ export default async function KiaStockReportRoute({
   if (!permission.allowed) forbidden()
 
   const resolvedSearchParams = await searchParams
-  return <KiaStockReportPage initialSearchParams={resolvedSearchParams} />
+  return <StockReportWrapper initialSearchParams={resolvedSearchParams} />
 }

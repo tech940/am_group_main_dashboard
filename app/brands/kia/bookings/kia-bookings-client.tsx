@@ -1,6 +1,10 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+/* eslint-disable react-hooks/set-state-in-effect */
+
+import { toast } from '@/hooks/use-toast'
+
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
@@ -16,6 +20,7 @@ import {
   Search,
   ShieldCheck,
   Truck,
+  Upload,
   UserRound,
   XCircle,
 } from 'lucide-react'
@@ -52,6 +57,30 @@ import {
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import {
+  AnimatedNumber,
+  AnimatePresence,
+  AutomotiveLoader,
+  Chip,
+  FieldValue,
+  IconTile,
+  InlineLoader,
+  InspectorSkeleton,
+  Kicker,
+  KpiRow,
+  LoaderOverlay,
+  type LoaderVariant,
+  motion,
+  PremiumEmptyState,
+  Reveal,
+  Stagger,
+  StaggerItem,
+  SuccessOverlay,
+  TableSkeleton as PremiumTableSkeleton,
+  type Tone,
+  toneSoftStyle,
+  usePremiumMotion,
+} from '@/components/kia/premium'
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
 
@@ -216,7 +245,7 @@ type CreateBookingForm = {
 
 const DEFAULT_PAGE_SIZE = 10
 const ALL_VALUE = 'all'
-const PRIMARY_SURFACE = 'rounded-[1.5rem] border border-slate-200 bg-white shadow-sm sm:rounded-[2rem]'
+const PRIMARY_SURFACE = 'kia-surface'
 const INPUT_STYLE = 'h-10 w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-3 text-sm font-semibold text-slate-800 transition-all duration-200 focus:bg-white focus:border-[#c8102e] focus:ring-4 focus:ring-red-50 focus:outline-none sm:h-12 sm:px-4'
 const COMPACT_INPUT_STYLE = 'h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-800 transition-all duration-200 focus:bg-white focus:border-[#c8102e] focus:ring-4 focus:ring-red-50 focus:outline-none'
 
@@ -232,27 +261,38 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  draft: 'border-slate-200 bg-slate-50 text-slate-700',
-  booking_created: 'border-sky-200 bg-sky-50 text-sky-700',
-  proforma_generated: 'border-indigo-200 bg-indigo-50 text-indigo-700',
-  on_hold: 'border-amber-200 bg-amber-50 text-amber-800',
-  vehicle_allocated: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  finance_pending: 'border-amber-200 bg-amber-50 text-amber-700',
-  ready_delivery: 'border-teal-200 bg-teal-50 text-teal-700',
-  delivered: 'border-green-200 bg-green-50 text-green-700',
-  cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
+// Maps a booking status to a premium chip tone (theme-token driven).
+const STATUS_TONE: Record<string, Tone> = {
+  draft: 'neutral',
+  booking_created: 'info',
+  proforma_generated: 'accent',
+  on_hold: 'warning',
+  vehicle_allocated: 'success',
+  transfer_requested: 'info',
+  finance_pending: 'warning',
+  ready_delivery: 'accent',
+  delivered: 'success',
+  cancelled: 'danger',
 }
 
-const KPI_CONFIG = [
-  { key: 'today', label: 'Today', icon: ClipboardList, accent: 'border-sky-400' },
-  { key: 'pendingProforma', label: 'Pending Proforma', icon: FileText, accent: 'border-indigo-400' },
-  { key: 'waitingAllocation', label: 'Waiting Allocation', icon: Car, accent: 'border-cyan-400' },
-  { key: 'financePending', label: 'Finance Pending', icon: BadgeIndianRupee, accent: 'border-amber-400' },
-  { key: 'readyDelivery', label: 'Ready Delivery', icon: Truck, accent: 'border-teal-400' },
-  { key: 'delivered', label: 'Delivered', icon: CheckCircle2, accent: 'border-emerald-400' },
-  { key: 'cancelled', label: 'Cancelled', icon: XCircle, accent: 'border-rose-400' },
-] as const
+// KPI widgets map each pipeline stage to a status filter + tone. Clicking a
+// card filters the table to that stage.
+const KPI_CONFIG: {
+  key: string
+  label: string
+  icon: typeof ClipboardList
+  tone: Tone
+  hint: string
+  statusFilter: string
+}[] = [
+  { key: 'today', label: 'Booked Today', icon: ClipboardList, tone: 'info', hint: 'New bookings today', statusFilter: 'all' },
+  { key: 'pendingProforma', label: 'Pending Proforma', icon: FileText, tone: 'accent', hint: 'Awaiting proforma', statusFilter: 'booking_created' },
+  { key: 'waitingAllocation', label: 'Awaiting VIN', icon: Car, tone: 'info', hint: 'Approved · unallocated', statusFilter: 'proforma_generated' },
+  { key: 'financePending', label: 'Payment Pending', icon: BadgeIndianRupee, tone: 'warning', hint: 'Accounts to confirm', statusFilter: 'vehicle_allocated' },
+  { key: 'readyDelivery', label: 'Ready to Deliver', icon: Truck, tone: 'accent', hint: 'Paid · deliverable', statusFilter: 'ready_delivery' },
+  { key: 'delivered', label: 'Delivered', icon: CheckCircle2, tone: 'success', hint: 'Completed', statusFilter: 'delivered' },
+  { key: 'cancelled', label: 'Cancelled', icon: XCircle, tone: 'danger', hint: 'Closed / lost', statusFilter: 'cancelled' },
+]
 
 const CREATE_TABS = ['Customer', 'Vehicle', 'Sales Team', 'Payment', 'Delivery'] as const
 const TEST_PERSONA_LABELS: Record<TestPersona, string> = {
@@ -347,46 +387,31 @@ function statusLabel(status?: string | null) {
   return STATUS_LABELS[status] || status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function SkeletonBlock({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-2xl bg-slate-200/70', className)} />
-}
-
 function TableSkeleton({ columns = 9, rows = 10 }: { columns?: number; rows?: number }) {
-  return (
-    <div className={cn(PRIMARY_SURFACE, 'overflow-hidden')}>
-      <div className="border-b border-slate-200 bg-slate-950 px-4 py-3">
-        <SkeletonBlock className="h-4 w-44 bg-white/20" />
-      </div>
-      <div className="space-y-2 p-4">
-        {Array.from({ length: rows }).map((_, rowIndex) => (
-          <div key={rowIndex} className="grid gap-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
-            {Array.from({ length: columns }).map((__, columnIndex) => (
-              <SkeletonBlock key={columnIndex} className="h-8" />
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
+  return <PremiumTableSkeleton columns={columns} rows={rows} />
 }
 
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white/80 p-10 text-center">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white">
-        <ClipboardList className="h-6 w-6" />
-      </div>
-      <h3 className="mt-4 text-xl font-black text-slate-950">{title}</h3>
-      <p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-slate-500">{description}</p>
-    </div>
-  )
+function EmptyState({
+  title,
+  description,
+  illustration = 'garage',
+  icon,
+  action,
+}: {
+  title: string
+  description: string
+  illustration?: 'garage' | 'search' | 'road' | 'error'
+  icon?: typeof ClipboardList
+  action?: React.ReactNode
+}) {
+  return <PremiumEmptyState title={title} description={description} illustration={illustration} icon={icon} action={action} />
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, className }: { status: string; className?: string }) {
   return (
-    <Badge variant="outline" className={cn('rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em]', STATUS_STYLES[status] || STATUS_STYLES.draft)}>
+    <Chip tone={STATUS_TONE[status] || 'neutral'} dot className={className}>
       {statusLabel(status)}
-    </Badge>
+    </Chip>
   )
 }
 
@@ -399,48 +424,35 @@ function BookingMobileCard({
 }) {
   const router = useRouter()
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" onClick={() => onOpen(row.id)}>
+    <article className="kia-surface-flush kia-lift p-3.5" onClick={() => onOpen(row.id)}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Booking</p>
-          <h3 className="mt-1 text-sm font-black leading-5 text-slate-950">{row.bookingNumber}</h3>
-          <p className="mt-1 truncate text-xs font-bold text-slate-600">{row.customerName}</p>
-          <p className="text-[11px] font-semibold text-slate-500">{row.customerPhone}</p>
+          <Kicker>Booking</Kicker>
+          <h3 className="mt-0.5 text-sm font-extrabold leading-5 text-[var(--kia-text)] kia-tnum">{row.bookingNumber}</h3>
+          <p className="mt-1 truncate text-xs font-bold text-[var(--kia-text-soft)]">{row.customerName}</p>
+          <p className="text-[11px] font-medium text-[var(--kia-text-faint)]">{row.customerPhone}</p>
         </div>
         <StatusBadge status={row.status} />
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Vehicle</p>
-          <p className="mt-1 font-black text-slate-900">{row.model || '-'}</p>
-          <p className="mt-0.5 break-words font-semibold text-slate-500">{row.variant || '-'}</p>
-        </div>
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Consultant</p>
-          <p className="mt-1 font-bold text-slate-700">{row.consultantName || '-'}</p>
-          <p className="mt-0.5 font-semibold text-slate-500">{formatDate(row.updatedAt)}</p>
-        </div>
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">VIN</p>
-          <p className="mt-1 break-all font-mono text-[11px] text-slate-600">{row.allocatedVin || '-'}</p>
-        </div>
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Finance</p>
-          <p className="mt-1 font-bold text-slate-700">{row.financeOrderNumber || '-'}</p>
-        </div>
+      <div className="mt-3 grid grid-cols-2 gap-2.5 text-xs">
+        <FieldValue label="Vehicle" value={<><span className="font-bold text-[var(--kia-text)]">{row.model || '—'}</span><br /><span className="text-[var(--kia-text-soft)]">{row.variant || '—'}</span></>} />
+        <FieldValue label="Consultant" value={<>{row.consultantName || '—'}<br /><span className="text-[var(--kia-text-faint)]">{formatDate(row.updatedAt)}</span></>} />
+        <FieldValue label="VIN" value={row.allocatedVin || '—'} mono />
+        <FieldValue label="Finance" value={row.financeOrderNumber || '—'} />
       </div>
       <div className="mt-3" onClick={(event) => event.stopPropagation()}>
         {row.proformaNumber ? (
           <Link
             href={`/brands/kia/proforma/all-proforma-details?search=${row.proformaNumber}`}
-            className="inline-flex h-9 w-full items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-[10px] font-black uppercase tracking-[0.08em] text-indigo-700"
+            className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border px-3 text-[11px] font-bold uppercase tracking-[0.06em]"
+            style={toneSoftStyle('accent')}
           >
-            Proforma Generated
+            Proforma ready <ArrowRight className="h-3 w-3" />
           </Link>
         ) : (
           <Button
             size="sm"
-            className="h-9 w-full rounded-xl border-none bg-[#c8102e] px-3 text-[11px] font-black text-white shadow-sm hover:bg-red-700"
+            className="h-9 w-full rounded-xl px-3 text-[11px] font-bold"
             onClick={() => router.push(`/brands/kia/proforma/generate?bookingId=${row.id}`)}
           >
             Generate Proforma
@@ -451,41 +463,88 @@ function BookingMobileCard({
   )
 }
 
+const JOURNEY_STEPS = [
+  { key: 'booking_created', label: 'Booking', icon: ClipboardList },
+  { key: 'proforma_generated', label: 'Proforma', icon: FileText },
+  { key: 'vehicle_allocated', label: 'VIN', icon: Car },
+  { key: 'finance_pending', label: 'Payment', icon: BadgeIndianRupee },
+  { key: 'ready_delivery', label: 'Ready', icon: ShieldCheck },
+  { key: 'delivered', label: 'Delivered', icon: Truck },
+] as const
+
+const STEP_ORDER: Record<string, number> = {
+  draft: 0,
+  booking_created: 0,
+  proforma_generated: 1,
+  on_hold: 2,
+  vehicle_allocated: 2,
+  transfer_requested: 2,
+  finance_pending: 3,
+  ready_delivery: 4,
+  delivered: 5,
+}
+
 function Stepper({ status }: { status: string }) {
-  const steps = [
-    { key: 'booking_created', label: 'Booking' },
-    { key: 'proforma_generated', label: 'Proforma' },
-    { key: 'vehicle_allocated', label: 'VIN' },
-    { key: 'finance_pending', label: 'Finance' },
-    { key: 'ready_delivery', label: 'Ready' },
-    { key: 'delivered', label: 'Delivered' },
-  ]
-  const currentIndex = Math.max(0, steps.findIndex((step) => step.key === status))
+  const animated = usePremiumMotion()
+  const cancelled = status === 'cancelled'
+  const currentIndex = status === 'delivered' ? 5 : STEP_ORDER[status] ?? 0
+  const progress = cancelled ? 0 : currentIndex / (JOURNEY_STEPS.length - 1)
   return (
-    <div className="rounded-[1.75rem] border border-white/80 bg-white/90 p-2 shadow-[0_18px_55px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/[0.03] backdrop-blur">
-      <div className="grid gap-2 sm:grid-cols-6">
-      {steps.map((step, index) => {
-        const active = index <= currentIndex || status === 'delivered'
-        const current = index === currentIndex && status !== 'delivered'
-        return (
-          <div
-            key={step.key}
-            className={cn(
-              'relative overflow-hidden rounded-2xl border px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] transition-all',
-              active
-                ? 'border-slate-900 bg-slate-950 text-white shadow-sm'
-                : 'border-slate-200 bg-slate-50/80 text-slate-400',
-              current && 'shadow-[0_12px_30px_rgba(15,23,42,0.16)]'
-            )}
-          >
-            <span className={cn('mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px]', active ? 'bg-white text-slate-950' : 'bg-white text-slate-400')}>
-              {index + 1}
-            </span>
-            <span>{step.label}</span>
-          </div>
-        )
-      })}
+    <div className="kia-surface-flush px-3 py-4 sm:px-5">
+      <div className="relative">
+        {/* rail */}
+        <div className="absolute left-4 right-4 top-4 h-[3px] rounded-full" style={{ backgroundColor: 'var(--kia-hairline-strong)' }} />
+        <motion.div
+          className="absolute left-4 top-4 h-[3px] rounded-full"
+          style={{ background: 'linear-gradient(90deg, var(--dashboard-action-hover), var(--dashboard-action-bg))', maxWidth: 'calc(100% - 2rem)' }}
+          initial={animated ? { width: 0 } : false}
+          animate={{ width: `calc(${progress} * (100% - 2rem))` }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        />
+        <div className="relative grid grid-cols-6 gap-1">
+          {JOURNEY_STEPS.map((step, index) => {
+            const done = !cancelled && index < currentIndex
+            const current = !cancelled && index === currentIndex
+            const StepIcon = step.icon
+            return (
+              <div key={step.key} className="flex flex-col items-center gap-1.5 text-center">
+                <motion.span
+                  className="grid h-8 w-8 place-items-center rounded-full border-2"
+                  style={{
+                    backgroundColor: done || current ? 'var(--dashboard-action-bg)' : 'var(--kia-surface)',
+                    borderColor: done || current ? 'var(--dashboard-action-bg)' : 'var(--kia-hairline-strong)',
+                    color: done || current ? 'var(--dashboard-action-fg)' : 'var(--kia-text-faint)',
+                  }}
+                  initial={animated ? { scale: 0.6, opacity: 0 } : false}
+                  animate={{ scale: current ? 1.08 : 1, opacity: 1 }}
+                  transition={{ delay: index * 0.06, type: 'spring', stiffness: 380, damping: 22 }}
+                >
+                  {done ? <CheckCircle2 className="h-4 w-4" /> : <StepIcon className="h-3.5 w-3.5" />}
+                  {current && animated && (
+                    <motion.span
+                      className="absolute inset-0 rounded-full"
+                      style={{ boxShadow: '0 0 0 2px var(--dashboard-action-bg)' }}
+                      animate={{ opacity: [0.6, 0], scale: [1, 1.7] }}
+                      transition={{ repeat: Infinity, duration: 1.8, ease: 'easeOut' }}
+                    />
+                  )}
+                </motion.span>
+                <span
+                  className="text-[9px] font-bold uppercase tracking-[0.08em]"
+                  style={{ color: done || current ? 'var(--kia-text)' : 'var(--kia-text-faint)' }}
+                >
+                  {step.label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
+      {cancelled && (
+        <p className="mt-3 text-center text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--dashboard-risk-text)' }}>
+          Booking cancelled
+        </p>
+      )}
     </div>
   )
 }
@@ -527,7 +586,7 @@ const COLORS = [
 const CONSULTANTS = [
   'OTHER DEALER',
   'SUNAKSHIT',
-  'Arun Sharma',
+  'ARUN SHARMA',
   'ANAM SINGH',
   'AKHASH BHATT',
   'SHUBHAM',
@@ -549,7 +608,7 @@ const MANAGERS = ['SANJEEV KOUL'] as const
 
 const TLS = [
   'MICHAEL DEEP SINGH',
-  'Naval preet Singh',
+  'NAVAL PREET SINGH',
   'UDHAMPUR',
   'OTHER DEALER',
   'SHIV DEV SINGH'
@@ -932,7 +991,7 @@ function initialCreateForm(): CreateBookingForm {
     costSheet: '',
     paymentReceived: '',
     waitingPeriod: '',
-    dealerCode: 'AM KIA',
+    dealerCode: 'JK402',
     notes: '',
   }
 }
@@ -956,6 +1015,7 @@ export function KiaBookingsClient({
   const queryClient = useQueryClient()
 
   const [search, setSearch] = useState(firstParam(initialSearchParams, 'search'))
+  const [debouncedSearch, setDebouncedSearch] = useState(() => firstParam(initialSearchParams, 'search'))
   const [dealer, setDealer] = useState(firstParam(initialSearchParams, 'dealer_code', ALL_VALUE))
   const [model, setModel] = useState(firstParam(initialSearchParams, 'model', ALL_VALUE))
   const [status, setStatus] = useState(firstParam(initialSearchParams, 'status', ALL_VALUE))
@@ -981,13 +1041,52 @@ export function KiaBookingsClient({
   const [createForm, setCreateForm] = useState<CreateBookingForm>(() => initialCreateForm())
   const [formError, setFormError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
-  const [testPersona, setTestPersona] = useState<TestPersona>('actual')
+  const [testPersona] = useState<TestPersona>('actual')
+  // Which contextual automotive loader to show for the in-flight workflow action.
+  const [loaderVariant, setLoaderVariant] = useState<LoaderVariant>('generic')
+  const [priceUploading, setPriceUploading] = useState(false)
+  const priceInputRef = useRef<HTMLInputElement>(null)
+  const [createSuccess, setCreateSuccess] = useState(false)
+  const [deliverySuccess, setDeliverySuccess] = useState(false)
+  const [allotSuccess, setAllotSuccess] = useState(false)
+
+  async function handlePriceUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setPriceUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch('/api/brands/kia/proforma/price-details/upload', { method: 'POST', body: formData })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || 'Failed to import price details')
+      const summary = payload.summary
+      toast({
+        title: 'Price Master Updated',
+        description: summary ? `Imported ${summary.importedRows} rows${summary.failedRows ? `, ${summary.failedRows} failed` : ''}.` : 'Prices replaced successfully.',
+        variant: 'success',
+      })
+      queryClient.invalidateQueries({ queryKey: ['kia-proforma-options-for-bookings'] })
+    } catch (err) {
+      toast({ title: 'Import Failed', description: err instanceof Error ? err.message : 'Failed to import price details', variant: 'error' })
+    } finally {
+      setPriceUploading(false)
+      if (priceInputRef.current) priceInputRef.current.value = ''
+    }
+  }
   const canUseTestPersona = currentUserRole === 'super_admin'
   const normalizedCurrentRole = normalizeRole(currentUserRole)
   const canCreateBookings = roleCanActAsSalesPerson(normalizedCurrentRole)
   const stockMode = mode === 'stock'
+  const animated = usePremiumMotion()
 
   const selectedBookingId = searchParams.get('bookingId') || ''
+
+  // Debounce search so the bookings list query doesn't refire on every keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   useEffect(() => {
     const query = buildQueryString({ search, dealer_code: dealer, model, status, consultant, page })
@@ -1001,14 +1100,14 @@ export function KiaBookingsClient({
   }, [pathname, consultant, dealer, model, page, router, search, selectedBookingId, status, embedMode])
 
   const listQueryString = useMemo(() => buildQueryString({
-    search,
+    search: debouncedSearch,
     dealer_code: dealer,
     model,
     status,
     consultant,
     page,
     pageSize: DEFAULT_PAGE_SIZE,
-  }), [consultant, dealer, model, page, search, status])
+  }), [consultant, dealer, debouncedSearch, model, page, status])
 
   const listQuery = useQuery({
     queryKey: ['kia-bookings', listQueryString],
@@ -1049,11 +1148,9 @@ export function KiaBookingsClient({
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-    onSuccess: (created) => {
-      setCreateOpen(false)
-      setCreateForm(initialCreateForm())
-      setCreateTab('Customer')
-      setActionMessage(`Booking ${created.id ? 'created' : 'saved'} successfully. Open it from the table when you are ready for the next stage.`)
+    onSuccess: () => {
+      // Play the success celebration; the dialog closes when it finishes.
+      setCreateSuccess(true)
       queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
     },
   })
@@ -1069,6 +1166,8 @@ export function KiaBookingsClient({
       setTransferTarget(null)
       setTransferToDealerCode('')
       setTransferReferenceName('')
+      if (loaderVariant === 'delivery') setDeliverySuccess(true)
+      if (loaderVariant === 'vin-match') setAllotSuccess(true)
       queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
       queryClient.invalidateQueries({ queryKey: ['kia-booking-detail', selectedBookingId] })
       queryClient.invalidateQueries({ queryKey: ['kia-booking-matching-vehicles', selectedBookingId] })
@@ -1136,11 +1235,11 @@ export function KiaBookingsClient({
       })
     },
     onSuccess: () => {
-      alert('Proforma generated successfully!')
+      toast({ title: 'Proforma Generated', description: 'Proforma generated successfully!', variant: 'success' })
       queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
     },
     onError: (error) => {
-      alert(error instanceof Error ? error.message : 'Failed to generate proforma')
+      toast({ title: 'Generation Failed', description: error instanceof Error ? error.message : 'Failed to generate proforma', variant: 'error' })
     },
     onSettled: () => {
       setGeneratingId(null)
@@ -1236,8 +1335,6 @@ export function KiaBookingsClient({
       ['bankFinance', 'Bank / Finance'],
       ['expectedDeliveryDate', 'Estimated Delivery Date'],
       ['promiseDate', 'Promise Date'],
-      ['commitment', 'Commitment With Customer'],
-      ['otherDealerDetails', 'Other Dealer Details'],
     ]
     const missing = requiredFields.find(([key]) => !createForm[key]?.trim())
     if (missing) {
@@ -1304,6 +1401,7 @@ export function KiaBookingsClient({
       setTransferReferenceName('')
       return
     }
+    setLoaderVariant(action === 'deliver' ? 'delivery' : 'generic')
     actionMutation.mutate({ endpoint: `/api/brands/kia/bookings/${selectedBookingId}/${action}` })
   }
 
@@ -1323,6 +1421,7 @@ export function KiaBookingsClient({
 
   function confirmTransfer() {
     if (!selectedBookingId || !transferTarget || !transferToDealerCode) return
+    setLoaderVariant('transfer')
     actionMutation.mutate({
       endpoint: `/api/brands/kia/bookings/${selectedBookingId}/transfer`,
       body: {
@@ -1340,6 +1439,7 @@ export function KiaBookingsClient({
       setAllotDialogVehicle(vehicle)
       return
     }
+    setLoaderVariant('vin-match')
     actionMutation.mutate({
       endpoint: `/api/brands/kia/bookings/${selectedBookingId}/allot`,
       body: { vinNumber },
@@ -1348,6 +1448,7 @@ export function KiaBookingsClient({
 
   function confirmAllot() {
     if (!selectedBookingId || !allotDialogVehicle) return
+    setLoaderVariant('vin-match')
     actionMutation.mutate({
       endpoint: `/api/brands/kia/bookings/${selectedBookingId}/allot`,
       body: { vinNumber: allotDialogVehicle.vinNumber },
@@ -1356,6 +1457,7 @@ export function KiaBookingsClient({
 
   function markPaymentNotReceived() {
     if (!selectedBookingId) return
+    setLoaderVariant('generic')
     actionMutation.mutate({
       endpoint: `/api/brands/kia/bookings/${selectedBookingId}/release`,
       body: { reason: 'Payment not received within reservation window' },
@@ -1364,6 +1466,7 @@ export function KiaBookingsClient({
 
   function confirmPayment() {
     if (!selectedBookingId) return
+    setLoaderVariant('payment')
     paymentMutation.mutate({
       bookingId: selectedBookingId,
       reference: paymentReference,
@@ -1397,99 +1500,120 @@ export function KiaBookingsClient({
     ? 'Choose an approved booking, then allot a VIN or initiate a transfer. Payment confirmation remains accounts-owned.'
     : null
 
+  const headerActions = (
+    <>
+      {canCreateBookings && !stockMode && (
+        <>
+          <Button className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" /> New Booking
+          </Button>
+          <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => setQuoteOpen(true)}>
+            <FileText className="h-4 w-4" /> Email Quote
+          </Button>
+          <input type="file" ref={priceInputRef} accept=".xlsx,.xls,.xlsm" onChange={handlePriceUpload} className="hidden" disabled={priceUploading} />
+          <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => priceInputRef.current?.click()} disabled={priceUploading}>
+            {priceUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Replace Prices
+          </Button>
+        </>
+      )}
+      <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => listQuery.refetch()} disabled={listQuery.isFetching}>
+        <RefreshCw className={cn('h-4 w-4', listQuery.isFetching && 'animate-spin')} /> Refresh
+      </Button>
+    </>
+  )
+
   const content = (
     <>
-      <div className="space-y-5">
-        <section className={cn(PRIMARY_SURFACE, 'overflow-hidden')}>
-          <div className="bg-gradient-to-br from-white via-slate-50 to-sky-50 p-3 sm:p-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              {!embedMode ? (
-                <div>
-                  <Badge variant="outline" className="rounded-full border-sky-100 bg-sky-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-700 sm:px-4 sm:text-xs">
-                    {currentHeading.badge}
-                  </Badge>
-                  <h1 className="mt-3 text-2xl font-black tracking-tight text-slate-950 sm:mt-4 sm:text-4xl">{currentHeading.title}</h1>
-                  <p className="mt-2 max-w-3xl text-xs font-semibold leading-5 text-slate-600 sm:text-sm sm:leading-6">
-                    {currentHeading.subtitle}
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  <Badge variant="outline" className="rounded-full border-sky-100 bg-sky-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-700 sm:px-4 sm:text-xs">
-                    {currentHeading.badge}
-                  </Badge>
-                </div>
-              )}
-              <div className="grid gap-2 sm:flex sm:flex-wrap sm:gap-3">
-                {canCreateBookings && !stockMode && (
-                  <>
-                    <Button className="h-10 rounded-2xl bg-slate-950 px-4 text-xs font-black text-white hover:bg-slate-800 sm:h-11 sm:px-5 sm:text-sm" onClick={() => setCreateOpen(true)}>
-                      <Plus className="h-4 w-4" /> New Booking
-                    </Button>
-                    <Button variant="outline" className="h-10 rounded-2xl border-slate-200 bg-white px-4 text-xs font-black text-slate-800 shadow-sm hover:bg-slate-50 sm:h-11 sm:px-5 sm:text-sm" onClick={() => setQuoteOpen(true)}>
-                      <FileText className="mr-2 h-4 w-4" /> Email Quote
-                    </Button>
-                  </>
-                )}
-                <Button variant="outline" className="h-10 rounded-2xl bg-white px-4 text-xs font-black sm:h-11 sm:px-5 sm:text-sm" onClick={() => listQuery.refetch()} disabled={listQuery.isFetching}>
-                  <RefreshCw className={cn('h-4 w-4', listQuery.isFetching && 'animate-spin')} /> Refresh
-                </Button>
-              </div>
-            </div>
-            {canUseTestPersona && (
-              <div className="mt-4 rounded-3xl border border-slate-200 bg-white/85 p-3 shadow-sm">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Super Admin Test Mode</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-600">Switch the visible workflow controls to rehearse each KIA booking stage before release.</p>
+      <div className="kia-premium space-y-5">
+        {/* ── Command header ── */}
+        {embedMode ? (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {headerActions}
+          </div>
+        ) : (
+          <Reveal>
+            <section className="kia-surface relative overflow-hidden">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full"
+                style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--dashboard-action-bg) 16%, transparent), transparent 70%)' }}
+              />
+              <div className="relative p-4 sm:p-6">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-3.5">
+                      <IconTile icon={stockMode ? Car : ClipboardList} tone="accent" size="lg" />
+                      <div className="min-w-0">
+                        <Kicker>{currentHeading.badge}</Kicker>
+                        <h1 className="mt-0.5 truncate text-2xl font-extrabold tracking-tight text-[var(--kia-text)] sm:text-[2rem] sm:leading-none">{currentHeading.title}</h1>
+                      </div>
+                    </div>
+                    <p className="mt-3 max-w-3xl text-sm font-medium leading-6 text-[var(--kia-text-soft)]">{currentHeading.subtitle}</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                    {(Object.keys(TEST_PERSONA_LABELS) as TestPersona[]).map((persona) => (
-                      <Button
-                        key={persona}
-                        type="button"
-                        variant={testPersona === persona ? 'default' : 'outline'}
-                        className={cn(
-                          'h-9 rounded-2xl px-3 text-[11px] font-black sm:px-4',
-                          testPersona === persona
-                            ? 'bg-slate-950 text-white hover:bg-slate-800'
-                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                        )}
-                        onClick={() => setTestPersona(persona)}
-                      >
-                        {TEST_PERSONA_LABELS[persona]}
-                      </Button>
-                    ))}
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-2.5">
+                    {headerActions}
                   </div>
                 </div>
               </div>
-            )}
-          </div>
-        </section>
-
-        {actionMessage && !selectedBookingId && (
-          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
-            {actionMessage}
-          </div>
+            </section>
+          </Reveal>
         )}
 
+        {/* ── KPI pipeline (click a card to filter the table) ── */}
+        {!stockMode && (
+          <KpiRow
+            items={KPI_CONFIG.map((cfg) => ({
+              key: cfg.key,
+              label: cfg.label,
+              value: (kpis as Record<string, number>)[cfg.key] ?? 0,
+              icon: cfg.icon,
+              tone: cfg.tone,
+              hint: cfg.hint,
+              active: cfg.statusFilter !== 'all' && status === cfg.statusFilter,
+            }))}
+            onSelect={(key) => {
+              const cfg = KPI_CONFIG.find((item) => item.key === key)
+              if (!cfg) return
+              setPage(1)
+              if (cfg.statusFilter === 'all') { setStatus(ALL_VALUE); return }
+              setStatus((prev) => (prev === cfg.statusFilter ? ALL_VALUE : cfg.statusFilter))
+            }}
+          />
+        )}
+
+        <AnimatePresence>
+          {actionMessage && !selectedBookingId && (
+            <motion.div
+              initial={animated ? { opacity: 0, y: -6 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-sm font-semibold"
+              style={toneSoftStyle('success')}
+            >
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              {actionMessage}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {stockSectionHint && (
-          <div className="rounded-3xl border border-sky-100 bg-white px-4 py-3 text-sm font-bold text-sky-900 shadow-sm">
+          <div className="flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-sm font-semibold" style={toneSoftStyle('info')}>
+            <Car className="h-4 w-4 shrink-0" />
             {stockSectionHint}
           </div>
         )}
 
-        <section className={cn(PRIMARY_SURFACE, 'sticky top-2 z-20 p-3 sm:top-3 sm:p-4')}>
-          <div className="grid gap-2 sm:gap-3 lg:grid-cols-[1.4fr_repeat(4,minmax(0,0.8fr))_auto]">
+        <section className={cn(PRIMARY_SURFACE, 'sticky top-2 z-20 p-2.5 sm:top-3 sm:p-3')}>
+          <div className="grid gap-2 sm:gap-2.5 lg:grid-cols-[1.5fr_repeat(4,minmax(0,0.85fr))_auto]">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Search booking, customer, phone, VIN..." className={cn(INPUT_STYLE, 'pl-11')} />
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kia-text-faint)]" />
+              <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Search booking, customer, phone, VIN…" className={cn(INPUT_STYLE, 'pl-10')} />
             </div>
             <FilterSelect value={dealer} placeholder="Dealer" values={filters.dealers} onChange={(value) => { setDealer(value); setPage(1) }} />
             <FilterSelect value={model} placeholder="Model" values={filters.models} onChange={(value) => { setModel(value); setPage(1) }} />
             <FilterSelect value={status} placeholder="Status" values={filters.statuses} onChange={(value) => { setStatus(value); setPage(1) }} labeler={statusLabel} />
             <FilterSelect value={consultant} placeholder="Consultant" values={filters.consultants} onChange={(value) => { setConsultant(value); setPage(1) }} />
-            <Button variant="outline" className="h-10 rounded-2xl bg-white text-xs font-black sm:h-11 sm:text-sm" onClick={() => { setSearch(''); setDealer(ALL_VALUE); setModel(ALL_VALUE); setStatus(ALL_VALUE); setConsultant(ALL_VALUE); setPage(1) }}>
+            <Button variant="outline" className="h-10 rounded-2xl text-xs font-bold sm:h-11 sm:text-sm" onClick={() => { setSearch(''); setDealer(ALL_VALUE); setModel(ALL_VALUE); setStatus(ALL_VALUE); setConsultant(ALL_VALUE); setPage(1) }}>
               Clear
             </Button>
           </div>
@@ -1499,62 +1623,99 @@ export function KiaBookingsClient({
           <TableSkeleton columns={9} />
         ) : listQuery.isError ? (
           <EmptyState
+            illustration="error"
             title="Unable to load bookings"
             description={listQuery.error instanceof Error ? listQuery.error.message : 'The bookings request failed. Refresh to retry or check the server logs if it repeats.'}
+            action={(
+              <Button variant="outline" className="h-10 rounded-2xl font-bold" onClick={() => listQuery.refetch()}>
+                <RefreshCw className="h-4 w-4" /> Retry
+              </Button>
+            )}
           />
         ) : rows.length === 0 ? (
-          <EmptyState title={currentEmptyState.title} description={currentEmptyState.description} />
+          <EmptyState
+            illustration={search || dealer !== ALL_VALUE || model !== ALL_VALUE || status !== ALL_VALUE || consultant !== ALL_VALUE ? 'search' : 'garage'}
+            title={currentEmptyState.title}
+            description={currentEmptyState.description}
+            action={canCreateBookings && !stockMode ? (
+              <Button className="h-10 rounded-2xl font-bold" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4" /> New Booking
+              </Button>
+            ) : undefined}
+          />
         ) : (
           <section className={cn(PRIMARY_SURFACE, 'overflow-hidden')}>
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-950 px-4 py-3 text-white">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/60">Bookings Pipeline</p>
-                <h2 className="text-base font-black">{data?.total || 0} records</h2>
+            <div
+              className="flex items-center justify-between gap-3 px-4 py-3.5"
+              style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--dashboard-primary) 96%, #000), var(--dashboard-primary))' }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid h-9 w-9 place-items-center rounded-xl" style={{ background: 'rgba(255,255,255,0.12)' }}>
+                  <ClipboardList className="h-[1.15rem] w-[1.15rem] text-white" />
+                </span>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">Bookings Pipeline</p>
+                  <h2 className="text-[15px] font-extrabold text-white">
+                    <AnimatedNumber value={data?.total || 0} /> records
+                  </h2>
+                </div>
               </div>
-              {listQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-white/70" />}
+              {listQuery.isFetching && <span className="text-white"><InlineLoader variant="search" size={30} /></span>}
             </div>
             <div className="grid gap-3 p-3 sm:hidden">
               {rows.map((row) => (
                 <BookingMobileCard key={row.id} row={row} onOpen={openBooking} />
               ))}
             </div>
-            <Table className="hidden sm:table">
+            <Table className="hidden sm:table kia-table">
               <TableHeader>
-                <TableRow className="bg-slate-50 hover:bg-slate-50">
+                <TableRow>
                   {['Booking', 'Customer', 'Vehicle', 'Consultant', 'Status', 'Finance', 'VIN', 'Updated', 'Action'].map((head) => (
-                    <TableHead key={head} className="h-9 px-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{head}</TableHead>
+                    <TableHead key={head} className="h-10 whitespace-nowrap px-3">{head}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.id} className="cursor-pointer bg-white text-sm hover:bg-slate-50" onClick={() => openBooking(row.id)}>
-                    <TableCell className="px-3 py-3 text-xs font-black leading-5 text-slate-950">{row.bookingNumber}</TableCell>
+                {rows.map((row, index) => (
+                  <motion.tr
+                    key={row.id}
+                    className="group cursor-pointer border-b border-[var(--kia-hairline)] text-sm"
+                    onClick={() => openBooking(row.id)}
+                    initial={animated ? { opacity: 0, y: 6 } : false}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: Math.min(index * 0.025, 0.32), ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    <TableCell className="px-3 py-3 text-xs font-extrabold leading-5 text-[var(--kia-text)]"><span className="kia-tnum">{row.bookingNumber}</span></TableCell>
                     <TableCell className="px-3 py-3">
-                      <div className="text-sm font-black leading-5 text-slate-900">{row.customerName}</div>
-                      <div className="text-[11px] font-semibold text-slate-500">{row.customerPhone}</div>
+                      <div className="text-sm font-bold leading-5 text-[var(--kia-text)]">{row.customerName}</div>
+                      <div className="text-[11px] font-medium text-[var(--kia-text-soft)]">{row.customerPhone}</div>
                     </TableCell>
                     <TableCell className="px-3 py-3">
-                      <div className="text-sm font-bold leading-5 text-slate-900">{row.model}</div>
-                      <div className="max-w-[220px] truncate text-[11px] text-slate-500">{row.variant}</div>
+                      <div className="text-sm font-semibold leading-5 text-[var(--kia-text)]">{row.model}</div>
+                      <div className="max-w-[220px] truncate text-[11px] text-[var(--kia-text-soft)]">{row.variant}</div>
                     </TableCell>
-                    <TableCell className="px-3 py-3 text-xs font-semibold text-slate-600">{row.consultantName}</TableCell>
+                    <TableCell className="px-3 py-3 text-xs font-semibold text-[var(--kia-text-soft)]">{row.consultantName}</TableCell>
                     <TableCell className="px-3 py-3"><StatusBadge status={row.status} /></TableCell>
-                    <TableCell className="px-3 py-3 text-xs font-semibold text-slate-600">{row.financeOrderNumber || '-'}</TableCell>
-                    <TableCell className="px-3 py-3 font-mono text-[11px] text-slate-600">{row.allocatedVin || '-'}</TableCell>
-                    <TableCell className="px-3 py-3 text-xs font-semibold text-slate-500">{formatDate(row.updatedAt)}</TableCell>
-                    <TableCell className="px-3 py-3 text-xs font-semibold text-slate-600" onClick={(e) => e.stopPropagation()}>
-                      {row.proformaNumber ? (
+                    <TableCell className="px-3 py-3 text-xs font-semibold text-[var(--kia-text-soft)]">{row.financeOrderNumber || '—'}</TableCell>
+                    <TableCell className="px-3 py-3 font-mono text-[11px] text-[var(--kia-text-soft)]">{row.allocatedVin || '—'}</TableCell>
+                    <TableCell className="px-3 py-3 text-xs font-semibold text-[var(--kia-text-faint)]">{formatDate(row.updatedAt)}</TableCell>
+                    <TableCell className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      {row.status === 'delivered' ? (
+                        <Chip tone="success" icon={CheckCircle2}>Delivered</Chip>
+                      ) : row.status === 'cancelled' ? (
+                        <Chip tone="danger" icon={XCircle}>Cancelled</Chip>
+                      ) : row.proformaNumber ? (
                         <Link
                           href={`/brands/kia/proforma/all-proforma-details?search=${row.proformaNumber}`}
-                          className="inline-flex h-8 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-3 text-[10px] font-black uppercase tracking-[0.08em] text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800"
+                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border px-3 text-[10px] font-bold uppercase tracking-[0.06em] transition-transform hover:-translate-y-0.5"
+                          style={toneSoftStyle('accent')}
                         >
-                          {stockMode ? 'OPEN STOCK STAGE' : 'PROFORMA GENERATED'}
+                          {stockMode ? 'Open stock stage' : 'Proforma ready'} <ArrowRight className="h-3 w-3" />
                         </Link>
                       ) : canCreateBookings ? (
                         <Button
                           size="sm"
-                          className="h-8 rounded-xl border-none bg-[#c8102e] px-3 text-[11px] font-black text-white shadow-sm hover:bg-red-700"
+                          className="h-8 rounded-xl px-3 text-[11px] font-bold"
                           onClick={() => {
                             router.push(`/brands/kia/proforma/generate?bookingId=${row.id}`)
                           }}
@@ -1562,18 +1723,20 @@ export function KiaBookingsClient({
                           Generate Proforma
                         </Button>
                       ) : (
-                        <span className="text-[11px] font-bold text-slate-400">Awaiting sales action</span>
+                        <span className="text-[11px] font-semibold text-[var(--kia-text-faint)]">Awaiting sales</span>
                       )}
                     </TableCell>
-                  </TableRow>
+                  </motion.tr>
                 ))}
               </TableBody>
             </Table>
-            <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs font-bold text-slate-500">Page {data?.page || page} of {data?.totalPages || 1}</p>
+            <div className="flex flex-col gap-3 border-t border-[var(--kia-hairline)] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs font-semibold text-[var(--kia-text-soft)]">
+                Page <span className="kia-tnum font-bold text-[var(--kia-text)]">{data?.page || page}</span> of {data?.totalPages || 1}
+              </p>
               <div className="flex gap-2">
-                <Button variant="outline" className="h-9 rounded-2xl bg-white text-xs font-black" disabled={page <= 1 || listQuery.isFetching} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
-                <Button variant="outline" className="h-9 rounded-2xl bg-white text-xs font-black" disabled={page >= (data?.totalPages || 1) || listQuery.isFetching} onClick={() => setPage((current) => current + 1)}>Next</Button>
+                <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" disabled={page <= 1 || listQuery.isFetching} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
+                <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" disabled={page >= (data?.totalPages || 1) || listQuery.isFetching} onClick={() => setPage((current) => current + 1)}>Next</Button>
               </div>
             </div>
           </section>
@@ -1590,6 +1753,14 @@ export function KiaBookingsClient({
         masterLoading={proformaOptionsQuery.isLoading}
         error={formError || (createMutation.error instanceof Error ? createMutation.error.message : '')}
         isSubmitting={createMutation.isPending}
+        showSuccess={createSuccess}
+        onSuccessDone={() => {
+          setCreateSuccess(false)
+          setCreateOpen(false)
+          setCreateForm(initialCreateForm())
+          setCreateTab('Customer')
+          setActionMessage('Booking created successfully. Open it from the table when you are ready for the next stage.')
+        }}
         onOpenChange={setCreateOpen}
         onTabChange={setCreateTab}
         onChange={updateCreateForm}
@@ -1604,7 +1775,8 @@ export function KiaBookingsClient({
       />
 
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent className="max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+        <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+          <LoaderOverlay show={paymentMutation.isPending} variant="payment" label="Verifying payment…" sublabel="Confirming and unlocking delivery" />
           <DialogHeader className="border-b border-slate-100 bg-[radial-gradient(circle_at_top_right,#dcfce7,transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-6">
             <Badge variant="outline" className="mb-3 w-fit rounded-full border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">Accounts Confirmation</Badge>
             <DialogTitle className="text-2xl font-black tracking-tight text-slate-950">Confirm Booking Payment</DialogTitle>
@@ -1634,7 +1806,8 @@ export function KiaBookingsClient({
       </Dialog>
 
       <Dialog open={Boolean(allotDialogVehicle)} onOpenChange={(open) => !open && setAllotDialogVehicle(null)}>
-        <DialogContent className="flex flex-col max-h-[90dvh] w-[calc(100vw-0.75rem)] max-w-2xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_25px_70px_rgba(15,23,42,0.2)]">
+        <DialogContent className="kia-premium flex flex-col max-h-[90dvh] w-[calc(100vw-0.75rem)] max-w-2xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_25px_70px_rgba(15,23,42,0.2)]">
+          <LoaderOverlay show={actionMutation.isPending} variant="vin-match" label="Allocating VIN…" sublabel="Reserving the unit for 72 hours" />
           <DialogHeader className="border-b border-slate-100 bg-[linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-5">
             <DialogTitle className="text-lg font-black tracking-tight text-slate-950">Allot this car</DialogTitle>
             <DialogDescription className="mt-1 max-w-xl text-xs font-semibold leading-5 text-slate-500">
@@ -1691,7 +1864,8 @@ export function KiaBookingsClient({
       </Dialog>
 
       <Dialog open={Boolean(transferTarget)} onOpenChange={(open) => !open && setTransferTarget(null)}>
-        <DialogContent className="max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-4xl overflow-hidden rounded-[1.5rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)]">
+        <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-4xl overflow-hidden rounded-[1.5rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)]">
+          <LoaderOverlay show={actionMutation.isPending} variant="transfer" label="Requesting transfer…" sublabel="Moving the VIN between outlets" />
           <DialogHeader className="border-b border-slate-100 bg-[linear-gradient(135deg,#ffffff,#f8fafc)] p-5 sm:p-8">
             <DialogTitle className="text-2xl font-black tracking-tight text-slate-950 sm:text-4xl">Transfer this car</DialogTitle>
             <DialogDescription className="mt-2 max-w-3xl text-sm font-semibold leading-7 text-slate-500 sm:text-[17px]">
@@ -1734,16 +1908,19 @@ export function KiaBookingsClient({
 
       <Dialog open={Boolean(selectedBookingId)} onOpenChange={(open) => { if (!open) closeBooking() }}>
         <DialogContent
-          className="fixed inset-y-0 right-0 left-auto top-0 z-50 flex h-dvh max-h-dvh w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l border-white/70 bg-white p-0 shadow-[0_30px_110px_rgba(15,23,42,0.24)] duration-300 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:w-[min(920px,calc(100vw-2rem))] sm:rounded-l-[2rem]"
+          className="kia-premium fixed inset-y-0 right-0 left-auto top-0 z-50 flex h-dvh max-h-dvh w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l p-0 shadow-[0_30px_110px_rgba(15,23,42,0.32)] duration-300 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:w-[min(940px,calc(100vw-2rem))] sm:rounded-l-[2rem]"
+          style={{ backgroundColor: 'var(--kia-canvas)', borderColor: 'var(--kia-hairline)' }}
         >
           <DialogTitle className="sr-only">Booking Details</DialogTitle>
+          <SuccessOverlay show={deliverySuccess} variant="delivery" label="Vehicle delivered!" sublabel="Handed over to the customer" onDone={() => setDeliverySuccess(false)} />
+          <SuccessOverlay show={allotSuccess} variant="generic" label="Vehicle allotted!" sublabel="VIN reserved for this booking" onDone={() => setAllotSuccess(false)} />
           {detailQuery.isLoading ? (
             <DrawerSkeleton />
           ) : detailQuery.isError ? (
             <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-              <XCircle className="h-12 w-12 text-rose-500" />
-              <h2 className="mt-4 text-2xl font-black text-slate-950">Unable to load booking</h2>
-              <p className="mt-2 text-sm font-semibold text-slate-500">{detailQuery.error instanceof Error ? detailQuery.error.message : 'The booking detail request failed.'}</p>
+              <AutomotiveLoader variant="generic" label={null} size={90} />
+              <h2 className="mt-4 text-2xl font-extrabold text-[var(--kia-text)]">Unable to load booking</h2>
+              <p className="mt-2 text-sm font-medium text-[var(--kia-text-soft)]">{detailQuery.error instanceof Error ? detailQuery.error.message : 'The booking detail request failed.'}</p>
             </div>
           ) : detailQuery.data ? (
             <BookingDrawer
@@ -1754,12 +1931,13 @@ export function KiaBookingsClient({
               matchingVehicles={matchingQuery.data?.rows || []}
               matchingLoading={matchingQuery.isLoading || matchingQuery.isFetching}
               actionLoading={actionMutation.isPending || statusMutation.isPending || paymentMutation.isPending}
+              actionLoaderVariant={loaderVariant}
               actionMessage={actionMessage}
               onAction={runAction}
               onAllot={allotVehicle}
               onOpenTransfer={openTransferDialog}
               onPaymentNotReceived={markPaymentNotReceived}
-              onStatusChange={(status) => statusMutation.mutate(status)}
+              onStatusChange={(status) => { setLoaderVariant('generic'); statusMutation.mutate(status) }}
             />
           ) : null}
         </DialogContent>
@@ -1813,6 +1991,8 @@ function CreateBookingDialog({
   masterLoading,
   error,
   isSubmitting,
+  showSuccess,
+  onSuccessDone,
   onOpenChange,
   onTabChange,
   onChange,
@@ -1827,6 +2007,8 @@ function CreateBookingDialog({
   masterLoading: boolean
   error: string
   isSubmitting: boolean
+  showSuccess: boolean
+  onSuccessDone: () => void
   onOpenChange: (open: boolean) => void
   onTabChange: (tab: (typeof CREATE_TABS)[number]) => void
   onChange: <K extends keyof CreateBookingForm>(key: K, value: CreateBookingForm[K]) => void
@@ -1836,9 +2018,84 @@ function CreateBookingDialog({
   const isLastStep = activeIndex === CREATE_TABS.length - 1
   const isFirstStep = activeIndex === 0
 
+  const [costSheetVerifying, setCostSheetVerifying] = useState(false)
+  const [costSheetFile, setCostSheetFile] = useState<File | null>(null)
+  const [stockChecking, setStockChecking] = useState(false)
+  const [stockCheckResult, setStockCheckResult] = useState<{ available: boolean; count: number } | null>(null)
+
+  useEffect(() => {
+    if (open && form.model && form.variant && form.color) {
+      setStockChecking(true)
+      const controller = new AbortController()
+      fetch(`/api/brands/kia/bookings/check-stock?model=${encodeURIComponent(form.model)}&variant=${encodeURIComponent(form.variant)}&color=${encodeURIComponent(form.color)}`, {
+        signal: controller.signal
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          setStockCheckResult(data)
+          onChange('status', data.available ? 'IN STOCK' : 'NOT IN STOCK')
+        })
+        .catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.error('Stock check error:', err)
+          }
+        })
+        .finally(() => setStockChecking(false))
+      return () => controller.abort()
+    } else {
+      setStockCheckResult(null)
+    }
+  }, [open, form.model, form.variant, form.color])
+
+  const handleCostSheetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setCostSheetVerifying(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/brands/kia/bookings/verify-cost-sheet', {
+        method: 'POST',
+        body: fd
+      })
+      if (!res.ok) {
+        throw new Error('Verification failed')
+      }
+      const data = await res.json()
+      if (data.valid) {
+        setCostSheetFile(file)
+        onChange('costSheet', data.url || file.name)
+        toast({
+          title: 'Document Verified',
+          description: `"${file.name}" accepted as a valid vehicle cost sheet.`,
+          variant: 'success'
+        })
+      } else {
+        e.target.value = ''
+        toast({
+          title: 'Invalid Cost Sheet',
+          description: 'This is not a valid Vehicle Cost Sheet. Please upload a clear cost sheet image.',
+          variant: 'error',
+          duration: 6000
+        })
+      }
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: 'Upload Failed',
+        description: 'Failed to verify cost sheet. Please try again.',
+        variant: 'error'
+      })
+    } finally {
+      setCostSheetVerifying(false)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-5xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+      <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-5xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+        <LoaderOverlay show={isSubmitting} variant="reserve" label="Creating booking…" sublabel="Reserving the customer's vehicle" />
+        <SuccessOverlay show={showSuccess} label="Booking created!" sublabel="Reserved for the customer" onDone={onSuccessDone} />
         <form
           onSubmit={onSubmit}
           onKeyDown={(e) => {
@@ -1849,17 +2106,20 @@ function CreateBookingDialog({
           className="flex max-h-[94dvh] flex-col"
         >
           {/* ── HEADER ── */}
-          <DialogHeader className="relative overflow-hidden border-b border-slate-100 bg-[radial-gradient(circle_at_top_left,#e0f2fe,transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] px-5 py-4 sm:px-7 sm:py-5">
-            <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-[#081a33]/10 blur-2xl" />
+          <DialogHeader className="relative overflow-hidden border-b border-white/10 px-5 py-5 text-white sm:px-7 sm:py-6" style={{ background: 'linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg))' }}>
+            <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+            <div className="pointer-events-none absolute -left-12 bottom-[-3rem] h-40 w-40 rounded-full bg-white/[0.07] blur-2xl" />
             <div className="relative">
-              <Badge variant="outline" className="mb-2 rounded-full border-sky-100 bg-sky-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-sky-700">Stepwise Booking</Badge>
-              <DialogTitle className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">Create AM Kia Booking</DialogTitle>
-              <DialogDescription className="mt-1 max-w-2xl text-xs font-semibold leading-5 text-slate-500">Create the booking first, then generate the proforma for manager approval.</DialogDescription>
+              <span className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white">
+                <Car className="h-3 w-3" /> Stepwise Booking
+              </span>
+              <DialogTitle className="text-xl font-extrabold tracking-tight sm:text-2xl">Create AM Kia Booking</DialogTitle>
+              <DialogDescription className="mt-1 max-w-2xl text-xs font-medium leading-5 text-white/80">Create the booking first, then generate the proforma for manager approval.</DialogDescription>
             </div>
           </DialogHeader>
 
           {/* ── PROGRESS STEPPER ── */}
-          <div className="border-b border-slate-100 bg-white px-5 py-3 sm:px-7 sm:py-4">
+          <div className="border-b border-slate-100 px-5 py-3 sm:px-7 sm:py-4" style={{ background: 'color-mix(in srgb, var(--dashboard-action-bg) 4%, #ffffff)' }}>
             <div className="flex items-start">
               {CREATE_TABS.map((tab, index) => {
                 const isActive = tab === activeTab
@@ -1874,9 +2134,9 @@ function CreateBookingDialog({
                       <div className={cn(
                         'flex h-8 w-8 items-center justify-center rounded-full text-xs font-black transition-all duration-300 sm:h-9 sm:w-9',
                         isActive
-                          ? 'bg-[#c8102e] text-white shadow-lg shadow-red-500/30 scale-110'
+                          ? 'bg-[var(--dashboard-action-bg)] text-white shadow-lg scale-110'
                           : isCompleted
-                            ? 'bg-slate-900 text-white'
+                            ? 'bg-[var(--dashboard-action-hover)] text-white'
                             : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
                       )}>
                         {isCompleted ? (
@@ -1889,7 +2149,7 @@ function CreateBookingDialog({
                       </div>
                       <span className={cn(
                         'hidden text-[9px] font-black uppercase tracking-[0.1em] transition-colors whitespace-nowrap sm:block',
-                        isActive ? 'text-[#c8102e]' : isCompleted ? 'text-slate-600' : 'text-slate-400'
+                        isActive ? 'text-[var(--dashboard-action-bg)]' : isCompleted ? 'text-slate-600' : 'text-slate-400'
                       )}>
                         {tab}
                       </span>
@@ -1897,7 +2157,7 @@ function CreateBookingDialog({
                     {index < CREATE_TABS.length - 1 && (
                       <div className={cn(
                         'h-[2px] flex-1 mx-2 rounded-full transition-all duration-500 mb-4',
-                        index < activeIndex ? 'bg-slate-900' : 'bg-slate-200'
+                        index < activeIndex ? 'bg-[var(--dashboard-action-bg)]' : 'bg-slate-200'
                       )} />
                     )}
                   </div>
@@ -1907,7 +2167,7 @@ function CreateBookingDialog({
           </div>
 
           {/* ── TAB CONTENT ── */}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-4 sm:p-6">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6" style={{ background: 'linear-gradient(180deg, #ffffff, color-mix(in srgb, var(--dashboard-action-bg) 6%, #f6f8ff))' }}>
             {error && <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</div>}
 
             {/* CUSTOMER TAB */}
@@ -1938,6 +2198,15 @@ function CreateBookingDialog({
                   </Field>
                   <Field label="Customer Email" required>
                     <Input value={form.customerEmailId} onChange={(event) => onChange('customerEmailId', event.target.value)} className={INPUT_STYLE} placeholder="customer@email.com" type="email" />
+                  </Field>
+                  <Field label="Dealer" required>
+                    <Select value={form.dealerCode} onValueChange={(val) => onChange('dealerCode', val)}>
+                      <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Dealer" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="JK402">JK402 - Jammu</SelectItem>
+                        <SelectItem value="JK501">JK501 - Udhampur</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
                 </div>
               </div>
@@ -1982,13 +2251,22 @@ function CreateBookingDialog({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Stock Status" required>
-                  <Select value={form.status} onValueChange={(val) => onChange('status', val)}>
-                    <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Stock Status" /></SelectTrigger>
-                    <SelectContent>
-                      {STOCK_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                <Field label="Stock Status">
+                  {stockChecking ? (
+                    <div className="h-11 rounded-2xl bg-slate-50 border border-slate-200 flex items-center px-4 text-xs font-semibold text-slate-500">Checking stock...</div>
+                  ) : stockCheckResult ? (
+                    <div className={`h-11 rounded-2xl border flex items-center px-4 text-xs font-black ${
+                      stockCheckResult.available 
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
+                        : 'bg-rose-50 border-rose-200 text-rose-700'
+                    }`}>
+                      {stockCheckResult.available 
+                        ? `✅ IN STOCK (${stockCheckResult.count} unit${stockCheckResult.count !== 1 ? 's' : ''} available)` 
+                        : '❌ NOT IN STOCK'}
+                    </div>
+                  ) : (
+                    <div className="h-11 rounded-2xl bg-slate-50 border border-slate-200 flex items-center px-4 text-xs font-semibold text-slate-400">Select model, variant & color first</div>
+                  )}
                 </Field>
                 <Field label="Waiting Period">
                   <Input value={form.waitingPeriod} onChange={(event) => onChange('waitingPeriod', event.target.value)} className={INPUT_STYLE} placeholder="e.g. 4–6 weeks" />
@@ -2039,10 +2317,26 @@ function CreateBookingDialog({
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Booking Amount" required><Input type="number" value={form.bookingAmount} onChange={(event) => onChange('bookingAmount', event.target.value)} className={INPUT_STYLE} placeholder="₹" /></Field>
                 <Field label="Booking Date" required><Input type="date" value={form.bookingDate} onChange={(event) => onChange('bookingDate', event.target.value)} className={INPUT_STYLE} /></Field>
-                <Field label="Payment Source" required><Input value={form.pmtSource} onChange={(event) => onChange('pmtSource', event.target.value)} className={INPUT_STYLE} placeholder="Cash / Cheque / UPI..." /></Field>
+                <Field label="Payment Source" required>
+                  <Select value={form.pmtSource} onValueChange={(val) => onChange('pmtSource', val)}>
+                    <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Payment Source" /></SelectTrigger>
+                    <SelectContent>
+                      {['CASH', 'CHEQUE', 'UPI', 'NEFT', 'RTGS', 'BANK TRANSFER', 'DD', 'CARD', 'OTHER'].map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
                 <Field label="Payment Amount" required><Input type="number" value={form.paymentAmount} onChange={(event) => onChange('paymentAmount', event.target.value)} className={INPUT_STYLE} placeholder="₹" /></Field>
                 <Field label="Payment Received Against Booking" required><Input value={form.paymentReceived} onChange={(event) => onChange('paymentReceived', event.target.value)} className={INPUT_STYLE} /></Field>
-                <Field label="Cost Sheet" required><Input value={form.costSheet} onChange={(event) => onChange('costSheet', event.target.value)} className={INPUT_STYLE} /></Field>
+                <Field label="Cost Sheet" required>
+                  <div className="space-y-2">
+                    <label className={`flex items-center justify-center gap-3 cursor-pointer h-11 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:border-slate-400 hover:bg-white transition-all ${costSheetVerifying ? 'opacity-60 pointer-events-none' : ''}`}>
+                      <input type="file" accept="image/*" onChange={handleCostSheetUpload} className="sr-only" />
+                      {costSheetVerifying ? '⏳ Verifying...' : costSheetFile ? `✅ ${costSheetFile.name}` : '📷 Upload Cost Sheet Image'}
+                    </label>
+                  </div>
+                </Field>
                 <Field label="Bank / Finance" required>
                   <Select value={form.bankFinance} onValueChange={(val) => onChange('bankFinance', val)}>
                     <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Bank / Finance" /></SelectTrigger>
@@ -2059,10 +2353,10 @@ function CreateBookingDialog({
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Estimated Delivery Date" required><Input type="date" value={form.expectedDeliveryDate} onChange={(event) => onChange('expectedDeliveryDate', event.target.value)} className={INPUT_STYLE} /></Field>
                 <Field label="Promise Date" required><Input type="date" value={form.promiseDate} onChange={(event) => onChange('promiseDate', event.target.value)} className={INPUT_STYLE} /></Field>
-                <Field label="Commitment With Customer" required>
+                <Field label="Commitment With Customer">
                   <Textarea value={form.commitment} onChange={(event) => onChange('commitment', event.target.value)} className="min-h-24 rounded-2xl border-slate-200 bg-white text-sm font-semibold text-slate-800" placeholder="Any special commitments made..." />
                 </Field>
-                <Field label="Other Dealer Details" required><Input value={form.otherDealerDetails} onChange={(event) => onChange('otherDealerDetails', event.target.value)} className={INPUT_STYLE} /></Field>
+                <Field label="Other Dealer Details"><Input value={form.otherDealerDetails} onChange={(event) => onChange('otherDealerDetails', event.target.value)} className={INPUT_STYLE} /></Field>
               </div>
             )}
           </div>
@@ -2128,17 +2422,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 }
 
 function DrawerSkeleton() {
-  return (
-    <div className="space-y-4 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_42%,#eef2f7_100%)] p-3 sm:space-y-5 sm:p-6">
-      <SkeletonBlock className="h-40 w-full rounded-[2rem]" />
-      <SkeletonBlock className="h-20 w-full rounded-[1.75rem]" />
-      <div className="grid gap-4 md:grid-cols-2">
-        <SkeletonBlock className="h-48 rounded-[1.75rem]" />
-        <SkeletonBlock className="h-48 rounded-[1.75rem]" />
-      </div>
-      <SkeletonBlock className="h-72 rounded-[1.75rem]" />
-    </div>
-  )
+  return <InspectorSkeleton />
 }
 
 function BookingDrawer({
@@ -2149,6 +2433,7 @@ function BookingDrawer({
   matchingVehicles,
   matchingLoading,
   actionLoading,
+  actionLoaderVariant,
   actionMessage,
   onAction,
   onAllot,
@@ -2163,6 +2448,7 @@ function BookingDrawer({
   matchingVehicles: MatchingVehicle[]
   matchingLoading: boolean
   actionLoading: boolean
+  actionLoaderVariant: LoaderVariant
   actionMessage: string
   onAction: (action: 'proforma' | 'finance' | 'payment' | 'release' | 'deliver' | 'cancel' | 'transfer') => void
   onAllot: (vinNumber: string) => void
@@ -2243,79 +2529,73 @@ function BookingDrawer({
   })()
   return (
     <>
-      <div className="relative overflow-hidden border-b border-slate-100 bg-[radial-gradient(circle_at_top_right,#dbeafe,transparent_34%),radial-gradient(circle_at_10%_0%,#fee2e2,transparent_24%),linear-gradient(135deg,#ffffff,#f8fafc_56%,#eef2f7)] p-4 sm:p-6">
-        <div className="absolute -right-24 -top-28 h-64 w-64 rounded-full bg-white/70 blur-3xl" />
-        <div className="absolute -bottom-32 left-8 h-56 w-56 rounded-full bg-slate-200/60 blur-3xl" />
-        <div className="relative">
+      <div className="relative shrink-0 overflow-hidden border-b" style={{ borderColor: 'var(--kia-hairline)', background: 'linear-gradient(135deg, color-mix(in srgb, var(--dashboard-primary) 9%, var(--kia-surface)), var(--kia-surface))' }}>
+        <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--dashboard-action-bg) 18%, transparent), transparent 70%)' }} />
+        <div className="relative p-4 sm:p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
-              <Badge variant="outline" className="rounded-full border-slate-200 bg-white/90 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 shadow-sm">
-                Booking Detail
-              </Badge>
-              <h2 className="mt-3 break-words text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{booking.bookingNumber}</h2>
-              <p className="mt-1 text-sm font-black leading-5 text-slate-700 sm:text-base">{booking.customerName}</p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-slate-500 sm:text-sm">{booking.customerPhone} · {booking.model || 'Vehicle NA'} · {booking.dealerCode || 'Dealer NA'}</p>
+              <Kicker>Vehicle Journey</Kicker>
+              <h2 className="mt-1 break-words text-2xl font-extrabold tracking-tight text-[var(--kia-text)] sm:text-[1.9rem]"><span className="kia-tnum">{booking.bookingNumber}</span></h2>
+              <p className="mt-1 text-sm font-bold text-[var(--kia-text)]">{booking.customerName}</p>
+              <p className="mt-0.5 text-xs font-medium text-[var(--kia-text-soft)]">{booking.customerPhone} · {booking.model || 'Vehicle NA'} · {booking.dealerCode || 'Dealer NA'}</p>
             </div>
             <div className="flex flex-col items-start gap-2 md:items-end">
               <StatusBadge status={booking.status} />
+              {financeOrder?.number && <Chip tone="info">{financeOrder.number}</Chip>}
+              {canUseTestPersona && <Chip tone="warning">{TEST_PERSONA_LABELS[effectivePersona]}</Chip>}
               {canUseTestPersona && (
-                <div className="rounded-full border border-slate-200 bg-white/85 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600 shadow-sm">
-                  {TEST_PERSONA_LABELS[effectivePersona]}
+                <div className="flex items-center gap-1.5 rounded-2xl border p-1.5" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface)' }}>
+                  <span className="pl-1 text-[10px] font-bold uppercase tracking-wider text-[var(--kia-text-faint)]">Manual</span>
+                  <Select value={booking.status} onValueChange={onStatusChange} disabled={actionLoading}>
+                    <SelectTrigger className="h-8 w-40 rounded-xl border px-2 py-0 text-xs font-bold" style={{ borderColor: 'var(--kia-hairline)' }}>
+                      <SelectValue placeholder="Override status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(STATUS_LABELS).map((status) => (
+                        <SelectItem key={status} value={status}>{STATUS_LABELS[status]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-              {canUseTestPersona && (
-              <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/85 p-1.5 shadow-sm">
-                <span className="pl-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Manual</span>
-                <Select value={booking.status} onValueChange={onStatusChange} disabled={actionLoading}>
-                  <SelectTrigger className="h-8 w-40 rounded-xl border border-slate-200 bg-white px-2 py-0 text-xs font-black text-slate-700 shadow-none hover:bg-slate-50">
-                    <SelectValue placeholder="Override status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.keys(STATUS_LABELS).map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {STATUS_LABELS[status]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               )}
             </div>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            <div className="rounded-2xl border border-white/80 bg-white/80 p-3 shadow-sm">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Proforma</p>
-              <p className="mt-1 truncate text-sm font-black text-slate-950">{proforma?.number || 'Not generated'}</p>
-            </div>
-            <div className="rounded-2xl border border-white/80 bg-white/80 p-3 shadow-sm">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">VIN</p>
-              <p className="mt-1 truncate font-mono text-xs font-black text-slate-950">{allocation?.vinNumber || 'Not allocated'}</p>
-            </div>
-            <div className="rounded-2xl border border-white/80 bg-white/80 p-3 shadow-sm">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Delivery</p>
-              <p className="mt-1 text-sm font-black text-slate-950">{formatDate(booking.expectedDeliveryDate)}</p>
-            </div>
+            {([
+              { label: 'Proforma', value: proforma?.number || 'Not generated', icon: FileText, tone: (proforma ? (proformaApproved ? 'success' : 'warning') : 'neutral') as Tone, mono: false },
+              { label: 'VIN', value: allocation?.vinNumber || 'Not allocated', icon: Car, tone: (allocation ? 'success' : 'neutral') as Tone, mono: true },
+              { label: 'Delivery', value: formatDate(booking.expectedDeliveryDate), icon: CalendarCheck, tone: 'info' as Tone, mono: false },
+            ]).map((stat) => (
+              <div key={stat.label} className="kia-surface-flush flex items-center gap-2.5 px-3 py-2.5">
+                <IconTile icon={stat.icon} tone={stat.tone} size="sm" />
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--kia-text-faint)]">{stat.label}</p>
+                  <p className={cn('truncate text-[13px] font-bold text-[var(--kia-text)]', stat.mono && 'font-mono text-xs')}>{stat.value}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_36%,#eef2f7_100%)] p-3 sm:space-y-5 sm:p-5">
+      <div className="kia-scroll relative min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:space-y-5 sm:p-5" style={{ background: 'var(--kia-canvas)' }}>
+        <LoaderOverlay show={actionLoading} variant={actionLoaderVariant} />
         <Stepper status={booking.status} />
-        {personaNote && <div className="rounded-2xl border border-sky-100 bg-white p-3 text-xs font-bold leading-5 text-sky-800 shadow-sm sm:text-sm">{personaNote}</div>}
-        <section className="rounded-[1.75rem] border border-white/80 bg-white/95 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/[0.03]">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{nextStep.label}</p>
+        {personaNote && <div className="rounded-2xl border px-3 py-2.5 text-xs font-semibold leading-5" style={toneSoftStyle('info')}>{personaNote}</div>}
+        <section className="kia-surface relative overflow-hidden p-4 sm:p-5" style={{ boxShadow: 'inset 3px 0 0 var(--dashboard-action-bg), var(--kia-elev-2)' }}>
+          <Kicker>{nextStep.label}</Kicker>
           <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-lg font-black tracking-tight text-slate-950">{nextStep.title}</h3>
-              <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">{nextStep.body}</p>
+              <h3 className="text-lg font-extrabold tracking-tight text-[var(--kia-text)]">{nextStep.title}</h3>
+              <p className="mt-1 text-sm font-medium leading-6 text-[var(--kia-text-soft)]">{nextStep.body}</p>
             </div>
             {nextStep.actionLabel && nextStep.onAction ? (
-              <Button className="h-10 rounded-2xl bg-slate-950 px-4 text-xs font-black text-white shadow-lg shadow-slate-950/15 hover:bg-slate-800 sm:text-sm" onClick={nextStep.onAction}>
+              <Button className="h-10 shrink-0 rounded-2xl px-4 text-sm font-bold" onClick={nextStep.onAction}>
                 {nextStep.actionLabel}
               </Button>
             ) : null}
           </div>
         </section>
-        {actionMessage && <div className="rounded-2xl border border-emerald-100 bg-white p-3 text-sm font-bold text-emerald-800 shadow-sm">{actionMessage}</div>}
+        {actionMessage && <div className="rounded-2xl border px-3 py-2.5 text-sm font-semibold" style={toneSoftStyle('success')}>{actionMessage}</div>}
         {(() => {
           const meta = (booking.metadata || {}) as Record<string, unknown>
           const paymentConfirmation = (meta.paymentConfirmation || {}) as Record<string, unknown>
@@ -2382,115 +2662,129 @@ function BookingDrawer({
           )
         })()}
 
-        <section className="rounded-[1.75rem] border border-white/80 bg-white/95 p-3 shadow-[0_18px_55px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/[0.03] sm:p-5">
+        <section className="kia-surface p-4 sm:p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
-                <Car className="h-5 w-5" />
-              </div>
+              <IconTile icon={Car} tone="info" />
               <div>
-              <h3 className="text-base font-black tracking-tight text-slate-950 sm:text-lg">Vehicle Allocation</h3>
-              <p className="text-xs font-semibold leading-5 text-slate-500 sm:text-sm">
-                {proformaApproved ? 'Matchable VINs exclude local Retail and active allocations.' : 'Allocation unlocks after Sales Manager / Manager approval.'}
-              </p>
+                <h3 className="text-base font-extrabold tracking-tight text-[var(--kia-text)] sm:text-lg">Vehicle Allocation</h3>
+                <p className="text-xs font-medium leading-5 text-[var(--kia-text-soft)]">
+                  {proformaApproved ? 'Matchable VINs exclude local Retail and active allocations.' : 'Allocation unlocks after Sales Manager / Manager approval.'}
+                </p>
               </div>
             </div>
             {allocation && (
-              <Button variant="outline" className="h-10 rounded-2xl border-slate-200 bg-white text-xs font-black shadow-sm sm:text-sm" disabled={actionLoading || !canActOnStock} onClick={() => onAction('release')}>
+              <Button variant="outline" className="h-10 shrink-0 rounded-2xl text-xs font-bold sm:text-sm" disabled={actionLoading || !canActOnStock} onClick={() => onAction('release')}>
                 {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />} Release VIN
               </Button>
             )}
           </div>
           {allocation ? (
-            <div className="mt-4 rounded-2xl border border-emerald-100 bg-[linear-gradient(135deg,#ecfdf5,#ffffff)] p-3 shadow-inner sm:p-4">
-              <p className="break-all font-mono text-xs font-black text-emerald-900 sm:text-sm">{allocation.vinNumber}</p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-emerald-700 sm:text-sm">{allocation.model} · {allocation.variant} · {allocation.color || 'Color NA'}</p>
-              <p className="mt-3 inline-flex rounded-full border border-emerald-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-emerald-800 shadow-sm sm:text-xs sm:tracking-[0.12em]">
-                Accounts payment window: {formatTimeRemaining(allocation.expiresAt)}
-              </p>
+            <div className="mt-4 rounded-2xl border p-3.5" style={toneSoftStyle('success')}>
+              <p className="break-all font-mono text-sm font-extrabold" style={{ color: 'var(--kia-text)' }}>{allocation.vinNumber}</p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-[var(--kia-text-soft)]">{allocation.model} · {allocation.variant} · {allocation.color || 'Color NA'}</p>
+              <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.1em]" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface)', color: 'var(--kia-text-soft)' }}>
+                <CalendarCheck className="h-3.5 w-3.5" /> Payment window: {formatTimeRemaining(allocation.expiresAt)}
+              </span>
             </div>
           ) : !proformaApproved ? (
-            <p className="mt-4 rounded-2xl border border-dashed border-amber-200 bg-amber-50/80 p-3 text-xs font-bold leading-5 text-amber-800 sm:p-4 sm:text-sm">
+            <div className="mt-4 rounded-2xl border border-dashed p-4 text-xs font-semibold leading-5" style={toneSoftStyle('warning')}>
               Generate the proforma and get senior approval before checking stock or allotting a vehicle.
-            </p>
+            </div>
           ) : matchingLoading ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <SkeletonBlock className="h-24" />
-              <SkeletonBlock className="h-24" />
+            <div className="mt-4 flex items-center justify-center py-8">
+              <AutomotiveLoader variant="vin-match" label="Matching available VINs…" sublabel="Scanning DMS + local stock" size={96} />
             </div>
           ) : matchingVehicles.length === 0 ? (
-            <p className="mt-4 rounded-2xl border border-dashed border-slate-300 p-3 text-xs font-semibold text-slate-500 sm:p-4 sm:text-sm">No matching vehicles available for this booking.</p>
+            <div className="mt-4">
+              <PremiumEmptyState illustration="garage" title="No matching vehicles" description="No free-stock or in-transit VIN currently matches this booking. Try a transfer, or check back after the next stock sync." />
+            </div>
           ) : (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <Stagger className="mt-4 grid gap-3 md:grid-cols-2">
               {matchingVehicles.slice(0, 6).map((vehicle) => (
-                <div key={vehicle.vinNumber} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 shadow-sm sm:p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="break-all font-mono text-xs font-black text-slate-950">{vehicle.vinNumber}</p>
-                      <p className="mt-1 text-sm font-bold text-slate-700">{vehicle.model} · {vehicle.variant}</p>
-                      <p className="text-xs font-semibold text-slate-500">{vehicle.dealerCode} · {vehicle.color || 'Color NA'} · {vehicle.source === 'bbnd' ? 'BBND snapshot' : vehicle.stockStatus || 'DMS'}</p>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Button size="sm" className="rounded-xl bg-slate-950 font-black text-white shadow-lg shadow-slate-950/15 hover:bg-slate-800" disabled={actionLoading || !canActOnStock} onClick={() => onAllot(vehicle.vinNumber)}>
-                        Allot Vehicle
-                      </Button>
-                      <Button size="sm" variant="outline" className="rounded-xl border-slate-200 bg-white font-black text-slate-700 shadow-sm hover:bg-slate-50" disabled={actionLoading || !canActOnStock} onClick={() => onOpenTransfer(vehicle)}>
-                        Transfer Vehicle
-                      </Button>
+                <StaggerItem key={vehicle.vinNumber}>
+                  <div className="kia-surface-flush kia-lift h-full p-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-all font-mono text-xs font-extrabold text-[var(--kia-text)]">{vehicle.vinNumber}</p>
+                        <p className="mt-1 text-sm font-bold text-[var(--kia-text)]">{vehicle.model} · {vehicle.variant}</p>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <Chip tone="neutral">{vehicle.dealerCode}</Chip>
+                          <Chip tone={vehicle.source === 'bbnd' ? 'warning' : 'info'}>{vehicle.source === 'bbnd' ? 'BBND' : (vehicle.stockStatus || 'DMS')}</Chip>
+                          {typeof vehicle.stockAge === 'number' && <Chip tone="neutral">{vehicle.stockAge}d</Chip>}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-col gap-2">
+                        <Button size="sm" className="rounded-xl text-xs font-bold" disabled={actionLoading || !canActOnStock} onClick={() => onAllot(vehicle.vinNumber)}>Allot</Button>
+                        <Button size="sm" variant="outline" className="rounded-xl text-xs font-bold" disabled={actionLoading || !canActOnStock} onClick={() => onOpenTransfer(vehicle)}>Transfer</Button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </StaggerItem>
               ))}
-            </div>
+            </Stagger>
           )}
         </section>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <section className="rounded-[1.75rem] border border-white/80 bg-white/95 p-3 shadow-[0_18px_55px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/[0.03] sm:p-5">
+          <section className="kia-surface p-4 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white">
-                <ClipboardList className="h-5 w-5" />
+              <IconTile icon={ClipboardList} tone="accent" />
+              <h3 className="text-base font-extrabold tracking-tight text-[var(--kia-text)] sm:text-lg">Timeline</h3>
+            </div>
+            {activities.length === 0 ? (
+              <p className="mt-4 text-sm font-medium text-[var(--kia-text-soft)]">No activity yet.</p>
+            ) : (
+              <div className="mt-4">
+                {activities.map((activity, i) => (
+                  <div key={activity.id} className="relative flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <span
+                        className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: 'var(--dashboard-action-bg)', boxShadow: '0 0 0 4px color-mix(in srgb, var(--dashboard-action-bg) 14%, transparent)' }}
+                      />
+                      {i < activities.length - 1 && <span className="w-px flex-1" style={{ backgroundColor: 'var(--kia-hairline-strong)' }} />}
+                    </div>
+                    <div className="min-w-0 flex-1 pb-4">
+                      <p className="text-sm font-bold text-[var(--kia-text)]">{activity.message}</p>
+                      <p className="mt-0.5 text-xs font-medium text-[var(--kia-text-faint)]">{activity.actorName || 'System'} · {formatDate(activity.createdAt)}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <h3 className="text-base font-black tracking-tight text-slate-950 sm:text-lg">Timeline</h3>
-            </div>
-            <div className="mt-4 space-y-3">
-              {activities.length === 0 ? <p className="text-sm font-semibold text-slate-500">No activity yet.</p> : activities.map((activity) => (
-                <div key={activity.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-                  <p className="text-sm font-black text-slate-900">{activity.message}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">{activity.actorName || 'System'} · {formatDate(activity.createdAt)}</p>
-                </div>
-              ))}
-            </div>
+            )}
           </section>
-          <section className="rounded-[1.75rem] border border-white/80 bg-white/95 p-3 shadow-[0_18px_55px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/[0.03] sm:p-5">
+          <section className="kia-surface p-4 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
-                <Truck className="h-5 w-5" />
-              </div>
-              <h3 className="text-base font-black tracking-tight text-slate-950 sm:text-lg">Delivery & Transfers</h3>
+              <IconTile icon={Truck} tone="success" />
+              <h3 className="text-base font-extrabold tracking-tight text-[var(--kia-text)] sm:text-lg">Delivery &amp; Transfers</h3>
             </div>
-            <div className="mt-4 grid gap-3">
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Expected Delivery</p>
-                <p className="mt-1 text-sm font-black text-slate-950">{formatDate(booking.expectedDeliveryDate)}</p>
+            <div className="mt-4 grid gap-2.5">
+              <div className="kia-surface-sunken px-3 py-2.5">
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--kia-text-faint)]">Expected Delivery</p>
+                <p className="mt-1 text-sm font-bold text-[var(--kia-text)]">{formatDate(booking.expectedDeliveryDate)}</p>
               </div>
               {transfers.slice(0, 4).map((transfer) => (
-                <div key={transfer.id} className="rounded-2xl border border-slate-100 bg-white p-3 text-sm font-semibold text-slate-600 shadow-sm">
-                  {transfer.vinNumber} · {transfer.fromDealerCode || '-'} <ArrowRight className="inline h-3 w-3" /> {transfer.toDealerCode || '-'} · {transfer.status}
+                <div key={transfer.id} className="flex flex-wrap items-center gap-1.5 rounded-2xl border px-3 py-2.5 text-xs font-semibold text-[var(--kia-text-soft)]" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface)' }}>
+                  <span className="font-mono text-[var(--kia-text)]">{transfer.vinNumber}</span>
+                  <span>{transfer.fromDealerCode || '—'}</span> <ArrowRight className="h-3 w-3" /> <span>{transfer.toDealerCode || '—'}</span>
+                  <Chip tone="info" className="ml-auto">{transfer.status}</Chip>
                 </div>
               ))}
-              <Button variant="outline" className="h-10 rounded-2xl border-slate-200 bg-white text-xs font-black shadow-sm sm:text-sm" disabled={actionLoading || !canActOnStock} onClick={() => onAction('transfer')}>
-                Request Transfer
-              </Button>
-              <Button className="h-10 rounded-2xl bg-emerald-600 text-xs font-black text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 sm:text-sm" disabled={actionLoading || !canActAsAccounts || booking.status !== 'ready_delivery'} onClick={() => onAction('deliver')}>
-                <CalendarCheck className="h-4 w-4" /> Mark Delivered
-              </Button>
-              <Button variant="outline" className="h-10 rounded-2xl border-amber-200 bg-white text-xs font-black text-amber-700 shadow-sm hover:bg-amber-50 sm:text-sm" disabled={actionLoading || !canActAsAccounts || !allocation || (booking.status !== 'vehicle_allocated' && booking.status !== 'transfer_requested')} onClick={onPaymentNotReceived}>
-                Payment not received
-              </Button>
-              <Button variant="outline" className="h-10 rounded-2xl border-rose-100 bg-white text-xs font-black text-rose-700 shadow-sm hover:bg-rose-50 sm:text-sm" disabled={actionLoading || (!canUseTestPersona && booking.status === 'delivered')} onClick={() => onAction('cancel')}>
-                Cancel Booking
-              </Button>
+              <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                <Button variant="outline" className="h-10 rounded-2xl text-xs font-bold" disabled={actionLoading || !canActOnStock} onClick={() => onAction('transfer')}>
+                  Request Transfer
+                </Button>
+                <Button className="h-10 rounded-2xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700" disabled={actionLoading || !canActAsAccounts || booking.status !== 'ready_delivery'} onClick={() => onAction('deliver')}>
+                  <CalendarCheck className="h-4 w-4" /> Mark Delivered
+                </Button>
+                <Button variant="outline" className="h-10 rounded-2xl border-amber-200 text-xs font-bold text-amber-700 hover:bg-amber-50" disabled={actionLoading || !canActAsAccounts || !allocation || (booking.status !== 'vehicle_allocated' && booking.status !== 'transfer_requested')} onClick={onPaymentNotReceived}>
+                  Payment not received
+                </Button>
+                <Button variant="outline" className="h-10 rounded-2xl border-rose-200 text-xs font-bold text-rose-700 hover:bg-rose-50" disabled={actionLoading || (!canUseTestPersona && booking.status === 'delivered')} onClick={() => onAction('cancel')}>
+                  Cancel Booking
+                </Button>
+              </div>
             </div>
           </section>
         </div>
@@ -2501,17 +2795,14 @@ function BookingDrawer({
 
 function InfoCard({ title, icon: Icon, items }: { title: string; icon: typeof ShieldCheck; items: Array<[string, string]> }) {
   return (
-    <section className="rounded-[1.75rem] border border-white/80 bg-white/95 p-3 shadow-[0_18px_55px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/[0.03] sm:p-5">
-      <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-950/15 sm:h-10 sm:w-10"><Icon className="h-4 w-4 sm:h-5 sm:w-5" /></div>
-        <h3 className="text-base font-black tracking-tight text-slate-950 sm:text-lg">{title}</h3>
+    <section className="kia-surface p-4 sm:p-5">
+      <div className="flex items-center gap-3 border-b pb-3" style={{ borderColor: 'var(--kia-hairline)' }}>
+        <IconTile icon={Icon} tone="accent" size="sm" />
+        <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)] sm:text-base">{title}</h3>
       </div>
-      <div className="mt-3 grid gap-2 sm:mt-4 sm:gap-3">
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
         {items.map(([label, value]) => (
-          <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3">
-            <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 sm:text-[10px] sm:tracking-[0.16em]">{label}</p>
-            <p className="mt-1 break-words text-xs font-black leading-5 text-slate-800 sm:text-sm">{value}</p>
-          </div>
+          <FieldValue key={label} label={label} value={value && value !== '-' ? value : undefined} />
         ))}
       </div>
     </section>
@@ -2520,18 +2811,18 @@ function InfoCard({ title, icon: Icon, items }: { title: string; icon: typeof Sh
 
 function ActionCard({ title, icon: Icon, value, status, action, disabled, onClick }: { title: string; icon: typeof ShieldCheck; value: string; status: string; action: string; disabled: boolean; onClick: () => void }) {
   return (
-    <section className="rounded-[1.75rem] border border-white/80 bg-white/95 p-3 shadow-[0_18px_55px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/[0.03] sm:p-5">
+    <section className="kia-surface flex flex-col p-4 sm:p-5">
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#c8102e]/10 text-[#c8102e] ring-1 ring-[#c8102e]/10 sm:h-10 sm:w-10"><Icon className="h-4 w-4 sm:h-5 sm:w-5" /></div>
+        <IconTile icon={Icon} tone="accent" size="sm" />
         <div>
-          <h3 className="text-base font-black tracking-tight text-slate-950 sm:text-lg">{title}</h3>
-          <p className="mt-0.5 text-xs font-bold text-slate-500">{status}</p>
+          <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)] sm:text-base">{title}</h3>
+          <p className="mt-0.5 text-xs font-semibold text-[var(--kia-text-soft)]">{status}</p>
         </div>
       </div>
-      <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-        <p className="break-words text-lg font-black leading-6 text-slate-950 sm:text-xl">{value}</p>
+      <div className="kia-surface-sunken mt-4 px-3 py-3">
+        <p className="kia-tnum break-words text-lg font-extrabold leading-6 text-[var(--kia-text)]">{value}</p>
       </div>
-      <Button className="mt-3 h-10 w-full rounded-2xl bg-slate-950 text-xs font-black text-white shadow-lg shadow-slate-950/15 hover:bg-slate-800 sm:mt-4 sm:text-sm" disabled={disabled} onClick={onClick}>
+      <Button className="mt-auto w-full rounded-2xl pt-0 text-sm font-bold sm:mt-3 h-10" disabled={disabled} onClick={onClick}>
         {disabled && <Loader2 className="h-4 w-4 animate-spin" />} {action}
       </Button>
     </section>
@@ -2644,11 +2935,11 @@ function EmailQuoteDialog({
       link.click()
       window.URL.revokeObjectURL(url)
 
-      alert('Quote generated, saved in database, and downloaded successfully!')
+      toast({ title: 'Quotation Generated', description: 'Quote generated, saved in database, and downloaded successfully!', variant: 'success' })
       setForm(EMPTY_QUOTE_FORM)
       onOpenChange(false)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Something went wrong')
+      toast({ title: 'Generation Failed', description: err instanceof Error ? err.message : 'Something went wrong', variant: 'error' })
     } finally {
       setIsSubmitting(false)
     }
@@ -2664,7 +2955,8 @@ function EmailQuoteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-2xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+      <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-2xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+        <LoaderOverlay show={isSubmitting} variant="proforma" label="Generating quotation…" sublabel="Preparing and stamping the PDF" />
         <form onSubmit={handleSubmit} className="flex flex-col">
           <DialogHeader className="relative overflow-hidden border-b border-slate-100 bg-[radial-gradient(circle_at_top_right,#e0f2fe,transparent_35%),linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-7">
             <div className="absolute -left-20 -top-24 h-56 w-56 rounded-full bg-cyan-200/30 blur-3xl" />

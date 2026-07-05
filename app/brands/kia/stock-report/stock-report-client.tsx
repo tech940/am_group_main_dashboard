@@ -319,8 +319,8 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
         status,
         model,
         search: deferredSearch,
-        page,
-        pageSize: 10,
+        page: 1,
+        pageSize: 9999,
         sort: reportSort,
         direction: reportDirection,
         ...filterParams,
@@ -633,7 +633,11 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                 <p className="text-[15px] font-semibold text-slate-400">How fast the whole lot converts to sales</p>
               </div>
               <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
-                <BarPanel title="Monthly retail trend" subtitle="Units delivered by selected period" data={summary.movement.monthly.slice(0, 8).reverse().map((row) => ({ name: row.month.slice(5), value: row.retail }))} />
+                <BarPanel title="Monthly retail trend" subtitle="Units delivered by selected period" data={summary.movement.monthly.slice(0, 8).reverse().map((row) => {
+                  const [year, month] = row.month.split('-').map(Number)
+                  const label = new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'short' }) + " '" + String(year).slice(2)
+                  return { name: label, value: row.retail }
+                })} />
                 <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
                   <CardHeader><CardTitle className="text-[18px] font-black">Lot velocity</CardTitle><CardDescription>Run-rate from recent sales</CardDescription></CardHeader>
                   <CardContent className="grid gap-3 sm:grid-cols-3">
@@ -865,7 +869,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
               </div>
               <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
                 <CardContent className="overflow-x-auto p-4">
-                  <Table className="[&_td]:py-3 [&_td]:text-[14px] [&_th]:text-[12px]">
+                  <Table className="[&_td]:py-2.5 [&_td]:text-[12px] [&_th]:text-[10px]">
                     <TableHeader>
                       <TableRow>
                         {['Age', 'Model', 'Variant', 'Colour', 'VIN', 'In stock', 'Value', 'Carrying Cost (MO)', 'Interest Accrued', 'Suggested action'].map((heading) => (
@@ -930,10 +934,6 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                           <TableHeader><TableRow>{displayedColumns.map((column) => <TableHead key={column} className="border-b-2 border-slate-300 font-black uppercase tracking-[0.08em] text-slate-500"><ColumnFilterDropdown column={column} label={toColumnLabel(column)} uniqueValues={reportQuery.data?.uniqueValues?.[column] || []} activeFilters={columnFilters[column] || []} onApply={(values) => { setColumnFilters((prev) => ({ ...prev, [column]: values })); setPage(1) }} onSort={(direction) => { setReportSort(column); setReportDirection(direction); setPage(1) }} isSortedAsc={reportSort === column && reportDirection === 'asc'} isSortedDesc={reportSort === column && reportDirection === 'desc'} /></TableHead>)}</TableRow></TableHeader>
                           <TableBody>{explorerRows.map((row, rowIndex) => <TableRow key={`${row.id || row.vin_no || rowIndex}-${rowIndex}`} className="odd:bg-[#f8fafc] even:bg-white hover:bg-slate-50/80 transition">{displayedColumns.map((column) => <TableCell key={column} className="whitespace-nowrap font-semibold text-slate-700" title={String(row[column] ?? '')}>{String(row[column] ?? '-')}</TableCell>)}</TableRow>)}{!explorerRows.length ? <TableRow><TableCell colSpan={displayedColumns.length || 1} className="py-10 text-center font-bold text-slate-500">No report rows found.</TableCell></TableRow> : null}</TableBody>
                         </Table>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-bold text-slate-500">Page {report?.pagination.page || 1} of {report?.pagination.totalPages || 1}</p>
-                        <div className="flex gap-2"><Button variant="outline" disabled={(report?.pagination.page || 1) <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-2xl bg-white font-black">Previous</Button><Button variant="outline" disabled={(report?.pagination.page || 1) >= (report?.pagination.totalPages || 1)} onClick={() => setPage((p) => p + 1)} className="rounded-2xl bg-white font-black">Next</Button></div>
                       </div>
                     </>
                   )}

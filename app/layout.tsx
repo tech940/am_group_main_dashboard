@@ -5,6 +5,8 @@ import "./globals.css";
 import { SidebarProvider } from "@/context/sidebar-context";
 import { DashboardQueryProvider } from "@/components/providers/query-provider";
 import { ActivityTracker } from "@/components/providers/activity-tracker";
+import { ToastContextProvider } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -47,12 +49,15 @@ export default function RootLayout({
           shadow="0 0 12px color-mix(in srgb, var(--dashboard-primary) 62%, transparent),0 0 6px color-mix(in srgb, var(--dashboard-primary) 42%, transparent)"
         />
         <DashboardQueryProvider>
-          <SidebarProvider>
-            <Suspense fallback={null}>
-              <ActivityTracker />
-            </Suspense>
-            {children}
-          </SidebarProvider>
+          <ToastContextProvider>
+            <SidebarProvider>
+              <Suspense fallback={null}>
+                <ActivityTracker />
+              </Suspense>
+              {children}
+            </SidebarProvider>
+            <Toaster />
+          </ToastContextProvider>
         </DashboardQueryProvider>
       </body>
     </html>

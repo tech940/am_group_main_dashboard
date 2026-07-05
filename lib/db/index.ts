@@ -11,8 +11,12 @@ function positiveInteger(value: string | undefined, fallback: number) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
+// In dev the pool was capped at 1, which serialises the parallel `Promise.all`
+// queries each list endpoint fires (7-8 round-trips → sequential = slow). A small
+// pool lets them actually run concurrently against the Supabase pooler while still
+// leaving plenty of headroom for auth. Overridable via DATABASE_POOL_MAX.
 const DB_POOL_MAX = process.env.NODE_ENV === 'development'
-  ? 1
+  ? positiveInteger(process.env.DATABASE_POOL_MAX, 4)
   : positiveInteger(process.env.DATABASE_POOL_MAX, DEFAULT_POOL_MAX)
 const LOCK_TIMEOUT_MS = positiveInteger(process.env.DATABASE_LOCK_TIMEOUT_MS, 3_000)
 const IDLE_IN_TRANSACTION_TIMEOUT_MS = positiveInteger(process.env.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS, 10_000)

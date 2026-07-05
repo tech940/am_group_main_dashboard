@@ -382,8 +382,17 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
     const gs = opacityName ? `/${opacityName} gs ` : ''
     return `q ${gs}${(w * cos).toFixed(3)} ${(w * sin).toFixed(3)} ${(-h * sin).toFixed(3)} ${(h * cos).toFixed(3)} ${x.toFixed(3)} ${yy.toFixed(3)} cm /${asset.name} Do Q`
   }
+  // Centre the rotated watermark on the page. Because the PDF transform rotates
+  // the image around its bottom-left corner (x,y), we offset x,y so the image's
+  // visual centre lands exactly at the page centre.
+  const WM_W = 310
+  const WM_H = 205
+  const WM_ROT = 40
+  const wmRad = (WM_ROT * Math.PI) / 180
+  const wmX = width / 2 - ((WM_W / 2) * Math.cos(wmRad) - (WM_H / 2) * Math.sin(wmRad))
+  const wmY = height / 2 - ((WM_W / 2) * Math.sin(wmRad) + (WM_H / 2) * Math.cos(wmRad))
   const pageBaseCommands = () => [
-    ...(pdfWatermarkLogo ? [imageCommand(pdfWatermarkLogo, 116, 118, 310, 205, 'GSWatermark', 40) || ''] : []),
+    ...(pdfWatermarkLogo ? [imageCommand(pdfWatermarkLogo, wmX, wmY, WM_W, WM_H, 'GSWatermark', WM_ROT) || ''] : []),
     '0 g',
     `1.1 w ${borderX} ${borderY} ${borderW} ${borderH} re S`,
     '0.5 w',

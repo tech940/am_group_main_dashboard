@@ -2,8 +2,10 @@
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
+import { toast } from '@/hooks/use-toast'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import {
   Bar,
@@ -46,7 +48,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +55,19 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { calculateKiaProformaPricing, getKiaBankOptions } from '@/lib/kia-proforma/pricing'
+import {
+  AnimatedNumber,
+  Chip,
+  IconTile,
+  Kicker,
+  LoaderOverlay,
+  motion,
+  PremiumEmptyState,
+  Reveal,
+  TableSkeleton as PremiumTableSkeleton,
+  type Tone,
+  toneSoftStyle,
+} from '@/components/kia/premium'
 
 export type KiaProformaSection =
   | 'bookings'
@@ -336,26 +350,26 @@ function proformaColumnValue(row: KiaProformaRow, column: string) {
   return String(value ?? '-')
 }
 
-function statusClass(value?: string | null) {
+function approvalTone(value?: string | null): Tone {
   const status = String(value || '').toLowerCase()
-  if (status.includes('approved') && !status.includes('not')) return 'border-[var(--dashboard-success-border)] bg-[var(--dashboard-success-bg)] text-[var(--dashboard-success)]'
-  if (status.includes('not') || status.includes('cancel')) return 'border-rose-200 bg-rose-50 text-rose-700'
-  if (status.includes('converted')) return 'border-blue-200 bg-blue-50 text-blue-700'
-  return 'border-amber-200 bg-amber-50 text-amber-700'
+  if (status.includes('approved') && !status.includes('not')) return 'success'
+  if (status.includes('not') || status.includes('cancel') || status.includes('decline')) return 'danger'
+  if (status.includes('converted')) return 'info'
+  return 'warning'
 }
 
 function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">{label}</span>
+      <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">{label}</span>
       {children}
-      {error && <span className="mt-1 block text-xs font-bold text-rose-600">{error}</span>}
+      {error && <span className="mt-1 block text-xs font-semibold" style={{ color: 'var(--dashboard-risk-text)' }}>{error}</span>}
     </label>
   )
 }
 
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <Input {...props} className={cn('h-11 rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 font-semibold shadow-sm focus:border-[var(--dashboard-primary-light)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--dashboard-primary-light)_18%,transparent)]', props.className)} />
+  return <Input {...props} className={cn('h-11 rounded-xl font-semibold', props.className)} />
 }
 
 function DataListInput({
@@ -395,12 +409,15 @@ function DataListInput({
   )
 }
 
-function FormSection({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function FormSection({ title, subtitle, icon, children }: { title: string; subtitle?: string; icon?: typeof ClipboardList; children: React.ReactNode }) {
   return (
-    <div className="rounded-[1.5rem] border border-slate-200 bg-white/82 p-4 shadow-sm">
-      <div className="mb-4 border-b border-slate-200 pb-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">{title}</p>
-        <p className="mt-1 text-xs font-semibold text-slate-500">{subtitle}</p>
+    <div className="kia-surface p-4 sm:p-5">
+      <div className="mb-4 flex items-center gap-3 border-b pb-3" style={{ borderColor: 'var(--kia-hairline)' }}>
+        {icon && <IconTile icon={icon} tone="accent" size="sm" />}
+        <div>
+          <Kicker>{title}</Kicker>
+          {subtitle && <p className="mt-0.5 text-xs font-medium text-[var(--kia-text-soft)]">{subtitle}</p>}
+        </div>
       </div>
       {children}
     </div>
@@ -439,6 +456,13 @@ function useProformas(mode: string, enabled = true) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  // Debounce the server-side search so a 1000-row fetch does not fire on every
+  // keystroke — the input stays responsive while requests are coalesced.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 350)
+    return () => clearTimeout(timer)
+  }, [search])
   const [page, setPage] = useState(1)
   const [financeStatus, setFinanceStatus] = useState('all')
   const reload = useCallback(async () => {
@@ -446,7 +470,7 @@ function useProformas(mode: string, enabled = true) {
     setLoading(true)
     setError('')
     const params = new URLSearchParams({ page: '1', pageSize: String(PROFORMA_LIST_PAGE_SIZE), mode })
-    if (search) params.set('search', search)
+    if (debouncedSearch) params.set('search', debouncedSearch)
     if (financeStatus !== 'all') params.set('financeStatus', financeStatus)
     try {
       const response = await fetch(`/api/brands/kia/proforma?${params}`)
@@ -464,7 +488,7 @@ function useProformas(mode: string, enabled = true) {
     } finally {
       setLoading(false)
     }
-  }, [enabled, financeStatus, mode, search])
+  }, [enabled, financeStatus, mode, debouncedSearch])
   useEffect(() => {
     reload()
   }, [reload])
@@ -522,11 +546,15 @@ function PriceDetailsUploadPanel({ onImported }: { onImported: () => void }) {
   }
 
   return (
-    <section className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm sm:rounded-[1.5rem] sm:p-4">
+    <section className="kia-surface-flush relative overflow-hidden p-3 sm:p-4">
+      <LoaderOverlay show={uploading} variant="proforma" label="Replacing price master…" sublabel="Importing the PRICE DETAILS sheet" />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#c8102e]">Price Master Upload</p>
-          <p className="mt-1 text-xs font-semibold leading-5 text-slate-600 sm:text-sm">Imports only the <span className="font-black text-slate-900">PRICE DETAILS</span> sheet and replaces the current KIA price master.</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <IconTile icon={Upload} tone="accent" />
+          <div className="min-w-0">
+            <Kicker>Price Master Upload</Kicker>
+            <p className="mt-0.5 text-xs font-medium leading-5 text-[var(--kia-text-soft)] sm:text-sm">Imports only the <span className="font-bold text-[var(--kia-text)]">PRICE DETAILS</span> sheet and replaces the current KIA price master.</p>
+          </div>
         </div>
         <div className="shrink-0">
           <input
@@ -537,16 +565,11 @@ function PriceDetailsUploadPanel({ onImported }: { onImported: () => void }) {
             className="hidden"
             disabled={uploading}
           />
-          <Button
-            type="button"
-            onClick={triggerFileSelect}
-            disabled={uploading}
-            className={cn('h-11 rounded-2xl bg-[#c8102e] text-[13px] font-black text-white hover:bg-red-700 border-none px-5 shadow-sm transition-all', uploading && 'opacity-90')}
-          >
+          <Button type="button" onClick={triggerFileSelect} disabled={uploading} className="h-11 rounded-2xl px-5 text-[13px] font-bold">
             {uploading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Replacing Prices...
+                Replacing…
               </>
             ) : (
               <>
@@ -558,12 +581,12 @@ function PriceDetailsUploadPanel({ onImported }: { onImported: () => void }) {
         </div>
       </div>
       {error && (
-        <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+        <p className="mt-3 rounded-xl border px-3 py-2 text-xs font-semibold" style={toneSoftStyle('danger')}>
           {error}
         </p>
       )}
       {summary && (
-        <div className="mt-3 grid gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-3 text-xs font-bold text-emerald-800 md:grid-cols-4">
+        <div className="mt-3 grid gap-2 rounded-2xl border p-3 text-xs font-semibold md:grid-cols-4" style={toneSoftStyle('success')}>
           <span>Sheet: {summary.sheetName}</span>
           <span>Processed: {summary.totalRowsProcessed}</span>
           <span>Imported: {summary.importedRows}</span>
@@ -587,56 +610,63 @@ function ModuleHeader({
   currentUserRole: string
   onPricesImported: () => void
 }) {
-  const titles: Record<KiaProformaSection, { title: string; subtitle: string; icon: React.ReactNode }> = {
-    bookings: { title: 'Booking CRM', subtitle: 'Manage customer bookings, stock allocations, and finance workflows.', icon: <ClipboardList className="h-5 w-5" /> },
-    stock: { title: 'Stock', subtitle: 'Approved bookings, stock matching, VIN reservation, and accounts payment follow-up.', icon: <ClipboardList className="h-5 w-5" /> },
-    generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: <FileText className="h-5 w-5" /> },
-    all: { title: 'All Proforma Details', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: <Columns3 className="h-5 w-5" /> },
-    'finance-remarks': { title: 'Finance Remarks', subtitle: 'Update finance status and remarks against every proforma.', icon: <WalletCards className="h-5 w-5" /> },
-    'pending-approval': { title: 'Pending Approval', subtitle: 'Verify discounts and cost fields before approval.', icon: <ShieldCheck className="h-5 w-5" /> },
-    analytics: { title: 'Hyp / Ins Analytics', subtitle: 'Pivot view for bank, insurance, and status performance.', icon: <BarChart3 className="h-5 w-5" /> },
-    insights: { title: 'Business Insights', subtitle: 'Operational charts for approvals, status, address integrity, model and fuel mix.', icon: <BarChart3 className="h-5 w-5" /> },
+  const titles: Record<KiaProformaSection, { title: string; subtitle: string; icon: typeof ClipboardList }> = {
+    bookings: { title: 'Booking CRM', subtitle: 'Manage customer bookings, stock allocations, and finance workflows.', icon: ClipboardList },
+    stock: { title: 'Stock', subtitle: 'Approved bookings, stock matching, VIN reservation, and accounts payment follow-up.', icon: ClipboardList },
+    generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: FileText },
+    all: { title: 'All Proforma Details', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: Columns3 },
+    'finance-remarks': { title: 'Finance Remarks', subtitle: 'Update finance status and remarks against every proforma.', icon: WalletCards },
+    'pending-approval': { title: 'Pending Approval', subtitle: 'Verify discounts and cost fields before approval.', icon: ShieldCheck },
+    analytics: { title: 'Hyp / Ins Analytics', subtitle: 'Pivot view for bank, insurance, and status performance.', icon: BarChart3 },
+    insights: { title: 'Business Insights', subtitle: 'Operational charts for approvals, status, address integrity, model and fuel mix.', icon: BarChart3 },
   }
   const current = titles[section]
+  const navItems = PROFORMA_NAV_ITEMS
+    .filter((item) => (!item.approverOnly || isApprover) && !item.hideFromNav)
+    .filter((item) => item.section !== 'bookings' || canSeeBookingsNav(currentUserRole))
   return (
-    <section className="rounded-[2rem] border border-[var(--dashboard-primary-border)] bg-white/85 p-5 shadow-xl shadow-slate-900/5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] text-[var(--dashboard-action-bg)]">
-            {current.icon}
-          </div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">Kia Proforma</p>
-            <h1 className="text-2xl font-black tracking-tight text-slate-950">{current.title}</h1>
-            <p className="mt-1 max-w-3xl text-sm font-semibold text-slate-600">{current.subtitle}</p>
+    <Reveal>
+      <section className="kia-surface relative overflow-hidden p-5">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full"
+          style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--dashboard-action-bg) 16%, transparent), transparent 70%)' }}
+        />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <IconTile icon={current.icon} tone="accent" size="lg" />
+            <div>
+              <Kicker>Kia Proforma</Kicker>
+              <h1 className="mt-0.5 text-2xl font-extrabold tracking-tight text-[var(--kia-text)]">{current.title}</h1>
+              <p className="mt-1 max-w-3xl text-sm font-medium text-[var(--kia-text-soft)]">{current.subtitle}</p>
+            </div>
           </div>
         </div>
-      </div>
-      <nav className="mt-5 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-2">
-        {PROFORMA_NAV_ITEMS
-          .filter((item) => (!item.approverOnly || isApprover) && !item.hideFromNav)
-          .filter((item) => item.section !== 'bookings' || canSeeBookingsNav(currentUserRole))
-          .map((item) => (
-            <Link
-              key={item.section}
-              href={item.href}
-              className={cn(
-                'shrink-0 rounded-xl border px-4 py-2 text-xs font-black transition-all',
-                item.section === section
-                  ? proformaPrimaryButton
-                  : proformaOutlineButton
-              )}
-            >
-              {item.label}
-            </Link>
-          ))}
-      </nav>
-      {section === 'bookings' && (
-        <div className="mt-4">
-          <PriceDetailsUploadPanel onImported={onPricesImported} />
-        </div>
-      )}
-    </section>
+        <nav className="kia-segment relative mt-5 flex gap-1 overflow-x-auto p-1">
+          {navItems.map((item) => {
+            const activeTab = item.section === section
+            return (
+              <Link
+                key={item.section}
+                href={item.href}
+                className="relative shrink-0 rounded-xl px-4 py-2 text-xs font-bold transition-colors"
+                style={{ color: activeTab ? 'var(--dashboard-action-fg)' : 'var(--kia-text-soft)' }}
+              >
+                {activeTab && (
+                  <motion.span
+                    layoutId="proforma-nav-pill"
+                    className="absolute inset-0 rounded-xl"
+                    style={{ background: 'linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg))', boxShadow: 'var(--kia-elev-2)' }}
+                    transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                  />
+                )}
+                <span className="relative">{item.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
+      </section>
+    </Reveal>
   )
 }
 
@@ -722,8 +752,8 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
     modelName: Boolean(bookingPrefill?.model),
     trimDescription: Boolean(bookingPrefill?.variant),
     vehicleColor: Boolean(bookingPrefill?.color),
-    bankName: Boolean(bookingPrefill?.bankName),
-    bankBranch: Boolean(bookingPrefill?.bankBranch),
+    bankName: false,
+    bankBranch: false,
     bookingAmount: Boolean(bookingPrefill?.bookingAmount),
     insuranceCompany: Boolean(prefillInsuranceCompany),
   }), [bookingPrefill, prefillInsuranceCompany])
@@ -821,14 +851,14 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
       const saved = await response.json().catch(() => null) as { row?: { id?: string } } | null
       setForm(EMPTY_FORM)
       onSaved()
-      alert('Proforma saved and sent to approval queue.')
+      toast({ title: 'Proforma Saved', description: 'Proforma saved and sent to approval queue.', variant: 'success' })
       if (bookingPrefill && saved?.row?.id) {
         router.push(`/brands/kia/proforma/all-proforma-details?search=${String(saved.row.id).slice(0, 8).toUpperCase()}`)
       } else if (bookingPrefill) {
         router.push(`/brands/kia/proforma/all-proforma-details?search=${bookingPrefill.bookingNumber || bookingPrefill.customerName || ''}`)
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to save proforma')
+      toast({ title: 'Save Failed', description: error instanceof Error ? error.message : 'Failed to save proforma', variant: 'error' })
     } finally {
       setSaving(false)
     }
@@ -836,28 +866,29 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
 
 
   return (
-    <section className="rounded-[2rem] border border-slate-200 bg-white/88 p-5 shadow-xl shadow-slate-900/5">
+    <section className="kia-surface relative overflow-hidden p-5">
+      <LoaderOverlay show={saving} variant="proforma" label="Preparing proforma…" sublabel="Calculating pricing and queuing for approval" />
       {bookingPrefill && (
-        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-sky-600 text-white">
+        <div className="mb-5 flex items-start gap-3 rounded-2xl border px-4 py-3" style={toneSoftStyle('info')}>
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-white" style={{ background: 'var(--dashboard-support-1)' }}>
             <ArrowLeft className="h-4 w-4" />
-          </div>
+          </span>
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-700">Pre-filled from Booking</p>
-            <p className="mt-0.5 text-sm font-semibold text-sky-800">
+            <p className="text-xs font-bold uppercase tracking-[0.16em]">Pre-filled from Booking</p>
+            <p className="mt-0.5 text-sm font-semibold">
               {bookingPrefill.bookingNumber ? `#${bookingPrefill.bookingNumber} · ` : ''}{bookingPrefill.customerName || 'Customer'} · {bookingPrefill.model || 'Vehicle'}
             </p>
-            <p className="mt-0.5 text-xs font-semibold text-sky-600">Review the pre-filled fields, complete any missing information, then save the proforma.</p>
+            <p className="mt-0.5 text-xs font-medium opacity-80">Review the pre-filled fields, complete any missing information, then save the proforma.</p>
           </div>
         </div>
       )}
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">Customer Proforma</p>
-          <h2 className="text-xl font-black text-slate-950">Pricing and customer details</h2>
+          <Kicker>Customer Proforma</Kicker>
+          <h2 className="mt-0.5 text-xl font-extrabold tracking-tight text-[var(--kia-text)]">Pricing and customer details</h2>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button onClick={submit} disabled={saving} className={cn('rounded-xl', proformaPrimaryButton)}>
+          <Button onClick={submit} disabled={saving} className="h-11 rounded-xl px-5 font-bold">
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Proforma
           </Button>
@@ -867,13 +898,13 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
       <div className="grid items-start gap-5 xl:grid-cols-2">
         <FormSection title="Customer Details" subtitle="">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Customer Type"><Select value={form.customerType} onValueChange={(value) => update('customerType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['Customer', 'CSD', 'Bharat Series'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Customer Type"><Select value={form.customerType} onValueChange={(value) => update('customerType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['Customer', 'CSD', 'Bharat Series'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Proforma Date"><TextInput type="date" value={form.proformaDate} onChange={(event) => update('proformaDate', event.target.value)} /></Field>
             <Field label="Customer Name" error={errors.customerName}><TextInput value={form.customerName} onChange={(event) => update('customerName', event.target.value)} readOnly={lockedFields.customerName} /></Field>
             <Field label="Mobile Number" error={errors.mobileNumber}><TextInput inputMode="numeric" maxLength={10} value={form.mobileNumber} onChange={(event) => update('mobileNumber', event.target.value.replace(/\D/g, '').slice(0, 10))} readOnly={lockedFields.mobileNumber} /></Field>
             <Field label="Customer Email" error={errors.customerEmail}><TextInput type="email" value={form.customerEmail} onChange={(event) => update('customerEmail', event.target.value)} readOnly={lockedFields.customerEmail} /></Field>
             <div className="md:col-span-2">
-              <Field label="Customer Address" error={errors.customerAddress}><Textarea value={form.customerAddress} onChange={(event) => update('customerAddress', event.target.value)} className="min-h-20 rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 font-semibold shadow-sm focus:border-[var(--dashboard-primary-light)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--dashboard-primary-light)_18%,transparent)]" /></Field>
+              <Field label="Customer Address" error={errors.customerAddress}><Textarea value={form.customerAddress} onChange={(event) => update('customerAddress', event.target.value)} className="min-h-20 rounded-xl border-[var(--dashboard-primary-border)] bg-white font-semibold shadow-sm focus:border-[var(--dashboard-primary-light)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--dashboard-primary-light)_18%,transparent)]" /></Field>
             </div>
           </div>
         </FormSection>
@@ -883,12 +914,16 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
             <Field label="Model" error={errors.modelName}><DataListInput listId="kia-models" value={form.modelName} onChange={(value) => { update('modelName', value); update('trimDescription', '') }} options={options.models} disabled={lockedFields.modelName} /></Field>
             <Field label="Variant / Trim" error={errors.trimDescription}><DataListInput listId="kia-trims" value={form.trimDescription} onChange={(value) => update('trimDescription', value)} onBlur={canonicalizeTrim} options={filteredTrims} disabled={lockedFields.trimDescription} /></Field>
             <Field label="Vehicle Color" error={errors.vehicleColor}><TextInput value={form.vehicleColor} onChange={(event) => update('vehicleColor', event.target.value)} readOnly={lockedFields.vehicleColor} /></Field>
-            <Field label="Fuel Type"><Select value={form.fuelType} onValueChange={(value) => update('fuelType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['DIESEL', 'PETROL', 'ELECTRIC'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Bank" error={errors.bankName}><DataListInput listId="kia-banks" value={form.bankName} onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '' }))} onBlur={canonicalizeBank} options={bankOptions} disabled={lockedFields.bankName} /></Field>
-            <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="kia-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} disabled={lockedFields.bankBranch} /></Field>
-            <Field label="Loan Amount"><TextInput type="number" value={form.loanAmount} onChange={(event) => update('loanAmount', event.target.value)} /></Field>
+            <Field label="Fuel Type"><Select value={form.fuelType} onValueChange={(value) => update('fuelType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['DIESEL', 'PETROL', 'ELECTRIC'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Bank" error={errors.bankName}><DataListInput listId="kia-banks" value={form.bankName} onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '', loanAmount: value.toUpperCase() === 'CASH' ? '0' : current.loanAmount }))} onBlur={canonicalizeBank} options={bankOptions} disabled={lockedFields.bankName} /></Field>
+            {form.bankName && form.bankName.toUpperCase() !== 'CASH' && (
+              <>
+                <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="kia-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} disabled={lockedFields.bankBranch} /></Field>
+                <Field label="Loan Amount"><TextInput type="number" value={form.loanAmount} onChange={(event) => update('loanAmount', event.target.value)} /></Field>
+              </>
+            )}
             <Field label="Insurance Company"><DataListInput listId="kia-insurance" value={form.insuranceCompany} onChange={(value) => update('insuranceCompany', value)} options={options.insuranceCompanies} disabled={lockedFields.insuranceCompany} /></Field>
-            <Field label="Vehicle Status"><Select value={form.vehicleStatus} onValueChange={(value) => update('vehicleStatus', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white/90 shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['IN HOUSE', 'OUT HOUSE'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Vehicle Status"><Select value={form.vehicleStatus} onValueChange={(value) => update('vehicleStatus', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['IN HOUSE', 'OUT HOUSE'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
           </div>
         </FormSection>
 
@@ -923,13 +958,17 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
             ))}
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">To Be Borne By Customer</p>
-              <p className="mt-2 text-2xl font-black text-slate-950">{formatCurrency(totals.totalCustomerCost)}</p>
+            <div className="kia-surface-sunken p-4">
+              <Kicker>To Be Borne By Customer</Kicker>
+              <p className="mt-2 text-2xl font-extrabold tracking-tight text-[var(--kia-text)]">
+                <AnimatedNumber value={asNumber(totals.totalCustomerCost)} format={(v) => formatCurrency(v)} />
+              </p>
             </div>
-            <div className="rounded-2xl border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--dashboard-action-bg)]">Grand Total</p>
-              <p className="mt-2 text-2xl font-black text-slate-950">{formatCurrency(totals.grandTotalCost)}</p>
+            <div className="rounded-2xl border p-4" style={{ backgroundColor: 'color-mix(in srgb, var(--dashboard-action-bg) 8%, var(--kia-surface))', borderColor: 'color-mix(in srgb, var(--dashboard-action-bg) 30%, transparent)' }}>
+              <p className="kia-kicker">Grand Total</p>
+              <p className="mt-2 text-2xl font-extrabold tracking-tight text-[var(--kia-text)]">
+                <AnimatedNumber value={asNumber(totals.grandTotalCost)} format={(v) => formatCurrency(v)} />
+              </p>
             </div>
           </div>
         </FormSection>
@@ -1064,14 +1103,14 @@ function FilterBar({
   }
 
   return (
-    <div className="space-y-3 rounded-3xl border border-slate-200 bg-white/82 p-3 shadow-sm">
+    <div className="kia-surface space-y-3 p-3">
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[260px] flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={mode === 'pending-approval' ? 'Search customer name or mobile number...' : 'Search customer, bank, insurance, mobile, branch, model, email...'} className="h-11 rounded-2xl border-slate-200 bg-white/80 pl-10 font-semibold" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kia-text-faint)]" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={mode === 'pending-approval' ? 'Search customer name or mobile number...' : 'Search customer, bank, insurance, mobile, branch, model, email...'} className="h-11 rounded-2xl border-slate-200 bg-white pl-10 font-semibold" />
         </div>
         {mode === 'finance-remarks' && setFinanceDate && (
-          <Input type="date" value={financeDate || ''} onChange={(event) => setFinanceDate(event.target.value)} className="h-11 w-44 rounded-2xl border-slate-200 bg-white/80 font-bold" />
+          <Input type="date" value={financeDate || ''} onChange={(event) => setFinanceDate(event.target.value)} className="h-11 w-44 rounded-2xl border-slate-200 bg-white font-bold" />
         )}
         
         {mode !== 'pending-approval' && (
@@ -1252,10 +1291,10 @@ function FilterBar({
 
 function ChecklistPanel({ title, items, selected, onToggle }: { title: string; items: { value: string; label: string }[]; selected: Set<string>; onToggle: (value: string) => void }) {
   return (
-    <div className="max-h-32 overflow-auto rounded-2xl border border-slate-200 bg-white p-2">
-      <p className="px-2 pb-1 text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">{title}</p>
-      {items.length === 0 ? <p className="px-2 py-1 text-xs font-bold text-slate-400">No values</p> : items.map((item) => (
-        <label key={item.value} className="flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50">
+    <div className="max-h-32 overflow-auto rounded-2xl border p-2" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface)' }}>
+      <p className="px-2 pb-1 text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--kia-text-faint)]">{title}</p>
+      {items.length === 0 ? <p className="px-2 py-1 text-xs font-semibold text-[var(--kia-text-faint)]">No values</p> : items.map((item) => (
+        <label key={item.value} className="flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-semibold text-[var(--kia-text-soft)] hover:bg-[var(--kia-surface-sunken)]">
           <Checkbox checked={selected.has(item.value)} onCheckedChange={() => onToggle(item.value)} />
           {item.label}
         </label>
@@ -1288,15 +1327,22 @@ function ProformaTable({
       return value !== null && value !== undefined && String(value).trim() !== ''
     })
   })
-  const stickyClass = (key: string, header = false) => {
-    if (key === 'index') return cn('sticky left-0 z-20 w-12 min-w-12', header ? 'bg-slate-950' : 'bg-white')
-    if (key === 'customerName') return cn('sticky left-12 z-20 min-w-[190px]', header ? 'bg-slate-950' : 'bg-white shadow-[8px_0_14px_rgba(15,23,42,0.04)]')
+  const stickyClass = (key: string) => {
+    if (key === 'index') return 'sticky left-0 z-20 w-12 min-w-12'
+    if (key === 'customerName') return 'sticky left-12 z-20 min-w-[190px] shadow-[8px_0_14px_rgba(15,23,42,0.05)]'
     return ''
   }
+  const stickyBg = (key: string): React.CSSProperties => (key === 'index' || key === 'customerName') ? { backgroundColor: 'var(--kia-surface)' } : {}
   return (
-    <div className="rounded-[1.75rem] border border-slate-200 bg-white/88 shadow-xl shadow-slate-900/5">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-500">Proforma Register</p>
+    <div className="kia-surface overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b p-3" style={{ borderColor: 'var(--kia-hairline)' }}>
+        <div className="flex items-center gap-3">
+          <IconTile icon={Columns3} tone="accent" size="sm" />
+          <div>
+            <Kicker>Proforma Register</Kicker>
+            <p className="text-xs font-semibold text-[var(--kia-text-soft)]">{rows.length} record{rows.length === 1 ? '' : 's'} on this page</p>
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className={cn('h-9 rounded-xl', proformaOutlineButton)} onClick={() => setShowColumnManager((value) => !value)}>
             <Columns3 className="mr-2 h-4 w-4" />Manage Columns
@@ -1313,11 +1359,11 @@ function ProformaTable({
         </div>
       </div>
       {showColumnManager && (
-        <div className="grid max-h-48 gap-2 overflow-auto border-b border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid max-h-48 gap-2 overflow-auto border-b p-3 sm:grid-cols-2 lg:grid-cols-4" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface-sunken)' }}>
           {TABLE_COLUMNS.filter((column) => column.key !== 'index').map((column) => {
             const key = String(column.key)
             return (
-              <label key={key} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+              <label key={key} className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold text-[var(--kia-text-soft)]" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface)' }}>
                 <Checkbox checked={!hiddenColumns.has(key)} onCheckedChange={(checked) => {
                   const next = new Set(hiddenColumns)
                   if (checked) next.delete(key)
@@ -1330,49 +1376,71 @@ function ProformaTable({
           })}
         </div>
       )}
-      <div className="max-h-[620px] overflow-auto">
-        <table className="w-max min-w-full table-auto border-collapse text-xs">
-          <thead className="sticky top-0 z-10 bg-slate-950 text-white">
+      <div className="kia-scroll max-h-[620px] overflow-auto">
+        <table className="kia-table w-max min-w-full table-auto border-collapse text-xs">
+          <thead className="sticky top-0 z-10">
             <tr>
               {visibleColumns.map((column) => (
-                <th key={String(column.key)} className={cn('whitespace-nowrap border-r border-white/15 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.16em]', stickyClass(String(column.key), true))}>
+                <th key={String(column.key)} className={cn('whitespace-nowrap border-r border-white/10 px-3 py-2.5 text-left', stickyClass(String(column.key)))}>
                   <span className="inline-flex items-center gap-2">
                     {column.label}
                     {column.key !== 'index' && (
                       <button
                         type="button"
                         title={`Hide ${column.label}`}
-                        className="rounded-md border border-white/15 px-1 text-[10px] text-white/75 hover:bg-white/10 hover:text-white"
+                        className="rounded-md border border-white/20 px-1 text-[10px] text-white/75 hover:bg-white/10 hover:text-white"
                         onClick={() => {
                           const next = new Set(hiddenColumns)
                           next.add(String(column.key))
                           setHiddenColumns(next)
                         }}
                       >
-                        -
+                        −
                       </button>
                     )}
                   </span>
                 </th>
               ))}
-              {extra && <th className="whitespace-nowrap px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.16em]">Finance</th>}
-              {action && <th className="sticky right-0 whitespace-nowrap bg-slate-950 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.16em]">Action</th>}
+              {extra && <th className="whitespace-nowrap px-3 py-2.5 text-left">Finance</th>}
+              {action && <th className="sticky right-0 whitespace-nowrap px-3 py-2.5 text-left">Action</th>}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={visibleColumns.length + (extra ? 1 : 0) + (action ? 1 : 0)} className="py-16 text-center font-bold text-slate-500">No proformas match this view.</td></tr>
-            ) : rows.map((row, index) => (
-              <tr key={row.id} className="border-b border-slate-200 align-top hover:bg-slate-50/80">
-                {visibleColumns.map((column) => {
-                  const raw = column.key === 'index' ? index + 1 : row[column.key]
-                  const value = column.numeric ? formatCurrency(raw) : column.key === 'entryTime' ? formatDateTime(String(raw)) : column.key === 'proformaDate' || column.key === 'financeUpdatedTime' ? formatDate(String(raw)) : String(raw ?? '-')
-                  return <td key={String(column.key)} className={cn('whitespace-nowrap border-r border-slate-200 px-3 py-2.5 text-xs font-semibold leading-tight text-slate-800', stickyClass(String(column.key)))}>{column.key === 'approvalStatus' ? <Badge className={cn('border', statusClass(row.approvalStatus))}>{row.approvalStatus}</Badge> : value}</td>
-                })}
-                {extra && <td className="min-w-[320px] border-r border-slate-200 px-3 py-2.5 text-xs">{extra(row)}</td>}
-                {action && <td className="sticky right-0 whitespace-nowrap bg-white px-3 py-2.5 text-xs shadow-[-10px_0_18px_rgba(15,23,42,0.04)]">{action(row)}</td>}
+              <tr>
+                <td colSpan={visibleColumns.length + (extra ? 1 : 0) + (action ? 1 : 0)} className="p-0">
+                  <PremiumEmptyState illustration="search" title="No proformas match this view" description="Adjust the filters, date range, or search to reveal records here." className="border-0 shadow-none" />
+                </td>
               </tr>
-            ))}
+            ) : rows.map((row, index) => {
+              const isPending = !['APPROVED', 'DECLINED', 'NOT APPROVED'].includes(String(row.approvalStatus).toUpperCase())
+              return (
+                <tr key={row.id} className="align-top">
+                  {visibleColumns.map((column, colIdx) => {
+                    const raw = column.key === 'index' ? index + 1 : row[column.key]
+                    const value = column.numeric ? formatCurrency(raw) : column.key === 'entryTime' ? formatDateTime(String(raw)) : column.key === 'proformaDate' || column.key === 'financeUpdatedTime' ? formatDate(String(raw)) : String(raw ?? '-')
+                    return (
+                      <td
+                        key={String(column.key)}
+                        className={cn('whitespace-nowrap px-3 py-2.5 text-xs font-semibold leading-tight text-[var(--kia-text)]', column.numeric && 'kia-tnum', stickyClass(String(column.key)))}
+                        style={{
+                          borderRight: '1px solid var(--kia-hairline)',
+                          borderBottom: '1px solid var(--kia-hairline)',
+                          ...stickyBg(String(column.key)),
+                          ...(isPending && colIdx === 0 ? { boxShadow: 'inset 4px 0 0 var(--dashboard-warning)' } : {}),
+                        }}
+                      >
+                        {column.key === 'approvalStatus' ? (
+                          <Chip tone={approvalTone(row.approvalStatus)}>{row.approvalStatus}</Chip>
+                        ) : value}
+                      </td>
+                    )
+                  })}
+                  {extra && <td className="min-w-[320px] px-3 py-2.5 text-xs" style={{ borderRight: '1px solid var(--kia-hairline)', borderBottom: '1px solid var(--kia-hairline)' }}>{extra(row)}</td>}
+                  {action && <td className="sticky right-0 whitespace-nowrap px-3 py-2.5 text-xs shadow-[-10px_0_18px_rgba(15,23,42,0.05)]" style={{ backgroundColor: 'var(--kia-surface)', borderBottom: '1px solid var(--kia-hairline)' }}>{action(row)}</td>}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -1382,6 +1450,7 @@ function ProformaTable({
 
 function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' | 'finance-remarks' | 'pending-approval' }) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const queryMode = mode === 'pending-approval' ? 'pending-approval' : 'all'
   const { rows, loading, error, search, setSearch, page, setPage, financeStatus, setFinanceStatus, reload } = useProformas(queryMode, true)
   const [selectedColumn, setSelectedColumn] = useState('')
@@ -1390,6 +1459,8 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const [endDate, setEndDate] = useState('')
   const [financeDate, setFinanceDate] = useState('')
   const [bankFilter, setBankFilter] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [isApproving, setIsApproving] = useState(false)
   const columnStorageKey = `kia-proforma:hidden-columns:${options.currentUser.id}:${mode}`
   const [hiddenColumns, setHiddenColumnsState] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
@@ -1446,26 +1517,49 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'finance', financeStatus: draft.status, financeRemarks: draft.remarks }),
     })
-    if (!response.ok) return alert('Failed to save finance remarks')
+    if (!response.ok) {
+      toast({ title: 'Error', description: 'Failed to save finance remarks', variant: 'error' })
+      return
+    }
     await reload()
   }
 
   async function approveCurrent(allApproved = false) {
     if (!verifying) return
-    const checks = { ...verifyState }
-    if (allApproved) FIELD_VERIFY.forEach(([key]) => { checks[key] = { status: 'APPROVED', reason: '' } })
-    const response = await fetch(`/api/brands/kia/proforma/${verifying.id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'approval', checks }),
-    })
-    if (!response.ok) return alert('Failed to save approval')
-    const approvedBookingId = verifying.linkedBookingId || null
-    setVerifying(null)
-    setVerifyState({})
-    await reload()
-    if (approvedBookingId) {
-      router.push(`/brands/kia/proforma/stock?bookingId=${approvedBookingId}`)
+    if (allApproved) {
+      setIsApproving(true)
+    } else {
+      setIsSaving(true)
+    }
+    try {
+      const checks = { ...verifyState }
+      if (allApproved) FIELD_VERIFY.forEach(([key]) => { checks[key] = { status: 'APPROVED', reason: '' } })
+      const response = await fetch(`/api/brands/kia/proforma/${verifying.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'approval', checks }),
+      })
+      if (!response.ok) {
+        toast({ title: 'Error', description: 'Failed to save approval', variant: 'error' })
+        return
+      }
+      const approvedBookingId = verifying.linkedBookingId || null
+      setVerifying(null)
+      setVerifyState({})
+      await reload()
+      // Ensure the Stock view refetches so the "BOOKING MATCH" flag appears
+      // immediately instead of only after a manual page reload.
+      queryClient.invalidateQueries({ queryKey: ['kia-approved-bookings-for-allot'] })
+      queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      if (approvedBookingId) {
+        router.push(`/brands/kia/proforma/stock?bookingId=${approvedBookingId}`)
+      }
+    } catch (err) {
+      console.error(err)
+      toast({ title: 'Error', description: 'Something went wrong during approval', variant: 'error' })
+    } finally {
+      setIsApproving(false)
+      setIsSaving(false)
     }
   }
 
@@ -1516,11 +1610,13 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
         onClear={clearFilters}
       />
       {error && !loading ? (
-        <div className="rounded-[2rem] border border-rose-200 bg-white p-5 font-bold text-rose-700 shadow-sm">
-          {error}
-          <Button variant="outline" className={cn('ml-3 h-9 rounded-xl', proformaOutlineButton)} onClick={reload}>Retry</Button>
-        </div>
-      ) : loading ? <div className="h-72 animate-pulse rounded-[2rem] bg-white/70" /> : (
+        <PremiumEmptyState
+          illustration="error"
+          title="Couldn't load proformas"
+          description={error}
+          action={<Button variant="outline" className={cn('h-10 rounded-xl', proformaOutlineButton)} onClick={reload}>Retry</Button>}
+        />
+      ) : loading ? <PremiumTableSkeleton rows={8} columns={9} /> : (
         <ProformaTable
           rows={pagedRows}
           hiddenColumns={hiddenColumns}
@@ -1530,13 +1626,20 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
           action={(row) => (
             <div className="flex gap-2">
               {mode === 'pending-approval' && <Button className={cn('rounded-xl', proformaPrimaryButton)} onClick={() => setVerifying(row)}>VERIFY</Button>}
-              {row.approvalStatus === 'APPROVED' && row.linkPreview && <Button variant="outline" className={cn('rounded-xl', proformaOutlineButton)} onClick={() => window.open(row.linkPreview!, '_blank')}>Open</Button>}
+              {row.approvalStatus === 'APPROVED' && row.linkPreview && (
+                <Button
+                  className="rounded-xl bg-indigo-600 px-4 text-xs font-black text-white hover:bg-indigo-700 h-8"
+                  onClick={() => window.open(row.linkPreview!, '_blank')}
+                >
+                  Open ↗
+                </Button>
+              )}
             </div>
           )}
         />
       )}
-      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 p-3">
-        <p className="text-sm font-bold text-slate-600">
+      <div className="kia-surface flex flex-wrap items-center justify-between gap-3 p-3">
+        <p className="text-sm font-semibold text-[var(--kia-text-soft)]">
           Showing {filteredRows.length === 0 ? 0 : ((currentClientPage - 1) * PROFORMA_TABLE_PAGE_SIZE) + 1}-{Math.min(currentClientPage * PROFORMA_TABLE_PAGE_SIZE, filteredRows.length)} of {filteredRows.length} records
         </p>
         <div className="flex flex-wrap items-center gap-2">
@@ -1555,30 +1658,53 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
       </div>
 
       <Dialog open={Boolean(verifying)} onOpenChange={(open) => !open && setVerifying(null)}>
-        <DialogContent className="max-h-[88vh] max-w-5xl overflow-y-auto rounded-3xl p-0">
-          <div className="bg-[var(--dashboard-action-bg)] p-6 text-white">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black">Verify Proforma</DialogTitle>
-              <DialogDescription className="text-white/80">{verifying?.customerName} / {verifying?.modelName}</DialogDescription>
+        <DialogContent className="kia-premium max-h-[88vh] max-w-5xl overflow-y-auto rounded-3xl p-0">
+          <LoaderOverlay show={isApproving || isSaving} variant="approval" label={isApproving ? 'Approving proforma…' : 'Saving verification…'} sublabel="Applying the approval decision" />
+          <div className="relative overflow-hidden p-6 text-white" style={{ background: 'linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg))' }}>
+            <div aria-hidden className="pointer-events-none absolute -right-12 -top-16 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
+            <DialogHeader className="relative">
+              <div className="flex items-center gap-3">
+                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><ShieldCheck className="h-5 w-5" /></span>
+                <div>
+                  <DialogTitle className="text-2xl font-extrabold tracking-tight">Verify Proforma</DialogTitle>
+                  <DialogDescription className="text-white/80">{verifying?.customerName} · {verifying?.modelName}</DialogDescription>
+                </div>
+              </div>
             </DialogHeader>
           </div>
           <div className="grid gap-3 p-6">
-            {FIELD_VERIFY.map(([key, label]) => (
-              <div key={key} className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[220px_180px_1fr]">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
-                  <p className="mt-1 text-lg font-black">{formatCurrency(verifying?.[key as keyof KiaProformaRow])}</p>
+            {FIELD_VERIFY.map(([key, label]) => {
+              const decision = verifyState[key]?.status
+              return (
+                <div key={key} className="kia-surface-sunken grid gap-3 p-3 md:grid-cols-[220px_180px_1fr]" style={decision === 'NOT APPROVED' ? toneSoftStyle('danger') : decision === 'APPROVED' ? toneSoftStyle('success') : undefined}>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">{label}</p>
+                    <p className="mt-1 text-lg font-extrabold text-[var(--kia-text)] kia-tnum">{formatCurrency(verifying?.[key as keyof KiaProformaRow])}</p>
+                  </div>
+                  <Select value={verifyState[key]?.status || 'blank'} onValueChange={(value) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { reason: '' }), status: value === 'blank' ? '' : value } }))}>
+                    <SelectTrigger className="rounded-xl bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+                    <SelectContent>{['blank', 'APPROVED', 'NOT APPROVED'].map((value) => <SelectItem key={value} value={value}>{value === 'blank' ? 'Blank' : value}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <Input value={verifyState[key]?.reason || ''} onChange={(event) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { status: '' }), reason: event.target.value } }))} placeholder="Reason if not approved" className="rounded-xl bg-white" />
                 </div>
-                <Select value={verifyState[key]?.status || 'blank'} onValueChange={(value) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { reason: '' }), status: value === 'blank' ? '' : value } }))}>
-                  <SelectTrigger className="rounded-xl bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
-                  <SelectContent>{['blank', 'APPROVED', 'NOT APPROVED'].map((value) => <SelectItem key={value} value={value}>{value === 'blank' ? 'Blank' : value}</SelectItem>)}</SelectContent>
-                </Select>
-                <Input value={verifyState[key]?.reason || ''} onChange={(event) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { status: '' }), reason: event.target.value } }))} placeholder="Reason if not approved" className="rounded-xl bg-white" />
-              </div>
-            ))}
+              )
+            })}
             <div className="flex justify-end gap-2">
-              <Button variant="outline" className={cn('rounded-xl', proformaOutlineButton)} onClick={() => approveCurrent(true)}>Approve All</Button>
-              <Button className={cn('rounded-xl', proformaPrimaryButton)} onClick={() => approveCurrent(false)}>Final Save</Button>
+              <Button
+                variant="outline"
+                className={cn('h-10 rounded-xl', proformaOutlineButton)}
+                disabled={isApproving || isSaving}
+                onClick={() => approveCurrent(true)}
+              >
+                {isApproving ? 'Approving…' : 'Approve All'}
+              </Button>
+              <Button
+                className={cn('h-10 rounded-xl', proformaPrimaryButton)}
+                disabled={isApproving || isSaving}
+                onClick={() => approveCurrent(false)}
+              >
+                {isSaving ? 'Saving…' : 'Final Save'}
+              </Button>
             </div>
           </div>
         </DialogContent>
@@ -1678,7 +1804,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-3 rounded-3xl border border-slate-200 bg-white/85 p-3">
+      <div className="flex flex-wrap gap-3 rounded-3xl border border-slate-200 bg-white p-3">
         <Select value={type} onValueChange={(value: 'bank' | 'insurance' | 'status') => setType(value)}><SelectTrigger className="w-56 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="bank">By Bank Name</SelectItem><SelectItem value="insurance">By Insurance Company</SelectItem>{!insights && <SelectItem value="status">By Status</SelectItem>}</SelectContent></Select>
         <Select value={grouping} onValueChange={(value: 'daily' | 'monthly' | 'yearly') => setGrouping(value)}><SelectTrigger className="w-44 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="daily">Daily</SelectItem><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="yearly">Yearly</SelectItem></SelectContent></Select>
         {!insights && <Select value={status} onValueChange={setStatus}><SelectTrigger className="w-44 rounded-xl bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="IN HOUSE">In House</SelectItem><SelectItem value="OUT HOUSE">Out House</SelectItem></SelectContent></Select>}
@@ -1714,7 +1840,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white/85 p-3">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3">
             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Column Visibility</span>
             {periods.map((period) => (
               <Button key={period} variant="outline" className={cn('h-8 rounded-xl text-xs', hiddenPeriods.has(period) ? proformaOutlineButton : proformaPrimaryButton)} onClick={() => {
@@ -1726,7 +1852,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
             ))}
             <Button variant="outline" className={cn('h-8 rounded-xl text-xs', proformaOutlineButton)} onClick={() => setStoredHiddenPeriods(new Set())}>Reset</Button>
           </div>
-          <div className="overflow-auto rounded-[1.75rem] border border-slate-200 bg-white/88">
+          <div className="overflow-auto rounded-[1.75rem] border border-slate-200 bg-white">
             <table className="w-max min-w-full table-auto text-xs">
               <thead className="bg-slate-950 text-white"><tr><th className="whitespace-nowrap px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-widest">Category</th>{visiblePeriods.map((period) => <th key={period} className="whitespace-nowrap px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest">{period}</th>)}<th className="whitespace-nowrap px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest">Grand Total</th></tr></thead>
               <tbody>
@@ -1735,7 +1861,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 p-3">
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-3">
             <p className="text-sm font-bold text-slate-600">Page {currentPivotPage} of {totalPivotPages} / {pivotRows.length} records</p>
             <div className="flex gap-2">
               <Button variant="outline" className={cn('rounded-xl', proformaOutlineButton)} disabled={currentPivotPage <= 1} onClick={() => setPage(currentPivotPage - 1)}>Prev</Button>
@@ -1749,7 +1875,7 @@ function AnalyticsView({ insights = false, userId }: { insights?: boolean; userI
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="rounded-[1.75rem] border border-slate-200 bg-white/88 p-4 shadow-sm"><p className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{title}</p>{children}</div>
+  return <div className="kia-surface p-4"><p className="kia-kicker mb-3">{title}</p>{children}</div>
 }
 
 function PieCard({ title, data }: { title: string; data: { name: string; value: number }[] }) {
@@ -1806,18 +1932,18 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
   const loading = optionsLoading || (Boolean(section === 'generate' && bookingId) && prefillLoading)
   const approverOnly = section === 'pending-approval'
   if (loading) {
-    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="space-y-4"><div className="h-32 animate-pulse rounded-[2rem] bg-white/70" /><div className="h-96 animate-pulse rounded-[2rem] bg-white/70" /></div></MainLayout>
+    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="kia-premium space-y-4"><div className="kia-skeleton h-32 rounded-[2rem]" /><PremiumTableSkeleton rows={7} columns={9} /></div></MainLayout>
   }
   if (error || !options) {
-    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 font-bold text-rose-700">{error || 'Unable to load Kia Proforma.'}</div></MainLayout>
+    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="kia-premium"><PremiumEmptyState illustration="error" title="Unable to load Kia Proforma" description={error || 'Please retry in a moment.'} action={<Button variant="outline" className={cn('h-10 rounded-xl', proformaOutlineButton)} onClick={reload}>Retry</Button>} /></div></MainLayout>
   }
   if (approverOnly && !options.currentUser.isApprover) {
-    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><h1 className="text-2xl font-black">Access required</h1><p className="mt-2 font-semibold text-amber-800">This page is available only for Kia Proforma approvers or manager roles.</p></div></MainLayout>
+    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="kia-premium"><PremiumEmptyState illustration="road" title="Access required" description="This page is available only for Kia Proforma approvers or manager roles." /></div></MainLayout>
   }
 
   return (
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
-      <div className="kia-proforma-shell space-y-5">
+      <div className="kia-proforma-shell kia-premium space-y-5">
         <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} onPricesImported={reload} />
         {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} currentUserRole={options.currentUser.role} />}
         {section === 'stock' && <KiaStockManagementDashboard />}

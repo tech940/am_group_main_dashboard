@@ -99,7 +99,7 @@ export default function LoginPage() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#f6f8fd] px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_8%_88%,rgba(180,210,255,0.45),transparent_24%),radial-gradient(circle_at_95%_92%,rgba(199,231,255,0.52),transparent_24%),linear-gradient(135deg,#fbfcff_0%,#f4f7fd_47%,#eef4fb_100%)]" />
-      <div className="pointer-events-none absolute -bottom-28 -left-28 h-80 w-80 rounded-full border border-white/90 bg-[radial-gradient(circle,rgba(255,255,255,0.95)_1px,transparent_2px)] bg-[length:16px_16px] opacity-70 shadow-[0_0_90px_rgba(125,169,232,0.18)]" />
+      <div className="pointer-events-none absolute -bottom-28 -left-28 h-80 w-80 rounded-full border border-white/90 bg-[radial-gradient(circle,rgba(255,255,255,0.95)_1px,transparent_2px)] bg-[length:16px_16px] opacity-70" />
       <div className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full border border-white/80 bg-white/30 blur-3xl" />
 
       <section className="relative mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1420px] flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-white/48 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur-xl lg:min-h-[calc(100vh-3rem)] lg:flex-row">
@@ -110,7 +110,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="absolute left-[56%] top-[60%] h-[660px] w-[660px] -translate-x-1/2 -translate-y-1/2">
+          <div className="absolute left-1/2 top-1/2 h-[660px] w-[660px] -translate-x-1/2 -translate-y-1/2">
             <div className="absolute left-1/2 top-1/2 h-[620px] w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/70" />
             <div className="absolute left-1/2 top-1/2 h-[466px] w-[466px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/70" />
             <div className="absolute left-1/2 top-1/2 h-[300px] w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-slate-200/80 animate-[spin_120s_linear_infinite]" />
@@ -147,17 +147,17 @@ export default function LoginPage() {
                 return (
                   <div
                     key={node.label}
-                    className="absolute left-1/2 top-1/2"
+                    className="absolute left-1/2 top-1/2 group"
                     style={{ transform: orbitTransform(node.angle, node.ring) }}
                   >
-                    <div className="flex min-w-28 flex-col items-center gap-2.5 animate-[spin_120s_linear_infinite_reverse]">
+                    <div className="flex min-w-28 flex-col items-center gap-2.5 animate-[spin_120s_linear_infinite_reverse] transition-transform duration-300">
                       <div
-                        className="flex h-[86px] w-[86px] items-center justify-center rounded-full border border-white/95 bg-white shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 ring-slate-100/70"
+                        className="flex h-[86px] w-[86px] items-center justify-center rounded-full border border-white/95 bg-white shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 ring-slate-100/70 transition-all duration-300 ease-out group-hover:scale-110 group-hover:shadow-[0_24px_56px_rgba(15,23,42,0.16)] group-hover:-translate-y-1"
                         style={{ background: `radial-gradient(circle at 30% 30%, #ffffff 0%, ${node.bg} 100%)` }}
                       >
                         <Icon className="h-10 w-10" style={{ color: node.color }} strokeWidth={2.4} />
                       </div>
-                      <span className="text-[15px] font-semibold tracking-[-0.01em] text-slate-950">
+                      <span className="text-[15px] font-semibold tracking-[-0.01em] text-slate-950 transition-all duration-300 group-hover:font-bold">
                         {node.label}
                       </span>
                     </div>

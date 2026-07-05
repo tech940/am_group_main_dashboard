@@ -29,6 +29,7 @@ export async function GET(request: Request) {
     const page = Number(url.searchParams.get('page') || 1)
     const pageSize = Number(url.searchParams.get('pageSize') || 10)
     const offset = (page - 1) * pageSize
+    const limitOffsetClause = pageSize === 9999 ? '' : `LIMIT ${pageSize} OFFSET ${offset}`
 
     // Build filters
     const filters: string[] = ['TRUE']
@@ -44,10 +45,14 @@ export async function GET(request: Request) {
         filters.push('va.id IS NULL')
       } else if (status === 'ALLOTTED') {
         filters.push("va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered')")
+      } else if (status === 'PAYMENT_OVERDUE') {
+        filters.push("va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW()")
       } else if (status === 'PAID_TO_DELIVER') {
         filters.push("va.id IS NOT NULL AND kb.status = 'ready_delivery'")
       } else if (status === 'DELIVERED') {
         filters.push("va.id IS NOT NULL AND kb.status = 'delivered'")
+      } else if (status === 'TRANSFERRED') {
+        filters.push("vt.id IS NOT NULL")
       }
     }
 
@@ -123,6 +128,8 @@ export async function GET(request: Request) {
         kb.consultant_name,
         kb.status as booking_status,
         kb.bank_name,
+        kb.delivery_target_date as raw_delivery_target_date,
+        COALESCE(kb.delivery_target_date::text, kb.metadata->>'expectedDeliveryDate') as booking_delivery_date,
         kb.metadata,
         vt.id as transfer_id,
         vt.transfer_status,
@@ -133,7 +140,7 @@ export async function GET(request: Request) {
       LEFT JOIN kia_vehicle_transfers vt ON vt.vin_number = sm.vin_number AND vt.transfer_status = 'pending'
       WHERE ${whereClause}
       ORDER BY sm.stock_age::int DESC NULLS LAST, sm.id DESC
-      LIMIT ${pageSize} OFFSET ${offset}
+      ${limitOffsetClause}
     `))
 
     // 4. Fetch activities

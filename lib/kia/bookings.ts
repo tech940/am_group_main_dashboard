@@ -128,10 +128,11 @@ async function addActivity(tx: DbTx, params: {
   })
 }
 
-async function nextBookingNumber(tx: DbTx) {
+async function nextBookingNumber(tx: DbTx, dealerCode: string) {
   const result = await tx.execute(sql<{ seq: string }>`SELECT nextval('public.kia_booking_number_seq')::text AS seq`)
-  const seq = text(rows<{ seq: string }>(result)[0]?.seq || '0').padStart(5, '0')
-  return `KIB-${new Date().getFullYear()}-${seq}`
+  const seq = text(rows<{ seq: string }>(result)[0]?.seq || '0').padStart(6, '0')
+  const cleanDealer = String(dealerCode || 'JK402').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return `KIA_${cleanDealer}_${new Date().getFullYear()}_${seq}`
 }
 
 export async function expireKiaTemporaryAllocations() {
@@ -274,7 +275,7 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
   }
 
   return db.transaction(async (tx) => {
-    const bookingNumber = await nextBookingNumber(tx)
+    const bookingNumber = await nextBookingNumber(tx, required.dealerCode)
     const [booking] = await tx.insert(kiaBookings).values({
       bookingNumber,
       status: 'booking_created',
@@ -785,10 +786,49 @@ export async function requestKiaVehicleTransfer(
   const vehicle = normalizedVin ? await readMatchingVehicle(normalizedVin) : null
 
   return db.transaction(async (tx) => {
-    const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
-    if (!booking) throw new Error('Booking not found')
+    const isDirectStockTransfer = !id || id === 'none' || id === 'system' || id === 'undefined' || id === 'null'
+
     const toDealerCode = normalizeKiaDealerCode(input.toDealerCode) || text(input.toDealerCode).toUpperCase()
     if (!toDealerCode) throw new Error('Target dealer is required')
+
+    if (isDirectStockTransfer) {
+      if (!normalizedVin) throw new Error('Pick a VIN before requesting a transfer.')
+      if (!vehicle) throw new Error('Vehicle not found for transfer')
+
+      // Insert transfer record. booking_id is nullable at the DB level for
+      // direct (booking-less) stock transfers, though the schema types it as
+      // required — cast through unknown rather than `any`.
+      const [transfer] = await tx.insert(kiaVehicleTransfers).values({
+        bookingId: null as unknown as string,
+        vinNumber: normalizedVin,
+        fromDealerCode: nullableText(vehicle.dealer_code),
+        toDealerCode,
+        transferStatus: 'Transferred',
+        notes: nullableText(input.notes),
+        requestedBy: appUser.id,
+        metadata: { source: 'direct_stock_transfer' },
+      }).returning()
+
+      // Update vehicle's dealer code in kia_stock_management table
+      await tx.execute(sql.raw(`
+        UPDATE kia_stock_management 
+        SET order_dealer = '${toDealerCode.replace(/'/g, "''")}' 
+        WHERE UPPER(vin_number) = '${normalizedVin.replace(/'/g, "''")}'
+      `))
+
+      // NOTE: we intentionally do NOT write a kia_stock_local_statuses row here.
+      // That table has a CHECK constraint permitting only local_status IN
+      // ('bbnd','retail'); 'transferred' violated it and crashed the transfer.
+      // Since no stock query ever reads local_status = 'transferred', this row
+      // was write-only — the transfer is fully recorded in kia_vehicle_transfers
+      // above. (To surface transferred vehicles in stock later, widen the CHECK
+      // constraint to include 'transferred' and add read logic for it.)
+
+      return { id: transfer.id, toDealerCode, vinNumber: normalizedVin }
+    }
+
+    const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
+    if (!booking) throw new Error('Booking not found')
     if (!booking.proformaId) throw new Error('Generate the proforma before requesting a transfer.')
 
     const [proforma] = await tx

@@ -716,7 +716,7 @@ export async function getKiaStockReportSummary(input: {
       aging: {
         buckets: ['0-15D', '16-30D', '31-60D', '61-90D', '90D+'].map((name) => ({ name, value: agingMap.get(name) || 0 })),
         byModel: Array.from(agingModelRows.entries()).map(([model, value]) => ({ model, units: value.units, avgAge: value.units ? Math.round(value.ageTotal / value.units) : 0 })).sort((a, b) => b.avgAge - a.avgAge),
-        rows: [...currentVehicles].sort((a, b) => b.stockAge - a.stockAge).slice(0, 10),
+        rows: [...currentVehicles].sort((a, b) => b.stockAge - a.stockAge),
         rows90Plus,
       },
       trims: {
@@ -838,7 +838,7 @@ async function readReportRows(input: {
         AND NOT EXISTS (
           SELECT 1
           FROM latest d
-          WHERE d.vin_number = ls.vin_number
+          WHERE d.vin_no = ls.vin_number
         )
     )
     SELECT *
@@ -865,7 +865,7 @@ export async function getKiaStockReportTable(input: {
   filters?: Record<string, string[]> | null
 }): Promise<KiaStockReportPayload> {
   const page = normalizePage(input.page, 1)
-  const pageSize = Math.min(100, normalizePage(input.pageSize, 10))
+  const pageSize = Math.min(99999, normalizePage(input.pageSize, 10))
   const cacheKey = `kia:stock-report:table:v8:${JSON.stringify({ ...input, page, pageSize })}`
   return getCachedData(cacheKey, async () => {
     const { filters: _filters, ...readInput } = input
