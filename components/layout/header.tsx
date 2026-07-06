@@ -25,9 +25,10 @@ const ACCENT_OPTIONS = [
   { id: 'skydash', label: 'Skydash', colors: ['#4B49AC', '#98BDFF', '#7DA0FA', '#7978E9', '#F3797E'] },
   { id: 'corona', label: 'Corona', colors: ['#191C24', '#AF1763', '#0D6EFD', '#198754', '#0DCAF0', '#AB2E3C', '#FFC107'] },
   { id: 'executive-navy', label: 'Executive Navy', colors: ['#031430', '#0B2A55', '#D4AF37', '#E8EEF7', '#38BDF8', '#00E97E'] },
-  { id: 'minimal-slate', label: 'Minimal Slate', colors: ['#475569', '#64748B', '#94A3B8', '#CBD5E1', '#E2E8F0'] },
-  { id: 'minimal-sage', label: 'Minimal Sage', colors: ['#4F6554', '#718E7A', '#90A997', '#B0C4B5', '#D1DDD5'] },
-  { id: 'minimal-sand', label: 'Minimal Sand', colors: ['#736050', '#947F6E', '#B5A497', '#D6CBC4', '#E6E1DA'] },
+  { id: 'amethyst', label: 'Amethyst', colors: ['#7C3AED', '#A78BFA', '#F472B6', '#38BDF8', '#FBBF24', '#34D399'] },
+  { id: 'tropical-teal', label: 'Tropical Teal', colors: ['#0D9488', '#2DD4BF', '#38BDF8', '#818CF8', '#FB7185', '#FACC15'] },
+  { id: 'sunset-ember', label: 'Sunset Ember', colors: ['#EA580C', '#FB923C', '#F43F5E', '#8B5CF6', '#14B8A6', '#FACC15'] },
+  { id: 'midnight-lavender', label: 'Midnight Lavender', colors: ['#0E0F19', '#655699', '#A99CE8', '#C3B7FE', '#837BAE', '#50388C'] },
 ] as const
 
 type AccentId = typeof ACCENT_OPTIONS[number]['id']

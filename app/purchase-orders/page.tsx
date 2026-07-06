@@ -37,6 +37,8 @@ import { BRANCH_OPTIONS, getBranchLabel } from '@/lib/branches'
 import { createClient } from '@/lib/supabase/client'
 import { useQueryClient } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
+import { ApprovalCategoryTabs, type ApprovalCategory } from '@/components/approvals/approval-tabs'
+import { PettyCashApprovalPanel } from '@/components/petty-cash/approval-panel'
 
 interface PurchaseOrder {
   id: string
@@ -556,6 +558,10 @@ function PurchaseOrdersPageContent() {
   const [purchaseOrderListMode, setPurchaseOrderListMode] = useState<PurchaseOrderListMode>('today')
   const [purchaseOrderPage, setPurchaseOrderPage] = useState(1)
   const [purchaseOrderPagination, setPurchaseOrderPagination] = useState<PurchaseOrderPagination>(DEFAULT_PURCHASE_ORDER_PAGINATION)
+  // Unified approval workspace: Purchase Orders (default) vs Petty Cash
+  const [approvalCategory, setApprovalCategory] = useState<ApprovalCategory>('purchase_orders')
+  const [pettyCashApprovalCount, setPettyCashApprovalCount] = useState(0)
+  const [userBrand, setUserBrand] = useState('')
 
   // View mode preference for MD/EA users
   const { value: viewMode, loading: viewPreferenceLoading, savePreference: saveViewMode, setValue: setViewModePreference } = usePurchaseOrdersViewPreference()
@@ -572,6 +578,8 @@ function PurchaseOrdersPageContent() {
   const canApproveMD = userRole === 'admin' || userRole === 'md'
   const canSubmitGRN = canCreateOrders
   const canProcessAccounts = userRole === 'admin' || userRole === 'accounts'
+  // Roles that approve either workflow get the unified Purchase Orders | Petty Cash tabs.
+  const isPettyCashApprover = userRole === 'ea' || userRole === 'md' || userRole === 'eba' || userRole === 'accounts' || userRole === 'super_admin'
   const canEditInitialOrder = Boolean(canCreateOrders && selectedOrder && !['completed', 'cancelled'].includes(selectedOrder.status))
   const effectivePurchaseOrderListMode: PurchaseOrderListMode = isApprovalRole(userRole) ? 'all' : purchaseOrderListMode
 
@@ -679,6 +687,7 @@ function PurchaseOrdersPageContent() {
         return
       }
       setUserRole(data.role || '')
+      setUserBrand(data.brand || '')
       if (data.role === 'md') {
         setApprovalBranchFilter(data.brand || 'all')
       }
@@ -981,6 +990,34 @@ function PurchaseOrdersPageContent() {
       }
     }
   }, [])
+
+  // Live petty-cash pending-approval badge count (mount + realtime on the requests table).
+  useEffect(() => {
+    if (!isPettyCashApprover) return
+    let cancelled = false
+    const fetchCount = async () => {
+      try {
+        const res = await fetch('/api/petty-cash/approvals?countOnly=1', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json().catch(() => null)
+        if (!cancelled && data && typeof data.count === 'number') setPettyCashApprovalCount(data.count)
+      } catch {
+        // non-fatal: the badge simply stays at its last value
+      }
+    }
+    void fetchCount()
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel('petty-cash-approvals')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'petty_cash_requests' }, () => { void fetchCount() })
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      void supabase.removeChannel(channel)
+    }
+  }, [isPettyCashApprover])
 
   const openOrderDetails = async (orderId: string) => {
     setLoadingOrderId(orderId)
@@ -1948,6 +1985,20 @@ function PurchaseOrdersPageContent() {
   return (
     <MainLayout>
       <div className="space-y-6">
+        {isPettyCashApprover && !selectedOrder && !showNewOrderForm && (
+          <div className="rounded-[28px] bg-white p-4 shadow-sm">
+            <ApprovalCategoryTabs
+              active={approvalCategory}
+              onChange={setApprovalCategory}
+              purchaseOrderCount={approvalFilterCounts.pending || 0}
+              pettyCashCount={pettyCashApprovalCount}
+            />
+          </div>
+        )}
+        {approvalCategory === 'petty_cash' && isPettyCashApprover ? (
+          <PettyCashApprovalPanel role={userRole} userBrand={userBrand} onCountChange={setPettyCashApprovalCount} />
+        ) : (
+        <>
         {userRole !== 'md' && userRole !== 'ea' && (
           <div className="flex flex-col gap-4 rounded-[28px] bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -2477,6 +2528,8 @@ function PurchaseOrdersPageContent() {
               </Card>
             )}
           </>
+        )}
+        </>
         )}
       </div>
     </MainLayout>

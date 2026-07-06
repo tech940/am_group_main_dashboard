@@ -11,7 +11,22 @@ import * as React from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info'
+export type Tone =
+  | 'neutral'
+  | 'accent'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
+  // Fixed vibrant hues for a colourful, multi-tone dashboard (theme-independent).
+  | 'blue'
+  | 'violet'
+  | 'teal'
+  | 'rose'
+  | 'emerald'
+  | 'sky'
+  | 'amber'
+  | 'indigo'
 
 const TONE_BASE: Record<Tone, string> = {
   neutral: '#64748b',
@@ -20,6 +35,14 @@ const TONE_BASE: Record<Tone, string> = {
   warning: 'var(--dashboard-warning)',
   danger: 'var(--dashboard-danger)',
   info: 'var(--dashboard-support-1)',
+  blue: '#3b82f6',
+  violet: '#8b5cf6',
+  teal: '#14b8a6',
+  rose: '#f43f5e',
+  emerald: '#10b981',
+  sky: '#0ea5e9',
+  amber: '#f59e0b',
+  indigo: '#6366f1',
 }
 
 const TONE_TEXT: Record<Tone, string> = {
@@ -29,6 +52,14 @@ const TONE_TEXT: Record<Tone, string> = {
   warning: 'var(--dashboard-warning-text)',
   danger: 'var(--dashboard-risk-text)',
   info: 'var(--dashboard-support-1)',
+  blue: '#1d4ed8',
+  violet: '#6d28d9',
+  teal: '#0f766e',
+  rose: '#be123c',
+  emerald: '#047857',
+  sky: '#0369a1',
+  amber: '#b45309',
+  indigo: '#4338ca',
 }
 
 export function toneSoftStyle(tone: Tone): React.CSSProperties {

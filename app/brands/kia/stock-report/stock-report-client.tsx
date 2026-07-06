@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable react-hooks/set-state-in-effect -- pre-existing reset-on-dependency-change effects; consistent with sibling KIA client files. */
+
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
@@ -361,7 +363,21 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   }
 
   const scrollToSection = (section: string) => {
-    document.getElementById(`stock-${section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const el = document.getElementById(`stock-${section}`)
+    if (!el) return
+    // Scroll ONLY the <main> content scroller. scrollIntoView() scrolls every
+    // scrollable ancestor — including the overflow-hidden layout column that
+    // holds the top navbar (overflow-hidden is still programmatically
+    // scrollable), which pushed the navbar out of view with no way to scroll it
+    // back. Scrolling the main container directly avoids that entirely.
+    const scroller = el.closest('main')
+    if (!scroller) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    const STICKY_NAV_OFFSET = 64 // leave room for the sticky section-tabs bar
+    const top = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - STICKY_NAV_OFFSET
+    scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
   }
 
   const handleExport = async () => {

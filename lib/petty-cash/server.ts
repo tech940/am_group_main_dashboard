@@ -278,6 +278,90 @@ export async function listPettyCashRequests(appUser: AppUser, input: z.input<typ
   }
 }
 
+type PettyCashRequestStatus = (typeof pettyCashRequests.$inferSelect)['status']
+
+const PETTY_CASH_APPROVAL_STATUSES = {
+  ea_approval: ['ea_pending', 'ea_on_hold'],
+  md_approval: ['md_pending', 'md_on_hold'],
+  accounts: ['accounts_pending', 'accounts_on_hold'],
+} as const satisfies Record<string, readonly PettyCashRequestStatus[]>
+
+/** Which approval stage a request's status currently sits at (null if terminal/creator-side). */
+export function pettyCashStageForStatus(status: string): 'ea_approval' | 'md_approval' | 'accounts' | null {
+  if (status === 'ea_pending' || status === 'ea_on_hold') return 'ea_approval'
+  if (status === 'md_pending' || status === 'md_on_hold') return 'md_approval'
+  if (status === 'accounts_pending' || status === 'accounts_on_hold') return 'accounts'
+  return null
+}
+
+/** The request statuses that belong in a given role's pending-approval queue. */
+function pettyCashApprovalStatusesForRole(role: AppUser['role']): PettyCashRequestStatus[] {
+  if (role === 'ea') return [...PETTY_CASH_APPROVAL_STATUSES.ea_approval]
+  if (role === 'md' || role === 'eba') return [...PETTY_CASH_APPROVAL_STATUSES.md_approval]
+  if (role === 'accounts') return [...PETTY_CASH_APPROVAL_STATUSES.accounts]
+  // Super admins get a supervisory view across every stage.
+  if (role === 'super_admin') {
+    return [
+      ...PETTY_CASH_APPROVAL_STATUSES.ea_approval,
+      ...PETTY_CASH_APPROVAL_STATUSES.md_approval,
+      ...PETTY_CASH_APPROVAL_STATUSES.accounts,
+    ]
+  }
+  return []
+}
+
+/** Pending petty-cash requests awaiting the current user's action, enriched for the approval UI. */
+export async function getPettyCashApprovalQueue(appUser: AppUser, opts?: { search?: string | null; branchId?: string | null }) {
+  const statuses = pettyCashApprovalStatusesForRole(appUser.role)
+  if (statuses.length === 0) return { count: 0, requests: [] as Array<Record<string, unknown>> }
+
+  const filters = [getPettyCashRequestVisibilityFilter(appUser), inArray(pettyCashRequests.status, statuses)]
+
+  if (opts?.branchId && opts.branchId !== 'all') {
+    if (!isBranchValue(opts.branchId)) throw new Error('Invalid branch')
+    if (!canManagePettyCashBranch(appUser, opts.branchId)) throw new Error('Forbidden branch')
+    filters.push(eq(pettyCashRequests.branchId, opts.branchId))
+  }
+
+  const search = (opts?.search || '').trim()
+  if (search) {
+    filters.push(or(
+      ilike(pettyCashRequests.requestNumber, `%${search}%`),
+      ilike(pettyCashRequests.requestedByName, `%${search}%`),
+      ilike(pettyCashRequests.purpose, `%${search}%`)
+    )!)
+  }
+
+  const rows = await db
+    .select()
+    .from(pettyCashRequests)
+    .where(and(...filters))
+    .orderBy(desc(pettyCashRequests.createdAt))
+    .limit(200)
+
+  const categories = await getPettyCashCategories()
+  const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
+
+  const requests = rows.map((row) => ({
+    ...serializeRequest(row),
+    stage: pettyCashStageForStatus(String(row.status)),
+    categoryName: row.categoryId ? categoryMap.get(row.categoryId) || null : null,
+  }))
+
+  return { count: rows.length, requests }
+}
+
+/** Lightweight badge count of pending petty-cash approvals for the current user. */
+export async function getPettyCashApprovalCount(appUser: AppUser) {
+  const statuses = pettyCashApprovalStatusesForRole(appUser.role)
+  if (statuses.length === 0) return 0
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(pettyCashRequests)
+    .where(and(getPettyCashRequestVisibilityFilter(appUser), inArray(pettyCashRequests.status, statuses)))
+  return Number(total) || 0
+}
+
 export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typeof pettyCashListQuerySchema>) {
   const query = pettyCashListQuerySchema.parse(input)
   const filters = [getPettyCashExpenseVisibilityFilter(appUser)]

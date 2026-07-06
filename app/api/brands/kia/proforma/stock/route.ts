@@ -67,18 +67,26 @@ export async function GET(request: Request) {
       )`)
     }
 
+    // Delivered vehicles have left inventory: hide them from the default stock
+    // list + Total Inventory. They remain reachable only via the explicit
+    // "Delivered" status filter.
+    const deliveredExpr = "(va.id IS NOT NULL AND kb.status = 'delivered')"
+    if (status !== 'DELIVERED') {
+      filters.push(`NOT ${deliveredExpr}`)
+    }
+
     const whereClause = filters.join(' AND ')
 
-    // 1. Fetch metrics
+    // 1. Fetch metrics (Total Inventory excludes delivered units)
     const metricsResult = await db.execute(sql.raw(`
       SELECT
-        COUNT(*)::int AS total_vins,
+        COUNT(CASE WHEN NOT ${deliveredExpr} THEN 1 END)::int AS total_vins,
         COUNT(CASE WHEN va.id IS NULL THEN 1 END)::int AS available,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') THEN 1 END)::int AS payment_pending,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW() THEN 1 END)::int AS payment_overdue,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'ready_delivery' THEN 1 END)::int AS paid_to_deliver,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'delivered' THEN 1 END)::int AS delivered,
-        (SELECT COUNT(*)::int FROM kia_vehicle_transfers WHERE transfer_status = 'pending') AS transfers
+        (SELECT COUNT(*)::int FROM kia_vehicle_transfers WHERE LOWER(transfer_status) IN ('transferred', 'requested')) AS transfers
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
@@ -94,12 +102,14 @@ export async function GET(request: Request) {
       transfers: 0,
     }
 
-    // 2. Fetch total count for pagination
+    // 2. Fetch total count for pagination (join transfers too, since the
+    // TRANSFERRED filter references vt.id in the WHERE clause)
     const totalCountResult = await db.execute(sql.raw(`
       SELECT COUNT(*)::int as count
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
+      LEFT JOIN kia_vehicle_transfers vt ON vt.vin_number = sm.vin_number AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
       WHERE ${whereClause}
     `))
     const totalRows = Number(totalCountResult[0]?.count || 0)
@@ -137,7 +147,7 @@ export async function GET(request: Request) {
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
-      LEFT JOIN kia_vehicle_transfers vt ON vt.vin_number = sm.vin_number AND vt.transfer_status = 'pending'
+      LEFT JOIN kia_vehicle_transfers vt ON vt.vin_number = sm.vin_number AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
       WHERE ${whereClause}
       ORDER BY sm.stock_age::int DESC NULLS LAST, sm.id DESC
       ${limitOffsetClause}
@@ -164,8 +174,8 @@ export async function GET(request: Request) {
       rows,
       activities,
       filters: {
-        dealers: filtersResult.map((r: any) => r.dealer),
-        models: modelsResult.map((r: any) => r.model),
+        dealers: filtersResult.map((r) => (r as { dealer: string }).dealer),
+        models: modelsResult.map((r) => (r as { model: string }).model),
       },
       pagination: {
         page,

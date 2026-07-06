@@ -342,20 +342,31 @@ function yearKey(value?: string | null) {
   return dateKey(value).slice(0, 4)
 }
 
+// The stored `location` is a mix of dealer codes (JK402/JK501) and city names
+// (JAMMU/UDHAMPUR), plus legacy sentinels ("all"/"kia"). Normalize to the branch
+// city: JK501/Udhampur -> Udhampur; everything else (JK402, Jammu, all, null) ->
+// Jammu (the primary dealer). This replaces the raw "All" shown before.
+function formatKiaLocation(value?: string | null) {
+  const v = String(value || '').trim().toUpperCase()
+  if (v === 'JK501' || v.startsWith('UDHAMPUR')) return 'Udhampur'
+  return 'Jammu'
+}
+
 function proformaColumnValue(row: KiaProformaRow, column: string) {
   if (column === 'index') return ''
   const value = row[column as keyof KiaProformaRow]
   if (column === 'entryTime') return formatDateTime(String(value || ''))
   if (column === 'proformaDate' || column === 'financeUpdatedTime') return formatDate(String(value || ''))
+  if (column === 'location') return formatKiaLocation(value as string | null)
   return String(value ?? '-')
 }
 
 function approvalTone(value?: string | null): Tone {
   const status = String(value || '').toLowerCase()
-  if (status.includes('approved') && !status.includes('not')) return 'success'
-  if (status.includes('not') || status.includes('cancel') || status.includes('decline')) return 'danger'
-  if (status.includes('converted')) return 'info'
-  return 'warning'
+  if (status.includes('approved') && !status.includes('not')) return 'emerald'
+  if (status.includes('not') || status.includes('cancel') || status.includes('decline')) return 'rose'
+  if (status.includes('converted')) return 'blue'
+  return 'amber'
 }
 
 function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
@@ -1327,9 +1338,11 @@ function ProformaTable({
       return value !== null && value !== undefined && String(value).trim() !== ''
     })
   })
+  // Freeze the index + customer columns only from `sm` up. On mobile the table
+  // scrolls normally with no sticky columns (per product requirement).
   const stickyClass = (key: string) => {
-    if (key === 'index') return 'sticky left-0 z-20 w-12 min-w-12'
-    if (key === 'customerName') return 'sticky left-12 z-20 min-w-[190px] shadow-[8px_0_14px_rgba(15,23,42,0.05)]'
+    if (key === 'index') return 'w-12 min-w-12 sm:sticky sm:left-0 sm:z-20'
+    if (key === 'customerName') return 'min-w-[190px] sm:sticky sm:left-12 sm:z-20 sm:shadow-[8px_0_14px_rgba(15,23,42,0.05)]'
     return ''
   }
   const stickyBg = (key: string): React.CSSProperties => (key === 'index' || key === 'customerName') ? { backgroundColor: 'var(--kia-surface)' } : {}
@@ -1402,7 +1415,7 @@ function ProformaTable({
                 </th>
               ))}
               {extra && <th className="whitespace-nowrap px-3 py-2.5 text-left">Finance</th>}
-              {action && <th className="sticky right-0 whitespace-nowrap px-3 py-2.5 text-left">Action</th>}
+              {action && <th className="whitespace-nowrap px-3 py-2.5 text-left sm:sticky sm:right-0">Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -1418,7 +1431,7 @@ function ProformaTable({
                 <tr key={row.id} className="align-top">
                   {visibleColumns.map((column, colIdx) => {
                     const raw = column.key === 'index' ? index + 1 : row[column.key]
-                    const value = column.numeric ? formatCurrency(raw) : column.key === 'entryTime' ? formatDateTime(String(raw)) : column.key === 'proformaDate' || column.key === 'financeUpdatedTime' ? formatDate(String(raw)) : String(raw ?? '-')
+                    const value = column.numeric ? formatCurrency(raw) : column.key === 'entryTime' ? formatDateTime(String(raw)) : column.key === 'proformaDate' || column.key === 'financeUpdatedTime' ? formatDate(String(raw)) : column.key === 'location' ? formatKiaLocation(raw as string | null) : String(raw ?? '-')
                     return (
                       <td
                         key={String(column.key)}
@@ -1437,7 +1450,7 @@ function ProformaTable({
                     )
                   })}
                   {extra && <td className="min-w-[320px] px-3 py-2.5 text-xs" style={{ borderRight: '1px solid var(--kia-hairline)', borderBottom: '1px solid var(--kia-hairline)' }}>{extra(row)}</td>}
-                  {action && <td className="sticky right-0 whitespace-nowrap px-3 py-2.5 text-xs shadow-[-10px_0_18px_rgba(15,23,42,0.05)]" style={{ backgroundColor: 'var(--kia-surface)', borderBottom: '1px solid var(--kia-hairline)' }}>{action(row)}</td>}
+                  {action && <td className="whitespace-nowrap px-3 py-2.5 text-xs sm:sticky sm:right-0 sm:shadow-[-10px_0_18px_rgba(15,23,42,0.05)]" style={{ backgroundColor: 'var(--kia-surface)', borderBottom: '1px solid var(--kia-hairline)' }}>{action(row)}</td>}
                 </tr>
               )
             })}

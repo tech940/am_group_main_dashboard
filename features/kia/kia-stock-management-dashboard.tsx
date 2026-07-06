@@ -446,11 +446,15 @@ export function KiaStockManagementDashboard() {
 
   const renderStatus = (row: StockRow) => {
     // Each state gets a distinct tone so Available / Allotted / Paid / Delivered
-    // never read as the same colour.
-    if (!row.allocation_id) return <Chip tone="success">Available</Chip>
-    if (row.booking_status === 'ready_delivery') return <Chip tone="accent">Paid · To Deliver</Chip>
-    if (row.booking_status === 'delivered') return <Chip tone="info">Delivered</Chip>
-    return <Chip tone="warning">Allotted</Chip>
+    // / Transferred never read as the same colour. Active allocation states take
+    // precedence; an unallocated VIN with a transfer record reads as Transferred.
+    if (row.allocation_id) {
+      if (row.booking_status === 'ready_delivery') return <Chip tone="violet">Paid · To Deliver</Chip>
+      if (row.booking_status === 'delivered') return <Chip tone="blue">Delivered</Chip>
+      return <Chip tone="amber">Allotted</Chip>
+    }
+    if (row.transfer_id) return <Chip tone="sky">Transferred{row.to_dealer_code ? ` → ${row.to_dealer_code}` : ''}</Chip>
+    return <Chip tone="emerald">Available</Chip>
   }
 
   // Activity icon mapping
@@ -523,13 +527,13 @@ export function KiaStockManagementDashboard() {
       {data?.metrics && (
         <KpiRow
           items={([
-            { key: 'All', label: 'Total VINs', value: data.metrics.total_vins, icon: Car, tone: 'neutral' as Tone, hint: 'Whole inventory' },
-            { key: 'AVAILABLE', label: 'Available', value: data.metrics.available, icon: CheckCircle2, tone: 'success' as Tone, hint: 'Free to allot' },
-            { key: 'PAYMENT_PENDING', label: 'Payment Pending', value: data.metrics.payment_pending, icon: WalletCards, tone: 'warning' as Tone, hint: 'Within window' },
-            { key: 'PAYMENT_OVERDUE', label: 'Payment Overdue', value: data.metrics.payment_overdue, icon: AlertTriangle, tone: 'danger' as Tone, hint: 'Past 72h' },
-            { key: 'PAID_TO_DELIVER', label: 'Paid · To Deliver', value: data.metrics.paid_to_deliver, icon: BadgeIndianRupee, tone: 'accent' as Tone, hint: 'Ready to hand over' },
-            { key: 'DELIVERED', label: 'Delivered', value: data.metrics.delivered, icon: Truck, tone: 'info' as Tone, hint: 'Completed' },
-            { key: 'TRANSFERRED', label: 'Transfers', value: data.metrics.transfers, icon: RefreshCw, tone: 'info' as Tone, hint: 'Inter-outlet' },
+            { key: 'All', label: 'Total VINs', value: data.metrics.total_vins, icon: Car, tone: 'blue' as Tone, hint: 'Whole inventory' },
+            { key: 'AVAILABLE', label: 'Available', value: data.metrics.available, icon: CheckCircle2, tone: 'emerald' as Tone, hint: 'Free to allot' },
+            { key: 'PAYMENT_PENDING', label: 'Payment Pending', value: data.metrics.payment_pending, icon: WalletCards, tone: 'amber' as Tone, hint: 'Within window' },
+            { key: 'PAYMENT_OVERDUE', label: 'Payment Overdue', value: data.metrics.payment_overdue, icon: AlertTriangle, tone: 'rose' as Tone, hint: 'Past 72h' },
+            { key: 'PAID_TO_DELIVER', label: 'Paid · To Deliver', value: data.metrics.paid_to_deliver, icon: BadgeIndianRupee, tone: 'violet' as Tone, hint: 'Ready to hand over' },
+            { key: 'DELIVERED', label: 'Delivered', value: data.metrics.delivered, icon: Truck, tone: 'teal' as Tone, hint: 'Completed' },
+            { key: 'TRANSFERRED', label: 'Transfers', value: data.metrics.transfers, icon: RefreshCw, tone: 'sky' as Tone, hint: 'Inter-outlet' },
           ] as (KpiDatum & { active?: boolean })[]).map((item) => ({ ...item, active: status === item.key }))}
           onSelect={(key) => { setStatus(key); setPage(1) }}
         />
@@ -1434,6 +1438,12 @@ export function KiaStockManagementDashboard() {
       {/* print stylesheet */}
       <style jsx global>{`
         @media print {
+          /* The 7-column stock report is wide — force landscape so the
+             Customer/Booking column isn't cropped at the page edge. */
+          @page {
+            size: A4 landscape;
+            margin: 8mm;
+          }
           body * {
             visibility: hidden !important;
           }
@@ -1447,8 +1457,17 @@ export function KiaStockManagementDashboard() {
             left: 0;
             top: 0;
             width: 100% !important;
+            padding: 0 !important;
             display: block !important;
             background-color: #f8fafc !important;
+          }
+          #printable-stock-report table {
+            width: 100% !important;
+            table-layout: fixed !important;
+          }
+          #printable-stock-report th, #printable-stock-report td {
+            word-break: break-word !important;
+            overflow-wrap: anywhere !important;
           }
           .page-break-avoid {
             page-break-inside: avoid !important;

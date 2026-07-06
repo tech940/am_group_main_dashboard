@@ -47,6 +47,21 @@ function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+// Surfaces the underlying cause of an otherwise-generic 500. In development we
+// return the real error text (Postgres/Supabase message) so failures are
+// debuggable instead of a blank "Failed to ...". Production keeps the generic
+// fallback so internal details are never leaked to end users.
+function errorResponseMessage(fallback: string, error: unknown) {
+  if (process.env.NODE_ENV === 'production') return fallback
+  const detail =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : ''
+  return detail ? `${fallback} (${detail})` : fallback
+}
+
 function normalizeRequestedBranch(value: unknown) {
   if (value === null || value === undefined || value === '') return null
   if (Array.isArray(value)) {
@@ -339,7 +354,7 @@ export async function POST(request: Request) {
     }, { status: 201 })
   } catch (error) {
     console.error('POST /api/admin/users failed:', error)
-    return NextResponse.json({ error: 'Failed to create user.' }, { status: 500 })
+    return NextResponse.json({ error: errorResponseMessage('Failed to create user.', error) }, { status: 500 })
   }
 }
 
@@ -455,7 +470,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ ...publicUser(updated, actor), permissionWarning })
   } catch (error) {
     console.error('PUT /api/admin/users failed:', error)
-    return NextResponse.json({ error: 'Failed to update user.' }, { status: 500 })
+    return NextResponse.json({ error: errorResponseMessage('Failed to update user.', error) }, { status: 500 })
   }
 }
 
@@ -499,6 +514,6 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('DELETE /api/admin/users failed:', error)
-    return NextResponse.json({ error: 'Failed to delete user.' }, { status: 500 })
+    return NextResponse.json({ error: errorResponseMessage('Failed to delete user.', error) }, { status: 500 })
   }
 }

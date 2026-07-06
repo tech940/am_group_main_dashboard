@@ -12,6 +12,12 @@
     --dashboard-action-bg: #4B49AC;
     --dashboard-action-hover: #373482;
     --dashboard-action-fg: #ffffff;
+    /* Sidebar gradient stops. Default to the primary ladder so existing themes
+       (skydash / corona / executive-navy) are unchanged; bright themes override
+       these with a dark, accent-tinted ladder while keeping bright action colors. */
+    --dashboard-sidebar-from: var(--dashboard-primary-dark);
+    --dashboard-sidebar-via: var(--dashboard-primary);
+    --dashboard-sidebar-to: var(--dashboard-primary-light);
     --dashboard-primary-rgb: 75, 73, 172;
     --dashboard-primary-light-rgb: 152, 189, 255;
     --dashboard-primary-hsl: 241 40% 48%;
@@ -110,73 +116,110 @@
     --chart-5: 152 100% 46%;
   }
 
-  :root[data-dashboard-accent="minimal-slate"] {
-    --dashboard-primary: #475569;
-    --dashboard-primary-dark: #334155;
-    --dashboard-primary-light: #64748B;
-    --dashboard-primary-soft: #f8fafc;
-    --dashboard-primary-border: #cbd5e1;
-    --dashboard-action-bg: #475569;
-    --dashboard-action-hover: #334155;
+  :root[data-dashboard-accent="amethyst"] {
+    --dashboard-primary: #7C3AED;
+    --dashboard-primary-dark: #6D28D9;
+    --dashboard-primary-light: #A78BFA;
+    --dashboard-primary-soft: #f5f3ff;
+    --dashboard-primary-border: #ddd6fe;
+    --dashboard-action-bg: #7C3AED;
+    --dashboard-action-hover: #6D28D9;
     --dashboard-action-fg: #ffffff;
-    --dashboard-primary-rgb: 71, 85, 105;
-    --dashboard-primary-light-rgb: 100, 116, 139;
-    --dashboard-primary-hsl: 215 16% 34%;
-    --dashboard-support-1: #64748B;
-    --dashboard-support-2: #94a3b8;
-    --dashboard-support-3: #cbd5e1;
-    --dashboard-support-4: #e2e8f0;
-    --dashboard-support-5: #475569;
-    --chart-2: 215 20% 65%;
-    --chart-3: 215 16% 47%;
-    --chart-4: 217 33% 17%;
-    --chart-5: 220 14% 96%;
+    --dashboard-sidebar-from: #140a24;
+    --dashboard-sidebar-via: #241145;
+    --dashboard-sidebar-to: #3a1d6b;
+    --dashboard-primary-rgb: 124, 58, 237;
+    --dashboard-primary-light-rgb: 167, 139, 250;
+    --dashboard-primary-hsl: 262 83% 58%;
+    --dashboard-support-1: #A78BFA;
+    --dashboard-support-2: #F472B6;
+    --dashboard-support-3: #38BDF8;
+    --dashboard-support-4: #FBBF24;
+    --dashboard-support-5: #34D399;
+    --chart-2: 330 81% 60%;
+    --chart-3: 199 89% 60%;
+    --chart-4: 43 96% 56%;
+    --chart-5: 160 84% 39%;
   }
 
-  :root[data-dashboard-accent="minimal-sage"] {
-    --dashboard-primary: #4f6554;
-    --dashboard-primary-dark: #3b4c3f;
-    --dashboard-primary-light: #718e7a;
-    --dashboard-primary-soft: #f4f7f5;
-    --dashboard-primary-border: #d1ddd5;
-    --dashboard-action-bg: #4f6554;
-    --dashboard-action-hover: #3b4c3f;
+  :root[data-dashboard-accent="tropical-teal"] {
+    --dashboard-primary: #0D9488;
+    --dashboard-primary-dark: #0F766E;
+    --dashboard-primary-light: #2DD4BF;
+    --dashboard-primary-soft: #f0fdfa;
+    --dashboard-primary-border: #99f6e4;
+    --dashboard-action-bg: #0D9488;
+    --dashboard-action-hover: #0F766E;
     --dashboard-action-fg: #ffffff;
-    --dashboard-primary-rgb: 79, 101, 84;
-    --dashboard-primary-light-rgb: 113, 142, 122;
-    --dashboard-primary-hsl: 134 12% 35%;
-    --dashboard-support-1: #718e7a;
-    --dashboard-support-2: #90a997;
-    --dashboard-support-3: #b0c4b5;
-    --dashboard-support-4: #d1ddd5;
-    --dashboard-support-5: #4f6554;
-    --chart-2: 134 10% 60%;
-    --chart-3: 134 12% 45%;
-    --chart-4: 135 15% 25%;
-    --chart-5: 130 10% 95%;
+    --dashboard-sidebar-from: #041f1c;
+    --dashboard-sidebar-via: #08312d;
+    --dashboard-sidebar-to: #0c4a43;
+    --dashboard-primary-rgb: 13, 148, 136;
+    --dashboard-primary-light-rgb: 45, 212, 191;
+    --dashboard-primary-hsl: 174 84% 32%;
+    --dashboard-support-1: #2DD4BF;
+    --dashboard-support-2: #38BDF8;
+    --dashboard-support-3: #818CF8;
+    --dashboard-support-4: #FB7185;
+    --dashboard-support-5: #FACC15;
+    --chart-2: 199 89% 60%;
+    --chart-3: 239 84% 74%;
+    --chart-4: 350 89% 71%;
+    --chart-5: 48 96% 53%;
   }
 
-  :root[data-dashboard-accent="minimal-sand"] {
-    --dashboard-primary: #736050;
-    --dashboard-primary-dark: #5b4c3f;
-    --dashboard-primary-light: #947f6e;
-    --dashboard-primary-soft: #faf9f6;
-    --dashboard-primary-border: #e6e1da;
-    --dashboard-action-bg: #736050;
-    --dashboard-action-hover: #5b4c3f;
+  :root[data-dashboard-accent="sunset-ember"] {
+    --dashboard-primary: #EA580C;
+    --dashboard-primary-dark: #C2410C;
+    --dashboard-primary-light: #FB923C;
+    --dashboard-primary-soft: #fff7ed;
+    --dashboard-primary-border: #fed7aa;
+    --dashboard-action-bg: #EA580C;
+    --dashboard-action-hover: #C2410C;
     --dashboard-action-fg: #ffffff;
-    --dashboard-primary-rgb: 115, 96, 80;
-    --dashboard-primary-light-rgb: 148, 127, 110;
-    --dashboard-primary-hsl: 28 18% 38%;
-    --dashboard-support-1: #947f6e;
-    --dashboard-support-2: #b5a497;
-    --dashboard-support-3: #d6cbc4;
-    --dashboard-support-4: #e6e1da;
-    --dashboard-support-5: #736050;
-    --chart-2: 28 12% 65%;
-    --chart-3: 28 15% 45%;
-    --chart-4: 30 18% 28%;
-    --chart-5: 30 10% 97%;
+    --dashboard-sidebar-from: #2a1206;
+    --dashboard-sidebar-via: #43200c;
+    --dashboard-sidebar-to: #6b3311;
+    --dashboard-primary-rgb: 234, 88, 12;
+    --dashboard-primary-light-rgb: 251, 146, 60;
+    --dashboard-primary-hsl: 25 95% 48%;
+    --dashboard-support-1: #FB923C;
+    --dashboard-support-2: #F43F5E;
+    --dashboard-support-3: #8B5CF6;
+    --dashboard-support-4: #14B8A6;
+    --dashboard-support-5: #FACC15;
+    --chart-2: 350 89% 60%;
+    --chart-3: 258 90% 66%;
+    --chart-4: 173 80% 40%;
+    --chart-5: 48 96% 53%;
+  }
+
+  /* Stakent-inspired charcoal + lavender. Designed to shine in dark mode
+     (see the dark-base override below); works on light too. */
+  :root[data-dashboard-accent="midnight-lavender"] {
+    --dashboard-primary: #655699;
+    --dashboard-primary-dark: #50388C;
+    --dashboard-primary-light: #A99CE8;
+    --dashboard-primary-soft: #f4f2fb;
+    --dashboard-primary-border: #d8d2ee;
+    --dashboard-action-bg: #655699;
+    --dashboard-action-hover: #50388C;
+    --dashboard-action-fg: #ffffff;
+    --dashboard-sidebar-from: #0E0F19;
+    --dashboard-sidebar-via: #1c1830;
+    --dashboard-sidebar-to: #322C4D;
+    --dashboard-primary-rgb: 101, 86, 153;
+    --dashboard-primary-light-rgb: 169, 156, 232;
+    --dashboard-primary-hsl: 252 28% 47%;
+    --dashboard-support-1: #A99CE8;
+    --dashboard-support-2: #C3B7FE;
+    --dashboard-support-3: #837BAE;
+    --dashboard-support-4: #655699;
+    --dashboard-support-5: #50388C;
+    --chart-2: 252 60% 76%;
+    --chart-3: 251 97% 86%;
+    --chart-4: 249 23% 58%;
+    --chart-5: 257 43% 38%;
   }
 
   .dark {
@@ -199,6 +242,24 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+  }
+
+  /* Midnight Lavender in dark mode: swap the generic dark base for the
+     Stakent charcoal (#0E0F19) with purple-tinted surfaces. */
+  .dark[data-dashboard-accent="midnight-lavender"] {
+    --background: 235 28% 8%;
+    --card: 233 28% 11%;
+    --card-foreground: 250 30% 96%;
+    --popover: 229 25% 15%;
+    --popover-foreground: 250 30% 96%;
+    --secondary: 251 27% 24%;
+    --secondary-foreground: 250 30% 96%;
+    --muted: 251 20% 20%;
+    --muted-foreground: 249 15% 68%;
+    --accent: 251 27% 24%;
+    --accent-foreground: 250 30% 96%;
+    --border: 251 27% 22%;
+    --input: 251 27% 22%;
   }
 }
 
@@ -995,8 +1056,8 @@
   }
 
   .app-sidebar-brand {
-    background: linear-gradient(165deg, var(--dashboard-primary-dark) 0%, var(--dashboard-primary) 46%, var(--dashboard-primary-light) 100%) !important;
-    background-color: var(--dashboard-primary) !important;
+    background: linear-gradient(165deg, var(--dashboard-sidebar-from) 0%, var(--dashboard-sidebar-via) 46%, var(--dashboard-sidebar-to) 100%) !important;
+    background-color: var(--dashboard-sidebar-via) !important;
     border-color: rgba(255, 255, 255, 0.18) !important;
     color: rgba(255, 255, 255, 0.92) !important;
   }

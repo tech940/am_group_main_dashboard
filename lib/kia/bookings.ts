@@ -16,6 +16,13 @@ import {
 } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import {
+  canAllotKiaVehicle,
+  canConfirmKiaPayment,
+  canDeliverKiaBooking,
+  canTransferKiaVehicle,
+  canVerifyKiaAccounts,
+} from '@/lib/kia/workflow-access'
 
 type JsonRecord = Record<string, unknown>
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -29,6 +36,7 @@ export const KIA_BOOKING_STATUSES = [
   'vehicle_allocated',
   'transfer_requested',
   'finance_pending',
+  'payment_confirmed',
   'ready_delivery',
   'delivered',
   'cancelled',
@@ -364,6 +372,13 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     if (input.deliveryTargetDate !== undefined) updates.deliveryTargetDate = input.deliveryTargetDate ? input.deliveryTargetDate : null
     if (input.status !== undefined) updates.status = normalizeStatus(input.status)
     if (input.delivered) {
+      // Delivery is the Sales Executive's final step (after Accounts verification).
+      if (!canDeliverKiaBooking(appUser.role)) {
+        throw new Error('Only the Sales Executive can mark the vehicle delivered.')
+      }
+      if (before.status !== 'ready_delivery') {
+        throw new Error('Delivery is available only after Accounts completes verification.')
+      }
       updates.status = 'delivered'
       updates.deliveredAt = new Date()
     }
@@ -588,6 +603,9 @@ export async function getKiaBookingMatchingVehicles(id: string) {
 }
 
 export async function allotKiaBookingVehicle(id: string, vinNumber: string, appUser: AppUser) {
+  if (!canAllotKiaVehicle(appUser.role)) {
+    throw new Error('The Sales Executive cannot allot vehicles. Allotment is done by an approving/finance/accounts role.')
+  }
   const normalizedVin = text(vinNumber).toUpperCase()
   if (!normalizedVin) throw new Error('VIN is required')
 
@@ -680,16 +698,14 @@ export async function confirmKiaBookingPayment(
   id: string,
   input: {
     reference?: string | null
-    invoiceDocumentUrl?: string | null
-    invoiceDocumentPath?: string | null
-    invoiceDocumentName?: string | null
   },
   appUser: AppUser,
 ) {
-  const role = text(appUser.role).toLowerCase()
-  const department = text((appUser as AppUser & { department?: string | null }).department).toLowerCase()
-  const canConfirm = role === 'accounts' || role === 'super_admin' || department.includes('account')
-  if (!canConfirm) throw new Error('Only Accounts Department users can confirm booking payment.')
+  // Finance stage: only Finance Head / Finance Team (+ admin) confirm payment.
+  // They do NOT enter invoice details — that moves to the Accounts stage.
+  if (!canConfirmKiaPayment(appUser.role)) {
+    throw new Error('Only the Finance team can confirm payment received.')
+  }
 
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
@@ -747,14 +763,12 @@ export async function confirmKiaBookingPayment(
     }
 
     const [updated] = await tx.update(kiaBookings).set({
-      status: 'ready_delivery',
+      // Finance confirmed payment -> hand off to the Accounts verification stage.
+      status: 'payment_confirmed',
       metadata: {
         ...((booking.metadata || {}) as JsonRecord),
         paymentConfirmation: {
           reference: nullableText(input.reference),
-          invoiceDocumentUrl: nullableText(input.invoiceDocumentUrl),
-          invoiceDocumentPath: nullableText(input.invoiceDocumentPath),
-          invoiceDocumentName: nullableText(input.invoiceDocumentName),
           confirmedAt: new Date().toISOString(),
           confirmedBy: appUser.fullName,
           confirmedByRole: appUser.role,
@@ -777,11 +791,74 @@ export async function confirmKiaBookingPayment(
   })
 }
 
+export async function verifyKiaAccountsPayment(
+  id: string,
+  input: {
+    invoiceNumber?: string | null
+    invoiceDocumentUrl?: string | null
+    invoiceDocumentPath?: string | null
+    invoiceDocumentName?: string | null
+    notes?: string | null
+  },
+  appUser: AppUser,
+) {
+  // Accounts stage: only Accounts (+ admin) record the invoice & verify docs.
+  if (!canVerifyKiaAccounts(appUser.role)) {
+    throw new Error('Only the Accounts team can verify payment documentation.')
+  }
+  const invoiceNumber = text(input.invoiceNumber).trim()
+  if (!invoiceNumber) throw new Error('Invoice number is required.')
+
+  return db.transaction(async (tx) => {
+    const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
+    if (!booking) throw new Error('Booking not found')
+    if (booking.status !== 'payment_confirmed') {
+      throw new Error('Accounts verification is only available after Finance confirms payment.')
+    }
+
+    const [updated] = await tx.update(kiaBookings).set({
+      // Accounts verified -> ready for the Sales Executive to deliver.
+      status: 'ready_delivery',
+      metadata: {
+        ...((booking.metadata || {}) as JsonRecord),
+        accountsVerification: {
+          invoiceNumber,
+          invoiceDocumentUrl: nullableText(input.invoiceDocumentUrl),
+          invoiceDocumentPath: nullableText(input.invoiceDocumentPath),
+          invoiceDocumentName: nullableText(input.invoiceDocumentName),
+          notes: nullableText(input.notes),
+          verifiedAt: new Date().toISOString(),
+          verifiedBy: appUser.fullName,
+          verifiedByRole: appUser.role,
+        },
+      },
+      updatedBy: appUser.id,
+      updatedAt: new Date(),
+    }).where(and(eq(kiaBookings.id, id), eq(kiaBookings.status, 'payment_confirmed'))).returning()
+
+    if (!updated) throw new Error('Booking already moved to another stage')
+
+    await addActivity(tx, {
+      bookingId: id,
+      type: 'accounts',
+      title: 'Accounts verified',
+      description: `Invoice ${invoiceNumber} verified by Accounts`,
+      after: updated as unknown as JsonRecord,
+      appUser,
+    })
+
+    return updated
+  })
+}
+
 export async function requestKiaVehicleTransfer(
   id: string,
   input: { toDealerCode?: string | null; notes?: string | null; vinNumber?: string | null },
   appUser: AppUser,
 ) {
+  if (!canTransferKiaVehicle(appUser.role)) {
+    throw new Error('The Sales Executive cannot request transfers.')
+  }
   const normalizedVin = text(input.vinNumber).toUpperCase()
   const vehicle = normalizedVin ? await readMatchingVehicle(normalizedVin) : null
 

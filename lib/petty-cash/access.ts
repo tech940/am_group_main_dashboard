@@ -28,6 +28,8 @@ export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined
 }
 
 export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {
+  // Super admin is a universal supervisor and may act on any stage.
+  if (role === 'super_admin') return true
   switch (stage) {
     case 'ea_approval':
       return role === 'ea'

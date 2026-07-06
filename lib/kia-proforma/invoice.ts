@@ -351,7 +351,10 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   const addPage = () => {
     page = { commands: [] }
     pages.push(page)
-    y = height - margin
+    // Start continuation pages well below the page-border top line
+    // (top border sits at height - borderY); otherwise flowed body text
+    // (e.g. Terms & Conditions) collides with the border on page 2+.
+    y = height - borderY - 30
   }
   const ensure = (space: number) => {
     if (y - space < margin) addPage()

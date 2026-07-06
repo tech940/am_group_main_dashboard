@@ -15,9 +15,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  Tag,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -105,8 +103,12 @@ export default function LoginPage() {
       <section className="relative mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1420px] flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-white/48 shadow-[0_24px_90px_rgba(15,23,42,0.10)] backdrop-blur-xl lg:min-h-[calc(100vh-3rem)] lg:flex-row">
         <div className="relative hidden min-h-[760px] flex-1 overflow-hidden px-10 py-9 lg:block xl:px-14">
           <div className="absolute left-10 top-9 z-30 xl:left-14">
-            <div className="flex items-center justify-center">
-              <img src={BRAND_LOGO_URL} alt="AM Group" className="h-[135px] w-auto object-contain" />
+            <div className="flex items-center gap-3">
+              <img
+                src={BRAND_LOGO_URL}
+                alt="AM Group"
+                className="h-[104px] w-auto object-contain mix-blend-multiply"
+              />
             </div>
           </div>
 
@@ -114,7 +116,6 @@ export default function LoginPage() {
             <div className="absolute left-1/2 top-1/2 h-[620px] w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/70" />
             <div className="absolute left-1/2 top-1/2 h-[466px] w-[466px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/70" />
             <div className="absolute left-1/2 top-1/2 h-[300px] w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-slate-200/80 animate-[spin_120s_linear_infinite]" />
-            <div className="absolute left-1/2 top-1/2 h-[610px] w-[610px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[conic-gradient(from_110deg,transparent_0deg,rgba(56,189,248,0.32)_32deg,transparent_70deg,transparent_155deg,rgba(34,197,94,0.22)_190deg,transparent_235deg,rgba(99,102,241,0.22)_306deg,transparent_360deg)] opacity-70 animate-[spin_90s_linear_infinite_reverse]" />
 
             <svg className="absolute inset-0 h-full w-full animate-[spin_120s_linear_infinite]" viewBox="0 0 660 660" aria-hidden="true">
               {ORBIT_NODES.map((node) => {
@@ -153,7 +154,6 @@ export default function LoginPage() {
                     <div className="flex min-w-28 flex-col items-center gap-2.5 animate-[spin_120s_linear_infinite_reverse] transition-transform duration-300">
                       <div
                         className="flex h-[86px] w-[86px] items-center justify-center rounded-full border border-white/95 bg-white shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 ring-slate-100/70 transition-all duration-300 ease-out group-hover:scale-110 group-hover:shadow-[0_24px_56px_rgba(15,23,42,0.16)] group-hover:-translate-y-1"
-                        style={{ background: `radial-gradient(circle at 30% 30%, #ffffff 0%, ${node.bg} 100%)` }}
                       >
                         <Icon className="h-10 w-10" style={{ color: node.color }} strokeWidth={2.4} />
                       </div>
@@ -186,11 +186,15 @@ export default function LoginPage() {
           <div className="absolute inset-y-10 left-0 hidden w-px bg-gradient-to-b from-transparent via-slate-200 to-transparent lg:block" />
 
           <div className="w-full max-w-[460px] rounded-[2rem] border border-white/90 bg-white/92 p-6 shadow-[0_28px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:p-9">
-            <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
-              <img src={BRAND_LOGO_URL} alt="AM Group" className="h-12 w-auto rounded-xl object-contain" />
+            <div className="mb-8 flex items-center gap-3 lg:hidden">
+              <img
+                src={BRAND_LOGO_URL}
+                alt="AM Group"
+                className="h-12 w-auto object-contain mix-blend-multiply"
+              />
             </div>
 
-            <div className="mt-2 flex flex-col items-center text-center">
+            <div className="mt-2 flex flex-col items-start text-left">
               <div className="inline-flex items-center gap-2 rounded-full bg-[#eaf2ff] px-4 py-2 text-xs font-black uppercase tracking-[0.24em] text-[#1f56a8] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
                 AM Group Dashboard
               </div>
@@ -267,24 +271,32 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <Button
+              <button
                 type="submit"
                 disabled={loading}
-                className="h-14 w-full rounded-2xl bg-[linear-gradient(90deg,#36d27b_0%,#19c7aa_50%,#45d34f_100%)] text-base font-black text-white shadow-[0_18px_34px_rgba(30,196,124,0.28)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_42px_rgba(30,196,124,0.34)] disabled:translate-y-0 disabled:opacity-80"
+                style={{
+                  backgroundImage: 'linear-gradient(90deg,#36d27b 0%,#19c7aa 50%,#45d34f 100%)',
+                }}
+                className="flex h-14 w-full items-center justify-center rounded-2xl text-base font-black text-white shadow-sm transition-all hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-80"
               >
                 <span className="flex items-center justify-center gap-3">
                   {loading ? 'Signing in...' : 'Sign In'}
                   {!loading && <ArrowRight className="h-5 w-5" />}
                 </span>
-              </Button>
+              </button>
             </form>
 
-            <div className="my-7 flex items-center gap-4">
-              <span className="h-px flex-1 bg-slate-200" />
-              <span className="text-xs font-semibold text-slate-400">Secure access</span>
-              <span className="h-px flex-1 bg-slate-200" />
+            <div className="mt-7 flex items-start gap-3 rounded-2xl border border-slate-200/90 bg-slate-50/80 px-4 py-4">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                <ShieldCheck className="h-5 w-5 text-slate-500" strokeWidth={2.2} />
+              </span>
+              <div>
+                <p className="text-sm font-bold text-slate-800">Secure &amp; Reliable</p>
+                <p className="mt-0.5 text-sm font-medium leading-6 text-slate-500">
+                  Protected by enterprise-grade security and encrypted connections.
+                </p>
+              </div>
             </div>
-
           </div>
         </div>
       </section>

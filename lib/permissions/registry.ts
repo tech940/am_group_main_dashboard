@@ -720,6 +720,9 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   service_manager: 'Service Manager',
   general_manager: 'General Manager',
   sales_head: 'Sales Head',
+  sales_executive: 'Sales Executive',
+  sales_manager: 'Sales Manager',
+  finance_team: 'Finance Team',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -863,6 +866,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   finance_head: [
     ...keysForGroups(['finance_orders'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit', 'audit']),
+    ...keysForGroups(['kia.bookings'], ['view', 'edit']),
   ],
   accounts: [
     ...keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),
@@ -892,6 +896,22 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ],
   sales_head: [
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  // KIA Proforma workflow: front-line executive — creates bookings & proformas,
+  // and delivers. No approve/audit (cannot approve proformas or act on approvals).
+  sales_executive: [
+    ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
+  ],
+  // KIA Proforma workflow: reviews & approves/declines proformas.
+  sales_manager: [
+    ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management', 'kia.insurance'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  // KIA Proforma workflow: confirms payment received (finance stage).
+  finance_team: [
+    ...keysForGroups(['finance_orders'], ['view', 'edit']),
+    ...keysForGroups(['kia.bookings'], ['view', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
 }
