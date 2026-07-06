@@ -23,6 +23,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { toast } from '@/hooks/use-toast'
+import { maskKiaPii } from '@/lib/kia/pii'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -120,11 +121,21 @@ type BookingOption = {
   loanAmount?: string | null
   notes?: string | null
   dealerCode?: string | null
+  // Present at runtime — the bookings API spreads the full kia_bookings row.
+  status?: string | null
+  createdAt?: string | null
+  proformaNumber?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
-export function KiaStockManagementDashboard() {
+export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRole?: string } = {}) {
   const queryClient = useQueryClient()
   const router = useRouter()
+
+  // Audit Log and customer PII (email / phone) are restricted to MD & Super Admin.
+  const role = String(currentUserRole || '').trim().toLowerCase()
+  const canViewAudit = role === 'md' || role === 'super_admin'
+  const canViewCustomerPii = role === 'md' || role === 'super_admin'
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
@@ -208,8 +219,10 @@ export function KiaStockManagementDashboard() {
 
   const bookingsList = bookingsData?.rows || []
 
-  const getMatchingBookingsCount = (row: StockRow) => {
-    if (row.allocation_id) return 0
+  // Single source of truth for "which bookings match this vehicle" — used by BOTH
+  // the badge count and the badge drawer so they never disagree.
+  const getMatchingBookings = (row: StockRow) => {
+    if (row.allocation_id) return []
     return bookingsList.filter((b) => {
       const bModel = String(b.model || '').toLowerCase().trim()
       const rModel = String(row.model || '').toLowerCase().trim()
@@ -218,8 +231,13 @@ export function KiaStockManagementDashboard() {
       const bVar = String(b.variant || '').toLowerCase().replace(/[^a-z0-9]/g, '')
       const rVar = String(row.variant || '').toLowerCase().replace(/[^a-z0-9]/g, '')
       return bVar.includes(rVar) || rVar.includes(bVar)
-    }).length
+    })
   }
+
+  const getMatchingBookingsCount = (row: StockRow) => getMatchingBookings(row).length
+
+  // Booking badge drawer — shows every booking linked/matched to a vehicle.
+  const [badgeDrawerVin, setBadgeDrawerVin] = useState<string | null>(null)
 
   // Mutations
   const allotMutation = useMutation({
@@ -540,8 +558,8 @@ export function KiaStockManagementDashboard() {
       )}
 
       {/* 2. Main Grid Layout for Table and Audit Panel */}
-      <div className={cn("grid grid-cols-1 gap-4 transition-all duration-300", 
-        auditLogOpen ? "lg:grid-cols-[1fr_320px]" : "grid-cols-1"
+      <div className={cn("grid grid-cols-1 gap-4 transition-all duration-300",
+        auditLogOpen && canViewAudit ? "lg:grid-cols-[1fr_320px]" : "grid-cols-1"
       )}>
         {/* Main/Left Column: Filters and Table */}
         <div className="w-full min-w-0 space-y-4">
@@ -600,17 +618,19 @@ export function KiaStockManagementDashboard() {
               </SelectContent>
             </Select>
 
-            {/* Audit Log button */}
-            <Button 
-              size="sm" 
-              variant="outline" 
-              className={cn("h-9 rounded-xl text-xs font-black border-slate-200 transition-all shadow-sm", 
-                auditLogOpen ? "bg-slate-950 text-white hover:bg-slate-800" : "bg-white hover:bg-slate-50 text-slate-800"
-              )}
-              onClick={() => setAuditLogOpen(!auditLogOpen)}
-            >
-              <ClipboardList className="mr-1.5 h-3.5 w-3.5" /> Audit Log
-            </Button>
+            {/* Audit Log button — MD & Super Admin only */}
+            {canViewAudit && (
+              <Button
+                size="sm"
+                variant="outline"
+                className={cn("h-9 rounded-xl text-xs font-black border-slate-200 transition-all shadow-sm",
+                  auditLogOpen ? "bg-slate-950 text-white hover:bg-slate-800" : "bg-white hover:bg-slate-50 text-slate-800"
+                )}
+                onClick={() => setAuditLogOpen(!auditLogOpen)}
+              >
+                <ClipboardList className="mr-1.5 h-3.5 w-3.5" /> Audit Log
+              </Button>
+            )}
 
             {/* Share Dropdown */}
             <DropdownMenu>
@@ -671,10 +691,16 @@ export function KiaStockManagementDashboard() {
                           const count = getMatchingBookingsCount(row)
                           if (count === 0) return null
                           return (
-                            <div className="mt-1.5 flex items-center gap-1 text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md w-fit">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setBadgeDrawerVin(row.vin_number) }}
+                              className="mt-1.5 flex items-center gap-1 text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md w-fit transition-all hover:bg-amber-100 hover:border-amber-300 hover:shadow-sm active:scale-95 cursor-pointer"
+                              title="View matching bookings"
+                            >
                               <AlertTriangle className="h-2.5 w-2.5 text-amber-600 shrink-0" />
                               <span>{count} BOOKING{count > 1 ? 'S' : ''} MATCH</span>
-                            </div>
+                              <ChevronRight className="h-2.5 w-2.5 text-amber-500 shrink-0" />
+                            </button>
                           )
                         })()}
                       </TableCell>
@@ -695,7 +721,7 @@ export function KiaStockManagementDashboard() {
                         {row.booking_id ? (
                           <div className="space-y-0.5 min-w-[120px]">
                             <div className="text-[11px] font-black text-slate-900 leading-tight truncate max-w-[130px]">{row.customer_name}</div>
-                            <div className="text-[9px] font-bold text-slate-500">{row.customer_phone}</div>
+                            <div className="text-[9px] font-bold text-slate-500">{maskKiaPii(row.customer_phone, canViewCustomerPii)}</div>
                             <div className="text-[9px] font-black text-slate-400">#{row.booking_number}</div>
                           </div>
                         ) : (
@@ -794,8 +820,8 @@ export function KiaStockManagementDashboard() {
           )}
         </div>
 
-        {/* Right Column: Audit Log Side Panel */}
-        {auditLogOpen && (
+        {/* Right Column: Audit Log Side Panel — MD & Super Admin only */}
+        {auditLogOpen && canViewAudit && (
           <div className="kia-surface flex h-[550px] flex-col overflow-hidden animate-in slide-in-from-right duration-200">
             <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface-sunken)' }}>
               <div className="flex items-center gap-2">
@@ -918,7 +944,7 @@ export function KiaStockManagementDashboard() {
                     <div>
                       <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Customer</span>
                       <span className="font-bold text-slate-900">{selectedBooking.customerName}</span>
-                      <span className="text-[10px] text-slate-500 font-semibold block">{selectedBooking.customerPhone}</span>
+                      <span className="text-[10px] text-slate-500 font-semibold block">{maskKiaPii(selectedBooking.customerPhone, canViewCustomerPii)}</span>
                     </div>
                     <div>
                       <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Booking Number</span>
@@ -1317,6 +1343,142 @@ export function KiaStockManagementDashboard() {
         })()
       )}
 
+      {/* Booking Badge Drawer — every booking matched to this vehicle */}
+      {mounted && badgeDrawerVin && (
+        (() => {
+          const row = data?.rows?.find((r) => r.vin_number === badgeDrawerVin)
+          const matches = row ? getMatchingBookings(row) : []
+          const statusChip = (status?: string | null): { label: string; tone: Tone } => {
+            const s = String(status || '').toLowerCase()
+            if (s === 'delivered') return { label: 'Delivered', tone: 'success' }
+            if (s === 'ready_delivery') return { label: 'Ready · To Deliver', tone: 'violet' }
+            if (s === 'vehicle_allocated') return { label: 'Vehicle Allotted', tone: 'info' }
+            if (s === 'proforma_generated') return { label: 'Proforma Generated', tone: 'accent' }
+            if (s === 'booking_created') return { label: 'Booking Created', tone: 'warning' }
+            if (s === 'cancelled') return { label: 'Cancelled', tone: 'danger' }
+            return { label: status ? String(status).replace(/_/g, ' ') : 'Active', tone: 'neutral' }
+          }
+          const paymentMethod = (b: BookingOption) => {
+            const meta = (b.metadata || {}) as Record<string, unknown>
+            const raw = meta.pmtSource || meta.paymentMethod || meta.paymentSource || b.bankName
+            if (raw) return String(raw)
+            return b.financeRequired ? 'Bank Finance' : 'Cash / Self'
+          }
+          const fmtDate = (value?: string | null) => {
+            if (!value) return '—'
+            const d = new Date(value)
+            if (Number.isNaN(d.getTime())) return '—'
+            return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          }
+          return createPortal(
+            <>
+              <motion.div
+                className="fixed inset-0 z-[99998] bg-slate-950/40 backdrop-blur-[2px]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setBadgeDrawerVin(null)}
+              />
+              <motion.div
+                className="kia-premium fixed inset-y-0 right-0 z-[99999] flex h-full w-[460px] max-w-[94vw] flex-col border-l shadow-2xl"
+                style={{ backgroundColor: 'var(--kia-canvas)', borderColor: 'var(--kia-hairline)' }}
+                initial={{ x: 48, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Hero */}
+                <div className="relative overflow-hidden border-b p-5 text-white" style={{ borderColor: 'var(--kia-hairline)', background: 'linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg))' }}>
+                  <div aria-hidden className="pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+                  <div className="relative flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/70">Matching Bookings</p>
+                      <code className="mt-1 block truncate font-mono text-sm font-extrabold">{badgeDrawerVin}</code>
+                      {row && <p className="mt-1 text-xs font-semibold text-white/85">{row.model} · {row.variant}</p>}
+                    </div>
+                    <button
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-white/10 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+                      onClick={() => setBadgeDrawerVin(null)}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  {!isLoadingBookings && (
+                    <div className="relative mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2.5 py-1 text-[11px] font-black">
+                      <ClipboardList className="h-3 w-3" />
+                      {matches.length} booking{matches.length === 1 ? '' : 's'} matched
+                    </div>
+                  )}
+                </div>
+
+                <div className="kia-scroll flex-1 space-y-3 overflow-y-auto p-4">
+                  {isLoadingBookings ? (
+                    [0, 1, 2].map((i) => (
+                      <div key={i} className="kia-surface animate-pulse p-4">
+                        <div className="h-3 w-28 rounded bg-[var(--kia-hairline-strong)]" />
+                        <div className="mt-2 h-2.5 w-40 rounded bg-[var(--kia-hairline)]" />
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {[0, 1, 2, 3].map((j) => <div key={j} className="h-6 rounded bg-[var(--kia-hairline)]" />)}
+                        </div>
+                      </div>
+                    ))
+                  ) : matches.length === 0 ? (
+                    <PremiumEmptyState illustration="garage" title="No matching bookings" description="No approved bookings are currently waiting for a vehicle of this model and variant." />
+                  ) : (
+                    matches.map((b, i) => {
+                      const chip = statusChip(b.status)
+                      return (
+                        <motion.div
+                          key={b.id}
+                          className="kia-surface p-4"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.05, duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <code className="font-mono text-[11px] font-black uppercase text-[var(--dashboard-action-bg)]">{b.bookingNumber}</code>
+                              <p className="mt-0.5 truncate text-sm font-extrabold text-[var(--kia-text)]">{b.customerName}</p>
+                              <p className="text-[11px] font-semibold text-[var(--kia-text-soft)]">{maskKiaPii(b.customerPhone, canViewCustomerPii)}</p>
+                            </div>
+                            <Chip tone={chip.tone}>{chip.label}</Chip>
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <FieldValue label="Model" value={b.model} />
+                            <FieldValue label="Variant" value={b.variant} />
+                            <FieldValue label="Colour" value={b.color || '—'} />
+                            <FieldValue label="Dealer" value={b.dealerCode || '—'} />
+                            <FieldValue label="Booking Date" value={fmtDate(b.createdAt)} />
+                            <FieldValue label="Payment Method" value={paymentMethod(b)} />
+                            <FieldValue label="Proforma" value={b.proformaNumber ? `#${b.proformaNumber}` : 'Generated'} />
+                            <FieldValue label="Consultant" value={b.consultantName || '—'} />
+                          </div>
+                          <div className="mt-3 flex justify-end">
+                            <Button
+                              size="sm"
+                              className="h-8 rounded-lg bg-slate-950 px-3 text-[10px] font-black text-white hover:bg-slate-800"
+                              onClick={() => {
+                                setBadgeDrawerVin(null)
+                                setAllotVin(badgeDrawerVin as string)
+                                setSelectedBookingId(b.id)
+                                setAllotDialogOpen(true)
+                              }}
+                            >
+                              Allot This Booking
+                            </Button>
+                          </div>
+                        </motion.div>
+                      )
+                    })
+                  )}
+                </div>
+              </motion.div>
+            </>,
+            document.body
+          )
+        })()
+      )}
+
       {/* 6. Printable Stock Report Container */}
       <div id="printable-stock-report" className="hidden print:block p-8 bg-slate-50 text-slate-900 font-sans w-full min-h-screen">
         {/* Banner Header */}
@@ -1370,12 +1532,10 @@ export function KiaStockManagementDashboard() {
             <thead>
               <tr className="bg-slate-900 text-[9px] font-black uppercase tracking-[0.12em] text-white">
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Model &amp; Variant</th>
-                <th className="px-4 py-3">VIN Number</th>
+                <th className="px-4 py-3">Car</th>
                 <th className="px-4 py-3">Colour</th>
                 <th className="px-4 py-3 text-center">Age</th>
                 <th className="px-4 py-3">Dealer</th>
-                <th className="px-4 py-3">Customer / Booking</th>
               </tr>
             </thead>
             <tbody>
@@ -1402,7 +1562,6 @@ export function KiaStockManagementDashboard() {
                       <div className="font-black uppercase text-slate-950">{row.model}</div>
                       <div className="mt-0.5 text-[9px] font-semibold text-slate-500">{row.variant}</div>
                     </td>
-                    <td className="px-4 py-3 align-middle font-mono font-bold text-slate-700">{row.vin_number}</td>
                     <td className="px-4 py-3 align-middle font-semibold text-slate-600">{row.color || '-'}</td>
                     <td className="px-4 py-3 text-center align-middle">
                       <span className="rounded px-1.5 py-0.5 text-[9px] font-black" style={aged ? { backgroundColor: '#fff1f2', color: '#be123c', border: '1px solid #fecdd3' } : { color: '#1e293b' }}>
@@ -1410,21 +1569,11 @@ export function KiaStockManagementDashboard() {
                       </span>
                     </td>
                     <td className="px-4 py-3 align-middle font-bold text-slate-700">{row.dealer_code}</td>
-                    <td className="px-4 py-3 align-middle">
-                      {row.booking_id ? (
-                        <div className="space-y-0.5">
-                          <div className="font-bold text-slate-900">{row.customer_name}</div>
-                          <div className="text-[8.5px] text-slate-400">#{row.booking_number} • SC: {row.consultant_name}</div>
-                        </div>
-                      ) : (
-                        <span className="font-semibold text-slate-400">-</span>
-                      )}
-                    </td>
                   </tr>
                 )
               })}
               {(!data?.rows || data.rows.length === 0) && (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-[11px] font-semibold text-slate-400">No stock vehicles to report.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-[11px] font-semibold text-slate-400">No stock vehicles to report.</td></tr>
               )}
             </tbody>
           </table>

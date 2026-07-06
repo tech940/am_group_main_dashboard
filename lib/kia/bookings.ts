@@ -22,11 +22,21 @@ import {
   canDeliverKiaBooking,
   canTransferKiaVehicle,
   canVerifyKiaAccounts,
+  canViewAllKiaBookings,
 } from '@/lib/kia/workflow-access'
 
 type JsonRecord = Record<string, unknown>
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 const TEMPORARY_ALLOCATION_HOURS = 72
+const CSD_ALLOCATION_HOURS = 120 // CSD customers get a 5-day payment window
+
+// The temporary-allocation payment window depends on the customer type captured
+// on the booking form: CSD → 5 days, everyone else → 72 hours.
+function allocationHoursForBooking(booking: { metadata?: unknown } | null | undefined): number {
+  const meta = (booking?.metadata || {}) as Record<string, unknown>
+  const type = String(meta.customerType || '').trim().toLowerCase()
+  return type === 'csd' ? CSD_ALLOCATION_HOURS : TEMPORARY_ALLOCATION_HOURS
+}
 
 export const KIA_BOOKING_STATUSES = [
   'draft',
@@ -52,6 +62,8 @@ export type BookingListInput = {
   consultant?: string | null
   page?: number | null
   pageSize?: number | null
+  // The requesting user — used to scope Sales Executives to their own bookings.
+  viewer?: { id?: string | null; email?: string | null; role?: string | null } | null
 }
 
 export type CreateBookingInput = {
@@ -200,6 +212,17 @@ function listFilters(input: BookingListInput) {
   if (text(input.status) && text(input.status).toLowerCase() !== 'all') filters.push(eq(kiaBookings.status, normalizeStatus(input.status)))
   if (text(input.consultant) && text(input.consultant).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.consultantName, text(input.consultant)))
 
+  // Sales Executives (and any non-privileged role) only ever see their own
+  // bookings — matched by creator id OR the consultant email stamped at creation.
+  const viewer = input.viewer
+  if (viewer && !canViewAllKiaBookings(viewer.role)) {
+    const ownFilters = []
+    if (viewer.id) ownFilters.push(eq(kiaBookings.createdBy, viewer.id))
+    if (viewer.email) ownFilters.push(ilike(kiaBookings.consultantEmail, viewer.email))
+    // If we can't identify the viewer at all, fail closed to no rows.
+    filters.push(ownFilters.length ? or(...ownFilters)! : sql`false`)
+  }
+
   const search = text(input.search)
   if (search) {
     const like = `%${search}%`
@@ -220,27 +243,41 @@ export async function getKiaBookingsList(input: BookingListInput) {
   const { page, pageSize, offset } = pageParams(input)
   const where = listFilters(input)
 
-  const [totalRows, bookingRows, statusRows, dealerRows, modelRows, consultantRows, todayRows] = await Promise.all([
+  // Page load is dominated by pooler round-trip latency (~225ms/query), not the
+  // queries themselves. The status counts, filter option lists and today count
+  // are all over the same unfiltered table, so fold them into ONE round trip via
+  // scalar sub-selects. That drops the list from 7 queries to 3 (count + page +
+  // aggregates) — one RTT wave instead of two under the dev pool.
+  const [totalRows, bookingRows, aggRows] = await Promise.all([
     db.select({ value: count() }).from(kiaBookings).where(where),
     db.select().from(kiaBookings).where(where).orderBy(desc(kiaBookings.updatedAt), desc(kiaBookings.createdAt)).limit(pageSize).offset(offset),
     db.execute(sql`
-      SELECT status, count(*)::int AS count
-      FROM kia_bookings
-      WHERE deleted_at IS NULL
-      GROUP BY status
-      ORDER BY status
+      SELECT
+        COALESCE((SELECT jsonb_object_agg(status, cnt) FROM (
+          SELECT status, count(*)::int AS cnt FROM kia_bookings WHERE deleted_at IS NULL GROUP BY status
+        ) s), '{}'::jsonb) AS status_counts,
+        COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
+          SELECT DISTINCT dealer_code AS value FROM kia_bookings WHERE deleted_at IS NULL AND dealer_code IS NOT NULL
+        ) d), '[]'::jsonb) AS dealers,
+        COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
+          SELECT DISTINCT model AS value FROM kia_bookings WHERE deleted_at IS NULL AND model IS NOT NULL
+        ) m), '[]'::jsonb) AS models,
+        COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
+          SELECT DISTINCT consultant_name AS value FROM kia_bookings WHERE deleted_at IS NULL AND consultant_name IS NOT NULL
+        ) c), '[]'::jsonb) AS consultants,
+        (SELECT count(*)::int FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC') AS today_count
     `),
-    db.execute(sql`SELECT DISTINCT dealer_code AS value FROM kia_bookings WHERE deleted_at IS NULL AND dealer_code IS NOT NULL ORDER BY dealer_code`),
-    db.execute(sql`SELECT DISTINCT model AS value FROM kia_bookings WHERE deleted_at IS NULL AND model IS NOT NULL ORDER BY model`),
-    db.execute(sql`SELECT DISTINCT consultant_name AS value FROM kia_bookings WHERE deleted_at IS NULL AND consultant_name IS NOT NULL ORDER BY consultant_name`),
-    db.execute(sql`SELECT count(*)::int AS count FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'`),
   ])
 
-  const statusCounts = rows<{ status: string; count: number }>(statusRows).reduce<Record<string, number>>((acc, row) => {
-    acc[text(row.status) || 'new'] = Number(row.count) || 0
-    return acc
-  }, {})
-  const todayCount = Number((rows<{ count: number }>(todayRows))[0]?.count || 0)
+  const agg = rows<{
+    status_counts: Record<string, number> | null
+    dealers: string[] | null
+    models: string[] | null
+    consultants: string[] | null
+    today_count: number
+  }>(aggRows)[0]
+  const statusCounts = agg?.status_counts || {}
+  const todayCount = Number(agg?.today_count || 0)
 
   return {
     rows: bookingRows,
@@ -260,9 +297,9 @@ export async function getKiaBookingsList(input: BookingListInput) {
       cancelled: statusCounts.cancelled || 0,
     },
     filters: {
-      dealers: rows<{ value: string }>(dealerRows).map((row) => text(row.value)).filter(Boolean),
-      models: rows<{ value: string }>(modelRows).map((row) => text(row.value)).filter(Boolean),
-      consultants: rows<{ value: string }>(consultantRows).map((row) => text(row.value)).filter(Boolean),
+      dealers: (agg?.dealers || []).map((value) => text(value)).filter(Boolean),
+      models: (agg?.models || []).map((value) => text(value)).filter(Boolean),
+      consultants: (agg?.consultants || []).map((value) => text(value)).filter(Boolean),
       statuses: KIA_BOOKING_STATUSES,
     },
   }
@@ -484,48 +521,29 @@ export async function generateKiaBookingProforma(id: string, appUser: AppUser) {
 }
 
 async function readMatchingVehicle(vinNumber: string) {
+  // Availability MUST use the exact same source + rule as the stock list, the
+  // "N BOOKINGS MATCH" badge and check-stock: a row in kia_stock_management with
+  // no active (unreleased) allocation is allottable — regardless of the raw DMS
+  // stock_status text. Previously this read kia_stock_report and only accepted
+  // 'free stock'/'in transit', so vehicles that showed a badge + Allot button
+  // failed with "Vehicle is not available for allocation". Same logic → no gap.
   const result = await analyticsDb.execute(sql`
-    WITH dms AS (
-      SELECT DISTINCT ON (sm.vin_number)
-        sm.vin_number,
-        sm.order_dealer AS dealer_code,
-        sm.model,
-        sm.variant,
-        sm.exterior_color_name AS color,
-        sm.engine_no,
-        sm.stock_status,
-        sm.stock_location,
-        sm.uploaded_at,
-        to_jsonb(sm) AS snapshot,
-        'dms'::text AS source
-      FROM kia_stock_report sm
-      LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-      WHERE sm.vin_number = ${vinNumber}
-        AND lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-        AND coalesce(ls.local_status, '') <> 'retail'
-      ORDER BY sm.vin_number, sm.uploaded_at DESC NULLS LAST, sm.id DESC
-    ),
-    bbnd AS (
-      SELECT
-        ls.vin_number,
-        ls.dealer_code,
-        ls.model,
-        ls.variant,
-        ls.color,
-        ls.engine_no,
-        coalesce(ls.stock_status_at_mark, 'BBND') AS stock_status,
-        ls.stock_location,
-        ls.source_uploaded_at AS uploaded_at,
-        ls.vehicle_snapshot AS snapshot,
-        'bbnd'::text AS source
-      FROM kia_stock_local_statuses ls
-      WHERE ls.vin_number = ${vinNumber}
-        AND ls.local_status = 'bbnd'
-        AND NOT EXISTS (SELECT 1 FROM dms)
-    )
-    SELECT * FROM dms
-    UNION ALL
-    SELECT * FROM bbnd
+    SELECT
+      sm.vin_number,
+      sm.order_dealer AS dealer_code,
+      sm.model,
+      sm.variant,
+      sm.exterior_color_name AS color,
+      sm.engine_no,
+      sm.stock_status,
+      to_jsonb(sm) AS snapshot,
+      'dms'::text AS source
+    FROM kia_stock_management sm
+    LEFT JOIN kia_vehicle_allocations va
+      ON va.vin_number = sm.vin_number AND va.released_at IS NULL
+    WHERE upper(sm.vin_number) = ${vinNumber}
+      AND va.id IS NULL
+    ORDER BY sm.id DESC
     LIMIT 1
   `)
   return rows(result)[0] || null
@@ -638,7 +656,7 @@ export async function allotKiaBookingVehicle(id: string, vinNumber: string, appU
       stockSource: text(vehicle.source) || 'dms',
       vehicleSnapshot: (vehicle.snapshot || {}) as JsonRecord,
       allocationStatus: 'temporary',
-      expiresAt: new Date(Date.now() + TEMPORARY_ALLOCATION_HOURS * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() + allocationHoursForBooking(booking) * 60 * 60 * 1000),
       allocatedBy: appUser.id,
     }).returning()
 
@@ -701,10 +719,11 @@ export async function confirmKiaBookingPayment(
   },
   appUser: AppUser,
 ) {
-  // Finance stage: only Finance Head / Finance Team (+ admin) confirm payment.
-  // They do NOT enter invoice details — that moves to the Accounts stage.
+  // Payment confirmation (Stock dashboard "Payment received"): Accounts / admin.
+  // This advances the vehicle to Paid · To Deliver; the invoice number / PDF are
+  // captured separately in the Accounts verification step in the Bookings CRM.
   if (!canConfirmKiaPayment(appUser.role)) {
-    throw new Error('Only the Finance team can confirm payment received.')
+    throw new Error('Only Accounts or an admin can confirm payment received.')
   }
 
   return db.transaction(async (tx) => {
@@ -763,8 +782,11 @@ export async function confirmKiaBookingPayment(
     }
 
     const [updated] = await tx.update(kiaBookings).set({
-      // Finance confirmed payment -> hand off to the Accounts verification stage.
-      status: 'payment_confirmed',
+      // Payment confirmed -> vehicle is Paid · To Deliver. Advancing straight to
+      // ready_delivery is what makes the stock row leave the "N h to pay" window
+      // and show "Paid · To Deliver" (the legacy 'payment_confirmed' status was
+      // not recognised by the stock list, so the row appeared stuck as ALLOTTED).
+      status: 'ready_delivery',
       metadata: {
         ...((booking.metadata || {}) as JsonRecord),
         paymentConfirmation: {
@@ -794,6 +816,7 @@ export async function confirmKiaBookingPayment(
 export async function verifyKiaAccountsPayment(
   id: string,
   input: {
+    reference?: string | null
     invoiceNumber?: string | null
     invoiceDocumentUrl?: string | null
     invoiceDocumentPath?: string | null
@@ -802,9 +825,10 @@ export async function verifyKiaAccountsPayment(
   },
   appUser: AppUser,
 ) {
-  // Accounts stage: only Accounts (+ admin) record the invoice & verify docs.
+  // Single ACCOUNTS stage (Finance removed): confirm payment release, record the
+  // invoice number + PDF, then advance the booking straight to ready_delivery.
   if (!canVerifyKiaAccounts(appUser.role)) {
-    throw new Error('Only the Accounts team can verify payment documentation.')
+    throw new Error('Only the Accounts team can confirm payment and verify documentation.')
   }
   const invoiceNumber = text(input.invoiceNumber).trim()
   if (!invoiceNumber) throw new Error('Invoice number is required.')
@@ -812,15 +836,73 @@ export async function verifyKiaAccountsPayment(
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
-    if (booking.status !== 'payment_confirmed') {
-      throw new Error('Accounts verification is only available after Finance confirms payment.')
+    if (booking.status !== 'vehicle_allocated' && booking.status !== 'transfer_requested' && booking.status !== 'payment_confirmed') {
+      throw new Error('Payment & invoice verification is available after the vehicle is allotted.')
+    }
+
+    const [allocation] = await tx.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
+    if (!allocation) throw new Error('No active allocation found')
+
+    await tx.update(kiaVehicleAllocations).set({
+      allocationStatus: 'final',
+      paymentConfirmedAt: new Date(),
+      paymentConfirmedBy: appUser.id,
+      paymentReference: nullableText(input.reference),
+      updatedAt: new Date(),
+    }).where(eq(kiaVehicleAllocations.id, allocation.id))
+
+    if (allocation.vinNumber) {
+      await tx.insert(kiaStockLocalStatuses).values({
+        vinNumber: allocation.vinNumber,
+        localStatus: 'retail',
+        dealerCode: allocation.dealerCode,
+        model: allocation.model,
+        variant: allocation.variant,
+        color: allocation.color,
+        engineNo: allocation.engineNo,
+        stockStatusAtMark: 'Retail after accounts payment confirmation',
+        bookingNo: booking.bookingNumber,
+        customerName: booking.customerName,
+        vehicleSnapshot: (allocation.vehicleSnapshot || {}) as JsonRecord,
+        notes: `Invoice ${invoiceNumber} verified by Accounts`,
+        markedBy: appUser.id,
+        markedByName: appUser.fullName,
+        markedByRole: appUser.role,
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: kiaStockLocalStatuses.vinNumber,
+        set: {
+          localStatus: 'retail',
+          dealerCode: allocation.dealerCode,
+          model: allocation.model,
+          variant: allocation.variant,
+          color: allocation.color,
+          engineNo: allocation.engineNo,
+          stockStatusAtMark: 'Retail after accounts payment confirmation',
+          bookingNo: booking.bookingNumber,
+          customerName: booking.customerName,
+          vehicleSnapshot: (allocation.vehicleSnapshot || {}) as JsonRecord,
+          notes: `Invoice ${invoiceNumber} verified by Accounts`,
+          markedBy: appUser.id,
+          markedByName: appUser.fullName,
+          markedByRole: appUser.role,
+          markedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      })
     }
 
     const [updated] = await tx.update(kiaBookings).set({
-      // Accounts verified -> ready for the Sales Executive to deliver.
+      // Payment released + invoice recorded -> ready for the Sales Executive to deliver.
       status: 'ready_delivery',
       metadata: {
         ...((booking.metadata || {}) as JsonRecord),
+        paymentConfirmation: {
+          reference: nullableText(input.reference),
+          confirmedAt: new Date().toISOString(),
+          confirmedBy: appUser.fullName,
+          confirmedByRole: appUser.role,
+        },
         accountsVerification: {
           invoiceNumber,
           invoiceDocumentUrl: nullableText(input.invoiceDocumentUrl),
@@ -834,15 +916,15 @@ export async function verifyKiaAccountsPayment(
       },
       updatedBy: appUser.id,
       updatedAt: new Date(),
-    }).where(and(eq(kiaBookings.id, id), eq(kiaBookings.status, 'payment_confirmed'))).returning()
+    }).where(eq(kiaBookings.id, id)).returning()
 
     if (!updated) throw new Error('Booking already moved to another stage')
 
     await addActivity(tx, {
       bookingId: id,
       type: 'accounts',
-      title: 'Accounts verified',
-      description: `Invoice ${invoiceNumber} verified by Accounts`,
+      title: 'Payment released & invoice verified',
+      description: `Invoice ${invoiceNumber} recorded by Accounts`,
       after: updated as unknown as JsonRecord,
       appUser,
     })
@@ -948,7 +1030,7 @@ export async function requestKiaVehicleTransfer(
           stockSource: text(vehicle.source) || 'dms',
           vehicleSnapshot: (vehicle.snapshot || {}) as JsonRecord,
           allocationStatus: 'temporary',
-          expiresAt: new Date(Date.now() + TEMPORARY_ALLOCATION_HOURS * 60 * 60 * 1000),
+          expiresAt: new Date(Date.now() + allocationHoursForBooking(booking) * 60 * 60 * 1000),
           allocatedBy: appUser.id,
         })
         .returning()

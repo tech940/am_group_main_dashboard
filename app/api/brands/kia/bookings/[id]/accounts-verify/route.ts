@@ -28,6 +28,7 @@ export async function POST(request: Request, context: RouteContext<'/api/brands/
     const contentType = request.headers.get('content-type') || ''
 
     let invoiceNumber: string | null = null
+    let reference: string | null = null
     let notes: string | null = null
     let invoiceDocumentUrl: string | null = null
     let invoiceDocumentPath: string | null = null
@@ -36,6 +37,7 @@ export async function POST(request: Request, context: RouteContext<'/api/brands/
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
       invoiceNumber = String(formData.get('invoiceNumber') || '').trim() || null
+      reference = String(formData.get('reference') || '').trim() || null
       notes = String(formData.get('notes') || '').trim() || null
       const invoice = formData.get('invoice')
       if (invoice instanceof File && invoice.size > 0) {
@@ -48,11 +50,13 @@ export async function POST(request: Request, context: RouteContext<'/api/brands/
     } else {
       const body = await request.json().catch(() => ({}))
       invoiceNumber = typeof body.invoiceNumber === 'string' ? body.invoiceNumber.trim() || null : null
+      reference = typeof body.reference === 'string' ? body.reference.trim() || null : null
       notes = typeof body.notes === 'string' ? body.notes.trim() || null : null
     }
 
     const booking = await verifyKiaAccountsPayment(id, {
       invoiceNumber,
+      reference,
       notes,
       invoiceDocumentUrl,
       invoiceDocumentPath,

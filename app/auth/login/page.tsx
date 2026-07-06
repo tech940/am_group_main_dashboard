@@ -155,7 +155,7 @@ export default function LoginPage() {
                       <div
                         className="flex h-[86px] w-[86px] items-center justify-center rounded-full border border-white/95 bg-white shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 ring-slate-100/70 transition-all duration-300 ease-out group-hover:scale-110 group-hover:shadow-[0_24px_56px_rgba(15,23,42,0.16)] group-hover:-translate-y-1"
                       >
-                        <Icon className="h-10 w-10" style={{ color: node.color }} strokeWidth={2.4} />
+                        <Icon className="h-10 w-10" style={{ color: node.color }} strokeWidth={1.5} />
                       </div>
                       <span className="text-[15px] font-semibold tracking-[-0.01em] text-slate-950 transition-all duration-300 group-hover:font-bold">
                         {node.label}

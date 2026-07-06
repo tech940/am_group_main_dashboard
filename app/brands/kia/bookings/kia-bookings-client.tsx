@@ -4,8 +4,9 @@
 
 import { toast } from '@/hooks/use-toast'
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChangeEvent, createContext, FormEvent, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
 import {
   ArrowRight,
   BadgeIndianRupee,
@@ -228,6 +229,7 @@ type ProformaOptionsPayload = {
 
 type CreateBookingForm = {
   customerName: string
+  customerType: string
   countryCode: string
   customerPhone: string
   customerEmailId: string
@@ -251,7 +253,6 @@ type CreateBookingForm = {
   otherDealerDetails: string
   promiseDate: string
   costSheet: string
-  paymentReceived: string
   waitingPeriod: string
   dealerCode: string
   notes: string
@@ -259,6 +260,12 @@ type CreateBookingForm = {
 
 const DEFAULT_PAGE_SIZE = 10
 const ALL_VALUE = 'all'
+
+// Customer phone / email are restricted to MD & Super Admin across the CRM. A
+// file-local context lets the many presentational sub-components mask PII without
+// threading a prop through every one.
+const KiaPiiContext = createContext(false)
+const useCanViewPii = () => useContext(KiaPiiContext)
 const PRIMARY_SURFACE = 'kia-surface'
 const INPUT_STYLE = 'h-10 w-full rounded-2xl border border-slate-200 bg-slate-50/50 px-3 text-sm font-semibold text-slate-800 transition-all duration-200 focus:bg-white focus:border-[#c8102e] focus:ring-4 focus:ring-red-50 focus:outline-none sm:h-12 sm:px-4'
 const COMPACT_INPUT_STYLE = 'h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-800 transition-all duration-200 focus:bg-white focus:border-[#c8102e] focus:ring-4 focus:ring-red-50 focus:outline-none'
@@ -454,6 +461,7 @@ function BookingMobileCard({
   onOpen: (id: string) => void
 }) {
   const router = useRouter()
+  const canViewPii = useCanViewPii()
   return (
     <article className="kia-surface-flush kia-lift p-3.5" onClick={() => onOpen(row.id)}>
       <div className="flex items-start justify-between gap-3">
@@ -461,7 +469,7 @@ function BookingMobileCard({
           <Kicker>Booking</Kicker>
           <h3 className="mt-0.5 text-sm font-extrabold leading-5 text-[var(--kia-text)] kia-tnum">{row.bookingNumber}</h3>
           <p className="mt-1 truncate text-xs font-bold text-[var(--kia-text-soft)]">{row.customerName}</p>
-          <p className="text-[11px] font-medium text-[var(--kia-text-faint)]">{row.customerPhone}</p>
+          <p className="text-[11px] font-medium text-[var(--kia-text-faint)]">{maskKiaPii(row.customerPhone, canViewPii)}</p>
         </div>
         <StatusBadge status={row.status} />
       </div>
@@ -997,6 +1005,7 @@ function SearchableVariantSelect({
 function initialCreateForm(): CreateBookingForm {
   return {
     customerName: '',
+    customerType: 'Regular',
     countryCode: '91',
     customerPhone: '',
     customerEmailId: '',
@@ -1020,7 +1029,6 @@ function initialCreateForm(): CreateBookingForm {
     otherDealerDetails: '',
     promiseDate: '',
     costSheet: '',
-    paymentReceived: '',
     waitingPeriod: '',
     dealerCode: 'JK402',
     notes: '',
@@ -1070,6 +1078,7 @@ export function KiaBookingsClient({
   const [paymentInvoiceFile, setPaymentInvoiceFile] = useState<File | null>(null)
   const [accountsDialogOpen, setAccountsDialogOpen] = useState(false)
   const [accountsInvoiceNumber, setAccountsInvoiceNumber] = useState('')
+  const [accountsReference, setAccountsReference] = useState('')
   const [accountsInvoiceFile, setAccountsInvoiceFile] = useState<File | null>(null)
   const [accountsNotes, setAccountsNotes] = useState('')
   const [createTab, setCreateTab] = useState<(typeof CREATE_TABS)[number]>('Customer')
@@ -1112,6 +1121,7 @@ export function KiaBookingsClient({
   const canUseTestPersona = currentUserRole === 'super_admin'
   const normalizedCurrentRole = normalizeRole(currentUserRole)
   const canCreateBookings = roleCanActAsSalesPerson(normalizedCurrentRole)
+  const canViewPii = canViewKiaCustomerPii(currentUserRole)
   const stockMode = mode === 'stock'
   const animated = usePremiumMotion()
 
@@ -1150,6 +1160,9 @@ export function KiaBookingsClient({
     retry: 2,
     staleTime: 10_000,
     refetchOnWindowFocus: false,
+    // Keep the current rows on screen while a page/filter change refetches, so the
+    // table never flashes an empty skeleton — pagination + search feel instant.
+    placeholderData: keepPreviousData,
   })
 
   const detailQuery = useQuery({
@@ -1244,12 +1257,13 @@ export function KiaBookingsClient({
   })
 
   const accountsMutation = useMutation({
-    mutationFn: async ({ bookingId, invoiceNumber, invoiceFile, notes }: { bookingId: string; invoiceNumber: string; invoiceFile: File | null; notes: string }) => {
+    mutationFn: async ({ bookingId, invoiceNumber, reference, invoiceFile, notes }: { bookingId: string; invoiceNumber: string; reference: string; invoiceFile: File | null; notes: string }) => {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 60000)
       try {
         const formData = new FormData()
         formData.append('invoiceNumber', invoiceNumber.trim())
+        if (reference.trim()) formData.append('reference', reference.trim())
         if (notes.trim()) formData.append('notes', notes.trim())
         if (invoiceFile) formData.append('invoice', invoiceFile)
         const response = await fetch(`/api/brands/kia/bookings/${bookingId}/accounts-verify`, {
@@ -1270,9 +1284,10 @@ export function KiaBookingsClient({
     onSuccess: () => {
       setAccountsDialogOpen(false)
       setAccountsInvoiceNumber('')
+      setAccountsReference('')
       setAccountsInvoiceFile(null)
       setAccountsNotes('')
-      setActionMessage('Accounts verified. Ready for the Sales Executive to deliver.')
+      setActionMessage('Payment released & invoice recorded. Ready for the Sales Executive to deliver.')
       queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
       queryClient.invalidateQueries({ queryKey: ['kia-booking-detail', selectedBookingId] })
       queryClient.invalidateQueries({ queryKey: ['kia-booking-matching-vehicles', selectedBookingId] })
@@ -1403,7 +1418,6 @@ export function KiaBookingsClient({
       ['bookingDate', 'Booking Date'],
       ['pmtSource', 'Payment Source'],
       ['paymentAmount', 'Payment Amount'],
-      ['paymentReceived', 'Payment Received Against Booking'],
       ['costSheet', 'Cost Sheet'],
       ['bankFinance', 'Bank / Finance'],
       ['expectedDeliveryDate', 'Estimated Delivery Date'],
@@ -1414,6 +1428,7 @@ export function KiaBookingsClient({
       setFormError(`${missing[1]} is required.`)
       const tabByField: Record<keyof CreateBookingForm, (typeof CREATE_TABS)[number]> = {
         customerName: 'Customer',
+        customerType: 'Customer',
         countryCode: 'Customer',
         customerPhone: 'Customer',
         customerEmailId: 'Customer',
@@ -1432,7 +1447,6 @@ export function KiaBookingsClient({
         bookingDate: 'Payment',
         pmtSource: 'Payment',
         paymentAmount: 'Payment',
-        paymentReceived: 'Payment',
         costSheet: 'Payment',
         bankFinance: 'Payment',
         expectedDeliveryDate: 'Delivery',
@@ -1560,6 +1574,7 @@ export function KiaBookingsClient({
     accountsMutation.mutate({
       bookingId: selectedBookingId,
       invoiceNumber: accountsInvoiceNumber,
+      reference: accountsReference,
       invoiceFile: accountsInvoiceFile,
       notes: accountsNotes,
     })
@@ -1614,7 +1629,7 @@ export function KiaBookingsClient({
   )
 
   const content = (
-    <>
+    <KiaPiiContext.Provider value={canViewPii}>
       <div className="kia-premium space-y-5">
         {/* ── Command header ── */}
         {embedMode ? (
@@ -1710,7 +1725,7 @@ export function KiaBookingsClient({
                 className="h-10 flex-1 gap-1.5 rounded-2xl text-xs font-bold sm:h-11 sm:text-sm"
                 onClick={() => {
                   const header = ['Booking ID', 'Customer', 'Phone', 'Vehicle', 'Variant', 'Colour', 'Dealer', 'Status', 'Booking Date', 'Payment']
-                  const body = rows.map((r) => [r.bookingNumber, r.customerName, r.customerPhone, r.model, r.variant, r.color || '', r.dealerCode, String(r.status), formatDate(r.createdAt || r.updatedAt), paymentMeta(String(r.status), r.deliveredAt).label])
+                  const body = rows.map((r) => [r.bookingNumber, r.customerName, maskKiaPii(r.customerPhone, canViewPii), r.model, r.variant, r.color || '', r.dealerCode, String(r.status), formatDate(r.createdAt || r.updatedAt), paymentMeta(String(r.status), r.deliveredAt).label])
                   const csv = [header, ...body].map((cols) => cols.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
                   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
                   const link = document.createElement('a')
@@ -1800,7 +1815,7 @@ export function KiaBookingsClient({
                       <TableCell className="px-3 py-3 text-xs font-extrabold leading-5 text-[var(--kia-text)]"><span className="kia-tnum">{row.bookingNumber}</span></TableCell>
                       <TableCell className="px-3 py-3">
                         <div className="text-sm font-bold leading-5 text-[var(--kia-text)]">{row.customerName}</div>
-                        <div className="text-[11px] font-medium text-[var(--kia-text-soft)]">{row.customerPhone}</div>
+                        <div className="text-[11px] font-medium text-[var(--kia-text-soft)]">{maskKiaPii(row.customerPhone, canViewPii)}</div>
                       </TableCell>
                       <TableCell className="px-3 py-3">
                         <div className="text-sm font-semibold leading-5 text-[var(--kia-text)]">{row.model}</div>
@@ -1915,16 +1930,20 @@ export function KiaBookingsClient({
         <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
           <LoaderOverlay show={accountsMutation.isPending} variant="payment" label="Verifying with Accounts…" sublabel="Recording invoice and confirming documents" />
           <DialogHeader className="border-b border-slate-100 bg-[radial-gradient(circle_at_top_right,#ede9fe,transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-6">
-            <Badge variant="outline" className="mb-3 w-fit rounded-full border-violet-100 bg-violet-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-violet-700">Accounts · Verification</Badge>
-            <DialogTitle className="text-2xl font-black tracking-tight text-slate-950">Verify Payment Documentation</DialogTitle>
+            <Badge variant="outline" className="mb-3 w-fit rounded-full border-violet-100 bg-violet-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-violet-700">Accounts · Payment &amp; Invoice</Badge>
+            <DialogTitle className="text-2xl font-black tracking-tight text-slate-950">Confirm Payment &amp; Record Invoice</DialogTitle>
             <DialogDescription className="mt-2 text-xs font-semibold leading-5 text-slate-500 sm:text-sm">
-              Enter the invoice number, upload the invoice PDF, and confirm the financial documentation is complete. This unlocks delivery.
+              Confirm the payment has been released, enter the invoice number, and upload the invoice PDF. Completing this unlocks delivery.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-4 sm:p-6">
             <div>
               <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Invoice Number <span className="text-red-500">*</span></Label>
               <Input className={cn(INPUT_STYLE, 'mt-1.5')} value={accountsInvoiceNumber} onChange={(event) => setAccountsInvoiceNumber(event.target.value)} placeholder="e.g. INV-2026-0001" />
+            </div>
+            <div>
+              <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Payment Reference / UTR</Label>
+              <Input className={cn(INPUT_STYLE, 'mt-1.5')} value={accountsReference} onChange={(event) => setAccountsReference(event.target.value)} placeholder="Optional reference / UTR" />
             </div>
             <div>
               <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Invoice PDF</Label>
@@ -1970,7 +1989,7 @@ export function KiaBookingsClient({
               </div>
               <div>
                 <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Contact number (from booking)</Label>
-                <Input readOnly value={detailQuery.data?.booking.customerPhone || ''} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
+                <Input readOnly value={maskKiaPii(detailQuery.data?.booking.customerPhone, canViewPii)} className={cn(COMPACT_INPUT_STYLE, 'mt-1 bg-slate-100/50')} />
               </div>
               <div>
                 <Label className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Financier</Label>
@@ -2083,7 +2102,7 @@ export function KiaBookingsClient({
           ) : null}
         </DialogContent>
       </Dialog>
-    </>
+    </KiaPiiContext.Provider>
   )
 
   if (embedMode) return content
@@ -2123,6 +2142,28 @@ function FilterSelect({
 }
 
 const BOOKING_DRAFT_KEY = 'kia-booking-draft-v1'
+
+// Returns the first invalid/missing required field for a wizard step, or null.
+function getBookingStepError(tab: (typeof CREATE_TABS)[number], form: CreateBookingForm): string | null {
+  const req = (key: keyof CreateBookingForm, label: string) => (!String(form[key] || '').trim() ? `${label} is required.` : null)
+  if (tab === 'Customer') {
+    if (getBookingStepMissing(form, 'customerName')) return 'Customer Name is required.'
+    const digits = String(form.customerPhone || '').replace(/\D/g, '')
+    if (digits.length !== 10) return 'Mobile Number must be exactly 10 digits.'
+    if (!String(form.customerEmailId || '').trim()) return 'Customer Email is required.'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmailId.trim())) return 'Enter a valid email address.'
+    return req('dealerCode', 'Dealer')
+  }
+  if (tab === 'Vehicle') return req('model', 'Model') || req('variant', 'Variant') || req('color', 'Colour')
+  if (tab === 'Sales Team') return req('managerName', 'Manager') || req('tlName', 'Team Leader') || req('consultantName', 'Consultant') || req('leadSource', 'Lead Source')
+  if (tab === 'Payment') return req('bookingAmount', 'Booking Amount') || req('bookingDate', 'Booking Date') || req('pmtSource', 'Payment Source') || req('paymentAmount', 'Payment Amount') || req('costSheet', 'Cost Sheet') || req('bankFinance', 'Bank / Finance')
+  if (tab === 'Delivery') return req('expectedDeliveryDate', 'Estimated Delivery Date') || req('promiseDate', 'Promise Date')
+  return null
+}
+
+function getBookingStepMissing(form: CreateBookingForm, key: keyof CreateBookingForm) {
+  return !String(form[key] || '').trim()
+}
 
 function BookingReviewRow({ label, value }: { label: string; value: string }) {
   return (
@@ -2175,6 +2216,7 @@ function CreateBookingDialog({
   const [stockChecking, setStockChecking] = useState(false)
   const [stockCheckResult, setStockCheckResult] = useState<{ available: boolean; count: number } | null>(null)
   const [hasDraft, setHasDraft] = useState(false)
+  const [stepError, setStepError] = useState('')
 
   // Detect a saved draft whenever the dialog opens.
   useEffect(() => {
@@ -2371,7 +2413,7 @@ function CreateBookingDialog({
 
           {/* ── TAB CONTENT ── */}
           <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6" style={{ background: 'linear-gradient(180deg, #ffffff, color-mix(in srgb, var(--dashboard-action-bg) 6%, #f6f8ff))' }}>
-            {error && <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</div>}
+            {(error || stepError) && <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error || stepError}</div>}
 
             {/* CUSTOMER TAB */}
             {activeTab === 'Customer' && (
@@ -2388,6 +2430,21 @@ function CreateBookingDialog({
                       <Input value={form.customerName} onChange={(event) => onChange('customerName', event.target.value)} className={INPUT_STYLE} placeholder="Full legal name" />
                     </Field>
                   </div>
+                  <div className="md:col-span-2">
+                    <Field label="Customer Type" required>
+                      <select
+                        value={form.customerType || 'Regular'}
+                        onChange={(event) => onChange('customerType', event.target.value)}
+                        className={cn(INPUT_STYLE, 'cursor-pointer appearance-none')}
+                      >
+                        <option value="Regular">Regular</option>
+                        <option value="CSD">CSD</option>
+                      </select>
+                      {form.customerType === 'CSD' && (
+                        <p className="mt-1.5 text-[11px] font-bold text-[var(--dashboard-action-bg)]">CSD bookings get a 5-day payment window after allotment (instead of 72 hours).</p>
+                      )}
+                    </Field>
+                  </div>
                   <Field label="Mobile Number" required>
                     <div className="flex gap-2">
                       <Input
@@ -2398,12 +2455,17 @@ function CreateBookingDialog({
                       />
                       <Input
                         value={form.customerPhone}
-                        onChange={(event) => onChange('customerPhone', event.target.value)}
+                        onChange={(event) => onChange('customerPhone', event.target.value.replace(/\D/g, '').slice(0, 10))}
                         className={cn(INPUT_STYLE, 'flex-1')}
                         placeholder="10-digit mobile"
                         type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
                       />
                     </div>
+                    {form.customerPhone.length > 0 && form.customerPhone.length !== 10 && (
+                      <p className="mt-1 text-[11px] font-bold text-rose-500">Mobile number must be exactly 10 digits.</p>
+                    )}
                   </Field>
                   <Field label="Customer Email" required>
                     <Input value={form.customerEmailId} onChange={(event) => onChange('customerEmailId', event.target.value)} className={INPUT_STYLE} placeholder="customer@email.com" type="email" />
@@ -2537,7 +2599,6 @@ function CreateBookingDialog({
                   </Select>
                 </Field>
                 <Field label="Payment Amount" required><Input type="number" value={form.paymentAmount} onChange={(event) => onChange('paymentAmount', event.target.value)} className={INPUT_STYLE} placeholder="₹" /></Field>
-                <Field label="Payment Received Against Booking" required><Input value={form.paymentReceived} onChange={(event) => onChange('paymentReceived', event.target.value)} className={INPUT_STYLE} /></Field>
                 <Field label="Cost Sheet" required>
                   <div className="space-y-2">
                     <label className={`flex items-center justify-center gap-3 cursor-pointer h-11 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:border-slate-400 hover:bg-white transition-all ${costSheetVerifying ? 'opacity-60 pointer-events-none' : ''}`}>
@@ -2670,7 +2731,16 @@ function CreateBookingDialog({
                   key="wizard-next"
                   type="button"
                   className="h-10 min-w-[90px] rounded-2xl bg-slate-950 text-xs font-black text-white shadow-lg shadow-slate-950/15 hover:bg-slate-800 sm:text-sm"
-                  onClick={() => onTabChange(CREATE_TABS[activeIndex + 1])}
+                  onClick={() => {
+                    const stepError = getBookingStepError(activeTab, form)
+                    if (stepError) {
+                      setStepError(stepError)
+                      toast({ title: 'Please complete this step', description: stepError, variant: 'error' })
+                      return
+                    }
+                    setStepError('')
+                    onTabChange(CREATE_TABS[activeIndex + 1])
+                  }}
                 >
                   Next →
                 </Button>
@@ -2744,6 +2814,7 @@ function BookingDrawer({
 }) {
   const router = useRouter()
   const { booking, allocation, proforma, financeOrder, activities, transfers } = detail
+  const canViewPii = canViewKiaCustomerPii(currentUserRole)
   const proformaApproved = proforma?.status === 'APPROVED'
   // Delivery date lives in the column when set via edit, else in the create-form metadata.
   const expectedDeliveryValue = booking.expectedDeliveryDate || ((booking.metadata as Record<string, unknown> | null)?.expectedDeliveryDate as string | null | undefined) || null
@@ -2755,7 +2826,6 @@ function BookingDrawer({
   const canActAsSalesManager = effectivePersona === 'actual' ? roleCanActAsSalesManager(currentUserRole) : effectivePersona === 'sales_manager'
   const canActAsAccounts = effectivePersona === 'actual' ? roleCanActAsAccounts(currentUserRole) : effectivePersona === 'accounts'
   // New role-model gates (backend enforces the same):
-  const canActAsFinance = effectivePersona === 'actual' ? canConfirmKiaPayment(currentUserRole) : effectivePersona === 'accounts'
   const canActAsAccountsVerify = effectivePersona === 'actual' ? canVerifyKiaAccounts(currentUserRole) : effectivePersona === 'accounts'
   const canDeliver = effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : effectivePersona === 'sales_person'
   const canActOnStock = effectivePersona === 'actual' ? canAllotKiaVehicle(currentUserRole) : effectivePersona !== 'sales_person'
@@ -2796,29 +2866,20 @@ function BookingDrawer({
         onAction: null,
       }
     }
-    if (booking.status === 'vehicle_allocated' || booking.status === 'transfer_requested') {
+    if (booking.status === 'vehicle_allocated' || booking.status === 'transfer_requested' || booking.status === 'payment_confirmed') {
       return {
-        label: 'Stage 4 · Finance',
-        title: 'Payment confirmation pending',
-        body: 'The VIN is reserved for 72 hours. The Finance team confirms the payment received; otherwise release the reservation.',
-        actionLabel: canActAsFinance ? 'Confirm Payment Received' : null,
-        onAction: canActAsFinance ? () => onAction('payment') : null,
-      }
-    }
-    if (booking.status === 'payment_confirmed') {
-      return {
-        label: 'Stage 5 · Accounts',
-        title: 'Accounts verification pending',
-        body: 'Finance confirmed the payment. Accounts must enter the invoice number, upload the invoice PDF, and verify the documentation before delivery.',
-        actionLabel: canActAsAccountsVerify ? 'Verify with Accounts' : null,
+        label: 'Stage 4 · Accounts',
+        title: 'Payment & invoice pending',
+        body: 'The VIN is reserved for 72 hours. Accounts confirms the payment release, records the invoice number, and uploads the invoice PDF; otherwise release the reservation.',
+        actionLabel: canActAsAccountsVerify ? 'Confirm Payment & Invoice' : null,
         onAction: canActAsAccountsVerify ? () => onAction('accounts') : null,
       }
     }
     if (booking.status === 'ready_delivery') {
       return {
-        label: 'Stage 6 · Delivery',
+        label: 'Stage 5 · Delivery',
         title: 'Ready to deliver',
-        body: 'Accounts has verified all documentation. The Sales Executive completes delivery.',
+        body: 'Accounts has released payment and verified all documentation. The Sales Executive completes delivery.',
         actionLabel: canDeliver ? 'Mark Delivered' : null,
         onAction: canDeliver ? () => onAction('deliver') : null,
       }
@@ -2832,18 +2893,15 @@ function BookingDrawer({
     }
   })()
 
-  // Stage-based vehicle journey (matches the reference right-sidebar timeline)
-  // and the new workflow: booking -> proforma -> approve -> allot -> finance
-  // payment -> accounts verify -> deliver.
-  const paymentDone = ['payment_confirmed', 'ready_delivery', 'delivered'].includes(String(booking.status)) || isDelivered
+  // Stage-based vehicle journey. New workflow (Finance removed):
+  // booking -> proforma -> approve -> allot -> accounts (payment + invoice) -> deliver.
   const accountsDone = ['ready_delivery', 'delivered'].includes(String(booking.status)) || isDelivered
   const journeyStages = [
     { key: 'booking', title: 'Booking Created', keywords: ['booking created', 'created'], done: true },
     { key: 'proforma', title: 'Proforma Generated', keywords: ['proforma generated', 'proforma'], done: Boolean(proforma) },
     { key: 'approved', title: 'Approved', keywords: ['approved', 'approval'], done: Boolean(proformaApproved) },
     { key: 'allotted', title: 'Vehicle Allotted', keywords: ['allot', 'allocat', 'vin reserved'], done: Boolean(allocation?.vinNumber) },
-    { key: 'payment', title: 'Payment Confirmed', keywords: ['payment'], done: paymentDone },
-    { key: 'accounts', title: 'Accounts Verified', keywords: ['accounts verified', 'invoice'], done: accountsDone },
+    { key: 'accounts', title: 'Payment & Invoice', keywords: ['payment', 'invoice', 'accounts'], done: accountsDone },
     { key: 'delivered', title: 'Delivered', keywords: ['delivered'], done: isDelivered },
   ]
   const journeyFrontier = journeyStages.reduce((acc, stage, index) => (stage.done ? index : acc), 0)
@@ -2941,8 +2999,8 @@ function BookingDrawer({
               <InfoCard title="Customer" icon={UserRound} items={[
                 ['Name', booking.customerName],
                 ['Country Code', String(meta.countryCode || '91')],
-                ['Phone', booking.customerPhone],
-                ['Email', booking.customerEmail || String(meta.customerEmailId || '-')],
+                ['Phone', maskKiaPii(booking.customerPhone, canViewPii)],
+                ['Email', maskKiaPii(booking.customerEmail || String(meta.customerEmailId || ''), canViewPii)],
                 ['Address', booking.customerAddress || '-'],
               ]} />
               <InfoCard title="Vehicle" icon={Car} items={[
@@ -2997,8 +3055,7 @@ function BookingDrawer({
                   }
                 }}
               />
-              <ActionCard title="Payment · Finance" icon={ShieldCheck} value={allocation ? allocation.vinNumber : 'No active VIN'} status={paymentDone ? 'Confirmed' : 'Pending Finance'} action={paymentDone ? 'Payment Confirmed' : 'Confirm Payment'} disabled={actionLoading || !canActAsFinance || !allocation || paymentDone} loading={actionLoading} onClick={() => onAction('payment')} />
-              <ActionCard title="Accounts · Verification" icon={ShieldCheck} value={accountsDone ? 'Invoice recorded' : 'Awaiting invoice'} status={accountsDone ? 'Verified' : booking.status === 'payment_confirmed' ? 'Pending Accounts' : 'Not started'} action={accountsDone ? 'Verified' : 'Verify & Add Invoice'} disabled={actionLoading || !canActAsAccountsVerify || booking.status !== 'payment_confirmed'} loading={actionLoading} onClick={() => onAction('accounts')} />
+              <ActionCard title="Accounts · Payment & Invoice" icon={ShieldCheck} value={accountsDone ? 'Invoice recorded' : allocation ? allocation.vinNumber : 'No active VIN'} status={accountsDone ? 'Payment released · Verified' : 'Pending Accounts'} action={accountsDone ? 'Completed' : 'Confirm Payment & Invoice'} disabled={actionLoading || !canActAsAccountsVerify || !allocation || accountsDone || !(booking.status === 'vehicle_allocated' || booking.status === 'transfer_requested' || booking.status === 'payment_confirmed')} loading={actionLoading} onClick={() => onAction('accounts')} />
             </div>
           )
         })()}

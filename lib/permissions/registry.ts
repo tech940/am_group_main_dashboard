@@ -866,7 +866,9 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   finance_head: [
     ...keysForGroups(['finance_orders'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit', 'audit']),
-    ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+    // KIA Proforma workflow: first approver in the chain (Finance Head → SM → GM).
+    ...keysForGroups(['kia', 'kia.bookings'], ['view']),
+    ...keysForGroups(['kia.proforma'], ['view', 'approve']),
   ],
   accounts: [
     ...keysForGroups(['purchase_orders', 'finance_orders'], ['view', 'edit', 'approve']),

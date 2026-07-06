@@ -6,8 +6,7 @@
 //   sales_executive  -> Create Booking, Generate Proforma, Deliver
 //   sales_manager / general_manager / md -> Approve / Decline Proforma
 //   (anyone except sales_executive) -> Allot Vehicle / Request Transfer
-//   finance_head / finance_team -> Confirm Payment Received
-//   accounts -> Enter Invoice #, upload Invoice PDF, verify documents
+//   accounts -> Confirm Payment Release + Invoice # + Invoice PDF (single step)
 //   sales_executive -> Mark Delivered
 // admin / super_admin bypass everything.
 
@@ -16,7 +15,6 @@ function norm(role?: string | null) {
 }
 
 const PROFORMA_APPROVER_ROLES = ['sales_manager', 'general_manager', 'md']
-const FINANCE_ROLES = ['finance_head', 'finance_team']
 
 export function isKiaWorkflowAdmin(role?: string | null) {
   const r = norm(role)
@@ -39,16 +37,15 @@ export function canCreateKiaBooking(role?: string | null) {
   return isKiaWorkflowAdmin(r) || r === 'sales_executive' || canApproveKiaProforma(r)
 }
 
-/** Finance Head / Finance Team (+ admin): confirm payment received (no invoice here). */
-export function canConfirmKiaPayment(role?: string | null) {
-  const r = norm(role)
-  return isKiaWorkflowAdmin(r) || FINANCE_ROLES.includes(r)
-}
-
-/** Accounts (+ admin): enter invoice number, upload invoice PDF, verify documentation. */
+/** Accounts (+ admin): confirm payment release, enter invoice #, upload invoice PDF. */
 export function canVerifyKiaAccounts(role?: string | null) {
   const r = norm(role)
   return isKiaWorkflowAdmin(r) || r === 'accounts'
+}
+
+/** Payment is now confirmed by Accounts (Finance stage removed). */
+export function canConfirmKiaPayment(role?: string | null) {
+  return canVerifyKiaAccounts(role)
 }
 
 /** Sales Executive (+ admin): mark the vehicle delivered. */
@@ -61,10 +58,25 @@ export function canDeliverKiaBooking(role?: string | null) {
 export function canAllotKiaVehicle(role?: string | null) {
   const r = norm(role)
   if (r === 'sales_executive') return false
-  return isKiaWorkflowAdmin(r) || canApproveKiaProforma(r) || canConfirmKiaPayment(r) || canVerifyKiaAccounts(r)
+  return isKiaWorkflowAdmin(r) || canApproveKiaProforma(r) || canVerifyKiaAccounts(r)
 }
 
 /** Transfer requests follow the same rule as allotment. */
 export function canTransferKiaVehicle(role?: string | null) {
   return canAllotKiaVehicle(role)
+}
+
+/**
+ * Who may see EVERY booking. Sales Executives (and any non-privileged role) see
+ * only their own bookings; approvers, Accounts, Finance Head, MD and admins see
+ * all of them (they need the full pipeline to approve / act on it).
+ */
+export function canViewAllKiaBookings(role?: string | null) {
+  const r = norm(role)
+  return (
+    isKiaWorkflowAdmin(r) ||
+    canApproveKiaProforma(r) ||
+    r === 'accounts' ||
+    r === 'finance_head'
+  )
 }

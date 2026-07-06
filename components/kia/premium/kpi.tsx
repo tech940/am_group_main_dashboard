@@ -50,7 +50,7 @@ export function KpiCard({
         disabled={!interactive}
         aria-pressed={active}
         className={cn(
-          'group relative flex h-full w-full flex-col justify-between overflow-hidden rounded-[1.35rem] border p-3.5 text-left transition-colors sm:p-4',
+          'group relative flex h-full w-full flex-col justify-between overflow-hidden rounded-[1.2rem] border px-3.5 py-3 text-left transition-colors',
           interactive ? 'cursor-pointer' : 'cursor-default',
         )}
         style={{
@@ -68,31 +68,33 @@ export function KpiCard({
             background: `radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, ${accent} 12%, transparent), transparent 60%)`,
           }}
         />
-        <div className="relative flex items-start justify-between gap-2">
+        <div className="relative flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <p className="text-2xl font-extrabold leading-none tracking-tight text-[var(--kia-text)] sm:text-[1.7rem]">
+              <AnimatedNumber value={value} format={format} />
+            </p>
+            {active && (
+              <motion.span
+                layoutId="kpi-active-dot"
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: accent }}
+              />
+            )}
+          </div>
           <span
-            className="grid h-9 w-9 place-items-center rounded-xl border transition-transform duration-300 group-hover:scale-105"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-transform duration-300 group-hover:scale-105"
             style={{
               backgroundColor: `color-mix(in srgb, ${accent} 13%, transparent)`,
               borderColor: `color-mix(in srgb, ${accent} 26%, transparent)`,
               color: accent,
             }}
           >
-            <Icon className="h-[1.05rem] w-[1.05rem]" />
+            <Icon className="h-4 w-4" />
           </span>
-          {active && (
-            <motion.span
-              layoutId="kpi-active-dot"
-              className="mt-1 h-2 w-2 rounded-full"
-              style={{ backgroundColor: accent }}
-            />
-          )}
         </div>
-        <div className="relative mt-3">
-          <p className="text-2xl font-extrabold leading-none tracking-tight text-[var(--kia-text)] sm:text-[1.7rem]">
-            <AnimatedNumber value={value} format={format} />
-          </p>
-          <p className="mt-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--kia-text-soft)]">{label}</p>
-          {hint && <p className="mt-0.5 text-[10px] font-medium text-[var(--kia-text-faint)]">{hint}</p>}
+        <div className="relative mt-2.5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--kia-text-soft)]">{label}</p>
+          {hint && <p className="mt-0.5 text-[10px] font-medium leading-tight text-[var(--kia-text-faint)]">{hint}</p>}
         </div>
       </button>
     </Lift>

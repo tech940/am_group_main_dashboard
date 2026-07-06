@@ -1590,4 +1590,19 @@ export const kiaQuotesRelations = relations(kiaQuotes, ({ one }) => ({
   }),
 }))
 
+// Delivery log for transactional customer emails (approved-proforma, quote, and
+// future workflow notifications). Booking-less emails (e.g. quotes) leave
+// booking_id null. Status: 'pending' | 'sent' | 'failed'.
+export const kiaEmailLogs = pgTable('kia_email_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id'),
+  customerEmail: text('customer_email').notNull(),
+  subject: text('subject').notNull(),
+  emailType: text('email_type'),
+  status: text('status').default('pending').notNull(),
+  error: text('error'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 

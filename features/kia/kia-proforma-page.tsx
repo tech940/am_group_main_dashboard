@@ -4,6 +4,7 @@
 
 import { toast } from '@/hooks/use-toast'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
@@ -38,6 +39,7 @@ import {
   ShieldCheck,
   Upload,
   WalletCards,
+  X,
 } from 'lucide-react'
 import { KiaBookingsClient } from '@/app/brands/kia/bookings/kia-bookings-client'
 import { KiaStockManagementDashboard } from './kia-stock-management-dashboard'
@@ -54,10 +56,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
+import { kiaApprovalStage, KIA_APPROVAL_STAGE_LABELS, kiaStageActorLabel, pendingStageOf } from '@/lib/kia-proforma/approval'
 import { calculateKiaProformaPricing, getKiaBankOptions } from '@/lib/kia-proforma/pricing'
 import {
   AnimatedNumber,
   Chip,
+  FieldValue,
   IconTile,
   Kicker,
   LoaderOverlay,
@@ -519,6 +524,18 @@ function canSeeBookingsNav(role: string) {
   return String(role || '').trim().toLowerCase() !== 'manager'
 }
 
+// Sales Executives are limited to the Booking CRM + Generate Proforma only —
+// no Stock, All Proforma Details, Finance Remarks, Pending Approval or analytics.
+function isKiaSalesPersonOnly(role: string) {
+  return String(role || '').trim().toLowerCase() === 'sales_executive'
+}
+
+function canAccessKiaSection(section: KiaProformaSection, role: string, isApprover: boolean) {
+  if (isKiaSalesPersonOnly(role)) return section === 'bookings' || section === 'generate'
+  if (section === 'pending-approval') return isApprover
+  return true
+}
+
 function PriceDetailsUploadPanel({ onImported }: { onImported: () => void }) {
   const [uploading, setUploading] = useState(false)
   const [summary, setSummary] = useState<PriceImportSummary | null>(null)
@@ -633,7 +650,7 @@ function ModuleHeader({
   }
   const current = titles[section]
   const navItems = PROFORMA_NAV_ITEMS
-    .filter((item) => (!item.approverOnly || isApprover) && !item.hideFromNav)
+    .filter((item) => !item.hideFromNav && canAccessKiaSection(item.section, currentUserRole, isApprover))
     .filter((item) => item.section !== 'bookings' || canSeeBookingsNav(currentUserRole))
   return (
     <Reveal>
@@ -938,7 +955,7 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
           </div>
         </FormSection>
 
-        <FormSection title="Price Details" subtitle="">
+        <FormSection title="Price Details" subtitle={pricing.price ? `Auto-fetched from price sheet · ${pricing.canonicalTrim || form.trimDescription}` : 'No matching price in the sheet — enter values manually'}>
           <div className="grid gap-4 md:grid-cols-2">
             {[
               ['exShowroom', 'Ex-Showroom'],
@@ -950,7 +967,10 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
               ['extWarranty', 'Extended Warranty'],
             ].map(([key, label]) => (
               <Field key={key} label={label}>
-                <TextInput type="number" value={form[key as keyof FormState]} disabled={!editablePrices} onChange={(event) => update(key as keyof FormState, event.target.value)} />
+                {/* Auto-fetched from the price sheet by model + variant and locked.
+                    Editable only for CSD / Bharat Series, or as a fallback when the
+                    DB has no matching price row (so the form is never a dead-end). */}
+                <TextInput type="number" value={form[key as keyof FormState]} disabled={!editablePrices && Boolean(pricing.price)} onChange={(event) => update(key as keyof FormState, event.target.value)} />
               </Field>
             ))}
           </div>
@@ -1321,6 +1341,8 @@ function ProformaTable({
   extra,
   action,
   hideEmptyColumns = false,
+  onRowClick,
+  canViewPii = false,
 }: {
   rows: KiaProformaRow[]
   hiddenColumns: Set<string>
@@ -1328,6 +1350,8 @@ function ProformaTable({
   extra?: (row: KiaProformaRow) => React.ReactNode
   action?: (row: KiaProformaRow) => React.ReactNode
   hideEmptyColumns?: boolean
+  onRowClick?: (row: KiaProformaRow) => void
+  canViewPii?: boolean
 }) {
   const [showColumnManager, setShowColumnManager] = useState(false)
   const visibleColumns = TABLE_COLUMNS.filter((column) => {
@@ -1428,10 +1452,14 @@ function ProformaTable({
             ) : rows.map((row, index) => {
               const isPending = !['APPROVED', 'DECLINED', 'NOT APPROVED'].includes(String(row.approvalStatus).toUpperCase())
               return (
-                <tr key={row.id} className="align-top">
+                <tr
+                  key={row.id}
+                  className={cn('align-top', onRowClick && 'cursor-pointer transition-colors hover:bg-[var(--kia-surface-hover,rgba(99,102,241,0.04))]')}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                >
                   {visibleColumns.map((column, colIdx) => {
                     const raw = column.key === 'index' ? index + 1 : row[column.key]
-                    const value = column.numeric ? formatCurrency(raw) : column.key === 'entryTime' ? formatDateTime(String(raw)) : column.key === 'proformaDate' || column.key === 'financeUpdatedTime' ? formatDate(String(raw)) : column.key === 'location' ? formatKiaLocation(raw as string | null) : String(raw ?? '-')
+                    const value = column.numeric ? formatCurrency(raw) : column.key === 'entryTime' ? formatDateTime(String(raw)) : column.key === 'proformaDate' || column.key === 'financeUpdatedTime' ? formatDate(String(raw)) : column.key === 'location' ? formatKiaLocation(raw as string | null) : (column.key === 'mobileNumber' || column.key === 'customerEmail') ? maskKiaPii(raw == null ? '' : String(raw), canViewPii) : String(raw ?? '-')
                     return (
                       <td
                         key={String(column.key)}
@@ -1449,8 +1477,8 @@ function ProformaTable({
                       </td>
                     )
                   })}
-                  {extra && <td className="min-w-[320px] px-3 py-2.5 text-xs" style={{ borderRight: '1px solid var(--kia-hairline)', borderBottom: '1px solid var(--kia-hairline)' }}>{extra(row)}</td>}
-                  {action && <td className="whitespace-nowrap px-3 py-2.5 text-xs sm:sticky sm:right-0 sm:shadow-[-10px_0_18px_rgba(15,23,42,0.05)]" style={{ backgroundColor: 'var(--kia-surface)', borderBottom: '1px solid var(--kia-hairline)' }}>{action(row)}</td>}
+                  {extra && <td className="min-w-[320px] px-3 py-2.5 text-xs" onClick={(e) => e.stopPropagation()} style={{ borderRight: '1px solid var(--kia-hairline)', borderBottom: '1px solid var(--kia-hairline)' }}>{extra(row)}</td>}
+                  {action && <td className="whitespace-nowrap px-3 py-2.5 text-xs sm:sticky sm:right-0 sm:shadow-[-10px_0_18px_rgba(15,23,42,0.05)]" onClick={(e) => e.stopPropagation()} style={{ backgroundColor: 'var(--kia-surface)', borderBottom: '1px solid var(--kia-hairline)' }}>{action(row)}</td>}
                 </tr>
               )
             })}
@@ -1487,6 +1515,10 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const [verifying, setVerifying] = useState<KiaProformaRow | null>(null)
   const [verifyState, setVerifyState] = useState<VerifyState>({})
   const [financeDrafts, setFinanceDrafts] = useState<Record<string, { status: string; remarks: string }>>({})
+  const [previewRow, setPreviewRow] = useState<KiaProformaRow | null>(null)
+  const [declineReason, setDeclineReason] = useState('')
+  const canViewPii = canViewKiaCustomerPii(options.currentUser.role)
+  const verifyStage = verifying ? pendingStageOf(verifying.approvalStatus) : 'finance_head'
   const isFinance = mode === 'finance-remarks'
 
   const filteredRows = useMemo(() => {
@@ -1537,35 +1569,54 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     await reload()
   }
 
-  async function approveCurrent(allApproved = false) {
+  async function approveCurrent(opts: { decision?: 'approve' | 'decline'; allApproved?: boolean } = {}) {
     if (!verifying) return
-    if (allApproved) {
-      setIsApproving(true)
-    } else {
-      setIsSaving(true)
-    }
+    const stage = pendingStageOf(verifying.approvalStatus)
+    const isDecline = opts.decision === 'decline'
+    if (isDecline) setIsSaving(true)
+    else setIsApproving(true)
     try {
-      const checks = { ...verifyState }
-      if (allApproved) FIELD_VERIFY.forEach(([key]) => { checks[key] = { status: 'APPROVED', reason: '' } })
+      const payload: Record<string, unknown> = { action: 'approval' }
+      if (stage === 'finance_head') {
+        const checks = { ...verifyState }
+        if (opts.allApproved) FIELD_VERIFY.forEach(([key]) => { checks[key] = { status: 'APPROVED', reason: '' } })
+        payload.checks = checks
+      } else {
+        payload.decision = opts.decision || 'approve'
+        if (isDecline) payload.declineReason = declineReason.trim()
+      }
       const response = await fetch(`/api/brands/kia/proforma/${verifying.id}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'approval', checks }),
+        body: JSON.stringify(payload),
       })
       if (!response.ok) {
-        toast({ title: 'Error', description: 'Failed to save approval', variant: 'error' })
+        const err = await response.json().catch(() => null) as { error?: string } | null
+        toast({ title: 'Error', description: err?.error || 'Failed to save approval', variant: 'error' })
         return
       }
+      const result = await response.json().catch(() => null) as { row?: { approvalStatus?: string } } | null
+      const fullyApproved = kiaApprovalStage(result?.row?.approvalStatus) === 'approved'
+      const declinedNow = kiaApprovalStage(result?.row?.approvalStatus) === 'declined'
       const approvedBookingId = verifying.linkedBookingId || null
       setVerifying(null)
       setVerifyState({})
+      setDeclineReason('')
+      toast({
+        title: declinedNow ? 'Proforma declined' : fullyApproved ? 'Proforma approved' : 'Approval recorded',
+        description: declinedNow
+          ? 'The proforma was sent back as Not Approved.'
+          : fullyApproved
+            ? 'Fully approved — the vehicle is now ready for allotment.'
+            : `Approved at ${kiaStageActorLabel(stage)} — sent to the next approver.`,
+        variant: declinedNow ? 'warning' : 'success',
+      })
       await reload()
-      // Ensure the Stock view refetches so the "BOOKING MATCH" flag appears
-      // immediately instead of only after a manual page reload.
-      queryClient.invalidateQueries({ queryKey: ['kia-approved-bookings-for-allot'] })
-      queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
-      if (approvedBookingId) {
-        router.push(`/brands/kia/proforma/stock?bookingId=${approvedBookingId}`)
+      // Only a fully-approved proforma is allotment-ready; refetch stock + route there.
+      if (fullyApproved) {
+        queryClient.invalidateQueries({ queryKey: ['kia-approved-bookings-for-allot'] })
+        queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+        if (approvedBookingId) router.push(`/brands/kia/proforma/stock?bookingId=${approvedBookingId}`)
       }
     } catch (err) {
       console.error(err)
@@ -1636,6 +1687,8 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
           setHiddenColumns={setHiddenColumns}
           extra={financeExtra}
           hideEmptyColumns={mode === 'pending-approval'}
+          onRowClick={setPreviewRow}
+          canViewPii={canViewPii}
           action={(row) => (
             <div className="flex gap-2">
               {mode === 'pending-approval' && <Button className={cn('rounded-xl', proformaPrimaryButton)} onClick={() => setVerifying(row)}>VERIFY</Button>}
@@ -1679,50 +1732,251 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
               <div className="flex items-center gap-3">
                 <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><ShieldCheck className="h-5 w-5" /></span>
                 <div>
-                  <DialogTitle className="text-2xl font-extrabold tracking-tight">Verify Proforma</DialogTitle>
+                  <DialogTitle className="text-2xl font-extrabold tracking-tight">{verifyStage === 'finance_head' ? 'Verify Proforma' : 'Approve Proforma'}</DialogTitle>
                   <DialogDescription className="text-white/80">{verifying?.customerName} · {verifying?.modelName}</DialogDescription>
                 </div>
               </div>
+              <div className="relative mt-3 inline-flex w-fit items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-black uppercase tracking-wide">
+                <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
+                Stage: {KIA_APPROVAL_STAGE_LABELS[verifyStage]}
+              </div>
             </DialogHeader>
           </div>
-          <div className="grid gap-3 p-6">
-            {FIELD_VERIFY.map(([key, label]) => {
-              const decision = verifyState[key]?.status
-              return (
-                <div key={key} className="kia-surface-sunken grid gap-3 p-3 md:grid-cols-[220px_180px_1fr]" style={decision === 'NOT APPROVED' ? toneSoftStyle('danger') : decision === 'APPROVED' ? toneSoftStyle('success') : undefined}>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">{label}</p>
-                    <p className="mt-1 text-lg font-extrabold text-[var(--kia-text)] kia-tnum">{formatCurrency(verifying?.[key as keyof KiaProformaRow])}</p>
+          {verifyStage === 'finance_head' ? (
+            <div className="grid gap-3 p-6">
+              <p className="text-xs font-semibold text-[var(--kia-text-soft)]">Finance Head — verify the discount fields. Approving forwards this proforma to the Sales Manager.</p>
+              {FIELD_VERIFY.map(([key, label]) => {
+                const decision = verifyState[key]?.status
+                return (
+                  <div key={key} className="kia-surface-sunken grid gap-3 p-3 md:grid-cols-[220px_180px_1fr]" style={decision === 'NOT APPROVED' ? toneSoftStyle('danger') : decision === 'APPROVED' ? toneSoftStyle('success') : undefined}>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">{label}</p>
+                      <p className="mt-1 text-lg font-extrabold text-[var(--kia-text)] kia-tnum">{formatCurrency(verifying?.[key as keyof KiaProformaRow])}</p>
+                    </div>
+                    <Select value={verifyState[key]?.status || 'blank'} onValueChange={(value) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { reason: '' }), status: value === 'blank' ? '' : value } }))}>
+                      <SelectTrigger className="rounded-xl bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+                      <SelectContent>{['blank', 'APPROVED', 'NOT APPROVED'].map((value) => <SelectItem key={value} value={value}>{value === 'blank' ? 'Blank' : value}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Input value={verifyState[key]?.reason || ''} onChange={(event) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { status: '' }), reason: event.target.value } }))} placeholder="Reason if not approved" className="rounded-xl bg-white" />
                   </div>
-                  <Select value={verifyState[key]?.status || 'blank'} onValueChange={(value) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { reason: '' }), status: value === 'blank' ? '' : value } }))}>
-                    <SelectTrigger className="rounded-xl bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
-                    <SelectContent>{['blank', 'APPROVED', 'NOT APPROVED'].map((value) => <SelectItem key={value} value={value}>{value === 'blank' ? 'Blank' : value}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <Input value={verifyState[key]?.reason || ''} onChange={(event) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { status: '' }), reason: event.target.value } }))} placeholder="Reason if not approved" className="rounded-xl bg-white" />
-                </div>
-              )
-            })}
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                className={cn('h-10 rounded-xl', proformaOutlineButton)}
-                disabled={isApproving || isSaving}
-                onClick={() => approveCurrent(true)}
-              >
-                {isApproving ? 'Approving…' : 'Approve All'}
-              </Button>
-              <Button
-                className={cn('h-10 rounded-xl', proformaPrimaryButton)}
-                disabled={isApproving || isSaving}
-                onClick={() => approveCurrent(false)}
-              >
-                {isSaving ? 'Saving…' : 'Final Save'}
-              </Button>
+                )
+              })}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  className={cn('h-10 rounded-xl', proformaOutlineButton)}
+                  disabled={isApproving || isSaving}
+                  onClick={() => approveCurrent({})}
+                >
+                  {isSaving ? 'Saving…' : 'Save Verification'}
+                </Button>
+                <Button
+                  className={cn('h-10 rounded-xl', proformaPrimaryButton)}
+                  disabled={isApproving || isSaving}
+                  onClick={() => approveCurrent({ allApproved: true })}
+                >
+                  {isApproving ? 'Approving…' : 'Approve & Forward →'}
+                </Button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="grid gap-4 p-6">
+              <p className="text-xs font-semibold text-[var(--kia-text-soft)]">{kiaStageActorLabel(verifyStage)} approval — review the details and approve to advance{verifyStage === 'sales_manager' ? ' to the General Manager' : ' (final approval)'}, or decline with a reason.</p>
+              <div className="kia-surface-sunken grid gap-3 p-4 sm:grid-cols-2">
+                <FieldValue label="Ex-Showroom" value={formatCurrency(verifying?.exShowroom)} />
+                <FieldValue label="Grand Total" value={formatCurrency(verifying?.grandTotalCost)} />
+                <FieldValue label="Cash Discount" value={formatCurrency(verifying?.cashDiscount)} />
+                <FieldValue label="Additional Discount" value={formatCurrency(verifying?.additionalDiscount)} />
+                <FieldValue label="Exchange Value" value={formatCurrency(verifying?.exchangeValue)} />
+                <FieldValue label="Booking Amount" value={formatCurrency(verifying?.bookingAmount)} />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">Decline reason (required to decline)</label>
+                <Textarea value={declineReason} onChange={(event) => setDeclineReason(event.target.value)} placeholder="Add a reason if you are declining this proforma…" className="mt-1 rounded-xl bg-white" rows={2} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  className={cn('h-10 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50')}
+                  disabled={isApproving || isSaving || !declineReason.trim()}
+                  onClick={() => approveCurrent({ decision: 'decline' })}
+                >
+                  {isSaving ? 'Declining…' : 'Decline'}
+                </Button>
+                <Button
+                  className={cn('h-10 rounded-xl', proformaPrimaryButton)}
+                  disabled={isApproving || isSaving}
+                  onClick={() => approveCurrent({ decision: 'approve' })}
+                >
+                  {isApproving ? 'Approving…' : verifyStage === 'sales_manager' ? 'Approve & Forward →' : 'Approve (Final)'}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
+
+      <ProformaPreviewDrawer
+        row={previewRow}
+        mode={mode}
+        canViewPii={canViewPii}
+        onClose={() => setPreviewRow(null)}
+        onVerify={(row) => { setPreviewRow(null); setVerifying(row) }}
+      />
     </div>
+  )
+}
+
+function ProformaPreviewDrawer({
+  row,
+  mode,
+  canViewPii = false,
+  onClose,
+  onVerify,
+}: {
+  row: KiaProformaRow | null
+  mode: 'all' | 'finance-remarks' | 'pending-approval'
+  canViewPii?: boolean
+  onClose: () => void
+  onVerify: (row: KiaProformaRow) => void
+}) {
+  if (!row || typeof document === 'undefined') return null
+
+  const money = (value: unknown) => formatCurrency(value)
+  const isPending = !['APPROVED', 'DECLINED', 'NOT APPROVED'].includes(String(row.approvalStatus).toUpperCase())
+
+  const priceFields: { label: string; value: string | number }[] = [
+    { label: 'Ex-Showroom', value: row.exShowroom },
+    { label: 'TCS', value: row.tcsValue },
+    { label: 'Registration', value: row.registrationCharges },
+    { label: 'Insurance', value: row.insuranceValue },
+    { label: 'FASTag', value: row.fastagValue },
+    { label: 'Accessories Kit', value: row.accessoriesKit },
+    { label: 'Ext. Warranty', value: row.extWarranty },
+    { label: 'Cash Discount', value: row.cashDiscount },
+    { label: 'Exchange Value', value: row.exchangeValue },
+    { label: 'Booking Amount', value: row.bookingAmount },
+    { label: 'Govt. Emp. Discount', value: row.govtEmployeeDiscount },
+    { label: 'Additional Discount', value: row.additionalDiscount },
+  ]
+
+  return createPortal(
+    <>
+      <motion.div
+        className="fixed inset-0 z-[99998] bg-slate-950/40 backdrop-blur-[2px]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        onClick={onClose}
+      />
+      <motion.div
+        className="kia-premium fixed inset-y-0 right-0 z-[99999] flex h-full w-[480px] max-w-[95vw] flex-col border-l shadow-2xl"
+        style={{ backgroundColor: 'var(--kia-canvas)', borderColor: 'var(--kia-hairline)' }}
+        initial={{ x: 48, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Hero */}
+        <div className="relative overflow-hidden border-b p-5 text-white" style={{ borderColor: 'var(--kia-hairline)', background: 'linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg))' }}>
+          <div aria-hidden className="pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/70">Proforma Preview</p>
+              <p className="mt-1 truncate text-lg font-extrabold tracking-tight">{row.customerName || '—'}</p>
+              <p className="mt-0.5 text-xs font-semibold text-white/85">{row.modelName} · {row.trimDescription}</p>
+            </div>
+            <button
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-white/10 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+              onClick={onClose}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="relative mt-3">
+            <Chip tone={approvalTone(row.approvalStatus)}>{row.approvalStatus}</Chip>
+          </div>
+        </div>
+
+        <div className="kia-scroll flex-1 space-y-4 overflow-y-auto p-4">
+          {/* Customer Details */}
+          <div className="kia-surface p-4">
+            <div className="mb-3 flex items-center gap-2.5">
+              <IconTile icon={ClipboardList} tone="info" size="sm" />
+              <h3 className="text-sm font-extrabold tracking-tight text-[var(--kia-text)]">Customer Details</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <FieldValue label="Customer" value={row.customerName || '—'} />
+              <FieldValue label="Mobile" value={maskKiaPii(row.mobileNumber, canViewPii)} />
+              <FieldValue label="Email" value={maskKiaPii(row.customerEmail, canViewPii)} />
+              <FieldValue label="Type" value={row.customerType || '—'} />
+              <FieldValue label="Proforma Date" value={formatDate(row.proformaDate)} />
+              <FieldValue label="Consultant" value={row.consultant || '—'} />
+              <div className="col-span-2"><FieldValue label="Address" value={row.customerAddress || '—'} /></div>
+            </div>
+          </div>
+
+          {/* Bank / Finance Details */}
+          <div className="kia-surface p-4">
+            <div className="mb-3 flex items-center gap-2.5">
+              <IconTile icon={WalletCards} tone="accent" size="sm" />
+              <h3 className="text-sm font-extrabold tracking-tight text-[var(--kia-text)]">Bank / Finance Details</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <FieldValue label="Bank" value={row.bankName || '—'} />
+              <FieldValue label="Branch" value={row.bankBranch || '—'} />
+              <FieldValue label="Loan Amount" value={money(row.loanAmount)} />
+              <FieldValue label="Insurance Co." value={row.insuranceCompany || '—'} />
+              <FieldValue label="Vehicle Status" value={row.vehicleStatus || '—'} />
+              <FieldValue label="Finance Status" value={row.financeStatus || '—'} />
+              {row.financeRemarks && <div className="col-span-2"><FieldValue label="Finance Remarks" value={row.financeRemarks} /></div>}
+            </div>
+          </div>
+
+          {/* Vehicle & Price Details */}
+          <div className="kia-surface p-4">
+            <div className="mb-3 flex items-center gap-2.5">
+              <IconTile icon={FileText} tone="violet" size="sm" />
+              <h3 className="text-sm font-extrabold tracking-tight text-[var(--kia-text)]">Vehicle & Price Details</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <FieldValue label="Model" value={row.modelName || '—'} />
+              <FieldValue label="Variant" value={row.trimDescription || '—'} />
+              <FieldValue label="Fuel" value={row.fuelType || '—'} />
+              <FieldValue label="Colour" value={row.vehicleColor || '—'} />
+            </div>
+            <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--kia-hairline)' }}>
+              <div className="grid grid-cols-2 gap-2">
+                {priceFields.map((field) => (
+                  <FieldValue key={field.label} label={field.label} value={money(field.value)} />
+                ))}
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3" style={{ borderColor: 'var(--kia-hairline)' }}>
+              <div className="rounded-xl px-3 py-2" style={toneSoftStyle('info')}>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--kia-text-soft)]">Customer Cost</p>
+                <p className="kia-tnum mt-0.5 text-sm font-extrabold text-[var(--kia-text)]">{money(row.totalCustomerCost)}</p>
+              </div>
+              <div className="rounded-xl px-3 py-2" style={toneSoftStyle('accent')}>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--kia-text-soft)]">Grand Total</p>
+                <p className="kia-tnum mt-0.5 text-sm font-extrabold text-[var(--kia-text)]">{money(row.grandTotalCost)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer actions — editing still happens via these, matching the table */}
+        <div className="flex items-center justify-end gap-2 border-t p-4" style={{ borderColor: 'var(--kia-hairline)' }}>
+          <Button variant="outline" className={cn('h-10 rounded-xl', proformaOutlineButton)} onClick={onClose}>Close</Button>
+          {mode === 'pending-approval' && isPending && (
+            <Button className={cn('h-10 rounded-xl', proformaPrimaryButton)} onClick={() => onVerify(row)}>VERIFY</Button>
+          )}
+          {row.approvalStatus === 'APPROVED' && row.linkPreview && (
+            <Button className="h-10 rounded-xl bg-indigo-600 px-4 text-xs font-black text-white hover:bg-indigo-700" onClick={() => window.open(row.linkPreview!, '_blank')}>Open ↗</Button>
+          )}
+        </div>
+      </motion.div>
+    </>,
+    document.body
   )
 }
 
@@ -1953,13 +2207,16 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
   if (approverOnly && !options.currentUser.isApprover) {
     return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="kia-premium"><PremiumEmptyState illustration="road" title="Access required" description="This page is available only for Kia Proforma approvers or manager roles." /></div></MainLayout>
   }
+  if (!canAccessKiaSection(section, options.currentUser.role, options.currentUser.isApprover)) {
+    return <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system"><div className="kia-premium"><PremiumEmptyState illustration="road" title="Access required" description="Sales Executives can access the Booking CRM and Generate Proforma only." /></div></MainLayout>
+  }
 
   return (
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
       <div className="kia-proforma-shell kia-premium space-y-5">
         <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} onPricesImported={reload} />
         {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} currentUserRole={options.currentUser.role} />}
-        {section === 'stock' && <KiaStockManagementDashboard />}
+        {section === 'stock' && <KiaStockManagementDashboard currentUserRole={options.currentUser.role} />}
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} bookingPrefill={bookingPrefill} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}
         {section === 'finance-remarks' && <DetailsView options={options} mode="finance-remarks" />}

@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, eq, isNull, or } from 'drizzle-orm'
+import { and, eq, isNull, like, or } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { AppUser } from '@/lib/auth/app-user'
 import { kiaProformas } from '@/lib/db/schema'
@@ -8,7 +8,9 @@ import { canUserAccessPermission } from '@/lib/permissions/service'
 
 type KiaProformaRole = AppUser['role']
 
-export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'super_admin', 'sales_manager', 'general_manager', 'md'] as const
+// Finance Head is the first approver in the chain, so they must be able to reach
+// the Pending Approval queue too.
+export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'super_admin', 'finance_head', 'sales_manager', 'general_manager', 'md'] as const
 
 export function canAccessKiaProforma(role: KiaProformaRole | null | undefined) {
   return Boolean(role)
@@ -31,13 +33,27 @@ export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = fa
   return and(...base, eq(kiaProformas.loginEmail, appUser.email))!
 }
 
-export function getKiaProformaPendingApprovalFilter() {
-  return and(
-    isNull(kiaProformas.deletedAt),
-    or(
-      eq(kiaProformas.approvalStatus, 'PENDING'),
-      eq(kiaProformas.approvalStatus, ''),
-      eq(kiaProformas.approvalStatus, 'NOT APPROVED')
-    )
+// Stage-aware Pending Approval queue. Each approver role only sees the proformas
+// waiting at their step; MD / admins see every in-flight proforma.
+//   Finance Head    -> PENDING / '' / NOT APPROVED (restart)
+//   Sales Manager   -> FINANCE_APPROVED
+//   General Manager -> MANAGER_APPROVED
+export function getKiaProformaPendingApprovalFilter(appUser?: AppUser): SQL<unknown> {
+  const financeBucket = or(
+    eq(kiaProformas.approvalStatus, 'PENDING'),
+    eq(kiaProformas.approvalStatus, ''),
+    like(kiaProformas.approvalStatus, 'NOT APPROVED%'),
   )!
+  const salesManagerBucket = eq(kiaProformas.approvalStatus, 'FINANCE_APPROVED')
+  const generalManagerBucket = eq(kiaProformas.approvalStatus, 'MANAGER_APPROVED')
+  const allInFlight = or(financeBucket, salesManagerBucket, generalManagerBucket)!
+
+  const role = String(appUser?.role || '').trim().toLowerCase()
+  let bucket: SQL<unknown> = allInFlight
+  if (role === 'finance_head') bucket = financeBucket
+  else if (role === 'sales_manager') bucket = salesManagerBucket
+  else if (role === 'general_manager') bucket = generalManagerBucket
+  // admin / super_admin / md (and permission-based approvers) → all in-flight.
+
+  return and(isNull(kiaProformas.deletedAt), bucket)!
 }

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import nodemailer from 'nodemailer'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { requirePermission } from '@/lib/permissions/service'
 import { ensureKiaUserProfile, touchKiaUserProfile } from '@/lib/kia-proforma/server'
 import { buildKiaQuotePdf, type KiaQuotePdfRow } from '@/lib/kia-proforma/invoice'
+import { sendTrackedEmail } from '@/lib/email/email-log'
+import { buildQuoteEmail } from '@/lib/email/templates'
 import { db } from '@/lib/db'
 import { kiaQuotes } from '@/lib/db/schema'
 
@@ -20,20 +21,6 @@ function readText(body: Record<string, unknown>, key: string) {
 function readAmount(body: Record<string, unknown>, key: string) {
   const parsed = Number(String(body[key] ?? '0').replace(/,/g, ''))
   return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00'
-}
-
-function getMailerTransport() {
-  const user = process.env.REPORT_MAIL_GMAIL_USER
-  const pass = process.env.REPORT_MAIL_GMAIL_APP_PASSWORD
-
-  if (!user || !pass) {
-    throw new Error('Quote email is not configured. Set REPORT_MAIL_GMAIL_USER and REPORT_MAIL_GMAIL_APP_PASSWORD.')
-  }
-
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user, pass },
-  })
 }
 
 function buildQuoteRow(body: Record<string, unknown>, location: string | null, consultant?: string | null): KiaQuotePdfRow {
@@ -98,40 +85,22 @@ export async function POST(request: NextRequest) {
     const row = buildQuoteRow(body, profile.dealerLocation || appUser.brand || 'kia', profile.consultantName || appUser.fullName)
     const pdf = buildKiaQuotePdf(row)
 
-    let emailSent = false
-    try {
-      const transport = getMailerTransport()
-      const fromName = process.env.REPORT_MAIL_FROM_NAME || 'AM KIA'
-      const mailUser = process.env.REPORT_MAIL_GMAIL_USER || ''
-      const to = row.customerEmail.trim().toLowerCase()
-
-      await transport.sendMail({
-        from: `"${fromName}" <${mailUser}>`,
-        to,
-        subject: `AM KIA Price Quotation - ${row.modelName}`,
-        text: [
-          `Dear ${row.customerName},`,
-          '',
-          'Please find attached your AM KIA price quotation.',
-          '',
-          'This is only a price quotation and not a booking confirmation, tax invoice, or final allocation document.',
-          'Vehicle prices, schemes, availability, and taxes are subject to change at the time of booking/invoicing.',
-        ].join('\n'),
-        html: `
-          <p>Dear <strong>${row.customerName}</strong>,</p>
-          <p>Please find attached your AM KIA price quotation.</p>
-          <p><strong>Important:</strong> This is only a price quotation and not a booking confirmation, tax invoice, or final allocation document. Vehicle prices, schemes, availability, and taxes are subject to change at the time of booking/invoicing.</p>
-        `,
-        attachments: [{
-          filename: `AM-KIA-Quote-${row.modelName.replace(/\s+/g, '-')}-${Date.now()}.pdf`,
-          content: pdf,
-          contentType: 'application/pdf',
-        }],
-      })
-      emailSent = true
-    } catch (e) {
-      console.warn('Failed to email quote PDF, will download only:', e)
-    }
+    // Email the quote PDF via Google OAuth2. Never blocks the download response:
+    // sendTrackedEmail logs the outcome and never throws.
+    const quoteEmail = buildQuoteEmail({ customerName: row.customerName })
+    const emailResult = await sendTrackedEmail({
+      to: row.customerEmail.trim().toLowerCase(),
+      subject: quoteEmail.subject,
+      html: quoteEmail.html,
+      text: quoteEmail.text,
+      emailType: 'quote',
+      attachments: [{
+        filename: 'Quotation.pdf',
+        content: pdf,
+        contentType: 'application/pdf',
+      }],
+    })
+    const emailSent = emailResult.ok
 
     await touchKiaUserProfile(appUser.email)
     

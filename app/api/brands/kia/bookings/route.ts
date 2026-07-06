@@ -38,6 +38,7 @@ export async function GET(request: Request) {
       consultant: url.searchParams.get('consultant'),
       page: Number(url.searchParams.get('page') || 1),
       pageSize: Number(url.searchParams.get('pageSize') || 10),
+      viewer: appUser ? { id: appUser.id, email: appUser.email, role: appUser.role } : null,
     }))
 
     const payload = {

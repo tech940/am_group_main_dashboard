@@ -49,13 +49,13 @@ const brandNavigation = [
         submenus: [
           { name: 'Business Excellence', href: '/brands/kia/business-excellence' },
           { name: 'Service Appointment', href: '/brands/kia/service-appointment' },
-          { name: 'Kia Proforma', href: '/brands/kia/proforma' },
         ],
       },
       {
         name: 'Sales',
         key: 'sales',
         submenus: [
+          { name: 'Kia Proforma', href: '/brands/kia/proforma' },
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },

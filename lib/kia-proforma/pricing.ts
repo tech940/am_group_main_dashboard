@@ -21,6 +21,7 @@ export type KiaBankBranchLookupRow = {
 export type ProformaPricingInput = {
   bankName: string
   bankBranch: string
+  modelName?: string
   trimDescription: string
   exShowroom: string | number
   tcsValue: string | number
@@ -114,12 +115,40 @@ export function findPriceByTrim(input: string, prices: KiaPriceLookupRow[]) {
   return prices.find((price) => normalizeLookup(price.trimDescription) === normalized) || null
 }
 
+function alnum(value: unknown) {
+  return normalizeLookup(value).replace(/[^a-z0-9]/g, '')
+}
+
+// Auto-fetch the vehicle price by MODEL + VARIANT. Tries an exact trim match first
+// (unchanged behaviour), then falls back to a model-scoped fuzzy match so a booking
+// whose variant text differs slightly from the price sheet still resolves a price
+// instead of leaving Ex-Showroom at 0.
+export function findPriceByModelTrim(model: string | undefined, trim: string, prices: KiaPriceLookupRow[]) {
+  const exact = findPriceByTrim(trim, prices)
+  if (exact) return exact
+
+  const trimKey = alnum(trim)
+  if (!trimKey) return null
+  const modelKey = normalizeLookup(model)
+
+  const candidates = prices.filter((price) => {
+    if (modelKey && normalizeLookup(price.model) !== modelKey) return false
+    const priceKey = alnum(price.trimDescription)
+    if (!priceKey) return false
+    return priceKey.includes(trimKey) || trimKey.includes(priceKey)
+  })
+  if (candidates.length === 0) return null
+
+  // Prefer the most specific (longest) matching trim.
+  return candidates.sort((a, b) => alnum(b.trimDescription).length - alnum(a.trimDescription).length)[0]
+}
+
 export function calculateKiaProformaPricing(
   input: ProformaPricingInput,
   prices: KiaPriceLookupRow[],
   banks: KiaBankBranchLookupRow[]
 ): ProformaPricingResult {
-  const price = findPriceByTrim(input.trimDescription, prices)
+  const price = findPriceByModelTrim(input.modelName, input.trimDescription, prices)
   const canonicalTrim = price?.trimDescription?.trim() || ''
   const canonicalBank = findCanonicalBank(input.bankName, banks)
   const branchOptions = canonicalBank ? getBranchesForBank(canonicalBank, banks) : []
