@@ -304,15 +304,8 @@ function isActiveBooking(row: Row) {
 }
 
 function isLostEnquiry(row: Row) {
-  const status = safeText(row.enquiry_status).toLowerCase()
-  return Boolean(
-    displayDate(row.lost_date)
-    || safeText(row.lost_reason)
-    || safeText(row.lost_due_to)
-    || safeText(row.lost_remark)
-    || status.includes('cancel')
-    || status.includes('lost')
-  )
+  // Lost = the enquiry has a lost reason recorded. Nothing else counts.
+  return Boolean(safeText(row.lost_reason))
 }
 
 function isOpenEnquiry(row: Row) {
@@ -1285,7 +1278,7 @@ const readCachedKiaSalesReportSummary = unstable_cache(
     const context = await resolveDateContext({ year, month, dealerCode: normalizedDealerCode })
     return await buildKiaSalesReportSummary(context, normalizedDealerCode)
   },
-  ['kia-sales-report-summary-v9-accessories-csr-date-taxable-td-done'],
+  ['kia-sales-report-summary-v10-lost-reason-only'],
   { revalidate: KIA_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS }
 )
 
