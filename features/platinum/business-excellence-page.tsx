@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
+import { formatBusinessFreshness, formatBusinessFreshnessShort } from '@/lib/business-excellence/freshness-format'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -582,27 +583,8 @@ function DealerCoverageNotice({ coverage }: { coverage?: DealerCoverage | null }
   )
 }
 
-function formatBusinessFreshness(value?: string | null) {
-  if (!value) return 'Not available'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Not available'
-  return `${date.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  })} IST`
-}
-
-function formatBusinessFreshnessShort(value?: string | null) {
-  if (!value) return 'Not available'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Not available'
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-}
+// Freshness formatters are centralised (timezone-safe, IST) in
+// '@/lib/business-excellence/freshness-format' — imported at the top of this file.
 
 function SmartTrendValueLabel({
   x,

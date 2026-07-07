@@ -111,7 +111,10 @@ function buildFreshnessSelect(source: FreshnessSource, dealerCode: string | null
     SELECT
       ${source.table}::text AS "table",
       ${source.label}::text AS "label",
-      MAX(uploaded_at) AS "sourceUpdatedAt",
+      -- "Last updated" is a source-level fact: the latest cron write to the WHOLE
+      -- table, independent of any dealer filter (which would otherwise show an older
+      -- per-dealer timestamp).
+      (SELECT MAX(uploaded_at) FROM ${sql.raw(`"${source.table}"`)}) AS "sourceUpdatedAt",
       COALESCE((
         SELECT n_live_tup::bigint
         FROM pg_stat_user_tables

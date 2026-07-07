@@ -1618,7 +1618,15 @@ export function KiaBookingsClient({
           <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => setQuoteOpen(true)}>
             <FileText className="h-4 w-4" /> Email Quote
           </Button>
-          <input type="file" ref={priceInputRef} accept=".xlsx,.xls,.xlsm" onChange={handlePriceUpload} className="hidden" disabled={priceUploading} />
+          <input
+            type="file"
+            ref={priceInputRef}
+            // Include MIME types alongside extensions — some OS file pickers grey out
+            // Excel files when only bare extensions are given.
+            accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
+            onChange={handlePriceUpload}
+            className="hidden"
+          />
           <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => priceInputRef.current?.click()} disabled={priceUploading}>
             {priceUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Replace Prices
           </Button>
