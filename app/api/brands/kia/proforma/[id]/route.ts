@@ -14,8 +14,9 @@ import {
 } from '@/lib/kia-proforma/approval'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 import { serializeUtcTimestampFields } from '@/lib/date-time'
-import { saveKiaProformaPdf } from '@/lib/kia-proforma/invoice'
+import { saveKiaProformaPdf, buildKiaProformaPdf } from '@/lib/kia-proforma/invoice'
 import { sendTrackedEmail } from '@/lib/email/email-log'
+import { buildTrackingUrl } from '@/lib/kia/tracking'
 import { buildApprovedProformaEmail } from '@/lib/email/templates'
 import { requirePermission } from '@/lib/permissions/service'
 
@@ -207,7 +208,21 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           bookingDate: bookingDate ? new Date(bookingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null,
           consultantName: text(updated.consultant),
           dealerName: text(updated.location) || 'AM Kia',
+          trackingUrl: linkedBookingRow?.id ? buildTrackingUrl(linkedBookingRow.id) : null,
         })
+        // Attach the approved proforma PDF so the customer receives it directly.
+        let attachments: { filename: string; content: Buffer; contentType: string }[] | undefined
+        try {
+          const pdfBuffer = buildKiaProformaPdf(updated)
+          attachments = [{
+            filename: `Kia-Proforma-${String(updated.id).slice(0, 8).toUpperCase()}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf',
+          }]
+        } catch (pdfError) {
+          // Never let a PDF failure block the notification — send without it.
+          console.error('Failed to build proforma PDF for approval email:', pdfError)
+        }
         await sendTrackedEmail({
           to: customerEmail,
           subject: email.subject,
@@ -215,6 +230,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           text: email.text,
           emailType: 'approved_proforma',
           bookingId: linkedBookingRow?.id || null,
+          attachments,
         })
       }
     }

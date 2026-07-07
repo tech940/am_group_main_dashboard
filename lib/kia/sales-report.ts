@@ -110,12 +110,12 @@ const TABLES: Record<SourceKey, TableConfig> = {
     key: 'accessories',
     label: 'Accessories Counter Sales Report',
     table: 'kia_accessories_counter_sales_report',
-    dateColumn: 'csr_bill_date',
+    dateColumn: 'csr_date',
     dealerColumns: ['dealer_code', 'dealer_code_2'],
-    defaultVisibleColumns: ['csr_bill_date', 'csr_bill_no', 'accessories_invoice_no', 'customer_name', 'customer_mobile', 'model', 'variant', 'vin', 'accessories_description', 'accessories_qty', 'accessory_taxable_amount', 'tax_amount', 'bill_status'],
+    defaultVisibleColumns: ['csr_date', 'csr_bill_no', 'accessories_invoice_no', 'customer_name', 'customer_mobile', 'model', 'variant', 'vin', 'accessories_description', 'accessories_qty', 'accessory_taxable_amount', 'tax_amount', 'bill_status'],
     searchColumns: ['csr_bill_no', 'accessories_invoice_no', 'customer_name', 'customer_mobile', 'model', 'variant', 'vin', 'reg_no', 'accessories_description'],
     modelColumn: 'model',
-    sortColumn: 'csr_bill_date',
+    sortColumn: 'csr_date',
   },
 }
 
@@ -342,12 +342,9 @@ function isMissedFollowupEnquiry(row: Row, todayStr: string) {
 }
 
 function isTestDriveDone(row: Row) {
-  return Boolean(
-    displayDate(row.test_drive_date)
-    || displayDate(row.td_appointment_date_and_time)
-    || numberValue(row.no_of_test_drive_given) > 0
-    || safeText(row.td_status).toLowerCase().includes('done')
-  )
+  // A test drive counts only when its status is explicitly "Done" — an appointment,
+  // a cancelled slot, or a mere appointment date does NOT count.
+  return safeText(row.td_status).toLowerCase() === 'done'
 }
 
 function getLeadTemperature(row: Row): TemperatureKey {
@@ -357,7 +354,8 @@ function getLeadTemperature(row: Row): TemperatureKey {
 }
 
 function getAccessoriesRevenue(row: Row) {
-  return numberValue(row.accessory_taxable_amount) + numberValue(row.tax_amount)
+  // Accessory revenue is the taxable amount only (tax is excluded).
+  return numberValue(row.accessory_taxable_amount)
 }
 
 function getDeliveryDays(row: Row) {
@@ -500,7 +498,7 @@ const readCachedKiaSalesReportFreshness = unstable_cache(
     const normalizedDealerCode = dealerCodeKey === ALL_DEALERS_CACHE_KEY ? null : dealerCodeKey
     return await buildKiaSalesReportFreshness(normalizedDealerCode)
   },
-  ['kia-sales-report-freshness-v6-jk501-accessories-import'],
+  ['kia-sales-report-freshness-v7-accessories-csr-date'],
   { revalidate: KIA_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS }
 )
 
@@ -729,7 +727,7 @@ function buildDeduplicationKey(config: TableConfig, row: Row) {
   return [
     'accessories',
     upperText(getFirstText(row, ['csr_bill_no', 'accessories_invoice_no'])),
-    displayDate(row.csr_bill_date) || safeText(row.csr_bill_date),
+    displayDate(row.csr_date) || safeText(row.csr_date),
     upperText(getFirstText(row, ['vin', 'reg_no'])),
     upperText(row.accessories_description),
     numberValue(row.accessories_qty) || numberValue(row.total_accessories_qty) || 1,
@@ -1287,7 +1285,7 @@ const readCachedKiaSalesReportSummary = unstable_cache(
     const context = await resolveDateContext({ year, month, dealerCode: normalizedDealerCode })
     return await buildKiaSalesReportSummary(context, normalizedDealerCode)
   },
-  ['kia-sales-report-summary-v7-jk501-accessories-import'],
+  ['kia-sales-report-summary-v9-accessories-csr-date-taxable-td-done'],
   { revalidate: KIA_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS }
 )
 

@@ -14,14 +14,15 @@ export function buildQuoteEmail(data: QuoteEmailData = {}): {
   const greeting = data.customerName?.trim() ? escapeHtml(data.customerName.trim()) : 'Customer'
 
   const bodyHtml = `
-    <p style="margin:0 0 16px;">Dear ${greeting},</p>
-    <p style="margin:0 0 16px;">Thank you for your interest.</p>
-    <p style="margin:0 0 16px;">Please find your requested quotation attached as a PDF.</p>
-    <p style="margin:0;">For any clarification, please contact our sales team.</p>
+    <p style="margin:0 0 14px;">Dear ${greeting},</p>
+    <p style="margin:0 0 14px;">Thank you for your interest in a Kia vehicle. Your requested quotation is <strong style="color:#111827;">attached as a PDF</strong>.</p>
+    <p style="margin:0 0 14px;">Take a moment to review the pricing and details — and when you&rsquo;re ready, our sales team will be glad to help you take the next step.</p>
+    <p style="margin:0;">For any clarification, simply reach out to your sales consultant.</p>
   `
 
   const html = emailLayout({
     heading: 'Your Vehicle Quote',
+    eyebrow: 'Quotation',
     preheader: 'Your requested vehicle quotation is attached.',
     bodyHtml,
   })

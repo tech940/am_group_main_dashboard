@@ -12,14 +12,34 @@ import 'server-only'
  * - Server-side only (`server-only`). Credentials never reach the client.
  */
 
+import fs from 'node:fs'
+import path from 'node:path'
 import nodemailer, { type Transporter } from 'nodemailer'
 import { google } from 'googleapis'
+import { BRAND_LOGO_CID } from './templates/layout'
 
 export type EmailAttachment = {
   filename: string
   content?: Buffer | string
   path?: string
   contentType?: string
+  /** Content-ID for inline images referenced in HTML via `cid:<value>`. */
+  cid?: string
+}
+
+// The brand logo, read once and reused. Attached inline (via cid) on every send so
+// the email header renders reliably without depending on a public image URL.
+let cachedBrandLogo: EmailAttachment | null | undefined
+function brandLogoAttachment(): EmailAttachment | null {
+  if (cachedBrandLogo !== undefined) return cachedBrandLogo
+  try {
+    const logoPath = path.join(process.cwd(), 'public', 'assets', 'am-group-logo-pdf.jpg')
+    const content = fs.readFileSync(logoPath)
+    cachedBrandLogo = { filename: 'am-kia-logo.jpg', content, contentType: 'image/jpeg', cid: BRAND_LOGO_CID }
+  } catch {
+    cachedBrandLogo = null
+  }
+  return cachedBrandLogo
 }
 
 export type SendEmailOptions = {
@@ -118,6 +138,9 @@ function looksLikeAuthError(error: unknown): boolean {
  * failure; retries once with a freshly-minted access token first.
  */
 export async function sendEmail(options: SendEmailOptions) {
+  // Always append the inline brand logo (referenced as cid:am-brand-logo in the HTML).
+  const logo = brandLogoAttachment()
+  const allAttachments = [...(options.attachments || []), ...(logo ? [logo] : [])]
   const message = {
     from: fromAddress(),
     to: options.to,
@@ -126,12 +149,17 @@ export async function sendEmail(options: SendEmailOptions) {
     subject: options.subject,
     text: options.text,
     html: options.html,
-    attachments: options.attachments?.map((attachment) => ({
-      filename: attachment.filename,
-      content: attachment.content,
-      path: attachment.path,
-      contentType: attachment.contentType,
-    })),
+    attachments: allAttachments.length
+      ? allAttachments.map((attachment) => ({
+          filename: attachment.filename,
+          content: attachment.content,
+          path: attachment.path,
+          contentType: attachment.contentType,
+          cid: attachment.cid,
+          // Logo is inline; other attachments (PDFs) stay as downloads.
+          contentDisposition: attachment.cid ? ('inline' as const) : undefined,
+        }))
+      : undefined,
   }
   const recipients = Array.isArray(options.to) ? options.to.join(', ') : options.to
 

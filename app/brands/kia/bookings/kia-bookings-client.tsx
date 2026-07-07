@@ -28,6 +28,7 @@ import {
   Eye,
   MoreVertical,
   Download,
+  Share2,
 } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -2815,7 +2816,43 @@ function BookingDrawer({
 }) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
+  const [sharingLink, setSharingLink] = useState(false)
   const { booking, allocation, proforma, financeOrder, activities, transfers } = detail
+
+  // Fetch the customer's public tracking URL, copy it to the clipboard, and offer
+  // to open the customer's email/share sheet. Staff-only action; the link itself
+  // is safe to hand to the customer.
+  const shareTrackingLink = async () => {
+    if (sharingLink) return
+    setSharingLink(true)
+    try {
+      const response = await fetch(`/api/brands/kia/bookings/${booking.id}/tracking-link`)
+      const payload = await response.json()
+      if (!response.ok || !payload.url) throw new Error(payload.error || 'Could not generate a tracking link.')
+      const url: string = payload.url
+      let copied = false
+      try {
+        await navigator.clipboard.writeText(url)
+        copied = true
+      } catch {
+        copied = false
+      }
+      toast({
+        title: copied ? 'Tracking link copied' : 'Tracking link ready',
+        description: copied
+          ? 'Share it with the customer so they can follow their order status.'
+          : url,
+      })
+    } catch (error) {
+      toast({
+        title: 'Unable to share link',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'error',
+      })
+    } finally {
+      setSharingLink(false)
+    }
+  }
   const canViewPii = canViewKiaCustomerPii(currentUserRole)
   const proformaApproved = proforma?.status === 'APPROVED'
   // Delivery date lives in the column when set via edit, else in the create-form metadata.
@@ -2939,6 +2976,16 @@ function BookingDrawer({
             </div>
             <div className="flex flex-col items-start gap-2 md:items-end">
               <StatusBadge status={booking.status} />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={shareTrackingLink}
+                disabled={sharingLink}
+                className="h-8 rounded-xl text-xs font-bold"
+              >
+                {sharingLink ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Share2 className="mr-1.5 h-3.5 w-3.5" />}
+                Share tracking link
+              </Button>
               {financeOrder?.number && <Chip tone="info">{financeOrder.number}</Chip>}
               {canUseTestPersona && <Chip tone="warning">{TEST_PERSONA_LABELS[effectivePersona]}</Chip>}
               {canUseTestPersona && (

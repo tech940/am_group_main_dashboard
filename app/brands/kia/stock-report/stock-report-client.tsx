@@ -21,6 +21,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  TriangleAlert,
+  CheckCircle2,
 } from 'lucide-react'
 import {
   Bar,
@@ -446,6 +448,24 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const fastestModels = [...modelCards].sort((a, b) => b.units - a.units).slice(0, 4)
   const slowestModels = [...modelCards].sort((a, b) => b.avgAge - a.avgAge).slice(0, 4)
 
+  // Capture "now" once on mount (and whenever the feed timestamp changes) — reading
+  // the clock during render is impure, so it lives in an effect instead.
+  const [nowMs, setNowMs] = useState(0)
+  useEffect(() => {
+    setNowMs(Date.now())
+  }, [freshnessQuery.data?.sourceUpdatedAt])
+
+  // DMS import health — how stale is the last stock feed? Fresh ≤ 2 days, stale 2–7 days, critical > 7 days.
+  const importHealth = useMemo(() => {
+    const raw = freshnessQuery.data?.sourceUpdatedAt
+    if (!raw || !nowMs) return { level: 'unknown' as const, ageDays: null as number | null, when: null as string | null }
+    const ts = new Date(raw).getTime()
+    if (Number.isNaN(ts)) return { level: 'unknown' as const, ageDays: null, when: null }
+    const ageDays = Math.max(0, Math.floor((nowMs - ts) / 86_400_000))
+    const level = ageDays <= 2 ? ('fresh' as const) : ageDays <= 7 ? ('stale' as const) : ('critical' as const)
+    return { level, ageDays, when: formatDateTime(raw) }
+  }, [freshnessQuery.data?.sourceUpdatedAt, nowMs])
+
   return (
     <MainLayout title="Stock Report" subtitle="AM Kia stock analytics workspace">
       <div className={cn('kia-premium -m-4 min-h-screen p-4 md:-m-6 md:p-6', PAGE_BACKGROUND)}>
@@ -482,6 +502,56 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
             </div>
           </div>
         </section>
+
+        <div
+          className={cn(
+            'mt-6 flex flex-wrap items-center gap-3 rounded-2xl border px-5 py-4',
+            importHealth.level === 'critical'
+              ? 'border-[color-mix(in_srgb,var(--dashboard-danger)_40%,transparent)] bg-[color-mix(in_srgb,var(--dashboard-danger)_10%,transparent)]'
+              : importHealth.level === 'stale'
+                ? 'border-[color-mix(in_srgb,var(--dashboard-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--dashboard-warning)_12%,transparent)]'
+                : importHealth.level === 'fresh'
+                  ? 'border-[color-mix(in_srgb,var(--dashboard-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--dashboard-success)_10%,transparent)]'
+                  : 'border-[var(--kia-hairline)] bg-[var(--kia-surface-sunken)]',
+          )}
+        >
+          {importHealth.level === 'critical' ? (
+            <TriangleAlert className="h-5 w-5 shrink-0 text-[var(--dashboard-danger)]" />
+          ) : importHealth.level === 'stale' ? (
+            <Clock className="h-5 w-5 shrink-0 text-[var(--dashboard-warning)]" />
+          ) : importHealth.level === 'fresh' ? (
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-[var(--dashboard-success)]" />
+          ) : (
+            <Clock className="h-5 w-5 shrink-0 text-[var(--kia-text-soft)]" />
+          )}
+          <div className="flex-1 min-w-[240px]">
+            <p className="text-sm font-black text-[var(--kia-text)]">
+              {importHealth.level === 'critical'
+                ? `DMS stock feed hasn't updated in ${importHealth.ageDays} days`
+                : importHealth.level === 'stale'
+                  ? `DMS stock feed is ${importHealth.ageDays} days old`
+                  : importHealth.level === 'fresh'
+                    ? importHealth.ageDays === 0
+                      ? 'DMS stock feed is up to date (imported today)'
+                      : `DMS stock feed is up to date (${importHealth.ageDays} day${importHealth.ageDays === 1 ? '' : 's'} ago)`
+                    : 'DMS stock feed timestamp unavailable'}
+            </p>
+            <p className="mt-0.5 text-xs font-semibold text-[var(--kia-text-soft)]">
+              {importHealth.when
+                ? importHealth.level === 'fresh'
+                  ? `Last import: ${importHealth.when}. Stock counts reflect the latest DMS feed.`
+                  : `Last import: ${importHealth.when}. Stock counts may be out of date — re-run the DMS import to refresh.`
+                : 'Could not read the last import time from the DMS feed. Verify the import job is running.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            className="h-10 rounded-xl border-[var(--kia-hairline)] bg-[var(--kia-surface)] font-bold text-[var(--kia-text)]"
+          >
+            <RefreshCw className={cn('mr-2 h-4 w-4', freshnessQuery.isFetching && 'animate-spin')} /> Re-check
+          </Button>
+        </div>
 
         <div className="sticky top-0 z-20 mt-6 flex h-auto flex-wrap justify-between items-center border-y border-[var(--kia-hairline)] bg-[var(--kia-surface-sunken)] px-4 py-1 backdrop-blur shadow-sm">
           <div className="flex flex-wrap gap-2">

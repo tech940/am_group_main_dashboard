@@ -99,6 +99,7 @@ type OverviewResponse = {
 
 type AuditResponse = {
   actorCapabilities: Capabilities
+  source?: 'admin' | 'kia'
   entries: Array<{
     id: string
     action: string
@@ -244,6 +245,7 @@ export function AdminConsole() {
   const [usersData, setUsersData] = useState<UsersResponse | null>(null)
   const [permissionsData, setPermissionsData] = useState<PermissionResponse | null>(null)
   const [auditData, setAuditData] = useState<AuditResponse | null>(null)
+  const [auditSource, setAuditSource] = useState<'admin' | 'kia'>('admin')
   const [systemCounts, setSystemCounts] = useState<{ bookings: number; activity: number; allocations: number; transfers: number; retailMarks: number } | null>(null)
   const [emailLogs, setEmailLogs] = useState<{
     counts: { pending: number; sent: number; failed: number; total: number }
@@ -290,7 +292,7 @@ export function AdminConsole() {
           : activeTab === 'access'
             ? `/api/admin/permissions${selectedUserId ? `?userId=${selectedUserId}` : ''}`
             : activeTab === 'audit'
-              ? '/api/admin/audit?pageSize=50'
+              ? `/api/admin/audit?pageSize=50&source=${auditSource}`
               : activeTab === 'system'
                 ? '/api/admin/reset-test-data'
                 : '/api/admin/settings'
@@ -325,7 +327,7 @@ export function AdminConsole() {
     } finally {
       setLoading(false)
     }
-  }, [activeTab, selectedUserId])
+  }, [activeTab, selectedUserId, auditSource])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
@@ -701,12 +703,39 @@ export function AdminConsole() {
 
             {activeTab === 'audit' && auditData && (
               <Card>
-                <CardHeader><CardTitle>Administrative Audit</CardTitle></CardHeader>
+                <CardHeader className="flex-row items-center justify-between gap-3">
+                  <div>
+                    <CardTitle>{auditSource === 'kia' ? 'KIA Booking Activity' : 'Administrative Audit'}</CardTitle>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {auditSource === 'kia'
+                        ? 'Every booking lifecycle event — created, allocated, approved, payment confirmed, delivered.'
+                        : 'User, permission and maintenance actions across the console.'}
+                    </p>
+                  </div>
+                  <div className="inline-flex rounded-lg border border-slate-200 p-1">
+                    {([['admin', 'Admin actions'], ['kia', 'Booking activity']] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setAuditSource(value)}
+                        className={cn(
+                          'rounded-md px-3 py-1.5 text-xs font-bold transition',
+                          auditSource === value ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900',
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto rounded-xl border">
                     <table className="w-full text-sm">
-                      <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="p-3">Time</th><th className="p-3">Actor</th><th className="p-3">Action</th><th className="p-3">Target</th><th className="p-3">Branch</th><th className="p-3">Reason</th></tr></thead>
+                      <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="p-3">Time</th><th className="p-3">Actor</th><th className="p-3">Action</th><th className="p-3">{auditSource === 'kia' ? 'Booking / Customer' : 'Target'}</th><th className="p-3">Branch</th><th className="p-3">{auditSource === 'kia' ? 'Detail' : 'Reason'}</th></tr></thead>
                       <tbody className="divide-y">
+                        {auditData.entries.length === 0 && (
+                          <tr><td colSpan={6} className="p-6 text-center text-slate-400">No entries yet.</td></tr>
+                        )}
                         {auditData.entries.map((entry) => (
                           <tr key={entry.id}>
                             <td className="p-3 text-slate-500">{new Date(entry.createdAt).toLocaleString()}</td>
