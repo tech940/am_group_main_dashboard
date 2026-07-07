@@ -89,9 +89,10 @@ const DATE_MODE_OPTIONS: Array<{ value: KiaStockDateMode; label: string }> = [
   { value: 'retail_date', label: 'Retail date' },
 ]
 
-const COLORS = ['#c5162f', '#071a2b', '#18a7d0', '#269442', '#8835a7', '#f07c1a', '#d76478']
-const SURFACE = 'rounded-[2rem] border border-[#d5dfea] bg-white shadow-[0_18px_42px_rgba(15,23,42,0.08)]'
-const PAGE_BACKGROUND = 'bg-[linear-gradient(180deg,#edf3f9_0%,#eef3f8_42%,#e7eef6_100%)]'
+// Chart series palette (kept as distinct hues; the first is the theme accent).
+const COLORS = ['var(--dashboard-action-bg)', '#0ea5e9', '#10b981', '#8b5cf6', '#f59e0b', '#f43f5e', '#14b8a6']
+const SURFACE = 'kia-surface rounded-[2rem]'
+const PAGE_BACKGROUND = 'bg-[var(--kia-canvas)]'
 
 function firstParam(params: SearchParamsInput, key: string) {
   const value = params[key]
@@ -144,15 +145,15 @@ function toColumnLabel(column: string) {
 }
 
 function SkeletonBlock({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-[1.5rem] bg-white/70', className)} />
+  return <div className={cn('animate-pulse rounded-[1.5rem] bg-[var(--kia-surface)]', className)} />
 }
 
 function ChartEmpty({ label = 'No stock data' }: { label?: string }) {
   return (
-    <div className="flex h-[260px] flex-col items-center justify-center rounded-[1.5rem] bg-slate-50 text-center">
+    <div className="flex h-[260px] flex-col items-center justify-center rounded-[1.5rem] bg-[var(--kia-surface-sunken)] text-center">
       <BarChart3 className="mb-3 h-8 w-8 text-slate-300" />
-      <p className="font-black text-slate-950">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-500">Try a different dealer, date mode, or month.</p>
+      <p className="font-black text-[var(--kia-text)]">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-[var(--kia-text-soft)]">Try a different dealer, date mode, or month.</p>
     </div>
   )
 }
@@ -161,19 +162,19 @@ function BarPanel({ title, subtitle, data }: { title: string; subtitle?: string;
   return (
     <Card className={SURFACE}>
       <CardHeader>
-        <CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[#c5162f]">{title}</CardTitle>
-        {subtitle ? <p className="text-sm font-semibold text-slate-500">{subtitle}</p> : null}
+        <CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">{title}</CardTitle>
+        {subtitle ? <p className="text-sm font-semibold text-[var(--kia-text-soft)]">{subtitle}</p> : null}
       </CardHeader>
       <CardContent>
         {data.length > 0 ? (
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--kia-hairline)" />
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={70} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip />
-                <Bar dataKey="value" fill="#071a2b" radius={[10, 10, 0, 0]} />
+                <Bar dataKey="value" fill="var(--dashboard-action-bg)" radius={[10, 10, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -187,8 +188,8 @@ function DonutPanel({ title, subtitle, data }: { title: string; subtitle?: strin
   return (
     <Card className={SURFACE}>
       <CardHeader>
-        <CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[#c5162f]">{title}</CardTitle>
-        {subtitle ? <p className="text-sm font-semibold text-slate-500">{subtitle}</p> : null}
+        <CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">{title}</CardTitle>
+        {subtitle ? <p className="text-sm font-semibold text-[var(--kia-text-soft)]">{subtitle}</p> : null}
       </CardHeader>
       <CardContent>
         {data.some((item) => item.value > 0) ? (
@@ -205,9 +206,9 @@ function DonutPanel({ title, subtitle, data }: { title: string; subtitle?: strin
             </div>
             <div className="space-y-2 self-center">
               {data.map((item, index) => (
-                <div key={item.name} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-sm font-black">
-                  <span className="flex items-center gap-2 text-slate-700"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />{item.name}</span>
-                  <span className="text-slate-950">{item.value}</span>
+                <div key={item.name} className="flex items-center justify-between rounded-2xl bg-[var(--kia-surface-sunken)] px-4 py-3 text-sm font-black">
+                  <span className="flex items-center gap-2 text-[var(--kia-text-soft)]"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />{item.name}</span>
+                  <span className="text-[var(--kia-text)]">{item.value}</span>
                 </div>
               ))}
             </div>
@@ -222,13 +223,13 @@ function VehicleTable({ title, rows }: { title: string; rows: KiaStockSummaryPay
   return (
     <Card className={SURFACE}>
       <CardHeader>
-        <CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[#c5162f]">{title}</CardTitle>
+        <CardTitle className="text-[13px] font-black uppercase tracking-[0.24em] text-[var(--dashboard-action-bg)]">{title}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="bg-[#071a2b] hover:bg-[#071a2b]">
+              <TableRow className="bg-[var(--dashboard-action-bg)] hover:bg-[var(--dashboard-action-bg)]">
                 {['Dealer', 'Status', 'Model', 'VIN', 'Age', 'Value'].map((heading) => (
                   <TableHead key={heading} className="text-[11px] font-black uppercase tracking-[0.18em] text-white">{heading}</TableHead>
                 ))}
@@ -237,15 +238,15 @@ function VehicleTable({ title, rows }: { title: string; rows: KiaStockSummaryPay
             <TableBody>
               {rows.map((row, index) => (
                 <TableRow key={`${row.rowKey}-${index}`} className="text-[13px]">
-                  <TableCell className="font-black text-[#c5162f]">{row.dealer}</TableCell>
+                  <TableCell className="font-black text-[var(--dashboard-action-bg)]">{row.dealer}</TableCell>
                   <TableCell><Badge variant="outline">{row.stockStatus}</Badge></TableCell>
-                  <TableCell className="font-bold">{row.model}<div className="text-xs text-slate-500">{row.variant}</div></TableCell>
+                  <TableCell className="font-bold">{row.model}<div className="text-xs text-[var(--kia-text-soft)]">{row.variant}</div></TableCell>
                   <TableCell className="font-mono text-xs">{row.vin || '-'}</TableCell>
                   <TableCell>{row.stockAge}D</TableCell>
                   <TableCell className="font-black">{formatMoney(row.stockValue)}</TableCell>
                 </TableRow>
               ))}
-              {rows.length === 0 ? <TableRow><TableCell colSpan={6} className="py-8 text-center font-bold text-slate-500">No rows found.</TableCell></TableRow> : null}
+              {rows.length === 0 ? <TableRow><TableCell colSpan={6} className="py-8 text-center font-bold text-[var(--kia-text-soft)]">No rows found.</TableCell></TableRow> : null}
             </TableBody>
           </Table>
         </div>
@@ -257,8 +258,8 @@ function VehicleTable({ title, rows }: { title: string; rows: KiaStockSummaryPay
 export function SectionHeading({ title, description }: { title: string; description?: string }) {
   return (
     <div className="mb-4 mt-6">
-      <h2 className="text-xl font-black tracking-tight text-slate-900 md:text-2xl">{title}</h2>
-      {description && <p className="text-sm font-semibold text-slate-500 mt-1">{description}</p>}
+      <h2 className="text-xl font-black tracking-tight text-[var(--kia-text)] md:text-2xl">{title}</h2>
+      {description && <p className="text-sm font-semibold text-[var(--kia-text-soft)] mt-1">{description}</p>}
     </div>
   )
 }
@@ -447,34 +448,34 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
   return (
     <MainLayout title="Stock Report" subtitle="AM Kia stock analytics workspace">
-      <div className={cn('-m-4 min-h-screen p-4 md:-m-6 md:p-6', PAGE_BACKGROUND)}>
+      <div className={cn('kia-premium -m-4 min-h-screen p-4 md:-m-6 md:p-6', PAGE_BACKGROUND)}>
         <section className={cn(SURFACE, 'overflow-hidden p-6 md:p-8')}>
           <div className="grid gap-6 lg:grid-cols-[1fr_560px]">
             <div>
-              <Badge className="rounded-full bg-[#e8f7ff] px-4 py-2 text-[#0073b5] hover:bg-[#e8f7ff]">
+              <Badge className="rounded-full bg-[color-mix(in_srgb,var(--dashboard-action-bg)_14%,transparent)] px-4 py-2 text-[var(--dashboard-action-bg)] hover:bg-[color-mix(in_srgb,var(--dashboard-action-bg)_14%,transparent)]">
                 <PackageCheck className="mr-2 h-4 w-4" /> AM Kia Stock
               </Badge>
-              <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Stock Report</h1>
-              <p className="mt-2 max-w-3xl text-base font-semibold leading-7 text-slate-600">
+              <h1 className="mt-4 text-3xl font-black tracking-tight text-[var(--kia-text)] md:text-4xl">Stock Report</h1>
+              <p className="mt-2 max-w-3xl text-base font-semibold leading-7 text-[var(--kia-text-soft)]">
                 Current unsold vehicle stock, transit pipeline, stock value, model mix, dealer split, and purchase report drill-downs.
               </p>
-              <p className="mt-3 text-sm font-black uppercase tracking-[0.2em] text-slate-500">
+              <p className="mt-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--kia-text-soft)]">
                 {formatDateTime(freshnessQuery.data?.sourceUpdatedAt)}
               </p>
             </div>
-            <div className="rounded-[1.5rem] border border-white/70 bg-white/85 p-4 shadow-inner">
+            <div className="rounded-[1.5rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] p-4 shadow-inner">
               <div className="flex flex-wrap items-end gap-3">
                 <label className="flex-1 min-w-[200px] space-y-2">
-                  <span className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">Dealer</span>
+                  <span className="text-[11px] font-black uppercase tracking-[0.22em] text-[var(--kia-text-soft)]">Dealer</span>
                   <Select value={selectedDealer} onValueChange={(value) => { setSelectedDealer(value); setPage(1) }}>
-                    <SelectTrigger className="h-12 rounded-2xl bg-white font-bold"><SelectValue placeholder="All dealers" /></SelectTrigger>
+                    <SelectTrigger className="h-12 rounded-2xl bg-[var(--kia-surface)] font-bold"><SelectValue placeholder="All dealers" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All dealers</SelectItem>
                       {(freshnessQuery.data?.dealerOptions || []).map((dealer) => <SelectItem key={dealer} value={dealer}>{dealer}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </label>
-                <Button onClick={handleRefresh} className="h-12 rounded-2xl bg-[#071a2b] font-black text-white hover:bg-[#102b46] px-6">
+                <Button onClick={handleRefresh} className="h-12 rounded-2xl bg-[var(--dashboard-action-bg)] font-black text-white hover:bg-[var(--dashboard-action-hover)] px-6">
                   <RefreshCw className={cn('mr-2 h-4 w-4', (summaryQuery.isFetching || freshnessQuery.isFetching) && 'animate-spin')} /> Refresh
                 </Button>
               </div>
@@ -482,7 +483,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
           </div>
         </section>
 
-        <div className="sticky top-0 z-20 mt-6 flex h-auto flex-wrap justify-between items-center border-y border-[#c9d5e2] bg-[#edf3f9]/95 px-4 py-1 backdrop-blur shadow-sm">
+        <div className="sticky top-0 z-20 mt-6 flex h-auto flex-wrap justify-between items-center border-y border-[var(--kia-hairline)] bg-[var(--kia-surface-sunken)] px-4 py-1 backdrop-blur shadow-sm">
           <div className="flex flex-wrap gap-2">
             {STOCK_SECTIONS.map((section) => {
               const isActive = (section.key as string) === 'explorer' 
@@ -501,8 +502,8 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                     }
                   }}
                   className={cn(
-                    "border-b-2 px-3 py-3 text-[13px] font-black transition hover:border-[#caa144] hover:text-slate-950",
-                    isActive ? "border-[#caa144] text-slate-950" : "border-transparent text-slate-600"
+                    "border-b-2 px-3 py-3 text-[13px] font-black transition hover:border-[var(--dashboard-action-bg)] hover:text-[var(--kia-text)]",
+                    isActive ? "border-[var(--dashboard-action-bg)] text-[var(--kia-text)]" : "border-transparent text-[var(--kia-text-soft)]"
                   )}
                 >
                   {section.label}
@@ -519,7 +520,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
             <SkeletonBlock className="h-96" />
           </div>
         ) : summary ? (
-          <div className="mt-6 space-y-8 text-[14px] text-slate-700">
+          <div className="mt-6 space-y-8 text-[14px] text-[var(--kia-text-soft)]">
             {viewMode === 'dashboard' ? (
               <>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -533,11 +534,11 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                 { label: 'Aged 60+ days', value: agedRows.filter((row) => row.stockAge >= 60).length, helper: `${availableStock ? Math.round((agedRows.filter((row) => row.stockAge >= 60).length / availableStock) * 100) : 0}% of lot` },
                 { label: 'Aged 90+ days', value: aged90Rows.length, helper: `${formatMoney(aged90Value)} frozen` },
               ].map((item, index) => (
-                <Card key={item.label} className={cn('rounded-[1.2rem] border bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)]', item.dark && 'bg-[#18283e] text-white', index >= 6 && 'border-l-4 border-l-[#d33d34]')}>
+                <Card key={item.label} className={cn('rounded-[1.2rem] border bg-[var(--kia-surface)] shadow-[0_10px_24px_rgba(15,23,42,0.08)]', item.dark && 'bg-[var(--dashboard-action-bg)] text-white', index >= 6 && 'border-l-4 border-l-[var(--dashboard-danger)]')}>
                   <CardContent className="p-5">
-                    <p className={cn('text-[11px] font-black uppercase tracking-[0.12em]', item.dark ? 'text-slate-300' : 'text-slate-500')}>{item.label}</p>
-                    <p className={cn('mt-3 text-[28px] font-black leading-none', item.dark ? 'text-white' : 'text-slate-950')}>{item.value}</p>
-                    <p className={cn('mt-2 text-[13px] font-semibold', item.dark ? 'text-slate-300' : 'text-slate-500')}>{item.helper}</p>
+                    <p className={cn('text-[11px] font-black uppercase tracking-[0.12em]', item.dark ? 'text-slate-300' : 'text-[var(--kia-text-soft)]')}>{item.label}</p>
+                    <p className={cn('mt-3 text-[28px] font-black leading-none', item.dark ? 'text-white' : 'text-[var(--kia-text)]')}>{item.value}</p>
+                    <p className={cn('mt-2 text-[13px] font-semibold', item.dark ? 'text-slate-300' : 'text-[var(--kia-text-soft)]')}>{item.helper}</p>
                   </CardContent>
                 </Card>
               ))}
@@ -545,18 +546,18 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
             <section id="stock-aging" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
-                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">01</span>Inventory aging</h2>
-                <p className="text-[15px] font-semibold text-slate-400">Stock age = days since KIN invoice. Click any band to see vehicles in it.</p>
+                <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">01</span>Inventory aging</h2>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">Stock age = days since KIN invoice. Click any band to see vehicles in it.</p>
               </div>
-              <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+              <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                 <CardContent className="space-y-4 p-7">
                   {ageBandRows.map((band) => {
                     const pct = availableStock ? (band.units / availableStock) * 100 : 0
                     const showInside = pct >= 15
                     return (
                       <div key={band.name} className="grid grid-cols-[86px_1fr_90px] items-center gap-4">
-                        <span className="text-[15px] font-black text-slate-600">{band.name}</span>
-                        <div className="relative flex items-center h-8 rounded-md bg-slate-100 w-full overflow-hidden">
+                        <span className="text-[15px] font-black text-[var(--kia-text-soft)]">{band.name}</span>
+                        <div className="relative flex items-center h-8 rounded-md bg-[var(--kia-surface-sunken)] w-full overflow-hidden">
                           <div 
                             className="h-full rounded-md transition-all duration-500" 
                             style={{ width: `${pct}%`, backgroundColor: band.color }} 
@@ -566,14 +567,14 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                               "absolute text-[13px] font-black transition-all duration-500",
                               showInside 
                                 ? "left-3 text-white" 
-                                : "text-slate-700"
+                                : "text-[var(--kia-text-soft)]"
                             )}
                             style={showInside ? undefined : { left: `${pct + 3}%` }}
                           >
                             {band.units}
                           </span>
                         </div>
-                        <span className="text-right text-[15px] font-bold text-slate-400">{formatMoney(band.value)}</span>
+                        <span className="text-right text-[15px] font-bold text-[var(--kia-text-faint)]">{formatMoney(band.value)}</span>
                       </div>
                     )
                   })}
@@ -583,11 +584,11 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
             <section id="stock-interest" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
-                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">02</span>Interest accrued to date</h2>
-                <p className="text-[15px] font-semibold text-slate-400">Floor-plan interest already spent carrying today&apos;s stock</p>
+                <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">02</span>Interest accrued to date</h2>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">Floor-plan interest already spent carrying today&apos;s stock</p>
               </div>
               <div className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
-                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                   <CardContent className="grid gap-3 p-6 sm:grid-cols-2">
                     {[
                       { label: 'Interest accrued to date', value: formatMoneyExpanded(interestAccrued), dark: true },
@@ -595,17 +596,17 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                       { label: 'Carrying cost / month · whole lot', value: formatMoneyExpanded(monthlyCarrying) },
                       { label: 'Daily bleed · aged 90+', value: formatMoneyExpanded(dailyAgedBleed) },
                     ].map((item) => (
-                      <div key={item.label} className={cn('rounded-xl border border-[#dbe4ee] p-5', item.dark ? 'bg-[#552019] text-white' : 'bg-slate-50')}>
+                      <div key={item.label} className={cn('rounded-xl border border-[var(--kia-hairline)] p-5', item.dark ? 'bg-[var(--dashboard-action-bg)] text-white' : 'bg-[var(--kia-surface-sunken)]')}>
                         <p className="text-[26px] font-black">{item.value}</p>
-                        <p className={cn('mt-2 text-[11px] font-black uppercase tracking-[0.1em]', item.dark ? 'text-rose-100' : 'text-slate-500')}>{item.label}</p>
+                        <p className={cn('mt-2 text-[11px] font-black uppercase tracking-[0.1em]', item.dark ? 'text-rose-100' : 'text-[var(--kia-text-soft)]')}>{item.label}</p>
                       </div>
                     ))}
-                    <p className="col-span-full border-t border-dashed border-slate-300 pt-3 text-[13px] font-semibold text-slate-500">
+                    <p className="col-span-full border-t border-dashed border-slate-300 pt-3 text-[13px] font-semibold text-[var(--kia-text-soft)]">
                       At {interestRate.toFixed(2)}%/yr on {formatMoneyExpanded(stockValue)} of landed stock.
                     </p>
                   </CardContent>
                 </Card>
-                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                   <CardHeader><CardTitle className="text-[18px] font-black">Interest accrued by aging band</CardTitle><CardDescription>Where the carrying cost has actually gone</CardDescription></CardHeader>
                   <CardContent className="space-y-3">
                     {ageBandRows.map((band) => {
@@ -615,7 +616,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                       return (
                         <div key={band.name} className="grid grid-cols-[70px_1fr_42px] items-center gap-3 text-[13px] font-bold">
                           <span>{band.name}</span>
-                          <div className="relative flex items-center h-7 rounded-md bg-slate-100 w-full overflow-hidden">
+                          <div className="relative flex items-center h-7 rounded-md bg-[var(--kia-surface-sunken)] w-full overflow-hidden">
                             <div 
                               className="h-full rounded-md transition-all duration-500" 
                               style={{ width: `${pct}%`, backgroundColor: band.color }} 
@@ -625,14 +626,14 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                                 "absolute text-[11px] font-black tracking-wider whitespace-nowrap transition-all duration-500",
                                 showInside 
                                   ? "left-3 text-white" 
-                                  : "text-slate-700"
+                                  : "text-[var(--kia-text-soft)]"
                               )}
                               style={showInside ? undefined : { left: `${pct + 2}%` }}
                             >
                               {formatMoneyExpanded(value)}
                             </span>
                           </div>
-                          <span className="text-slate-400">
+                          <span className="text-[var(--kia-text-faint)]">
                             {interestAccrued ? Math.round(pct) : 0}%
                           </span>
                         </div>
@@ -645,8 +646,8 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
             <section id="stock-turns" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
-                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">03</span>Inventory turns & days of supply</h2>
-                <p className="text-[15px] font-semibold text-slate-400">How fast the whole lot converts to sales</p>
+                <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">03</span>Inventory turns & days of supply</h2>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">How fast the whole lot converts to sales</p>
               </div>
               <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
                 <BarPanel title="Monthly retail trend" subtitle="Units delivered by selected period" data={summary.movement.monthly.slice(0, 8).reverse().map((row) => {
@@ -654,7 +655,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                   const label = new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'short' }) + " '" + String(year).slice(2)
                   return { name: label, value: row.retail }
                 })} />
-                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                   <CardHeader><CardTitle className="text-[18px] font-black">Lot velocity</CardTitle><CardDescription>Run-rate from recent sales</CardDescription></CardHeader>
                   <CardContent className="grid gap-3 sm:grid-cols-3">
                     {[
@@ -663,7 +664,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                       [soldThisMonth, 'Sold · 30 days'],
                       [summary.movement.monthly.slice(0, 3).reduce((sum, row) => sum + row.retail, 0), 'Sold · 90 days'],
                       [summary.movement.monthly.slice(0, 12).reduce((sum, row) => sum + row.retail, 0), 'Sold · 12 months'],
-                    ].map(([value, label], index) => <div key={label} className={cn('rounded-xl border border-[#dbe4ee] p-4', index === 0 && 'bg-[#18283e] text-white')}><p className="text-[26px] font-black">{value}</p><p className="mt-2 text-[11px] font-black uppercase text-slate-500">{label}</p></div>)}
+                    ].map(([value, label], index) => <div key={label} className={cn('rounded-xl border border-[var(--kia-hairline)] p-4', index === 0 && 'bg-[var(--dashboard-action-bg)] text-white')}><p className="text-[26px] font-black">{value}</p><p className="mt-2 text-[11px] font-black uppercase text-[var(--kia-text-soft)]">{label}</p></div>)}
                   </CardContent>
                 </Card>
               </div>
@@ -671,8 +672,8 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
             <section id="stock-mix" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
-                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">04</span>Inventory mix</h2>
-                <p className="text-[15px] font-semibold text-slate-400">What the {availableStock} units are made of</p>
+                <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">04</span>Inventory mix</h2>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">What the {availableStock} units are made of</p>
               </div>
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                 {[
@@ -681,10 +682,10 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                   ['By dealer', summary.overview.dealerSplit],
                   ['By colour', summary.models.colorMix],
                 ].map(([title, items]) => (
-                  <Card key={title as string} className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                  <Card key={title as string} className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                     <CardHeader><CardTitle className="text-[18px] font-black">{title as string}</CardTitle></CardHeader>
                     <CardContent className="space-y-3">
-                      {(items as Array<{ name: string; value: number }>).slice(0, 6).map((item) => <div key={item.name} className="grid grid-cols-[110px_1fr_30px] items-center gap-3 text-[14px]"><span className="font-semibold text-slate-500">{item.name}</span><span className="h-2 rounded-full bg-slate-100"><span className="block h-2 rounded-full bg-[#18283e]" style={{ width: `${Math.max(6, (item.value / Math.max(1, availableStock)) * 100)}%` }} /></span><span className="font-black">{item.value}</span></div>)}
+                      {(items as Array<{ name: string; value: number }>).slice(0, 6).map((item) => <div key={item.name} className="grid grid-cols-[110px_1fr_30px] items-center gap-3 text-[14px]"><span className="font-semibold text-[var(--kia-text-soft)]">{item.name}</span><span className="h-2 rounded-full bg-[var(--kia-surface-sunken)]"><span className="block h-2 rounded-full bg-[var(--dashboard-action-bg)]" style={{ width: `${Math.max(6, (item.value / Math.max(1, availableStock)) * 100)}%` }} /></span><span className="font-black">{item.value}</span></div>)}
                     </CardContent>
                   </Card>
                 ))}
@@ -693,15 +694,15 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
             <section id="stock-supply" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
-                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">05</span>Days of supply — the stocking engine</h2>
-                <p className="text-[15px] font-semibold text-slate-400">Current stock ÷ daily sales rate. Healthy band 21–45 days.</p>
+                <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">05</span>Days of supply — the stocking engine</h2>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">Current stock ÷ daily sales rate. Healthy band 21–45 days.</p>
               </div>
-              <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+              <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                 <CardContent className="space-y-5 p-7">
                   {modelCards.slice(0, 5).map((card) => {
                     const supply = soldThisMonth ? Math.round((card.units / Math.max(1, soldThisMonth / 30))) : 0
                     const statusText = supply < 21 ? 'RUNNING DRY' : supply > 90 ? 'OVERSTOCKED' : 'HEALTHY'
-                    return <div key={card.model} className="grid grid-cols-[190px_1fr_140px] items-center gap-5 border-b border-slate-200 pb-4 last:border-0"><div><p className="text-[16px] font-black text-slate-900">{card.model}</p><p className="text-[13px] font-semibold text-slate-500">{card.units} in stock</p></div><div className="relative h-3 rounded-full bg-slate-100"><span className="absolute left-[23%] top-0 h-3 w-[22%] bg-emerald-100" /><span className="absolute top-[-9px] h-8 w-1 rounded bg-[#c83d34]" style={{ left: `${Math.min(96, supply)}%` }} /></div><div className="text-right"><span className={cn('rounded-lg px-3 py-2 text-[13px] font-black', statusText === 'HEALTHY' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-[#c73b32]')}>{statusText}</span><p className="mt-2 text-[12px] font-semibold text-slate-500">{supply}d supply</p></div></div>
+                    return <div key={card.model} className="grid grid-cols-[190px_1fr_140px] items-center gap-5 border-b border-[var(--kia-hairline)] pb-4 last:border-0"><div><p className="text-[16px] font-black text-[var(--kia-text)]">{card.model}</p><p className="text-[13px] font-semibold text-[var(--kia-text-soft)]">{card.units} in stock</p></div><div className="relative h-3 rounded-full bg-[var(--kia-surface-sunken)]"><span className="absolute left-[23%] top-0 h-3 w-[22%] bg-emerald-100" /><span className="absolute top-[-9px] h-8 w-1 rounded bg-[var(--dashboard-danger)]" style={{ left: `${Math.min(96, supply)}%` }} /></div><div className="text-right"><span className={cn('rounded-lg px-3 py-2 text-[13px] font-black', statusText === 'HEALTHY' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-[var(--dashboard-danger)]')}>{statusText}</span><p className="mt-2 text-[12px] font-semibold text-[var(--kia-text-soft)]">{supply}d supply</p></div></div>
                   })}
                 </CardContent>
               </Card>
@@ -709,44 +710,44 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
             <section id="stock-by-model" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
-                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">06</span>Stock by model & trim</h2>
-                <p className="text-[15px] font-semibold text-slate-400">Detailed stock levels and trim mix by vehicle model</p>
+                <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">06</span>Stock by model & trim</h2>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">Detailed stock levels and trim mix by vehicle model</p>
               </div>
               <div className="grid gap-5 md:grid-cols-2">
                 {modelCards.map((card) => (
-                  <Card key={card.model} className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm hover:shadow-md transition">
+                  <Card key={card.model} className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm hover:shadow-md transition">
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-[20px] font-black text-slate-900">{card.model}</CardTitle>
-                          <CardDescription className="font-semibold text-slate-500">{formatMoney(card.stockValue)} total capital</CardDescription>
+                          <CardTitle className="text-[20px] font-black text-[var(--kia-text)]">{card.model}</CardTitle>
+                          <CardDescription className="font-semibold text-[var(--kia-text-soft)]">{formatMoney(card.stockValue)} total capital</CardDescription>
                         </div>
-                        <Badge className="bg-[#18283e] text-white hover:bg-[#18283e] rounded-lg px-3 py-1 font-black text-[13px]">
+                        <Badge className="bg-[var(--dashboard-action-bg)] text-white hover:bg-[var(--dashboard-action-bg)] rounded-lg px-3 py-1 font-black text-[13px]">
                           {card.units} Units
                         </Badge>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4 rounded-xl bg-slate-50 p-3.5 text-center">
+                      <div className="grid grid-cols-2 gap-4 rounded-xl bg-[var(--kia-surface-sunken)] p-3.5 text-center">
                         <div>
-                          <p className="text-[11px] font-black uppercase text-slate-500">Avg Stock Age</p>
-                          <p className="mt-1 text-[20px] font-black text-slate-900">{card.avgAge} days</p>
+                          <p className="text-[11px] font-black uppercase text-[var(--kia-text-soft)]">Avg Stock Age</p>
+                          <p className="mt-1 text-[20px] font-black text-[var(--kia-text)]">{card.avgAge} days</p>
                         </div>
                         <div>
-                          <p className="text-[11px] font-black uppercase text-slate-500">Free / In-Transit</p>
-                          <p className="mt-1 text-[20px] font-black text-slate-900">{card.freeStock} / {card.inTransit}</p>
+                          <p className="text-[11px] font-black uppercase text-[var(--kia-text-soft)]">Free / In-Transit</p>
+                          <p className="mt-1 text-[20px] font-black text-[var(--kia-text)]">{card.freeStock} / {card.inTransit}</p>
                         </div>
                       </div>
                       <div>
-                        <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-2.5">Stock by Trim</p>
+                        <p className="text-[11px] font-black uppercase tracking-wider text-[var(--kia-text-soft)] mb-2.5">Stock by Trim</p>
                         <div className="space-y-2">
                           {card.variants.map((trim) => (
                             <div key={trim.name} className="grid grid-cols-[160px_1fr_30px] items-center gap-3 text-[13px]">
-                              <span className="font-semibold text-slate-600 truncate" title={trim.name}>{trim.name}</span>
-                              <span className="h-2.5 rounded-full bg-slate-100 relative overflow-hidden">
-                                <span className="absolute left-0 top-0 h-full rounded-full bg-[#caa144]" style={{ width: `${(trim.value / card.units) * 100}%` }} />
+                              <span className="font-semibold text-[var(--kia-text-soft)] truncate" title={trim.name}>{trim.name}</span>
+                              <span className="h-2.5 rounded-full bg-[var(--kia-surface-sunken)] relative overflow-hidden">
+                                <span className="absolute left-0 top-0 h-full rounded-full bg-[var(--dashboard-action-bg)]" style={{ width: `${(trim.value / card.units) * 100}%` }} />
                               </span>
-                              <span className="font-black text-slate-800 text-right">{trim.value}</span>
+                              <span className="font-black text-[var(--kia-text)] text-right">{trim.value}</span>
                             </div>
                           ))}
                         </div>
@@ -759,28 +760,28 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
              <section id="stock-reorder" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
-                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">06</span>Reorder & clear</h2>
-                <p className="text-[15px] font-semibold text-slate-400">Where to chase supply vs. where to free up cash</p>
+                <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">06</span>Reorder & clear</h2>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">Where to chase supply vs. where to free up cash</p>
               </div>
               <div className="grid gap-5 xl:grid-cols-2">
-                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <div>
                       <CardTitle className="text-[18px] font-black text-emerald-700">▲ Fast movers — protect availability</CardTitle>
                       <CardDescription>Ranked by recent sales/stock concentration</CardDescription>
                     </div>
-                    <div className="flex rounded-lg bg-slate-100 p-1">
+                    <div className="flex rounded-lg bg-[var(--kia-surface-sunken)] p-1">
                       <button 
                         type="button" 
                         onClick={() => setFastMovingMode('models')} 
-                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', fastMovingMode === 'models' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}
+                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', fastMovingMode === 'models' ? 'bg-[var(--kia-surface)] text-[var(--kia-text)] shadow-sm' : 'text-[var(--kia-text-soft)] hover:text-[var(--kia-text)]')}
                       >
                         Models
                       </button>
                       <button 
                         type="button" 
                         onClick={() => setFastMovingMode('trims')} 
-                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', fastMovingMode === 'trims' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}
+                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', fastMovingMode === 'trims' ? 'bg-[var(--kia-surface)] text-[var(--kia-text)] shadow-sm' : 'text-[var(--kia-text-soft)] hover:text-[var(--kia-text)]')}
                       >
                         Trims
                       </button>
@@ -789,31 +790,31 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                   <CardContent className="space-y-4">
                     {fastMovingMode === 'models' ? (
                       fastestModels.map((card, index) => (
-                        <div key={card.model} className="border-b border-slate-200 pb-4 last:border-0">
+                        <div key={card.model} className="border-b border-[var(--kia-hairline)] pb-4 last:border-0">
                           <div className="flex justify-between">
                             <p className="font-black">
-                              <span className="mr-3 rounded-md bg-[#18283e] px-2 py-1 text-white">{index + 1}</span>
+                              <span className="mr-3 rounded-md bg-[var(--dashboard-action-bg)] px-2 py-1 text-white">{index + 1}</span>
                               {card.model}
                             </p>
                             <p className="font-black">{card.units} units</p>
                           </div>
-                          <p className="mt-1 text-[13px] font-semibold text-slate-500">Protect availability; review fast-selling trims weekly.</p>
+                          <p className="mt-1 text-[13px] font-semibold text-[var(--kia-text-soft)]">Protect availability; review fast-selling trims weekly.</p>
                         </div>
                       ))
                     ) : (
                       (summary.trims?.fastest || []).map((trim, index) => (
-                        <div key={`${trim.model}-${trim.variant}`} className="border-b border-slate-200 pb-4 last:border-0">
+                        <div key={`${trim.model}-${trim.variant}`} className="border-b border-[var(--kia-hairline)] pb-4 last:border-0">
                           <div className="flex justify-between items-start">
                             <div>
-                              <p className="font-black text-slate-900">
-                                <span className="mr-3 rounded-md bg-[#18283e] px-2 py-0.5 text-white text-[12px]">{index + 1}</span>
+                              <p className="font-black text-[var(--kia-text)]">
+                                <span className="mr-3 rounded-md bg-[var(--dashboard-action-bg)] px-2 py-0.5 text-white text-[12px]">{index + 1}</span>
                                 {trim.variant}
                               </p>
-                              <p className="mt-1 text-[12px] font-bold text-slate-400">{trim.model}</p>
+                              <p className="mt-1 text-[12px] font-bold text-[var(--kia-text-faint)]">{trim.model}</p>
                             </div>
                             <div className="text-right">
                               <p className="font-black text-emerald-700">{trim.salesCount90d} sold (90d)</p>
-                              <p className="mt-0.5 text-[12px] font-semibold text-slate-500">{trim.stockCount} in stock</p>
+                              <p className="mt-0.5 text-[12px] font-semibold text-[var(--kia-text-soft)]">{trim.stockCount} in stock</p>
                             </div>
                           </div>
                         </div>
@@ -821,24 +822,24 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                     )}
                   </CardContent>
                 </Card>
-                <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+                <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <div>
-                      <CardTitle className="text-[18px] font-black text-[#c73b32]">▼ Slow movers — free the cash</CardTitle>
+                      <CardTitle className="text-[18px] font-black text-[var(--dashboard-danger)]">▼ Slow movers — free the cash</CardTitle>
                       <CardDescription>High age against weak recent movement</CardDescription>
                     </div>
-                    <div className="flex rounded-lg bg-slate-100 p-1">
+                    <div className="flex rounded-lg bg-[var(--kia-surface-sunken)] p-1">
                       <button 
                         type="button" 
                         onClick={() => setSlowMovingMode('models')} 
-                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', slowMovingMode === 'models' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}
+                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', slowMovingMode === 'models' ? 'bg-[var(--kia-surface)] text-[var(--kia-text)] shadow-sm' : 'text-[var(--kia-text-soft)] hover:text-[var(--kia-text)]')}
                       >
                         Models
                       </button>
                       <button 
                         type="button" 
                         onClick={() => setSlowMovingMode('trims')} 
-                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', slowMovingMode === 'trims' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}
+                        className={cn('rounded-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider transition', slowMovingMode === 'trims' ? 'bg-[var(--kia-surface)] text-[var(--kia-text)] shadow-sm' : 'text-[var(--kia-text-soft)] hover:text-[var(--kia-text)]')}
                       >
                         Trims
                       </button>
@@ -847,25 +848,25 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                   <CardContent className="space-y-4">
                     {slowMovingMode === 'models' ? (
                       slowestModels.map((card) => (
-                        <div key={card.model} className="border-b border-slate-200 pb-4 last:border-0">
+                        <div key={card.model} className="border-b border-[var(--kia-hairline)] pb-4 last:border-0">
                           <div className="flex justify-between">
                             <p className="font-black">{card.model}</p>
                             <p className="font-black">{card.avgAge}d avg</p>
                           </div>
-                          <p className="mt-1 text-[13px] font-semibold text-slate-500">{card.units} stock · cut fresh orders and push exchange/discount focus.</p>
+                          <p className="mt-1 text-[13px] font-semibold text-[var(--kia-text-soft)]">{card.units} stock · cut fresh orders and push exchange/discount focus.</p>
                         </div>
                       ))
                     ) : (
                       (summary.trims?.slowest || []).map((trim) => (
-                        <div key={`${trim.model}-${trim.variant}`} className="border-b border-slate-200 pb-4 last:border-0">
+                        <div key={`${trim.model}-${trim.variant}`} className="border-b border-[var(--kia-hairline)] pb-4 last:border-0">
                           <div className="flex justify-between items-start">
                             <div>
-                              <p className="font-black text-slate-900">{trim.variant}</p>
-                              <p className="mt-1 text-[12px] font-bold text-slate-400">{trim.model} · {trim.stockCount} in stock</p>
+                              <p className="font-black text-[var(--kia-text)]">{trim.variant}</p>
+                              <p className="mt-1 text-[12px] font-bold text-[var(--kia-text-faint)]">{trim.model} · {trim.stockCount} in stock</p>
                             </div>
                             <div className="text-right">
                               <p className="font-black text-rose-700">{trim.avgAge}d avg age</p>
-                              <p className="mt-0.5 text-[12px] font-semibold text-slate-500">{trim.salesCount90d} sold (90d)</p>
+                              <p className="mt-0.5 text-[12px] font-semibold text-[var(--kia-text-soft)]">{trim.salesCount90d} sold (90d)</p>
                             </div>
                           </div>
                         </div>
@@ -878,18 +879,18 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
 
             <section id="stock-aged" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
-                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">07</span>Aged inventory action list — 90+ days</h2>
-                <p className="text-[15px] font-semibold text-slate-400">
+                <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">07</span>Aged inventory action list — 90+ days</h2>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">
                   {rows90Plus.length} units · {formatMoneyExpanded(rows90Plus.reduce((sum, r) => sum + r.stockValue, 0))} capital frozen
                 </p>
               </div>
-              <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+              <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                 <CardContent className="overflow-x-auto p-4">
                   <Table className="[&_td]:py-2.5 [&_td]:text-[12px] [&_th]:text-[10px]">
                     <TableHeader>
                       <TableRow>
                         {['Age', 'Model', 'Variant', 'Colour', 'VIN', 'In stock', 'Value', 'Carrying Cost (MO)', 'Interest Accrued', 'Suggested action'].map((heading) => (
-                          <TableHead key={heading} className="font-black uppercase tracking-[0.08em] text-slate-500">{heading}</TableHead>
+                          <TableHead key={heading} className="font-black uppercase tracking-[0.08em] text-[var(--kia-text-soft)]">{heading}</TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
@@ -897,24 +898,24 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                       {rows90Plus.map((row) => (
                         <TableRow key={row.rowKey}>
                           <TableCell>
-                            <span className={cn('rounded-full px-3 py-1 text-white font-black', row.stockAge > 120 ? 'bg-[#c73b32]' : 'bg-[#e17a29]')}>
+                            <span className={cn('rounded-full px-3 py-1 text-white font-black', row.stockAge > 120 ? 'bg-[var(--dashboard-danger)]' : 'bg-[#e17a29]')}>
                               {row.stockAge}d
                             </span>
                           </TableCell>
-                          <TableCell className="font-black text-slate-900">{row.model}</TableCell>
-                          <TableCell className="font-semibold text-slate-700">{row.variant}</TableCell>
-                          <TableCell className="text-slate-600">{row.color}</TableCell>
+                          <TableCell className="font-black text-[var(--kia-text)]">{row.model}</TableCell>
+                          <TableCell className="font-semibold text-[var(--kia-text-soft)]">{row.variant}</TableCell>
+                          <TableCell className="text-[var(--kia-text-soft)]">{row.color}</TableCell>
                           <TableCell className="font-mono text-[12px]">{row.vin || '-'}</TableCell>
-                          <TableCell className="text-slate-600">{formatDate(row.grnDate || row.departureDate)}</TableCell>
-                          <TableCell className="font-black text-slate-900">{formatMoneyExpanded(row.stockValue)}</TableCell>
-                          <TableCell className="font-bold text-slate-700">{formatMoneyExpanded(row.carryingCostMonth)}</TableCell>
+                          <TableCell className="text-[var(--kia-text-soft)]">{formatDate(row.grnDate || row.departureDate)}</TableCell>
+                          <TableCell className="font-black text-[var(--kia-text)]">{formatMoneyExpanded(row.stockValue)}</TableCell>
+                          <TableCell className="font-bold text-[var(--kia-text-soft)]">{formatMoneyExpanded(row.carryingCostMonth)}</TableCell>
                           <TableCell className="font-black text-red-700">{formatMoneyExpanded(row.interestAccrued)}</TableCell>
-                          <TableCell className="text-slate-500 font-medium">Liquidate: max discount + exchange</TableCell>
+                          <TableCell className="text-[var(--kia-text-soft)] font-medium">Liquidate: max discount + exchange</TableCell>
                         </TableRow>
                       ))}
                       {!rows90Plus.length ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="py-10 text-center font-bold text-slate-500">
+                          <TableCell colSpan={10} className="py-10 text-center font-bold text-[var(--kia-text-soft)]">
                             No 90+ days aged vehicles currently in stock.
                           </TableCell>
                         </TableRow>
@@ -928,27 +929,27 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
         ) : (
           <section id="stock-explorer" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
-                <h2 className="text-[23px] font-black text-slate-900"><span className="mr-4 text-[13px] text-[#b4912f]">08</span>Stock explorer</h2>
-                <p className="text-[15px] font-semibold text-slate-400">Filter, search and sort the live lot</p>
+                <h2 className="text-[23px] font-black text-[var(--kia-text)]"><span className="mr-4 text-[13px] text-[var(--dashboard-action-bg)]">08</span>Stock explorer</h2>
+                <p className="text-[15px] font-semibold text-[var(--kia-text-faint)]">Filter, search and sort the live lot</p>
               </div>
-              <Card className="rounded-[1.2rem] border border-[#d7e0ea] bg-white shadow-sm">
+              <Card className="rounded-[1.2rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
                 <CardContent className="space-y-5 p-5">
                   <div className="grid gap-3 xl:grid-cols-[1fr_150px_150px_auto]">
                     <div className="relative">
-                      <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                      <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="search VIN / variant..." className="h-11 rounded-xl bg-white pl-11 font-semibold" />
+                      <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kia-text-faint)]" />
+                      <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="search VIN / variant..." className="h-11 rounded-xl bg-[var(--kia-surface)] pl-11 font-semibold" />
                     </div>
-                    <Select value={status} onValueChange={(value) => { setStatus(value); setPage(1) }}><SelectTrigger className="h-11 rounded-xl bg-white font-bold"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{(freshnessQuery.data?.statusOptions || []).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
-                    <Select value={model} onValueChange={(value) => { setModel(value); setPage(1) }}><SelectTrigger className="h-11 rounded-xl bg-white font-bold"><SelectValue placeholder="Model" /></SelectTrigger><SelectContent><SelectItem value="all">All models</SelectItem>{modelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
-                    <Button onClick={handleExport} className="h-11 rounded-xl bg-[#071a2b] font-black text-white hover:bg-[#102b46]"><Download className="mr-2 h-4 w-4" /> Export</Button>
+                    <Select value={status} onValueChange={(value) => { setStatus(value); setPage(1) }}><SelectTrigger className="h-11 rounded-xl bg-[var(--kia-surface)] font-bold"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{(freshnessQuery.data?.statusOptions || []).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
+                    <Select value={model} onValueChange={(value) => { setModel(value); setPage(1) }}><SelectTrigger className="h-11 rounded-xl bg-[var(--kia-surface)] font-bold"><SelectValue placeholder="Model" /></SelectTrigger><SelectContent><SelectItem value="all">All models</SelectItem>{modelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
+                    <Button onClick={handleExport} className="h-11 rounded-xl bg-[var(--dashboard-action-bg)] font-black text-white hover:bg-[var(--dashboard-action-hover)]"><Download className="mr-2 h-4 w-4" /> Export</Button>
                   </div>
-                  <p className="text-[14px] font-semibold text-slate-500">Showing {explorerRows.length} of {report?.pagination.totalRows || 0} units · {formatMoney(stockValue)} landed</p>
+                  <p className="text-[14px] font-semibold text-[var(--kia-text-soft)]">Showing {explorerRows.length} of {report?.pagination.totalRows || 0} units · {formatMoney(stockValue)} landed</p>
                   {reportQuery.isLoading ? <SkeletonBlock className="h-96" /> : (
                     <>
                       <div className="overflow-x-auto">
                         <Table className="[&_td]:text-[13px] [&_th]:text-[11px]">
-                          <TableHeader><TableRow>{displayedColumns.map((column) => <TableHead key={column} className="border-b-2 border-slate-300 font-black uppercase tracking-[0.08em] text-slate-500"><ColumnFilterDropdown column={column} label={toColumnLabel(column)} uniqueValues={reportQuery.data?.uniqueValues?.[column] || []} activeFilters={columnFilters[column] || []} onApply={(values) => { setColumnFilters((prev) => ({ ...prev, [column]: values })); setPage(1) }} onSort={(direction) => { setReportSort(column); setReportDirection(direction); setPage(1) }} isSortedAsc={reportSort === column && reportDirection === 'asc'} isSortedDesc={reportSort === column && reportDirection === 'desc'} /></TableHead>)}</TableRow></TableHeader>
-                          <TableBody>{explorerRows.map((row, rowIndex) => <TableRow key={`${row.id || row.vin_no || rowIndex}-${rowIndex}`} className="odd:bg-[#f8fafc] even:bg-white hover:bg-slate-50/80 transition">{displayedColumns.map((column) => <TableCell key={column} className="whitespace-nowrap font-semibold text-slate-700" title={String(row[column] ?? '')}>{String(row[column] ?? '-')}</TableCell>)}</TableRow>)}{!explorerRows.length ? <TableRow><TableCell colSpan={displayedColumns.length || 1} className="py-10 text-center font-bold text-slate-500">No report rows found.</TableCell></TableRow> : null}</TableBody>
+                          <TableHeader><TableRow>{displayedColumns.map((column) => <TableHead key={column} className="border-b-2 border-slate-300 font-black uppercase tracking-[0.08em] text-[var(--kia-text-soft)]"><ColumnFilterDropdown column={column} label={toColumnLabel(column)} uniqueValues={reportQuery.data?.uniqueValues?.[column] || []} activeFilters={columnFilters[column] || []} onApply={(values) => { setColumnFilters((prev) => ({ ...prev, [column]: values })); setPage(1) }} onSort={(direction) => { setReportSort(column); setReportDirection(direction); setPage(1) }} isSortedAsc={reportSort === column && reportDirection === 'asc'} isSortedDesc={reportSort === column && reportDirection === 'desc'} /></TableHead>)}</TableRow></TableHeader>
+                          <TableBody>{explorerRows.map((row, rowIndex) => <TableRow key={`${row.id || row.vin_no || rowIndex}-${rowIndex}`} className="odd:bg-[var(--kia-surface-sunken)] even:bg-[var(--kia-surface)] hover:bg-[var(--kia-surface-sunken)]/80 transition">{displayedColumns.map((column) => <TableCell key={column} className="whitespace-nowrap font-semibold text-[var(--kia-text-soft)]" title={String(row[column] ?? '')}>{String(row[column] ?? '-')}</TableCell>)}</TableRow>)}{!explorerRows.length ? <TableRow><TableCell colSpan={displayedColumns.length || 1} className="py-10 text-center font-bold text-[var(--kia-text-soft)]">No report rows found.</TableCell></TableRow> : null}</TableBody>
                         </Table>
                       </div>
                     </>
@@ -966,8 +967,8 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
           </div>
         ) : null}
 
-        <div className="mt-6 grid gap-3 rounded-[1.5rem] border border-slate-200 bg-white/75 p-4 text-sm font-semibold text-slate-600 md:grid-cols-3">
-          <p><CarFront className="mr-2 inline h-4 w-4 text-[#c5162f]" />Available stock counts only Free Stock + In transit.</p>
+        <div className="mt-6 grid gap-3 rounded-[1.5rem] border border-[var(--kia-hairline)] bg-[var(--kia-surface)]/75 p-4 text-sm font-semibold text-[var(--kia-text-soft)] md:grid-cols-3">
+          <p><CarFront className="mr-2 inline h-4 w-4 text-[var(--dashboard-action-bg)]" />Available stock counts only Free Stock + In transit.</p>
           <p><Truck className="mr-2 inline h-4 w-4 text-[#18a7d0]" />Retail, transfers, allocated, and test-drive rows are movement context only.</p>
           <p><CalendarDays className="mr-2 inline h-4 w-4 text-[#269442]" />Main stock cards use the latest uploaded VIN snapshot.</p>
         </div>
@@ -1056,18 +1057,18 @@ function ColumnFilterDropdown({
         <button
           type="button"
           className={cn(
-            "inline-flex items-center gap-1.5 text-left font-black tracking-wide transition rounded-md px-1.5 py-0.5 hover:bg-slate-100/80 outline-none focus:ring-1 focus:ring-[#071a2b]/20 cursor-pointer select-none",
-            hasActiveFilter && "text-[#c5162f] bg-rose-50 hover:bg-rose-100/70"
+            "inline-flex items-center gap-1.5 text-left font-black tracking-wide transition rounded-md px-1.5 py-0.5 hover:bg-[var(--kia-surface-sunken)]/80 outline-none focus:ring-1 focus:ring-[var(--dashboard-action-bg)]/20 cursor-pointer select-none",
+            hasActiveFilter && "text-[var(--dashboard-action-bg)] bg-rose-50 hover:bg-rose-100/70"
           )}
         >
           <span>{label}</span>
           <span className="flex items-center gap-0.5">
-            {isSortedAsc && <ChevronDown className="h-3 w-3 rotate-180 text-[#c5162f]" />}
-            {isSortedDesc && <ChevronDown className="h-3 w-3 text-[#c5162f]" />}
+            {isSortedAsc && <ChevronDown className="h-3 w-3 rotate-180 text-[var(--dashboard-action-bg)]" />}
+            {isSortedDesc && <ChevronDown className="h-3 w-3 text-[var(--dashboard-action-bg)]" />}
             {hasActiveFilter ? (
-              <Filter className="h-3 w-3 fill-current text-[#c5162f]" />
+              <Filter className="h-3 w-3 fill-current text-[var(--dashboard-action-bg)]" />
             ) : (
-              (!isSortedAsc && !isSortedDesc) && <ChevronDown className="h-3.5 w-3.5 text-slate-400 opacity-60" />
+              (!isSortedAsc && !isSortedDesc) && <ChevronDown className="h-3.5 w-3.5 text-[var(--kia-text-faint)] opacity-60" />
             )}
           </span>
         </button>
@@ -1075,7 +1076,7 @@ function ColumnFilterDropdown({
       <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className="w-64 bg-[#071a2b] text-white border-[#122130] shadow-xl rounded-[1.2rem] p-3 flex flex-col focus:outline-none"
+        className="w-64 bg-[var(--dashboard-action-bg)] text-white border-white/15 shadow-xl rounded-[1.2rem] p-3 flex flex-col focus:outline-none"
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
         {/* Sort Section */}
@@ -1085,7 +1086,7 @@ function ColumnFilterDropdown({
             onSort('asc')
             setOpen(false)
           }}
-          className="flex items-center gap-2.5 w-full text-left rounded-lg px-2.5 py-2 text-[12px] font-semibold text-slate-300 hover:text-white hover:bg-[#122130] transition cursor-pointer"
+          className="flex items-center gap-2.5 w-full text-left rounded-lg px-2.5 py-2 text-[12px] font-semibold text-slate-300 hover:text-white hover:bg-black/20 transition cursor-pointer"
         >
           <span className="text-[10px] border border-slate-500 rounded px-1 py-0.5 font-bold">A-Z</span>
           <span>Sort A to Z</span>
@@ -1096,7 +1097,7 @@ function ColumnFilterDropdown({
             onSort('desc')
             setOpen(false)
           }}
-          className="flex items-center gap-2.5 w-full text-left rounded-lg px-2.5 py-2 text-[12px] font-semibold text-slate-300 hover:text-white hover:bg-[#122130] transition cursor-pointer"
+          className="flex items-center gap-2.5 w-full text-left rounded-lg px-2.5 py-2 text-[12px] font-semibold text-slate-300 hover:text-white hover:bg-black/20 transition cursor-pointer"
         >
           <span className="text-[10px] border border-slate-500 rounded px-1 py-0.5 font-bold">Z-A</span>
           <span>Sort Z to A</span>
@@ -1112,8 +1113,8 @@ function ColumnFilterDropdown({
           className={cn(
             "flex items-center gap-2.5 w-full text-left rounded-lg px-2.5 py-2 text-[12px] font-semibold transition",
             hasActiveFilter
-              ? "text-rose-400 hover:text-rose-300 hover:bg-[#122130] cursor-pointer"
-              : "text-slate-500 cursor-not-allowed opacity-50"
+              ? "text-rose-400 hover:text-rose-300 hover:bg-black/20 cursor-pointer"
+              : "text-[var(--kia-text-soft)] cursor-not-allowed opacity-50"
           )}
         >
           <XCircle className="h-4 w-4" />
@@ -1124,13 +1125,13 @@ function ColumnFilterDropdown({
 
         {/* Search Input Box */}
         <div className="relative mb-2 px-0.5">
-          <Search className="absolute left-2.5 top-2.5 h-3 w-3 text-slate-400" />
+          <Search className="absolute left-2.5 top-2.5 h-3 w-3 text-[var(--kia-text-faint)]" />
           <Input
             type="text"
             placeholder="Search"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            className="h-8 pl-8 pr-3 text-[11px] bg-[#122130] border-slate-700 text-white rounded-lg focus-visible:ring-1 focus-visible:ring-rose-500 focus-visible:ring-offset-0 focus-visible:border-slate-600 placeholder-slate-400 shadow-inner"
+            className="h-8 pl-8 pr-3 text-[11px] bg-black/20 border-slate-700 text-white rounded-lg focus-visible:ring-1 focus-visible:ring-rose-500 focus-visible:ring-offset-0 focus-visible:border-slate-600 placeholder-slate-400 shadow-inner"
             onKeyDown={(e) => e.stopPropagation()} // Stop propagation to prevent radix from closing
           />
         </div>
@@ -1138,28 +1139,28 @@ function ColumnFilterDropdown({
         {/* Scrollable Checkbox List */}
         <div className="max-h-44 overflow-y-auto space-y-1 px-0.5 pr-1 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
           {filteredValues.length > 0 && (
-            <label className="flex items-center gap-2 px-1.5 py-1 hover:bg-[#122130] rounded cursor-pointer text-[12px] text-slate-300 hover:text-white select-none transition">
+            <label className="flex items-center gap-2 px-1.5 py-1 hover:bg-black/20 rounded cursor-pointer text-[12px] text-slate-300 hover:text-white select-none transition">
               <input
                 type="checkbox"
                 checked={isAllSelected}
                 onChange={handleSelectAllChange}
-                className="rounded border-slate-700 bg-transparent text-[#c5162f] focus:ring-0 focus:ring-offset-0 h-3.5 w-3.5 cursor-pointer accent-[#c5162f]"
+                className="rounded border-slate-700 bg-transparent text-[var(--dashboard-action-bg)] focus:ring-0 focus:ring-offset-0 h-3.5 w-3.5 cursor-pointer accent-[var(--dashboard-action-bg)]"
               />
               <span className="font-semibold text-slate-200">(Select All)</span>
             </label>
           )}
           {filteredValues.length === 0 ? (
-            <div className="text-center py-4 text-[11px] text-slate-400 italic">
+            <div className="text-center py-4 text-[11px] text-[var(--kia-text-faint)] italic">
               No matches found
             </div>
           ) : (
             filteredValues.map((val) => (
-              <label key={val} className="flex items-center gap-2 px-1.5 py-1 hover:bg-[#122130] rounded cursor-pointer text-[12px] text-slate-300 hover:text-white select-none transition">
+              <label key={val} className="flex items-center gap-2 px-1.5 py-1 hover:bg-black/20 rounded cursor-pointer text-[12px] text-slate-300 hover:text-white select-none transition">
                 <input
                   type="checkbox"
                   checked={tempChecked.includes(val)}
                   onChange={() => handleCheckboxChange(val)}
-                  className="rounded border-slate-700 bg-transparent text-[#c5162f] focus:ring-0 focus:ring-offset-0 h-3.5 w-3.5 cursor-pointer accent-[#c5162f]"
+                  className="rounded border-slate-700 bg-transparent text-[var(--dashboard-action-bg)] focus:ring-0 focus:ring-offset-0 h-3.5 w-3.5 cursor-pointer accent-[var(--dashboard-action-bg)]"
                 />
                 <span>{val === '' ? '(Blanks)' : val}</span>
               </label>
@@ -1173,7 +1174,7 @@ function ColumnFilterDropdown({
             size="sm"
             variant="ghost"
             type="button"
-            className="h-7 px-2.5 text-[11px] font-semibold text-slate-400 hover:text-white hover:bg-transparent"
+            className="h-7 px-2.5 text-[11px] font-semibold text-[var(--kia-text-faint)] hover:text-white hover:bg-transparent"
             onClick={() => setOpen(false)}
           >
             Cancel
@@ -1181,7 +1182,7 @@ function ColumnFilterDropdown({
           <Button
             size="sm"
             type="button"
-            className="h-7 px-3.5 text-[11px] font-bold bg-[#c5162f] text-white hover:bg-[#c5162f]/90 rounded-lg shadow-sm"
+            className="h-7 px-3.5 text-[11px] font-bold bg-[var(--dashboard-action-bg)] text-white hover:bg-[var(--dashboard-action-bg)]/90 rounded-lg shadow-sm"
             onClick={handleApply}
           >
             OK

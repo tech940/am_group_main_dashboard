@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   UserCog,
   Users,
+  Wrench,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Badge } from '@/components/ui/badge'
@@ -128,7 +129,7 @@ const ROLE_LABELS: Record<string, string> = {
 }
 
 const TAB_DEFINITIONS: Array<{
-  key: 'overview' | 'users' | 'branch-admins' | 'access' | 'audit' | 'settings'
+  key: 'overview' | 'users' | 'branch-admins' | 'access' | 'audit' | 'system' | 'settings'
   label: string
   icon: typeof Users
   superOnly?: boolean
@@ -138,6 +139,7 @@ const TAB_DEFINITIONS: Array<{
   { key: 'branch-admins', label: 'Branch Admins', icon: UserCog, superOnly: true },
   { key: 'access', label: 'Access', icon: KeyRound },
   { key: 'audit', label: 'Audit', icon: ShieldCheck },
+  { key: 'system', label: 'System', icon: Wrench, superOnly: true },
   { key: 'settings', label: 'Settings', icon: Settings, superOnly: true },
 ]
 
@@ -242,6 +244,13 @@ export function AdminConsole() {
   const [usersData, setUsersData] = useState<UsersResponse | null>(null)
   const [permissionsData, setPermissionsData] = useState<PermissionResponse | null>(null)
   const [auditData, setAuditData] = useState<AuditResponse | null>(null)
+  const [systemCounts, setSystemCounts] = useState<{ bookings: number; activity: number; allocations: number; transfers: number; retailMarks: number } | null>(null)
+  const [emailLogs, setEmailLogs] = useState<{
+    counts: { pending: number; sent: number; failed: number; total: number }
+    last24h: { total: number; failed: number }
+    rows: Array<{ id: string; customerEmail: string; subject: string; emailType: string | null; status: string; error: string | null; sentAt: string | null; createdAt: string }>
+  } | null>(null)
+  const [resetting, setResetting] = useState(false)
   const [settingsData, setSettingsData] = useState<Record<string, unknown> | null>(null)
   const [settingsText, setSettingsText] = useState('')
   const [loading, setLoading] = useState(true)
@@ -282,7 +291,9 @@ export function AdminConsole() {
             ? `/api/admin/permissions${selectedUserId ? `?userId=${selectedUserId}` : ''}`
             : activeTab === 'audit'
               ? '/api/admin/audit?pageSize=50'
-              : '/api/admin/settings'
+              : activeTab === 'system'
+                ? '/api/admin/reset-test-data'
+                : '/api/admin/settings'
       const response = await fetch(endpoint, { cache: 'no-store' })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Unable to load the Admin Console.')
@@ -301,6 +312,10 @@ export function AdminConsole() {
       } else if (activeTab === 'audit') {
         setAuditData(payload)
         setCapabilities(payload.actorCapabilities)
+      } else if (activeTab === 'system') {
+        setSystemCounts(payload.counts)
+        const emailResponse = await fetch('/api/admin/email-logs', { cache: 'no-store' })
+        if (emailResponse.ok) setEmailLogs(await emailResponse.json())
       } else {
         setSettingsData(payload)
         setSettingsText(JSON.stringify(payload, null, 2))
@@ -447,6 +462,25 @@ export function AdminConsole() {
       setError(saveError instanceof Error ? saveError.message : 'Failed to save permissions.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function resetTestData() {
+    const c = systemCounts
+    const summary = c ? `${c.bookings} bookings, ${c.allocations} allocations, ${c.transfers} transfers, ${c.retailMarks} retail markers` : 'all test bookings and allocations'
+    if (!window.confirm(`Reset test data?\n\nThis permanently deletes:\n• ${summary}\n\nProformas, users and real inventory are NOT touched. A record is written to the audit log. This cannot be undone.`)) return
+    setResetting(true)
+    setError('')
+    try {
+      const response = await fetch('/api/admin/reset-test-data', { method: 'POST' })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Failed to reset test data.')
+      setSystemCounts(payload.counts)
+      window.alert(`Test data reset. Removed ${payload.removed.bookings} bookings, ${payload.removed.allocations} allocations, ${payload.removed.transfers} transfers and ${payload.removed.retailMarks} retail markers.`)
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Failed to reset test data.')
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -683,6 +717,104 @@ export function AdminConsole() {
                             <td className="p-3 text-slate-500">{entry.reason || '-'}</td>
                           </tr>
                         ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {activeTab === 'system' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Maintenance · Reset Test Data</CardTitle>
+                  <p className="mt-1 text-sm text-slate-500">Super-Admin-only. Wipes KIA test bookings and their allocations/transfers/activity, and clears the &lsquo;retail&rsquo; stock markers created while testing (returning those vehicles to available stock). Proformas, users, permissions and real inventory are not touched.</p>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                    {[
+                      { label: 'Bookings', value: systemCounts?.bookings },
+                      { label: 'Activity log', value: systemCounts?.activity },
+                      { label: 'Allocations', value: systemCounts?.allocations },
+                      { label: 'Transfers', value: systemCounts?.transfers },
+                      { label: 'Retail markers', value: systemCounts?.retailMarks },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+                        <p className="text-2xl font-black text-slate-900">{item.value ?? '—'}</p>
+                        <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4">
+                    <div className="flex-1 min-w-[240px] text-sm font-semibold text-rose-800">
+                      This is destructive and cannot be undone. A snapshot of the counts is written to the audit log.
+                    </div>
+                    <Button variant="destructive" onClick={() => void resetTestData()} disabled={resetting || !systemCounts}>
+                      {resetting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wrench className="mr-2 h-4 w-4" />}
+                      Reset Test Data
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {activeTab === 'system' && (
+              <Card>
+                <CardHeader className="flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>Email Delivery</CardTitle>
+                    <p className="mt-1 text-sm text-slate-500">Every proforma-approval and quote email is logged here. Watch for failures so a bounced customer email doesn&rsquo;t go unnoticed.</p>
+                  </div>
+                  {emailLogs && emailLogs.last24h.failed > 0 && (
+                    <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-black text-rose-700">{emailLogs.last24h.failed} failed in last 24h</span>
+                  )}
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {[
+                      { label: 'Sent', value: emailLogs?.counts.sent, cls: 'text-emerald-600' },
+                      { label: 'Failed', value: emailLogs?.counts.failed, cls: 'text-rose-600' },
+                      { label: 'Pending', value: emailLogs?.counts.pending, cls: 'text-amber-600' },
+                      { label: 'Total', value: emailLogs?.counts.total, cls: 'text-slate-900' },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+                        <p className={cn('text-2xl font-black', item.cls)}>{item.value ?? '—'}</p>
+                        <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full min-w-[720px] text-sm">
+                      <thead className="bg-slate-100 text-left text-[11px] font-black uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2">Status</th>
+                          <th className="px-3 py-2">Type</th>
+                          <th className="px-3 py-2">Recipient</th>
+                          <th className="px-3 py-2">Subject</th>
+                          <th className="px-3 py-2">When</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(emailLogs?.rows || []).slice(0, 30).map((row) => (
+                          <tr key={row.id} className="border-t border-slate-100 align-top">
+                            <td className="px-3 py-2">
+                              <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-black uppercase',
+                                row.status === 'sent' ? 'bg-emerald-50 text-emerald-700'
+                                  : row.status === 'failed' ? 'bg-rose-50 text-rose-700'
+                                    : 'bg-amber-50 text-amber-700')}>{row.status}</span>
+                            </td>
+                            <td className="px-3 py-2 font-semibold text-slate-600">{row.emailType || '—'}</td>
+                            <td className="px-3 py-2 font-semibold text-slate-800">{row.customerEmail}</td>
+                            <td className="px-3 py-2 text-slate-600">
+                              <div className="max-w-[280px] truncate">{row.subject}</div>
+                              {row.error && <div className="mt-0.5 max-w-[280px] truncate text-[11px] font-semibold text-rose-600" title={row.error}>{row.error}</div>}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-slate-500">{new Date(row.sentAt || row.createdAt).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                        {!emailLogs?.rows.length && (
+                          <tr><td colSpan={5} className="px-3 py-8 text-center font-semibold text-slate-400">No emails logged yet.</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>

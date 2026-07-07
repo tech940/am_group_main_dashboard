@@ -20,13 +20,24 @@ import type {
 type Row = Record<string, unknown>
 
 const TABLE = 'kia_stock_report'
-const AVAILABLE_STATUS_SQL = sql`LOWER(TRIM(COALESCE(stock_status::text, ''))) IN ('free stock', 'in transit')`
 const VALUE_SQL = sql`COALESCE(
   sm.basic_price,
   pr.basic_price,
   NULLIF(regexp_replace(sm.kin_invoice_amt::text, '[^0-9.-]', '', 'g'), '')::numeric,
   0
 ) * 1.36`
+
+// ── Single source of truth for KIA current stock ──────────────────────────────
+// Both the Stock Report and the Bookings → Stock section resolve "in stock" from
+// kia_stock_management, overlaid with the booking workflow: a vehicle stays in
+// stock until its booking is DELIVERED (sold). Allotted-but-not-yet-delivered
+// vehicles remain in stock (they carry an active allocation). This mirrors
+// app/api/brands/kia/proforma/stock exactly, so both modules report the same count.
+const STOCK_SOURCE_JOINS = sql`
+  LEFT JOIN kia_purchase_report pr ON sm.vin_number = pr.vin_no
+  LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
+  LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL`
+const STOCK_SOURCE_NOT_DELIVERED = sql`NOT (va.id IS NOT NULL AND kb.status = 'delivered')`
 
 function parsedInvoiceDateSql(alias = 'sm.') {
   const col = `${alias}kin_invoice_date`
@@ -298,64 +309,14 @@ async function readCurrentRows(dealerCode: string | null) {
         ${VALUE_SQL} AS stock_value,
         GREATEST((CURRENT_DATE - COALESCE(${parsedInvoiceDateSql()}, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS age_days,
         GREATEST((CURRENT_DATE - COALESCE(${parsedInvoiceDateSql()}, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS stock_age
-    FROM kia_stock_report sm
-      LEFT JOIN kia_purchase_report pr ON sm.vin_number = pr.vin_no
-      LEFT JOIN kia_stock_local_statuses ksl ON ksl.vin_number = sm.vin_number
+    FROM kia_stock_management sm
+      ${STOCK_SOURCE_JOINS}
       WHERE COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text) IS NOT NULL
-        AND COALESCE(ksl.local_status, '') <> 'retail'
+        AND ${STOCK_SOURCE_NOT_DELIVERED}
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
-    ),
-    active_stock AS (
-      SELECT *
-      FROM latest
-
-      UNION ALL
-
-      SELECT
-        ls.id::text AS id,
-        ls.vin_number,
-        ls.vin_number AS vin_no,
-        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS order_dealer,
-        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS dealer,
-        COALESCE(NULLIF(TRIM(ls.model), ''), 'Unknown') AS model,
-        COALESCE(NULLIF(TRIM(ls.variant), ''), 'Unknown') AS variant,
-        COALESCE(NULLIF(TRIM(ls.color), ''), 'Unknown') AS exterior_color_name,
-        COALESCE(NULLIF(TRIM(ls.color), ''), 'Unknown') AS color,
-        COALESCE(NULLIF(TRIM(ls.stock_status_at_mark), ''), 'Free Stock') AS stock_status,
-        COALESCE(NULLIF(TRIM(ls.stock_location), ''), '-') AS stock_location,
-        NULL::text AS blocked,
-        ls.basic_price,
-        NULL::text AS kin_invoice_amt,
-        COALESCE(NULLIF(TRIM(ls.engine_no), ''), '') AS engine_no,
-        COALESCE(NULLIF(TRIM(ls.notes), ''), 'BBND saved snapshot') AS remarks,
-        ls.source_uploaded_at AS uploaded_at,
-        COALESCE(NULLIF(TRIM(ls.booking_no), ''), '') AS booking_no,
-        COALESCE(NULLIF(TRIM(ls.customer_name), ''), '') AS cust_name,
-        NULL::date AS sign_off_date,
-        COALESCE(NULLIF(TRIM(ls.kin_invoice_date), ''), '') AS kin_invoice_date,
-        ls.marked_at AS created_at,
-        NULL::date AS grn_date,
-        NULL::date AS departure_date,
-        NULL::date AS order_date,
-        NULL::date AS retail_date,
-        ls.basic_price::text AS total_invoice_value,
-        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS dealer_code,
-        COALESCE(ls.basic_price, 0)::numeric * 1.36 AS stock_value,
-        GREATEST(COALESCE(NULLIF(regexp_replace((ls.vehicle_snapshot->>'stock_age')::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)::int, 0) AS age_days,
-        GREATEST(COALESCE(NULLIF(regexp_replace((ls.vehicle_snapshot->>'stock_age')::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)::int, 0) AS stock_age
-      FROM kia_stock_local_statuses ls
-      WHERE ls.local_status = 'bbnd'
-        AND NOT EXISTS (
-          SELECT 1
-          FROM latest d
-          WHERE d.vin_number = ls.vin_number
-        )
     )
-    SELECT *
-    FROM active_stock
-    WHERE ${AVAILABLE_STATUS_SQL}
-      ${activeDealerClause(dealerCode)}
+    SELECT * FROM latest
   `))
 }
 
@@ -428,7 +389,7 @@ export async function getKiaStockReportSummary(input: {
   const fallback = await latestMonthFallback()
   const context = resolveDateContext(input, fallback)
   const dateMode = normalizeDateMode(input.dateMode)
-  const cacheKey = `kia:stock-report:summary:v13:${dealerCode || 'all'}`
+  const cacheKey = `kia:stock-report:summary:v14:${dealerCode || 'all'}`
   return getCachedData(cacheKey, async () => {
     const currentRows = await readCurrentRows(dealerCode)
     const currentVehicles = currentRows.map(normalizeVehicle)
@@ -663,7 +624,7 @@ export async function getKiaStockReportSummary(input: {
       },
       overview: {
         kpis: [
-          { label: 'Available Stock', value: totalStock, formattedValue: totalStock.toLocaleString('en-IN'), helper: 'Free Stock + In transit only' },
+          { label: 'Available Stock', value: totalStock, formattedValue: totalStock.toLocaleString('en-IN'), helper: 'Current inventory (excludes delivered)' },
           { label: 'Free Stock', value: freeStock, formattedValue: freeStock.toLocaleString('en-IN'), helper: 'Ready unsold units' },
           { label: 'In Transit', value: inTransit, formattedValue: inTransit.toLocaleString('en-IN'), helper: 'Unsold units on the way' },
           { label: 'Stock Value', value: stockValue, formattedValue: formatCurrency(stockValue), helper: 'Approx. invoice value' },
@@ -791,59 +752,16 @@ async function readReportRows(input: {
         ${VALUE_SQL} AS stock_value,
         GREATEST((CURRENT_DATE - COALESCE(${parsedInvoiceDateSql()}, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS age_days,
         GREATEST((CURRENT_DATE - COALESCE(${parsedInvoiceDateSql()}, pr.grn_date, pr.departure_date, pr.order_date, sm.created_at::date))::int, 0) AS stock_age
-      FROM kia_stock_report sm
-      LEFT JOIN kia_purchase_report pr ON sm.vin_number = pr.vin_no
-      LEFT JOIN kia_stock_local_statuses ksl ON ksl.vin_number = sm.vin_number
+      FROM kia_stock_management sm
+      ${STOCK_SOURCE_JOINS}
       WHERE COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text) IS NOT NULL
-        AND COALESCE(ksl.local_status, '') <> 'retail'
+        AND ${STOCK_SOURCE_NOT_DELIVERED}
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
-    ),
-    active_stock AS (
-      SELECT *
-      FROM latest
-
-      UNION ALL
-
-      SELECT
-        ls.id::text AS id,
-        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS dealer,
-        COALESCE(NULLIF(TRIM(ls.stock_status_at_mark), ''), 'Free Stock') AS stock_status,
-        COALESCE(NULLIF(TRIM(ls.model), ''), 'Unknown') AS model,
-        COALESCE(NULLIF(TRIM(ls.variant), ''), 'Unknown') AS variant,
-        COALESCE(NULLIF(TRIM(ls.color), ''), 'Unknown') AS color,
-        ls.vin_number AS vin_no,
-        COALESCE(NULLIF(TRIM(ls.stock_location), ''), '-') AS stock_location,
-        NULL::text AS blocked,
-        ls.basic_price,
-        NULL::text AS kin_invoice_amt,
-        COALESCE(NULLIF(TRIM(ls.engine_no), ''), '') AS engine_no,
-        COALESCE(NULLIF(TRIM(ls.notes), ''), 'BBND saved snapshot') AS remarks,
-        ls.source_uploaded_at AS uploaded_at,
-        COALESCE(NULLIF(TRIM(ls.booking_no), ''), '') AS booking_no,
-        COALESCE(NULLIF(TRIM(ls.customer_name), ''), '') AS cust_name,
-        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS main_dealer,
-        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS order_dealer,
-        NULL::date AS grn_date,
-        NULL::date AS departure_date,
-        NULL::date AS order_date,
-        NULL::date AS retail_date,
-        ls.basic_price::text AS total_invoice_value,
-        COALESCE(NULLIF(TRIM(ls.dealer_code), ''), 'Unknown') AS dealer_code,
-        COALESCE(ls.basic_price, 0)::numeric * 1.36 AS stock_value,
-        GREATEST(COALESCE(NULLIF(regexp_replace((ls.vehicle_snapshot->>'stock_age')::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)::int, 0) AS age_days,
-        GREATEST(COALESCE(NULLIF(regexp_replace((ls.vehicle_snapshot->>'stock_age')::text, '[^0-9.-]', '', 'g'), '')::numeric, 0)::int, 0) AS stock_age
-      FROM kia_stock_local_statuses ls
-      WHERE ls.local_status = 'bbnd'
-        AND NOT EXISTS (
-          SELECT 1
-          FROM latest d
-          WHERE d.vin_no = ls.vin_number
-        )
     )
     SELECT *
-    FROM active_stock
-    WHERE ${AVAILABLE_STATUS_SQL}
+    FROM latest
+    WHERE TRUE
       ${activeDealerClause(dealerCode)}
       ${selectedFiltersClause(input)}
       ${searchClause(safeText(input.search))}
@@ -866,7 +784,7 @@ export async function getKiaStockReportTable(input: {
 }): Promise<KiaStockReportPayload> {
   const page = normalizePage(input.page, 1)
   const pageSize = Math.min(99999, normalizePage(input.pageSize, 10))
-  const cacheKey = `kia:stock-report:table:v8:${JSON.stringify({ ...input, page, pageSize })}`
+  const cacheKey = `kia:stock-report:table:v9:${JSON.stringify({ ...input, page, pageSize })}`
   return getCachedData(cacheKey, async () => {
     const { filters: _filters, ...readInput } = input
     const { columns, rows: fetchedRows } = await readReportRows(readInput)
