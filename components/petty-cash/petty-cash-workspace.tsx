@@ -64,7 +64,8 @@ type TabKey = 'overview' | 'requests' | 'expenses' | 'ledger'
 type WorkflowDialogState = { request: PettyCashRequest; action: 'reject' | 'hold' } | null
 
 /* ---- role gating (ported verbatim) ---- */
-const isCreatorRole = (role: string) => role === 'admin' || role === 'branch_admin'
+// Only the Branch Admin (branch_admin) may submit petty cash requests / expenses.
+const isCreatorRole = (role: string) => role === 'branch_admin'
 const isApproverRole = (role: string) => role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts'
 const isExpenseFeedRole = (role: string) => isApproverRole(role) || role === 'super_admin'
 
@@ -104,6 +105,7 @@ export function PettyCashWorkspace() {
   const [payload, setPayload] = useState<DashboardPayload | null>(null)
   const [ledger, setLedger] = useState<PettyCashLedgerEntry[]>([])
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [expenseLocationFilter, setExpenseLocationFilter] = useState('all')
   const [requestForm, setRequestForm] = useState<RequestFormState>(EMPTY_REQUEST_FORM)
   const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(EMPTY_EXPENSE_FORM)
   const [expenseFiles, setExpenseFiles] = useState<string[]>([])
@@ -204,6 +206,16 @@ export function PettyCashWorkspace() {
   const allRequests = payload?.requests || []
   const allExpenses = payload?.expenses || []
   const showMdScopeToggle = userRole === 'md'
+  // Admin / MD / EA (and super admin) can filter expenses location-wise.
+  const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'super_admin'].includes(userRole)
+  const expenseLocationOptions = useMemo(
+    () => Array.from(new Set(allExpenses.map((expense) => (expense.location || '').trim()).filter(Boolean))).sort(),
+    [allExpenses],
+  )
+  const visibleExpenses = useMemo(() => {
+    if (!canFilterExpensesByLocation || expenseLocationFilter === 'all') return allExpenses
+    return allExpenses.filter((expense) => (expense.location || '').trim() === expenseLocationFilter)
+  }, [allExpenses, canFilterExpensesByLocation, expenseLocationFilter])
   const contentLoading = dashboardLoading || ledgerLoading
   const requestLocationOptions = useMemo(() => getPettyCashLocationOptions(currentBranchId), [currentBranchId])
   const expenseFeedTitle = userRole === 'accounts' ? 'Branch Expense Ledger Feed' : 'Recent Branch Expenses'
@@ -488,8 +500,16 @@ export function PettyCashWorkspace() {
       )}
 
       {activeTab === 'expenses' && (
-        <SectionCard title={canCreate ? 'Your Expense History' : expenseFeedTitle} subtitle="Spends posted against allocations" icon={ReceiptText} iconTone="emerald">
-          {renderExpenseTable(allExpenses)}
+        <SectionCard
+          title={canCreate ? 'Your Expense History' : expenseFeedTitle}
+          subtitle="Spends posted against allocations"
+          icon={ReceiptText}
+          iconTone="emerald"
+          toolbar={canFilterExpensesByLocation ? (
+            <LocationFilter value={expenseLocationFilter} options={expenseLocationOptions} onChange={setExpenseLocationFilter} />
+          ) : undefined}
+        >
+          {renderExpenseTable(visibleExpenses)}
         </SectionCard>
       )}
 
@@ -604,6 +624,7 @@ export function PettyCashWorkspace() {
         columns={[
           { header: 'Expense #', cell: (expense) => <span className="font-mono text-xs font-bold text-slate-500">{normalizeExpenseNumber(expense)}</span> },
           { header: 'Date', cell: (expense) => <span className="text-slate-600">{formatDateTime(expenseDate(expense))}</span> },
+          ...(canFilterExpensesByLocation ? [{ header: 'Location', cell: (expense: import('./types').PettyCashExpense) => <span className="font-semibold text-slate-700">{expense.location || '—'}</span> }] : []),
           { header: 'Description', cell: (expense) => <span className="line-clamp-1 max-w-[220px] text-slate-600">{expense.particulars || expense.purpose || '—'}</span> },
           { header: 'Vendor', cell: (expense) => <span className="text-slate-600">{expenseVendor(expense)}</span> },
           { header: 'Amount', align: 'right', cell: (expense) => <span className="font-black tabular-nums text-slate-900">{formatCurrency(expense.amount)}</span> },
@@ -612,6 +633,22 @@ export function PettyCashWorkspace() {
       />
     )
   }
+}
+
+function LocationFilter({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
+  return (
+    <div className="inline-flex items-center gap-2">
+      <span className="text-xs font-bold text-slate-500">Location</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-9 cursor-pointer rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm outline-none focus:border-slate-400"
+      >
+        <option value="all">All Locations</option>
+        {options.map((location) => <option key={location} value={location}>{location}</option>)}
+      </select>
+    </div>
+  )
 }
 
 function ScopeToggle({ scope, onChange }: { scope: 'all' | 'mine'; onChange: (scope: 'all' | 'mine') => void }) {

@@ -96,7 +96,9 @@ export function getPettyCashLocationOptions(branchId: string | null | undefined)
   }
 
   if (normalizedBranch === 'kia') {
-    return KIA_BRANCH_DEALERS.map((branch) => branch.label)
+    // Banihal is a Petty-Cash-only location (no DMS dealer code), so it is added
+    // here rather than in KIA_BRANCH_DEALERS to avoid affecting dealer mapping.
+    return [...KIA_BRANCH_DEALERS.map((branch) => branch.label), 'Banihal']
   }
 
   return ['Main Location']

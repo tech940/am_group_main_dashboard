@@ -19,12 +19,14 @@ export function canAccessPettyCash(role: PettyCashRole | null | undefined) {
     || role === 'accounts'
 }
 
+// Only the Branch Admin (branch_admin) submits petty cash requests and expenses.
+// Everyone else in the chain (EA, MD/EBA, Accounts, super_admin) reviews/approves.
 export function canCreatePettyCashRequest(role: PettyCashRole | null | undefined) {
-  return role === 'admin' || role === 'branch_admin'
+  return role === 'branch_admin'
 }
 
 export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined) {
-  return role === 'admin' || role === 'branch_admin'
+  return role === 'branch_admin'
 }
 
 export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {

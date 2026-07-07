@@ -31,7 +31,22 @@ import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 
 const HYUNDAI_LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/4/44/Hyundai_Motor_Company_logo.svg'
 
-const brandNavigation = [
+type SidebarSubmenu = { name: string; href: string }
+type SidebarSection = { name: string; key: string; href?: string; submenus: SidebarSubmenu[] }
+type SidebarBrand = {
+  name: string
+  key: string
+  href: string
+  logo: string
+  logoClassName: string
+  logoContainerClassName: string
+  color: string
+  icon: typeof Activity
+  comingSoon: boolean
+  sections: SidebarSection[]
+}
+
+const brandNavigation: SidebarBrand[] = [
   {
     name: 'AM Kia',
     key: 'kia',
@@ -55,7 +70,7 @@ const brandNavigation = [
         name: 'Sales',
         key: 'sales',
         submenus: [
-          { name: 'Kia Proforma', href: '/brands/kia/proforma' },
+          { name: 'Bookings', href: '/brands/kia/proforma' },
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
@@ -65,12 +80,6 @@ const brandNavigation = [
       {
         name: 'H Promise',
         key: 'h-promise',
-        submenus: [],
-      },
-      {
-        name: 'Insurance',
-        key: 'insurance',
-        href: '/brands/kia/insurance',
         submenus: [],
       },
     ],
@@ -187,6 +196,9 @@ const brandNavigation = [
 ]
 
 const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
+
+// The single section a Branch Sales person is allowed to see/access.
+const BOOKINGS_HREF = '/brands/kia/proforma'
 const alwaysVisibleBrandKeys = new Set<string>()
 const DEFAULT_SIDEBAR_FAVOURITES: string[] = []
 
@@ -269,9 +281,13 @@ export function Sidebar() {
     savePreference: saveFavouriteHrefs,
     loading: favouritesLoading,
   } = useUserPreferences<string[]>('sidebar_favourites', DEFAULT_SIDEBAR_FAVOURITES)
-  const canAccessFinanceOrders = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba', 'accounts', 'finance_head'].includes(userRole || '')
+  // Branch Admin is locked to Petty Cash only — everything else is hidden.
+  const pettyCashOnly = userRole === 'branch_admin'
+  // Branch Sales person is locked to the Bookings section only.
+  const bookingsOnly = userRole === 'sales_executive'
+  const canAccessFinanceOrders = !pettyCashOnly && ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba', 'accounts', 'finance_head'].includes(userRole || '')
   const canAccessPettyCash = ['admin', 'super_admin', 'branch_admin', 'ea', 'md', 'eba', 'accounts'].includes(userRole || '')
-  const canAccessAmFinance = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba'].includes(userRole || '')
+  const canAccessAmFinance = !pettyCashOnly && ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba'].includes(userRole || '')
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
   useEffect(() => {
@@ -307,6 +323,10 @@ export function Sidebar() {
   }, [])
 
   const isSidebarItemVisible = useCallback((href: string, brandKey: string) => {
+    // Branch Sales person: nothing but the Bookings section.
+    if (bookingsOnly && href !== BOOKINGS_HREF) {
+      return false
+    }
     if ((href === '/brands/kia/sales-report' || href === '/brands/kia/stock-report') && !isKiaSalesReportRoleAllowed(userRole)) {
       return false
     }
@@ -318,7 +338,7 @@ export function Sidebar() {
     }
 
     return true
-  }, [userBrand, userRole, permissionMap])
+  }, [userBrand, userRole, permissionMap, bookingsOnly])
 
   const toggleFavourite = useCallback(async (href: string) => {
     if (!isEligibleFavouriteHref(href)) return
@@ -338,6 +358,8 @@ export function Sidebar() {
   }
 
   const visibleBrands = useMemo(() => {
+    if (pettyCashOnly) return []
+    if (bookingsOnly) return availableBrands.filter((brand) => brand.key === 'kia')
     return availableBrands
       .filter((brand) => {
         if (brand.key === 'mg') return true
@@ -357,7 +379,7 @@ export function Sidebar() {
         const bOrder = BRANCH_OPTIONS.findIndex((branch) => branch.value === b.key)
         return aOrder - bOrder
       })
-  }, [userBrand, userRole])
+  }, [userBrand, userRole, pettyCashOnly, bookingsOnly])
 
   const favouriteItems = useMemo(() => {
     const itemMap = new Map<string, { href: string; label: string; brandName: string }>()
@@ -480,7 +502,7 @@ export function Sidebar() {
           collapsed ? "px-0" : "px-4"
         )}>
           <div className="space-y-10">
-            {!collapsed && (
+            {!collapsed && !pettyCashOnly && (
               <div>
                 <p className="mb-4 px-4 text-[11px] font-black uppercase tracking-[0.2em] text-indigo-50/65">
                   Favourites
@@ -823,6 +845,8 @@ export function Sidebar() {
                             const sectionOpen = openBrandSections.has(sectionKey)
                             const directHref = 'href' in section ? section.href : undefined
                             const hasChildren = section.submenus.length > 0
+                            // Branch Sales person only ever sees the section that holds Bookings.
+                            if (bookingsOnly && !hasChildren) return null
                             const directPermissionKey = directHref ? sidebarPermissionByHref[directHref] : undefined
                             const isBrandUser = userBrand === brand.key || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
                             const directLocked = directHref && !isBrandUser && directPermissionKey

@@ -36,7 +36,7 @@ export function buildQuoteEmail(data: QuoteEmailData = {}): {
     'For any clarification, please contact our sales team.',
     '',
     'Regards',
-    'AM Global Dashboard',
+    'AM Kia',
   ].join('\n')
 
   return { subject: QUOTE_SUBJECT, html, text }

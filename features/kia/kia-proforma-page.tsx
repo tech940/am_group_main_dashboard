@@ -517,7 +517,7 @@ const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: st
   { section: 'generate', label: 'Generate Proforma', href: '/brands/kia/proforma/generate', hideFromNav: true },
   { section: 'all', label: 'All Proforma Details', href: '/brands/kia/proforma/all-proforma-details' },
   { section: 'finance-remarks', label: 'Finance Remarks', href: '/brands/kia/proforma/finance-remarks', hideFromNav: true },
-  { section: 'pending-approval', label: 'Pending Approval', href: '/brands/kia/proforma/pending-approval', approverOnly: true },
+  { section: 'pending-approval', label: 'Pending Proforma', href: '/brands/kia/proforma/pending-approval', approverOnly: true },
 ]
 
 function canSeeBookingsNav(role: string) {
@@ -644,7 +644,7 @@ function ModuleHeader({
     generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: FileText },
     all: { title: 'All Proforma Details', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: Columns3 },
     'finance-remarks': { title: 'Finance Remarks', subtitle: 'Update finance status and remarks against every proforma.', icon: WalletCards },
-    'pending-approval': { title: 'Pending Approval', subtitle: 'Verify discounts and cost fields before approval.', icon: ShieldCheck },
+    'pending-approval': { title: 'Pending Proforma', subtitle: 'Verify discounts and cost fields before approval.', icon: ShieldCheck },
     analytics: { title: 'Hyp / Ins Analytics', subtitle: 'Pivot view for bank, insurance, and status performance.', icon: BarChart3 },
     insights: { title: 'Business Insights', subtitle: 'Operational charts for approvals, status, address integrity, model and fuel mix.', icon: BarChart3 },
   }
@@ -862,6 +862,15 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
 
   async function submit() {
     if (!validate()) return
+    // A negative grand total means discounts exceed the price — never save it.
+    if (asNumber(totals.grandTotalCost) < 0) {
+      toast({
+        title: 'Invalid Grand Total',
+        description: 'Grand Total is negative — discounts/deductions exceed the vehicle price. Adjust the values before saving.',
+        variant: 'error',
+      })
+      return
+    }
     setSaving(true)
     try {
       const payload = {
@@ -945,11 +954,10 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
             <Field label="Fuel Type"><Select value={form.fuelType} onValueChange={(value) => update('fuelType', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['DIESEL', 'PETROL', 'ELECTRIC'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Bank" error={errors.bankName}><DataListInput listId="kia-banks" value={form.bankName} onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '', loanAmount: value.toUpperCase() === 'CASH' ? '0' : current.loanAmount }))} onBlur={canonicalizeBank} options={bankOptions} disabled={lockedFields.bankName} /></Field>
             {form.bankName && form.bankName.toUpperCase() !== 'CASH' && (
-              <>
-                <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="kia-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} disabled={lockedFields.bankBranch} /></Field>
-                <Field label="Loan Amount"><TextInput type="number" value={form.loanAmount} onChange={(event) => update('loanAmount', event.target.value)} /></Field>
-              </>
+              <Field label="Bank Branch" error={errors.bankBranch}><DataListInput listId="kia-bank-branches" value={form.bankBranch} onChange={(value) => update('bankBranch', value)} onBlur={canonicalizeBranch} options={filteredBranches} disabled={lockedFields.bankBranch} /></Field>
             )}
+            {/* Loan Amount is disabled for CASH payments (nothing is financed). */}
+            <Field label="Loan Amount"><TextInput type="number" value={form.loanAmount} disabled={form.bankName.toUpperCase() === 'CASH'} onChange={(event) => update('loanAmount', event.target.value)} /></Field>
             <Field label="Insurance Company"><DataListInput listId="kia-insurance" value={form.insuranceCompany} onChange={(value) => update('insuranceCompany', value)} options={options.insuranceCompanies} disabled={lockedFields.insuranceCompany} /></Field>
             <Field label="Vehicle Status"><Select value={form.vehicleStatus} onValueChange={(value) => update('vehicleStatus', value)}><SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger><SelectContent>{['IN HOUSE', 'OUT HOUSE'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></Field>
           </div>

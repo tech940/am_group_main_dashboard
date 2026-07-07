@@ -768,8 +768,9 @@ const hyundaiPlatinumExecutiveGroups = [
 export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   admin: allPermissionKeys,
   super_admin: allPermissionKeys,
+  // Branch Admin is locked to Petty Cash only (scoped to their own branch);
+  // no brand modules, user management, access control or audit.
   branch_admin: [
-    ...keysForGroups(['user_management', 'access_control', 'admin_audit'], ['view', 'create', 'edit']),
     ...keysForGroups(['petty_cash'], ['view', 'create', 'edit', 'audit']),
   ],
   ceo: keysForGroups([
@@ -900,10 +901,10 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
-  // KIA Proforma workflow: front-line executive — creates bookings & proformas,
-  // and delivers. No approve/audit (cannot approve proformas or act on approvals).
+  // KIA Proforma workflow: front-line executive — locked to the Bookings section
+  // (Booking CRM + generating proformas). No stock, insurance, approve or audit.
   sales_executive: [
-    ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit']),
   ],
   // KIA Proforma workflow: reviews & approves/declines proformas.
   sales_manager: [

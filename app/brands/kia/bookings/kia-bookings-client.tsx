@@ -16,6 +16,7 @@ import {
   ClipboardList,
   FileText,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -2813,6 +2814,7 @@ function BookingDrawer({
   onStatusChange: (status: string) => void
 }) {
   const router = useRouter()
+  const [editOpen, setEditOpen] = useState(false)
   const { booking, allocation, proforma, financeOrder, activities, transfers } = detail
   const canViewPii = canViewKiaCustomerPii(currentUserRole)
   const proformaApproved = proforma?.status === 'APPROVED'
@@ -2829,6 +2831,8 @@ function BookingDrawer({
   const canActAsAccountsVerify = effectivePersona === 'actual' ? canVerifyKiaAccounts(currentUserRole) : effectivePersona === 'accounts'
   const canDeliver = effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : effectivePersona === 'sales_person'
   const canActOnStock = effectivePersona === 'actual' ? canAllotKiaVehicle(currentUserRole) : effectivePersona !== 'sales_person'
+  // Sales persons (and managers/admin) can edit booking details until the booking is closed.
+  const canEditBooking = !isTerminal && (canActAsSalesPerson || canActAsSalesManager)
   const personaNote = canUseTestPersona && effectivePersona !== 'actual'
     ? `Testing as ${TEST_PERSONA_LABELS[effectivePersona]}. Server permissions still use your Super Admin account; this only stages the UI controls.`
     : null
@@ -3193,6 +3197,11 @@ function BookingDrawer({
                 <Button variant="outline" className="h-10 rounded-2xl border-amber-200 text-xs font-bold text-amber-700 hover:bg-amber-50" disabled={actionLoading || !canActAsAccounts || !allocation || (booking.status !== 'vehicle_allocated' && booking.status !== 'transfer_requested')} onClick={onPaymentNotReceived}>
                   Payment not received
                 </Button>
+                {canEditBooking && (
+                  <Button variant="outline" className="h-10 rounded-2xl border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100" disabled={actionLoading} onClick={() => setEditOpen(true)}>
+                    <Pencil className="h-4 w-4" /> Edit Booking
+                  </Button>
+                )}
                 <Button variant="outline" className="h-10 rounded-2xl border-rose-200 text-xs font-bold text-rose-700 hover:bg-rose-50" disabled={actionLoading || isTerminal} onClick={() => onAction('cancel')}>
                   Cancel Booking
                 </Button>
@@ -3201,7 +3210,125 @@ function BookingDrawer({
           </section>
         </div>
       </div>
+      <EditBookingDialog booking={booking} open={editOpen} onOpenChange={setEditOpen} />
     </>
+  )
+}
+
+function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDetailPayload['booking']; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const queryClient = useQueryClient()
+
+  const buildForm = () => {
+    const meta = (booking.metadata || {}) as Record<string, unknown>
+    return {
+      customerName: booking.customerName || '',
+      customerPhone: booking.customerPhone || '',
+      customerEmail: booking.customerEmail || String(meta.customerEmailId || ''),
+      customerAddress: booking.customerAddress || booking.address || String(meta.customerAddress || ''),
+      model: booking.model || '',
+      variant: booking.variant || '',
+      color: booking.color || booking.colorPreference || String(meta.color || ''),
+      fuelType: booking.fuelType || String(meta.fuelType || 'PETROL'),
+      bankName: booking.bankName || String(meta.bankFinance || ''),
+      consultantName: booking.consultantName || '',
+      notes: booking.notes || String(meta.notes || ''),
+    }
+  }
+
+  const [form, setForm] = useState(buildForm)
+
+  // Re-prime the form each time the dialog is opened (or a different booking loads).
+  useEffect(() => {
+    if (open) setForm(buildForm())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, booking.id])
+
+  const set = (key: keyof ReturnType<typeof buildForm>, value: string) => setForm((current) => ({ ...current, [key]: value }))
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const bankTrimmed = form.bankName.trim()
+      const response = await fetch(`/api/brands/kia/bookings/${booking.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...form,
+          financeRequired: Boolean(bankTrimmed) && bankTrimmed.toUpperCase() !== 'CASH',
+        }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(payload?.error || 'Failed to update booking')
+      }
+      return response.json()
+    },
+    onSuccess: () => {
+      toast({ title: 'Booking updated', description: 'Your changes have been saved.', variant: 'success' })
+      queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['kia-booking-detail', booking.id] })
+      onOpenChange(false)
+    },
+    onError: (error) => toast({ title: 'Update failed', description: error instanceof Error ? error.message : 'Failed to update booking', variant: 'error' }),
+  })
+
+  const phoneDigits = form.customerPhone.replace(/\D/g, '')
+  const phoneInvalid = phoneDigits.length !== 10
+  const emailInvalid = form.customerEmail.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail.trim())
+
+  const save = () => {
+    if (!form.customerName.trim()) { toast({ title: 'Customer name required', variant: 'error' }); return }
+    if (phoneInvalid) { toast({ title: 'Invalid mobile', description: 'Mobile number must be exactly 10 digits.', variant: 'error' }); return }
+    if (emailInvalid) { toast({ title: 'Invalid email', description: 'Enter a valid email address.', variant: 'error' }); return }
+    mutation.mutate()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="kia-premium max-h-[88vh] max-w-2xl overflow-y-auto rounded-3xl p-0">
+        <div className="relative overflow-hidden p-6 text-white" style={{ background: 'linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg))' }}>
+          <DialogHeader className="relative">
+            <DialogTitle className="text-2xl font-extrabold tracking-tight text-white">Edit Booking</DialogTitle>
+            <DialogDescription className="text-white/80">#{booking.bookingNumber} · update customer, vehicle, and finance details</DialogDescription>
+          </DialogHeader>
+        </div>
+        <div className="grid gap-4 p-6 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Field label="Customer Name" required><Input value={form.customerName} onChange={(event) => set('customerName', event.target.value)} className={INPUT_STYLE} /></Field>
+          </div>
+          <Field label="Mobile Number" required>
+            <Input value={form.customerPhone} onChange={(event) => set('customerPhone', event.target.value.replace(/\D/g, '').slice(0, 10))} className={INPUT_STYLE} inputMode="numeric" maxLength={10} />
+            {form.customerPhone.length > 0 && phoneInvalid && <p className="mt-1 text-[11px] font-bold text-rose-600">Mobile number must be exactly 10 digits.</p>}
+          </Field>
+          <Field label="Customer Email">
+            <Input value={form.customerEmail} onChange={(event) => set('customerEmail', event.target.value)} className={INPUT_STYLE} type="email" />
+            {emailInvalid && <p className="mt-1 text-[11px] font-bold text-rose-600">Enter a valid email address.</p>}
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label="Address"><Input value={form.customerAddress} onChange={(event) => set('customerAddress', event.target.value)} className={INPUT_STYLE} /></Field>
+          </div>
+          <Field label="Model"><Input value={form.model} onChange={(event) => set('model', event.target.value)} className={INPUT_STYLE} /></Field>
+          <Field label="Variant"><Input value={form.variant} onChange={(event) => set('variant', event.target.value)} className={INPUT_STYLE} /></Field>
+          <Field label="Colour"><Input value={form.color} onChange={(event) => set('color', event.target.value)} className={INPUT_STYLE} /></Field>
+          <Field label="Fuel Type">
+            <select value={form.fuelType} onChange={(event) => set('fuelType', event.target.value)} className={cn(INPUT_STYLE, 'cursor-pointer appearance-none')}>
+              {['PETROL', 'DIESEL', 'ELECTRIC', 'HYBRID', 'CNG'].map((fuel) => <option key={fuel} value={fuel}>{fuel}</option>)}
+            </select>
+          </Field>
+          <Field label="Bank / Finance"><Input value={form.bankName} onChange={(event) => set('bankName', event.target.value)} className={INPUT_STYLE} placeholder="CASH or bank name" /></Field>
+          <Field label="Sales Consultant"><Input value={form.consultantName} onChange={(event) => set('consultantName', event.target.value)} className={INPUT_STYLE} /></Field>
+          <div className="sm:col-span-2">
+            <Field label="Notes"><Textarea value={form.notes} onChange={(event) => set('notes', event.target.value)} className="min-h-[70px] rounded-2xl border-slate-200 bg-slate-50/50" /></Field>
+          </div>
+        </div>
+        <DialogFooter className="gap-2 border-t border-slate-100 p-4">
+          <Button variant="outline" className="h-10 rounded-xl border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
+          <Button className="h-10 rounded-xl bg-slate-950 px-5 text-xs font-black text-white hover:bg-slate-800" onClick={save} disabled={mutation.isPending}>
+            {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

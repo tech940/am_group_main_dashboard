@@ -59,7 +59,7 @@ export function buildApprovedProformaEmail(data: ApprovedProformaEmailData): {
     'If you have any questions, please contact your sales consultant.',
     '',
     'Regards,',
-    'AM Global Dashboard',
+    'AM Kia',
   ].filter((line) => line !== '').join('\n')
 
   return { subject: APPROVED_PROFORMA_SUBJECT, html, text }

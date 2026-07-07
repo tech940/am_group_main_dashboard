@@ -8,7 +8,7 @@ export type EmailLayoutOptions = {
   preheader?: string
 }
 
-const BRAND = 'AM Global Dashboard'
+const BRAND = 'AM Kia'
 const ACCENT = '#c8102e' // AM Kia red
 
 export function emailLayout({ heading, bodyHtml, preheader }: EmailLayoutOptions): string {

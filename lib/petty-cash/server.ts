@@ -204,7 +204,10 @@ function filterDashboardRequests(appUser: AppUser, requests: Array<Record<string
 }
 
 function filterDashboardExpenses(appUser: AppUser, expenses: Array<Record<string, unknown>>) {
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
+  // Only the Branch Admin (the submitter) is limited to their own expenses.
+  // Admin / MD / EA / Accounts / super admin see the full (branch-scoped) feed so
+  // they can review and filter location-wise.
+  if (appUser.role === 'branch_admin') {
     return expenses.filter((expense) => String(expense.createdBy || '') === appUser.id)
   }
 
@@ -392,10 +395,23 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
   const whereExpression = and(...filters)
   const offset = (query.page - 1) * query.pageSize
   const [{ total }] = await db.select({ total: count() }).from(pettyCashExpenses).where(whereExpression)
-  const rows = await db.select().from(pettyCashExpenses).where(whereExpression).orderBy(desc(pettyCashExpenses.createdAt)).limit(query.pageSize).offset(offset)
+  // Location lives on the originating request (requestForm.location); surface it on
+  // each expense (via allocation -> request) so back-office roles can filter by it.
+  const rows = await db
+    .select({
+      expense: pettyCashExpenses,
+      location: sql<string | null>`${pettyCashRequests.requestForm} ->> 'location'`,
+    })
+    .from(pettyCashExpenses)
+    .leftJoin(pettyCashAllocations, eq(pettyCashAllocations.id, pettyCashExpenses.allocationId))
+    .leftJoin(pettyCashRequests, eq(pettyCashRequests.id, pettyCashAllocations.requestId))
+    .where(whereExpression)
+    .orderBy(desc(pettyCashExpenses.createdAt))
+    .limit(query.pageSize)
+    .offset(offset)
 
   return {
-    expenses: rows.map((row) => serializeExpense(row)),
+    expenses: rows.map((row) => ({ ...serializeExpense(row.expense as Record<string, unknown>), location: row.location || null })),
     pagination: {
       page: query.page,
       pageSize: query.pageSize,
@@ -440,7 +456,8 @@ export async function getPettyCashDashboard(appUser: AppUser, branchId?: string 
     getPettyCashCategories(),
     getCurrentPettyCashAllocation(appUser, branchId),
     listPettyCashRequests(appUser, { page: 1, pageSize: 8, status: 'all', branchId }),
-    listPettyCashExpenses(appUser, { page: 1, pageSize: 8, status: 'all', branchId }),
+    // Fetch a wide window of expenses so the location filter has enough to work with.
+    listPettyCashExpenses(appUser, { page: 1, pageSize: 50, status: 'all', branchId }),
   ])
 
   const requests = filterDashboardRequests(appUser, requestsResult.requests as Array<Record<string, unknown>>)

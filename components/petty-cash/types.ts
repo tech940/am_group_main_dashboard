@@ -73,6 +73,7 @@ export type PettyCashExpense = {
   receivedBy?: string | null
   received_by?: string | null
   purpose: string
+  location?: string | null
   createdBy?: string
   created_by?: string
   createdAt?: string
