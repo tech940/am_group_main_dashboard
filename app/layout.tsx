@@ -30,7 +30,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${inter.variable} h-full antialiased`}
-      data-dashboard-accent="executive-navy"
+      data-dashboard-accent="midnight-lavender"
       suppressHydrationWarning
     >
       <head>

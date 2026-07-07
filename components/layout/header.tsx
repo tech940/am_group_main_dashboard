@@ -75,15 +75,15 @@ function getThemeServerSnapshot() {
 
 function getAccentSnapshot(): AccentId {
   if (typeof document === 'undefined') {
-    return 'executive-navy'
+    return 'midnight-lavender'
   }
 
   const accent = document.documentElement.getAttribute('data-dashboard-accent')
-  return ACCENT_OPTIONS.some((option) => option.id === accent) ? accent as AccentId : 'executive-navy'
+  return ACCENT_OPTIONS.some((option) => option.id === accent) ? accent as AccentId : 'midnight-lavender'
 }
 
 function getAccentServerSnapshot(): AccentId {
-  return 'executive-navy'
+  return 'midnight-lavender'
 }
 
 interface UserData {
