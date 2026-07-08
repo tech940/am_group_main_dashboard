@@ -359,7 +359,7 @@ export function MDGridView({
                         onCheckedChange={() => toggleSelection(order.id)}
                         aria-label={`Select ${transactionLabel}`}
                         title={`Select ${transactionLabel}`}
-                        className="border-slate-300 bg-white text-white shadow-sm data-[state=checked]:border-[var(--dashboard-action-bg)] data-[state=checked]:bg-[var(--dashboard-action-bg)] data-[state=checked]:text-[var(--dashboard-action-fg)]"
+                        className="border-slate-300 bg-white text-slate-700 shadow-sm data-[state=checked]:border-[var(--dashboard-action-bg)] data-[state=checked]:bg-[var(--dashboard-action-bg)] data-[state=checked]:text-[var(--dashboard-action-fg)]"
                       />
                     )}
                     <Button

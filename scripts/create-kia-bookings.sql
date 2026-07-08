@@ -120,14 +120,14 @@ BEGIN
         WHERE u.supabase_id = (SELECT auth.uid())::text
           AND u.deleted_at IS NULL
           AND u.is_active
-          AND (u.role IN ('admin', 'super_admin', 'ceo', 'md') OR lower(coalesce(u.brand, '')) IN ('kia', 'all'))
+          AND (u.role IN ('admin', 'developer', 'ceo', 'md') OR lower(coalesce(u.brand, '')) IN ('kia', 'all'))
       ))
       WITH CHECK (EXISTS (
         SELECT 1 FROM public.users u
         WHERE u.supabase_id = (SELECT auth.uid())::text
           AND u.deleted_at IS NULL
           AND u.is_active
-          AND (u.role IN ('admin', 'super_admin', 'ceo', 'md') OR lower(coalesce(u.brand, '')) IN ('kia', 'all'))
+          AND (u.role IN ('admin', 'developer', 'ceo', 'md') OR lower(coalesce(u.brand, '')) IN ('kia', 'all'))
       ));
   END IF;
 END $$;
@@ -144,13 +144,13 @@ BEGIN
           WHERE u.supabase_id = (SELECT auth.uid())::text
             AND u.deleted_at IS NULL
             AND u.is_active
-            AND (u.role IN (''admin'', ''super_admin'', ''ceo'', ''md'') OR lower(coalesce(u.brand, '''')) IN (''kia'', ''all''))
+            AND (u.role IN (''admin'', ''developer'', ''ceo'', ''md'') OR lower(coalesce(u.brand, '''')) IN (''kia'', ''all''))
         )) WITH CHECK (EXISTS (
           SELECT 1 FROM public.users u
           WHERE u.supabase_id = (SELECT auth.uid())::text
             AND u.deleted_at IS NULL
             AND u.is_active
-            AND (u.role IN (''admin'', ''super_admin'', ''ceo'', ''md'') OR lower(coalesce(u.brand, '''')) IN (''kia'', ''all''))
+            AND (u.role IN (''admin'', ''developer'', ''ceo'', ''md'') OR lower(coalesce(u.brand, '''')) IN (''kia'', ''all''))
         ))',
         table_name || '_authenticated_kia_users',
         table_name

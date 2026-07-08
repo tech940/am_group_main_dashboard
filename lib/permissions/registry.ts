@@ -705,7 +705,7 @@ const allPermissionKeys = PERMISSIONS.map((permission) => permission.key)
 
 export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   admin: 'Legacy Admin',
-  super_admin: 'Super Admin',
+  developer: 'Developer',
   branch_admin: 'Branch Admin',
   ceo: 'CEO',
   md: 'MD',
@@ -767,7 +767,7 @@ const hyundaiPlatinumExecutiveGroups = [
 
 export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   admin: allPermissionKeys,
-  super_admin: allPermissionKeys,
+  developer: allPermissionKeys,
   // Branch Admin is locked to Petty Cash only (scoped to their own branch);
   // no brand modules, user management, access control or audit.
   branch_admin: [

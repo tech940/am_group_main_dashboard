@@ -1,7 +1,7 @@
 import type { AppUser } from '@/lib/auth/app-user'
 import { hasGlobalAccessRole } from '@/lib/auth/roles'
 
-const AM_FINANCE_ALLOWED_ROLES = new Set<AppUser['role']>(['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba'])
+const AM_FINANCE_ALLOWED_ROLES = new Set<AppUser['role']>(['admin', 'developer', 'ceo', 'md', 'ea', 'eba'])
 
 export function canAccessAmFinance(role: AppUser['role'] | null | undefined) {
   return Boolean(role && (AM_FINANCE_ALLOWED_ROLES.has(role) || hasGlobalAccessRole(role)))

@@ -32,7 +32,7 @@ export function pendingStageOf(approvalStatus?: string | null): KiaApprovalStage
 /** Whether the given role may act on the given pending stage. MD/admins override. */
 export function roleActsOnKiaStage(role: string | null | undefined, stage: KiaApprovalStage): boolean {
   const r = String(role || '').trim().toLowerCase()
-  if (r === 'admin' || r === 'super_admin' || r === 'md') return true
+  if (r === 'admin' || r === 'developer' || r === 'md') return true
   if (stage === 'finance_head') return r === 'finance_head'
   if (stage === 'sales_manager') return r === 'sales_manager'
   if (stage === 'general_manager') return r === 'general_manager'

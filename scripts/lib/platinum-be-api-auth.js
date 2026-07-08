@@ -62,11 +62,11 @@ async function resolveApiUserEmail() {
       FROM users
       WHERE is_active = true
         AND deleted_at IS NULL
-        AND role IN ('admin', 'super_admin', 'ceo', 'md')
+        AND role IN ('admin', 'developer', 'ceo', 'md')
       ORDER BY
         CASE role
           WHEN 'admin' THEN 0
-          WHEN 'super_admin' THEN 1
+          WHEN 'developer' THEN 1
           ELSE 2
         END
       LIMIT 1

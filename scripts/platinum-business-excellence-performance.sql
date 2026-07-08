@@ -1,13 +1,10 @@
 -- Platinum Business Excellence performance indexes and summary sources.
--- Run outside a transaction because CREATE INDEX CONCURRENTLY is used.
+-- Safe to run inside or outside a transaction.
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS am_platinum_open_ro_fast_lookup_idx
+CREATE INDEX IF NOT EXISTS am_platinum_open_ro_fast_lookup_idx
   ON am_platinum_repair_order_list (
     (
-      COALESCE(
-        NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-        NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), '')
-      )
+      NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), '')
     ),
     r_o_date,
     (COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text)),
@@ -16,7 +13,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS am_platinum_open_ro_fast_lookup_idx
   )
   WHERE LOWER(COALESCE(r_o_status, '')) = 'open';
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS am_platinum_complaints_fast_lookup_idx
+CREATE INDEX IF NOT EXISTS am_platinum_complaints_fast_lookup_idx
   ON am_platinum_call_center_complaints (
     (
       NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE')
@@ -27,7 +24,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS am_platinum_complaints_fast_lookup_idx
     id DESC
   );
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS am_platinum_ro_billing_fast_lookup_idx
+CREATE INDEX IF NOT EXISTS am_platinum_ro_billing_fast_lookup_idx
   ON am_platinum_ro_billing_report (
     bill_date,
     (
@@ -41,7 +38,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS am_platinum_ro_billing_fast_lookup_idx
     id DESC
   );
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS am_platinum_sot_fast_lookup_idx
+CREATE INDEX IF NOT EXISTS am_platinum_sot_fast_lookup_idx
   ON am_platinum_trust_package (
     reg_date,
     (
@@ -55,13 +52,14 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS am_platinum_sot_fast_lookup_idx
     id DESC
   );
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS am_platinum_service_appointment_resolution_idx
+CREATE INDEX IF NOT EXISTS am_platinum_service_appointment_resolution_idx
   ON am_platinum_service_appointment (
     b_t_date_time,
     (COALESCE(NULLIF(TRIM(b_t_no), ''), NULLIF(TRIM(vin), ''), NULLIF(TRIM(reg_no), ''))),
     (NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'))
   );
 
+DROP VIEW IF EXISTS am_platinum_service_appointment_resolved_v1 CASCADE;
 CREATE OR REPLACE VIEW am_platinum_service_appointment_resolved_v1 AS
 SELECT
   source.*,
@@ -455,15 +453,13 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS am_platinum_open_ro_daily_summary_v1 AS
 WITH latest AS (
   SELECT DISTINCT ON (
     COALESCE(
-      NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-      NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), ''),
+      NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''),
       'UNMAPPED'
     ),
     COALESCE(NULLIF(TRIM(r_o_no::text), ''), id::text)
   )
     COALESCE(
-      NULLIF(NULLIF(UPPER(TRIM(COALESCE(source_dealer_code, ''))), ''), 'ACTIVE'),
-      NULLIF(UPPER(TRIM(COALESCE(dealer, ''))), ''),
+      NULLIF(UPPER(TRIM(COALESCE(dlr_no, ''))), ''),
       'UNMAPPED'
     ) AS dealer_code,
     r_o_date::date AS report_date,

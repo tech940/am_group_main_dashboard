@@ -9,7 +9,7 @@ export const metadata = {
 }
 
 function isKiaStockReportRoleAllowed(role: string | null | undefined) {
-  return role === 'super_admin' || role === 'md' || role === 'eba'
+  return role === 'developer' || role === 'md' || role === 'eba'
 }
 
 export default async function KiaStockReportRoute({

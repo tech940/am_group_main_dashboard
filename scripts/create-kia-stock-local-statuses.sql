@@ -50,7 +50,7 @@ CREATE POLICY "KIA stock local statuses readable by KIA users"
         AND u.deleted_at IS NULL
         AND u.is_active = true
         AND (
-          u.role IN ('super_admin', 'admin', 'md', 'manager', 'branch_admin')
+          u.role IN ('developer', 'admin', 'md', 'manager', 'branch_admin')
           OR u.brand IN ('kia', 'all')
         )
     )
@@ -69,7 +69,7 @@ CREATE POLICY "KIA stock local statuses writable by KIA sales users"
         AND u.deleted_at IS NULL
         AND u.is_active = true
         AND (
-          u.role IN ('super_admin', 'admin', 'md', 'manager', 'branch_admin')
+          u.role IN ('developer', 'admin', 'md', 'manager', 'branch_admin')
           OR u.brand IN ('kia', 'all')
         )
     )
@@ -88,7 +88,7 @@ CREATE POLICY "KIA stock local statuses updatable by KIA sales users"
         AND u.deleted_at IS NULL
         AND u.is_active = true
         AND (
-          u.role IN ('super_admin', 'admin', 'md', 'manager', 'branch_admin')
+          u.role IN ('developer', 'admin', 'md', 'manager', 'branch_admin')
           OR u.brand IN ('kia', 'all')
         )
     )
@@ -101,7 +101,7 @@ CREATE POLICY "KIA stock local statuses updatable by KIA sales users"
         AND u.deleted_at IS NULL
         AND u.is_active = true
         AND (
-          u.role IN ('super_admin', 'admin', 'md', 'manager', 'branch_admin')
+          u.role IN ('developer', 'admin', 'md', 'manager', 'branch_admin')
           OR u.brand IN ('kia', 'all')
         )
     )

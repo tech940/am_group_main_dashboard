@@ -266,7 +266,7 @@ export async function GET(request: Request) {
       conditions.push(eq(users.role, role as AppUser['role']))
     }
     if (department !== 'all') conditions.push(ilike(users.department, department))
-    if (branch !== 'any' && actorCapabilities.authority === 'super_admin') conditions.push(eq(users.brand, branch))
+    if (branch !== 'any' && actorCapabilities.authority === 'developer') conditions.push(eq(users.brand, branch))
     if (status !== 'all') conditions.push(eq(users.isActive, status === 'active'))
 
     const where = and(...conditions)
@@ -278,7 +278,7 @@ export async function GET(request: Request) {
       db.select({ total: count() }).from(users).where(where),
       db.select({
         totalUsers: count(),
-        administrators: sql<number>`count(*) filter (where ${users.role} in ('admin', 'super_admin', 'branch_admin'))`,
+        administrators: sql<number>`count(*) filter (where ${users.role} in ('admin', 'developer', 'branch_admin'))`,
         managers: sql<number>`count(*) filter (where ${users.role} = 'manager')`,
         active: sql<number>`count(*) filter (where ${users.isActive} = true)`,
         inactive: sql<number>`count(*) filter (where ${users.isActive} = false)`,
@@ -371,7 +371,7 @@ export async function PUT(request: Request) {
       .limit(1)
     if (!existing) return NextResponse.json({ error: 'User not found.' }, { status: 404 })
     if (!canManageAdminTarget(actor, existing)) {
-      return NextResponse.json({ error: 'This user is managed by Super Admin.' }, { status: 403 })
+      return NextResponse.json({ error: 'This user is managed by Developer.' }, { status: 403 })
     }
 
     if (typeof body.expectedUpdatedAt === 'string' && existing.updatedAt.toISOString() !== body.expectedUpdatedAt) {
@@ -391,7 +391,7 @@ export async function PUT(request: Request) {
 
     const authUpdates: Record<string, unknown> = {}
 
-    if (actorCapabilities.authority === 'super_admin') {
+    if (actorCapabilities.authority === 'developer') {
       if (typeof body.role === 'string') {
         if (!VALID_ROLES.includes(body.role as AppUser['role']) || !canAssignRole(actor, body.role as AppUser['role'])) {
           return NextResponse.json({ error: 'You cannot assign this role.' }, { status: 400 })
@@ -478,8 +478,8 @@ export async function DELETE(request: Request) {
   try {
     const actor = await getAuthenticatedAppUser()
     const actorCapabilities = actor ? getAdminCapabilities(actor) : null
-    if (!actor || actorCapabilities?.authority !== 'super_admin') {
-      return NextResponse.json({ error: 'Only Super Admin can permanently delete users.' }, { status: 403 })
+    if (!actor || actorCapabilities?.authority !== 'developer') {
+      return NextResponse.json({ error: 'Only Developer can permanently delete users.' }, { status: 403 })
     }
 
     const id = new URL(request.url).searchParams.get('id')

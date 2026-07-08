@@ -1,8 +1,8 @@
 -- Hierarchical Admin Console migration.
 -- Safe to run repeatedly.
 
-ALTER TYPE role ADD VALUE IF NOT EXISTS 'super_admin' AFTER 'admin';
-ALTER TYPE role ADD VALUE IF NOT EXISTS 'branch_admin' AFTER 'super_admin';
+ALTER TYPE role ADD VALUE IF NOT EXISTS 'developer' AFTER 'admin';
+ALTER TYPE role ADD VALUE IF NOT EXISTS 'branch_admin' AFTER 'developer';
 
 ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.users(id),
@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS admin_audit_logs_branch_idx
 
 -- Legacy global admins retain full authority under the new explicit role.
 UPDATE public.users
-SET role = 'super_admin'::role,
+SET role = 'developer'::role,
     updated_at = now()
 WHERE role = 'admin'::role
   AND deleted_at IS NULL;

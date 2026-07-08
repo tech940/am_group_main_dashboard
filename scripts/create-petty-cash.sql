@@ -291,7 +291,7 @@ using (
       and u.is_active = true
       and u.deleted_at is null
       and (
-        u.role in ('admin', 'super_admin')
+        u.role in ('admin', 'developer')
         or u.brand = 'all'
         or u.id = petty_cash_requests.created_by
         or (
@@ -315,7 +315,7 @@ using (
       and u.is_active = true
       and u.deleted_at is null
       and (
-        u.role in ('admin', 'super_admin')
+        u.role in ('admin', 'developer')
         or u.id = petty_cash_requests.created_by
         or (
           u.role in ('branch_admin', 'ea', 'md', 'accounts')
@@ -332,7 +332,7 @@ with check (
       and u.is_active = true
       and u.deleted_at is null
       and (
-        u.role in ('admin', 'super_admin')
+        u.role in ('admin', 'developer')
         or (
           u.role = 'branch_admin'
           and u.id = petty_cash_requests.created_by
@@ -355,7 +355,7 @@ using (
       and u.is_active = true
       and u.deleted_at is null
       and (
-        u.role in ('admin', 'super_admin')
+        u.role in ('admin', 'developer')
         or u.brand = 'all'
         or u.id = petty_cash_allocations.allocated_to
         or (
@@ -379,7 +379,7 @@ using (
       and u.is_active = true
       and u.deleted_at is null
       and (
-        u.role in ('admin', 'super_admin')
+        u.role in ('admin', 'developer')
         or u.brand = 'all'
         or u.id = petty_cash_expenses.created_by
         or (
@@ -403,7 +403,7 @@ using (
       and u.is_active = true
       and u.deleted_at is null
       and (
-        u.role in ('admin', 'super_admin')
+        u.role in ('admin', 'developer')
         or u.id = petty_cash_expenses.created_by
         or (
           u.role in ('branch_admin', 'ea', 'md', 'accounts')
@@ -420,7 +420,7 @@ with check (
       and u.is_active = true
       and u.deleted_at is null
       and (
-        u.role in ('admin', 'super_admin')
+        u.role in ('admin', 'developer')
         or (
           u.role = 'branch_admin'
           and u.id = petty_cash_expenses.created_by
@@ -445,7 +445,7 @@ using (
       and u.is_active = true
       and u.deleted_at is null
       and (
-        u.role in ('admin', 'super_admin')
+        u.role in ('admin', 'developer')
         or u.brand = 'all'
         or u.id = r.created_by
         or u.id = e.created_by
@@ -470,7 +470,7 @@ using (
       and u.is_active = true
       and u.deleted_at is null
       and (
-        u.role in ('admin', 'super_admin')
+        u.role in ('admin', 'developer')
         or u.brand = 'all'
         or (
           u.role in ('branch_admin', 'ea', 'md', 'accounts')

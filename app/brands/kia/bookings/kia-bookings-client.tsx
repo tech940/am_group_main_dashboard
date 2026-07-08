@@ -1120,7 +1120,7 @@ export function KiaBookingsClient({
       if (priceInputRef.current) priceInputRef.current.value = ''
     }
   }
-  const canUseTestPersona = currentUserRole === 'super_admin'
+  const canUseTestPersona = currentUserRole === 'developer'
   const normalizedCurrentRole = normalizeRole(currentUserRole)
   const canCreateBookings = roleCanActAsSalesPerson(normalizedCurrentRole)
   const canViewPii = canViewKiaCustomerPii(currentUserRole)
@@ -1723,7 +1723,7 @@ export function KiaBookingsClient({
           <div className="grid gap-2 sm:gap-2.5 lg:grid-cols-[1.5fr_repeat(4,minmax(0,0.85fr))_auto]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kia-text-faint)]" />
-              <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Search booking, customer, phone, VIN…" className={cn(INPUT_STYLE, 'pl-10')} />
+              <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Search booking, customer, phone, VIN…" className={cn(INPUT_STYLE, '!pl-10 sm:!pl-11')} />
             </div>
             <FilterSelect value={dealer} placeholder="Dealer" values={filters.dealers} onChange={(value) => { setDealer(value); setPage(1) }} />
             <FilterSelect value={model} placeholder="Model" values={filters.models} onChange={(value) => { setModel(value); setPage(1) }} />
@@ -2078,7 +2078,7 @@ export function KiaBookingsClient({
 
       <Dialog open={Boolean(selectedBookingId)} onOpenChange={(open) => { if (!open) closeBooking() }}>
         <DialogContent
-          className="kia-premium fixed inset-y-0 right-0 left-auto top-0 z-50 flex h-dvh max-h-dvh w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l p-0 shadow-[0_30px_110px_rgba(15,23,42,0.32)] duration-300 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:w-[min(940px,calc(100vw-2rem))] sm:rounded-l-[2rem]"
+          className="kia-premium fixed inset-y-0 !left-0 sm:!left-auto !right-0 !top-0 z-50 !flex min-w-0 h-dvh max-h-dvh w-full max-w-full sm:max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l p-0 shadow-[0_30px_110px_rgba(15,23,42,0.32)] duration-300 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:!w-[min(940px,calc(100vw-2rem))] sm:rounded-l-[2rem]"
           style={{ backgroundColor: 'var(--kia-canvas)', borderColor: 'var(--kia-hairline)' }}
         >
           <DialogTitle className="sr-only">Booking Details</DialogTitle>
@@ -2276,10 +2276,10 @@ function CreateBookingDialog({
   }
 
   useEffect(() => {
-    if (open && form.model && form.variant && form.color) {
+    if (open && form.variant && form.color) {
       setStockChecking(true)
       const controller = new AbortController()
-      fetch(`/api/brands/kia/bookings/check-stock?model=${encodeURIComponent(form.model)}&variant=${encodeURIComponent(form.variant)}&color=${encodeURIComponent(form.color)}`, {
+      fetch(`/api/brands/kia/bookings/check-stock?model=${encodeURIComponent(form.model || '')}&variant=${encodeURIComponent(form.variant)}&color=${encodeURIComponent(form.color)}`, {
         signal: controller.signal
       })
         .then((r) => r.json())
@@ -2297,7 +2297,7 @@ function CreateBookingDialog({
     } else {
       setStockCheckResult(null)
     }
-  }, [open, form.model, form.variant, form.color])
+  }, [open, form.variant, form.color])
 
   const handleCostSheetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -2546,7 +2546,7 @@ function CreateBookingDialog({
                         : '❌ NOT IN STOCK'}
                     </div>
                   ) : (
-                    <div className="h-11 rounded-2xl bg-slate-50 border border-slate-200 flex items-center px-4 text-xs font-semibold text-slate-400">Select model, variant & color first</div>
+                    <div className="h-11 rounded-2xl bg-slate-50 border border-slate-200 flex items-center px-4 text-xs font-semibold text-slate-400">Select variant & color first</div>
                   )}
                 </Field>
                 <Field label="Waiting Period">
@@ -2962,15 +2962,15 @@ function BookingDrawer({
 
   return (
     <>
-      <div className="relative shrink-0 overflow-hidden border-b" style={{ borderColor: 'var(--kia-hairline)', background: 'linear-gradient(135deg, color-mix(in srgb, var(--dashboard-primary) 9%, var(--kia-surface)), var(--kia-surface))' }}>
+      <div className="relative shrink-0 overflow-hidden border-b w-full min-w-0" style={{ borderColor: 'var(--kia-hairline)', background: 'linear-gradient(135deg, color-mix(in srgb, var(--dashboard-primary) 9%, var(--kia-surface)), var(--kia-surface))' }}>
         <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--dashboard-action-bg) 18%, transparent), transparent 70%)' }} />
-        <div className="relative p-4 sm:p-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
+        <div className="relative p-4 sm:p-6 w-full min-w-0">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between w-full min-w-0">
+            <div className="flex min-w-0 items-start gap-3 w-full">
               <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl" style={toneSoftStyle('accent')}>
                 <Car className="h-7 w-7" />
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <Kicker>Vehicle Journey</Kicker>
                 <h2 className="mt-0.5 break-words text-xl font-extrabold tracking-tight text-[var(--kia-text)] sm:text-2xl">
                   {[booking.model, booking.variant].filter(Boolean).join(' ') || booking.bookingNumber}
@@ -3013,7 +3013,7 @@ function BookingDrawer({
               )}
             </div>
           </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 w-full min-w-0">
             {([
               { label: 'Proforma', value: proforma?.number || 'Not generated', icon: FileText, tone: (proforma ? (proformaApproved ? 'success' : 'warning') : 'neutral') as Tone, mono: false },
               { label: 'VIN', value: allocation?.vinNumber || 'Not allocated', icon: Car, tone: (allocation ? 'success' : 'neutral') as Tone, mono: true },
@@ -3030,7 +3030,7 @@ function BookingDrawer({
           </div>
         </div>
       </div>
-      <div className="kia-scroll relative min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:space-y-5 sm:p-5" style={{ background: 'var(--kia-canvas)' }}>
+      <div className="kia-scroll relative min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-3 sm:space-y-5 sm:p-5 w-full min-w-0" style={{ background: 'var(--kia-canvas)' }}>
         <LoaderOverlay show={actionLoading} variant={actionLoaderVariant} />
         <Stepper status={booking.status} />
         {personaNote && <div className="rounded-2xl border px-3 py-2.5 text-xs font-semibold leading-5" style={toneSoftStyle('info')}>{personaNote}</div>}
@@ -3054,7 +3054,7 @@ function BookingDrawer({
           const paymentConfirmation = (meta.paymentConfirmation || {}) as Record<string, unknown>
           const accountsVerification = (meta.accountsVerification || {}) as Record<string, unknown>
           return (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 w-full min-w-0">
               <InfoCard title="Customer" icon={UserRound} items={[
                 ['Name', booking.customerName],
                 ['Country Code', String(meta.countryCode || '91')],
@@ -3157,7 +3157,7 @@ function BookingDrawer({
               <PremiumEmptyState illustration="garage" title="No matching vehicles" description="No free-stock or in-transit VIN currently matches this booking. Try a transfer, or check back after the next stock sync." />
             </div>
           ) : (
-            <Stagger className="mt-4 grid gap-3 md:grid-cols-2">
+            <Stagger className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               {matchingVehicles.slice(0, 6).map((vehicle) => (
                 <StaggerItem key={vehicle.vinNumber}>
                   <div className="kia-surface-flush kia-lift h-full p-3.5">
@@ -3183,7 +3183,7 @@ function BookingDrawer({
           )}
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 w-full min-w-0">
           <section className="kia-surface p-4 sm:p-5">
             <div className="flex items-center gap-3">
               <IconTile icon={ClipboardList} tone="accent" />
@@ -3242,7 +3242,7 @@ function BookingDrawer({
                   <Chip tone="info" className="ml-auto">{transfer.status}</Chip>
                 </div>
               ))}
-              <div className="mt-1 grid gap-2 sm:grid-cols-2">
+              <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2 w-full min-w-0">
                 <Button variant="outline" className="h-10 rounded-2xl text-xs font-bold" disabled={actionLoading || !canActOnStock || isTerminal} onClick={() => onAction('transfer')}>
                   Request Transfer
                 </Button>
@@ -3389,12 +3389,12 @@ function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDe
 
 function InfoCard({ title, icon: Icon, items }: { title: string; icon: typeof ShieldCheck; items: Array<[string, string]> }) {
   return (
-    <section className="kia-surface p-4 sm:p-5">
-      <div className="flex items-center gap-3 border-b pb-3" style={{ borderColor: 'var(--kia-hairline)' }}>
+    <section className="kia-surface p-4 sm:p-5 min-w-0 w-full">
+      <div className="flex items-center gap-3 border-b pb-3 w-full min-w-0" style={{ borderColor: 'var(--kia-hairline)' }}>
         <IconTile icon={Icon} tone="accent" size="sm" />
-        <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)] sm:text-base">{title}</h3>
+        <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)] sm:text-base truncate">{title}</h3>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 min-w-0 w-full">
         {items.map(([label, value]) => (
           <FieldValue key={label} label={label} value={value && value !== '-' ? value : undefined} />
         ))}
@@ -3405,16 +3405,16 @@ function InfoCard({ title, icon: Icon, items }: { title: string; icon: typeof Sh
 
 function ActionCard({ title, icon: Icon, value, status, action, disabled, loading, onClick }: { title: string; icon: typeof ShieldCheck; value: string; status: string; action: string; disabled: boolean; loading?: boolean; onClick: () => void }) {
   return (
-    <section className="kia-surface flex flex-col p-4 sm:p-5">
-      <div className="flex items-center gap-3">
+    <section className="kia-surface flex flex-col p-4 sm:p-5 min-w-0 w-full">
+      <div className="flex items-center gap-3 w-full min-w-0">
         <IconTile icon={Icon} tone="accent" size="sm" />
-        <div>
-          <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)] sm:text-base">{title}</h3>
-          <p className="mt-0.5 text-xs font-semibold text-[var(--kia-text-soft)]">{status}</p>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)] sm:text-base truncate">{title}</h3>
+          <p className="mt-0.5 text-xs font-semibold text-[var(--kia-text-soft)] truncate">{status}</p>
         </div>
       </div>
-      <div className="kia-surface-sunken mt-4 px-3 py-3">
-        <p className="kia-tnum break-words text-lg font-extrabold leading-6 text-[var(--kia-text)]">{value}</p>
+      <div className="kia-surface-sunken mt-4 px-3 py-3 w-full min-w-0">
+        <p className="kia-tnum break-all text-lg font-extrabold leading-6 text-[var(--kia-text)]">{value}</p>
       </div>
       <Button className="mt-auto w-full rounded-2xl pt-0 text-sm font-bold sm:mt-3 h-10" disabled={disabled} onClick={onClick}>
         {loading && <Loader2 className="h-4 w-4 animate-spin" />} {action}

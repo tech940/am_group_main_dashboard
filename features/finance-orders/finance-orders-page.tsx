@@ -261,7 +261,7 @@ export function FinanceOrdersPageContent({ currentUser }: { currentUser: Current
   const [bulkActionLoading, setBulkActionLoading] = useState<'approve' | 'hold' | 'deny' | null>(null)
   const [exportingCompletedPdf, setExportingCompletedPdf] = useState(false)
 
-  const isGlobalAdmin = currentUser.role === 'admin' || currentUser.role === 'super_admin'
+  const isGlobalAdmin = currentUser.role === 'admin' || currentUser.role === 'developer'
   const canCreate = isGlobalAdmin || currentUser.role === 'finance_head'
   const canActAccounts = isGlobalAdmin || currentUser.role === 'accounts'
   const canActEa = isGlobalAdmin || currentUser.role === 'ea'

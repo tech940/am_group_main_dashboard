@@ -1,9 +1,9 @@
-export const SUPER_ADMIN_ROLE_VALUES = ['super_admin'] as const
-export const GLOBAL_ACCESS_ROLE_VALUES = ['super_admin', 'md', 'ceo', 'ea', 'eba'] as const
-export const ADMIN_ROLE_VALUES = [...SUPER_ADMIN_ROLE_VALUES] as const
+export const DEVELOPER_ROLE_VALUES = ['developer'] as const
+export const GLOBAL_ACCESS_ROLE_VALUES = ['developer', 'md', 'ceo', 'ea', 'eba'] as const
+export const ADMIN_ROLE_VALUES = [...DEVELOPER_ROLE_VALUES] as const
 
 export function isSuperAdminRole(role: string | null | undefined) {
-  return role === 'super_admin'
+  return role === 'developer' || role === 'md'
 }
 
 /** Roles that can access every sidebar section across all branches regardless of assigned branch. */

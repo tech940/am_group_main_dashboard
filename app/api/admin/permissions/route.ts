@@ -91,7 +91,7 @@ export async function GET(request: Request) {
       : visibleUsers[0] || null
 
     const branch = actorCapabilities.branch
-    const allowedGroups = actorCapabilities.authority === 'super_admin'
+    const allowedGroups = actorCapabilities.authority === 'developer'
       ? catalog.groups
       : catalog.groups.filter((group) =>
         Boolean(branch && (group.key === branch || group.key.startsWith(`${branch}.`)))
@@ -120,7 +120,7 @@ export async function GET(request: Request) {
             label: ROLE_PERMISSION_TEMPLATE_LABELS[role as keyof typeof ROLE_PERMISSION_TEMPLATE_LABELS],
             permissions: Object.fromEntries(
               Object.entries(template).filter(([key]) =>
-                actorCapabilities.authority === 'super_admin' || isDelegablePermission(actor, key)
+                actorCapabilities.authority === 'developer' || isDelegablePermission(actor, key)
               )
             ),
           }]
@@ -160,7 +160,7 @@ export async function PATCH(request: Request) {
       .limit(1)
     if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 })
     if (!canManageAdminTarget(actor, target)) {
-      return NextResponse.json({ error: 'This user is managed by Super Admin.' }, { status: 403 })
+      return NextResponse.json({ error: 'This user is managed by Developer.' }, { status: 403 })
     }
 
     const invalidKeys = Object.keys(requested).filter((key) => !isDelegablePermission(actor, key))

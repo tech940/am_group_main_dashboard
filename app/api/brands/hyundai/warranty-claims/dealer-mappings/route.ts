@@ -17,7 +17,7 @@ export async function GET() {
 export async function PUT(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (appUser.role !== 'admin' && appUser.role !== 'super_admin') {
+  if (appUser.role !== 'admin' && appUser.role !== 'developer') {
     return NextResponse.json({ error: 'Super Admin access required' }, { status: 403 })
   }
   const payload = await request.json() as { dealerCode?: string; dealerName?: string; isActive?: boolean }

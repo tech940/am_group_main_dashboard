@@ -472,58 +472,64 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'On road price must be a valid amount' }, { status: 400 })
   }
 
-  const result = await db.execute(sql`
-    INSERT INTO demo_vehicle_details (
-      vehicle_key,
-      vin,
-      registration_number,
-      tracker_status,
-      service_date,
-      current_reading_kms,
-      on_road_price,
-      vehicle_status,
-      updated_by,
-      updated_by_name,
-      updated_at
-    )
-    VALUES (
-      ${vehicleKey},
-      ${vin || vehicleKey},
-      ${registrationNumber},
-      ${trackerStatus || null},
-      ${serviceDate}::date,
-      ${currentReadingKms},
-      ${onRoadPrice},
-      ${vehicleStatus || null},
-      ${appUser.id},
-      ${appUser.fullName},
-      now()
-    )
-    ON CONFLICT (vehicle_key) DO UPDATE SET
-      vin = excluded.vin,
-      registration_number = excluded.registration_number,
-      tracker_status = excluded.tracker_status,
-      service_date = excluded.service_date,
-      current_reading_kms = excluded.current_reading_kms,
-      on_road_price = excluded.on_road_price,
-      vehicle_status = excluded.vehicle_status,
-      updated_by = excluded.updated_by,
-      updated_by_name = excluded.updated_by_name,
-      updated_at = now()
-    RETURNING
-      vehicle_key AS "vehicleKey",
-      vin,
-      registration_number AS "registrationNumber",
-      tracker_status AS "trackerStatus",
-      service_date AS "serviceDate",
-      current_reading_kms AS "currentReadingKms",
-      on_road_price AS "onRoadPrice",
-      vehicle_status AS "vehicleStatus",
-      updated_by_name AS "detailsUpdatedBy",
-      updated_at AS "detailsUpdatedAt"
-  `)
+  try {
+    const result = await db.execute(sql`
+      INSERT INTO demo_vehicle_details (
+        vehicle_key,
+        vin,
+        registration_number,
+        tracker_status,
+        service_date,
+        current_reading_kms,
+        on_road_price,
+        vehicle_status,
+        updated_by,
+        updated_by_name,
+        updated_at
+      )
+      VALUES (
+        ${vehicleKey},
+        ${vin || vehicleKey},
+        ${registrationNumber},
+        ${trackerStatus || null},
+        ${serviceDate}::date,
+        ${currentReadingKms},
+        ${onRoadPrice},
+        ${vehicleStatus || null},
+        ${appUser.id},
+        ${appUser.fullName},
+        now()
+      )
+      ON CONFLICT (vehicle_key) DO UPDATE SET
+        vin = excluded.vin,
+        registration_number = excluded.registration_number,
+        tracker_status = excluded.tracker_status,
+        service_date = excluded.service_date,
+        current_reading_kms = excluded.current_reading_kms,
+        on_road_price = excluded.on_road_price,
+        vehicle_status = excluded.vehicle_status,
+        updated_by = excluded.updated_by,
+        updated_by_name = excluded.updated_by_name,
+        updated_at = now()
+      RETURNING
+        vehicle_key AS "vehicleKey",
+        vin,
+        registration_number AS "registrationNumber",
+        tracker_status AS "trackerStatus",
+        service_date AS "serviceDate",
+        current_reading_kms AS "currentReadingKms",
+        on_road_price AS "onRoadPrice",
+        vehicle_status AS "vehicleStatus",
+        updated_by_name AS "detailsUpdatedBy",
+        updated_at AS "detailsUpdatedAt"
+    `)
 
-  await invalidateCachePattern('kia:demo-cars-list:*')
+    await invalidateCachePattern('kia:demo-cars-list:*')
 
-  return NextResponse.json({ details: resultRows(result)[0] })
+    return NextResponse.json({ details: resultRows(result)[0] })
+  } catch (error) {
+    console.error('[demo-cars-list POST] Failed to save vehicle details:', error)
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({ error: `Failed to save vehicle details: ${message}` }, { status: 500 })
+  }
 }

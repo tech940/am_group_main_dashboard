@@ -209,9 +209,9 @@ export function FieldValue({
   className?: string
 }) {
   return (
-    <div className={cn('kia-surface-sunken px-3 py-2.5', className)}>
+    <div className={cn('kia-surface-sunken px-3 py-2.5 min-w-0', className)}>
       <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--kia-text-faint)]">{label}</p>
-      <p className={cn('mt-1 break-words text-[13px] font-bold leading-5 text-[var(--kia-text)]', mono && 'font-mono text-xs tracking-tight')}>
+      <p className={cn('mt-1 break-all text-[13px] font-bold leading-5 text-[var(--kia-text)]', mono && 'font-mono text-xs tracking-tight')}>
         {value || '—'}
       </p>
     </div>

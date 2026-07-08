@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 function isKiaStockReportRoleAllowed(role: string | null | undefined) {
-  return role === 'super_admin' || role === 'md' || role === 'eba'
+  return role === 'developer' || role === 'md' || role === 'eba'
 }
 
 export async function GET(request: Request) {

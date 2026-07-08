@@ -43,11 +43,11 @@ export function isFinanceOrderStage(value: string): value is typeof FINANCE_ORDE
 }
 
 export function canAccessFinanceOrders(role: FinanceRole | null | undefined) {
-  return role === 'admin' || role === 'super_admin' || role === 'ceo' || role === 'md' || role === 'ea' || role === 'eba' || role === 'accounts' || role === 'finance_head'
+  return role === 'admin' || role === 'developer' || role === 'ceo' || role === 'md' || role === 'ea' || role === 'eba' || role === 'accounts' || role === 'finance_head'
 }
 
 export function canCreateFinanceOrders(role: FinanceRole | null | undefined) {
-  return role === 'admin' || role === 'super_admin' || role === 'finance_head'
+  return role === 'admin' || role === 'developer' || role === 'finance_head'
 }
 
 export function canEditFinanceOrder(role: FinanceRole | null | undefined, order: Pick<FinanceOrderRecord, 'status' | 'createdBy'>, userId: string) {
@@ -57,15 +57,15 @@ export function canEditFinanceOrder(role: FinanceRole | null | undefined, order:
 }
 
 export function canVerifyFinanceAccounts(role: FinanceRole | null | undefined) {
-  return role === 'admin' || role === 'super_admin' || role === 'accounts'
+  return role === 'admin' || role === 'developer' || role === 'accounts'
 }
 
 export function canApproveFinanceEa(role: FinanceRole | null | undefined) {
-  return role === 'admin' || role === 'super_admin' || role === 'ea'
+  return role === 'admin' || role === 'developer' || role === 'ea'
 }
 
 export function canApproveFinanceMd(role: FinanceRole | null | undefined) {
-  return role === 'admin' || role === 'super_admin' || role === 'md'
+  return role === 'admin' || role === 'developer' || role === 'md'
 }
 
 function getFinanceBranchFilter(appUser: AppUser) {
@@ -96,7 +96,7 @@ export function getFinanceOrderVisibilityFilter(appUser: AppUser): SQL<unknown> 
 
   switch (appUser.role) {
     case 'admin':
-    case 'super_admin':
+    case 'developer':
       return and(...baseFilters)!
     case 'ceo':
     case 'md':
@@ -135,7 +135,7 @@ export function canReadFinanceOrder(appUser: AppUser, order: Pick<FinanceOrderRe
 }
 
 export function getFinanceApprovalFilter(role: FinanceRole | null | undefined, filter: string | null) {
-  if (role !== 'ea' && role !== 'md' && role !== 'eba' && role !== 'accounts' && role !== 'admin' && role !== 'super_admin') return null
+  if (role !== 'ea' && role !== 'md' && role !== 'eba' && role !== 'accounts' && role !== 'admin' && role !== 'developer') return null
 
   if (filter === 'hold') {
     if (role === 'accounts') return eq(financeOrders.status, 'accounts_on_hold')

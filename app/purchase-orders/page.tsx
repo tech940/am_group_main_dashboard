@@ -579,7 +579,7 @@ function PurchaseOrdersPageContent() {
   const canSubmitGRN = canCreateOrders
   const canProcessAccounts = userRole === 'admin' || userRole === 'accounts'
   // Roles that approve either workflow get the unified Purchase Orders | Petty Cash tabs.
-  const isPettyCashApprover = userRole === 'ea' || userRole === 'md' || userRole === 'eba' || userRole === 'accounts' || userRole === 'super_admin'
+  const isPettyCashApprover = userRole === 'ea' || userRole === 'md' || userRole === 'eba' || userRole === 'accounts' || userRole === 'developer'
   const canEditInitialOrder = Boolean(canCreateOrders && selectedOrder && !['completed', 'cancelled'].includes(selectedOrder.status))
   const effectivePurchaseOrderListMode: PurchaseOrderListMode = isApprovalRole(userRole) ? 'all' : purchaseOrderListMode
 
@@ -713,7 +713,7 @@ function PurchaseOrdersPageContent() {
 
       if (isApprovalRole(userRole)) {
         params.set('approvalFilter', approvalFilter)
-        if (userRole === 'md' && approvalBranchFilter !== 'all') {
+        if (userRole === 'md') {
           params.set('branchFilter', approvalBranchFilter)
         }
       }

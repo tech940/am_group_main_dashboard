@@ -167,7 +167,7 @@ function buildFreshnessSelect(source: FreshnessSource, dealerCode: string | null
     : sql``
 
   return sql`
-    SELECT
+    (SELECT
       ${source.table}::text AS "table",
       ${source.label}::text AS "label",
       -- "Last updated" is a source-level fact: the latest cron write to the WHOLE
@@ -184,6 +184,7 @@ function buildFreshnessSelect(source: FreshnessSource, dealerCode: string | null
       ${Boolean(dealerCode && dealerExpression)}::boolean AS "dealerScoped"
     FROM ${sql.raw(`"${source.table}"`)}
     ${dealerWhere}
+    LIMIT 1)
   `
 }
 

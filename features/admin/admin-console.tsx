@@ -33,7 +33,7 @@ import { BRANCH_OPTIONS, USER_BRANCH_OPTIONS } from '@/lib/branches'
 import { cn } from '@/lib/utils'
 
 type Capabilities = {
-  authority: 'super_admin' | 'branch_admin'
+  authority: 'developer' | 'branch_admin'
   branch: string | null
   canManageSettings: boolean
   canManageBranchAdmins: boolean
@@ -112,7 +112,7 @@ type AuditResponse = {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  super_admin: 'Super Admin',
+  developer: 'Developer',
   branch_admin: 'Branch Admin',
   admin: 'Legacy Admin',
   ceo: 'CEO',
@@ -130,7 +130,7 @@ const ROLE_LABELS: Record<string, string> = {
 }
 
 const TAB_DEFINITIONS: Array<{
-  key: 'overview' | 'users' | 'branch-admins' | 'access' | 'audit' | 'system' | 'settings'
+  key: 'overview' | 'users' | 'branch-admins' | 'access' | 'audit' | 'sync-logs' | 'system' | 'settings'
   label: string
   icon: typeof Users
   superOnly?: boolean
@@ -140,6 +140,7 @@ const TAB_DEFINITIONS: Array<{
   { key: 'branch-admins', label: 'Branch Admins', icon: UserCog, superOnly: true },
   { key: 'access', label: 'Access', icon: KeyRound },
   { key: 'audit', label: 'Audit', icon: ShieldCheck },
+  { key: 'sync-logs', label: 'Data Sync Logs', icon: RefreshCw },
   { key: 'system', label: 'System', icon: Wrench, superOnly: true },
   { key: 'settings', label: 'Settings', icon: Settings, superOnly: true },
 ]
@@ -246,6 +247,11 @@ export function AdminConsole() {
   const [permissionsData, setPermissionsData] = useState<PermissionResponse | null>(null)
   const [auditData, setAuditData] = useState<AuditResponse | null>(null)
   const [auditSource, setAuditSource] = useState<'admin' | 'kia'>('admin')
+  const [syncLogs, setSyncLogs] = useState<{
+    kia: Array<{ table: string; label: string; lastUpdated: string | null; rowCount: number }>
+    hyundai: Array<{ table: string; label: string; lastUpdated: string | null; rowCount: number }>
+    platinum: Array<{ table: string; label: string; lastUpdated: string | null; rowCount: number }>
+  } | null>(null)
   const [systemCounts, setSystemCounts] = useState<{ bookings: number; activity: number; allocations: number; transfers: number; retailMarks: number } | null>(null)
   const [emailLogs, setEmailLogs] = useState<{
     counts: { pending: number; sent: number; failed: number; total: number }
@@ -277,7 +283,7 @@ export function AdminConsole() {
   const activeTab = useMemo(() => {
     const definition = TAB_DEFINITIONS.find((item) => item.key === requestedTab)
     if (!definition) return 'overview'
-    if (definition.superOnly && capabilities?.authority !== 'super_admin') return 'overview'
+    if (definition.superOnly && capabilities?.authority !== 'developer') return 'overview'
     return definition.key
   }, [requestedTab, capabilities])
 
@@ -293,9 +299,11 @@ export function AdminConsole() {
             ? `/api/admin/permissions${selectedUserId ? `?userId=${selectedUserId}` : ''}`
             : activeTab === 'audit'
               ? `/api/admin/audit?pageSize=50&source=${auditSource}`
-              : activeTab === 'system'
-                ? '/api/admin/reset-test-data'
-                : '/api/admin/settings'
+              : activeTab === 'sync-logs'
+                ? '/api/admin/data-freshness'
+                : activeTab === 'system'
+                  ? '/api/admin/reset-test-data'
+                  : '/api/admin/settings'
       const response = await fetch(endpoint, { cache: 'no-store' })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Unable to load the Admin Console.')
@@ -313,6 +321,9 @@ export function AdminConsole() {
         setPermissionChanges({})
       } else if (activeTab === 'audit') {
         setAuditData(payload)
+        setCapabilities(payload.actorCapabilities)
+      } else if (activeTab === 'sync-logs') {
+        setSyncLogs(payload)
         setCapabilities(payload.actorCapabilities)
       } else if (activeTab === 'system') {
         setSystemCounts(payload.counts)
@@ -334,7 +345,7 @@ export function AdminConsole() {
     return () => window.clearTimeout(timer)
   }, [load])
 
-  const visibleTabs = TAB_DEFINITIONS.filter((tab) => !tab.superOnly || capabilities?.authority === 'super_admin')
+  const visibleTabs = TAB_DEFINITIONS.filter((tab) => !tab.superOnly || capabilities?.authority === 'developer')
   const filteredUsers = (usersData?.users || []).filter((user) => {
     if (activeTab === 'branch-admins' && user.role !== 'branch_admin') return false
     const query = search.trim().toLowerCase()
@@ -410,7 +421,7 @@ export function AdminConsole() {
           fullName: editForm.fullName,
           department: editForm.department,
           phoneNumber: editForm.phoneNumber,
-          ...(capabilities?.authority === 'super_admin' ? {
+          ...(capabilities?.authority === 'developer' ? {
             role: editForm.role,
             brand: editForm.brand,
             email: editForm.email,
@@ -530,7 +541,7 @@ export function AdminConsole() {
           </div>
           <div className="flex items-center gap-2 px-2">
             <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-              {capabilities?.authority === 'branch_admin' ? 'Branch Admin' : 'Super Admin'}
+              {capabilities?.authority === 'branch_admin' ? 'Branch Admin' : 'Developer'}
             </Badge>
             <Button variant="ghost" size="icon" onClick={() => void load()}><RefreshCw className="h-4 w-4" /></Button>
           </div>
@@ -626,7 +637,7 @@ export function AdminConsole() {
                                     <Button size="sm" variant="outline" className="text-red-600" disabled={saving} onClick={() => void permanentlyDeleteUser(user)}>Delete</Button>
                                   )}
                                 </div>
-                              ) : <span className="text-xs font-medium text-slate-400">Managed by Super Admin</span>}
+                              ) : <span className="text-xs font-medium text-slate-400">Managed by Developer</span>}
                             </td>
                           </tr>
                         ))}
@@ -666,7 +677,7 @@ export function AdminConsole() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {!permissionsData.selectedUser?.canManage && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">Managed by Super Admin. Access is read-only.</div>
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">Managed by Developer. Access is read-only.</div>
                     )}
                     {permissionsData.groups.map((group) => {
                       const groupPermissions = permissionsData.permissions.filter((permission) => permission.groupKey === group.key)
@@ -751,6 +762,71 @@ export function AdminConsole() {
                   </div>
                 </CardContent>
               </Card>
+            )}
+            {activeTab === 'sync-logs' && syncLogs && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                    <RefreshCw className="h-5 w-5 text-indigo-600 animate-spin-slow" /> Data Freshness & Sync Monitor
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Real-time monitoring of data import status, row counts, and last sync timestamps across all brands.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                  {([
+                    { brandKey: 'kia' as const, brandName: 'AM Kia', themeColor: 'border-l-indigo-600' },
+                    { brandKey: 'hyundai' as const, brandName: 'AM Hyundai', themeColor: 'border-l-emerald-600' },
+                    { brandKey: 'platinum' as const, brandName: 'AM Platinum', themeColor: 'border-l-amber-500' },
+                  ] as const).map(({ brandKey, brandName, themeColor }) => {
+                    const logs = syncLogs[brandKey] || []
+                    return (
+                      <Card key={brandKey} className={cn("border-l-4 shadow-sm", themeColor)}>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base font-bold flex items-center justify-between">
+                            {brandName}
+                            <Badge variant="secondary" className="text-[10px] font-bold">
+                              {logs.length} tables
+                            </Badge>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            {logs.map((row) => {
+                              const date = row.lastUpdated ? new Date(row.lastUpdated) : null
+                              const isToday = date ? date.toDateString() === new Date().toDateString() : false
+                              return (
+                                <div key={row.table} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 hover:bg-slate-50 transition-colors">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-800">{row.label}</span>
+                                    <span className="text-[10px] font-black text-slate-500 bg-white px-1.5 py-0.5 rounded border">
+                                      {row.rowCount.toLocaleString()} rows
+                                    </span>
+                                  </div>
+                                  <div className="mt-1.5 flex items-center justify-between">
+                                    <span className="text-[11px] font-semibold text-slate-500">
+                                      {date ? date.toLocaleString() : 'Not available'}
+                                    </span>
+                                    {date ? (
+                                      <span className={cn(
+                                        "inline-block h-2 w-2 rounded-full",
+                                        isToday ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
+                                      )} />
+                                    ) : (
+                                      <span className="inline-block h-2 w-2 rounded-full bg-slate-300" />
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </div>
             )}
 
             {activeTab === 'system' && (
@@ -931,7 +1007,7 @@ export function AdminConsole() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-3 max-h-[60vh] overflow-y-auto pr-2">
-            {capabilities?.authority === 'super_admin' ? (
+            {capabilities?.authority === 'developer' ? (
               <div className="grid grid-cols-2 gap-4">
                 <div><Label>Full name</Label><Input value={editForm.fullName} onChange={(event) => setEditForm((current) => ({ ...current, fullName: event.target.value }))} /></div>
                 <div><Label>Email</Label><Input type="email" value={editForm.email} onChange={(event) => setEditForm((current) => ({ ...current, email: event.target.value }))} /></div>
@@ -940,7 +1016,7 @@ export function AdminConsole() {
               <div><Label>Full name</Label><Input value={editForm.fullName} onChange={(event) => setEditForm((current) => ({ ...current, fullName: event.target.value }))} /></div>
             )}
             
-            {capabilities?.authority === 'super_admin' && (
+            {capabilities?.authority === 'developer' && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Role</Label>
@@ -956,7 +1032,7 @@ export function AdminConsole() {
               </div>
             )}
 
-            {capabilities?.authority === 'super_admin' && (
+            {capabilities?.authority === 'developer' && (
               <div>
                 <Label className="mb-1.5 block">Branch(es)</Label>
                 <BranchSelector value={editForm.brand} onChange={(value) => setEditForm((current) => ({ ...current, brand: value }))} />

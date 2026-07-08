@@ -55,7 +55,7 @@ export const createPettyCashExpenseSchema = z.object({
   receivedBy: optionalText,
   purpose: z.string().trim().min(2).max(2000),
   expenseForm: z.record(z.string(), z.unknown()).default({}),
-  billFiles: z.array(z.string().trim()).default([]),
+  billFiles: z.array(z.string().trim()).min(1, 'Please upload at least one bill image or PDF.'),
 })
 
 export const pettyCashWorkflowSchema = z.object({
@@ -303,7 +303,7 @@ function pettyCashApprovalStatusesForRole(role: AppUser['role']): PettyCashReque
   if (role === 'md' || role === 'eba') return [...PETTY_CASH_APPROVAL_STATUSES.md_approval]
   if (role === 'accounts') return [...PETTY_CASH_APPROVAL_STATUSES.accounts]
   // Super admins get a supervisory view across every stage.
-  if (role === 'super_admin') {
+  if (role === 'developer') {
     return [
       ...PETTY_CASH_APPROVAL_STATUSES.ea_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.md_approval,
@@ -422,7 +422,7 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
 }
 
 export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?: string | null) {
-  if (appUser.role === 'super_admin' && !branchId) return null
+  if (appUser.role === 'developer' && !branchId) return null
 
   const filters = [getPettyCashAllocationVisibilityFilter(appUser)]
 
@@ -1129,7 +1129,7 @@ export async function getPettyCashLedger(appUser: AppUser, allocationId?: string
       : undefined
 
   const filters = allocationFilter ? [allocationFilter] : []
-  if (appUser.role !== 'admin' && appUser.role !== 'super_admin' && appUser.brand && appUser.brand !== 'all') {
+  if (appUser.role !== 'admin' && appUser.role !== 'developer' && appUser.brand && appUser.brand !== 'all') {
     filters.push(eq(pettyCashLedgerEntries.branchId, appUser.brand))
   }
 

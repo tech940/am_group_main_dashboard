@@ -9568,7 +9568,7 @@
       "schema": "public",
       "values": [
         "admin",
-        "super_admin",
+        "developer",
         "branch_admin",
         "ceo",
         "purchase_manager",

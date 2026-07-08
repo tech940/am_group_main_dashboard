@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, ChevronDown, Menu, LogOut, User, Mail, Loader2, Moon, Palette, Sun } from 'lucide-react'
+import { ChevronDown, Menu, LogOut, User, Mail, Loader2, Moon, Sun } from 'lucide-react'
 import { useSidebar } from '@/context/sidebar-context'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -17,21 +17,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 // import { NotificationBell } from '@/components/layout/notification-bell' // disabled for now
 
+
+
+
 const THEME_CHANGE_EVENT = 'dashboard-theme-change'
-const ACCENT_CHANGE_EVENT = 'dashboard-accent-change'
-const ACCENT_STORAGE_KEY = 'dashboard-accent'
 
-const ACCENT_OPTIONS = [
-  { id: 'skydash', label: 'Skydash', colors: ['#4B49AC', '#98BDFF', '#7DA0FA', '#7978E9', '#F3797E'] },
-  { id: 'corona', label: 'Corona', colors: ['#191C24', '#AF1763', '#0D6EFD', '#198754', '#0DCAF0', '#AB2E3C', '#FFC107'] },
-  { id: 'executive-navy', label: 'Executive Navy', colors: ['#031430', '#0B2A55', '#D4AF37', '#E8EEF7', '#38BDF8', '#00E97E'] },
-  { id: 'amethyst', label: 'Amethyst', colors: ['#7C3AED', '#A78BFA', '#F472B6', '#38BDF8', '#FBBF24', '#34D399'] },
-  { id: 'tropical-teal', label: 'Tropical Teal', colors: ['#0D9488', '#2DD4BF', '#38BDF8', '#818CF8', '#FB7185', '#FACC15'] },
-  { id: 'sunset-ember', label: 'Sunset Ember', colors: ['#EA580C', '#FB923C', '#F43F5E', '#8B5CF6', '#14B8A6', '#FACC15'] },
-  { id: 'midnight-lavender', label: 'Midnight Lavender', colors: ['#0E0F19', '#655699', '#A99CE8', '#C3B7FE', '#837BAE', '#50388C'] },
-] as const
 
-type AccentId = typeof ACCENT_OPTIONS[number]['id']
 
 function subscribeToThemeChanges(callback: () => void) {
   if (typeof window === 'undefined') {
@@ -47,20 +38,6 @@ function subscribeToThemeChanges(callback: () => void) {
   }
 }
 
-function subscribeToAccentChanges(callback: () => void) {
-  if (typeof window === 'undefined') {
-    return () => {}
-  }
-
-  window.addEventListener('storage', callback)
-  window.addEventListener(ACCENT_CHANGE_EVENT, callback)
-
-  return () => {
-    window.removeEventListener('storage', callback)
-    window.removeEventListener(ACCENT_CHANGE_EVENT, callback)
-  }
-}
-
 function getThemeSnapshot() {
   if (typeof document === 'undefined') {
     return false
@@ -73,18 +50,6 @@ function getThemeServerSnapshot() {
   return false
 }
 
-function getAccentSnapshot(): AccentId {
-  if (typeof document === 'undefined') {
-    return 'midnight-lavender'
-  }
-
-  const accent = document.documentElement.getAttribute('data-dashboard-accent')
-  return ACCENT_OPTIONS.some((option) => option.id === accent) ? accent as AccentId : 'midnight-lavender'
-}
-
-function getAccentServerSnapshot(): AccentId {
-  return 'midnight-lavender'
-}
 
 interface UserData {
   id: string
@@ -109,11 +74,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
     getThemeSnapshot,
     getThemeServerSnapshot
   )
-  const activeAccent = useSyncExternalStore(
-    subscribeToAccentChanges,
-    getAccentSnapshot,
-    getAccentServerSnapshot
-  )
+
 
   const { data: userData, isLoading: loading } = useQuery({
     queryKey: ['auth', 'user'],
@@ -157,11 +118,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
     window.dispatchEvent(new Event(THEME_CHANGE_EVENT))
   }
 
-  const setAccentColor = (accent: AccentId) => {
-    document.documentElement.setAttribute('data-dashboard-accent', accent)
-    window.localStorage.setItem(ACCENT_STORAGE_KEY, accent)
-    window.dispatchEvent(new Event(ACCENT_CHANGE_EVENT))
-  }
+
 
   const getRoleBadgeColor = (role: string) => {
     switch (role.toLowerCase()) {
@@ -197,41 +154,6 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
       <div className="flex items-center gap-8">
         {/* Right Actions */}
         <div className="flex items-center gap-4">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="Change dashboard theme"
-                title="Theme"
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--dashboard-primary-border)] bg-white text-slate-700 shadow-sm transition-all hover:bg-[var(--dashboard-primary-soft)] hover:text-[var(--dashboard-primary)] dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/16"
-              >
-                <Palette className="h-5 w-5" />
-              </button>
-            </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 rounded-2xl border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-slate-950">
-              <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300">
-                Theme
-              </DropdownMenuLabel>
-              {ACCENT_OPTIONS.map((option) => {
-                const isActive = option.id === activeAccent
-                return (
-                  <DropdownMenuItem
-                    key={option.id}
-                    onClick={() => setAccentColor(option.id)}
-                    className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-white/10"
-                  >
-                    <span className="flex h-5 w-16 overflow-hidden rounded-full border border-slate-200 shadow-sm">
-                      {option.colors.map((color) => (
-                        <span key={color} className="h-full flex-1" style={{ backgroundColor: color }} />
-                      ))}
-                    </span>
-                    <span className="flex-1 text-xs">{option.label}</span>
-                    {isActive && <Check className="h-4 w-4 text-[var(--dashboard-primary)]" />}
-                  </DropdownMenuItem>
-                )
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
           <button
             type="button"
             onClick={toggleDarkMode}

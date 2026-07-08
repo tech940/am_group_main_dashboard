@@ -1341,7 +1341,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-nowrap sm:items-end">
-              <div className="min-w-[170px] sm:flex-1">
+              <div className="min-w-[240px] sm:flex-1">
                 <p className="mb-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Month</p>
                 <DropdownMenu
                   open={monthPickerOpen}
@@ -1366,12 +1366,14 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                   }}
                 >
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="outline" className="h-12 w-full justify-between rounded-[1rem] border-[#d8e2ec] bg-white px-4 text-[14px] font-semibold text-slate-900 shadow-sm hover:bg-white">
-                      <span className="inline-flex items-center gap-2">
-                        <CalendarDays className="h-4 w-4 text-slate-400" />
-                        {customRangeLabel || selectedMonthOption?.label || 'Select dates'}
+                    <Button type="button" variant="outline" className="h-12 w-full flex items-center justify-between gap-2 rounded-[1rem] border-[#d8e2ec] bg-white px-4 text-[14px] font-semibold text-slate-900 shadow-sm hover:bg-white min-w-0">
+                      <span className="flex items-center gap-2 min-w-0 flex-1">
+                        <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
+                        <span className="truncate text-left">
+                          {customRangeLabel || selectedMonthOption?.label || 'Select dates'}
+                        </span>
                       </span>
-                      <ChevronDown className="h-4 w-4 text-slate-500" />
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-[340px] rounded-[1.5rem] border border-[#d8e2ec] bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">

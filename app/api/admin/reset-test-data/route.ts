@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic'
 async function authorizeSuperAdmin() {
   const actor = await getAuthenticatedAppUser()
   const capabilities = actor ? getAdminCapabilities(actor) : null
-  if (!actor || !capabilities || capabilities.authority !== 'super_admin') return null
+  if (!actor || !capabilities || capabilities.authority !== 'developer') return null
   return actor
 }
 

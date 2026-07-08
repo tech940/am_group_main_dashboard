@@ -13,7 +13,7 @@ import { isBranchValue } from '@/lib/branches'
 import { PERMISSIONS, PERMISSION_GROUPS } from '@/lib/permissions/registry'
 
 export const PROTECTED_ROLES = new Set<AppUser['role']>([
-  'super_admin',
+  'developer',
   'admin',
   'branch_admin',
   'md',
@@ -34,7 +34,7 @@ export const BRANCH_ASSIGNABLE_ROLES = new Set<AppUser['role']>([
 ])
 
 export type AdminActorCapabilities = {
-  authority: 'super_admin' | 'branch_admin'
+  authority: 'developer' | 'branch_admin'
   branch: string | null
   canManageAllBranches: boolean
   canManageProtectedRoles: boolean
@@ -57,7 +57,7 @@ export { isAdminRole, isBranchAdminRole, isSuperAdminRole }
 export function getAdminCapabilities(actor: AppUser): AdminActorCapabilities | null {
   if (isSuperAdminRole(actor.role)) {
     return {
-      authority: 'super_admin',
+      authority: 'developer',
       branch: null,
       canManageAllBranches: true,
       canManageProtectedRoles: true,
@@ -75,14 +75,14 @@ export function getAdminCapabilities(actor: AppUser): AdminActorCapabilities | n
 export function canSeeAdminTarget(actor: AppUser, target: AdminTarget) {
   const capabilities = getAdminCapabilities(actor)
   if (!capabilities) return false
-  if (capabilities.authority === 'super_admin') return true
+  if (capabilities.authority === 'developer') return true
   return target.brand === capabilities.branch
 }
 
 export function canManageAdminTarget(actor: AppUser, target: AdminTarget) {
   const capabilities = getAdminCapabilities(actor)
   if (!capabilities || actor.id === target.id) return false
-  if (capabilities.authority === 'super_admin') return true
+  if (capabilities.authority === 'developer') return true
   return target.brand === capabilities.branch && !PROTECTED_ROLES.has(target.role)
 }
 
@@ -108,7 +108,7 @@ export function resolveManagedBranch(actor: AppUser, requestedBranch: string | n
 export function isDelegablePermission(actor: AppUser, permissionKey: string) {
   const capabilities = getAdminCapabilities(actor)
   if (!capabilities) return false
-  if (capabilities.authority === 'super_admin') return true
+  if (capabilities.authority === 'developer') return true
   return permissionKey.startsWith(`${capabilities.branch}.`)
 }
 

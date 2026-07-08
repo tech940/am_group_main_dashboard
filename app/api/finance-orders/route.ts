@@ -370,7 +370,7 @@ export async function PUT(request: NextRequest) {
       .limit(1)
 
     if (!existingOrder) return NextResponse.json({ error: 'Finance order not found' }, { status: 404 })
-    if (!canEditFinanceOrder(appUser.role, existingOrder, appUser.id) && appUser.role !== 'admin' && appUser.role !== 'super_admin') {
+    if (!canEditFinanceOrder(appUser.role, existingOrder, appUser.id) && appUser.role !== 'admin' && appUser.role !== 'developer') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

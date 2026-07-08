@@ -7,11 +7,10 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
-    const model = url.searchParams.get('model') || ''
     const variant = url.searchParams.get('variant') || ''
     const color = url.searchParams.get('color') || ''
 
-    if (!model) {
+    if (!variant || !color) {
       return NextResponse.json({ available: false, count: 0 })
     }
 
@@ -33,7 +32,6 @@ export async function GET(request: Request) {
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       WHERE va.id IS NULL
-        AND UPPER(sm.model) = '${model.replace(/'/g, "''").trim().toUpperCase()}'
         ${variantFilter}
         ${colorFilter}
     `)

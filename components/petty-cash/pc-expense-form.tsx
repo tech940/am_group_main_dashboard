@@ -120,7 +120,9 @@ export function ExpenseFormDialog({
             </Field>
 
             <div className="space-y-2">
-              <Label className="text-[11px] font-black uppercase tracking-wider text-slate-500">Upload Bill</Label>
+              <Label className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                Upload Bill <span className="text-rose-500">*</span>
+              </Label>
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center transition-colors hover:border-slate-300 hover:bg-slate-50">
                 <UploadCloud className="h-6 w-6 text-slate-400" />
                 <span className="text-sm font-bold text-slate-600">Click to upload bills</span>

@@ -712,10 +712,10 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
 
             {/* Controls (Quiet premium surface inside section shell) */}
             <div className="flex flex-wrap items-center gap-3 rounded-[1.6rem] border border-white/85 bg-[linear-gradient(135deg,rgba(255,255,255,0.92)_0%,rgba(248,250,252,0.9)_100%)] p-2.5 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.18)]">
-              <div className="min-w-[140px]">
+              <div className="min-w-[160px] max-w-[200px]">
                 <p className="mb-1 text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Month</p>
                 <Select value={selectedMonthOption?.key || ''} onValueChange={handleMonthChange}>
-                  <SelectTrigger className="h-9 rounded-xl border-slate-200 bg-white/96 text-xs font-semibold text-slate-800 shadow-sm focus:ring-sky-500">
+                  <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 bg-white/96 text-xs font-semibold text-slate-800 shadow-sm focus:ring-sky-500 [&>span]:truncate">
                     <SelectValue placeholder="Select month" />
                   </SelectTrigger>
                   <SelectContent>

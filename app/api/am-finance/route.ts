@@ -311,7 +311,7 @@ function validateFinanceMutation(body: Record<string, unknown>, mode: 'create' |
 
   const loanAmount = values.loanAmount === null || values.loanAmount === undefined ? null : Number(values.loanAmount)
   const existingPayoutPercent = existingRow?.dealerPayoutPercent || null
-  const isGlobalAdmin = role === 'admin' || role === 'super_admin'
+  const isGlobalAdmin = role === 'admin' || role === 'developer'
   const effectivePayoutPercent = mode === 'update' && !isGlobalAdmin
     ? existingPayoutPercent
     : values.dealerPayoutPercent

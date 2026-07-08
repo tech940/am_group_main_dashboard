@@ -134,8 +134,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
 
   // Audit Log and customer PII (email / phone) are restricted to MD & Super Admin.
   const role = String(currentUserRole || '').trim().toLowerCase()
-  const canViewAudit = role === 'md' || role === 'super_admin'
-  const canViewCustomerPii = role === 'md' || role === 'super_admin'
+  const canViewAudit = role === 'md' || role === 'developer'
+  const canViewCustomerPii = role === 'md' || role === 'developer'
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
@@ -1489,7 +1489,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                 <clipPath id="print-circle">
                   <circle cx="50" cy="50" r="50"/>
                 </clipPath>
-                <image href="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.jpeg" x="0" y="0" height="100" width="100" clipPath="url(#print-circle)" />
+                <image href="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg" x="0" y="0" height="100" width="100" clipPath="url(#print-circle)" />
               </svg>
             </div>
             <div>

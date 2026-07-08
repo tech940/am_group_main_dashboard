@@ -8,7 +8,7 @@
 //   (anyone except sales_executive) -> Allot Vehicle / Request Transfer
 //   accounts -> Confirm Payment Release + Invoice # + Invoice PDF (single step)
 //   sales_executive -> Mark Delivered
-// admin / super_admin bypass everything.
+// admin / developer bypass everything.
 
 function norm(role?: string | null) {
   return String(role || '').trim().toLowerCase()
@@ -18,7 +18,7 @@ const PROFORMA_APPROVER_ROLES = ['sales_manager', 'general_manager', 'md']
 
 export function isKiaWorkflowAdmin(role?: string | null) {
   const r = norm(role)
-  return r === 'admin' || r === 'super_admin'
+  return r === 'admin' || r === 'developer'
 }
 
 export function isKiaSalesExecutive(role?: string | null) {

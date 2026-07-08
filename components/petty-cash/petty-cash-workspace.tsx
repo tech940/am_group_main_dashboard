@@ -67,14 +67,14 @@ type WorkflowDialogState = { request: PettyCashRequest; action: 'reject' | 'hold
 // Only the Branch Admin (branch_admin) may submit petty cash requests / expenses.
 const isCreatorRole = (role: string) => role === 'branch_admin'
 const isApproverRole = (role: string) => role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts'
-const isExpenseFeedRole = (role: string) => isApproverRole(role) || role === 'super_admin'
+const isExpenseFeedRole = (role: string) => isApproverRole(role) || role === 'developer'
 
 const PENDING_STATUSES = ['ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold']
 const OPEN_REQUEST_STATUSES = ['draft', 'submitted', ...PENDING_STATUSES]
 
 function canActOnRequest(role: string, request: PettyCashRequest) {
   const status = request.status
-  if (role === 'super_admin') return PENDING_STATUSES.includes(status)
+  if (role === 'developer') return PENDING_STATUSES.includes(status)
   if (role === 'ea') return status === 'ea_pending' || status === 'ea_on_hold'
   if (role === 'md') return status === 'md_pending' || status === 'md_on_hold'
   if (role === 'accounts') return status === 'accounts_pending' || status === 'accounts_on_hold'
@@ -193,7 +193,7 @@ export function PettyCashWorkspace() {
   const spendPercentage = allocationAmount > 0 ? Math.min(100, Math.round((spentAmount / allocationAmount) * 100)) : 0
   const userRole = payload?.user.role || ''
   const currentBranchId = payload?.user.brand || ''
-  const isSuperAdmin = userRole === 'super_admin'
+  const isSuperAdmin = userRole === 'developer'
   // Creation is a branch action driven by the user's own login branch.
   // Super admins have no single branch (brand = 'all'), so they review/approve
   // across every branch instead of creating.
@@ -207,7 +207,7 @@ export function PettyCashWorkspace() {
   const allExpenses = payload?.expenses || []
   const showMdScopeToggle = userRole === 'md'
   // Admin / MD / EA (and super admin) can filter expenses location-wise.
-  const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'super_admin'].includes(userRole)
+  const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'developer'].includes(userRole)
   const expenseLocationOptions = useMemo(
     () => Array.from(new Set(allExpenses.map((expense) => (expense.location || '').trim()).filter(Boolean))).sort(),
     [allExpenses],
@@ -279,6 +279,7 @@ export function PettyCashWorkspace() {
     if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a valid amount greater than 0.'); return }
     if (amount > remainingAmount) { setError('Amount exceeds the remaining balance.'); return }
     if (purpose.length < 5) { setError('Purpose must be at least 5 characters.'); return }
+    if (expenseFiles.length === 0) { setError('Please upload at least one bill image or PDF.'); return }
 
     setSubmitting(true)
     setError(null)

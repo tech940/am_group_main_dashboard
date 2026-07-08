@@ -10,7 +10,7 @@ type KiaProformaRole = AppUser['role']
 
 // Finance Head is the first approver in the chain, so they must be able to reach
 // the Pending Approval queue too.
-export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'super_admin', 'finance_head', 'sales_manager', 'general_manager', 'md'] as const
+export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'developer', 'finance_head', 'sales_manager', 'general_manager', 'md'] as const
 
 export function canAccessKiaProforma(role: KiaProformaRole | null | undefined) {
   return Boolean(role)
@@ -28,7 +28,7 @@ export async function canApproveKiaProformaForUser(appUser: AppUser, profileAppr
 export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = false): SQL<unknown> {
   const base = [isNull(kiaProformas.deletedAt)]
   // Back office sees all proformas; the Sales Executive sees only the ones they generated.
-  const isBackOffice = ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba', 'manager', 'accounts', 'viewer', 'service_manager', 'purchase_manager', 'sales_manager', 'general_manager', 'finance_head', 'finance_team'].includes(appUser.role)
+  const isBackOffice = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba', 'manager', 'accounts', 'viewer', 'service_manager', 'purchase_manager', 'sales_manager', 'general_manager', 'finance_head', 'finance_team'].includes(appUser.role)
   if (canApprove || isBackOffice) return and(...base)!
   return and(...base, eq(kiaProformas.loginEmail, appUser.email))!
 }
@@ -53,7 +53,7 @@ export function getKiaProformaPendingApprovalFilter(appUser?: AppUser): SQL<unkn
   if (role === 'finance_head') bucket = financeBucket
   else if (role === 'sales_manager') bucket = salesManagerBucket
   else if (role === 'general_manager') bucket = generalManagerBucket
-  // admin / super_admin / md (and permission-based approvers) → all in-flight.
+  // admin / developer / md (and permission-based approvers) → all in-flight.
 
   return and(isNull(kiaProformas.deletedAt), bucket)!
 }

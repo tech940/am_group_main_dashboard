@@ -47,9 +47,6 @@ BEGIN
   NEW.dlr_no := hyundai_normalize_active_dealer_code(NEW.dlr_no);
   NEW.dealer_code_2 := hyundai_normalize_active_dealer_code(NEW.dealer_code_2);
   NEW.sale_dealer_code := hyundai_normalize_active_dealer_code(NEW.sale_dealer_code);
-  IF UPPER(TRIM(COALESCE(NEW.dealer, ''))) ~ '^N[0-9]+$' THEN
-    NEW.dealer := hyundai_normalize_active_dealer_code(NEW.dealer);
-  END IF;
   NEW.row_hash := encode(
     digest((((to_jsonb(NEW) - 'id') - 'row_hash') - 'uploaded_at')::text, 'sha256'),
     'hex'
@@ -109,7 +106,7 @@ CREATE INDEX IF NOT EXISTS hyundai_ro_billing_ro_idx
 
 CREATE INDEX IF NOT EXISTS hyundai_repair_order_open_dealer_date_idx
   ON hyundai_repair_order_list (
-    UPPER(TRIM(COALESCE(dealer, ''))),
+    UPPER(TRIM(COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), NULLIF(dlr_no, '')))),
     r_o_date,
     uploaded_at DESC
   )

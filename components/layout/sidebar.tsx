@@ -22,7 +22,7 @@ import { useUserRole } from '@/lib/hooks/use-user-role'
 import { hasGlobalAccessRole } from '@/lib/auth/roles'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 
-const HYUNDAI_LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/4/44/Hyundai_Motor_Company_logo.svg'
+const HYUNDAI_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_hyundai.svg'
 
 type SidebarSubmenu = { name: string; href: string }
 type SidebarSection = { name: string; key: string; href?: string; submenus: SidebarSubmenu[] }
@@ -44,7 +44,7 @@ const brandNavigation: SidebarBrand[] = [
     name: 'AM Kia',
     key: 'kia',
     href: '/brands/kia',
-    logo: 'https://www.citypng.com/public/uploads/preview/kia-white-logo-hd-png-7017516947105094q5qjti6gq.png',
+    logo: 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_kia.svg',
     logoClassName: 'p-1.5',
     logoContainerClassName: '',
     color: 'text-blue-100',
@@ -251,7 +251,7 @@ function isSidebarHrefActive(href: string, pathname: string | null) {
 
 function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
   const normalized = String(role || '').trim().toLowerCase()
-  return normalized === 'super_admin' || normalized === 'md' || normalized === 'eba'
+  return normalized === 'developer' || normalized === 'md' || normalized === 'eba'
 }
 
 
@@ -268,9 +268,9 @@ export function Sidebar() {
   const pettyCashOnly = userRole === 'branch_admin'
   // Branch Sales person is locked to the Bookings section only.
   const bookingsOnly = userRole === 'sales_executive'
-  const canAccessFinanceOrders = !pettyCashOnly && ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba', 'accounts', 'finance_head'].includes(userRole || '')
-  const canAccessPettyCash = ['admin', 'super_admin', 'branch_admin', 'ea', 'md', 'eba', 'accounts'].includes(userRole || '')
-  const canAccessAmFinance = !pettyCashOnly && ['admin', 'super_admin', 'ceo', 'md', 'ea', 'eba'].includes(userRole || '')
+  const canAccessFinanceOrders = !pettyCashOnly && ['admin', 'developer', 'ceo', 'md', 'ea', 'eba', 'accounts', 'finance_head'].includes(userRole || '')
+  const canAccessPettyCash = ['admin', 'developer', 'branch_admin', 'ea', 'md', 'eba', 'accounts'].includes(userRole || '')
+  const canAccessAmFinance = !pettyCashOnly && ['admin', 'developer', 'ceo', 'md', 'ea', 'eba'].includes(userRole || '')
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
   useEffect(() => {
@@ -392,6 +392,7 @@ export function Sidebar() {
           key: item.href,
           label: item.label,
           href: item.href,
+          badge: item.brandName,
           external: true,
           active: isSidebarHrefActive(item.href, pathname),
           favourite: { active: true, onToggle: () => void toggleFavourite(item.href) },
@@ -505,11 +506,11 @@ export function Sidebar() {
         )}>
           {!collapsed && (
             <div className="flex items-center gap-2 h-12 flex-1 ml-1">
-              <div className="rounded-lg border border-white/10 bg-black px-3 py-4 shadow-sm">
+              <div className="rounded-lg border border-slate-200/50 bg-white px-2.5 py-1.5 shadow-sm">
                 <img
-                  src="https://amgroupind.com/wp-content/uploads/2023/06/logo-1.png"
+                  src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg"
                   alt="AM Group"
-                  className="h-9 object-contain"
+                  className="h-8 object-contain"
                 />
               </div>
               <div className="h-3 w-[1px] bg-indigo-700/20" />

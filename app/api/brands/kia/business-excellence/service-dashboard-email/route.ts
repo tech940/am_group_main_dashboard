@@ -9,7 +9,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const SEND_ALLOWED_ROLES = new Set(['admin', 'super_admin', 'ceo', 'md', 'manager'])
+const SEND_ALLOWED_ROLES = new Set(['admin', 'developer', 'ceo', 'md', 'manager'])
 
 function readStringArray(value: unknown) {
   if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean)

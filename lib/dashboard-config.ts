@@ -12,7 +12,7 @@ export {
 export type { BranchValue, UserBranchValue } from './branches'
 
 export const USER_ROLE_OPTIONS = [
-  { value: 'super_admin', label: 'Super Admin', color: 'bg-red-600' },
+  { value: 'developer', label: 'Developer', color: 'bg-red-600' },
   { value: 'branch_admin', label: 'Branch Admin', color: 'bg-violet-600' },
   { value: 'admin', label: 'Legacy Admin', color: 'bg-red-500' },
   { value: 'ceo', label: 'CEO', color: 'bg-slate-700' },
