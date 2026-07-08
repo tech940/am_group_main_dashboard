@@ -57,6 +57,7 @@ const brandNavigation: SidebarBrand[] = [
         submenus: [
           { name: 'Business Excellence', href: '/brands/kia/business-excellence' },
           { name: 'Service Appointment', href: '/brands/kia/service-appointment' },
+          { name: 'Vehicle Tracker', href: '/brands/kia/vehicle-tracker' },
         ],
       },
       {
@@ -204,6 +205,7 @@ const sidebarPermissionByHref: Record<string, string> = {
   '/brands/kia/business-excellence/executive-dashboard': 'kia.business_excellence.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',
   '/brands/kia/service-appointment': 'kia.service_appointment.view',
+  '/brands/kia/vehicle-tracker': 'kia.service_appointment.view',
   '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
   '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
   '/brands/kia/sales-report': 'kia.sales_report.view',

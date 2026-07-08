@@ -1605,4 +1605,34 @@ export const kiaEmailLogs = pgTable('kia_email_logs', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+// Vehicle Tracker (Service floor): logs a vehicle leaving and returning, with an
+// AI-verified, timestamped camera photo. status: 'out' | 'returned'.
+// durationMinutes is computed on return (vehicle_in_at - vehicle_out_at).
+export const kiaVehicleTracker = pgTable('kia_vehicle_tracker', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  entryDate: date('entry_date').notNull(),
+  vehicleOutAt: timestamp('vehicle_out_at', { withTimezone: true }).notNull(),
+  vehicleInAt: timestamp('vehicle_in_at', { withTimezone: true }),
+  status: text('status').default('out').notNull(),
+  durationMinutes: integer('duration_minutes'),
+  outPhotoUrl: text('out_photo_url').notNull(),
+  outPhotoPath: text('out_photo_path'),
+  inPhotoUrl: text('in_photo_url'),
+  inPhotoPath: text('in_photo_path'),
+  dealerCode: text('dealer_code'),
+  notes: text('notes'),
+  createdBy: uuid('created_by').references(() => users.id),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const kiaVehicleTrackerRelations = relations(kiaVehicleTracker, ({ one }) => ({
+  creator: one(users, {
+    fields: [kiaVehicleTracker.createdBy],
+    references: [users.id],
+  }),
+}))
+
 
