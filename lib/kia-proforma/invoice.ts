@@ -35,6 +35,12 @@ export type KiaProformaInvoiceRow = {
   disclaimerLines?: string[] | null
 }
 
+function isJkBank(bankName: string) {
+  const normalized = String(bankName || '').toUpperCase().replace(/\s+/g, '')
+  return normalized.includes('J&KBANK') || normalized.includes('J&K') || normalized === 'JKBANK'
+}
+
+
 type PdfPage = {
   commands: string[]
 }
@@ -169,7 +175,7 @@ export function generateApprovedInvoiceTable(row: KiaProformaInvoiceRow) {
 export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
   const addressHTML = addressBlock(row)
   const bankName = text(row.bankName)
-  const dealershipCode = bankName.toUpperCase() === 'J&K BANK' ? 'JKB0993J003' : 'NOT APPLICABLE'
+  const dealershipCode = isJkBank(bankName) ? 'JKB0993J003' : 'NOT APPLICABLE'
 
   return `<!DOCTYPE html>
 <html>
@@ -357,9 +363,27 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   const textAt = (x: number, yy: number, value: string, size = 10, bold = false) => {
     page.commands.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${yy} Td (${pdfEscape(value)}) Tj ET`)
   }
+  const getTextWidth = (text: string, size: number) => {
+    let textWidth = 0
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i]
+      if (char >= 'A' && char <= 'Z') {
+        textWidth += 0.62 * size
+      } else if (char === 'f' || char === 'i' || char === 'j' || char === 'l' || char === 't' || char === 'I' || char === '.' || char === ',' || char === ':' || char === '!' || char === ';' || char === '-' || char === '|' || char === '/') {
+        textWidth += 0.25 * size
+      } else if (char === 'w' || char === 'm' || char === 'W' || char === 'M' || char === '@' || char === '&') {
+        textWidth += 0.80 * size
+      } else if (char === ' ') {
+        textWidth += 0.28 * size
+      } else {
+        textWidth += 0.50 * size
+      }
+    }
+    return textWidth
+  }
   const center = (yy: number, value: string, size = 10, bold = false) => {
-    const estimate = value.length * size * 0.24
-    textAt((width / 2) - estimate, yy, value, size, bold)
+    const textWidth = getTextWidth(value, size)
+    textAt((width / 2) - (textWidth / 2), yy, value, size, bold)
   }
   const rect = (x: number, yy: number, w: number, h: number, fill = false) => {
     page.commands.push(fill ? `0.91 g ${x} ${yy} ${w} ${h} re f 0 g` : `${x} ${yy} ${w} ${h} re S`)
@@ -402,8 +426,8 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   center(y - 10, address.name, 14, true)
   y -= 20
   address.pdfLines.forEach((line) => {
-    center(y, line, 10)
-    y -= 13
+    center(y, line, 8)
+    y -= 11
   })
   y -= 8
   center(y, text(row.documentTitle) || 'PROFORMA INVOICE', 12, true)
@@ -472,13 +496,13 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   center(y - 30, '(Signature/Seal)', 9)
   y -= 58
 
-  const dealershipCode = text(row.bankName).toUpperCase() === 'J&K BANK' ? 'JKB0993J003' : 'NOT APPLICABLE'
+  const dealershipCode = isJkBank(text(row.bankName)) ? 'JKB0993J003' : 'NOT APPLICABLE'
   ensure(82)
   center(y, 'PAYMENT DETAILS: All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD. Payable at Jammu', 9, true)
   y -= 15
   center(y, 'AC. No. 43418019645 | BRANCH: SBI-SME-JAMMU | IFSC: SBIN0014501', 8, true)
   y -= 24
-  center(y, `DEALERSHIP CODE: ${dealershipCode}`, 20, true)
+  center(y, `DEALERSHIP CODE: ${dealershipCode}`, 9, true)
   y -= 24
   center(y, 'Sales: 9484211111 | Finance: 9484111111', 9)
   y -= 13
@@ -486,8 +510,11 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   y -= 13
 
   y -= 8
+  ensure(14)
+  center(y, 'Terms & Conditions:', 9, true)
+  y -= 14
+
   const terms = [
-    'Terms & Conditions:',
     '1. The above prices are for Jammu until otherwise indicated.',
     '2. Prices valid at the time of delivery will be applicable.',
     '3. Any changes in taxes and/or levies shall be borne by the customer.',
@@ -495,25 +522,25 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
     '5. Vehicle/model/color delivery subject to certain conditions.',
     '6. Once the car is allotted & in transit, payment to be made within 3 days or the car will be transferred to next booking.',
   ]
-  terms.forEach((line, index) => {
-    wrap(line, 100).forEach((part, lineIndex) => {
+  terms.forEach((line) => {
+    wrap(line, 85).forEach((part) => {
       ensure(13)
-      textAt(margin, y, part, 8, index === 0 && lineIndex === 0)
+      center(y, part, 8)
       y -= 12
     })
   })
 
   y -= 8
   ensure(56)
-  textAt(margin, y, 'For Exchange:', 9, true)
-  textAt(margin, y - 13, '- RC', 8)
-  textAt(margin, y - 25, '- Insurance (6 months old)', 8)
-  textAt(margin, y - 37, '- Chassis traces', 8)
-  textAt(width / 2, y, 'For Govt. Employee:', 9, true)
-  textAt(width / 2, y - 13, '- Aadhar Card', 8)
-  textAt(width / 2, y - 25, '- PAN Card', 8)
-  textAt(width / 2, y - 37, '- Latest Salary Slip', 8)
-  textAt(width / 2, y - 49, '- ID Card', 8)
+  textAt(width / 2 - 140, y, 'For Exchange:', 9, true)
+  textAt(width / 2 - 140, y - 13, '- RC', 8)
+  textAt(width / 2 - 140, y - 25, '- Insurance (6 months old)', 8)
+  textAt(width / 2 - 140, y - 37, '- Chassis traces', 8)
+  textAt(width / 2 + 20, y, 'For Govt. Employee:', 9, true)
+  textAt(width / 2 + 20, y - 13, '- Aadhar Card', 8)
+  textAt(width / 2 + 20, y - 25, '- PAN Card', 8)
+  textAt(width / 2 + 20, y - 37, '- Latest Salary Slip', 8)
+  textAt(width / 2 + 20, y - 49, '- ID Card', 8)
 
   const objects: Buffer[] = []
   const addObject = (body: PdfObjectBody) => {

@@ -22,6 +22,7 @@ import {
   YAxis,
 } from 'recharts'
 import {
+  AlertTriangle,
   ArrowLeft,
   BarChart3,
   CalendarDays,
@@ -33,6 +34,7 @@ import {
   FileText,
   Filter,
   Loader2,
+  Pencil,
   RotateCcw,
   Save,
   Search,
@@ -513,11 +515,11 @@ function useProformas(mode: string, enabled = true) {
 
 const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: string; approverOnly?: boolean; hideFromNav?: boolean }[] = [
   { section: 'bookings', label: 'Booking CRM', href: '/brands/kia/proforma/bookings' },
+  { section: 'pending-approval', label: 'Pending Proforma', href: '/brands/kia/proforma/pending-approval', approverOnly: true },
   { section: 'stock', label: 'Stock', href: '/brands/kia/proforma/stock' },
   { section: 'generate', label: 'Generate Proforma', href: '/brands/kia/proforma/generate', hideFromNav: true },
-  { section: 'all', label: 'All Proforma Details', href: '/brands/kia/proforma/all-proforma-details' },
+  { section: 'all', label: 'Proformas', href: '/brands/kia/proforma/all-proforma-details' },
   { section: 'finance-remarks', label: 'Finance Remarks', href: '/brands/kia/proforma/finance-remarks', hideFromNav: true },
-  { section: 'pending-approval', label: 'Pending Proforma', href: '/brands/kia/proforma/pending-approval', approverOnly: true },
 ]
 
 function canSeeBookingsNav(role: string) {
@@ -642,7 +644,7 @@ function ModuleHeader({
     bookings: { title: 'Booking CRM', subtitle: 'Manage customer bookings, stock allocations, and finance workflows.', icon: ClipboardList },
     stock: { title: 'Stock', subtitle: 'Approved bookings, stock matching, VIN reservation, and accounts payment follow-up.', icon: ClipboardList },
     generate: { title: 'Generate Proforma', subtitle: 'Create Kia customer proformas with pricing, discounts, and approval queue.', icon: FileText },
-    all: { title: 'All Proforma Details', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: Columns3 },
+    all: { title: 'Proformas', subtitle: 'Search, filter, audit, and open approved proforma records.', icon: Columns3 },
     'finance-remarks': { title: 'Finance Remarks', subtitle: 'Update finance status and remarks against every proforma.', icon: WalletCards },
     'pending-approval': { title: 'Pending Proforma', subtitle: 'Verify discounts and cost fields before approval.', icon: ShieldCheck },
     analytics: { title: 'Hyp / Ins Analytics', subtitle: 'Pivot view for bank, insurance, and status performance.', icon: BarChart3 },
@@ -733,6 +735,13 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  // Pending duplicate data returned from the server — used to show the warning dialog.
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    existingId: string
+    existingDate: string | null
+    customerName: string
+    matchedOn: string
+  } | null>(null)
   const editablePrices = form.customerType === 'CSD' || form.customerType === 'Bharat Series'
   const filteredTrims = useMemo(() => {
     return options.trims.filter((trim) => !form.modelName || trim.model === form.modelName).map((trim) => trim.trim_description)
@@ -860,7 +869,7 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
 
   const router = useRouter()
 
-  async function submit() {
+  async function submit(forceSave = false) {
     if (!validate()) return
     // A negative grand total means discounts exceed the price — never save it.
     if (asNumber(totals.grandTotalCost) < 0) {
@@ -878,12 +887,32 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
         totalCustomerCost: totals.totalCustomerCost,
         grandTotalCost: totals.grandTotalCost,
         bookingId: bookingPrefill?.bookingId || undefined,
+        forceSave,
       }
       const response = await fetch('/api/brands/kia/proforma', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       })
+      // Duplicate found — surface warning dialog instead of throwing.
+      if (response.status === 409) {
+        const dup = await response.json().catch(() => null) as {
+          duplicate?: boolean
+          existingId?: string
+          existingDate?: string
+          customerName?: string
+          matchedOn?: string
+        } | null
+        if (dup?.duplicate) {
+          setDuplicateWarning({
+            existingId: dup.existingId || '',
+            existingDate: dup.existingDate || null,
+            customerName: dup.customerName || form.customerName,
+            matchedOn: dup.matchedOn || 'details',
+          })
+          return
+        }
+      }
       if (!response.ok) throw new Error('Failed to save proforma')
       const saved = await response.json().catch(() => null) as { row?: { id?: string } } | null
       setForm(EMPTY_FORM)
@@ -925,12 +954,47 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
           <h2 className="mt-0.5 text-xl font-extrabold tracking-tight text-[var(--kia-text)]">Pricing and customer details</h2>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button onClick={submit} disabled={saving} className="h-11 rounded-xl px-5 font-bold">
+          <Button onClick={() => void submit()} disabled={saving} className="h-11 rounded-xl px-5 font-bold">
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Proforma
           </Button>
         </div>
       </div>
+
+      {/* ── Duplicate Warning Dialog ────────────────────────────────────── */}
+      <Dialog open={!!duplicateWarning} onOpenChange={(open) => { if (!open) setDuplicateWarning(null) }}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              Duplicate Proforma Detected
+            </DialogTitle>
+            <DialogDescription className="mt-2 text-sm">
+              A proforma already exists for <strong>{duplicateWarning?.customerName}</strong> matched on <strong>{duplicateWarning?.matchedOn}</strong>.
+              {duplicateWarning?.existingId && (
+                <span className="mt-1 block text-xs text-slate-500">
+                  Existing Proforma ID: <code className="rounded bg-slate-100 px-1 font-mono text-xs">{duplicateWarning.existingId.slice(0, 8).toUpperCase()}</code>
+                  {duplicateWarning.existingDate && (
+                    <> · {new Date(duplicateWarning.existingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</>
+                  )}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => setDuplicateWarning(null)}>Cancel</Button>
+            <Button
+              className="rounded-xl bg-amber-600 text-white hover:bg-amber-700"
+              onClick={() => {
+                setDuplicateWarning(null)
+                void submit(true)
+              }}
+            >
+              Save Anyway
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid items-start gap-5 xl:grid-cols-2">
         <FormSection title="Customer Details" subtitle="">
@@ -1526,12 +1590,16 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const [financeDrafts, setFinanceDrafts] = useState<Record<string, { status: string; remarks: string }>>({})
   const [previewRow, setPreviewRow] = useState<KiaProformaRow | null>(null)
   const [declineReason, setDeclineReason] = useState('')
+  const [editingRow, setEditingRow] = useState<KiaProformaRow | null>(null)
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const isGmRole = ['general_manager', 'admin', 'developer'].includes(options.currentUser.role)
   const canViewPii = canViewKiaCustomerPii(options.currentUser.role)
   const verifyStage = verifying ? pendingStageOf(verifying.approvalStatus) : 'approval'
-  // Single shared approval stage: the Sales Manager sees the discount-verification checklist
-  // (the review the Finance Head used to do); the General Manager sees the lighter approve/
-  // decline screen. Either one approving finalizes the proforma. MD/admins get the checklist.
-  const useChecklistUi = String(options.currentUser.role || '').toLowerCase() !== 'general_manager'
+  // Stage 1 (Sales Manager / GM): the Sales Manager sees the discount-verification checklist and
+  // the General Manager sees the lighter approve/decline screen; approving hands off to Finance.
+  // Stage 2 (Finance Head / Finance Team): a simple approve/decline that finalizes the proforma.
+  const useChecklistUi = verifyStage === 'approval' && String(options.currentUser.role || '').toLowerCase() !== 'general_manager'
+  const isFinalApprovalStage = verifyStage === 'finance'
   const isFinance = mode === 'finance-remarks'
 
   const filteredRows = useMemo(() => {
@@ -1713,6 +1781,15 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
                   Open ↗
                 </Button>
               )}
+              {isGmRole && (
+                <Button
+                  variant="outline"
+                  className="h-8 rounded-xl border-slate-300 px-3 text-xs font-bold text-slate-600 hover:border-indigo-400 hover:text-indigo-600"
+                  onClick={() => setEditingRow(row)}
+                >
+                  <Pencil className="mr-1.5 h-3 w-3" /> Edit
+                </Button>
+              )}
             </div>
           )}
         />
@@ -1737,95 +1814,99 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
       </div>
 
       <Dialog open={Boolean(verifying)} onOpenChange={(open) => !open && setVerifying(null)}>
-        <DialogContent className="kia-premium max-h-[88vh] max-w-5xl overflow-y-auto rounded-3xl p-0">
+        <DialogContent className="kia-premium max-h-[88vh] max-w-5xl overflow-hidden rounded-3xl p-0 flex flex-col">
           <LoaderOverlay show={isApproving || isSaving} variant="approval" label={isApproving ? 'Approving proforma…' : 'Saving verification…'} sublabel="Applying the approval decision" />
-          <div className="relative overflow-hidden p-6 text-white" style={{ background: 'linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg))' }}>
-            <div aria-hidden className="pointer-events-none absolute -right-12 -top-16 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
-            <DialogHeader className="relative">
-              <div className="flex items-center gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><ShieldCheck className="h-5 w-5" /></span>
-                <div>
-                  <DialogTitle className="text-2xl font-extrabold tracking-tight">{useChecklistUi ? 'Verify Proforma' : 'Approve Proforma'}</DialogTitle>
-                  <DialogDescription className="text-white/80">{verifying?.customerName} · {verifying?.modelName}</DialogDescription>
+          <div className="flex-1 overflow-y-auto flex flex-col">
+            <div className="relative overflow-hidden p-6 text-white" style={{ background: 'linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg))' }}>
+              <div aria-hidden className="pointer-events-none absolute -right-12 -top-16 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
+              <DialogHeader className="relative">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><ShieldCheck className="h-5 w-5" /></span>
+                  <div>
+                    <DialogTitle className="text-2xl font-extrabold tracking-tight">{useChecklistUi ? 'Verify Proforma' : 'Approve Proforma'}</DialogTitle>
+                    <DialogDescription className="text-white/80">{verifying?.customerName} · {verifying?.modelName}</DialogDescription>
+                  </div>
+                </div>
+                <div className="relative mt-3 inline-flex w-fit items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-black uppercase tracking-wide">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
+                  Stage: {KIA_APPROVAL_STAGE_LABELS[verifyStage]}
+                </div>
+              </DialogHeader>
+            </div>
+            {useChecklistUi ? (
+              <div className="grid gap-3 p-6">
+                <p className="text-xs font-semibold text-[var(--kia-text-soft)]">Verify the discount fields, then approve. This sends the proforma to Finance for final approval.</p>
+                {FIELD_VERIFY.map(([key, label]) => {
+                  const decision = verifyState[key]?.status
+                  return (
+                    <div key={key} className="kia-surface-sunken grid gap-3 p-3 md:grid-cols-[220px_180px_1fr]" style={decision === 'NOT APPROVED' ? toneSoftStyle('danger') : decision === 'APPROVED' ? toneSoftStyle('success') : undefined}>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">{label}</p>
+                        <p className="mt-1 text-lg font-extrabold text-[var(--kia-text)] kia-tnum">{formatCurrency(verifying?.[key as keyof KiaProformaRow])}</p>
+                      </div>
+                      <Select value={verifyState[key]?.status || 'blank'} onValueChange={(value) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { reason: '' }), status: value === 'blank' ? '' : value } }))}>
+                        <SelectTrigger className="rounded-xl bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+                        <SelectContent>{['blank', 'APPROVED', 'NOT APPROVED'].map((value) => <SelectItem key={value} value={value}>{value === 'blank' ? 'Blank' : value}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <Input value={verifyState[key]?.reason || ''} onChange={(event) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { status: '' }), reason: event.target.value } }))} placeholder="Reason if not approved" className="rounded-xl bg-white" />
+                    </div>
+                  )
+                })}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    className={cn('h-10 rounded-xl', proformaOutlineButton)}
+                    disabled={isApproving || isSaving}
+                    onClick={() => approveCurrent({})}
+                  >
+                    {isSaving ? 'Saving…' : 'Save Verification'}
+                  </Button>
+                  <Button
+                    className={cn('h-10 rounded-xl', proformaPrimaryButton)}
+                    disabled={isApproving || isSaving}
+                    onClick={() => approveCurrent({ allApproved: true })}
+                  >
+                    {isApproving ? 'Approving…' : 'Approve & Send to Finance'}
+                  </Button>
                 </div>
               </div>
-              <div className="relative mt-3 inline-flex w-fit items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-black uppercase tracking-wide">
-                <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
-                Stage: {KIA_APPROVAL_STAGE_LABELS[verifyStage]}
+            ) : (
+              <div className="grid gap-4 p-6">
+                <p className="text-xs font-semibold text-[var(--kia-text-soft)]">{isFinalApprovalStage
+                  ? 'Finance Head / Finance Team approval — this is the final approval. Approving it makes the vehicle ready for allotment, or decline with a reason.'
+                  : 'Sales Manager / General Manager approval — approve to send the proforma to Finance for final approval, or decline with a reason.'}</p>
+                <div className="kia-surface-sunken grid gap-3 p-4 sm:grid-cols-2">
+                  <FieldValue label="Ex-Showroom" value={formatCurrency(verifying?.exShowroom)} />
+                  <FieldValue label="Grand Total" value={formatCurrency(verifying?.grandTotalCost)} />
+                  <FieldValue label="Cash Discount" value={formatCurrency(verifying?.cashDiscount)} />
+                  <FieldValue label="Additional Discount" value={formatCurrency(verifying?.additionalDiscount)} />
+                  <FieldValue label="Exchange Value" value={formatCurrency(verifying?.exchangeValue)} />
+                  <FieldValue label="Booking Amount" value={formatCurrency(verifying?.bookingAmount)} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">Decline reason (required to decline)</label>
+                  <Textarea value={declineReason} onChange={(event) => setDeclineReason(event.target.value)} placeholder="Add a reason if you are declining this proforma…" className="mt-1 rounded-xl bg-white" rows={2} />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    className={cn('h-10 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50')}
+                    disabled={isApproving || isSaving || !declineReason.trim()}
+                    onClick={() => approveCurrent({ decision: 'decline' })}
+                  >
+                    {isSaving ? 'Declining…' : 'Decline'}
+                  </Button>
+                  <Button
+                    className={cn('h-10 rounded-xl', proformaPrimaryButton)}
+                    disabled={isApproving || isSaving}
+                    onClick={() => approveCurrent({ decision: 'approve' })}
+                  >
+                    {isApproving ? 'Approving…' : isFinalApprovalStage ? 'Approve (Final)' : 'Approve & Send to Finance'}
+                  </Button>
+                </div>
               </div>
-            </DialogHeader>
+            )}
           </div>
-          {useChecklistUi ? (
-            <div className="grid gap-3 p-6">
-              <p className="text-xs font-semibold text-[var(--kia-text-soft)]">Verify the discount fields, then approve. This is the final approval — either the Sales Manager or the General Manager can approve.</p>
-              {FIELD_VERIFY.map(([key, label]) => {
-                const decision = verifyState[key]?.status
-                return (
-                  <div key={key} className="kia-surface-sunken grid gap-3 p-3 md:grid-cols-[220px_180px_1fr]" style={decision === 'NOT APPROVED' ? toneSoftStyle('danger') : decision === 'APPROVED' ? toneSoftStyle('success') : undefined}>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">{label}</p>
-                      <p className="mt-1 text-lg font-extrabold text-[var(--kia-text)] kia-tnum">{formatCurrency(verifying?.[key as keyof KiaProformaRow])}</p>
-                    </div>
-                    <Select value={verifyState[key]?.status || 'blank'} onValueChange={(value) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { reason: '' }), status: value === 'blank' ? '' : value } }))}>
-                      <SelectTrigger className="rounded-xl bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
-                      <SelectContent>{['blank', 'APPROVED', 'NOT APPROVED'].map((value) => <SelectItem key={value} value={value}>{value === 'blank' ? 'Blank' : value}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <Input value={verifyState[key]?.reason || ''} onChange={(event) => setVerifyState((current) => ({ ...current, [key]: { ...(current[key] || { status: '' }), reason: event.target.value } }))} placeholder="Reason if not approved" className="rounded-xl bg-white" />
-                  </div>
-                )
-              })}
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  className={cn('h-10 rounded-xl', proformaOutlineButton)}
-                  disabled={isApproving || isSaving}
-                  onClick={() => approveCurrent({})}
-                >
-                  {isSaving ? 'Saving…' : 'Save Verification'}
-                </Button>
-                <Button
-                  className={cn('h-10 rounded-xl', proformaPrimaryButton)}
-                  disabled={isApproving || isSaving}
-                  onClick={() => approveCurrent({ allApproved: true })}
-                >
-                  {isApproving ? 'Approving…' : 'Approve (Final)'}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-4 p-6">
-              <p className="text-xs font-semibold text-[var(--kia-text-soft)]">{kiaStageActorLabel(verifyStage)} approval — the Sales Manager or General Manager reviews the details and approves (final approval), or declines with a reason.</p>
-              <div className="kia-surface-sunken grid gap-3 p-4 sm:grid-cols-2">
-                <FieldValue label="Ex-Showroom" value={formatCurrency(verifying?.exShowroom)} />
-                <FieldValue label="Grand Total" value={formatCurrency(verifying?.grandTotalCost)} />
-                <FieldValue label="Cash Discount" value={formatCurrency(verifying?.cashDiscount)} />
-                <FieldValue label="Additional Discount" value={formatCurrency(verifying?.additionalDiscount)} />
-                <FieldValue label="Exchange Value" value={formatCurrency(verifying?.exchangeValue)} />
-                <FieldValue label="Booking Amount" value={formatCurrency(verifying?.bookingAmount)} />
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">Decline reason (required to decline)</label>
-                <Textarea value={declineReason} onChange={(event) => setDeclineReason(event.target.value)} placeholder="Add a reason if you are declining this proforma…" className="mt-1 rounded-xl bg-white" rows={2} />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  className={cn('h-10 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50')}
-                  disabled={isApproving || isSaving || !declineReason.trim()}
-                  onClick={() => approveCurrent({ decision: 'decline' })}
-                >
-                  {isSaving ? 'Declining…' : 'Decline'}
-                </Button>
-                <Button
-                  className={cn('h-10 rounded-xl', proformaPrimaryButton)}
-                  disabled={isApproving || isSaving}
-                  onClick={() => approveCurrent({ decision: 'approve' })}
-                >
-                  {isApproving ? 'Approving…' : 'Approve (Final)'}
-                </Button>
-              </div>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
 
@@ -1836,6 +1917,246 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
         onClose={() => setPreviewRow(null)}
         onVerify={(row) => { setPreviewRow(null); setVerifying(row) }}
       />
+
+      {/* ── GM Edit Dialog ────────────────────────────────────────────────── */}
+      <Dialog open={!!editingRow} onOpenChange={(open) => { if (!open) setEditingRow(null) }}>
+        <DialogContent className="kia-premium max-h-[92vh] max-w-4xl overflow-y-auto rounded-3xl p-0">
+          <LoaderOverlay show={isSavingEdit} variant="proforma" label="Saving edits…" sublabel="Updating proforma and resetting approval to PENDING" />
+          {editingRow && (
+            <GMEditForm
+              row={editingRow}
+              onClose={() => setEditingRow(null)}
+              onSaved={async () => {
+                setEditingRow(null)
+                await reload()
+                toast({ title: 'Proforma Updated', description: 'Proforma has been updated and reset to PENDING for re-approval.', variant: 'success' })
+              }}
+              isSaving={isSavingEdit}
+              setIsSaving={setIsSavingEdit}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ── GM Edit Form ──────────────────────────────────────────────────────────────
+// Renders a pre-filled proforma form inside the GM Edit Dialog. On save it
+// PATCHes `action: 'edit'` which resets approval to PENDING.
+function GMEditForm({
+  row,
+  onClose,
+  onSaved,
+  isSaving,
+  setIsSaving,
+}: {
+  row: KiaProformaRow
+  onClose: () => void
+  onSaved: () => Promise<void>
+  isSaving: boolean
+  setIsSaving: (v: boolean) => void
+}) {
+  const rowToForm = (r: KiaProformaRow): FormState => ({
+    customerType: r.customerType || 'Customer',
+    proformaDate: r.proformaDate ? new Date(r.proformaDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) : new Date().toISOString().slice(0, 10),
+    customerName: r.customerName || '',
+    mobileNumber: r.mobileNumber || '',
+    customerAddress: r.customerAddress || '',
+    customerEmail: r.customerEmail || '',
+    modelName: r.modelName || '',
+    trimDescription: r.trimDescription || '',
+    fuelType: r.fuelType || 'PETROL',
+    vehicleColor: r.vehicleColor || '',
+    bankName: r.bankName || '',
+    bankBranch: r.bankBranch || '',
+    vehicleStatus: r.vehicleStatus || 'IN HOUSE',
+    loanAmount: String(r.loanAmount || '0'),
+    insuranceCompany: r.insuranceCompany || '',
+    exShowroom: String(r.exShowroom || '0'),
+    tcsValue: String(r.tcsValue || '0'),
+    registrationCharges: String(r.registrationCharges || '0'),
+    insuranceValue: String(r.insuranceValue || '0'),
+    fastagValue: String(r.fastagValue || '0'),
+    accessoriesKit: String(r.accessoriesKit || '0'),
+    extWarranty: String(r.extWarranty || '0'),
+    cashDiscount: String(r.cashDiscount || '0'),
+    exchangeValue: String(r.exchangeValue || '0'),
+    bookingAmount: String(r.bookingAmount || '0'),
+    govtEmployeeDiscount: String(r.govtEmployeeDiscount || '0'),
+    additionalDiscount: String(r.additionalDiscount || '0'),
+  })
+
+  const [form, setForm] = useState<FormState>(() => rowToForm(row))
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function validate() {
+    const next: Record<string, string> = {}
+    if (!form.customerName.trim()) next.customerName = 'Customer name is required'
+    if (!/^\d{10}$/.test(form.mobileNumber)) next.mobileNumber = 'Mobile number must be 10 digits'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) next.customerEmail = 'Valid email is required'
+    ;(['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'bankName', 'vehicleStatus'] as (keyof FormState)[]).forEach((key) => {
+      if (!String(form[key] || '').trim()) next[key] = 'Required'
+    })
+    setErrors(next)
+    return Object.keys(next).length === 0
+  }
+
+  const totals = useMemo(() => {
+    const exS = asNumber(form.exShowroom)
+    const tcs = asNumber(form.tcsValue)
+    const reg = asNumber(form.registrationCharges)
+    const ins = asNumber(form.insuranceValue)
+    const ftg = asNumber(form.fastagValue)
+    const acc = asNumber(form.accessoriesKit)
+    const ext = asNumber(form.extWarranty)
+    const totalCustomerCost = exS + tcs + reg + ins + ftg + acc + ext
+    const disc = asNumber(form.cashDiscount) + asNumber(form.exchangeValue) + asNumber(form.bookingAmount) + asNumber(form.govtEmployeeDiscount) + asNumber(form.additionalDiscount)
+    const grandTotalCost = totalCustomerCost - disc
+    return { totalCustomerCost: totalCustomerCost.toFixed(2), grandTotalCost: grandTotalCost.toFixed(2) }
+  }, [form])
+
+  async function saveEdit() {
+    if (!validate()) return
+    setIsSaving(true)
+    try {
+      const payload = {
+        action: 'edit',
+        ...form,
+        totalCustomerCost: totals.totalCustomerCost,
+        grandTotalCost: totals.grandTotalCost,
+      }
+      const response = await fetch(`/api/brands/kia/proforma/${row.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => null) as { error?: string } | null
+        toast({ title: 'Save Failed', description: err?.error || 'Failed to save edits', variant: 'error' })
+        return
+      }
+      await onSaved()
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to save edits', variant: 'error' })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const numField = (label: string, key: keyof FormState) => (
+    <Field label={label} error={errors[key]}>
+      <TextInput
+        type="number"
+        value={String(form[key])}
+        onChange={(e) => update(key, e.target.value)}
+        className="tabular-nums"
+      />
+    </Field>
+  )
+
+  return (
+    <div className="p-6 space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--kia-text-faint)]">General Manager Edit</p>
+          <h2 className="mt-0.5 text-xl font-extrabold tracking-tight text-[var(--kia-text)]">Edit Proforma #{row.id.slice(0, 8).toUpperCase()}</h2>
+          <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
+            <AlertTriangle className="h-3 w-3" /> Saving will reset approval to PENDING
+          </div>
+        </div>
+        <Button variant="outline" className="rounded-xl" onClick={onClose}><X className="h-4 w-4" /></Button>
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-2">
+        {/* Customer Details */}
+        <FormSection title="Customer Details">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Customer Type">
+              <Select value={form.customerType} onValueChange={(v) => update('customerType', v)}>
+                <SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>{['Customer', 'CSD', 'Bharat Series'].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            <Field label="Proforma Date"><TextInput type="date" value={form.proformaDate} onChange={(e) => update('proformaDate', e.target.value)} /></Field>
+            <Field label="Customer Name" error={errors.customerName}><TextInput value={form.customerName} onChange={(e) => update('customerName', e.target.value)} /></Field>
+            <Field label="Mobile Number" error={errors.mobileNumber}><TextInput inputMode="numeric" maxLength={10} value={form.mobileNumber} onChange={(e) => update('mobileNumber', e.target.value.replace(/\D/g, '').slice(0, 10))} /></Field>
+            <Field label="Customer Email" error={errors.customerEmail}><TextInput type="email" value={form.customerEmail} onChange={(e) => update('customerEmail', e.target.value)} /></Field>
+            <div className="md:col-span-2">
+              <Field label="Customer Address" error={errors.customerAddress}>
+                <textarea value={form.customerAddress} onChange={(e) => update('customerAddress', e.target.value)} rows={2} className="w-full rounded-xl border border-[var(--dashboard-primary-border)] bg-white px-3 py-2 text-sm font-semibold shadow-sm" />
+              </Field>
+            </div>
+          </div>
+        </FormSection>
+
+        {/* Vehicle Details */}
+        <FormSection title="Vehicle & Bank">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Model Name" error={errors.modelName}><TextInput value={form.modelName} onChange={(e) => update('modelName', e.target.value)} /></Field>
+            <Field label="Trim / Variant" error={errors.trimDescription}><TextInput value={form.trimDescription} onChange={(e) => update('trimDescription', e.target.value)} /></Field>
+            <Field label="Fuel Type" error={errors.fuelType}>
+              <Select value={form.fuelType} onValueChange={(v) => update('fuelType', v)}>
+                <SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>{['PETROL', 'DIESEL', 'ELECTRIC', 'HYBRID'].map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            <Field label="Vehicle Color" error={errors.vehicleColor}><TextInput value={form.vehicleColor} onChange={(e) => update('vehicleColor', e.target.value)} /></Field>
+            <Field label="Vehicle Status" error={errors.vehicleStatus}>
+              <Select value={form.vehicleStatus} onValueChange={(v) => update('vehicleStatus', v)}>
+                <SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>{['IN HOUSE', 'IN TRANSIT', 'INDENT'].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            <Field label="Bank Name" error={errors.bankName}><TextInput value={form.bankName} onChange={(e) => update('bankName', e.target.value)} /></Field>
+            <Field label="Bank Branch"><TextInput value={form.bankBranch} onChange={(e) => update('bankBranch', e.target.value)} /></Field>
+            <Field label="Insurance Company"><TextInput value={form.insuranceCompany} onChange={(e) => update('insuranceCompany', e.target.value)} /></Field>
+          </div>
+        </FormSection>
+      </div>
+
+      {/* Pricing */}
+      <FormSection title="Pricing & Discounts">
+        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          {numField('Ex-Showroom', 'exShowroom')}
+          {numField('TCS Value', 'tcsValue')}
+          {numField('Registration Charges', 'registrationCharges')}
+          {numField('Insurance Value', 'insuranceValue')}
+          {numField('Fastag Value', 'fastagValue')}
+          {numField('Accessories Kit', 'accessoriesKit')}
+          {numField('Ext Warranty', 'extWarranty')}
+          {numField('Cash Discount', 'cashDiscount')}
+          {numField('Exchange Value', 'exchangeValue')}
+          {numField('Booking Amount', 'bookingAmount')}
+          {numField('Govt Employee Discount', 'govtEmployeeDiscount')}
+          {numField('Additional Discount', 'additionalDiscount')}
+          {numField('Loan Amount', 'loanAmount')}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-4 rounded-2xl bg-slate-50 p-4 text-sm font-bold">
+          <span>Total Customer Cost: <span className="font-extrabold text-[var(--kia-text)]">{formatCurrency(totals.totalCustomerCost)}</span></span>
+          <span className={asNumber(totals.grandTotalCost) < 0 ? 'text-rose-600' : ''}>
+            Grand Total: <span className="font-extrabold">{formatCurrency(totals.grandTotalCost)}</span>
+          </span>
+        </div>
+      </FormSection>
+
+      {/* Save */}
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" className="rounded-xl" onClick={onClose}>Cancel</Button>
+        <Button
+          disabled={isSaving}
+          className="rounded-xl bg-indigo-600 px-6 text-white hover:bg-indigo-700"
+          onClick={() => void saveEdit()}
+        >
+          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Save Changes
+        </Button>
+      </div>
     </div>
   )
 }

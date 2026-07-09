@@ -1184,6 +1184,13 @@ export function KiaBookingsClient({
     return () => clearTimeout(timer)
   }, [search])
 
+  // Automatically populate consultantName in the form state from the logged-in user context
+  useEffect(() => {
+    if (createOpen && currentUserName && !createForm.consultantName) {
+      updateCreateForm('consultantName', currentUserName)
+    }
+  }, [createOpen, currentUserName, createForm.consultantName])
+
   useEffect(() => {
     const query = buildQueryString({ search, dealer_code: dealer, model, status, consultant, page })
     const next = new URLSearchParams(query)
@@ -1777,7 +1784,7 @@ export function KiaBookingsClient({
                   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
                   const link = document.createElement('a')
                   link.href = url
-                  link.download = `kia-bookings-${new Date().toISOString().slice(0, 10)}.csv`
+                  link.download = `kia-bookings-${stockMode ? 'stock' : 'crm'}-${new Date().toISOString().slice(0, 10)}.csv`
                   link.click()
                   URL.revokeObjectURL(url)
                 }}
@@ -2621,7 +2628,7 @@ function CreateBookingDialog({
                   </Select>
                 </Field>
                 <Field label="Consultant">
-                  <Input readOnly value={currentUserName || 'You'} className={cn(INPUT_STYLE, 'bg-slate-100/60')} title="Automatically set to the logged-in user" />
+                  <Input readOnly value={form.consultantName || currentUserName || 'You'} className={cn(INPUT_STYLE, 'bg-slate-100/60')} title="Automatically set to the logged-in user" />
                 </Field>
                 <Field label="Lead Source" required>
                   <Select value={form.leadSource} onValueChange={(val) => onChange('leadSource', val)}>

@@ -1,4 +1,4 @@
-import { detailTable, emailLayout, escapeHtml, primaryButton } from './layout'
+import { detailTable, emailLayout, escapeHtml, primaryButton, secondaryButton } from './layout'
 
 export type ApprovedProformaEmailData = {
   customerName: string
@@ -11,6 +11,8 @@ export type ApprovedProformaEmailData = {
   dealerName?: string | null
   /** Public self-service tracking URL for the customer to follow their order. */
   trackingUrl?: string | null
+  /** Public "Request a Callback" URL — lets the customer ask the team to call them back. */
+  callbackUrl?: string | null
 }
 
 export const APPROVED_PROFORMA_SUBJECT = 'Your Kia Proforma has been Approved'
@@ -24,7 +26,7 @@ export function buildApprovedProformaEmail(data: ApprovedProformaEmailData): {
 
   const bodyHtml = `
     <p style="margin:0 0 14px;">Dear <strong>${escapeHtml(greetingName)}</strong>,</p>
-    <p style="margin:0 0 18px;">Great news — your vehicle proforma has been <strong style="color:#111827;">approved</strong>. The signed proforma is attached to this email as a PDF for your records.</p>
+    <p style="margin:0 0 18px;">Great news! Your vehicle proforma has been <strong style="color:#111827;">approved</strong>. The signed proforma is attached to this email as a PDF for your records.</p>
     ${detailTable([
       ['Proforma Number', data.proformaNumber],
       ['Vehicle Model', data.model],
@@ -37,6 +39,10 @@ export function buildApprovedProformaEmail(data: ApprovedProformaEmailData): {
     ${data.trackingUrl ? `
     ${primaryButton(data.trackingUrl, 'Track your order')}
     <p style="margin:6px 0 0;text-align:center;font-size:12px;color:#9aa2b1;">Follow your booking status anytime with the button above.</p>
+    ` : ''}
+    ${data.callbackUrl ? `
+    ${secondaryButton(data.callbackUrl, 'Request a Callback')}
+    <p style="margin:6px 0 0;text-align:center;font-size:12px;color:#9aa2b1;">Prefer to talk? Tap above and our team will call you back.</p>
     ` : ''}
     <p style="margin:20px 0 0;">Our team will now proceed with the remaining booking process. If you have any questions, please reach out to your sales consultant.</p>
   `
@@ -62,6 +68,7 @@ export function buildApprovedProformaEmail(data: ApprovedProformaEmailData): {
     data.dealerName ? `Dealer: ${data.dealerName}` : '',
     '',
     data.trackingUrl ? `Track your order: ${data.trackingUrl}` : '',
+    data.callbackUrl ? `Request a callback: ${data.callbackUrl}` : '',
     'Our team will now proceed with the remaining booking process.',
     'If you have any questions, please contact your sales consultant.',
     '',

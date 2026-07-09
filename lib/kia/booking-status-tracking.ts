@@ -63,7 +63,11 @@ export function getKiaBookingStageInfo(
       if (stage === 'declined') {
         return { stageLabel: 'Proforma Declined', pendingWith: 'Sales Executive', state: 'pending' }
       }
-      // Default (undefined approvalStatus, PENDING, or legacy) — the approval gate.
+      if (stage === 'finance') {
+        // Stage 2: Sales Manager / GM approved; awaiting Finance Head / Finance Team.
+        return { stageLabel: 'Finance Approval', pendingWith: kiaStageActorLabel('finance'), state: 'pending' }
+      }
+      // Default (undefined approvalStatus, PENDING, or legacy) — the stage-1 approval gate.
       return { stageLabel: 'Proforma Approval', pendingWith: kiaStageActorLabel('approval'), state: 'pending' }
     }
     case 'on_hold':

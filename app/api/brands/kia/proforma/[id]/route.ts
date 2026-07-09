@@ -16,7 +16,8 @@ import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 import { serializeUtcTimestampFields } from '@/lib/date-time'
 import { saveKiaProformaPdf, buildKiaProformaPdf } from '@/lib/kia-proforma/invoice'
 import { sendTrackedEmail } from '@/lib/email/email-log'
-import { buildTrackingUrl } from '@/lib/kia/tracking'
+import { buildCallbackUrl, buildTrackingUrl } from '@/lib/kia/tracking'
+import { getKiaBranchLabel, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { buildApprovedProformaEmail } from '@/lib/email/templates'
 import { requirePermission } from '@/lib/permissions/service'
 
@@ -38,6 +39,18 @@ function serialize(row: Record<string, unknown>) {
 
 function text(value: unknown) {
   return String(value ?? '').trim()
+}
+
+function readAmount(value: unknown) {
+  const parsed = Number(String(value ?? '0').replace(/,/g, ''))
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00'
+}
+
+function readDate(value: unknown) {
+  const v = String(value ?? '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
+  const d = new Date(`${v}T00:00:00+05:30`)
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
 async function getRow(id: string) {
@@ -131,6 +144,49 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       updates.approvedBy = profile.consultantName || appUser.fullName || appUser.email
       approvalStageActed = stage
       approvalDeclined = declined
+    } else if (action === 'edit') {
+      // Only general_manager, admin, or developer can edit a proforma in-place.
+      const GM_EDIT_ROLES = ['general_manager', 'admin', 'developer']
+      if (!GM_EDIT_ROLES.includes(appUser.role)) {
+        return NextResponse.json({ error: 'Only the General Manager can edit a proforma.' }, { status: 403 })
+      }
+      // Apply all editable fields and reset approval chain back to PENDING.
+      const proformaDate = readDate(body.proformaDate)
+      if (!proformaDate) return NextResponse.json({ error: 'Invalid proforma date.' }, { status: 400 })
+      updates.proformaDate = proformaDate
+      updates.customerType = text(body.customerType)
+      updates.customerName = text(body.customerName)
+      updates.mobileNumber = text(body.mobileNumber)
+      updates.customerAddress = text(body.customerAddress)
+      updates.customerEmail = text(body.customerEmail)
+      updates.modelName = text(body.modelName)
+      updates.trimDescription = text(body.trimDescription)
+      updates.fuelType = text(body.fuelType)
+      updates.vehicleColor = text(body.vehicleColor)
+      updates.bankName = text(body.bankName)
+      updates.bankBranch = text(body.bankBranch) || null
+      updates.vehicleStatus = text(body.vehicleStatus)
+      updates.insuranceCompany = text(body.insuranceCompany) || null
+      updates.loanAmount = readAmount(body.loanAmount)
+      updates.exShowroom = readAmount(body.exShowroom)
+      updates.tcsValue = readAmount(body.tcsValue)
+      updates.registrationCharges = readAmount(body.registrationCharges)
+      updates.insuranceValue = readAmount(body.insuranceValue)
+      updates.fastagValue = readAmount(body.fastagValue)
+      updates.accessoriesKit = readAmount(body.accessoriesKit)
+      updates.extWarranty = readAmount(body.extWarranty)
+      updates.cashDiscount = readAmount(body.cashDiscount)
+      updates.exchangeValue = readAmount(body.exchangeValue)
+      updates.bookingAmount = readAmount(body.bookingAmount)
+      updates.govtEmployeeDiscount = readAmount(body.govtEmployeeDiscount)
+      updates.additionalDiscount = readAmount(body.additionalDiscount)
+      updates.totalCustomerCost = readAmount(body.totalCustomerCost)
+      updates.grandTotalCost = readAmount(body.grandTotalCost)
+      // Reset approval so the edited proforma goes back through the approval chain.
+      updates.approvalStatus = 'PENDING'
+      updates.approvedBy = null
+      updates.linkPreview = null
+      approvalStageActed = 'edit'
     } else if (action === 'settings') {
       if (!ownsRow && !isApprover) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       return NextResponse.json({ error: 'Use profile settings endpoint' }, { status: 400 })
@@ -169,17 +225,23 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         }
 
         const actor = profile.consultantName || appUser.fullName || appUser.email
-        const actedBy = kiaStageActorLabel(approvalStageActed as ReturnType<typeof pendingStageOf>) || appUser.role
-        const title = approvalDeclined
-          ? 'Proforma Declined'
-          : isApproved
-            ? 'Proforma Approved'
-            : `Proforma ${actedBy} Approved`
-        const description = approvalDeclined
-          ? `Declined by ${actor} (${actedBy})`
-          : isApproved
-            ? `Final approval by ${actor} (General Manager)`
-            : `Approved by ${actor} (${actedBy}) — sent to next approver`
+        const actedBy = approvalStageActed === 'edit'
+          ? 'General Manager'
+          : kiaStageActorLabel(approvalStageActed as ReturnType<typeof pendingStageOf>) || appUser.role
+        const title = approvalStageActed === 'edit'
+          ? 'Proforma Edited by GM'
+          : approvalDeclined
+            ? 'Proforma Declined'
+            : isApproved
+              ? 'Proforma Approved'
+              : `Proforma ${actedBy} Approved`
+        const description = approvalStageActed === 'edit'
+          ? `Proforma updated and reset to PENDING by ${actor} (General Manager)`
+          : approvalDeclined
+            ? `Declined by ${actor} (${actedBy})`
+            : isApproved
+              ? `Final approval by ${actor} (${actedBy})`
+              : `Approved by ${actor} (${actedBy}) — sent to next approver`
         await db.insert(kiaBookingActivity).values({
           bookingId: linkedBooking.id,
           activityType: 'proforma',
@@ -199,6 +261,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       const customerEmail = text(updated.customerEmail)
       if (customerEmail) {
         const bookingDate = linkedBookingRow?.createdAt || updated.proformaDate
+        // Dealer shown to the customer comes from the BOOKING's dealer code (authoritative), mapped
+        // to a friendly branch name. The proforma's own `location` is an unreliable source — legacy
+        // rows stored a brand value like "all" there.
+        const dealerCode = normalizeKiaDealerCode(linkedBookingRow?.dealerCode ?? updated.location)
+        const dealerDisplayName = dealerCode ? `AM Kia ${getKiaBranchLabel(dealerCode)}` : 'AM Kia'
         const email = buildApprovedProformaEmail({
           customerName: text(updated.customerName) || 'Customer',
           proformaNumber: String(updated.id).slice(0, 8).toUpperCase(),
@@ -207,8 +274,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           color: text(updated.vehicleColor),
           bookingDate: bookingDate ? new Date(bookingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null,
           consultantName: text(updated.consultant),
-          dealerName: text(updated.location) || 'AM Kia',
+          dealerName: dealerDisplayName,
           trackingUrl: linkedBookingRow?.id ? buildTrackingUrl(linkedBookingRow.id) : null,
+          callbackUrl: linkedBookingRow?.id ? buildCallbackUrl(linkedBookingRow.id) : null,
         })
         // Attach the approved proforma PDF so the customer receives it directly.
         let attachments: { filename: string; content: Buffer; contentType: string }[] | undefined

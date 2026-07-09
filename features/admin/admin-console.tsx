@@ -145,11 +145,15 @@ const TAB_DEFINITIONS: Array<{
   label: string
   icon: typeof Users
   superOnly?: boolean
+  // Reachable by deep-link but not shown as its own tab button. 'access' (the granular
+  // per-permission editor) is consolidated under 'access-map' — you open it by clicking a
+  // user's Edit in the Access Map, so it no longer needs a redundant top-level tab.
+  hidden?: boolean
 }> = [
   { key: 'overview', label: 'Overview', icon: Activity },
   { key: 'users', label: 'Users', icon: Users },
   { key: 'branch-admins', label: 'Branch Admins', icon: UserCog, superOnly: true },
-  { key: 'access', label: 'Access', icon: KeyRound },
+  { key: 'access', label: 'Access', icon: KeyRound, hidden: true },
   { key: 'access-map', label: 'Access Map', icon: LayoutGrid },
   { key: 'roles', label: 'Roles', icon: ShieldCheck, superOnly: true },
   { key: 'audit', label: 'Audit', icon: ShieldCheck },
@@ -407,7 +411,7 @@ export function AdminConsole() {
     return () => window.clearTimeout(timer)
   }, [load])
 
-  const visibleTabs = TAB_DEFINITIONS.filter((tab) => !tab.superOnly || capabilities?.authority === 'developer')
+  const visibleTabs = TAB_DEFINITIONS.filter((tab) => !tab.hidden && (!tab.superOnly || capabilities?.authority === 'developer'))
   const filteredUsers = (usersData?.users || []).filter((user) => {
     if (activeTab === 'branch-admins' && user.role !== 'branch_admin') return false
     const query = search.trim().toLowerCase()

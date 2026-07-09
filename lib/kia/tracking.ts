@@ -60,6 +60,13 @@ export function buildTrackingUrl(bookingId: string, baseUrl?: string): string {
   return `${base}/track/${signTrackingToken(bookingId)}`
 }
 
+// The "Request a Callback" link. Reuses the SAME signed token as the tracking link — it resolves
+// to the same booking id via verifyTrackingToken, so no new secret or DB column is needed.
+export function buildCallbackUrl(bookingId: string, baseUrl?: string): string {
+  const base = (baseUrl || env.app.url || '').replace(/\/$/, '')
+  return `${base}/track/${signTrackingToken(bookingId)}/callback`
+}
+
 // Customer-facing lifecycle. Deliberately friendlier than the internal statuses,
 // and mapped 1:1 to booking.status so the "current step" is always honest.
 export const KIA_TRACKING_STEPS = [

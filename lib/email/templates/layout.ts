@@ -102,6 +102,18 @@ export function primaryButton(href: string, label: string): string {
     </table>`
 }
 
+/** A secondary call-to-action button — outlined/tinted, to sit beside the primary one. */
+export function secondaryButton(href: string, label: string): string {
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:10px auto 8px;border-collapse:separate;">
+      <tr>
+        <td style="border-radius:12px;background:${ACCENT_TINT};border:1px solid ${ACCENT};">
+          <a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 32px;font-size:15px;font-weight:700;color:${ACCENT};text-decoration:none;border-radius:12px;">${escapeHtml(label)}</a>
+        </td>
+      </tr>
+    </table>`
+}
+
 export function escapeHtml(value: string): string {
   return String(value)
     .replace(/&/g, '&amp;')

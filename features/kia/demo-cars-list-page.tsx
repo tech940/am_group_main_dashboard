@@ -383,15 +383,17 @@ function VehicleDetailsModal({
 
 export function DemoCarsListPage() {
   const [location, setLocation] = useState<DemoCarsLocation>('all')
+  const [status, setStatus] = useState<'all' | 'sold' | 'not_sold'>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [selectedRow, setSelectedRow] = useState<DemoCarRow | null>(null)
 
   const queryString = useMemo(() => buildQueryString({
     location,
+    status,
     search,
     page,
-  }), [location, page, search])
+  }), [location, status, page, search])
 
   const { data, error, isLoading, isFetching, refetch } = useQuery<DemoCarsPayload>({
     queryKey: ['demo-cars-list', queryString],
@@ -487,7 +489,7 @@ export function DemoCarsListPage() {
             </section>
 
             <section className="rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-900/5">
-              <div className="grid gap-3 border-b border-slate-200 p-4 lg:grid-cols-[1fr_auto]">
+              <div className="grid gap-3 border-b border-slate-200 p-4 lg:grid-cols-[1fr_auto_auto]">
                 <label className="relative">
                   <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
@@ -512,6 +514,38 @@ export function DemoCarsListPage() {
                     >
                       <MapPin className="mr-1.5 inline h-3.5 w-3.5" />
                       {locationLabel(item)}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(['all', 'not_sold', 'sold'] as const).map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => {
+                        setStatus(item)
+                        setPage(1)
+                      }}
+                      className={cn(
+                        'h-12 rounded-2xl border px-5 text-xs font-black uppercase tracking-widest shadow-sm transition',
+                        status === item
+                          ? 'border-[var(--dashboard-action-bg)] bg-[var(--dashboard-action-bg)] text-[var(--dashboard-action-fg)]'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-[var(--dashboard-primary-border)] hover:text-[var(--dashboard-action-bg)]'
+                      )}
+                    >
+                      {item === 'all' ? (
+                        'All Status'
+                      ) : item === 'sold' ? (
+                        <>
+                          <Car className="mr-1.5 inline h-3.5 w-3.5" />
+                          Sold
+                        </>
+                      ) : (
+                        <>
+                          <Car className="mr-1.5 inline h-3.5 w-3.5" />
+                          Unsold
+                        </>
+                      )}
                     </button>
                   ))}
                 </div>

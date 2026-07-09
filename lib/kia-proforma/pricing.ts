@@ -68,6 +68,14 @@ function normalizeLookup(value: unknown) {
   return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
+function normalizeBankName(value: unknown) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/\bbank\b/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim()
+}
+
 function toAmount(value: unknown) {
   const parsed = Number(String(value ?? '0').replace(/,/g, ''))
   return Number.isFinite(parsed) ? parsed : 0
@@ -82,10 +90,10 @@ export function getKiaBankOptions(banks: KiaBankBranchLookupRow[]) {
 }
 
 export function findCanonicalBank(input: string, banks: KiaBankBranchLookupRow[]) {
-  const normalized = normalizeLookup(input)
+  const normalized = normalizeBankName(input)
   if (!normalized) return ''
   if (normalized === 'cash') return 'CASH'
-  return banks.find((bank) => normalizeLookup(bank.bank_name) === normalized)?.bank_name?.trim() || ''
+  return banks.find((bank) => normalizeBankName(bank.bank_name) === normalized)?.bank_name?.trim() || ''
 }
 
 export function getBranchesForBank(input: string, banks: KiaBankBranchLookupRow[]) {
@@ -93,7 +101,7 @@ export function getBranchesForBank(input: string, banks: KiaBankBranchLookupRow[
   if (!canonicalBank) return []
   return uniqueValues(
     banks
-      .filter((bank) => normalizeLookup(bank.bank_name) === normalizeLookup(canonicalBank))
+      .filter((bank) => normalizeBankName(bank.bank_name) === normalizeBankName(canonicalBank))
       .map((bank) => bank.bank_branch || '')
   )
 }
@@ -104,7 +112,7 @@ export function findCanonicalBranch(input: string, bankInput: string, banks: Kia
   const canonicalBank = findCanonicalBank(bankInput, banks)
   if (!canonicalBank) return ''
   return banks.find((bank) => (
-    normalizeLookup(bank.bank_name) === normalizeLookup(canonicalBank)
+    normalizeBankName(bank.bank_name) === normalizeBankName(canonicalBank)
     && normalizeLookup(bank.bank_branch) === normalized
   ))?.bank_branch?.trim() || ''
 }

@@ -201,8 +201,14 @@ export async function invalidateCache(key: string): Promise<void> {
 }
 
 export async function invalidateCachePattern(pattern: string): Promise<void> {
-  const redis = getRedisClient()
+  const regexPattern = new RegExp('^' + pattern.replace(/:/g, '\\:').replace(/\*/g, '.*') + '$')
+  for (const key of l1Cache.keys()) {
+    if (regexPattern.test(key)) {
+      l1Cache.delete(key)
+    }
+  }
 
+  const redis = getRedisClient()
   if (!redis) return
 
   try {

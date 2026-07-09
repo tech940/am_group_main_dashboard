@@ -7,6 +7,7 @@ import {
   adminAuditLogs,
   kiaBookingActivity,
   kiaBookings,
+  kiaCallbackRequests,
   kiaStockLocalStatuses,
   kiaVehicleAllocations,
   kiaVehicleTransfers,
@@ -64,6 +65,8 @@ export async function POST() {
       await tx.delete(kiaBookingActivity)
       await tx.delete(kiaVehicleTransfers)
       await tx.delete(kiaVehicleAllocations)
+      // Callback requests are a FK child of kia_bookings — must be cleared before the bookings.
+      await tx.delete(kiaCallbackRequests)
       await tx.delete(kiaBookings)
       await tx.delete(kiaStockLocalStatuses).where(eq(kiaStockLocalStatuses.localStatus, 'retail'))
 

@@ -42,6 +42,17 @@ function prefixLabel(prefix: string) {
   return prefix.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 
+// The four admin permission sections (User Management, Access Control, Admin Audit, Dashboard
+// Settings) collapse into ONE "Admin Panel" column — a single checkbox grants/denies the whole
+// admin area, mirroring the single "Admin Panel" sidebar link. `user_management` is the
+// representative section shown and read; toggling it writes all four keys together on save.
+const ADMIN_VIEW_KEYS = ['user_management', 'access_control', 'admin_audit', 'dashboard_settings']
+const ADMIN_PRIMARY_KEY = 'user_management'
+const ADMIN_HIDDEN_KEYS = new Set(['access_control', 'admin_audit', 'dashboard_settings'])
+function groupOf(sectionKey: string) {
+  return sectionKey === ADMIN_PRIMARY_KEY ? 'admin' : sectionKey.split('.')[0]
+}
+
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/)
   if (parts.length >= 2) {
@@ -65,20 +76,28 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // Collapse the four admin sections into a single "Admin Panel" column: hide the three extras
+  // and relabel the representative. data.access still carries all four keys (used on save).
+  const displaySections = useMemo(() =>
+    data.sections
+      .filter((section) => !ADMIN_HIDDEN_KEYS.has(section.key))
+      .map((section) => (section.key === ADMIN_PRIMARY_KEY ? { ...section, name: 'Admin Panel' } : section)),
+  [data.sections])
+
   const groups = useMemo(() => {
     const byPrefix = new Map<string, Section[]>()
-    for (const section of data.sections) {
-      const prefix = section.key.split('.')[0]
+    for (const section of displaySections) {
+      const prefix = groupOf(section.key)
       const list = byPrefix.get(prefix) || []
       list.push(section)
       byPrefix.set(prefix, list)
     }
-    return Array.from(byPrefix.entries()).map(([prefix, sections]) => ({ prefix, label: prefixLabel(prefix), sections }))
-  }, [data.sections])
+    return Array.from(byPrefix.entries()).map(([prefix, sections]) => ({ prefix, label: prefix === 'admin' ? 'Admin Panel' : prefixLabel(prefix), sections }))
+  }, [displaySections])
 
   const visibleGroups = groupFilter === 'all' ? groups : groups.filter((g) => g.prefix === groupFilter)
   const columns = visibleGroups.flatMap((g) => g.sections)
-  const groupStart = (i: number) => i > 0 && columns[i - 1].key.split('.')[0] !== columns[i].key.split('.')[0]
+  const groupStart = (i: number) => i > 0 && groupOf(columns[i - 1].key) !== groupOf(columns[i].key)
 
   const filteredUsers = useMemo(() => {
     const q = userQuery.trim().toLowerCase()
@@ -120,8 +139,12 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
       await Promise.all(Object.entries(edits).map(([userId, sectionMap]) => {
         const permissions: Record<string, boolean | null> = {}
         for (const [key, want] of Object.entries(sectionMap)) {
-          const def = data.access[userId]?.[key]?.defaultVisible ?? false
-          permissions[`${key}.view`] = want === def ? null : want
+          // The single "Admin Panel" column fans out to all four admin permission keys.
+          const targetKeys = key === ADMIN_PRIMARY_KEY ? ADMIN_VIEW_KEYS : [key]
+          for (const targetKey of targetKeys) {
+            const def = data.access[userId]?.[targetKey]?.defaultVisible ?? false
+            permissions[`${targetKey}.view`] = want === def ? null : want
+          }
         }
         return fetch('/api/admin/permissions', {
           method: 'PATCH',
@@ -449,7 +472,7 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
                   </h3>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-600 tracking-wide">
-                  {data.sections.find((s) => s.key === sectionKey)?.name}
+                  {displaySections.find((s) => s.key === sectionKey)?.name}
                 </span>
               </div>
 

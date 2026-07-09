@@ -1,7 +1,7 @@
 'use client'
 
 import type { ComponentProps, ReactNode } from 'react'
-import { startTransition, useDeferredValue, useEffect, useState } from 'react'
+import { startTransition, useDeferredValue, useEffect, useState, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -828,6 +828,8 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   const [expandedReportColumns, setExpandedReportColumns] = useState(REPORT_EXPANDED_DEFAULTS)
   const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({})
   const [missedFollowupsOnly, setMissedFollowupsOnly] = useState(false)
+  const shouldRefreshNext = useRef(false)
+
 
   const deferredReportSearch = useDeferredValue(reportSearch)
   const deferredLostSearch = useDeferredValue(lostSearch)
@@ -872,10 +874,14 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
       selectedDealerCode || 'all',
     ],
     enabled: periodReady,
-    queryFn: () => fetchReportJson<SalesReportSummaryPayload>(`/api/brands/kia/sales-report/summary?${buildQueryString({
-      ...periodQueryParams,
-      dealer_code: selectedDealerCode,
-    })}`, 'kia-sales-report-summary', 25000),
+    queryFn: () => {
+      const refresh = shouldRefreshNext.current
+      return fetchReportJson<SalesReportSummaryPayload>(`/api/brands/kia/sales-report/summary?${buildQueryString({
+        ...periodQueryParams,
+        dealer_code: selectedDealerCode,
+        refresh: refresh ? 'true' : undefined,
+      })}`, 'kia-sales-report-summary', 25000)
+    },
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
     retry: 1,
@@ -904,6 +910,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
     ],
     enabled: periodReady && activeTab === 'reports' && summaryQuery.isSuccess,
     queryFn: () => {
+      const refresh = shouldRefreshNext.current
       const filterParams: Record<string, string> = {}
       Object.entries(columnFilters).forEach(([col, vals]) => {
         if (vals && vals.length > 0) {
@@ -923,6 +930,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
         page: reportPage,
         pageSize: reportPageSize,
         missedFollowups: missedFollowupsOnly ? 'true' : 'false',
+        refresh: refresh ? 'true' : undefined,
         ...filterParams,
       })}`, 'kia-sales-report-reports', 25000)
     },
@@ -1531,9 +1539,13 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                 type="button"
                 className="h-12 rounded-[1rem] border border-[#071a2b] bg-[#071a2b] px-5 text-[13px] font-black text-white hover:bg-[#071a2b]/95"
                 onClick={() => {
+                  shouldRefreshNext.current = true
                   void freshnessQuery.refetch()
                   void summaryQuery.refetch()
                   if (activeTab === 'reports') void reportQuery.refetch()
+                  setTimeout(() => {
+                    shouldRefreshNext.current = false
+                  }, 1000)
                 }}
                 disabled={headerLoading}
               >
@@ -1955,23 +1967,34 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
           <TabsContent value="team" className="space-y-5">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-[16px] font-semibold text-slate-400">Filter by dealership:</span>
-              <Button type="button" className={cn('rounded-full px-5 text-[13px] font-black', !selectedDealerCode ? 'bg-[#071a2b] text-white hover:bg-[#071a2b]/95' : 'border border-[#d5dfea] bg-white text-slate-700 hover:text-[#071a2b]')} onClick={() => {
-                setSelectedDealerCode(null)
-                setTeamPage(1)
-                setHeatmapPage(1)
-                setRetailPage(1)
-                setLostPage(1)
-              }}>
-                🏢 All
-              </Button>
-              {(freshness?.dealerOptions || []).map((dealerCode) => (
-                <Button key={dealerCode} type="button" className={cn('rounded-full border border-[#d5dfea] bg-white px-5 text-[13px] font-black text-slate-700 hover:text-[#071a2b]', selectedDealerCode === dealerCode && 'border-[#071a2b] bg-[#071a2b] text-white hover:bg-[#071a2b]/95 hover:text-white')} onClick={() => {
-                  setSelectedDealerCode(dealerCode)
+              <Button
+                type="button"
+                variant={!selectedDealerCode ? 'default' : 'outline'}
+                className="rounded-full px-5 text-[13px] font-black"
+                onClick={() => {
+                  setSelectedDealerCode(null)
                   setTeamPage(1)
                   setHeatmapPage(1)
                   setRetailPage(1)
                   setLostPage(1)
-                }}>
+                }}
+              >
+                🏢 All
+              </Button>
+              {(freshness?.dealerOptions || []).map((dealerCode) => (
+                <Button
+                  key={dealerCode}
+                  type="button"
+                  variant={selectedDealerCode === dealerCode ? 'default' : 'outline'}
+                  className="rounded-full px-5 text-[13px] font-black"
+                  onClick={() => {
+                    setSelectedDealerCode(dealerCode)
+                    setTeamPage(1)
+                    setHeatmapPage(1)
+                    setRetailPage(1)
+                    setLostPage(1)
+                  }}
+                >
                   {dealerCode}
                 </Button>
               ))}
@@ -2024,15 +2047,15 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                 <div className="overflow-hidden rounded-[1.5rem] border border-slate-200">
                   <Table className="[&_td]:text-[11px] [&_td]:font-medium [&_th]:text-[10px]">
                     <TableHeader>
-                      <TableRow className="border-b-2 border-[#c5162f] bg-white hover:bg-white">
+                      <TableRow className="border-b-2 border-[#071a2b] bg-white hover:bg-white">
                         {['Consultant', 'Enquiries', 'Test Drives', 'TD Ratio', 'Bookings', 'Conv. Rate', 'Walk-ins', 'WI Bkgs', 'WI Conv.'].map((label) => (
-                          <TableHead key={label} className="text-[10px] font-black text-[#c5162f]">{label}</TableHead>
+                          <TableHead key={label} className="text-[10px] font-black text-[#071a2b]">{label}</TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {pagedTeamRows.map((item, index) => (
-                        <TableRow key={item.consultant} className={cn(index === pagedTeamRows.length - 1 && 'border-t-2 border-[#c5162f]', 'odd:bg-white even:bg-[#fbfdff]')}>
+                        <TableRow key={item.consultant} className={cn(index === pagedTeamRows.length - 1 && 'border-t-2 border-[#071a2b]', 'odd:bg-white even:bg-[#fbfdff]')}>
                           <TableCell className="font-black text-slate-950">{item.consultant}</TableCell>
                           <TableCell>{formatNumber(item.enquiries)}</TableCell>
                           <TableCell>
@@ -2461,7 +2484,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                 )}>
                     <Table className="[&_td]:text-[11px] [&_td]:font-medium [&_th]:text-[10px]">
                     <TableHeader>
-                      <TableRow className="border-b-2 border-[#071a2b] bg-white hover:bg-white">
+                      <TableRow className="border-b-2 border-[#071a2b] bg-transparent hover:bg-transparent">
                         {visibleColumns.map((column) => (
                           <TableHead key={column} className="px-4 py-2 text-[10px] font-black text-[#25303b]">
                             <ColumnFilterDropdown
@@ -2661,18 +2684,20 @@ function ColumnFilterDropdown({
         <button
           type="button"
           className={cn(
-            "inline-flex items-center gap-1.5 text-left font-black tracking-wide transition rounded-md px-1.5 py-0.5 hover:bg-slate-100/80 outline-none focus:ring-1 focus:ring-[#071a2b]/20 cursor-pointer select-none",
-            hasActiveFilter && "text-[#c5162f] bg-rose-50 hover:bg-rose-100/70"
+            "inline-flex items-center gap-1.5 text-left font-black tracking-wide transition rounded-md px-2 py-1 outline-none cursor-pointer select-none border-0",
+            hasActiveFilter
+              ? "text-white bg-rose-600 hover:bg-rose-700 shadow-sm"
+              : "text-white bg-transparent hover:bg-white/12 focus:bg-white/15 focus:ring-1 focus:ring-white/20"
           )}
         >
           <span>{label}</span>
           <span className="flex items-center gap-0.5">
-            {isSortedAsc && <ChevronDown className="h-3 w-3 rotate-180 text-[#c5162f]" />}
-            {isSortedDesc && <ChevronDown className="h-3 w-3 text-[#c5162f]" />}
+            {isSortedAsc && <ChevronDown className={cn("h-3 w-3 rotate-180", hasActiveFilter ? "text-white" : "text-rose-400")} />}
+            {isSortedDesc && <ChevronDown className={cn("h-3 w-3", hasActiveFilter ? "text-white" : "text-rose-400")} />}
             {hasActiveFilter ? (
-              <Filter className="h-3 w-3 fill-current text-[#c5162f]" />
+              <Filter className="h-3 w-3 fill-current text-white" />
             ) : (
-              (!isSortedAsc && !isSortedDesc) && <ChevronDown className="h-3.5 w-3.5 text-slate-400 opacity-60" />
+              (!isSortedAsc && !isSortedDesc) && <ChevronDown className="h-3.5 w-3.5 text-white/55 opacity-70" />
             )}
           </span>
         </button>

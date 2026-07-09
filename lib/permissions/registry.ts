@@ -909,7 +909,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   finance_head: [
     ...keysForGroups(['finance_orders'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit', 'audit']),
-    // KIA Proforma workflow: first approver in the chain (Finance Head → SM → GM).
+    // KIA Proforma workflow: final approver — reviews & approves after Sales Manager / GM.
     ...keysForGroups(['kia', 'kia.bookings'], ['view']),
     ...keysForGroups(['kia.proforma'], ['view', 'approve']),
   ],
@@ -959,10 +959,13 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management', 'kia.insurance'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
-  // KIA Proforma workflow: confirms payment received (finance stage).
+  // KIA Proforma workflow: final approver alongside the Finance Head — reviews & approves/declines
+  // proformas (stage 2), and confirms payment received at the booking finance stage.
   finance_team: [
     ...keysForGroups(['finance_orders'], ['view', 'edit']),
+    ...keysForGroups(['kia'], ['view']),
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+    ...keysForGroups(['kia.proforma'], ['view', 'approve']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
 }

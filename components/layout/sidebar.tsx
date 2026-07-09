@@ -6,10 +6,7 @@ import {
   Activity,
   Menu,
   X,
-  Settings,
-  Users,
   Shield,
-  KeyRound,
   ShoppingCart,
   Banknote,
   Landmark,
@@ -218,7 +215,7 @@ export function Sidebar() {
   const { collapsed, setCollapsed } = useSidebar()
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
   const permissionMapRef = useRef<Record<string, boolean> | null>(null)
-  const { userRole, canAccessAdmin, isSuperAdmin, userBrand, loading } = useUserRole()
+  const { userRole, canAccessAdmin, userBrand, loading } = useUserRole()
   const {
     value: favouriteHrefsValue,
     savePreference: saveFavouriteHrefs,
@@ -412,17 +409,15 @@ export function Sidebar() {
     })
     if ((canAccessAmFinance || permissionMap) && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
     if (canAccessAdmin) {
-      const adminActive = Boolean(pathname?.startsWith('/admin'))
-      const adminChildren: NavNode[] = [
-        { key: 'admin-users', label: 'User Management', href: '/admin?tab=users', icon: Users, active: adminActive },
-        { key: 'admin-access', label: 'Access Control', href: '/admin?tab=access', icon: KeyRound },
-      ]
-      if (isSuperAdmin) {
-        adminChildren.push({ key: 'admin-branch', label: 'Branch Admins', href: '/admin?tab=branch-admins', icon: KeyRound })
-        adminChildren.push({ key: 'admin-system', label: 'System · Reset Test Data', href: '/admin?tab=system', icon: Settings })
-        adminChildren.push({ key: 'admin-settings', label: 'Dashboard Settings', href: '/admin?tab=settings', icon: Settings })
-      }
-      commonNodes.push({ key: 'admin', label: 'Admin Panel', icon: Shield, children: adminChildren })
+      // Single link — the Admin page exposes all sections (Users, Access, Branch Admins, System,
+      // Settings) as in-page tabs, so no sidebar dropdown is needed.
+      commonNodes.push({
+        key: 'admin',
+        label: 'Admin Panel',
+        href: '/admin',
+        icon: Shield,
+        active: Boolean(pathname?.startsWith('/admin')),
+      })
     }
     if (commonNodes.length > 0) groups.push({ key: 'common', label: 'Common', nodes: commonNodes })
 
@@ -477,7 +472,7 @@ export function Sidebar() {
 
     return groups
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, isSuperAdmin, canAccessFinanceOrders, canAccessPettyCash, canAccessAmFinance, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
+  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, canAccessFinanceOrders, canAccessPettyCash, canAccessAmFinance, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
 
   return (
     <>

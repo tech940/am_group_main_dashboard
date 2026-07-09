@@ -46,6 +46,11 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url)
+    if (url.searchParams.get('refresh') === 'true') {
+      const { invalidateCachePattern } = await import('@/lib/redis/cache-utils')
+      await invalidateCachePattern('kia:sales-report:*')
+    }
+
     const filters: Record<string, string[]> = {}
     for (const [key, value] of url.searchParams.entries()) {
       if (key.startsWith('filter_') && value) {

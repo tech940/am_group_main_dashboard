@@ -60,7 +60,12 @@ function validatePayload(body: Record<string, unknown>) {
   return errors
 }
 
-function buildValues(body: Record<string, unknown>, appUser: NonNullable<Awaited<ReturnType<typeof getAuthenticatedAppUser>>>, profile: NonNullable<Awaited<ReturnType<typeof ensureKiaUserProfile>>>) {
+function buildValues(
+  body: Record<string, unknown>,
+  appUser: NonNullable<Awaited<ReturnType<typeof getAuthenticatedAppUser>>>,
+  profile: NonNullable<Awaited<ReturnType<typeof ensureKiaUserProfile>>>,
+  dealerCodeFromBooking: string | null = null
+) {
   const values: typeof kiaProformas.$inferInsert = {
     proformaDate: readDate(body, 'proformaDate')!,
     customerType: readText(body, 'customerType'),
@@ -78,7 +83,7 @@ function buildValues(body: Record<string, unknown>, appUser: NonNullable<Awaited
     insuranceCompany: readText(body, 'insuranceCompany'),
     loginEmail: appUser.email,
     consultant: profile.consultantName || appUser.fullName,
-    location: profile.dealerLocation || appUser.brand || 'kia',
+    location: dealerCodeFromBooking || (profile.dealerLocation && profile.dealerLocation !== 'all' ? profile.dealerLocation : null) || 'JK402',
     empCode: profile.employeeCode || '',
     createdBy: appUser.id,
     approvalStatus: 'PENDING',
@@ -221,11 +226,64 @@ export async function POST(request: NextRequest) {
     if (Object.keys(errors).length > 0) return NextResponse.json({ errors }, { status: 400 })
 
     const bookingId = readText(body, 'bookingId')
+    const forceSave = body.forceSave === true
+
+    // ── Duplicate guard ──────────────────────────────────────────────────────
+    // Check for any existing non-deleted proforma with the same mobile, email,
+    // or customer name. Allow override with forceSave=true.
+    if (!forceSave) {
+      const mobile = readText(body, 'mobileNumber')
+      const email = readText(body, 'customerEmail').toLowerCase()
+      const name = readText(body, 'customerName').toLowerCase()
+      const [existing] = await db
+        .select({
+          id: kiaProformas.id,
+          proformaDate: kiaProformas.proformaDate,
+          customerName: kiaProformas.customerName,
+          mobileNumber: kiaProformas.mobileNumber,
+          customerEmail: kiaProformas.customerEmail,
+        })
+        .from(kiaProformas)
+        .where(
+          and(
+            isNull(kiaProformas.deletedAt),
+            or(
+              eq(kiaProformas.mobileNumber, mobile),
+              ilike(kiaProformas.customerEmail, email),
+              ilike(kiaProformas.customerName, name),
+            )!,
+          ),
+        )
+        .orderBy(desc(kiaProformas.proformaDate))
+        .limit(1)
+      if (existing) {
+        return NextResponse.json({
+          duplicate: true,
+          existingId: existing.id,
+          existingDate: existing.proformaDate,
+          customerName: existing.customerName,
+          matchedOn: mobile === existing.mobileNumber ? 'mobile' : existing.customerEmail?.toLowerCase() === email ? 'email' : 'name',
+        }, { status: 409 })
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     const created = await db.transaction(async (tx) => {
+      let dealerCodeFromBooking: string | null = null
+      if (bookingId) {
+        const [booking] = await tx
+          .select({ dealerCode: kiaBookings.dealerCode })
+          .from(kiaBookings)
+          .where(eq(kiaBookings.id, bookingId))
+          .limit(1)
+        if (booking) {
+          dealerCodeFromBooking = booking.dealerCode
+        }
+      }
+
       const [proforma] = await tx
         .insert(kiaProformas)
-        .values(buildValues(body, appUser, profile))
+        .values(buildValues(body, appUser, profile, dealerCodeFromBooking))
         .returning()
 
       if (bookingId) {

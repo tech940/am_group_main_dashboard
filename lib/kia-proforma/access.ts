@@ -8,9 +8,9 @@ import { canUserAccessPermission } from '@/lib/permissions/service'
 
 type KiaProformaRole = AppUser['role']
 
-// Finance Head is the first approver in the chain, so they must be able to reach
-// the Pending Approval queue too.
-export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'developer', 'finance_head', 'sales_manager', 'general_manager', 'md'] as const
+// The chain is Sales Manager / GM (stage 1) -> Finance Head / Finance Team (stage 2).
+// Every one of these roles needs to reach the Pending Approval queue.
+export const KIA_PROFORMA_APPROVER_ROLES = ['admin', 'developer', 'finance_head', 'finance_team', 'sales_manager', 'general_manager', 'md'] as const
 
 export function canAccessKiaProforma(role: KiaProformaRole | null | undefined) {
   return Boolean(role)
@@ -33,9 +33,9 @@ export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = fa
   return and(...base, eq(kiaProformas.loginEmail, appUser.email))!
 }
 
-// Single shared approval stage: every approver (Sales Manager, General Manager, MD, admin)
-// sees EVERY in-flight proforma, so either the SM or the GM can approve any of them. Legacy
-// FINANCE_APPROVED / MANAGER_APPROVED statuses (from the old sequential chain) are folded in.
+// Every approver (Sales Manager, GM, Finance Head, Finance Team, MD, admin) sees EVERY in-flight
+// proforma. In-flight = awaiting stage 1 (PENDING / '') OR stage 2 (MANAGER_APPROVED) OR declined
+// (restarts). The per-stage role gate lives in roleActsOnKiaStage; the server enforces it on approve.
 export function getKiaProformaPendingApprovalFilter(_appUser?: AppUser): SQL<unknown> {
   const allInFlight = or(
     eq(kiaProformas.approvalStatus, 'PENDING'),

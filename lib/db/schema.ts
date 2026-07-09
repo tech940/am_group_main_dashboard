@@ -1606,6 +1606,25 @@ export const kiaEmailLogs = pgTable('kia_email_logs', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+// Customer callback requests raised from the "Request a Callback" button in the proforma email.
+// Deliberately stores NO customer phone/email — only basic details — so PII never leaks to staff.
+export const kiaCallbackRequests = pgTable('kia_callback_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id).notNull(),
+  customerName: text('customer_name').notNull(),
+  preferredTime: text('preferred_time'), // 'morning' | 'afternoon' | 'evening' | 'anytime'
+  note: text('note'),
+  status: text('status').default('pending').notNull(), // 'pending' | 'contacted' | 'closed'
+  source: text('source').default('proforma_email').notNull(),
+  contactedBy: uuid('contacted_by').references(() => users.id),
+  contactedAt: timestamp('contacted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaCallbackRequestsBookingIdx: index('kia_callback_requests_booking_idx').on(table.bookingId),
+  kiaCallbackRequestsStatusIdx: index('kia_callback_requests_status_idx').on(table.status),
+}))
+
 // Vehicle Tracker (Service floor): logs a vehicle leaving and returning, with an
 // AI-verified, timestamped camera photo. status: 'out' | 'returned'.
 // durationMinutes is computed on return (vehicle_in_at - vehicle_out_at).

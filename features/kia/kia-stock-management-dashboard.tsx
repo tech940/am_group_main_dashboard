@@ -536,7 +536,12 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   }
 
   const handleDownloadPDF = () => {
+    const originalTitle = document.title
+    const date = new Date().toISOString().slice(0, 10)
+    document.title = `AM_Kia_Stock_Report_${date}`
     window.print()
+    // Restore after a short delay to allow the print dialog to capture the title
+    setTimeout(() => { document.title = originalTitle }, 1000)
   }
 
   return (

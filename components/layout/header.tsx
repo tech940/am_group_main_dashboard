@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-// import { NotificationBell } from '@/components/layout/notification-bell' // disabled for now
+import { NotificationBell } from '@/components/layout/notification-bell'
 
 
 
@@ -163,8 +163,8 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
           >
             {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </button>
-          {/* NotificationBell disabled for now — will be re-enabled later */}
-          
+          <NotificationBell userId={user?.id ?? null} userRole={user?.role ?? null} />
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div className="flex cursor-pointer items-center gap-3 border-l border-slate-200/70 pl-6 transition-opacity hover:opacity-85 dark:border-white/10">

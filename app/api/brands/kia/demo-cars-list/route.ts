@@ -20,6 +20,7 @@ type DemoCarsFilters = {
   page: number
   location: 'all' | 'jammu' | 'udhampur'
   search: string
+  status: 'all' | 'sold' | 'not_sold'
 }
 
 type DisplayColumn = {
@@ -54,11 +55,18 @@ function normalizeLocation(value: string | null): DemoCarsFilters['location'] {
   return 'all'
 }
 
+function normalizeStatus(value: string | null): DemoCarsFilters['status'] {
+  const normalized = String(value || 'all').trim().toLowerCase()
+  if (normalized === 'sold' || normalized === 'not_sold') return normalized
+  return 'all'
+}
+
 function getFilters(searchParams: URLSearchParams): DemoCarsFilters {
   return {
     page: positiveInteger(searchParams.get('page'), 1),
     location: normalizeLocation(searchParams.get('location')),
     search: String(searchParams.get('search') || '').trim(),
+    status: normalizeStatus(searchParams.get('status')),
   }
 }
 
@@ -184,6 +192,12 @@ function filteredWhere(filters: DemoCarsFilters, columns: Set<string>) {
     } else if (filters.location === 'udhampur') {
       clauses.push(sql`billing_dealer_code = 'JK501'`)
     }
+  }
+
+  if (filters.status === 'sold') {
+    clauses.push(sql`vehicle_status = 'sold'`)
+  } else if (filters.status === 'not_sold') {
+    clauses.push(sql`(vehicle_status IS NULL OR vehicle_status != 'sold')`)
   }
 
   if (filters.search) {

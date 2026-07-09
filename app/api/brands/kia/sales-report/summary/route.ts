@@ -46,6 +46,11 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url)
+    if (url.searchParams.get('refresh') === 'true') {
+      const { invalidateCachePattern } = await import('@/lib/redis/cache-utils')
+      await invalidateCachePattern('kia:sales-report:*')
+    }
+
     const data = await timer.time('summary', () => getKiaSalesReportSummary({
       year: parseYear(url.searchParams.get('year')),
       month: parseMonthIndex(url.searchParams.get('month')),
