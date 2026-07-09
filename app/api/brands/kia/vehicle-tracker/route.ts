@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { requirePermission } from '@/lib/permissions/service'
 import { normalizeKiaDealerCode, DEFAULT_KIA_DEALER_CODE } from '@/lib/kia/dealer-branch'
+import { canFillVehicleTracker, canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import {
   createVehicleTrackerEntry,
   listVehicleTrackerEntries,
@@ -13,19 +13,17 @@ import {
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const PERMISSION = 'kia.service_appointment.view'
-
-async function authorize() {
+async function authorize(mode: 'view' | 'fill') {
   const accessResponse = await requireBrandApiAccess('kia')
   if (accessResponse) return { response: accessResponse, appUser: null }
   const appUser = await getAuthenticatedAppUser()
-  const permission = await requirePermission(appUser, PERMISSION)
-  if (!permission.allowed) return { response: NextResponse.json({ error: permission.reason }, { status: 403 }), appUser }
+  const ok = mode === 'fill' ? canFillVehicleTracker(appUser?.role) : canViewVehicleTracker(appUser?.role)
+  if (!ok) return { response: NextResponse.json({ error: 'You do not have access to the Vehicle Tracker.' }, { status: 403 }), appUser }
   return { response: null, appUser }
 }
 
 export async function GET(request: Request) {
-  const auth = await authorize()
+  const auth = await authorize('view')
   if (auth.response) return auth.response
   try {
     const { searchParams } = new URL(request.url)
@@ -41,7 +39,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authorize()
+  const auth = await authorize('fill')
   if (auth.response) return auth.response
   try {
     const form = await request.formData()

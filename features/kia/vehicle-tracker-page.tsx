@@ -4,18 +4,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Car, LogOut, LogIn, RefreshCw, Timer, CheckCircle2, CalendarDays } from 'lucide-react'
+import { Car, LogOut, LogIn, RefreshCw, Timer, CheckCircle2, Eye } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { KIA_BRANCH_DEALERS, DEFAULT_KIA_DEALER_CODE } from '@/lib/kia/dealer-branch'
@@ -36,7 +29,8 @@ type Entry = {
   createdAt: string
 }
 
-const INPUT = 'h-11 w-full rounded-xl border border-[var(--kia-hairline)] bg-[var(--kia-surface)] px-3 text-sm font-semibold text-[var(--kia-text)] focus:outline-none focus:ring-2 focus:ring-[var(--dashboard-action-bg)]'
+const INPUT = 'h-12 w-full rounded-xl border border-[var(--kia-hairline)] bg-[var(--kia-surface)] px-3 text-base font-semibold text-[var(--kia-text)] focus:outline-none focus:ring-2 focus:ring-[var(--dashboard-action-bg)]'
+const LABEL = 'text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]'
 
 function todayIso(now: Date) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -52,8 +46,7 @@ function formatDuration(min: number | null) {
   if (min == null || min < 0) return '—'
   const h = Math.floor(min / 60)
   const m = min % 60
-  if (h <= 0) return `${m}m`
-  return `${h}h ${m}m`
+  return h <= 0 ? `${m}m` : `${h}h ${m}m`
 }
 function formatTime(iso: string | null) {
   if (!iso) return '—'
@@ -62,35 +55,34 @@ function formatTime(iso: string | null) {
   return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
-export function VehicleTrackerPage() {
+export function VehicleTrackerPage({ canFill = false }: { canFill?: boolean }) {
   const queryClient = useQueryClient()
   const [now, setNow] = useState<number>(0)
+  const [mode, setMode] = useState<'out' | 'in'>('out')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'out' | 'returned'>('all')
 
-  // Form state
+  // Out form
   const [name, setName] = useState('')
   const [date, setDate] = useState('')
   const [outTime, setOutTime] = useState('')
-  const [inTime, setInTime] = useState('')
   const [dealer, setDealer] = useState<string>(DEFAULT_KIA_DEALER_CODE)
   const [notes, setNotes] = useState('')
-  const [photo, setPhoto] = useState<File | null>(null)
-  const [cameraKey, setCameraKey] = useState(0)
+  const [outPhoto, setOutPhoto] = useState<File | null>(null)
+  const [outCamKey, setOutCamKey] = useState(0)
   const [submitting, setSubmitting] = useState(false)
 
-  // Filters
-  const [filterStatus, setFilterStatus] = useState<'all' | 'out' | 'returned'>('all')
-
-  // Mark-returned dialog
-  const [returnTarget, setReturnTarget] = useState<Entry | null>(null)
+  // In form
+  const [selectedId, setSelectedId] = useState('')
   const [returnAt, setReturnAt] = useState('')
-  const [returnPhoto, setReturnPhoto] = useState<File | null>(null)
+  const [inPhoto, setInPhoto] = useState<File | null>(null)
+  const [inCamKey, setInCamKey] = useState(0)
   const [returning, setReturning] = useState(false)
 
-  // Seed default date/time on mount + tick a live clock every 30s for elapsed timers.
   useEffect(() => {
     const n = new Date()
     setDate(todayIso(n))
     setOutTime(timeHm(n))
+    setReturnAt(`${todayIso(n)}T${timeHm(n)}`)
     setNow(n.getTime())
     const t = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(t)
@@ -107,14 +99,34 @@ export function VehicleTrackerPage() {
     staleTime: 15_000,
   })
 
-  const rows = useMemo(() => listQuery.data || [], [listQuery.data])
-  const outCount = rows.filter((r) => r.status === 'out').length
+  // Currently-out vehicles for the "Vehicle In" picker (always fetched, unfiltered).
+  const outQuery = useQuery({
+    queryKey: ['kia-vehicle-tracker', 'out'],
+    queryFn: async () => {
+      const res = await fetch('/api/brands/kia/vehicle-tracker?status=out', { cache: 'no-store' })
+      const payload = await res.json()
+      if (!res.ok) throw new Error(payload.error || 'Failed to load out vehicles.')
+      return (payload.rows || []) as Entry[]
+    },
+    staleTime: 15_000,
+    enabled: canFill,
+  })
 
-  async function submit() {
-    if (!name.trim()) return toast({ title: 'Name required', description: 'Enter the name.', variant: 'error' })
-    if (!date) return toast({ title: 'Date required', description: 'Pick a date.', variant: 'error' })
-    if (!outTime) return toast({ title: 'Vehicle-out time required', description: 'Set when the vehicle went out.', variant: 'error' })
-    if (!photo) return toast({ title: 'Photo required', description: 'Capture a photo of the vehicle with the camera first.', variant: 'error' })
+  const rows = useMemo(() => listQuery.data || [], [listQuery.data])
+  const outVehicles = useMemo(() => outQuery.data || [], [outQuery.data])
+  const selected = outVehicles.find((v) => v.id === selectedId) || null
+  const returnPreviewMin = selected && returnAt
+    ? Math.max(0, Math.round((new Date(returnAt).getTime() - new Date(selected.vehicleOutAt).getTime()) / 60000))
+    : null
+
+  function refreshAll() {
+    void queryClient.invalidateQueries({ queryKey: ['kia-vehicle-tracker'] })
+  }
+
+  async function submitOut() {
+    if (!name.trim()) return toast({ title: 'Name required', description: 'Enter the vehicle / driver name.', variant: 'error' })
+    if (!date || !outTime) return toast({ title: 'Time out required', description: 'Set the date and out time.', variant: 'error' })
+    if (!outPhoto) return toast({ title: 'Front photo required', description: 'Capture the FRONT of the vehicle with the camera.', variant: 'error' })
 
     setSubmitting(true)
     try {
@@ -122,28 +134,19 @@ export function VehicleTrackerPage() {
       fd.append('name', name.trim())
       fd.append('entryDate', date)
       fd.append('vehicleOut', combineLocalIso(date, outTime))
-      if (inTime) fd.append('vehicleIn', combineLocalIso(date, inTime))
       fd.append('dealerCode', dealer)
       if (notes.trim()) fd.append('notes', notes.trim())
-      fd.append('photo', photo)
+      fd.append('photo', outPhoto)
 
       const res = await fetch('/api/brands/kia/vehicle-tracker', { method: 'POST', body: fd })
       const payload = await res.json()
       if (!res.ok) {
-        if (payload.code === 'not_a_vehicle') {
-          return toast({ title: 'Not a vehicle photo', description: payload.error, variant: 'error' })
-        }
+        if (payload.code === 'not_a_vehicle') return toast({ title: 'Photo rejected', description: payload.error, variant: 'error' })
         throw new Error(payload.error || 'Failed to log the vehicle.')
       }
-      toast({ title: 'Logged', description: `${name.trim()} recorded.`, variant: 'success' })
-      // Reset for the next entry (keep date + dealer).
-      setName('')
-      setInTime('')
-      setNotes('')
-      setPhoto(null)
-      setOutTime(timeHm(new Date()))
-      setCameraKey((k) => k + 1)
-      void queryClient.invalidateQueries({ queryKey: ['kia-vehicle-tracker'] })
+      toast({ title: 'Vehicle out logged', description: `${name.trim()} recorded.`, variant: 'success' })
+      setName(''); setNotes(''); setOutPhoto(null); setOutTime(timeHm(new Date())); setOutCamKey((k) => k + 1)
+      refreshAll()
     } catch (error) {
       toast({ title: 'Could not save', description: error instanceof Error ? error.message : 'Try again.', variant: 'error' })
     } finally {
@@ -151,35 +154,25 @@ export function VehicleTrackerPage() {
     }
   }
 
-  function openReturn(entry: Entry) {
-    const n = new Date()
-    setReturnTarget(entry)
-    setReturnPhoto(null)
-    // datetime-local wants local time without seconds/zone
-    setReturnAt(`${todayIso(n)}T${timeHm(n)}`)
-  }
+  async function submitIn() {
+    if (!selectedId) return toast({ title: 'Select a vehicle', description: 'Pick a vehicle that is currently out.', variant: 'error' })
+    if (!returnAt) return toast({ title: 'Time in required', description: 'Set the return time.', variant: 'error' })
+    if (!inPhoto) return toast({ title: 'Front photo required', description: 'Capture the FRONT of the returning vehicle.', variant: 'error' })
 
-  async function submitReturn() {
-    if (!returnTarget) return
     setReturning(true)
     try {
       const fd = new FormData()
-      if (returnAt) {
-        const iso = new Date(returnAt).toISOString()
-        if (!Number.isNaN(new Date(returnAt).getTime())) fd.append('vehicleIn', iso)
-      }
-      if (returnPhoto) fd.append('photo', returnPhoto)
-      const res = await fetch(`/api/brands/kia/vehicle-tracker/${returnTarget.id}`, { method: 'PATCH', body: fd })
+      fd.append('vehicleIn', new Date(returnAt).toISOString())
+      fd.append('photo', inPhoto)
+      const res = await fetch(`/api/brands/kia/vehicle-tracker/${selectedId}`, { method: 'PATCH', body: fd })
       const payload = await res.json()
       if (!res.ok) {
-        if (payload.code === 'not_a_vehicle') {
-          return toast({ title: 'Not a vehicle photo', description: payload.error, variant: 'error' })
-        }
+        if (payload.code === 'not_a_vehicle') return toast({ title: 'Photo rejected', description: payload.error, variant: 'error' })
         throw new Error(payload.error || 'Failed to mark returned.')
       }
-      toast({ title: 'Marked returned', description: `Out for ${formatDuration(payload.row?.durationMinutes ?? null)}.`, variant: 'success' })
-      setReturnTarget(null)
-      void queryClient.invalidateQueries({ queryKey: ['kia-vehicle-tracker'] })
+      toast({ title: 'Vehicle in logged', description: `Out for ${formatDuration(payload.row?.durationMinutes ?? null)}.`, variant: 'success' })
+      setSelectedId(''); setInPhoto(null); setInCamKey((k) => k + 1); setReturnAt(`${todayIso(new Date())}T${timeHm(new Date())}`)
+      refreshAll()
     } catch (error) {
       toast({ title: 'Could not update', description: error instanceof Error ? error.message : 'Try again.', variant: 'error' })
     } finally {
@@ -189,102 +182,128 @@ export function VehicleTrackerPage() {
 
   return (
     <MainLayout title="Vehicle Tracker" subtitle="AM Kia · Service">
-      <div className="kia-premium -m-4 min-h-screen bg-[var(--kia-canvas)] p-4 md:-m-6 md:p-6">
-        <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-[minmax(0,420px)_1fr]">
-          {/* ── New entry form ── */}
-          <section className="kia-surface rounded-[1.5rem] p-4 sm:p-5">
-            <div className="flex items-center gap-2.5">
-              <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--dashboard-action-bg)_16%,transparent)] text-[var(--dashboard-action-bg)]">
-                <LogOut className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="text-lg font-black tracking-tight text-[var(--kia-text)]">Log a vehicle out</h2>
-                <p className="text-xs font-semibold text-[var(--kia-text-soft)]">Camera photo is AI-checked for a vehicle.</p>
-              </div>
-            </div>
+      <div className="kia-premium -m-4 min-h-screen bg-[var(--kia-canvas)] p-3 sm:p-4 md:-m-6 md:p-6">
+        <div className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-[minmax(0,440px)_1fr] lg:gap-5">
 
-            <div className="mt-4 space-y-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]">Name</Label>
-                <input className={INPUT} value={name} onChange={(e) => setName(e.target.value)} placeholder="Driver / vehicle name" />
+          {/* ── Form (fill roles only) ── */}
+          {canFill && (
+            <section className="kia-surface rounded-2xl p-3.5 sm:p-5">
+              {/* Segmented Out / In */}
+              <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-[var(--kia-surface-sunken)] p-1.5">
+                {([['out', 'Vehicle Out', LogOut], ['in', 'Vehicle In', LogIn]] as const).map(([value, label, Icon]) => (
+                  <button
+                    key={value}
+                    onClick={() => setMode(value)}
+                    className={cn(
+                      'flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-black transition',
+                      mode === value ? 'bg-[var(--dashboard-action-bg)] text-white shadow' : 'text-[var(--kia-text-soft)]',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" /> {label}
+                  </button>
+                ))}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]">Date</Label>
-                  <input type="date" className={INPUT} value={date} onChange={(e) => setDate(e.target.value)} />
+              {mode === 'out' ? (
+                <div className="mt-4 space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className={LABEL}>Name</Label>
+                    <input className={INPUT} value={name} onChange={(e) => setName(e.target.value)} placeholder="Driver / vehicle name" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className={LABEL}>Date</Label>
+                      <input type="date" className={INPUT} value={date} onChange={(e) => setDate(e.target.value)} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className={LABEL}>Time out</Label>
+                      <input type="time" className={INPUT} value={outTime} onChange={(e) => setOutTime(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className={LABEL}>Branch</Label>
+                    <select className={INPUT} value={dealer} onChange={(e) => setDealer(e.target.value)}>
+                      {KIA_BRANCH_DEALERS.map((b) => <option key={b.dealerCode} value={b.dealerCode}>{b.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className={LABEL}>Front photo (camera only)</Label>
+                    <VehicleTrackerCamera key={outCamKey} label="front of the vehicle" onCapture={setOutPhoto} />
+                    <p className="text-[11px] font-medium text-[var(--kia-text-faint)]">Only the vehicle&rsquo;s front is accepted — AI checks each photo.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className={LABEL}>Notes <span className="font-medium normal-case text-[var(--kia-text-faint)]">(optional)</span></Label>
+                    <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Purpose / destination" className="rounded-xl text-base" />
+                  </div>
+                  <Button onClick={submitOut} disabled={submitting} className="h-12 w-full rounded-xl bg-[var(--dashboard-action-bg)] text-base font-black text-white hover:bg-[var(--dashboard-action-hover)]">
+                    {submitting ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <LogOut className="mr-2 h-5 w-5" />}
+                    {submitting ? 'Saving…' : 'Log vehicle out'}
+                  </Button>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]">Branch</Label>
-                  <select className={INPUT} value={dealer} onChange={(e) => setDealer(e.target.value)}>
-                    {KIA_BRANCH_DEALERS.map((b) => (
-                      <option key={b.dealerCode} value={b.dealerCode}>{b.label}</option>
-                    ))}
-                  </select>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className={LABEL}>Vehicle that is returning</Label>
+                    <select className={INPUT} value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+                      <option value="">{outVehicles.length ? 'Select a vehicle that is out…' : 'No vehicles are currently out'}</option>
+                      {outVehicles.map((v) => (
+                        <option key={v.id} value={v.id}>{v.name} · out {formatTime(v.vehicleOutAt)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className={LABEL}>Time in</Label>
+                    <input type="datetime-local" className={INPUT} value={returnAt} onChange={(e) => setReturnAt(e.target.value)} />
+                    {returnPreviewMin != null && (
+                      <p className="text-[11px] font-bold text-[var(--kia-text-soft)]">Out for {formatDuration(returnPreviewMin)}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className={LABEL}>Front photo on return (camera only)</Label>
+                    <VehicleTrackerCamera key={inCamKey} label="front of the vehicle" onCapture={setInPhoto} />
+                  </div>
+                  <Button onClick={submitIn} disabled={returning || !selectedId} className="h-12 w-full rounded-xl bg-emerald-600 text-base font-black text-white hover:bg-emerald-700">
+                    {returning ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
+                    {returning ? 'Saving…' : 'Log vehicle in'}
+                  </Button>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]">Vehicle out</Label>
-                  <input type="time" className={INPUT} value={outTime} onChange={(e) => setOutTime(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]">Vehicle in <span className="font-medium normal-case text-[var(--kia-text-faint)]">(optional)</span></Label>
-                  <input type="time" className={INPUT} value={inTime} onChange={(e) => setInTime(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]">Vehicle photo (camera only)</Label>
-                <VehicleTrackerCamera key={cameraKey} onCapture={setPhoto} />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]">Notes <span className="font-medium normal-case text-[var(--kia-text-faint)]">(optional)</span></Label>
-                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Purpose / destination" className="rounded-xl" />
-              </div>
-
-              <Button onClick={submit} disabled={submitting} className="h-12 w-full rounded-xl bg-[var(--dashboard-action-bg)] text-base font-black text-white hover:bg-[var(--dashboard-action-hover)]">
-                {submitting ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-5 w-5" />}
-                {submitting ? 'Saving…' : 'Log vehicle out'}
-              </Button>
-            </div>
-          </section>
+              )}
+            </section>
+          )}
 
           {/* ── Live list ── */}
-          <section className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap gap-2">
-                {([['all', 'All'], ['out', `Out (${outCount})`], ['returned', 'Returned']] as const).map(([value, label]) => (
+          <section className="space-y-3">
+            {!canFill && (
+              <div className="flex items-center gap-2 rounded-xl bg-[var(--kia-surface-sunken)] px-3 py-2 text-xs font-bold text-[var(--kia-text-soft)]">
+                <Eye className="h-4 w-4" /> View only — Service General Manager
+              </div>
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                {([['all', 'All'], ['out', `Out (${outVehicles.length || rows.filter((r) => r.status === 'out').length})`], ['returned', 'Returned']] as const).map(([value, label]) => (
                   <button
                     key={value}
                     onClick={() => setFilterStatus(value)}
                     className={cn(
-                      'rounded-full px-4 py-1.5 text-xs font-black transition',
-                      filterStatus === value
-                        ? 'bg-[var(--dashboard-action-bg)] text-white'
-                        : 'bg-[var(--kia-surface-sunken)] text-[var(--kia-text-soft)] hover:text-[var(--kia-text)]',
+                      'rounded-full px-3.5 py-1.5 text-xs font-black transition',
+                      filterStatus === value ? 'bg-[var(--dashboard-action-bg)] text-white' : 'bg-[var(--kia-surface-sunken)] text-[var(--kia-text-soft)]',
                     )}
                   >
                     {label}
                   </button>
                 ))}
               </div>
-              <Button variant="outline" onClick={() => listQuery.refetch()} disabled={listQuery.isFetching} className="h-9 rounded-xl">
+              <Button variant="outline" onClick={() => { listQuery.refetch(); outQuery.refetch() }} disabled={listQuery.isFetching} className="h-9 rounded-xl">
                 <RefreshCw className={cn('mr-2 h-4 w-4', listQuery.isFetching && 'animate-spin')} /> Refresh
               </Button>
             </div>
 
             {listQuery.isLoading ? (
-              <div className="grid gap-3">
-                {[0, 1, 2].map((i) => <div key={i} className="h-28 animate-pulse rounded-2xl bg-[var(--kia-surface-sunken)]" />)}
-              </div>
+              <div className="grid gap-3 sm:grid-cols-2">{[0, 1, 2, 3].map((i) => <div key={i} className="h-28 animate-pulse rounded-2xl bg-[var(--kia-surface-sunken)]" />)}</div>
             ) : rows.length === 0 ? (
               <div className="kia-surface grid place-items-center gap-2 rounded-2xl px-6 py-16 text-center">
                 <Car className="h-10 w-10 text-[var(--kia-text-faint)]" />
                 <p className="text-sm font-bold text-[var(--kia-text)]">No vehicles logged yet</p>
-                <p className="max-w-xs text-xs font-semibold text-[var(--kia-text-soft)]">Log a vehicle out from the form to start tracking.</p>
               </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -299,10 +318,7 @@ export function VehicleTrackerPage() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <p className="truncate text-sm font-black text-[var(--kia-text)]">{entry.name}</p>
-                            <span className={cn(
-                              'shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide',
-                              isOut ? 'bg-amber-500/15 text-amber-600' : 'bg-emerald-500/15 text-emerald-600',
-                            )}>
+                            <span className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide', isOut ? 'bg-amber-500/15 text-amber-600' : 'bg-emerald-500/15 text-emerald-600')}>
                               {isOut ? 'Out' : 'Returned'}
                             </span>
                           </div>
@@ -316,10 +332,13 @@ export function VehicleTrackerPage() {
                           </div>
                         </div>
                       </div>
-                      {isOut && (
+                      {isOut && canFill && (
                         <div className="border-t border-[var(--kia-hairline)] p-2">
-                          <Button onClick={() => openReturn(entry)} className="h-9 w-full rounded-xl bg-emerald-600 text-xs font-black text-white hover:bg-emerald-700">
-                            <LogIn className="mr-1.5 h-4 w-4" /> Mark returned
+                          <Button
+                            onClick={() => { setMode('in'); setSelectedId(entry.id); if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                            className="h-9 w-full rounded-xl bg-emerald-600 text-xs font-black text-white hover:bg-emerald-700"
+                          >
+                            <LogIn className="mr-1.5 h-4 w-4" /> Log this vehicle in
                           </Button>
                         </div>
                       )}
@@ -331,38 +350,6 @@ export function VehicleTrackerPage() {
           </section>
         </div>
       </div>
-
-      {/* ── Mark returned dialog ── */}
-      <Dialog open={Boolean(returnTarget)} onOpenChange={(open) => { if (!open) setReturnTarget(null) }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><LogIn className="h-5 w-5" /> Mark returned</DialogTitle>
-          </DialogHeader>
-          {returnTarget && (
-            <div className="space-y-3">
-              <div className="rounded-xl bg-[var(--kia-surface-sunken)] p-3 text-sm">
-                <p className="font-black text-[var(--kia-text)]">{returnTarget.name}</p>
-                <p className="text-xs font-semibold text-[var(--kia-text-soft)]">Out at {formatTime(returnTarget.vehicleOutAt)}</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]"><CalendarDays className="mr-1 inline h-3.5 w-3.5" /> Return time</Label>
-                <input type="datetime-local" className={INPUT} value={returnAt} onChange={(e) => setReturnAt(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold uppercase tracking-wide text-[var(--kia-text-soft)]">Return photo <span className="font-medium normal-case text-[var(--kia-text-faint)]">(optional)</span></Label>
-                <VehicleTrackerCamera key={returnTarget.id} label="return photo" onCapture={setReturnPhoto} />
-              </div>
-            </div>
-          )}
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setReturnTarget(null)} className="rounded-xl">Cancel</Button>
-            <Button onClick={submitReturn} disabled={returning} className="rounded-xl bg-emerald-600 font-black text-white hover:bg-emerald-700">
-              {returning ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-              Confirm return
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </MainLayout>
   )
 }

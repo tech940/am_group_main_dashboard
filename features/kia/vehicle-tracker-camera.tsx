@@ -21,58 +21,68 @@ export function VehicleTrackerCamera({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
   const previewUrlRef = useRef<string | null>(null)
   const [mode, setMode] = useState<CameraMode>('idle')
+  const [stream, setStream] = useState<MediaStream | null>(null)
   const [error, setError] = useState('')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
   const stopStream = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
+    setStream((current) => {
+      current?.getTracks().forEach((track) => track.stop())
+      return null
+    })
+  }, [])
+
+  const clearPreview = useCallback(() => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current)
+      previewUrlRef.current = null
     }
+    setPreviewUrl(null)
   }, [])
 
   const start = useCallback(async () => {
     setError('')
     onCapture(null)
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current)
-      previewUrlRef.current = null
-      setPreviewUrl(null)
-    }
+    clearPreview()
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setMode('error')
-      setError('Camera is not available on this device or browser.')
+      setError('Camera is not available. Open this page over HTTPS on a device with a camera.')
       return
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+      const media = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } },
         audio: false,
       })
-      streamRef.current = stream
+      setStream(media)
       setMode('live')
-      // Attach after the <video> is rendered.
-      window.setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          void videoRef.current.play().catch(() => null)
-        }
-      }, 0)
     } catch {
       setMode('error')
-      setError('Camera permission denied. Allow camera access to capture a photo.')
+      setError('Camera permission was blocked. Allow camera access, then tap Try again.')
     }
-  }, [onCapture])
+  }, [onCapture, clearPreview])
+
+  // Attach the stream to the <video> after it mounts (fixes the black-screen race).
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !stream) return
+    video.srcObject = stream
+    const play = () => video.play().catch(() => null)
+    if (video.readyState >= 1) play()
+    else video.onloadedmetadata = play
+    return () => {
+      video.onloadedmetadata = null
+    }
+  }, [stream, mode])
 
   const capture = useCallback(() => {
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas) return
     const w = video.videoWidth || 1280
-    const h = video.videoHeight || 720
+    const h = video.videoHeight || 960
     canvas.width = w
     canvas.height = h
     const ctx = canvas.getContext('2d')
@@ -120,17 +130,25 @@ export function VehicleTrackerCamera({
 
   useEffect(() => {
     return () => {
-      stopStream()
+      setStream((current) => {
+        current?.getTracks().forEach((track) => track.stop())
+        return null
+      })
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
     }
-  }, [stopStream])
+  }, [])
 
   return (
     <div className={cn('space-y-2', className)}>
-      <div className="relative overflow-hidden rounded-2xl border border-[var(--kia-hairline)] bg-black/90 aspect-[4/3]">
-        {mode === 'live' && (
-          <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
-        )}
+      <div className="relative overflow-hidden rounded-2xl border border-[var(--kia-hairline)] bg-black aspect-[4/3]">
+        {/* Video stays mounted while live so the ref is stable for the attach effect. */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={cn('h-full w-full object-cover', mode === 'live' ? 'block' : 'hidden')}
+        />
         {mode === 'captured' && previewUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={previewUrl} alt="Captured vehicle" className="h-full w-full object-cover" />
@@ -139,21 +157,17 @@ export function VehicleTrackerCamera({
           <button
             type="button"
             onClick={start}
-            className="flex h-full w-full flex-col items-center justify-center gap-2 text-white/80"
+            className="flex h-full w-full flex-col items-center justify-center gap-2 px-6 text-center text-white/80"
           >
-            {mode === 'error' ? (
-              <AlertTriangle className="h-9 w-9 text-amber-400" />
-            ) : (
-              <Camera className="h-9 w-9" />
-            )}
-            <span className="px-6 text-center text-sm font-semibold">
-              {mode === 'error' ? error : `Tap to open camera and capture the ${label.toLowerCase()}`}
+            {mode === 'error' ? <AlertTriangle className="h-9 w-9 text-amber-400" /> : <Camera className="h-9 w-9" />}
+            <span className="text-sm font-semibold">
+              {mode === 'error' ? error : `Tap to open the camera and capture the ${label.toLowerCase()}`}
             </span>
           </button>
         )}
         {mode === 'live' && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 bg-black/50 px-3 py-1.5 text-[11px] font-bold text-white">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-rose-500" /> LIVE · timestamp will be stamped on capture
+            <span className="h-2 w-2 animate-pulse rounded-full bg-rose-500" /> LIVE · time is stamped on capture
           </div>
         )}
       </div>
@@ -162,30 +176,22 @@ export function VehicleTrackerCamera({
       <div className="flex gap-2">
         {mode === 'live' && (
           <>
-            <Button type="button" onClick={capture} className="h-11 flex-1 rounded-xl font-bold">
-              <Camera className="mr-2 h-4 w-4" /> Capture
+            <Button type="button" onClick={capture} className="h-12 flex-1 rounded-xl text-base font-bold">
+              <Camera className="mr-2 h-5 w-5" /> Capture
             </Button>
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                stopStream()
-                setMode('idle')
-              }}
-              className="h-11 rounded-xl"
+              onClick={() => { stopStream(); setMode('idle') }}
+              className="h-12 rounded-xl px-4"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5" />
             </Button>
           </>
         )}
-        {mode === 'captured' && (
+        {(mode === 'captured' || mode === 'error') && (
           <Button type="button" variant="outline" onClick={start} className="h-11 flex-1 rounded-xl font-bold">
-            <RefreshCw className="mr-2 h-4 w-4" /> Retake
-          </Button>
-        )}
-        {mode === 'error' && (
-          <Button type="button" variant="outline" onClick={start} className="h-11 flex-1 rounded-xl font-bold">
-            <RefreshCw className="mr-2 h-4 w-4" /> Try again
+            <RefreshCw className="mr-2 h-4 w-4" /> {mode === 'error' ? 'Try again' : 'Retake'}
           </Button>
         )}
       </div>

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { analyticsTableColumnSet } from '@/lib/analytics/table-columns'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { getCachedData } from '@/lib/redis/cache-utils'
@@ -93,7 +93,7 @@ async function readSourceFreshness(source: FreshnessSource, dealerCode: string |
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-business-excellence-freshness')
   try {
-    const accessError = await timer.time('auth', () => requireBrandApiAccess('kia'))
+    const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request))
     if (accessError) return accessError
 
     const { searchParams } = new URL(request.url)

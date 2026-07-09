@@ -95,8 +95,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
       let declined = false
       let declineDetail = ''
-      if (stage === 'finance_head') {
-        // Finance Head verifies the discount fields (the VERIFY checklist).
+      if (body.checks) {
+        // Checklist path (Sales Manager / MD / admin): verify the discount fields.
         const checks = (body.checks || {}) as Record<string, { status?: string; reason?: string }>
         const failures = VERIFY_FIELDS
           .map(([key, label]) => ({ label, status: text(checks[key]?.status), reason: text(checks[key]?.reason) }))

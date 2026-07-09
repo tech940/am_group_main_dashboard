@@ -19,6 +19,27 @@ export function canAccessPettyCash(role: PettyCashRole | null | undefined) {
     || role === 'accounts'
 }
 
+// Org-level roles that supervise petty cash across the WHOLE system. In petty
+// cash `branchId` is the brand (e.g. 'kia') and the individual dealership
+// (JK402 = KIA Jammu, JK501 = KIA Udhampur, …) lives in requestForm.location —
+// so "all branches" here means every brand AND every dealership. These roles are
+// not tied to a single branch and must see requests, expenses and allocations
+// everywhere. (MD/EBA already had this for requests; EA + expenses + allocations
+// were inconsistently branch-scoped — this makes it uniform.)
+const PETTY_CASH_ALL_BRANCH_ROLES = new Set<string>(['developer', 'ea', 'md', 'eba'])
+
+export function hasPettyCashAllBranchAccess(appUser: Pick<AppUser, 'role' | 'brand'>) {
+  return PETTY_CASH_ALL_BRANCH_ROLES.has(appUser.role) || hasAllBranchAccess(appUser.brand)
+}
+
+/** May this user VIEW petty-cash data scoped to `branchId`? All-branch roles may
+ * scope to any brand; everyone else only to their own. Distinct from
+ * canManagePettyCashBranch, which governs CREATE (kept branch-strict). */
+export function canViewPettyCashBranch(appUser: AppUser, branchId: string | null | undefined) {
+  if (!branchId) return false
+  return hasPettyCashAllBranchAccess(appUser) || appUser.brand === branchId
+}
+
 // Only the Branch Admin (branch_admin) submits petty cash requests and expenses.
 // Everyone else in the chain (EA, MD/EBA, Accounts, developer) reviews/approves.
 export function canCreatePettyCashRequest(role: PettyCashRole | null | undefined) {
@@ -53,19 +74,12 @@ export function canManagePettyCashBranch(appUser: AppUser, branchId: string | nu
 export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unknown> {
   const baseFilters: SQL<unknown>[] = [isNull(pettyCashRequests.deletedAt)]
 
-  if (appUser.role === 'developer' || hasAllBranchAccess(appUser.brand)) {
+  // EA / MD / EBA / Developer (and any 'all' user) see every branch's requests.
+  if (hasPettyCashAllBranchAccess(appUser)) {
     return and(...baseFilters)!
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
-    return and(...baseFilters, eq(pettyCashRequests.branchId, appUser.brand || ''))!
-  }
-
-  if (appUser.role === 'md' || appUser.role === 'eba') {
-    return and(...baseFilters)!
-  }
-
-  if (appUser.role === 'ea' || appUser.role === 'accounts') {
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'accounts') {
     return and(...baseFilters, eq(pettyCashRequests.branchId, appUser.brand || ''))!
   }
 
@@ -75,15 +89,12 @@ export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unkno
 export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unknown> {
   const baseFilters: SQL<unknown>[] = [isNull(pettyCashExpenses.deletedAt)]
 
-  if (appUser.role === 'developer' || hasAllBranchAccess(appUser.brand)) {
+  // EA / MD / EBA / Developer (and any 'all' user) see every branch's expenses.
+  if (hasPettyCashAllBranchAccess(appUser)) {
     return and(...baseFilters)!
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
-    return and(...baseFilters, eq(pettyCashExpenses.branchId, appUser.brand || ''))!
-  }
-
-  if (appUser.role === 'ea' || appUser.role === 'md' || appUser.role === 'eba' || appUser.role === 'accounts') {
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'accounts') {
     return and(...baseFilters, eq(pettyCashExpenses.branchId, appUser.brand || ''))!
   }
 
@@ -91,7 +102,8 @@ export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unkno
 }
 
 export function getPettyCashAllocationVisibilityFilter(appUser: AppUser): SQL<unknown> {
-  if (appUser.role === 'developer' || hasAllBranchAccess(appUser.brand)) {
+  // EA / MD / EBA / Developer (and any 'all' user) see every branch's allocations.
+  if (hasPettyCashAllBranchAccess(appUser)) {
     return eq(pettyCashAllocations.status, 'active')
   }
 
@@ -110,14 +122,13 @@ export function getPettyCashAllocationVisibilityFilter(appUser: AppUser): SQL<un
 }
 
 export function canReadPettyCashRequest(appUser: AppUser, request: Pick<PettyCashRequestRecord, 'branchId' | 'createdBy'>) {
-  if (appUser.role === 'developer' || hasAllBranchAccess(appUser.brand)) return true
-  if (appUser.role === 'md' || appUser.role === 'eba') return true
+  if (hasPettyCashAllBranchAccess(appUser)) return true
   if (request.createdBy === appUser.id) return true
   return canAccessPettyCash(appUser.role) && appUser.brand === request.branchId
 }
 
 export function canReadPettyCashExpense(appUser: AppUser, expense: Pick<PettyCashExpenseRecord, 'branchId' | 'createdBy'>) {
-  if (appUser.role === 'developer' || hasAllBranchAccess(appUser.brand)) return true
+  if (hasPettyCashAllBranchAccess(appUser)) return true
   if (expense.createdBy === appUser.id) return true
   return canAccessPettyCash(appUser.role) && appUser.brand === expense.branchId
 }

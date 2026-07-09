@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { invalidateCachePattern } from '@/lib/redis/cache-utils'
 import { CACHE_KEYS } from '@/lib/redis/client'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST() {
-  const accessError = await requireBrandApiAccess('kia')
+  const accessError = await requireBrandSectionApiAccess('kia', 'kia.business_excellence.view')
   if (accessError) return accessError
 
   await invalidateCachePattern(`${CACHE_KEYS.BUSINESS_EXCELLENCE}:*`)

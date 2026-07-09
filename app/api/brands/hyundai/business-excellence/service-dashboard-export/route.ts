@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
 import { buildHyundaiServiceDashboardExport } from '@/lib/hyundai/service-dashboard-export'
@@ -10,7 +10,7 @@ export const maxDuration = 60
 
 export async function GET(request: Request) {
   const timer = createApiTimer('hyundai-service-dashboard-export')
-  const accessError = await timer.time('auth', () => requireBrandApiAccess('hyundai'))
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('hyundai', 'hyundai.business_excellence.view', request))
   if (accessError) return accessError
   const { searchParams } = new URL(request.url)
   try {

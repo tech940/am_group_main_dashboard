@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { buildPlatinumServiceDashboardPreview } from '@/lib/platinum/service-dashboard-export'
@@ -11,7 +11,7 @@ const PREVIEW_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
 
 export async function GET(request: Request) {
   const timer = createApiTimer('platinum-service-dashboard-preview')
-  const accessError = await timer.time('auth', () => requireBrandApiAccess('platinum'))
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('platinum', 'platinum.business_excellence.view', request))
   if (accessError) return accessError
 
   const { searchParams } = new URL(request.url)

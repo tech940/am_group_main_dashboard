@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   KeyRound,
+  LayoutGrid,
   Loader2,
   Plus,
   RefreshCw,
@@ -15,6 +16,7 @@ import {
   Settings,
   Shield,
   ShieldCheck,
+  Upload,
   UserCog,
   Users,
   Wrench,
@@ -23,14 +25,17 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { BRANCH_OPTIONS, USER_BRANCH_OPTIONS } from '@/lib/branches'
+import { BRANCH_OPTIONS } from '@/lib/branches'
+import { getBrandDealers } from '@/lib/dealers/registry'
 import { cn } from '@/lib/utils'
+import { AccessControlPanel } from './access-control-panel'
+import { AccessMap, type AccessMatrixData } from './access-map'
+import { RolesPanel, type RolesData } from './roles-panel'
 
 type Capabilities = {
   authority: 'developer' | 'branch_admin'
@@ -47,6 +52,7 @@ type ManagedUser = {
   fullName: string
   role: string
   brand: string | null
+  dealers: string | null
   department: string | null
   phoneNumber: string | null
   isActive: boolean
@@ -73,7 +79,7 @@ type UsersResponse = {
 type PermissionResponse = {
   users: Array<ManagedUser & { branchLabel: string; canManage: boolean }>
   selectedUser: (ManagedUser & { canManage: boolean }) | null
-  groups: Array<{ key: string; name: string; parentKey: string | null; description: string }>
+  groups: Array<{ key: string; name: string; parentKey: string | null; description: string; sortOrder?: number }>
   permissions: Array<{ key: string; groupKey: string; label: string; action: string }>
   snapshot: {
     effective: Record<string, boolean>
@@ -125,12 +131,17 @@ const ROLE_LABELS: Record<string, string> = {
   technician: 'Technician',
   viewer: 'Employee / Viewer',
   service_manager: 'Service Manager',
-  general_manager: 'General Manager',
+  general_manager: 'Sales General Manager',
+  service_general_manager: 'Service General Manager',
   sales_head: 'Sales Head',
+  sales_executive: 'Sales Executive',
+  sales_manager: 'Sales Manager',
+  finance_team: 'Finance Team',
+  eba: 'EBA',
 }
 
 const TAB_DEFINITIONS: Array<{
-  key: 'overview' | 'users' | 'branch-admins' | 'access' | 'audit' | 'sync-logs' | 'system' | 'settings'
+  key: 'overview' | 'users' | 'branch-admins' | 'access' | 'access-map' | 'roles' | 'audit' | 'sync-logs' | 'system' | 'settings'
   label: string
   icon: typeof Users
   superOnly?: boolean
@@ -139,6 +150,8 @@ const TAB_DEFINITIONS: Array<{
   { key: 'users', label: 'Users', icon: Users },
   { key: 'branch-admins', label: 'Branch Admins', icon: UserCog, superOnly: true },
   { key: 'access', label: 'Access', icon: KeyRound },
+  { key: 'access-map', label: 'Access Map', icon: LayoutGrid },
+  { key: 'roles', label: 'Roles', icon: ShieldCheck, superOnly: true },
   { key: 'audit', label: 'Audit', icon: ShieldCheck },
   { key: 'sync-logs', label: 'Data Sync Logs', icon: RefreshCw },
   { key: 'system', label: 'System', icon: Wrench, superOnly: true },
@@ -237,6 +250,40 @@ function BranchSelector({
   );
 }
 
+function isSingleBrand(brand: string): boolean {
+  return Boolean(brand) && brand !== 'all' && !brand.includes(',')
+}
+
+// Branch/dealer scope within a single brand. Only shown when the brand has dealer locations
+// (KIA, Hyundai, Platinum). No selection = the user sees every branch of the brand.
+function DealerSelector({ brand, value, onChange }: { brand: string; value: string[]; onChange: (value: string[]) => void }) {
+  const options = isSingleBrand(brand) ? getBrandDealers(brand) : []
+  if (options.length === 0) return null
+
+  const toggle = (code: string) => {
+    onChange(value.includes(code) ? value.filter((v) => v !== code) : [...value, code])
+  }
+
+  return (
+    <div>
+      <Label className="mb-1.5 block">Branch scope <span className="font-normal text-slate-400">— leave empty for all branches</span></Label>
+      <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        {options.map((dealer) => (
+          <label key={dealer.code} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={value.includes(dealer.code)}
+              onChange={() => toggle(dealer.code)}
+              className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-xs font-medium text-slate-600">{dealer.label} <span className="text-slate-400">({dealer.code})</span></span>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function AdminConsole() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -245,6 +292,8 @@ export function AdminConsole() {
   const [overview, setOverview] = useState<OverviewResponse | null>(null)
   const [usersData, setUsersData] = useState<UsersResponse | null>(null)
   const [permissionsData, setPermissionsData] = useState<PermissionResponse | null>(null)
+  const [accessMatrix, setAccessMatrix] = useState<AccessMatrixData | null>(null)
+  const [rolesData, setRolesData] = useState<RolesData | null>(null)
   const [auditData, setAuditData] = useState<AuditResponse | null>(null)
   const [auditSource, setAuditSource] = useState<'admin' | 'kia'>('admin')
   const [syncLogs, setSyncLogs] = useState<{
@@ -259,6 +308,8 @@ export function AdminConsole() {
     rows: Array<{ id: string; customerEmail: string; subject: string; emailType: string | null; status: string; error: string | null; sentAt: string | null; createdAt: string }>
   } | null>(null)
   const [resetting, setResetting] = useState(false)
+  const [priceUploading, setPriceUploading] = useState(false)
+  const [priceUploadResult, setPriceUploadResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [settingsData, setSettingsData] = useState<Record<string, unknown> | null>(null)
   const [settingsText, setSettingsText] = useState('')
   const [loading, setLoading] = useState(true)
@@ -272,13 +323,14 @@ export function AdminConsole() {
     password: '',
     role: 'viewer',
     brand: '',
+    dealers: [] as string[],
     department: '',
   })
   const [saving, setSaving] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState(searchParams.get('user') || '')
   const [permissionChanges, setPermissionChanges] = useState<Record<string, boolean | null>>({})
   const [editUser, setEditUser] = useState<ManagedUser | null>(null)
-  const [editForm, setEditForm] = useState({ fullName: '', email: '', password: '', role: '', brand: '', department: '', phoneNumber: '' })
+  const [editForm, setEditForm] = useState({ fullName: '', email: '', password: '', role: '', brand: '', dealers: [] as string[], department: '', phoneNumber: '' })
 
   const activeTab = useMemo(() => {
     const definition = TAB_DEFINITIONS.find((item) => item.key === requestedTab)
@@ -297,6 +349,10 @@ export function AdminConsole() {
           ? '/api/admin/users?pageSize=100'
           : activeTab === 'access'
             ? `/api/admin/permissions${selectedUserId ? `?userId=${selectedUserId}` : ''}`
+            : activeTab === 'access-map'
+              ? '/api/admin/access-matrix'
+            : activeTab === 'roles'
+              ? '/api/admin/roles'
             : activeTab === 'audit'
               ? `/api/admin/audit?pageSize=50&source=${auditSource}`
               : activeTab === 'sync-logs'
@@ -319,6 +375,12 @@ export function AdminConsole() {
         setCapabilities(payload.actorCapabilities)
         setSelectedUserId(payload.selectedUser?.id || '')
         setPermissionChanges({})
+      } else if (activeTab === 'access-map') {
+        setAccessMatrix(payload)
+        setCapabilities(payload.actorCapabilities)
+      } else if (activeTab === 'roles') {
+        setRolesData(payload)
+        setCapabilities(payload.actorCapabilities)
       } else if (activeTab === 'audit') {
         setAuditData(payload)
         setCapabilities(payload.actorCapabilities)
@@ -368,7 +430,7 @@ export function AdminConsole() {
       if (!response.ok) throw new Error(payload.error || 'Failed to create user.')
       setCreateOpen(false)
       setCreateStep(1)
-      setCreateForm({ fullName: '', email: '', password: '', role: 'viewer', brand: '', department: '' })
+      setCreateForm({ fullName: '', email: '', password: '', role: 'viewer', brand: '', dealers: [], department: '' })
       await load()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to create user.')
@@ -403,6 +465,7 @@ export function AdminConsole() {
       password: '',
       role: user.role,
       brand: user.brand || '',
+      dealers: user.dealers ? user.dealers.split(',').map((code) => code.trim()).filter(Boolean) : [],
       department: user.department || '',
       phoneNumber: user.phoneNumber || '',
     })
@@ -424,6 +487,7 @@ export function AdminConsole() {
           ...(capabilities?.authority === 'developer' ? {
             role: editForm.role,
             brand: editForm.brand,
+            dealers: editForm.dealers,
             email: editForm.email,
             ...(editForm.password ? { password: editForm.password } : {}),
           } : {}),
@@ -475,6 +539,30 @@ export function AdminConsole() {
       setError(saveError instanceof Error ? saveError.message : 'Failed to save permissions.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function uploadPriceMaster(file?: File | null) {
+    if (!file) return
+    setPriceUploading(true)
+    setPriceUploadResult(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch('/api/brands/kia/proforma/price-details/upload', { method: 'POST', body: formData })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || 'Failed to import price details.')
+      const summary = payload.summary
+      setPriceUploadResult({
+        ok: true,
+        message: summary
+          ? `Imported ${summary.importedRows} rows${summary.failedRows ? `, ${summary.failedRows} failed` : ''} from "${summary.sheetName}".`
+          : 'Prices replaced successfully.',
+      })
+    } catch (uploadError) {
+      setPriceUploadResult({ ok: false, message: uploadError instanceof Error ? uploadError.message : 'Failed to import price details.' })
+    } finally {
+      setPriceUploading(false)
     }
   }
 
@@ -649,67 +737,29 @@ export function AdminConsole() {
             )}
 
             {activeTab === 'access' && permissionsData && (
-              <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
-                <Card>
-                  <CardHeader><CardTitle>Select User</CardTitle></CardHeader>
-                  <CardContent className="space-y-2">
-                    {permissionsData.users.map((user) => (
-                      <button
-                        key={user.id}
-                        onClick={() => setSelectedUserId(user.id)}
-                        className={cn('w-full rounded-xl border p-3 text-left transition', selectedUserId === user.id ? 'border-indigo-400 bg-indigo-50' : 'hover:bg-slate-50')}
-                      >
-                        <p className="font-semibold text-slate-900">{user.fullName}</p>
-                        <p className="text-xs text-slate-500">{ROLE_LABELS[user.role] || user.role} · {user.branchLabel}</p>
-                      </button>
-                    ))}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="flex-row items-center justify-between">
-                    <div>
-                      <CardTitle>{permissionsData.selectedUser?.fullName || 'Access Editor'}</CardTitle>
-                      <p className="mt-1 text-sm text-slate-500">Inherited, explicit, and unavailable access is resolved server-side.</p>
-                    </div>
-                    <Button disabled={saving || !permissionsData.selectedUser?.canManage || !Object.keys(permissionChanges).length} onClick={() => void savePermissions()}>
-                      {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save Access
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {!permissionsData.selectedUser?.canManage && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">Managed by Developer. Access is read-only.</div>
-                    )}
-                    {permissionsData.groups.map((group) => {
-                      const groupPermissions = permissionsData.permissions.filter((permission) => permission.groupKey === group.key)
-                      if (!groupPermissions.length) return null
-                      return (
-                        <div key={group.key} className="rounded-xl border p-4">
-                          <div className="mb-3"><p className="font-bold text-slate-900">{group.name}</p><p className="text-xs text-slate-500">{group.description}</p></div>
-                          <div className="flex flex-wrap gap-3">
-                            {groupPermissions.map((permission) => {
-                              const value = permission.key in permissionChanges
-                                ? permissionChanges[permission.key] === true
-                                : permissionsData.snapshot.effective[permission.key] === true
-                              const inherited = !(permission.key in permissionsData.snapshot.overrides)
-                              return (
-                                <label key={permission.key} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                                  <Checkbox
-                                    checked={value}
-                                    disabled={!permissionsData.selectedUser?.canManage}
-                                    onCheckedChange={(checked) => setPermissionChanges((current) => ({ ...current, [permission.key]: checked === true }))}
-                                  />
-                                  <span className="capitalize">{permission.action}</span>
-                                  <span className="text-[10px] uppercase text-slate-400">{inherited ? 'inherited' : 'explicit'}</span>
-                                </label>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </CardContent>
-                </Card>
-              </div>
+              <AccessControlPanel
+                data={permissionsData}
+                selectedUserId={selectedUserId}
+                onSelectUser={setSelectedUserId}
+                changes={permissionChanges}
+                setChanges={setPermissionChanges}
+                saving={saving}
+                onSave={() => void savePermissions()}
+                roleLabels={ROLE_LABELS}
+              />
+            )}
+
+            {activeTab === 'access-map' && accessMatrix && (
+              <AccessMap
+                data={accessMatrix}
+                roleLabels={ROLE_LABELS}
+                onEditUser={(id) => { setSelectedUserId(id); router.replace('/admin?tab=access') }}
+                onReload={() => void load()}
+              />
+            )}
+
+            {activeTab === 'roles' && rolesData && (
+              <RolesPanel data={rolesData} />
             )}
 
             {activeTab === 'audit' && auditData && (
@@ -827,6 +877,33 @@ export function AdminConsole() {
                   })}
                 </div>
               </div>
+            )}
+
+            {activeTab === 'system' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>KIA Price Master · Replace Prices</CardTitle>
+                  <p className="mt-1 text-sm text-slate-500">Upload the KIA price workbook to replace the current price master (only the <strong>PRICE DETAILS</strong> sheet is imported). Used by Bookings and Proforma pricing. Moved here from the Booking section.</p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <label className={cn('inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800', priceUploading && 'pointer-events-none opacity-60')}>
+                    {priceUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {priceUploading ? 'Replacing prices…' : 'Replace Prices (Excel)'}
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
+                      className="hidden"
+                      disabled={priceUploading}
+                      onChange={(event) => { void uploadPriceMaster(event.target.files?.[0]); event.target.value = '' }}
+                    />
+                  </label>
+                  {priceUploadResult && (
+                    <p className={cn('rounded-xl border px-3 py-2 text-sm font-medium', priceUploadResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700')}>
+                      {priceUploadResult.message}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             )}
 
             {activeTab === 'system' && (
@@ -973,9 +1050,14 @@ export function AdminConsole() {
                 {capabilities?.authority === 'branch_admin'
                   ? <Input value={branchLabel(capabilities.branch)} disabled />
                   : (
-                    <BranchSelector value={createForm.brand} onChange={(value) => setCreateForm((current) => ({ ...current, brand: value }))} />
+                    <BranchSelector value={createForm.brand} onChange={(value) => setCreateForm((current) => ({ ...current, brand: value, dealers: [] }))} />
                   )}
               </div>
+              <DealerSelector
+                brand={capabilities?.authority === 'branch_admin' ? (capabilities.branch || '') : createForm.brand}
+                value={createForm.dealers}
+                onChange={(value) => setCreateForm((current) => ({ ...current, dealers: value }))}
+              />
               <div><Label>Department</Label><Input value={createForm.department} onChange={(event) => setCreateForm((current) => ({ ...current, department: event.target.value }))} /></div>
             </div>
           )}
@@ -1033,9 +1115,16 @@ export function AdminConsole() {
             )}
 
             {capabilities?.authority === 'developer' && (
-              <div>
-                <Label className="mb-1.5 block">Branch(es)</Label>
-                <BranchSelector value={editForm.brand} onChange={(value) => setEditForm((current) => ({ ...current, brand: value }))} />
+              <div className="space-y-4">
+                <div>
+                  <Label className="mb-1.5 block">Branch(es)</Label>
+                  <BranchSelector value={editForm.brand} onChange={(value) => setEditForm((current) => ({ ...current, brand: value, dealers: [] }))} />
+                </div>
+                <DealerSelector
+                  brand={editForm.brand}
+                  value={editForm.dealers}
+                  onChange={(value) => setEditForm((current) => ({ ...current, dealers: value }))}
+                />
               </div>
             )}
 

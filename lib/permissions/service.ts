@@ -31,7 +31,7 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-const PERMISSION_CACHE_VERSION = 'v5'
+const PERMISSION_CACHE_VERSION = 'v7'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 const ADMIN_ONLY_PERMISSION_GROUPS = new Set(['user_management', 'access_control', 'admin_audit'])
 
@@ -55,9 +55,15 @@ const BRANCH_PERMISSION_PREFIXES = BRANCH_OPTIONS.map((branch) => branch.value)
 
 function getBranchPermissionPrefixes(branchAccess: string | null | undefined) {
   if (hasAllBranchAccess(branchAccess)) return BRANCH_PERMISSION_PREFIXES
-  return BRANCH_PERMISSION_PREFIXES.includes(branchAccess as typeof BRANCH_PERMISSION_PREFIXES[number])
-    ? [branchAccess as typeof BRANCH_PERMISSION_PREFIXES[number]]
-    : []
+  if (!branchAccess) return []
+  // A user's brand may be a single value ('kia') OR a comma-separated multi-brand assignment
+  // ('hyundai,tata'). Split it and keep every valid brand — otherwise multi-brand users match
+  // NO prefix, so constrainSnapshotToBranch/applyBrandDefault would grant them nothing at all.
+  return branchAccess
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value): value is typeof BRANCH_PERMISSION_PREFIXES[number] =>
+      (BRANCH_PERMISSION_PREFIXES as string[]).includes(value))
 }
 
 function applyBranchRoleDefaults(
@@ -78,17 +84,6 @@ function applyBranchRoleDefaults(
         const mappedKey = `${prefix}${key.slice('kia'.length)}`
         if (availableKeys.has(mappedKey)) roleDefaults[mappedKey] = true
       }
-    }
-  }
-
-  for (const permission of PERMISSIONS) {
-    const isInBranch = prefixes.some((prefix) =>
-      permission.groupKey === prefix || permission.groupKey.startsWith(`${prefix}.`)
-    )
-    if (!isInBranch) continue
-
-    if (role === 'branch_admin') {
-      roleDefaults[permission.key] = true
     }
   }
 }
@@ -113,6 +108,45 @@ function constrainSnapshotToBranch(
   }
 }
 
+// Roles whose access is defined purely by their role template — they do NOT receive the
+// blanket "see your whole brand" default. This moves two former sidebar hardcodes into the
+// resolution layer: branch_admin (Petty Cash only) and sales_executive (Bookings only).
+const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive'])
+
+// Sensitive KIA report sections that only developer/md/eba may see (formerly the
+// `isKiaSalesReportRoleAllowed` sidebar hardcode). They are excluded from the brand default
+// and force-set by applySensitiveSectionRules so no other role — brand user or global — sees them.
+const SENSITIVE_REPORT_ROLES = new Set<string>(['developer', 'md', 'eba'])
+function isSensitiveReportKey(key: string) {
+  return key.startsWith('kia.sales_report.') || key.startsWith('kia.stock_report.')
+}
+function applySensitiveSectionRules(effective: Record<string, boolean>, role: PermissionRole) {
+  const allowed = SENSITIVE_REPORT_ROLES.has(role)
+  for (const key of Object.keys(effective)) {
+    if (isSensitiveReportKey(key)) effective[key] = allowed
+  }
+}
+
+// A user's brand grants default visibility of that brand's own sections. This is applied to
+// the DEFAULT layer (before overrides) so an explicit Deny wins. Template-only roles and the
+// sensitive report sections are excluded so their narrower rules hold.
+function applyBrandDefault(
+  values: Record<string, boolean>,
+  role: PermissionRole,
+  branchAccess: string | null | undefined
+) {
+  if (isSuperAdminRole(role) || hasGlobalAccessRole(role) || hasAllBranchAccess(branchAccess)) return
+  if (TEMPLATE_ONLY_ROLES.has(role)) return
+  // Grant every section of EACH assigned brand (handles comma-separated multi-brand users).
+  const prefixes = getBranchPermissionPrefixes(branchAccess)
+  if (!prefixes.length) return
+  for (const key of Object.keys(values)) {
+    if (!prefixes.some((prefix) => key.startsWith(`${prefix}.`))) continue
+    if (isSensitiveReportKey(key)) continue
+    values[key] = true
+  }
+}
+
 function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string | null): PermissionSnapshot {
   const roleKeys = new Set(
     isSuperAdminRole(role)
@@ -128,11 +162,10 @@ function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string |
     for (const key of Object.keys(roleDefaults)) roleDefaults[key] = true
   } else if (hasGlobalAccessRole(role)) {
     for (const key of Object.keys(roleDefaults)) roleDefaults[key] = !isAdminOnlyPermission(key)
-  } else if (branchAccess) {
+  } else {
+    const prefixes = getBranchPermissionPrefixes(branchAccess)
     for (const key of Object.keys(roleDefaults)) {
-      if (key.startsWith(`${branchAccess}.`)) {
-        roleDefaults[key] = true
-      }
+      if (prefixes.some((prefix) => key.startsWith(`${prefix}.`))) roleDefaults[key] = true
     }
   }
 
@@ -223,14 +256,15 @@ export async function ensurePermissionRegistrySynced() {
       .filter((value): value is { role: PermissionRole; permissionId: string; allowed: boolean; updatedAt: Date } => Boolean(value)))
 
   if (rolePermissionRows.length > 0) {
+    // SEED ONLY — insert-if-absent. Role defaults are editable in the Admin → Roles tab, so we
+    // must NOT overwrite an existing role_permissions row on every sync (that would clobber
+    // admin edits). New template keys are still seeded; existing rows are left as the DB has
+    // them. Trade-off: removing a key from a code template no longer un-grants it — the DB is
+    // authoritative for role defaults once seeded.
     await db.insert(rolePermissions)
       .values(rolePermissionRows)
-      .onConflictDoUpdate({
+      .onConflictDoNothing({
         target: [rolePermissions.role, rolePermissions.permissionId],
-        set: {
-          allowed: true,
-          updatedAt: now,
-        },
       })
   }
 }
@@ -337,15 +371,12 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
     .where(eq(userPermissions.userId, userId))
 
   const keyById = new Map(permissionRows.map((permission) => [permission.id, permission.key]))
-  const roleDefaults = Object.fromEntries(permissionRows.map((permission) => [permission.key, false]))
+  const baseRoleDefaults = Object.fromEntries(permissionRows.map((permission) => [permission.key, false]))
 
   for (const row of roleRows) {
     const key = keyById.get(row.permissionId)
-    if (key) roleDefaults[key] = row.allowed
+    if (key) baseRoleDefaults[key] = row.allowed
   }
-
-  applyBranchRoleDefaults(roleDefaults, targetUser.role, targetUser.brand)
-  constrainSnapshotToBranch(roleDefaults, targetUser.role, targetUser.brand)
 
   const overrides: Record<string, boolean> = {}
   for (const row of overrideRows) {
@@ -353,19 +384,38 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
     if (key) overrides[key] = row.allowed
   }
 
+  return resolveEffectiveSnapshot(baseRoleDefaults, overrides, targetUser.role, targetUser.brand)
+}
+
+/**
+ * Pure permission resolution — no database. Layers role defaults → branch role defaults →
+ * brand default → branch scope, then merges the user's explicit overrides LAST so that an
+ * explicit Deny (allowed=false) wins over the brand default. Super Admins always resolve to
+ * all-true; global-access roles resolve to everything except admin-only. Exported so the
+ * resolution rules can be unit-tested without standing up the database.
+ */
+export function resolveEffectiveSnapshot(
+  baseRoleDefaults: Record<string, boolean>,
+  overrides: Record<string, boolean>,
+  role: PermissionRole,
+  branchAccess: string | null | undefined,
+): PermissionSnapshot {
+  const roleDefaults = { ...baseRoleDefaults }
+  applyBranchRoleDefaults(roleDefaults, role, branchAccess)
+  applyBrandDefault(roleDefaults, role, branchAccess)
+  constrainSnapshotToBranch(roleDefaults, role, branchAccess)
+
+  // Overrides merge LAST, so an explicit Deny wins over the brand default.
   const effective = { ...roleDefaults, ...overrides }
-  constrainSnapshotToBranch(effective, targetUser.role, targetUser.brand)
-  if (isSuperAdminRole(targetUser.role)) {
+  constrainSnapshotToBranch(effective, role, branchAccess)
+  if (isSuperAdminRole(role)) {
     for (const key of Object.keys(effective)) effective[key] = true
-  } else if (hasGlobalAccessRole(targetUser.role)) {
+  } else if (hasGlobalAccessRole(role)) {
     for (const key of Object.keys(effective)) effective[key] = !isAdminOnlyPermission(key)
-  } else if (targetUser.brand) {
-    for (const key of Object.keys(effective)) {
-      if (key.startsWith(`${targetUser.brand}.`)) {
-        effective[key] = true
-      }
-    }
   }
+  // Sensitive KIA reports are restricted to developer/md/eba even for global roles — applied
+  // last so it overrides the brand default, overrides, and the global-access grant.
+  applySensitiveSectionRules(effective, role)
 
   return { effective, roleDefaults, overrides }
 }
@@ -383,8 +433,9 @@ export async function canUserAccessPermission(appUser: AppUser | null, permissio
   if (isSuperAdminRole(appUser.role)) return true
   if (hasGlobalAccessRole(appUser.role)) return !isAdminOnlyPermission(permissionKey)
 
-  if (appUser.brand && permissionKey.startsWith(`${appUser.brand}.`)) return true
-
+  // Brand no longer short-circuits to `true` here. A user's brand still grants default
+  // visibility of its own sections, but that default lives in the snapshot's roleDefaults,
+  // so an explicit Deny override can now take precedence. See buildUserPermissionSnapshot.
   const snapshot = await getUserPermissionSnapshot(appUser.id)
   return snapshot.effective[permissionKey] === true
 }
@@ -481,4 +532,79 @@ export async function updateUserPermissionOverrides(params: {
 
   await clearUserPermissionCache(params.targetUserId)
   return buildUserPermissionSnapshot(params.targetUserId)
+}
+
+// Editing a role's defaults changes every user who has that role, so their cached snapshots
+// must be dropped.
+async function invalidateRolePermissionCaches(role: PermissionRole) {
+  const rows = await db.select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.role, role), isNull(users.deletedAt)))
+  await Promise.all(rows.map((row) => clearUserPermissionCache(row.id)))
+}
+
+/** DB-backed role defaults as { role: { permissionKey: true } } — only granted keys are present. */
+export async function getRolePermissionGrants(): Promise<Record<string, Record<string, boolean>>> {
+  await ensurePermissionRegistrySynced()
+  const rows = await db.select({
+    role: rolePermissions.role,
+    key: permissions.name,
+    allowed: rolePermissions.allowed,
+  })
+    .from(rolePermissions)
+    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+
+  const grants: Record<string, Record<string, boolean>> = {}
+  for (const row of rows) {
+    if (!row.allowed) continue
+    ;(grants[row.role] ||= {})[row.key] = true
+  }
+  return grants
+}
+
+/**
+ * Update a role's default permissions. `changes` maps a permission key to whether the role
+ * should grant it by default: true upserts a granted row, false removes the grant. Every
+ * affected user's cache is invalidated.
+ */
+export async function updateRolePermissions(params: {
+  role: PermissionRole
+  changes: Record<string, boolean>
+}) {
+  const entries = Object.entries(params.changes)
+  if (entries.length === 0) return getRolePermissionGrants()
+
+  await ensurePermissionRegistrySynced()
+  const permissionRows = await db.select({ id: permissions.id, key: permissions.name })
+    .from(permissions)
+    .where(inArray(permissions.name, entries.map(([key]) => key)))
+  const idByKey = new Map(permissionRows.map((permission) => [permission.key, permission.id]))
+  const now = new Date()
+
+  const upsertRows: Array<typeof rolePermissions.$inferInsert> = []
+  const removeIds: string[] = []
+  for (const [key, granted] of entries) {
+    const permissionId = idByKey.get(key)
+    if (!permissionId) continue
+    if (granted) upsertRows.push({ role: params.role, permissionId, allowed: true, updatedAt: now })
+    else removeIds.push(permissionId)
+  }
+
+  await Promise.all([
+    removeIds.length > 0
+      ? db.delete(rolePermissions).where(and(
+        eq(rolePermissions.role, params.role),
+        inArray(rolePermissions.permissionId, removeIds),
+      ))
+      : Promise.resolve(),
+    upsertRows.length > 0
+      ? db.insert(rolePermissions).values(upsertRows).onConflictDoUpdate({
+        target: [rolePermissions.role, rolePermissions.permissionId],
+        set: { allowed: sql`excluded.allowed`, updatedAt: now },
+      })
+      : Promise.resolve(),
+  ])
+
+  await invalidateRolePermissionCaches(params.role)
+  return getRolePermissionGrants()
 }

@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumRoBillingCoverage } from '@/lib/platinum/business-excellence-coverage'
@@ -1402,7 +1402,7 @@ function normalizeGroupBy(value: string) {
 export async function GET(request: Request) {
   const timer = createApiTimer('ro-billing-analysis')
   try {
-    const accessError = await timer.time('auth', () => requireBrandApiAccess('platinum'))
+    const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('platinum', 'platinum.business_excellence.view', request))
     if (accessError) return accessError
 
     const { searchParams } = new URL(request.url)

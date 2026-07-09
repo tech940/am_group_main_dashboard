@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import {
   hyundaiSourceDealerSql,
@@ -212,7 +212,7 @@ async function readSourceFreshness(sources: FreshnessSource[], dealerCode: strin
 export async function GET(request: Request) {
   const timer = createApiTimer('hyundai-business-excellence-freshness')
   try {
-    const accessError = await timer.time('auth', () => requireBrandApiAccess('hyundai'))
+    const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('hyundai', 'hyundai.business_excellence.view', request))
     if (accessError) return accessError
 
     const { searchParams } = new URL(request.url)

@@ -12,11 +12,14 @@ export type VehicleTrackerEntry = typeof kiaVehicleTracker.$inferSelect
 
 export type VehicleVerification = { ok: boolean; reason: string }
 
+const NOT_A_VEHICLE = 'No vehicle detected. Please capture a clear photo of the vehicle.'
+const NOT_FRONT = 'Only the FRONT of the vehicle is accepted. Capture the front — grille, headlights and number plate facing the camera.'
+
 /**
  * Use the app's Groq vision model (same one that powers the cost-sheet check) to
- * decide whether an image clearly shows a motor vehicle. Returns { ok:false } when
- * the model says it is not a vehicle, or when the key/call is unavailable — the
- * caller surfaces the reason to the user so they re-shoot the photo.
+ * decide whether an image clearly shows the FRONT of a motor vehicle. Returns
+ * { ok:false } when it is not a vehicle, not the front, or the call is unavailable —
+ * the caller surfaces the reason so the user re-shoots the photo.
  */
 export async function verifyImageHasVehicle(file: File): Promise<VehicleVerification> {
   const apiKey = process.env.GROQ_API_KEY
@@ -38,7 +41,7 @@ export async function verifyImageHasVehicle(file: File): Promise<VehicleVerifica
             content: [
               {
                 type: 'text',
-                text: 'Look at this photo. Does it clearly show a motor vehicle (a car, SUV, van, truck, bus, or motorcycle)? A small date/time stamp may be overlaid on the image — ignore it. Respond with ONLY strict JSON on one line: {"vehicle": true|false, "reason": "<max 8 words>"}.',
+                text: 'Look at this photo of a motor vehicle (car, SUV, van, truck, bus or motorcycle). A small date/time stamp may be overlaid — ignore it. Decide two things: (1) is a motor vehicle clearly visible, and (2) is it photographed from the FRONT (you can see the grille, both headlights, and/or the front number plate facing the camera — NOT the side profile, rear, or interior). Respond with ONLY strict JSON on one line: {"vehicle": true|false, "front": true|false, "reason": "<max 8 words>"}.',
               },
               { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
             ],
@@ -59,22 +62,22 @@ export async function verifyImageHasVehicle(file: File): Promise<VehicleVerifica
     const match = raw.match(/\{[\s\S]*\}/)
     if (match) {
       try {
-        const parsed = JSON.parse(match[0]) as { vehicle?: unknown; reason?: unknown }
-        const ok = parsed.vehicle === true || String(parsed.vehicle).toLowerCase() === 'true'
-        return {
-          ok,
-          reason: ok
-            ? String(parsed.reason || 'Vehicle detected.')
-            : 'No vehicle detected in the photo. Please capture a clear photo of the vehicle.',
-        }
+        const parsed = JSON.parse(match[0]) as { vehicle?: unknown; front?: unknown; reason?: unknown }
+        const isVehicle = parsed.vehicle === true || String(parsed.vehicle).toLowerCase() === 'true'
+        const isFront = parsed.front === true || String(parsed.front).toLowerCase() === 'true'
+        if (!isVehicle) return { ok: false, reason: NOT_A_VEHICLE }
+        if (!isFront) return { ok: false, reason: NOT_FRONT }
+        return { ok: true, reason: String(parsed.reason || 'Front of vehicle detected.') }
       } catch {
         // fall through to text heuristic
       }
     }
-    const positive = /\b(true|yes|vehicle|car|suv|van|truck|bus|motorcycle|bike)\b/i.test(raw)
-    return positive
-      ? { ok: true, reason: 'Vehicle detected.' }
-      : { ok: false, reason: 'No vehicle detected in the photo. Please capture a clear photo of the vehicle.' }
+    // Heuristic fallback if JSON parsing failed: require a vehicle word AND a front cue.
+    const hasVehicle = /\b(vehicle|car|suv|van|truck|bus|motorcycle|bike)\b/i.test(raw)
+    const hasFront = /\bfront\b/i.test(raw) && !/\bnot\s+(the\s+)?front\b/i.test(raw)
+    if (!hasVehicle) return { ok: false, reason: NOT_A_VEHICLE }
+    if (!hasFront) return { ok: false, reason: NOT_FRONT }
+    return { ok: true, reason: 'Front of vehicle detected.' }
   } catch (error) {
     console.error('Groq vehicle-verify failed:', error)
     return { ok: false, reason: 'Could not verify the photo. Please try again.' }

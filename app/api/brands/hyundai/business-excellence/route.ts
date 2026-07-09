@@ -4,7 +4,7 @@ import { analyticsDb as db } from '@/lib/analytics/db'
 import { analyticsTableColumns } from '@/lib/analytics/table-columns'
 import { getCachedData, invalidateCachePattern } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { getHyundaiDealerCodes, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
 
@@ -285,7 +285,7 @@ async function fetchTableRows({
 export async function GET(request: Request) {
   const timer = createApiTimer('hyundai-business-excellence')
   try {
-    const accessError = await timer.time('auth', () => requireBrandApiAccess('hyundai'))
+    const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('hyundai', 'hyundai.business_excellence.view', request))
     if (accessError) return accessError
 
     const { searchParams } = new URL(request.url)
@@ -332,7 +332,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST() {
-  const accessError = await requireBrandApiAccess('hyundai')
+  const accessError = await requireBrandSectionApiAccess('hyundai', 'hyundai.business_excellence.view')
   if (accessError) return accessError
 
   await Promise.all([

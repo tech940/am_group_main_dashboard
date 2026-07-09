@@ -1,5 +1,8 @@
 import KiaBusinessExcellencePage from '@/features/kia/business-excellence-page'
 import { getBrandAccess } from '@/lib/auth/brand-access'
+import { getUserDealerScope } from '@/lib/auth/dealer-scope'
+import { getBrandDealers } from '@/lib/dealers/registry'
+import { requirePermission } from '@/lib/permissions/service'
 import { forbidden, notFound, redirect } from 'next/navigation'
 
 const REPORT_TITLES: Record<string, string> = {
@@ -50,5 +53,13 @@ export default async function Page({
     forbidden()
   }
 
-  return <KiaBusinessExcellencePage initialReport={report} currentUserRole={access.appUser.role} />
+  const permission = await requirePermission(access.appUser, 'kia.business_excellence.view')
+  if (!permission.allowed) {
+    forbidden()
+  }
+
+  const dealerScope = getUserDealerScope(access.appUser, 'kia')
+  const allowedDealers = dealerScope ? getBrandDealers('kia').filter((dealer) => dealerScope.includes(dealer.code)) : undefined
+
+  return <KiaBusinessExcellencePage initialReport={report} currentUserRole={access.appUser.role} allowedDealers={allowedDealers} />
 }

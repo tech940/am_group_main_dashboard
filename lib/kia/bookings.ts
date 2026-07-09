@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, count, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm'
+import { and, count, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { analyticsDb } from '@/lib/analytics/db'
 import {
@@ -64,6 +64,9 @@ export type BookingListInput = {
   pageSize?: number | null
   // The requesting user — used to scope Sales Executives to their own bookings.
   viewer?: { id?: string | null; email?: string | null; role?: string | null } | null
+  // Dealer/branch codes the user is restricted to (null/empty = all branches). A hard boundary
+  // applied to the list, KPIs, and filter options — set from the user's dealer scope server-side.
+  allowedDealers?: string[] | null
 }
 
 export type CreateBookingInput = {
@@ -208,6 +211,8 @@ function listFilters(input: BookingListInput) {
   const filters = [isNull(kiaBookings.deletedAt)]
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
   if (dealerCode) filters.push(eq(kiaBookings.dealerCode, dealerCode))
+  // Branch boundary: a dealer-scoped user can never see another branch's bookings.
+  if (input.allowedDealers && input.allowedDealers.length) filters.push(inArray(kiaBookings.dealerCode, input.allowedDealers))
   if (text(input.model) && text(input.model).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.model, text(input.model)))
   if (text(input.status) && text(input.status).toLowerCase() !== 'all') filters.push(eq(kiaBookings.status, normalizeStatus(input.status)))
   if (text(input.consultant) && text(input.consultant).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.consultantName, text(input.consultant)))
@@ -242,6 +247,10 @@ function listFilters(input: BookingListInput) {
 export async function getKiaBookingsList(input: BookingListInput) {
   const { page, pageSize, offset } = pageParams(input)
   const where = listFilters(input)
+  // Same branch boundary applied to the KPI counts and filter-option lists below.
+  const dealerScope = input.allowedDealers && input.allowedDealers.length
+    ? sql`AND dealer_code = ANY(${input.allowedDealers})`
+    : sql``
 
   // Page load is dominated by pooler round-trip latency (~225ms/query), not the
   // queries themselves. The status counts, filter option lists and today count
@@ -254,18 +263,18 @@ export async function getKiaBookingsList(input: BookingListInput) {
     db.execute(sql`
       SELECT
         COALESCE((SELECT jsonb_object_agg(status, cnt) FROM (
-          SELECT status, count(*)::int AS cnt FROM kia_bookings WHERE deleted_at IS NULL GROUP BY status
+          SELECT status, count(*)::int AS cnt FROM kia_bookings WHERE deleted_at IS NULL ${dealerScope} GROUP BY status
         ) s), '{}'::jsonb) AS status_counts,
         COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
-          SELECT DISTINCT dealer_code AS value FROM kia_bookings WHERE deleted_at IS NULL AND dealer_code IS NOT NULL
+          SELECT DISTINCT dealer_code AS value FROM kia_bookings WHERE deleted_at IS NULL AND dealer_code IS NOT NULL ${dealerScope}
         ) d), '[]'::jsonb) AS dealers,
         COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
-          SELECT DISTINCT model AS value FROM kia_bookings WHERE deleted_at IS NULL AND model IS NOT NULL
+          SELECT DISTINCT model AS value FROM kia_bookings WHERE deleted_at IS NULL AND model IS NOT NULL ${dealerScope}
         ) m), '[]'::jsonb) AS models,
         COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
-          SELECT DISTINCT consultant_name AS value FROM kia_bookings WHERE deleted_at IS NULL AND consultant_name IS NOT NULL
+          SELECT DISTINCT consultant_name AS value FROM kia_bookings WHERE deleted_at IS NULL AND consultant_name IS NOT NULL ${dealerScope}
         ) c), '[]'::jsonb) AS consultants,
-        (SELECT count(*)::int FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC') AS today_count
+        (SELECT count(*)::int FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC' ${dealerScope}) AS today_count
     `),
   ])
 
@@ -613,6 +622,15 @@ export async function getKiaBookingMatchingVehicles(id: string) {
       UNION ALL
       SELECT * FROM bbnd
     ) vehicles
+    -- #10d: a vehicle that has been transferred (or has a pending transfer) to a branch is only
+    -- allocatable from that destination branch. Exclude any vehicle transferred to a dealer OTHER
+    -- than this booking's dealer; vehicles transferred TO this dealer (or not transferred) stay.
+    WHERE NOT EXISTS (
+      SELECT 1 FROM kia_vehicle_transfers vt
+      WHERE vt.vin_number = vehicles.vin_number
+        AND LOWER(coalesce(vt.transfer_status, '')) IN ('transferred', 'requested')
+        AND coalesce(vt.to_dealer_code, '') <> ${text(booking.dealerCode)}
+    )
     ORDER BY
       CASE WHEN variant ILIKE ${variantPattern} THEN 0 ELSE 1 END,
       uploaded_at DESC NULLS LAST

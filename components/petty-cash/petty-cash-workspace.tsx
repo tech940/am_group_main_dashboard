@@ -10,7 +10,6 @@ import {
   ClipboardList,
   Clock3,
   Layers,
-  Loader2,
   PauseCircle,
   Plus,
   ReceiptText,
@@ -28,6 +27,7 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { RequestFormDialog } from './pc-request-form'
 import { ExpenseFormDialog } from './pc-expense-form'
+import { PettyCashDetailDialog, type DetailTarget } from './pc-detail-dialog'
 import {
   BalanceMeter,
   EmptyState,
@@ -60,8 +60,28 @@ import {
   type RequestFormState,
 } from './types'
 
-type TabKey = 'overview' | 'requests' | 'expenses' | 'ledger'
+type TabKey = 'overview' | 'requests' | 'expenses' | 'allocations' | 'ledger'
 type WorkflowDialogState = { request: PettyCashRequest; action: 'reject' | 'hold' } | null
+
+type PettyCashAllocationRow = {
+  id: string
+  allocationNumber?: string
+  allocation_number?: string
+  branchId?: string
+  branch_id?: string
+  status: string
+  allocatedAmount?: string
+  allocated_amount?: string
+  spentAmount?: string
+  spent_amount?: string
+  remainingAmount?: string
+  location?: string | null
+  allocatedToName?: string | null
+  allocatedAt?: string
+  allocated_at?: string
+  createdAt?: string
+  created_at?: string
+}
 
 /* ---- role gating (ported verbatim) ---- */
 // Only the Branch Admin (branch_admin) may submit petty cash requests / expenses.
@@ -88,6 +108,17 @@ function stageForRequest(request: PettyCashRequest): ApprovalStage {
   return 'accounts'
 }
 
+// Short, human "current stage" for the queue — makes it obvious at a glance where
+// a request is sitting and who needs to act next.
+function pettyCashStageLabel(status: string): { label: string; className: string } {
+  if (status.startsWith('ea_')) return { label: 'EA', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
+  if (status.startsWith('md_')) return { label: 'MD', className: 'bg-blue-50 text-blue-700 ring-blue-200' }
+  if (status.startsWith('accounts')) return { label: 'Accounts', className: 'bg-violet-50 text-violet-700 ring-violet-200' }
+  if (status === 'approved') return { label: 'Completed', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
+  if (status.includes('reject') || status === 'cancelled') return { label: 'Closed', className: 'bg-rose-50 text-rose-700 ring-rose-200' }
+  return { label: 'Draft', className: 'bg-slate-100 text-slate-600 ring-slate-200' }
+}
+
 async function fetchJson<T>(url: string, label: string): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30000)
@@ -112,12 +143,16 @@ export function PettyCashWorkspace() {
   const [requestDialogOpen, setRequestDialogOpen] = useState(false)
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false)
   const [workflowDialog, setWorkflowDialog] = useState<WorkflowDialogState>(null)
+  const [detailTarget, setDetailTarget] = useState<DetailTarget>(null)
   const [loading, setLoading] = useState(true)
   const [dashboardLoading, setDashboardLoading] = useState(false)
   const [ledgerLoading, setLedgerLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mdQueueScope, setMdQueueScope] = useState<'all' | 'mine'>('mine')
+  const [allocations, setAllocations] = useState<PettyCashAllocationRow[]>([])
+  const [allocationsLoading, setAllocationsLoading] = useState(false)
+  const [allocationLocationFilter, setAllocationLocationFilter] = useState('all')
 
   const refreshLedger = useCallback(async (allocationId?: string | null) => {
     setLedgerLoading(true)
@@ -129,6 +164,18 @@ export function PettyCashWorkspace() {
       setLedger([])
     } finally {
       setLedgerLoading(false)
+    }
+  }, [])
+
+  const loadAllocations = useCallback(async () => {
+    setAllocationsLoading(true)
+    try {
+      const data = await fetchJson<{ allocations: PettyCashAllocationRow[] }>('/api/petty-cash/allocations', 'allocations')
+      setAllocations(data.allocations || [])
+    } catch {
+      setAllocations([])
+    } finally {
+      setAllocationsLoading(false)
     }
   }, [])
 
@@ -184,6 +231,7 @@ export function PettyCashWorkspace() {
     return () => clearTimeout(timer)
   }, [loadDashboard])
 
+
   /* ---- derived values ---- */
   const summary = payload?.summary
   const currentAllocation = payload?.currentAllocation || null
@@ -206,8 +254,10 @@ export function PettyCashWorkspace() {
   const allRequests = payload?.requests || []
   const allExpenses = payload?.expenses || []
   const showMdScopeToggle = userRole === 'md'
-  // Admin / MD / EA (and super admin) can filter expenses location-wise.
-  const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'developer'].includes(userRole)
+  // EA / MD / EBA / Developer supervise every branch & dealership; 'all' users too.
+  const isAllBranchViewer = ['ea', 'md', 'eba', 'developer'].includes(userRole) || currentBranchId === 'all'
+  // Back-office reviewers can filter the cross-branch expense feed location-wise.
+  const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'eba', 'developer'].includes(userRole)
   const expenseLocationOptions = useMemo(
     () => Array.from(new Set(allExpenses.map((expense) => (expense.location || '').trim()).filter(Boolean))).sort(),
     [allExpenses],
@@ -216,9 +266,25 @@ export function PettyCashWorkspace() {
     if (!canFilterExpensesByLocation || expenseLocationFilter === 'all') return allExpenses
     return allExpenses.filter((expense) => (expense.location || '').trim() === expenseLocationFilter)
   }, [allExpenses, canFilterExpensesByLocation, expenseLocationFilter])
+  const allocationLocationOptions = useMemo(
+    () => Array.from(new Set(allocations.map((allocation) => (allocation.location || '').trim()).filter(Boolean))).sort(),
+    [allocations],
+  )
+  const visibleAllocations = useMemo(() => {
+    if (allocationLocationFilter === 'all') return allocations
+    return allocations.filter((allocation) => (allocation.location || '').trim() === allocationLocationFilter)
+  }, [allocations, allocationLocationFilter])
+  const allocationTotals = useMemo(() => allocations.reduce((acc, allocation) => {
+    acc.allocated += Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
+    acc.spent += Number(allocation.spentAmount || allocation.spent_amount || 0)
+    acc.remaining += Number(allocation.remainingAmount ?? Math.max(0, Number(allocation.allocatedAmount || allocation.allocated_amount || 0) - Number(allocation.spentAmount || allocation.spent_amount || 0)))
+    return acc
+  }, { allocated: 0, spent: 0, remaining: 0 }), [allocations])
   const contentLoading = dashboardLoading || ledgerLoading
   const requestLocationOptions = useMemo(() => getPettyCashLocationOptions(currentBranchId), [currentBranchId])
-  const expenseFeedTitle = userRole === 'accounts' ? 'Branch Expense Ledger Feed' : 'Recent Branch Expenses'
+  const expenseFeedTitle = userRole === 'accounts'
+    ? 'Branch Expense Ledger Feed'
+    : isAllBranchViewer ? 'Recent Expenses · All Branches' : 'Recent Branch Expenses'
 
   const approvalRequests = useMemo(() => {
     if (userRole !== 'md' || mdQueueScope === 'all') return allRequests
@@ -229,6 +295,12 @@ export function PettyCashWorkspace() {
   // rejected / cancelled ones must drop out immediately after a decision.
   const myOpenRequests = useMemo(() => allRequests.filter((request) => OPEN_REQUEST_STATUSES.includes(request.status)), [allRequests])
   const pendingQueue = useMemo(() => approvalRequests.filter((request) => PENDING_STATUSES.includes(request.status)), [approvalRequests])
+
+  // Reviewers (EA/MD/EBA/Developer) get the cross-branch allocations feed — powers
+  // both the Allocations tab and the overview aggregate KPIs.
+  useEffect(() => {
+    if (canReviewQueue) void loadAllocations()
+  }, [canReviewQueue, loadAllocations])
 
   /* ---- mutations ---- */
   const submitRequest = useCallback(async () => {
@@ -382,6 +454,8 @@ export function PettyCashWorkspace() {
     { key: 'overview', label: 'Overview', icon: Layers },
     { key: 'requests', label: 'Requests', icon: ClipboardList },
     { key: 'expenses', label: 'Expenses', icon: ReceiptText },
+    // Allocations is a cross-branch supervisor view — only reviewers see it.
+    ...(canReviewQueue ? [{ key: 'allocations' as const, label: 'Allocations', icon: Banknote }] : []),
     { key: 'ledger', label: 'Ledger', icon: Wallet },
   ]
 
@@ -423,39 +497,69 @@ export function PettyCashWorkspace() {
         </div>
       )}
 
-      {/* KPI row */}
+      {/* KPI row — reviewers see cross-branch aggregates (they own no single
+          allocation); creators see their own allocation health. */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Current Allocation" value={formatCurrency(allocationAmount)} meta={branchLabel} icon={Banknote} tone="blue" />
-        <SummaryCard label="Remaining" value={formatCurrency(remainingAmount)} meta={`${spendPercentage}% of allocation used`} icon={Wallet} tone="emerald" />
-        <SummaryCard label="Spent" value={formatCurrency(spentAmount)} meta="Live deducted from active allocation" icon={TrendingDown} tone="rose" />
-        <SummaryCard
-          label="Pending Requests"
-          value={String(summary?.pendingRequestCount ?? 0)}
-          meta={canReviewQueue ? 'Awaiting your approval' : 'Your requests in review'}
-          icon={ShieldCheck}
-          tone="amber"
-          onClick={() => setActiveTab('requests')}
-          active={activeTab === 'requests'}
-        />
+        {canReviewQueue && !canCreate ? (
+          <>
+            <SummaryCard
+              label="Pending Requests"
+              value={String(summary?.pendingRequestCount ?? 0)}
+              meta="Awaiting your approval"
+              icon={ShieldCheck}
+              tone="amber"
+              onClick={() => setActiveTab('requests')}
+              active={activeTab === 'requests'}
+            />
+            <SummaryCard
+              label="Active Allocations"
+              value={allocationsLoading ? '…' : String(allocations.length)}
+              meta="Across all branches"
+              icon={Banknote}
+              tone="blue"
+              onClick={() => setActiveTab('allocations')}
+              active={activeTab === 'allocations'}
+            />
+            <SummaryCard label="Total Remaining" value={formatCurrency(allocationTotals.remaining)} meta="Unspent across allocations" icon={Wallet} tone="emerald" />
+            <SummaryCard label="Total Spent" value={formatCurrency(allocationTotals.spent)} meta="Spent across allocations" icon={TrendingDown} tone="rose" />
+          </>
+        ) : (
+          <>
+            <SummaryCard label="Current Allocation" value={formatCurrency(allocationAmount)} meta={branchLabel} icon={Banknote} tone="blue" />
+            <SummaryCard label="Remaining" value={formatCurrency(remainingAmount)} meta={`${spendPercentage}% of allocation used`} icon={Wallet} tone="emerald" />
+            <SummaryCard label="Spent" value={formatCurrency(spentAmount)} meta="Live deducted from active allocation" icon={TrendingDown} tone="rose" />
+            <SummaryCard
+              label="Pending Requests"
+              value={String(summary?.pendingRequestCount ?? 0)}
+              meta={canReviewQueue ? 'Awaiting your approval' : 'Your requests in review'}
+              icon={ShieldCheck}
+              tone="amber"
+              onClick={() => setActiveTab('requests')}
+              active={activeTab === 'requests'}
+            />
+          </>
+        )}
       </div>
 
       {/* Segmented tabs */}
-      <div className="inline-flex w-full max-w-lg items-center gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1 shadow-sm">
-        {tabs.map((tab) => {
-          const isActive = tab.key === activeTab
-          const Icon = tab.icon
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActiveTab(tab.key)}
-              className={cn('relative flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors', isActive ? 'text-white' : 'text-slate-600 hover:text-slate-900')}
-            >
-              {isActive && <motion.span layoutId="pc-tab-pill" transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="absolute inset-0 rounded-xl bg-[var(--dashboard-action-bg)] shadow-sm" />}
-              <span className="relative z-10 flex items-center gap-2"><Icon className="h-4 w-4" /> {tab.label}</span>
-            </button>
-          )
-        })}
+      <div className="w-full overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="inline-flex min-w-max sm:min-w-0 sm:w-full max-w-2xl items-center gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1 shadow-sm">
+          {tabs.map((tab) => {
+            const isActive = tab.key === activeTab
+            const Icon = tab.icon
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={cn('relative flex flex-1 shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors', isActive ? 'text-white' : 'text-slate-600 hover:text-slate-900')}
+              >
+                {isActive && <motion.span layoutId="pc-tab-pill" transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="absolute inset-0 rounded-xl bg-[var(--dashboard-action-bg)] shadow-sm" />}
+                <span className="relative z-10 flex items-center gap-2"><Icon className="h-4 w-4" /> {tab.label}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Tab content */}
@@ -471,6 +575,50 @@ export function PettyCashWorkspace() {
           )}
           {canReviewQueue && (
             <SectionCard
+              title="Balances by Branch"
+              subtitle="Remaining petty cash for each active allocation, per branch & dealership"
+              icon={Banknote}
+              iconTone="blue"
+            >
+              {allocationsLoading ? (
+                <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
+                  {Array.from({ length: 3 }).map((_, index) => <div key={`bal-skeleton-${index}`} className="h-28 animate-pulse rounded-2xl bg-slate-50" />)}
+                </div>
+              ) : allocations.length === 0 ? (
+                <EmptyState icon={Banknote} title="No active allocations" description="Funded allocations across branches will appear here once approved." />
+              ) : (
+                <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
+                  {allocations.map((allocation) => {
+                    const allocated = Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
+                    const spent = Number(allocation.spentAmount || allocation.spent_amount || 0)
+                    const remaining = Number(allocation.remainingAmount ?? Math.max(0, allocated - spent))
+                    return (
+                      <button
+                        key={allocation.id}
+                        type="button"
+                        onClick={() => setActiveTab('allocations')}
+                        className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-slate-300"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-black text-slate-800">{allocation.location || getBranchLabel(normalizeBranchId(allocation))}</span>
+                          <StatusPill status={allocation.status} />
+                        </div>
+                        <p className="mt-0.5 text-xs font-semibold text-slate-500">{getBranchLabel(normalizeBranchId(allocation))}</p>
+                        <p className="mt-3 text-2xl font-black tracking-tight text-emerald-600">{formatCurrency(remaining)}</p>
+                        <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Remaining</p>
+                        <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs font-semibold text-slate-500">
+                          <span>Allocated {formatCurrency(allocated)}</span>
+                          <span className="text-rose-600">Spent {formatCurrency(spent)}</span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </SectionCard>
+          )}
+          {canReviewQueue && (
+            <SectionCard
               title="Pending Approval Queue"
               subtitle="Petty cash requests awaiting your decision"
               icon={ShieldCheck}
@@ -481,7 +629,7 @@ export function PettyCashWorkspace() {
             </SectionCard>
           )}
           {isExpenseFeedRole(userRole) && (
-            <SectionCard title={expenseFeedTitle} subtitle="Recent spends across your branch" icon={ReceiptText} iconTone="slate">
+            <SectionCard title={expenseFeedTitle} subtitle={isAllBranchViewer ? 'Recent spends across all branches & dealerships' : 'Recent spends across your branch'} icon={ReceiptText} iconTone="slate">
               {renderExpenseTable(allExpenses)}
             </SectionCard>
           )}
@@ -514,16 +662,46 @@ export function PettyCashWorkspace() {
         </SectionCard>
       )}
 
+      {activeTab === 'allocations' && (
+        <SectionCard
+          title="Allocations"
+          subtitle="Active petty cash allocations across every branch and dealership"
+          icon={Banknote}
+          iconTone="blue"
+          toolbar={<LocationFilter value={allocationLocationFilter} options={allocationLocationOptions} onChange={setAllocationLocationFilter} />}
+        >
+          <RecordTable
+            rows={visibleAllocations}
+            loading={allocationsLoading}
+            rowKey={(allocation) => allocation.id}
+            empty={<EmptyState icon={Banknote} title="No active allocations" description="Active allocations across branches and dealerships will appear here." />}
+            columns={[
+              { header: 'Branch', cell: (allocation) => <span className="font-bold text-slate-800">{getBranchLabel(normalizeBranchId(allocation))}</span> },
+              { header: 'Location', cell: (allocation) => <span className="font-semibold text-slate-700">{allocation.location || '—'}</span> },
+              { header: 'Allocation #', cell: (allocation) => <span className="font-mono text-xs font-bold text-slate-500">{allocation.allocationNumber || allocation.allocation_number || '—'}</span> },
+              { header: 'Allocated', align: 'right', cell: (allocation) => <span className="font-black tabular-nums text-slate-900">{formatCurrency(allocation.allocatedAmount || allocation.allocated_amount)}</span> },
+              { header: 'Spent', align: 'right', cell: (allocation) => <span className="font-black tabular-nums text-rose-600">{formatCurrency(allocation.spentAmount || allocation.spent_amount)}</span> },
+              { header: 'Remaining', align: 'right', cell: (allocation) => <span className="font-black tabular-nums text-emerald-600">{formatCurrency(allocation.remainingAmount ?? Math.max(0, Number(allocation.allocatedAmount || allocation.allocated_amount || 0) - Number(allocation.spentAmount || allocation.spent_amount || 0)))}</span> },
+              { header: 'Status', cell: (allocation) => <StatusPill status={allocation.status} /> },
+              { header: 'Allocated To', cell: (allocation) => <span className="text-slate-600">{allocation.allocatedToName || '—'}</span> },
+            ]}
+          />
+        </SectionCard>
+      )}
+
       {activeTab === 'ledger' && (
-        <SectionCard title="Allocation Ledger" subtitle="Immutable running record of every movement" icon={Wallet} iconTone="blue">
+        <SectionCard title="Allocation Ledger" subtitle={isAllBranchViewer ? 'Immutable running record of every movement, across all branches' : 'Immutable running record of every movement'} icon={Wallet} iconTone="blue">
           <RecordTable
             rows={ledger}
             loading={ledgerLoading}
             rowKey={(entry) => entry.id}
             empty={<EmptyState icon={Wallet} title="No ledger entries" description="Ledger movements appear here once an allocation is created or spent." />}
             columns={[
+              ...(isAllBranchViewer
+                ? [{ header: 'Branch', cell: (entry: PettyCashLedgerEntry) => <span className="font-bold text-slate-800">{getBranchLabel(normalizeBranchId(entry))}</span> }]
+                : []),
               { header: 'Type', cell: (entry) => <span className="font-bold capitalize text-slate-800">{ledgerEntryType(entry).replace(/_/g, ' ')}</span> },
-              { header: 'Description', cell: (entry) => <span className="text-slate-600">{entry.description || '—'}</span> },
+              { header: 'Description', cell: (entry) => <span className="line-clamp-1 block max-w-[280px] text-slate-600">{entry.description || '—'}</span> },
               { header: 'Amount', align: 'right', cell: (entry) => <span className={cn('font-black tabular-nums', Number(entry.amount) < 0 ? 'text-rose-600' : 'text-slate-900')}>{formatCurrency(entry.amount)}</span> },
               { header: 'Balance After', align: 'right', cell: (entry) => <span className="font-black tabular-nums text-emerald-600">{formatCurrency(ledgerBalanceAfter(entry))}</span> },
               { header: 'Posted At', align: 'right', cell: (entry) => <span className="text-xs font-semibold text-slate-500">{formatDateTime(entry.createdAt || entry.created_at)}</span> },
@@ -572,6 +750,7 @@ export function PettyCashWorkspace() {
           await applyRequestWorkflow(request.id, stageForRequest(request), action, remarks)
         }}
       />
+      <PettyCashDetailDialog target={detailTarget} onClose={() => setDetailTarget(null)} categories={categoryOptions} />
     </div>
   )
 
@@ -582,12 +761,22 @@ export function PettyCashWorkspace() {
         rows={rows}
         loading={contentLoading}
         rowKey={(request) => request.id}
+        onRowClick={(request) => setDetailTarget({ type: 'request', id: request.id, row: request })}
         empty={<EmptyState icon={ClipboardList} title={withActions ? 'Nothing to approve' : 'No requests yet'} description={withActions ? 'Petty cash requests awaiting your approval will appear here.' : 'Raise a request to get a fresh allocation for your branch.'} />}
         columns={[
           { header: 'Request #', cell: (request) => <span className="font-mono text-xs font-bold text-slate-500">{normalizeRequestNumber(request)}</span> },
           { header: 'Requested By', cell: (request) => <span className="font-bold text-slate-800">{requestedByName(request)}</span> },
           { header: 'Purpose', cell: (request) => <span className="line-clamp-1 max-w-[220px] text-slate-600">{request.purpose || '—'}</span> },
           { header: 'Amount', align: 'right', cell: (request) => <span className="font-black tabular-nums text-slate-900">{formatCurrency(requestedAmount(request))}</span> },
+          ...(withActions
+            ? [{
+                header: 'Stage',
+                cell: (request: PettyCashRequest) => {
+                  const stage = pettyCashStageLabel(request.status)
+                  return <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ring-1 ring-inset', stage.className)}>{stage.label}</span>
+                },
+              }]
+            : []),
           { header: 'Status', cell: (request) => <StatusPill status={request.status} /> },
           ...(withActions
             ? [{
@@ -595,7 +784,7 @@ export function PettyCashWorkspace() {
                 align: 'right' as const,
                 cell: (request: PettyCashRequest) => (
                   canActOnRequest(userRole, request) ? (
-                    <div className="flex items-center justify-end gap-1.5">
+                    <div className="flex items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()}>
                       <button type="button" onClick={() => void applyRequestWorkflow(request.id, stageForRequest(request), 'approve')} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
                         <CheckCircle2 className="h-3.5 w-3.5" /> Approve
                       </button>
@@ -621,6 +810,7 @@ export function PettyCashWorkspace() {
         rows={rows}
         loading={contentLoading}
         rowKey={(expense) => expense.id}
+        onRowClick={(expense) => setDetailTarget({ type: 'expense', id: expense.id, row: expense })}
         empty={<EmptyState icon={ReceiptText} title="No expenses yet" description="Posted spends will appear here with their running status." />}
         columns={[
           { header: 'Expense #', cell: (expense) => <span className="font-mono text-xs font-bold text-slate-500">{normalizeExpenseNumber(expense)}</span> },

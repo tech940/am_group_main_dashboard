@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
@@ -732,7 +732,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
 
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-complaints')
-  const accessError = await timer.time('auth', () => requireBrandApiAccess('kia'))
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request))
   if (accessError) return accessError
 
   try {

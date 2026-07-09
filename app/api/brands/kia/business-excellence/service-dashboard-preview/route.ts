@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { buildKiaServiceDashboardPreview } from '@/lib/kia/service-dashboard-export'
@@ -11,7 +11,7 @@ const PREVIEW_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300'
 
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-service-dashboard-preview')
-  const accessError = await timer.time('auth', () => requireBrandApiAccess('kia'))
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request))
   if (accessError) return accessError
 
   const { searchParams } = new URL(request.url)

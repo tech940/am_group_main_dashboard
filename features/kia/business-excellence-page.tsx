@@ -1422,7 +1422,13 @@ function SheetRowsTable({
   )
 }
 
-export default function KiaBusinessExcellencePage({ initialReport, currentUserRole }: { initialReport?: string; currentUserRole?: string | null } = {}) {
+export default function KiaBusinessExcellencePage({ initialReport, currentUserRole, allowedDealers }: { initialReport?: string; currentUserRole?: string | null; allowedDealers?: { code: string; label: string }[] } = {}) {
+  // When the signed-in user is pinned to specific branch(es), the dealer selector is limited to
+  // those and defaults to their branch (so the page never requests a branch the server will 403).
+  const isDealerRestricted = Boolean(allowedDealers && allowedDealers.length)
+  const scopedDealers = isDealerRestricted ? KIA_BRANCH_DEALERS.filter((dealer) => allowedDealers!.some((allowed) => allowed.code === dealer.dealerCode)) : KIA_BRANCH_DEALERS
+  const scopedDefaultDealer = scopedDealers[0]?.dealerCode || DEFAULT_KIA_DEALER_CODE
+  const clampDealer = (code: string | null) => (!isDealerRestricted || (code && scopedDealers.some((dealer) => dealer.dealerCode === code))) ? code : null
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
@@ -1443,8 +1449,8 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   const [datePanelMode, setDatePanelMode] = useState<'current' | 'compare'>('current')
   const [appliedDateFilter, setAppliedDateFilter] = useState<BusinessDateFilter>(() => getEffectiveBusinessDateFilter())
   const [selectedDealerCode, setSelectedDealerCode] = useState<string | null>(() => {
-    const normalized = normalizeKiaDealerCode(searchParams.get('dealer_code'))
-    return normalized || (initialReportName === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE)
+    const normalized = clampDealer(normalizeKiaDealerCode(searchParams.get('dealer_code')))
+    return normalized || (initialReportName === EXECUTIVE_DASHBOARD_REPORT && !isDealerRestricted ? null : scopedDefaultDealer)
   })
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
   const [showDateControls, setShowDateControls] = useState(false)
@@ -1462,7 +1468,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
     const hasDateParams = params.has('startDate') || params.has('endDate') || params.has('compareStartDate') || params.has('compareEndDate') || params.get('periodMode') === 'year' || params.has('year')
     const timeout = window.setTimeout(() => {
       const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
-      setSelectedDealerCode(normalizeKiaDealerCode(params.get('dealer_code')) || (activeReport === EXECUTIVE_DASHBOARD_REPORT ? null : DEFAULT_KIA_DEALER_CODE))
+      setSelectedDealerCode(clampDealer(normalizeKiaDealerCode(params.get('dealer_code'))) || (activeReport === EXECUTIVE_DASHBOARD_REPORT && !isDealerRestricted ? null : scopedDefaultDealer))
       if (!hasDateParams) {
         const fallback = getEffectiveBusinessDateFilter()
         setSelectedPreset('mtd')
@@ -1872,9 +1878,9 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
               const isServiceDashboardSheet = selectedSheet.sheetName === SERVICE_DASHBOARD_REPORT
               const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet
               const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
-              const branchOptions = isExecutiveDashboardSheet
-                ? [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
-                : KIA_BRANCH_DEALERS
+              const branchOptions = (isExecutiveDashboardSheet && !isDealerRestricted)
+                ? [{ label: 'All Locations', dealerCode: null as string | null }, ...scopedDealers]
+                : scopedDealers
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
                 : ''

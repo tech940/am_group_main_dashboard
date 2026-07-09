@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumComplaintsCoverage } from '@/lib/platinum/business-excellence-coverage'
@@ -1088,7 +1088,7 @@ async function buildComplaintsPayload(filters: ComplaintFilters, chunk: Complain
 
 export async function GET(request: Request) {
   const timer = createApiTimer('Platinum-complaints')
-  const accessError = await timer.time('auth', () => requireBrandApiAccess('platinum'))
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('platinum', 'platinum.business_excellence.view', request))
   if (accessError) return accessError
 
   try {

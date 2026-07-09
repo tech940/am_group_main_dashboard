@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { mgUserProfiles } from '@/lib/db/schema'
 import { ensureMgUserProfile } from '@/lib/mg-proforma/server'
 
 export const dynamic = 'force-dynamic'
 
 export async function PATCH(request: NextRequest) {
-  const accessResponse = await requireBrandApiAccess('mg')
+  const accessResponse = await requireBrandSectionApiAccess('mg', 'mg.proforma.view')
   if (accessResponse) return accessResponse
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

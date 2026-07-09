@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
+  const accessError = await requireBrandSectionApiAccess('kia', 'kia.bookings.view')
+  if (accessError) return accessError
   try {
     const url = new URL(request.url)
     const variant = url.searchParams.get('variant') || ''

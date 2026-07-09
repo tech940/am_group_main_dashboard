@@ -1,6 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
 import { DemoJobCardsPage } from '@/features/kia/demo-job-cards-page'
 import { getBrandAccess } from '@/lib/auth/brand-access'
+import { requirePermission } from '@/lib/permissions/service'
 
 export const metadata = {
   title: 'Demo Job Cards | AM Kia',
@@ -15,6 +16,11 @@ export default async function Page() {
   }
 
   if (!access.allowed) {
+    forbidden()
+  }
+
+  const permission = await requirePermission(access.appUser, 'kia.demo_job_cards.view')
+  if (!permission.allowed) {
     forbidden()
   }
 

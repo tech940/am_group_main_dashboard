@@ -504,6 +504,24 @@
     letter-spacing: 0.15em !important;
     text-transform: uppercase !important;
   }
+
+  /* Access Map grid opts out of the global dark thead/th styling above and keeps every sticky
+     cell fully opaque, so scrolling content never shows through the pinned header/column. */
+  .access-map-grid thead tr { background-color: transparent !important; }
+  .access-map-grid th {
+    color: hsl(var(--muted-foreground)) !important;
+    font-weight: 600 !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+  }
+  .access-map-grid thead th { background-color: color-mix(in srgb, hsl(var(--muted)) 70%, hsl(var(--card))) !important; }
+  .access-map-grid thead th.am-group { background-color: hsl(var(--muted)) !important; }
+  .access-map-grid tbody td.am-user { background-color: color-mix(in srgb, hsl(var(--muted)) 45%, hsl(var(--card))) !important; }
+
+  /* Checkbox cells: force the fill/tick colours so the button preflight (transparent bg) and
+     any global button styling can't blank them out. Tick uses currentColor. */
+  .access-map-grid .am-check { border-color: hsl(var(--border)) !important; background-color: hsl(var(--card)) !important; color: transparent !important; }
+  .access-map-grid .am-check.is-on { border-color: #10b981 !important; background-color: #10b981 !important; color: #ffffff !important; }
 }
 
 @layer utilities {

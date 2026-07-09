@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 import { requirePermission } from '@/lib/permissions/service'
 
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,14 @@ export async function GET(request: Request) {
     const auth = await authorize()
     if (auth.response) return auth.response
 
+    // Branch boundary: a dealer-scoped user only ever sees their own branch's vehicles (#10c).
+    // MD/Developer/global users are unrestricted (getUserDealerScope returns null). Dealer codes
+    // are validated against the registry, so they are safe to inline.
+    const dealerScope = getUserDealerScope(auth.appUser, 'kia')
+    const dealerScopeClause = dealerScope && dealerScope.length
+      ? `sm.order_dealer IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''")}'`).join(', ')})`
+      : null
+
     const url = new URL(request.url)
     const search = url.searchParams.get('search') || ''
     const dealerCode = url.searchParams.get('dealer_code') || 'All'
@@ -33,6 +42,7 @@ export async function GET(request: Request) {
 
     // Build filters
     const filters: string[] = ['TRUE']
+    if (dealerScopeClause) filters.push(dealerScopeClause)
     if (dealerCode !== 'All') {
       filters.push(`sm.order_dealer = '${dealerCode.replace(/'/g, "''")}'`)
     }
@@ -77,6 +87,26 @@ export async function GET(request: Request) {
 
     const whereClause = filters.join(' AND ')
 
+    // Scope-only filters for the KPI metrics. The metrics break down BY status (available,
+    // payment pending, delivered, …), so they must apply the current dealer/model/search scope
+    // but NOT the status or delivered filters — otherwise the cards wouldn't reflect the
+    // selected dealer/model at all (the previous bug: metrics ran with no WHERE).
+    const scopeFilters: string[] = ['TRUE']
+    if (dealerScopeClause) scopeFilters.push(dealerScopeClause)
+    if (dealerCode !== 'All') scopeFilters.push(`sm.order_dealer = '${dealerCode.replace(/'/g, "''")}'`)
+    if (model !== 'All') scopeFilters.push(`sm.model ILIKE '%${model.replace(/'/g, "''")}%'`)
+    if (search) {
+      const escaped = search.replace(/'/g, "''")
+      scopeFilters.push(`(
+        sm.vin_number ILIKE '%${escaped}%' OR
+        kb.customer_name ILIKE '%${escaped}%' OR
+        kb.customer_phone ILIKE '%${escaped}%' OR
+        kb.booking_number ILIKE '%${escaped}%' OR
+        kb.consultant_name ILIKE '%${escaped}%'
+      )`)
+    }
+    const scopeWhereClause = scopeFilters.join(' AND ')
+
     // 1. Fetch metrics (Total Inventory excludes delivered units)
     const metricsResult = await db.execute(sql.raw(`
       SELECT
@@ -90,6 +120,7 @@ export async function GET(request: Request) {
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
+      WHERE ${scopeWhereClause}
     `))
 
     const metrics = metricsResult[0] || {

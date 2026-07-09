@@ -1,15 +1,15 @@
-// Sequential KIA proforma approval chain (client + server safe — no server-only).
+// Single-stage KIA proforma approval (client + server safe — no server-only).
 //
-//   PENDING / ''      -> Finance Head reviews (verifies discount fields)
-//   FINANCE_APPROVED  -> Sales Manager approves / declines
-//   MANAGER_APPROVED  -> General Manager approves / declines
-//   APPROVED          -> fully approved (PDF generated, booking advances)
-//   NOT APPROVED | …  -> declined at some stage (re-enters Finance Head queue)
+// The Finance Head → Sales Manager → General Manager chain was collapsed into ONE shared
+// approval stage. A generated proforma waits at that single stage; EITHER the Sales Manager
+// OR the General Manager may approve it, and whoever acts first finalizes it.
+//
+//   PENDING / '' / (legacy FINANCE_APPROVED, MANAGER_APPROVED) -> the single approval stage
+//   APPROVED                                                   -> fully approved (advances)
+//   NOT APPROVED | …                                          -> declined (restarts the stage)
 
 export type KiaApprovalStage =
-  | 'finance_head'
-  | 'sales_manager'
-  | 'general_manager'
+  | 'approval'
   | 'approved'
   | 'declined'
 
@@ -18,46 +18,41 @@ export function kiaApprovalStage(approvalStatus?: string | null): KiaApprovalSta
   const s = String(approvalStatus || '').trim().toUpperCase()
   if (s === 'APPROVED') return 'approved'
   if (s.startsWith('NOT APPROVED') || s === 'DECLINED') return 'declined'
-  if (s === 'MANAGER_APPROVED') return 'general_manager'
-  if (s === 'FINANCE_APPROVED') return 'sales_manager'
-  return 'finance_head' // PENDING, '', or any legacy value
+  // Everything else — PENDING, '', and legacy FINANCE_APPROVED / MANAGER_APPROVED from before
+  // the chain was collapsed — is the single shared approval stage.
+  return 'approval'
 }
 
 /** The pending stage a declined proforma restarts from. */
 export function pendingStageOf(approvalStatus?: string | null): KiaApprovalStage {
   const stage = kiaApprovalStage(approvalStatus)
-  return stage === 'declined' ? 'finance_head' : stage
+  return stage === 'declined' ? 'approval' : stage
 }
 
-/** Whether the given role may act on the given pending stage. MD/admins override. */
+/**
+ * Whether the given role may act on the given pending stage. The single approval stage is
+ * shared by the Sales Manager and the General Manager (MD / admins always override).
+ */
 export function roleActsOnKiaStage(role: string | null | undefined, stage: KiaApprovalStage): boolean {
   const r = String(role || '').trim().toLowerCase()
   if (r === 'admin' || r === 'developer' || r === 'md') return true
-  if (stage === 'finance_head') return r === 'finance_head'
-  if (stage === 'sales_manager') return r === 'sales_manager'
-  if (stage === 'general_manager') return r === 'general_manager'
+  if (stage === 'approval') return r === 'sales_manager' || r === 'general_manager'
   return false
 }
 
-/** The approvalStatus to write when the current stage is approved. */
-export function nextApprovalStatusAfterApprove(stage: KiaApprovalStage): { status: string; finalized: boolean } {
-  if (stage === 'finance_head') return { status: 'FINANCE_APPROVED', finalized: false }
-  if (stage === 'sales_manager') return { status: 'MANAGER_APPROVED', finalized: false }
-  return { status: 'APPROVED', finalized: true } // general_manager (or override at final)
+/** The approvalStatus to write when the single approval stage is approved — always final. */
+export function nextApprovalStatusAfterApprove(_stage: KiaApprovalStage): { status: string; finalized: boolean } {
+  return { status: 'APPROVED', finalized: true }
 }
 
 export const KIA_APPROVAL_STAGE_LABELS: Record<KiaApprovalStage, string> = {
-  finance_head: 'Finance Head Review',
-  sales_manager: 'Sales Manager Review',
-  general_manager: 'General Manager Review',
+  approval: 'Approval',
   approved: 'Approved',
   declined: 'Not Approved',
 }
 
-/** Short label naming who acts next at a pending stage. */
+/** Short label naming who acts at a pending stage. */
 export function kiaStageActorLabel(stage: KiaApprovalStage): string {
-  if (stage === 'finance_head') return 'Finance Head'
-  if (stage === 'sales_manager') return 'Sales Manager'
-  if (stage === 'general_manager') return 'General Manager'
+  if (stage === 'approval') return 'Sales Manager / General Manager'
   return ''
 }

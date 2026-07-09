@@ -1506,7 +1506,12 @@ function SheetRowsTable({
   )
 }
 
-export default function KiaBusinessExcellencePage({ initialReport, currentUserRole }: { initialReport?: string; currentUserRole?: string | null } = {}) {
+export default function KiaBusinessExcellencePage({ initialReport, currentUserRole, allowedDealers }: { initialReport?: string; currentUserRole?: string | null; allowedDealers?: { code: string; label: string }[] } = {}) {
+  // Branch-scoped users only see their assigned branch in the selector (server also enforces).
+  const isDealerRestricted = Boolean(allowedDealers && allowedDealers.length)
+  const scopedDealers = isDealerRestricted ? KIA_BRANCH_DEALERS.filter((dealer) => allowedDealers!.some((allowed) => allowed.code === dealer.dealerCode)) : KIA_BRANCH_DEALERS
+  const scopedDefaultDealer = scopedDealers[0]?.dealerCode || DEFAULT_KIA_DEALER_CODE
+  const clampDealer = (code: string | null) => (!isDealerRestricted || (code && scopedDealers.some((dealer) => dealer.dealerCode === code))) ? code : null
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
@@ -1527,8 +1532,8 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
   const [datePanelMode, setDatePanelMode] = useState<'current' | 'compare'>('current')
   const [appliedDateFilter, setAppliedDateFilter] = useState<BusinessDateFilter>(() => getEffectiveBusinessDateFilter())
   const [selectedDealerCode, setSelectedDealerCode] = useState<string | null>(() => {
-    const normalized = normalizeKiaDealerCode(searchParams.get('dealer_code'))
-    return normalized || DEFAULT_KIA_DEALER_CODE
+    const normalized = clampDealer(normalizeKiaDealerCode(searchParams.get('dealer_code')))
+    return normalized || scopedDefaultDealer
   })
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
   const [showDateControls, setShowDateControls] = useState(false)
@@ -1551,7 +1556,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
     const params = new URLSearchParams(queryDateFilterKey)
     const hasDateParams = params.has('startDate') || params.has('endDate') || params.has('compareStartDate') || params.has('compareEndDate') || params.get('periodMode') === 'year' || params.has('year')
     const timeout = window.setTimeout(() => {
-      setSelectedDealerCode(normalizeKiaDealerCode(params.get('dealer_code')) || DEFAULT_KIA_DEALER_CODE)
+      setSelectedDealerCode(clampDealer(normalizeKiaDealerCode(params.get('dealer_code'))) || scopedDefaultDealer)
       if (!hasDateParams) {
         const fallback = getEffectiveBusinessDateFilter()
         setSelectedPreset('mtd')
@@ -1956,9 +1961,9 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
                 : ''
-              const branchOptions = isExecutiveDashboardSheet
-                ? [{ label: 'All Locations', dealerCode: null as string | null }, ...KIA_BRANCH_DEALERS]
-                : KIA_BRANCH_DEALERS
+              const branchOptions = (isExecutiveDashboardSheet && !isDealerRestricted)
+                ? [{ label: 'All Locations', dealerCode: null as string | null }, ...scopedDealers]
+                : scopedDealers
 
               return (
                 <div className="animate-in slide-in-from-bottom-4 duration-500">

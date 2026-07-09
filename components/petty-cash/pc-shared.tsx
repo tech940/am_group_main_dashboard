@@ -261,12 +261,14 @@ export function RecordTable<T>({
   loading,
   empty,
   rowKey,
+  onRowClick,
 }: {
   rows: T[]
   columns: Array<{ header: string; align?: 'left' | 'right'; cell: (row: T) => ReactNode; className?: string }>
   loading?: boolean
   empty: ReactNode
   rowKey: (row: T) => string
+  onRowClick?: (row: T) => void
 }) {
   if (loading) {
     return (
@@ -290,7 +292,14 @@ export function RecordTable<T>({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={rowKey(row)} className="border-b border-slate-50 transition-colors last:border-b-0 hover:bg-slate-50/60">
+            <tr
+              key={rowKey(row)}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              className={cn(
+                'border-b border-slate-50 transition-colors last:border-b-0 hover:bg-slate-50/60',
+                onRowClick && 'cursor-pointer',
+              )}
+            >
               {columns.map((column) => (
                 <td key={column.header} className={cn('px-4 py-3 align-middle font-semibold text-slate-700', column.align === 'right' && 'text-right', column.className)}>
                   {column.cell(row)}

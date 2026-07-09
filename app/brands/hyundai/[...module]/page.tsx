@@ -1,5 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getBrandAccess } from '@/lib/auth/brand-access'
+import { getUserDealerScope } from '@/lib/auth/dealer-scope'
+import { getBrandDealers } from '@/lib/dealers/registry'
 import { HyundaiModulePlaceholder } from '@/features/hyundai/hyundai-module-placeholder'
 import HyundaiBusinessExcellencePage from '@/features/hyundai/business-excellence-page'
 import { HyundaiWarrantyClaimsPage } from '@/features/hyundai/warranty-claims-page'
@@ -155,7 +157,9 @@ export default async function Page({
   // }
 
   if (definition.component === 'business-excellence') {
-    return <HyundaiBusinessExcellencePage initialReport={definition.report || 'overview'} currentUserRole={access.appUser.role} />
+    const dealerScope = getUserDealerScope(access.appUser, 'hyundai')
+    const allowedDealers = dealerScope ? getBrandDealers('hyundai').filter((dealer) => dealerScope.includes(dealer.code)) : undefined
+    return <HyundaiBusinessExcellencePage initialReport={definition.report || 'overview'} currentUserRole={access.appUser.role} allowedDealers={allowedDealers} />
   }
 
   if (definition.component === 'warranty-claims') {

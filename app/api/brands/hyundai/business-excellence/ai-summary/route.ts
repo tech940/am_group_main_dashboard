@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { appendHyundaiDealerCodeParam, normalizeHyundaiDealerCode } from '@/lib/hyundai/dealer-branch'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -472,7 +472,7 @@ function createCacheKey(report: string, startDate: string, endDate: string, data
 }
 
 export async function POST(request: NextRequest) {
-  const accessError = await requireBrandApiAccess('hyundai')
+  const accessError = await requireBrandSectionApiAccess('hyundai', 'hyundai.business_excellence.view')
   if (accessError) return accessError
 
   try {

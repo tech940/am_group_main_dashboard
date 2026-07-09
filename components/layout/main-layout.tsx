@@ -17,7 +17,7 @@ export function MainLayout({ children, hideHeader = false, title, subtitle }: Ma
       <div className="dashboard-orb dashboard-orb-bottom pointer-events-none absolute bottom-[-8rem] right-[26%] h-96 w-96 rounded-full blur-3xl" />
       <div className="relative z-10 flex flex-1 pl-0">
         <Sidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {!hideHeader && <Header title={title} subtitle={subtitle} />}
           <main className={cn("glass-dashboard-content flex-1 overflow-y-auto", !hideHeader ? "px-8 pb-8 pt-4" : "px-10 pb-10 pt-4")}>
             {children}

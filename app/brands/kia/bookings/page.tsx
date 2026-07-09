@@ -24,5 +24,5 @@ export default async function KiaBookingsRoute({
   }
 
   const resolvedSearchParams = await searchParams
-  return <KiaBookingsClient initialSearchParams={resolvedSearchParams} currentUserRole={access.appUser.role} />
+  return <KiaBookingsClient initialSearchParams={resolvedSearchParams} currentUserRole={access.appUser.role} currentUserName={access.appUser.fullName} />
 }

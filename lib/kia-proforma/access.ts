@@ -33,27 +33,16 @@ export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = fa
   return and(...base, eq(kiaProformas.loginEmail, appUser.email))!
 }
 
-// Stage-aware Pending Approval queue. Each approver role only sees the proformas
-// waiting at their step; MD / admins see every in-flight proforma.
-//   Finance Head    -> PENDING / '' / NOT APPROVED (restart)
-//   Sales Manager   -> FINANCE_APPROVED
-//   General Manager -> MANAGER_APPROVED
-export function getKiaProformaPendingApprovalFilter(appUser?: AppUser): SQL<unknown> {
-  const financeBucket = or(
+// Single shared approval stage: every approver (Sales Manager, General Manager, MD, admin)
+// sees EVERY in-flight proforma, so either the SM or the GM can approve any of them. Legacy
+// FINANCE_APPROVED / MANAGER_APPROVED statuses (from the old sequential chain) are folded in.
+export function getKiaProformaPendingApprovalFilter(_appUser?: AppUser): SQL<unknown> {
+  const allInFlight = or(
     eq(kiaProformas.approvalStatus, 'PENDING'),
     eq(kiaProformas.approvalStatus, ''),
     like(kiaProformas.approvalStatus, 'NOT APPROVED%'),
+    eq(kiaProformas.approvalStatus, 'FINANCE_APPROVED'),
+    eq(kiaProformas.approvalStatus, 'MANAGER_APPROVED'),
   )!
-  const salesManagerBucket = eq(kiaProformas.approvalStatus, 'FINANCE_APPROVED')
-  const generalManagerBucket = eq(kiaProformas.approvalStatus, 'MANAGER_APPROVED')
-  const allInFlight = or(financeBucket, salesManagerBucket, generalManagerBucket)!
-
-  const role = String(appUser?.role || '').trim().toLowerCase()
-  let bucket: SQL<unknown> = allInFlight
-  if (role === 'finance_head') bucket = financeBucket
-  else if (role === 'sales_manager') bucket = salesManagerBucket
-  else if (role === 'general_manager') bucket = generalManagerBucket
-  // admin / developer / md (and permission-based approvers) → all in-flight.
-
-  return and(isNull(kiaProformas.deletedAt), bucket)!
+  return and(isNull(kiaProformas.deletedAt), allInFlight)!
 }

@@ -20,6 +20,7 @@ import {
   updateUserPermissionOverrides,
 } from '@/lib/permissions/service'
 import { ROLE_PERMISSION_TEMPLATE_LABELS, getTemplateMap } from '@/lib/permissions/registry'
+import { invalidateCachePattern } from '@/lib/redis/cache-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -179,6 +180,8 @@ export async function PATCH(request: Request) {
       changes,
       reason,
     })
+    // The Access Map caches its computed grid; drop it so edits show immediately.
+    await invalidateCachePattern('access-matrix:*')
     await writeAdminAudit({
       actor,
       action: 'permissions.updated',

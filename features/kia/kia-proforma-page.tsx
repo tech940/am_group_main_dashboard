@@ -974,11 +974,12 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
               ['accessoriesKit', 'Accessories'],
               ['extWarranty', 'Extended Warranty'],
             ].map(([key, label]) => (
-              <Field key={key} label={label}>
-                {/* Auto-fetched from the price sheet by model + variant and locked.
-                    Editable only for CSD / Bharat Series, or as a fallback when the
-                    DB has no matching price row (so the form is never a dead-end). */}
-                <TextInput type="number" value={form[key as keyof FormState]} disabled={!editablePrices && Boolean(pricing.price)} onChange={(event) => update(key as keyof FormState, event.target.value)} />
+              <Field key={key} label={key === 'insuranceValue' ? `${label} (editable)` : label}>
+                {/* Auto-fetched from the price sheet by model + variant and locked. Editable only
+                    for CSD / Bharat Series, as a fallback when the DB has no matching price row
+                    (so the form is never a dead-end), or for Insurance — which is quote-dependent
+                    and can always be overridden manually. */}
+                <TextInput type="number" value={form[key as keyof FormState]} disabled={key !== 'insuranceValue' && !editablePrices && Boolean(pricing.price)} onChange={(event) => update(key as keyof FormState, event.target.value)} />
               </Field>
             ))}
           </div>
@@ -1526,7 +1527,11 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const [previewRow, setPreviewRow] = useState<KiaProformaRow | null>(null)
   const [declineReason, setDeclineReason] = useState('')
   const canViewPii = canViewKiaCustomerPii(options.currentUser.role)
-  const verifyStage = verifying ? pendingStageOf(verifying.approvalStatus) : 'finance_head'
+  const verifyStage = verifying ? pendingStageOf(verifying.approvalStatus) : 'approval'
+  // Single shared approval stage: the Sales Manager sees the discount-verification checklist
+  // (the review the Finance Head used to do); the General Manager sees the lighter approve/
+  // decline screen. Either one approving finalizes the proforma. MD/admins get the checklist.
+  const useChecklistUi = String(options.currentUser.role || '').toLowerCase() !== 'general_manager'
   const isFinance = mode === 'finance-remarks'
 
   const filteredRows = useMemo(() => {
@@ -1585,7 +1590,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
     else setIsApproving(true)
     try {
       const payload: Record<string, unknown> = { action: 'approval' }
-      if (stage === 'finance_head') {
+      if (useChecklistUi) {
         const checks = { ...verifyState }
         if (opts.allApproved) FIELD_VERIFY.forEach(([key]) => { checks[key] = { status: 'APPROVED', reason: '' } })
         payload.checks = checks
@@ -1740,7 +1745,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
               <div className="flex items-center gap-3">
                 <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><ShieldCheck className="h-5 w-5" /></span>
                 <div>
-                  <DialogTitle className="text-2xl font-extrabold tracking-tight">{verifyStage === 'finance_head' ? 'Verify Proforma' : 'Approve Proforma'}</DialogTitle>
+                  <DialogTitle className="text-2xl font-extrabold tracking-tight">{useChecklistUi ? 'Verify Proforma' : 'Approve Proforma'}</DialogTitle>
                   <DialogDescription className="text-white/80">{verifying?.customerName} · {verifying?.modelName}</DialogDescription>
                 </div>
               </div>
@@ -1750,9 +1755,9 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
               </div>
             </DialogHeader>
           </div>
-          {verifyStage === 'finance_head' ? (
+          {useChecklistUi ? (
             <div className="grid gap-3 p-6">
-              <p className="text-xs font-semibold text-[var(--kia-text-soft)]">Finance Head — verify the discount fields. Approving forwards this proforma to the Sales Manager.</p>
+              <p className="text-xs font-semibold text-[var(--kia-text-soft)]">Verify the discount fields, then approve. This is the final approval — either the Sales Manager or the General Manager can approve.</p>
               {FIELD_VERIFY.map(([key, label]) => {
                 const decision = verifyState[key]?.status
                 return (
@@ -1783,13 +1788,13 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
                   disabled={isApproving || isSaving}
                   onClick={() => approveCurrent({ allApproved: true })}
                 >
-                  {isApproving ? 'Approving…' : 'Approve & Forward →'}
+                  {isApproving ? 'Approving…' : 'Approve (Final)'}
                 </Button>
               </div>
             </div>
           ) : (
             <div className="grid gap-4 p-6">
-              <p className="text-xs font-semibold text-[var(--kia-text-soft)]">{kiaStageActorLabel(verifyStage)} approval — review the details and approve to advance{verifyStage === 'sales_manager' ? ' to the General Manager' : ' (final approval)'}, or decline with a reason.</p>
+              <p className="text-xs font-semibold text-[var(--kia-text-soft)]">{kiaStageActorLabel(verifyStage)} approval — the Sales Manager or General Manager reviews the details and approves (final approval), or declines with a reason.</p>
               <div className="kia-surface-sunken grid gap-3 p-4 sm:grid-cols-2">
                 <FieldValue label="Ex-Showroom" value={formatCurrency(verifying?.exShowroom)} />
                 <FieldValue label="Grand Total" value={formatCurrency(verifying?.grandTotalCost)} />
@@ -1816,7 +1821,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
                   disabled={isApproving || isSaving}
                   onClick={() => approveCurrent({ decision: 'approve' })}
                 >
-                  {isApproving ? 'Approving…' : verifyStage === 'sales_manager' ? 'Approve & Forward →' : 'Approve (Final)'}
+                  {isApproving ? 'Approving…' : 'Approve (Final)'}
                 </Button>
               </div>
             </div>
@@ -2223,7 +2228,7 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
       <div className="kia-proforma-shell kia-premium space-y-5">
         <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} onPricesImported={reload} />
-        {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} currentUserRole={options.currentUser.role} />}
+        {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} currentUserRole={options.currentUser.role} currentUserName={options.currentUser.fullName} />}
         {section === 'stock' && <KiaStockManagementDashboard currentUserRole={options.currentUser.role} />}
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} bookingPrefill={bookingPrefill} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}

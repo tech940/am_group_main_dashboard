@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { analyticsTableExists } from '@/lib/analytics/table-exists'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import {
   getHyundaiDealerCodes,
@@ -1397,7 +1397,7 @@ async function buildOverviewPayload(
 
 export async function GET(request: Request) {
   const timer = createApiTimer('business-excellence-overview')
-  const accessError = await timer.time('auth', () => requireBrandApiAccess('hyundai'))
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('hyundai', 'hyundai.business_excellence.view', request))
   if (accessError) return accessError
 
   const { searchParams } = new URL(request.url)

@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 
 export async function POST(request: Request) {
+  const accessError = await requireBrandSectionApiAccess('kia', 'kia.bookings.view')
+  if (accessError) return accessError
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File

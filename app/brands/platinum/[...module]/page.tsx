@@ -1,5 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getBrandAccess } from '@/lib/auth/brand-access'
+import { getUserDealerScope } from '@/lib/auth/dealer-scope'
+import { getBrandDealers } from '@/lib/dealers/registry'
 import { requirePermission } from '@/lib/permissions/service'
 import { PlatinumModulePlaceholder } from '@/features/platinum/platinum-module-placeholder'
 import PlatinumBusinessExcellencePage from '@/features/platinum/business-excellence-page'
@@ -131,7 +133,9 @@ export default async function Page({
   }
 
   if (definition.component === 'business-excellence') {
-    return <PlatinumBusinessExcellencePage initialReport={definition.report || 'overview'} currentUserRole={access.appUser.role} />
+    const dealerScope = getUserDealerScope(access.appUser, 'platinum')
+    const allowedDealers = dealerScope ? getBrandDealers('platinum').filter((dealer) => dealerScope.includes(dealer.code)) : undefined
+    return <PlatinumBusinessExcellencePage initialReport={definition.report || 'overview'} currentUserRole={access.appUser.role} allowedDealers={allowedDealers} />
   }
 
   if (definition.component === 'warranty-claims') {

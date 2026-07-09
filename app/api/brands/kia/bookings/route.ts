@@ -3,6 +3,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { requirePermission } from '@/lib/permissions/service'
+import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 import { createKiaBooking, getKiaBookingsList } from '@/lib/kia/bookings'
 
 export const dynamic = 'force-dynamic'
@@ -39,6 +40,8 @@ export async function GET(request: Request) {
       page: Number(url.searchParams.get('page') || 1),
       pageSize: Number(url.searchParams.get('pageSize') || 10),
       viewer: appUser ? { id: appUser.id, email: appUser.email, role: appUser.role } : null,
+      // Branch boundary: MD/Developer/global see all; a pinned user only sees their dealer(s).
+      allowedDealers: getUserDealerScope(appUser, 'kia'),
     }))
 
     const payload = {

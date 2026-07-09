@@ -675,6 +675,47 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
   },
 ]
 
+// Single source of truth for the route each navigable section lives at. The sidebar's
+// href→permission gating map and route guards are generated from this (see
+// lib/permissions/navigation.ts), so adding a section means adding it here — not editing a
+// separate hand-maintained map in the sidebar. `aliases` are additional paths that resolve to
+// the same section (e.g. a Business Excellence landing page vs. its /overview route).
+export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }> = {
+  purchase_orders: { href: '/purchase-orders' },
+  finance_orders: { href: '/finance-orders' },
+  petty_cash: { href: '/petty-cash' },
+  am_finance: { href: '/am-finance' },
+  user_management: { href: '/admin' },
+  'kia.business_excellence': { href: '/brands/kia/business-excellence', aliases: ['/brands/kia/business-excellence/executive-dashboard', '/brands/kia/business-excellence/overview'] },
+  'kia.service_appointment': { href: '/brands/kia/service-appointment' },
+  'kia.demo_job_cards': { href: '/brands/kia/demo-job-cards' },
+  'kia.demo_cars_list': { href: '/brands/kia/demo-cars-list' },
+  'kia.sales_report': { href: '/brands/kia/sales-report' },
+  'kia.stock_report': { href: '/brands/kia/stock-report' },
+  'kia.bookings': { href: '/brands/kia/bookings' },
+  'kia.proforma': { href: '/brands/kia/proforma' },
+  'kia.insurance': { href: '/brands/kia/insurance' },
+  'hyundai.business_excellence': { href: '/brands/hyundai/business-excellence', aliases: ['/brands/hyundai/business-excellence/executive-dashboard', '/brands/hyundai/business-excellence/overview'] },
+  'hyundai.service_appointment': { href: '/brands/hyundai/service-appointment' },
+  'hyundai.demo_job_cards': { href: '/brands/hyundai/demo-job-cards' },
+  'hyundai.demo_cars_list': { href: '/brands/hyundai/demo-cars-list' },
+  'hyundai.proforma': { href: '/brands/hyundai/proforma' },
+  'hyundai.warranty_list': { href: '/brands/hyundai/warranty-list' },
+  'hyundai.warranty_claim_list': { href: '/brands/hyundai/warranty-claim-list' },
+  'platinum.business_excellence': { href: '/brands/platinum/business-excellence', aliases: ['/brands/platinum/business-excellence/executive-dashboard', '/brands/platinum/business-excellence/overview'] },
+  'platinum.service_appointment': { href: '/brands/platinum/service-appointment' },
+  'platinum.demo_job_cards': { href: '/brands/platinum/demo-job-cards' },
+  'platinum.demo_cars_list': { href: '/brands/platinum/demo-cars-list' },
+  'platinum.proforma': { href: '/brands/platinum/proforma' },
+  'platinum.warranty_list': { href: '/brands/platinum/warranty-list' },
+  'platinum.warranty_claim_list': { href: '/brands/platinum/warranty-claim-list' },
+  'mg.business_excellence': { href: '/brands/mg/business-excellence/overview' },
+  'mg.service_appointment': { href: '/brands/mg/service-appointment' },
+  'mg.demo_job_cards': { href: '/brands/mg/demo-job-cards' },
+  'mg.demo_cars_list': { href: '/brands/mg/demo-cars-list' },
+  'mg.proforma': { href: '/brands/mg/proforma' },
+}
+
 export const PERMISSIONS: PermissionDefinition[] = PERMISSION_GROUPS.flatMap((group) =>
   group.actions.map((action, index) => ({
     key: `${group.key}.${action}`,
@@ -718,7 +759,8 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   technician: 'Technician',
   viewer: 'Employee',
   service_manager: 'Service Manager',
-  general_manager: 'General Manager',
+  general_manager: 'Sales General Manager',
+  service_general_manager: 'Service General Manager',
   sales_head: 'Sales Head',
   sales_executive: 'Sales Executive',
   sales_manager: 'Sales Manager',
@@ -895,6 +937,12 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ],
   general_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'kia.insurance', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  // Service General Manager: service-side oversight. Views KIA service modules; the
+  // Vehicle Tracker is additionally role-gated in lib/kia/vehicle-tracker-access.ts.
+  service_general_manager: [
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   sales_head: [

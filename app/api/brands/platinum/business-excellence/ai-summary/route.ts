@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { appendPlatinumDealerCodeParam, normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -522,7 +522,7 @@ function createCacheKey(report: string, startDate: string, endDate: string, data
 }
 
 export async function POST(request: NextRequest) {
-  const accessError = await requireBrandApiAccess('platinum')
+  const accessError = await requireBrandSectionApiAccess('platinum', 'platinum.business_excellence.view')
   if (accessError) return accessError
 
   try {

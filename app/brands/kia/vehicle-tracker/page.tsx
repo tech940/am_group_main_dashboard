@@ -1,7 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
 import { VehicleTrackerPage } from '@/features/kia/vehicle-tracker-page'
 import { getBrandAccess } from '@/lib/auth/brand-access'
-import { requirePermission } from '@/lib/permissions/service'
+import { canFillVehicleTracker, canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 
 export const metadata = {
   title: 'Vehicle Tracker | AM Kia',
@@ -19,10 +19,10 @@ export default async function Page() {
     forbidden()
   }
 
-  const permission = await requirePermission(access.appUser, 'kia.service_appointment.view')
-  if (!permission.allowed) {
+  // Role-gated: Branch Admin + Service GM can view; only Branch Admin (+ MD/Developer) can fill.
+  if (!canViewVehicleTracker(access.appUser.role)) {
     forbidden()
   }
 
-  return <VehicleTrackerPage />
+  return <VehicleTrackerPage canFill={canFillVehicleTracker(access.appUser.role)} />
 }

@@ -18,6 +18,7 @@ export type AppUser = {
   fullName: string
   role: typeof users.$inferSelect.role
   brand: string | null
+  dealers: string | null
   department: string | null
   isActive: boolean
 }
@@ -79,6 +80,7 @@ async function findAppUserBySupabaseId(supabaseId: string) {
       fullName: users.fullName,
       role: users.role,
       brand: users.brand,
+      dealers: users.dealers,
       department: users.department,
       isActive: users.isActive,
     })
@@ -90,7 +92,7 @@ async function findAppUserBySupabaseId(supabaseId: string) {
 }
 
 function appUserRedisKey(supabaseId: string) {
-  return `auth:app-user:v1:${supabaseId}`
+  return `auth:app-user:v2:${supabaseId}`
 }
 
 function isAppUser(value: unknown): value is AppUser {
@@ -128,7 +130,7 @@ async function writePersistentAppUser(user: AppUser) {
 async function findAppUserBySupabaseIdViaRest(supabaseId: string) {
   const { data, error } = await supabaseAdmin
     .from('users')
-    .select('id,supabase_id,email,full_name,role,brand,department,is_active')
+    .select('id,supabase_id,email,full_name,role,brand,dealers,department,is_active')
     .eq('supabase_id', supabaseId)
     .is('deleted_at', null)
     .abortSignal(AbortSignal.timeout(3_000))
@@ -144,6 +146,7 @@ async function findAppUserBySupabaseIdViaRest(supabaseId: string) {
     fullName: String(data.full_name),
     role: data.role as AppUser['role'],
     brand: data.brand === null ? null : String(data.brand),
+    dealers: data.dealers === null || data.dealers === undefined ? null : String(data.dealers),
     department: data.department === null ? null : String(data.department),
     isActive: Boolean(data.is_active),
   }
@@ -160,6 +163,7 @@ async function findAppUserBySupabaseIdViaSessionPool(supabaseId: string) {
     fullName: String(data.full_name),
     role: data.role as AppUser['role'],
     brand: data.brand,
+    dealers: data.dealers ?? null,
     department: data.department,
     isActive: Boolean(data.is_active),
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { requirePermission } from '@/lib/permissions/service'
+import { canFillVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import {
   checkInVehicleTrackerEntry,
   uploadTrackerPhoto,
@@ -11,15 +11,14 @@ import {
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const PERMISSION = 'kia.service_appointment.view'
-
-// Mark a vehicle as returned. Accepts an optional in-photo (also AI-verified).
+// Mark a vehicle as returned (fill action). Accepts a required front-side in-photo.
 export async function PATCH(request: Request, context: RouteContext<'/api/brands/kia/vehicle-tracker/[id]'>) {
   const accessResponse = await requireBrandApiAccess('kia')
   if (accessResponse) return accessResponse
   const appUser = await getAuthenticatedAppUser()
-  const permission = await requirePermission(appUser, PERMISSION)
-  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+  if (!canFillVehicleTracker(appUser?.role)) {
+    return NextResponse.json({ error: 'You do not have access to the Vehicle Tracker.' }, { status: 403 })
+  }
 
   try {
     const { id } = await context.params
@@ -30,18 +29,17 @@ export async function PATCH(request: Request, context: RouteContext<'/api/brands
       return NextResponse.json({ error: 'Invalid vehicle-in time.' }, { status: 400 })
     }
 
-    let inPhotoUrl: string | null = null
-    let inPhotoPath: string | null = null
     const photo = form.get('photo')
-    if (photo instanceof File && photo.size > 0) {
-      const verdict = await verifyImageHasVehicle(photo)
-      if (!verdict.ok) {
-        return NextResponse.json({ error: verdict.reason, code: 'not_a_vehicle' }, { status: 422 })
-      }
-      const stored = await uploadTrackerPhoto(photo, 'in')
-      inPhotoUrl = stored.url
-      inPhotoPath = stored.path
+    if (!(photo instanceof File) || photo.size === 0) {
+      return NextResponse.json({ error: 'A front-side camera photo of the returning vehicle is required.' }, { status: 400 })
     }
+    const verdict = await verifyImageHasVehicle(photo)
+    if (!verdict.ok) {
+      return NextResponse.json({ error: verdict.reason, code: 'not_a_vehicle' }, { status: 422 })
+    }
+    const stored = await uploadTrackerPhoto(photo, 'in')
+    const inPhotoUrl: string = stored.url
+    const inPhotoPath: string = stored.path
 
     const row = await checkInVehicleTrackerEntry({
       id,

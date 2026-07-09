@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -479,7 +479,7 @@ async function buildPayload(filters: SotFilters, chunk: SotChunk) {
 export async function GET(request: Request) {
   const timer = createApiTimer('Platinum-business-excellence-sot')
   try {
-    const accessError = await timer.time('auth', () => requireBrandApiAccess('platinum'))
+    const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('platinum', 'platinum.business_excellence.view', request))
     if (accessError) return accessError
 
     const { searchParams } = new URL(request.url)

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { analyticsTableExists } from '@/lib/analytics/table-exists'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
@@ -1081,7 +1081,7 @@ async function buildWorkshopPayload(
 
 export async function GET(request: Request) {
   const timer = createApiTimer('workshop-performance')
-  const authResponse = await timer.time('auth', () => requireBrandApiAccess('kia'))
+  const authResponse = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.business_excellence.view', request))
   if (authResponse) return authResponse
 
   const { searchParams } = new URL(request.url)

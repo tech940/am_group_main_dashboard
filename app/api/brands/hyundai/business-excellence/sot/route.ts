@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import {
   hyundaiSourceDealerFilter,
@@ -536,7 +536,7 @@ async function buildPayload(filters: SotFilters, chunk: SotChunk) {
 export async function GET(request: Request) {
   const timer = createApiTimer('hyundai-business-excellence-sot')
   try {
-    const accessError = await timer.time('auth', () => requireBrandApiAccess('hyundai'))
+    const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('hyundai', 'hyundai.business_excellence.view', request))
     if (accessError) return accessError
 
     const { searchParams } = new URL(request.url)

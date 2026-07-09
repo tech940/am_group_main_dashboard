@@ -18,6 +18,7 @@ import {
   type BranchModuleAccessRoleValue,
 } from '@/lib/branch-module-access'
 import { isUserBranchValue } from '@/lib/branches'
+import { parseUserDealers } from '@/lib/dealers/registry'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import {
@@ -38,9 +39,21 @@ type CreateUserInput = {
   password?: unknown
   role?: unknown
   brand?: unknown
+  dealers?: unknown
   department?: unknown
   phoneNumber?: unknown
   branchModuleRole?: unknown
+}
+
+// Dealer/branch scope only applies to a single concrete brand that has a dealer registry.
+// Anything else (no brand, 'all', or multi-brand) clears the scope to null (= all branches).
+function normalizeDealers(brand: string | null | undefined, value: unknown): string | null {
+  if (!brand || brand === 'all' || brand.includes(',')) return null
+  const codes = Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : typeof value === 'string' ? value.split(',') : []
+  const valid = parseUserDealers(brand, codes.join(','))
+  return valid.length ? valid.join(',') : null
 }
 
 function normalizeOptionalString(value: unknown) {
@@ -89,6 +102,7 @@ function publicUser(user: typeof users.$inferSelect, actor: AppUser) {
     fullName: user.fullName,
     role: user.role,
     brand: user.brand,
+    dealers: user.dealers,
     department: user.department,
     phoneNumber: user.phoneNumber,
     isActive: user.isActive,
@@ -168,6 +182,7 @@ function normalizeCreateInput(input: CreateUserInput, actor: AppUser) {
     password,
     role: role as AppUser['role'],
     branch,
+    dealers: normalizeDealers(branch, input.dealers),
     department: normalizeOptionalString(input.department),
     phoneNumber: normalizeOptionalString(input.phoneNumber),
     branchModuleRole,
@@ -200,6 +215,7 @@ async function createUser(input: CreateUserInput, actor: AppUser, request: Reque
       fullName: normalized.fullName,
       role: normalized.role,
       brand: normalized.branch,
+      dealers: normalized.dealers,
       department: normalized.department,
       phoneNumber: normalized.phoneNumber,
       createdBy: actor.id,
@@ -406,6 +422,10 @@ export async function PUT(request: Request) {
           return NextResponse.json({ error: 'Branch Admin must have exactly one branch.' }, { status: 400 })
         }
         updates.brand = requestedBranch
+      }
+      if ('dealers' in body || 'brand' in body) {
+        const effectiveBrand = (updates.brand ?? existing.brand) as string | null
+        updates.dealers = normalizeDealers(effectiveBrand, 'dealers' in body ? body.dealers : existing.dealers)
       }
       if (typeof body.email === 'string' && body.email.trim()) {
         const email = body.email.trim().toLowerCase()

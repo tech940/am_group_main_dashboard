@@ -25,6 +25,8 @@ import {
   canReadPettyCashExpense,
   canReadPettyCashRequest,
   canUsePettyCashAllocation,
+  canViewPettyCashBranch,
+  hasPettyCashAllBranchAccess,
   getPettyCashAllocationVisibilityFilter,
   getPettyCashExpenseVisibilityFilter,
   getPettyCashRequestVisibilityFilter,
@@ -55,7 +57,9 @@ export const createPettyCashExpenseSchema = z.object({
   receivedBy: optionalText,
   purpose: z.string().trim().min(2).max(2000),
   expenseForm: z.record(z.string(), z.unknown()).default({}),
-  billFiles: z.array(z.string().trim()).min(1, 'Please upload at least one bill image or PDF.'),
+  billFiles: z
+    .array(z.string().trim().min(1, 'Bill file URL cannot be empty.'))
+    .min(1, 'Please upload at least one bill image or PDF.'),
 })
 
 export const pettyCashWorkflowSchema = z.object({
@@ -250,7 +254,7 @@ export async function listPettyCashRequests(appUser: AppUser, input: z.input<typ
 
   if (query.branchId && query.branchId !== 'all') {
     if (!isBranchValue(query.branchId)) throw new Error('Invalid branch')
-    if (!canManagePettyCashBranch(appUser, query.branchId)) throw new Error('Forbidden branch')
+    if (!canViewPettyCashBranch(appUser, query.branchId)) throw new Error('Forbidden branch')
     filters.push(eq(pettyCashRequests.branchId, query.branchId))
   }
 
@@ -322,7 +326,7 @@ export async function getPettyCashApprovalQueue(appUser: AppUser, opts?: { searc
 
   if (opts?.branchId && opts.branchId !== 'all') {
     if (!isBranchValue(opts.branchId)) throw new Error('Invalid branch')
-    if (!canManagePettyCashBranch(appUser, opts.branchId)) throw new Error('Forbidden branch')
+    if (!canViewPettyCashBranch(appUser, opts.branchId)) throw new Error('Forbidden branch')
     filters.push(eq(pettyCashRequests.branchId, opts.branchId))
   }
 
@@ -365,6 +369,43 @@ export async function getPettyCashApprovalCount(appUser: AppUser) {
   return Number(total) || 0
 }
 
+/**
+ * Status-tracking board feed: every petty-cash request the user is allowed to
+ * see, with the fields the board needs to derive the current stage, pending
+ * approver, and how long it has been waiting.
+ *
+ * "Waiting since" is taken from `updatedAt`. Every workflow transition
+ * (submit / EA / MD / Accounts / hold) stamps `updatedAt = now`, so it is an
+ * accurate marker of when the request entered its *current* status. There is no
+ * dedicated per-stage "entered at" column, so this is an approximation for
+ * requests that were edited for any other reason — in practice petty-cash
+ * requests are only ever touched by the workflow, so it holds.
+ */
+export async function getPettyCashStatusBoard(appUser: AppUser) {
+  const rows = await db
+    .select({
+      id: pettyCashRequests.id,
+      requestNumber: pettyCashRequests.requestNumber,
+      branchId: pettyCashRequests.branchId,
+      status: pettyCashRequests.status,
+      requestedByName: pettyCashRequests.requestedByName,
+      requestedAmount: pettyCashRequests.requestedAmount,
+      purpose: pettyCashRequests.purpose,
+      department: pettyCashRequests.department,
+      createdAt: pettyCashRequests.createdAt,
+      updatedAt: pettyCashRequests.updatedAt,
+    })
+    .from(pettyCashRequests)
+    .where(getPettyCashRequestVisibilityFilter(appUser))
+    .orderBy(desc(pettyCashRequests.updatedAt))
+    .limit(500)
+
+  return {
+    generatedAt: new Date().toISOString(),
+    requests: rows.map((row) => serializeUtcTimestampFields(row as Record<string, unknown>, ['createdAt', 'updatedAt'])),
+  }
+}
+
 export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typeof pettyCashListQuerySchema>) {
   const query = pettyCashListQuerySchema.parse(input)
   const filters = [getPettyCashExpenseVisibilityFilter(appUser)]
@@ -376,7 +417,7 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
 
   if (query.branchId && query.branchId !== 'all') {
     if (!isBranchValue(query.branchId)) throw new Error('Invalid branch')
-    if (!canManagePettyCashBranch(appUser, query.branchId)) throw new Error('Forbidden branch')
+    if (!canViewPettyCashBranch(appUser, query.branchId)) throw new Error('Forbidden branch')
     filters.push(eq(pettyCashExpenses.branchId, query.branchId))
   }
 
@@ -422,13 +463,16 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
 }
 
 export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?: string | null) {
-  if (appUser.role === 'developer' && !branchId) return null
+  // Cross-branch supervisors (EA/MD/EBA/Developer/all) don't own a single
+  // allocation — the "current allocation" KPI is only meaningful once they pick a
+  // branch. Without one, return null and let them use the Allocations list.
+  if (hasPettyCashAllBranchAccess(appUser) && !branchId) return null
 
   const filters = [getPettyCashAllocationVisibilityFilter(appUser)]
 
   if (branchId && branchId !== 'all') {
     if (!isBranchValue(branchId)) throw new Error('Invalid branch')
-    if (!canManagePettyCashBranch(appUser, branchId)) throw new Error('Forbidden branch')
+    if (!canViewPettyCashBranch(appUser, branchId)) throw new Error('Forbidden branch')
     filters.push(eq(pettyCashAllocations.branchId, branchId))
   }
 
@@ -451,18 +495,66 @@ export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?:
   }
 }
 
+/**
+ * List active allocations the user may see, one row per branch/dealership. For
+ * cross-branch supervisors (EA/MD/EBA/Developer) this spans every brand and
+ * every location so they can review and filter allocations org-wide. `location`
+ * (the dealership, e.g. KIA Jammu / KIA Udhampur) is pulled from the originating
+ * request's requestForm so the UI can offer a Location/Dealership filter.
+ */
+export async function listPettyCashAllocations(appUser: AppUser, input?: { branchId?: string | null }) {
+  const filters = [getPettyCashAllocationVisibilityFilter(appUser)]
+
+  const branchId = input?.branchId
+  if (branchId && branchId !== 'all') {
+    if (!isBranchValue(branchId)) throw new Error('Invalid branch')
+    if (!canViewPettyCashBranch(appUser, branchId)) throw new Error('Forbidden branch')
+    filters.push(eq(pettyCashAllocations.branchId, branchId))
+  }
+
+  const rows = await db
+    .select({
+      allocation: pettyCashAllocations,
+      location: sql<string | null>`${pettyCashRequests.requestForm} ->> 'location'`,
+      allocatedToName: users.fullName,
+    })
+    .from(pettyCashAllocations)
+    .leftJoin(pettyCashRequests, eq(pettyCashRequests.id, pettyCashAllocations.requestId))
+    .leftJoin(users, eq(users.id, pettyCashAllocations.allocatedTo))
+    .where(and(...filters))
+    .orderBy(desc(pettyCashAllocations.createdAt))
+    .limit(200)
+
+  return {
+    allocations: rows.map((row) => ({
+      ...serializeAllocation(row.allocation as Record<string, unknown>),
+      location: row.location || null,
+      allocatedToName: row.allocatedToName || null,
+      remainingAmount: toMoney(getRemainingBalance(row.allocation)),
+    })),
+  }
+}
+
 export async function getPettyCashDashboard(appUser: AppUser, branchId?: string | null) {
   const [categories, currentAllocation, requestsResult, expensesResult] = await Promise.all([
     getPettyCashCategories(),
     getCurrentPettyCashAllocation(appUser, branchId),
-    listPettyCashRequests(appUser, { page: 1, pageSize: 8, status: 'all', branchId }),
+    // Wide window so the reviewer's visible queue matches the authoritative pending
+    // count (getPettyCashApprovalCount) rather than trailing an 8-row slice.
+    listPettyCashRequests(appUser, { page: 1, pageSize: 50, status: 'all', branchId }),
     // Fetch a wide window of expenses so the location filter has enough to work with.
     listPettyCashExpenses(appUser, { page: 1, pageSize: 50, status: 'all', branchId }),
   ])
 
   const requests = filterDashboardRequests(appUser, requestsResult.requests as Array<Record<string, unknown>>)
   const expenses = filterDashboardExpenses(appUser, expensesResult.expenses as Array<Record<string, unknown>>)
-  const pendingRequestCount = requests.filter((request) => String(request.status).includes('pending') || String(request.status).includes('on_hold')).length
+  // Single source of truth for the pending badge: approver/supervisor roles use
+  // the exact same count as Purchase Orders → Petty Cash (getPettyCashApprovalCount),
+  // so the two surfaces can never disagree. Creators fall back to their own
+  // in-flight requests (filterDashboardRequests already scopes to them).
+  const pendingRequestCount = pettyCashApprovalStatusesForRole(appUser.role).length
+    ? await getPettyCashApprovalCount(appUser)
+    : requests.length
   const pendingExpenseCount = 0
   const currentAllocationRecord = currentAllocation as Record<string, unknown> | null
   const allocationAmount = currentAllocationRecord ? parseMoney(currentAllocationRecord.allocatedAmount as string) : 0
@@ -1122,21 +1214,21 @@ export async function getPettyCashExpenseDetails(appUser: AppUser, expenseId: st
 }
 
 export async function getPettyCashLedger(appUser: AppUser, allocationId?: string | null) {
-  const allocationFilter = allocationId
+  // A specific allocation → its ledger. Otherwise: all-branch supervisors
+  // (EA/MD/EBA/Developer) see EVERY branch's movements; branch-scoped roles only
+  // their own. The previous code filtered developers to branchId='all', which
+  // matched nothing and left the ledger blank.
+  const branchScoped = !hasPettyCashAllBranchAccess(appUser) && Boolean(appUser.brand) && appUser.brand !== 'all'
+  const ledgerFilter = allocationId
     ? eq(pettyCashLedgerEntries.allocationId, allocationId)
-    : canManagePettyCashBranch(appUser, appUser.brand || '')
-      ? eq(pettyCashLedgerEntries.branchId, appUser.brand || '')
+    : branchScoped
+      ? eq(pettyCashLedgerEntries.branchId, appUser.brand as string)
       : undefined
-
-  const filters = allocationFilter ? [allocationFilter] : []
-  if (appUser.role !== 'admin' && appUser.role !== 'developer' && appUser.brand && appUser.brand !== 'all') {
-    filters.push(eq(pettyCashLedgerEntries.branchId, appUser.brand))
-  }
 
   const rows = await db
     .select()
     .from(pettyCashLedgerEntries)
-    .where(filters.length > 0 ? and(...filters) : undefined)
+    .where(ledgerFilter)
     .orderBy(desc(pettyCashLedgerEntries.createdAt))
     .limit(100)
 

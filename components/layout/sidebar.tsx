@@ -20,7 +20,11 @@ import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 import { hasGlobalAccessRole } from '@/lib/auth/roles'
+import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
+import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
+
+const VEHICLE_TRACKER_HREF = '/brands/kia/vehicle-tracker'
 
 const HYUNDAI_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_hyundai.svg'
 
@@ -191,54 +195,11 @@ const brandNavigation: SidebarBrand[] = [
 
 const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
 
-// The single section a Branch Sales person is allowed to see/access.
-const BOOKINGS_HREF = '/brands/kia/proforma'
 const alwaysVisibleBrandKeys = new Set<string>()
 const DEFAULT_SIDEBAR_FAVOURITES: string[] = []
 
-const sidebarPermissionByHref: Record<string, string> = {
-  '/purchase-orders': 'purchase_orders.view',
-  '/finance-orders': 'finance_orders.view',
-  '/petty-cash': 'petty_cash.view',
-  '/am-finance': 'am_finance.view',
-  '/brands/kia/business-excellence': 'kia.business_excellence.view',
-  '/brands/kia/business-excellence/executive-dashboard': 'kia.business_excellence.view',
-  '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',
-  '/brands/kia/service-appointment': 'kia.service_appointment.view',
-  '/brands/kia/vehicle-tracker': 'kia.service_appointment.view',
-  '/brands/kia/demo-job-cards': 'kia.demo_job_cards.view',
-  '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
-  '/brands/kia/sales-report': 'kia.sales_report.view',
-  '/brands/kia/stock-report': 'kia.stock_report.view',
-  '/brands/kia/bookings': 'kia.bookings.view',
-  '/brands/kia/proforma': 'kia.proforma.view',
-  '/brands/kia/insurance': 'kia.insurance.view',
-  '/brands/hyundai/business-excellence': 'hyundai.business_excellence.view',
-  '/brands/hyundai/business-excellence/executive-dashboard': 'hyundai.business_excellence.view',
-  '/brands/hyundai/business-excellence/overview': 'hyundai.business_excellence.view',
-  '/brands/hyundai/service-appointment': 'hyundai.service_appointment.view',
-  '/brands/hyundai/demo-job-cards': 'hyundai.demo_job_cards.view',
-  '/brands/hyundai/demo-cars-list': 'hyundai.demo_cars_list.view',
-  '/brands/hyundai/proforma': 'hyundai.proforma.view',
-  '/brands/hyundai/warranty-list': 'hyundai.warranty_list.view',
-  '/brands/hyundai/warranty-claim-list': 'hyundai.warranty_claim_list.view',
-  '/brands/platinum/business-excellence': 'platinum.business_excellence.view',
-  '/brands/platinum/business-excellence/executive-dashboard': 'platinum.business_excellence.view',
-  '/brands/platinum/business-excellence/overview': 'platinum.business_excellence.view',
-  '/brands/platinum/service-appointment': 'platinum.service_appointment.view',
-  '/brands/platinum/demo-job-cards': 'platinum.demo_job_cards.view',
-  '/brands/platinum/demo-cars-list': 'platinum.demo_cars_list.view',
-  '/brands/platinum/proforma': 'platinum.proforma.view',
-  '/brands/platinum/warranty-list': 'platinum.warranty_list.view',
-  '/brands/platinum/warranty-claim-list': 'platinum.warranty_claim_list.view',
-  '/brands/mg/business-excellence/overview': 'mg.business_excellence.view',
-  '/brands/mg/service-appointment': 'mg.service_appointment.view',
-  '/brands/mg/demo-job-cards': 'mg.demo_job_cards.view',
-  '/brands/mg/demo-cars-list': 'mg.demo_cars_list.view',
-  '/brands/mg/proforma': 'mg.proforma.view',
-  '/admin': 'user_management.view',
-
-}
+// Generated from the registry's SECTION_ROUTES (proven identical by scripts/verify-nav-map.ts).
+const sidebarPermissionByHref = SIDEBAR_PERMISSION_BY_HREF
 
 function isSidebarHrefActive(href: string, pathname: string | null) {
   if (!pathname) return false
@@ -251,12 +212,6 @@ function isSidebarHrefActive(href: string, pathname: string | null) {
   return pathname === href
 }
 
-function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
-  const normalized = String(role || '').trim().toLowerCase()
-  return normalized === 'developer' || normalized === 'md' || normalized === 'eba'
-}
-
-
 export function Sidebar() {
   const pathname = usePathname()
   const { collapsed, setCollapsed } = useSidebar()
@@ -266,13 +221,13 @@ export function Sidebar() {
     value: favouriteHrefsValue,
     savePreference: saveFavouriteHrefs,
   } = useUserPreferences<string[]>('sidebar_favourites', DEFAULT_SIDEBAR_FAVOURITES)
-  // Branch Admin is locked to Petty Cash only — everything else is hidden.
-  const pettyCashOnly = userRole === 'branch_admin'
-  // Branch Sales person is locked to the Bookings section only.
-  const bookingsOnly = userRole === 'sales_executive'
-  const canAccessFinanceOrders = !pettyCashOnly && ['admin', 'developer', 'ceo', 'md', 'ea', 'eba', 'accounts', 'finance_head'].includes(userRole || '')
+  // Common-module role gates (unchanged). Brand-section visibility is now driven entirely by
+  // the effective permission map — the former branch_admin (Petty-Cash-only), sales_executive
+  // (Bookings-only) and sales/stock-report hardcodes moved into the resolution layer
+  // (lib/permissions/service.ts), so a per-section Deny and restricted-role defaults apply here.
+  const canAccessFinanceOrders = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba', 'accounts', 'finance_head'].includes(userRole || '')
   const canAccessPettyCash = ['admin', 'developer', 'branch_admin', 'ea', 'md', 'eba', 'accounts'].includes(userRole || '')
-  const canAccessAmFinance = !pettyCashOnly && ['admin', 'developer', 'ceo', 'md', 'ea', 'eba'].includes(userRole || '')
+  const canAccessAmFinance = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba'].includes(userRole || '')
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
   useEffect(() => {
@@ -303,23 +258,24 @@ export function Sidebar() {
     return href.startsWith('/brands/')
   }, [])
 
-  const isSidebarItemVisible = useCallback((href: string, brandKey: string) => {
-    // Branch Sales person: nothing but the Bookings section.
-    if (bookingsOnly && href !== BOOKINGS_HREF) {
-      return false
+  const isSidebarItemVisible = useCallback((href: string) => {
+    // Vehicle Tracker is role-gated (Service floor): Branch Admin + Service GM + MD/Developer.
+    // Sales GM is excluded. This one stays role-based (it has no permission-registry entry).
+    if (href === VEHICLE_TRACKER_HREF) {
+      const isKiaUser = userBrand === 'kia' || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
+      return canViewVehicleTracker(userRole) && isKiaUser
     }
-    if ((href === '/brands/kia/sales-report' || href === '/brands/kia/stock-report') && !isKiaSalesReportRoleAllowed(userRole)) {
-      return false
-    }
-
+    // Everything else is gated by the user's effective permissions. Brand users are no longer
+    // auto-granted their whole brand here, so a per-section Deny — and restricted-role defaults
+    // (branch_admin, sales_executive, sensitive reports) — hide the link. hasPermission handles
+    // global roles and the pre-load (map === null) fail-open.
     const permissionKey = sidebarPermissionByHref[href]
-    const isBrandUser = userBrand === brandKey || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
-    if (permissionKey && !isBrandUser && !hasPermission(permissionKey)) {
+    if (permissionKey && !hasPermission(permissionKey)) {
       return false
     }
 
     return true
-  }, [userBrand, userRole, permissionMap, bookingsOnly])
+  }, [userBrand, userRole, permissionMap])
 
   const toggleFavourite = useCallback(async (href: string) => {
     if (!isEligibleFavouriteHref(href)) return
@@ -330,16 +286,18 @@ export function Sidebar() {
   }, [favouriteHrefs, isEligibleFavouriteHref, saveFavouriteHrefs])
 
   const visibleBrands = useMemo(() => {
-    if (pettyCashOnly) return []
-    if (bookingsOnly) return availableBrands.filter((brand) => brand.key === 'kia')
+    // Which brands to surface. Individual sections inside each brand are gated by
+    // isSidebarItemVisible, so a brand with no visible sections is dropped later.
+    // The user's brand may be a comma-separated multi-brand assignment ('hyundai,tata'),
+    // so match against the SPLIT set — an exact `=== userBrand` compare would surface no brand
+    // at all for those users (the "only MG showed" bug).
+    const userBrandKeys = (userBrand || '').split(',').map((value) => value.trim()).filter(Boolean)
     return availableBrands
       .filter((brand) => {
-        if (brand.key === 'mg') return true
         if (alwaysVisibleBrandKeys.has(brand.key)) return true
         if (hasGlobalAccessRole(userRole)) return true
-        if (!userBrand) return false
         if (hasAllBranchAccess(userBrand)) return true
-        return brand.key === userBrand
+        return userBrandKeys.includes(brand.key)
       })
       .sort((a, b) => {
         if (userBrand) {
@@ -351,18 +309,18 @@ export function Sidebar() {
         const bOrder = BRANCH_OPTIONS.findIndex((branch) => branch.value === b.key)
         return aOrder - bOrder
       })
-  }, [userBrand, userRole, pettyCashOnly, bookingsOnly])
+  }, [userBrand, userRole])
 
   const favouriteItems = useMemo(() => {
     const itemMap = new Map<string, { href: string; label: string; brandName: string }>()
     for (const brand of visibleBrands) {
       for (const section of brand.sections) {
-        if ('href' in section && section.href && isSidebarItemVisible(section.href, brand.key) && isEligibleFavouriteHref(section.href)) {
+        if ('href' in section && section.href && isSidebarItemVisible(section.href) && isEligibleFavouriteHref(section.href)) {
           itemMap.set(section.href, { href: section.href, label: section.name, brandName: brand.name })
         }
 
         for (const submenu of section.submenus) {
-          if (!isSidebarItemVisible(submenu.href, brand.key) || !isEligibleFavouriteHref(submenu.href)) continue
+          if (!isSidebarItemVisible(submenu.href) || !isEligibleFavouriteHref(submenu.href)) continue
           itemMap.set(submenu.href, {
             href: submenu.href,
             label: submenu.name,
@@ -406,7 +364,15 @@ export function Sidebar() {
     const commonNodes: NavNode[] = []
     if (hasPermission('purchase_orders.view')) commonNodes.push({ key: '/purchase-orders', label: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart, external: true, active: pathname === '/purchase-orders' })
     if ((canAccessFinanceOrders || permissionMap) && hasPermission('finance_orders.view')) commonNodes.push({ key: '/finance-orders', label: 'Finance Orders', href: '/finance-orders', icon: Landmark, external: true, active: pathname === '/finance-orders' })
-    if ((canAccessPettyCash || permissionMap) && hasPermission('petty_cash.view')) commonNodes.push({ key: '/petty-cash', label: 'Petty Cash', href: '/petty-cash', icon: Banknote, external: true, active: pathname === '/petty-cash' })
+    if ((canAccessPettyCash || permissionMap) && hasPermission('petty_cash.view')) commonNodes.push({
+      key: 'petty-cash',
+      label: 'Petty Cash',
+      icon: Banknote,
+      children: [
+        { key: '/petty-cash', label: 'Overview', href: '/petty-cash', external: true, active: pathname === '/petty-cash' },
+        { key: '/petty-cash/status', label: 'Status Tracker', href: '/petty-cash/status', external: true, active: pathname === '/petty-cash/status' },
+      ],
+    })
     if (canAccessAmFinance) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
     if (canAccessAdmin) {
       const adminActive = Boolean(pathname?.startsWith('/admin'))
@@ -426,21 +392,12 @@ export function Sidebar() {
     // ── Branches → Sections → Submenus (cascade), reusing the existing gating ──
     const brandNodes: NavNode[] = []
     for (const brand of visibleBrands) {
-      const isBrandUser = userBrand === brand.key || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
       const sections: NavNode[] = []
       for (const section of brand.sections) {
         const directHref = 'href' in section ? section.href : undefined
         const hasChildren = section.submenus.length > 0
-        if (bookingsOnly && !hasChildren) continue
-        const directPermissionKey = directHref ? sidebarPermissionByHref[directHref] : undefined
-        const directLocked = directHref && !isBrandUser && directPermissionKey ? !hasPermission(directPermissionKey) : false
-        if (directHref && directLocked) continue
-        const visibleSubmenus = section.submenus.filter((sub) => {
-          if (!isSidebarItemVisible(sub.href, brand.key)) return false
-          const permissionKey = sidebarPermissionByHref[sub.href]
-          const subLocked = isBrandUser ? false : (permissionKey ? !hasPermission(permissionKey) : false)
-          return !subLocked
-        })
+        if (directHref && !isSidebarItemVisible(directHref)) continue
+        const visibleSubmenus = section.submenus.filter((sub) => isSidebarItemVisible(sub.href))
         if (hasChildren && visibleSubmenus.length === 0) continue
         if (directHref) {
           sections.push({
@@ -483,7 +440,7 @@ export function Sidebar() {
 
     return groups
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, isSuperAdmin, canAccessFinanceOrders, canAccessPettyCash, canAccessAmFinance, userBrand, userRole, bookingsOnly, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
+  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, isSuperAdmin, canAccessFinanceOrders, canAccessPettyCash, canAccessAmFinance, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
 
   return (
     <>

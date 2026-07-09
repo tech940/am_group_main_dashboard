@@ -13,6 +13,7 @@ import {
   CalendarCheck,
   Car,
   CheckCircle2,
+  Clock3,
   ClipboardList,
   FileText,
   Loader2,
@@ -95,6 +96,11 @@ import {
   canDeliverKiaBooking,
   canVerifyKiaAccounts,
 } from '@/lib/kia/workflow-access'
+import {
+  formatWaitingDuration,
+  getKiaBookingStageInfo,
+  isKiaBookingWaitLong,
+} from '@/lib/kia/booking-status-tracking'
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
 
@@ -455,12 +461,72 @@ function StatusBadge({ status, className }: { status: string; className?: string
   )
 }
 
+// Ticks `now` every minute so any "time waiting" derived from it stays live
+// without refetching. One interval per mount; the list passes it down to rows.
+function useMinuteTick(intervalMs = 60_000) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(timer)
+  }, [intervalMs])
+  return now
+}
+
+// Compact "Waiting / Pending with" indicator shared by the list rows and the
+// detail panel. Shows the current stage, who it's pending with, and how long the
+// booking has waited there — but only for non-terminal statuses.
+//
+// "Time waiting" is derived from the booking's `updatedAt` as the marker for when
+// it entered its current stage. APPROXIMATION: every workflow transition stamps
+// `updatedAt`, so it closely tracks stage entry, but a non-stage edit (e.g. fixing
+// a phone number) also bumps it — so this is a close approximation, not an exact
+// stage-entry timestamp.
+function BookingWaitingIndicator({
+  status,
+  approvalStatus,
+  updatedAt,
+  now,
+  align = 'left',
+  className,
+}: {
+  status: string
+  approvalStatus?: string | null
+  updatedAt?: string | null
+  now: number
+  align?: 'left' | 'right'
+  className?: string
+}) {
+  const info = getKiaBookingStageInfo(status, approvalStatus)
+  const isPending = info.state === 'pending'
+  const stale = isPending && isKiaBookingWaitLong(updatedAt, now)
+  return (
+    <div className={cn('flex flex-col gap-0.5', align === 'right' && 'items-end text-right', className)}>
+      <span className="text-[11px] font-bold leading-4 text-[var(--kia-text-soft)]">
+        {info.pendingWith ? (
+          <>Pending with <span className="text-[var(--kia-text)]">{info.pendingWith}</span></>
+        ) : (
+          info.stageLabel
+        )}
+      </span>
+      {isPending && (
+        <span className={cn('inline-flex items-center gap-1 text-[11px] font-bold leading-4', stale ? 'text-rose-600' : 'text-[var(--kia-text-faint)]')}>
+          <Clock3 className="h-3 w-3" />
+          {formatWaitingDuration(updatedAt, now)}
+          {stale ? ' · overdue' : ' waiting'}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function BookingMobileCard({
   row,
   onOpen,
+  now,
 }: {
   row: BookingRow
   onOpen: (id: string) => void
+  now: number
 }) {
   const router = useRouter()
   const canViewPii = useCanViewPii()
@@ -473,7 +539,11 @@ function BookingMobileCard({
           <p className="mt-1 truncate text-xs font-bold text-[var(--kia-text-soft)]">{row.customerName}</p>
           <p className="text-[11px] font-medium text-[var(--kia-text-faint)]">{maskKiaPii(row.customerPhone, canViewPii)}</p>
         </div>
-        <StatusBadge status={row.status} />
+        <div className="flex flex-col items-end gap-1.5">
+          <StatusBadge status={row.status} />
+          {/* List rows don't carry the proforma approval, so approvalStatus is omitted. */}
+          <BookingWaitingIndicator status={row.status} updatedAt={row.updatedAt} now={now} align="right" />
+        </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2.5 text-xs">
         <FieldValue label="Vehicle" value={<><span className="font-bold text-[var(--kia-text)]">{row.model || '—'}</span><br /><span className="text-[var(--kia-text-soft)]">{row.variant || '—'}</span></>} />
@@ -1041,12 +1111,14 @@ export function KiaBookingsClient({
   initialSearchParams,
   embedMode = false,
   currentUserRole = 'viewer',
+  currentUserName = '',
   mode = 'crm',
   priceOptions,
 }: {
   initialSearchParams: SearchParamsInput
   embedMode?: boolean
   currentUserRole?: string
+  currentUserName?: string
   mode?: BookingClientMode
   priceOptions?: ProformaOptionsPayload | null
 }) {
@@ -1090,42 +1162,19 @@ export function KiaBookingsClient({
   const [testPersona] = useState<TestPersona>('actual')
   // Which contextual automotive loader to show for the in-flight workflow action.
   const [loaderVariant, setLoaderVariant] = useState<LoaderVariant>('generic')
-  const [priceUploading, setPriceUploading] = useState(false)
-  const priceInputRef = useRef<HTMLInputElement>(null)
   const [createSuccess, setCreateSuccess] = useState(false)
   const [deliverySuccess, setDeliverySuccess] = useState(false)
   const [allotSuccess, setAllotSuccess] = useState(false)
 
-  async function handlePriceUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setPriceUploading(true)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const response = await fetch('/api/brands/kia/proforma/price-details/upload', { method: 'POST', body: formData })
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(payload?.error || 'Failed to import price details')
-      const summary = payload.summary
-      toast({
-        title: 'Price Master Updated',
-        description: summary ? `Imported ${summary.importedRows} rows${summary.failedRows ? `, ${summary.failedRows} failed` : ''}.` : 'Prices replaced successfully.',
-        variant: 'success',
-      })
-      queryClient.invalidateQueries({ queryKey: ['kia-proforma-options-for-bookings'] })
-    } catch (err) {
-      toast({ title: 'Import Failed', description: err instanceof Error ? err.message : 'Failed to import price details', variant: 'error' })
-    } finally {
-      setPriceUploading(false)
-      if (priceInputRef.current) priceInputRef.current.value = ''
-    }
-  }
+  // "Replace Prices" (KIA price-master Excel upload) now lives in Admin → System.
   const canUseTestPersona = currentUserRole === 'developer'
   const normalizedCurrentRole = normalizeRole(currentUserRole)
   const canCreateBookings = roleCanActAsSalesPerson(normalizedCurrentRole)
   const canViewPii = canViewKiaCustomerPii(currentUserRole)
   const stockMode = mode === 'stock'
   const animated = usePremiumMotion()
+  // Live minute tick for the "time waiting" indicators on each list row.
+  const nowTick = useMinuteTick()
 
   const selectedBookingId = searchParams.get('bookingId') || ''
 
@@ -1414,7 +1463,6 @@ export function KiaBookingsClient({
       ['status', 'Stock Status'],
       ['managerName', 'Manager Name'],
       ['tlName', 'Team Leader'],
-      ['consultantName', 'Consultant Name'],
       ['leadSource', 'Lead Source'],
       ['bookingAmount', 'Booking Amount'],
       ['bookingDate', 'Booking Date'],
@@ -1461,7 +1509,8 @@ export function KiaBookingsClient({
       setCreateTab(tabByField[missing[0]] || 'Customer')
       return
     }
-    createMutation.mutate(createForm)
+    // Consultant is always the logged-in user — never chosen in the form — so ownership is accurate.
+    createMutation.mutate({ ...createForm, consultantName: currentUserName || createForm.consultantName })
   }
 
   function runAction(action: 'proforma' | 'finance' | 'payment' | 'accounts' | 'release' | 'deliver' | 'cancel' | 'transfer') {
@@ -1617,18 +1666,6 @@ export function KiaBookingsClient({
           </Button>
           <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => setQuoteOpen(true)}>
             <FileText className="h-4 w-4" /> Email Quote
-          </Button>
-          <input
-            type="file"
-            ref={priceInputRef}
-            // Include MIME types alongside extensions — some OS file pickers grey out
-            // Excel files when only bare extensions are given.
-            accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
-            onChange={handlePriceUpload}
-            className="hidden"
-          />
-          <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => priceInputRef.current?.click()} disabled={priceUploading}>
-            {priceUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Replace Prices
           </Button>
         </>
       )}
@@ -1797,7 +1834,7 @@ export function KiaBookingsClient({
             </div>
             <div className="grid gap-3 p-3 sm:hidden">
               {rows.map((row) => (
-                <BookingMobileCard key={row.id} row={row} onOpen={openBooking} />
+                <BookingMobileCard key={row.id} row={row} onOpen={openBooking} now={nowTick} />
               ))}
             </div>
             <Table className="hidden sm:table kia-table">
@@ -1835,7 +1872,13 @@ export function KiaBookingsClient({
                         <div className="text-xs font-bold text-[var(--kia-text)]">{row.dealerCode || '—'}</div>
                         {city && <div className="text-[11px] font-medium text-[var(--kia-text-soft)]">{city}</div>}
                       </TableCell>
-                      <TableCell className="px-3 py-3"><StatusBadge status={row.status} /></TableCell>
+                      <TableCell className="px-3 py-3">
+                        <div className="flex flex-col gap-1.5">
+                          <StatusBadge status={row.status} />
+                          {/* List rows don't carry the proforma approval, so approvalStatus is omitted. */}
+                          <BookingWaitingIndicator status={row.status} updatedAt={row.updatedAt} now={nowTick} />
+                        </div>
+                      </TableCell>
                       <TableCell className="px-3 py-3 text-xs font-semibold text-[var(--kia-text-soft)]">{formatDate(row.createdAt || row.updatedAt)}</TableCell>
                       <TableCell className="px-3 py-3"><Chip tone={pay.tone}>{pay.label}</Chip></TableCell>
                       <TableCell className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
@@ -1880,6 +1923,7 @@ export function KiaBookingsClient({
       <CreateBookingDialog
         open={createOpen}
         form={createForm}
+        currentUserName={currentUserName}
         activeTab={createTab}
         modelOptions={bookingModelOptions}
         variantOptions={bookingVariantOptions}
@@ -2187,6 +2231,7 @@ function BookingReviewRow({ label, value }: { label: string; value: string }) {
 function CreateBookingDialog({
   open,
   form,
+  currentUserName,
   activeTab,
   modelOptions,
   variantOptions,
@@ -2203,6 +2248,7 @@ function CreateBookingDialog({
 }: {
   open: boolean
   form: CreateBookingForm
+  currentUserName: string
   activeTab: (typeof CREATE_TABS)[number]
   modelOptions: string[]
   variantOptions: string[]
@@ -2574,13 +2620,8 @@ function CreateBookingDialog({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Consultant Name" required>
-                  <Select value={form.consultantName} onValueChange={(val) => onChange('consultantName', val)}>
-                    <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Consultant" /></SelectTrigger>
-                    <SelectContent>
-                      {CONSULTANTS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                <Field label="Consultant">
+                  <Input readOnly value={currentUserName || 'You'} className={cn(INPUT_STYLE, 'bg-slate-100/60')} title="Automatically set to the logged-in user" />
                 </Field>
                 <Field label="Lead Source" required>
                   <Select value={form.leadSource} onValueChange={(val) => onChange('leadSource', val)}>
@@ -2826,6 +2867,8 @@ function BookingDrawer({
   const [editOpen, setEditOpen] = useState(false)
   const [sharingLink, setSharingLink] = useState(false)
   const { booking, allocation, proforma, financeOrder, activities, transfers } = detail
+  // Live minute tick for the detail panel's "time waiting" indicator.
+  const now = useMinuteTick()
 
   // Fetch the customer's public tracking URL, copy it to the clipboard, and offer
   // to open the customer's email/share sheet. Staff-only action; the link itself
@@ -2984,6 +3027,14 @@ function BookingDrawer({
             </div>
             <div className="flex flex-col items-start gap-2 md:items-end">
               <StatusBadge status={booking.status} />
+              {/* Waiting / Pending with — refined by the linked proforma's approval state. */}
+              <BookingWaitingIndicator
+                status={booking.status}
+                approvalStatus={proforma?.status}
+                updatedAt={booking.updatedAt}
+                now={now}
+                align="right"
+              />
               <Button
                 variant="outline"
                 size="sm"

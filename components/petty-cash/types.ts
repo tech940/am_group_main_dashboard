@@ -51,6 +51,8 @@ export type PettyCashRequest = {
   created_by?: string
   createdAt?: string
   created_at?: string
+  updatedAt?: string
+  updated_at?: string
 }
 
 export type PettyCashExpense = {
@@ -84,6 +86,8 @@ export type PettyCashLedgerEntry = {
   id: string
   entryType?: string
   entry_type?: string
+  branchId?: string
+  branch_id?: string
   amount: string
   balanceAfter?: string
   balance_after?: string

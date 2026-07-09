@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { appendKiaDealerCodeParam, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
@@ -473,7 +473,7 @@ function createCacheKey(report: string, startDate: string, endDate: string, data
 }
 
 export async function POST(request: NextRequest) {
-  const accessError = await requireBrandApiAccess('kia')
+  const accessError = await requireBrandSectionApiAccess('kia', 'kia.business_excellence.view')
   if (accessError) return accessError
 
   try {

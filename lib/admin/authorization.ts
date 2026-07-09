@@ -30,6 +30,7 @@ export const BRANCH_ASSIGNABLE_ROLES = new Set<AppUser['role']>([
   'viewer',
   'service_manager',
   'general_manager',
+  'service_general_manager',
   'sales_head'
 ])
 

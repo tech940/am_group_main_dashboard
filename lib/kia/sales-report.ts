@@ -874,6 +874,13 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
         const dealer = upperText(getFirstText(row, TABLES.enquiry.dealerColumns)) || 'Unknown'
         const model = normalizeModel(row.model)
         const consultant = normalizeConsultant(row.consultant_name)
+        // Group consultants case-insensitively (UPPER+TRIM) so name-casing variants
+        // of the same person — e.g. "Abi Dogra" vs "ABI DOGRA" — collapse into a
+        // single row. This matches how the Booking Report matches a consultant
+        // (buildOptionalFilter uses UPPER(TRIM(consultant_name))). Without it the
+        // same consultant was split across buckets, undercounting both walk-ins and
+        // bookings versus the Booking Report source of truth.
+        const consultantKey = upperText(row.consultant_name) || 'UNASSIGNED'
         const date = displayDate(row.enquiry_date)
         increment(sourceMap, source)
         increment(dealerMap, dealer)
@@ -885,7 +892,7 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
         increment(temperatureMap as Map<string, number>, getLeadTemperature(row))
         if (date) increment(dailyMap, date)
 
-        const current = teamBase.get(consultant) || {
+        const current = teamBase.get(consultantKey) || {
           consultant,
           enquiries: 0,
           bookings: 0,
@@ -899,19 +906,22 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
         current.enquiries += 1
         if (source === 'Walkin') current.walkinEnquiries += 1
         if (isTestDriveDone(row)) current.testDrives += 1
-        teamBase.set(consultant, current)
+        teamBase.set(consultantKey, current)
       }
 
       for (const row of bookingRows) {
         const source = normalizeSource(getFirstText(row, ['main_source', 'source']))
         const consultant = normalizeConsultant(row.consultant_name)
+        // Same case-insensitive grouping key as the enquiry loop above so a
+        // consultant's enquiries and bookings land in the same leaderboard row.
+        const consultantKey = upperText(row.consultant_name) || 'UNASSIGNED'
         const model = normalizeModel(row.model)
         increment(bookingsBySource, source)
         increment(bookingsByConsultant, consultant)
         increment(bookingsByModel, model)
         if (!bookingsBySourceModel.has(source)) bookingsBySourceModel.set(source, new Map())
         increment(bookingsBySourceModel.get(source) as Map<string, number>, model)
-        const current = teamBase.get(consultant) || {
+        const current = teamBase.get(consultantKey) || {
           consultant,
           enquiries: 0,
           bookings: 0,
@@ -924,7 +934,7 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
         }
         current.bookings += 1
         if (source === 'Walkin') current.walkinBookings += 1
-        teamBase.set(consultant, current)
+        teamBase.set(consultantKey, current)
       }
 
       for (const row of lostRows) {
@@ -972,7 +982,10 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
           walkinConversionPct: percent(item.walkinBookings, item.walkinEnquiries),
           tdRatePct: percent(item.testDrives, item.enquiries),
         }))
-        .sort((left, right) => right.enquiries - left.enquiries)
+        // "Booking Leaders ranked by output": bookings are the primary ranking
+        // signal (output = cars booked), with total enquiries as the tie-breaker
+        // so bookings — not enquiry volume alone — drive the ordering.
+        .sort((left, right) => right.bookings - left.bookings || right.enquiries - left.enquiries)
 
       const daily = Array.from(dailyMap.entries())
         .sort((left, right) => left[0].localeCompare(right[0]))

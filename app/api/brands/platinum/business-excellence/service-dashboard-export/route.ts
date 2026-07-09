@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode } from '@/lib/platinum/dealer-branch'
 import { buildPlatinumServiceDashboardExport } from '@/lib/platinum/service-dashboard-export'
@@ -10,7 +10,7 @@ export const maxDuration = 60
 
 export async function GET(request: Request) {
   const timer = createApiTimer('platinum-service-dashboard-export')
-  const accessError = await timer.time('auth', () => requireBrandApiAccess('platinum'))
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('platinum', 'platinum.business_excellence.view', request))
   if (accessError) return accessError
 
   const { searchParams } = new URL(request.url)

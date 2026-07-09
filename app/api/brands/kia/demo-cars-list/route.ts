@@ -5,7 +5,7 @@ import { analyticsDb as db } from '@/lib/analytics/db'
 import { analyticsTableColumnSet } from '@/lib/analytics/table-columns'
 import { analyticsTableExists } from '@/lib/analytics/table-exists'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { getCachedData, invalidateCachePattern } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
@@ -405,7 +405,7 @@ export async function GET(request: Request) {
   const timer = createApiTimer('demo-cars-list')
 
   try {
-    const access = await timer.time('auth', () => requireBrandApiAccess('kia'))
+    const access = await timer.time('auth', () => requireBrandSectionApiAccess('kia', 'kia.demo_cars_list.view'))
     if (access) return access
 
     const { searchParams } = new URL(request.url)
@@ -434,7 +434,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const access = await requireBrandApiAccess('kia')
+  const access = await requireBrandSectionApiAccess('kia', 'kia.demo_cars_list.view')
   if (access) return access
 
   const appUser = await getAuthenticatedAppUser()

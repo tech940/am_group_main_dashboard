@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm'
 import { analyticsDb as db } from '@/lib/analytics/db'
 import { analyticsTableHasColumn } from '@/lib/analytics/table-columns'
 import { analyticsTableExists } from '@/lib/analytics/table-exists'
-import { requireBrandApiAccess } from '@/lib/auth/brand-access'
+import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withApiDiagnostics } from '@/lib/api/timing'
 import { normalizePlatinumDealerCode, PLATINUM_ALL_LOCATIONS_CODE } from '@/lib/platinum/dealer-branch'
 import { fetchPlatinumWorkshopVasAmount, fetchPlatinumWorkshopVasAmounts } from '@/lib/platinum/business-excellence-vas'
@@ -1686,7 +1686,7 @@ export async function buildOverviewPayload(
 
 export async function GET(request: Request) {
   const timer = createApiTimer('business-excellence-overview')
-  const accessError = await timer.time('auth', () => requireBrandApiAccess('platinum'))
+  const accessError = await timer.time('auth', () => requireBrandSectionApiAccess('platinum', 'platinum.business_excellence.view', request))
   if (accessError) return accessError
 
   const { searchParams } = new URL(request.url)

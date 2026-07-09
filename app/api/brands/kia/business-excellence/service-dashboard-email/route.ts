@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { canAccessBrand } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { requirePermission } from '@/lib/permissions/service'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { sendServiceDashboardEmail } from '@/lib/reports/service-dashboard-email'
 
@@ -26,6 +27,8 @@ export async function POST(request: NextRequest) {
     if (!canAccessBrand(appUser, 'kia') || !SEND_ALLOWED_ROLES.has(String(appUser.role || '').toLowerCase())) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    const permission = await requirePermission(appUser, 'kia.business_excellence.view')
+    if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
 
     const body = await request.json().catch(() => ({})) as Record<string, unknown>
     const result = await timer.time('send-email', () => sendServiceDashboardEmail({

@@ -10,6 +10,7 @@ type AuthUserRow = {
   full_name: string
   role: string
   brand: string | null
+  dealers: string | null
   department: string | null
   is_active: boolean
 }
@@ -84,6 +85,7 @@ export async function findAuthUserBySupabaseId(supabaseId: string) {
       full_name,
       role,
       brand,
+      dealers,
       department,
       is_active
     FROM users
