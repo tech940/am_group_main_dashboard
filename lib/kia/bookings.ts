@@ -153,7 +153,8 @@ async function addActivity(tx: DbTx, params: {
 
 async function nextBookingNumber(tx: DbTx, dealerCode: string) {
   const result = await tx.execute(sql<{ seq: string }>`SELECT nextval('public.kia_booking_number_seq')::text AS seq`)
-  const seq = text(rows<{ seq: string }>(result)[0]?.seq || '0').padStart(6, '0')
+  const rawSeq = parseInt(text(rows<{ seq: string }>(result)[0]?.seq || '0'), 10)
+  const seq = String(rawSeq + 120000).padStart(6, '0')
   const cleanDealer = String(dealerCode || 'JK402').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
   return `KIA_${cleanDealer}_${new Date().getFullYear()}_${seq}`
 }

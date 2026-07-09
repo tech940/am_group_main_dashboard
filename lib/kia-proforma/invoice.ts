@@ -140,12 +140,15 @@ function dateLabel(value: Date | string) {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
 }
 
-function addressBlock(row: KiaProformaInvoiceRow) {
-  const location = text(row.location) || 'Jammu'
+function addressBlock(_row: KiaProformaInvoiceRow) {
   return {
-    name: 'PLATINUM AUTOMOBILES PVT LTD',
-    details: `AM Kia, ${htmlEscape(location)}<br>Authorized Kia Dealer`,
-    pdfLines: [`AM Kia, ${location}`, 'Authorized Kia Dealer'],
+    name: 'AM KIA',
+    details: `A Unit of Platinum Automobiles Pvt Ltd Unit II.<br>Showroom- Akhnoor road opp. Pillar no.52, Toph Sherkhania, Jammu- 180001.<br>PH. 9484211111 | Email: sales@amkia.in`,
+    pdfLines: [
+      'A Unit of Platinum Automobiles Pvt Ltd Unit II.',
+      'Showroom- Akhnoor road opp. Pillar no.52, Toph Sherkhania, Jammu- 180001.',
+      'PH. 9484211111 | Email: sales@amkia.in',
+    ],
   }
 }
 
@@ -174,8 +177,8 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
 <meta charset="utf-8">
 <style>
   body { font-family: Arial, sans-serif; font-size: 12px; color: #000; margin: 20px; line-height: 1.4; }
-  h2 { font-size: 15px; margin: 0 0 4px; }
-  .header { text-align: center; margin-bottom: 12px; }
+  h2 { font-size: 20px; font-weight: bold; margin: 0 0 4px; text-align: center; }
+  .header { text-align: center; margin-bottom: 12px; font-size: 12px; line-height: 1.6; }
   .section-title { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 10px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 12px; table-layout: fixed; }
   td, th { border: 1px solid #000; padding: 5px 7px; word-wrap: break-word; overflow-wrap: break-word; }
@@ -186,10 +189,13 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
   .info-val { width: 50%; text-align: right; }
   .payment { text-align: center; font-size: 11px; padding-top: 8px; margin-bottom: 10px; line-height: 1.7; }
   .payment-account { display: block; margin-top: 4px; font-size: 10px; line-height: 1.45; }
-  .dealership-code { display: block; margin: 8px 0 6px; font-size: 28px; line-height: 1.05; font-weight: bold; }
-  .tc { font-size: 11px; line-height: 1.6; margin-bottom: 10px; }
+  .dealership-code { display: block; margin: 8px 0 6px; font-size: 28px; line-height: 1.05; font-weight: bold; text-align: center; }
+  .tc { font-size: 11px; line-height: 1.6; margin-bottom: 10px; text-align: center; }
+  .tc-list { text-align: left; display: inline-block; margin: 0 auto; }
   .stamp { text-align: center; margin-bottom: 12px; }
   .stamp-box { display: inline-block; border: 2px solid #000; padding: 12px 20px; }
+  .footer-docs { width: 100%; max-width: 500px; margin: 0 auto; border: none; }
+  .footer-docs td { border: none; vertical-align: top; font-size: 11px; line-height: 1.6; }
   .watermark {
     position: fixed;
     inset: 0;
@@ -211,18 +217,7 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
     padding: 10px 8px 8px;
     min-height: calc(100vh - 60px);
   }
-  .brand-line {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
-  }
-  .brand-mark {
-    width: 90px;
-    min-height: 48px;
-    object-fit: contain;
-  }
+
 </style>
 </head>
 <body>
@@ -232,13 +227,9 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
 </div>
 
 <div class="page-border">
-  <div class="brand-line">
-    <img class="brand-mark" src="${AM_GROUP_LOGO_PATH}" alt="AM Group">
-    <div class="header">
-      <h2>${addressHTML.name}</h2>
-      ${addressHTML.details}
-    </div>
-    <img class="brand-mark" src="${AM_GROUP_LOGO_PATH}" alt="AM Group">
+  <div style="text-align:center; margin-bottom: 12px;">
+    <h2>${addressHTML.name}</h2>
+    <div class="header">${addressHTML.details}</div>
   </div>
 
 <div class="section-title">Proforma Invoice</div>
@@ -288,32 +279,36 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
 
 <div class="tc">
   <b>Terms &amp; Conditions:</b><br>
-  1. The above prices are for Jammu until otherwise indicated.<br>
-  2. Prices valid at the time of delivery will be applicable.<br>
-  3. Any changes in taxes and/or levies shall be borne by the customer.<br>
-  4. Prices and specifications are subject to change without notice.<br>
-  5. Vehicle/model/color delivery subject to certain conditions.<br>
-  6. Once the car is allotted &amp; in transit, payment to be made within 3 days or the car will be transferred to next booking.
+  <div class="tc-list">
+    1. The above prices are for Jammu until otherwise indicated.<br>
+    2. Prices valid at the time of delivery will be applicable.<br>
+    3. Any changes in taxes and/or levies shall be borne by the customer.<br>
+    4. Prices and specifications are subject to change without notice.<br>
+    5. Vehicle/model/color delivery subject to certain conditions.<br>
+    6. Once the car is allotted &amp; in transit, payment to be made within 3 days or the car will be transferred to next booking.
+  </div>
 </div>
 
-<table style="border:none;">
-  <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
-  <tr>
-    <td style="border:none;vertical-align:top;font-size:11px;line-height:1.6;">
-      <b>For Exchange:</b><br>
-      - RC<br>
-      - Insurance (6 months old)<br>
-      - Chassis traces
-    </td>
-    <td style="border:none;vertical-align:top;font-size:11px;line-height:1.6;">
-      <b>For Govt. Employee:</b><br>
-      - Aadhar Card<br>
-      - PAN Card<br>
-      - Latest Salary Slip<br>
-      - ID Card
-    </td>
-  </tr>
-</table>
+<div style="text-align:center;">
+  <table class="footer-docs">
+    <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
+    <tr>
+      <td>
+        <b>For Exchange:</b><br>
+        - RC<br>
+        - Insurance (6 months old)<br>
+        - Chassis traces
+      </td>
+      <td>
+        <b>For Govt. Employee:</b><br>
+        - Aadhar Card<br>
+        - PAN Card<br>
+        - Latest Salary Slip<br>
+        - ID Card
+      </td>
+    </tr>
+  </table>
+</div>
 
 </div>
 </body>

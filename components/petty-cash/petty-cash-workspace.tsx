@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils'
 import { RequestFormDialog } from './pc-request-form'
 import { ExpenseFormDialog } from './pc-expense-form'
 import { PettyCashDetailDialog, type DetailTarget } from './pc-detail-dialog'
+import { PettyCashStatusBoard } from './petty-cash-status-board'
 import {
   BalanceMeter,
   EmptyState,
@@ -60,7 +61,7 @@ import {
   type RequestFormState,
 } from './types'
 
-type TabKey = 'overview' | 'requests' | 'expenses' | 'allocations' | 'ledger'
+type TabKey = 'overview' | 'status' | 'requests' | 'expenses' | 'allocations' | 'ledger'
 type WorkflowDialogState = { request: PettyCashRequest; action: 'reject' | 'hold' } | null
 
 type PettyCashAllocationRow = {
@@ -452,6 +453,7 @@ export function PettyCashWorkspace() {
 
   const tabs: Array<{ key: TabKey; label: string; icon: typeof Wallet }> = [
     { key: 'overview', label: 'Overview', icon: Layers },
+    { key: 'status', label: 'Status', icon: Clock3 },
     { key: 'requests', label: 'Requests', icon: ClipboardList },
     { key: 'expenses', label: 'Expenses', icon: ReceiptText },
     // Allocations is a cross-branch supervisor view — only reviewers see it.
@@ -635,6 +637,8 @@ export function PettyCashWorkspace() {
           )}
         </div>
       )}
+
+      {activeTab === 'status' && <PettyCashStatusBoard embedded />}
 
       {activeTab === 'requests' && (
         <SectionCard

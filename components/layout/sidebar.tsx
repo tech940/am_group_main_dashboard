@@ -1,6 +1,6 @@
 'use client'
 
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   Activity,
@@ -15,11 +15,11 @@ import {
   Landmark,
 } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
 import { useUserRole } from '@/lib/hooks/use-user-role'
-import { hasGlobalAccessRole } from '@/lib/auth/roles'
+import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
@@ -214,8 +214,10 @@ function isSidebarHrefActive(href: string, pathname: string | null) {
 
 export function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { collapsed, setCollapsed } = useSidebar()
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
+  const permissionMapRef = useRef<Record<string, boolean> | null>(null)
   const { userRole, canAccessAdmin, isSuperAdmin, userBrand, loading } = useUserRole()
   const {
     value: favouriteHrefsValue,
@@ -230,26 +232,60 @@ export function Sidebar() {
   const canAccessAmFinance = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba'].includes(userRole || '')
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
+  // Fetch the effective permission map. When `refreshOnChange` and the map actually changed
+  // vs the last one we held, also re-run the server components (router.refresh()) so guarded
+  // pages update in place — this is what makes an admin's grant/revoke apply to this user's
+  // open tab without a manual reload.
+  const syncPermissions = useCallback(async (refreshOnChange: boolean) => {
+    try {
+      const response = await fetch('/api/auth/permissions', { cache: 'no-store' })
+      if (!response.ok) return
+      const data = (await response.json()) as { permissions?: Record<string, boolean> | null } | null
+      const next = data?.permissions ?? null
+      const changed = JSON.stringify(next) !== JSON.stringify(permissionMapRef.current)
+      if (!changed) return
+      permissionMapRef.current = next
+      setPermissionMap(next)
+      if (refreshOnChange) router.refresh()
+    } catch {
+      /* keep the last-known map; fail-open elsewhere */
+    }
+  }, [router])
+
+  // Initial load (no refresh — nothing to update yet).
+  useEffect(() => {
+    if (loading || !userRole) return
+    const timer = setTimeout(() => { void syncPermissions(false) }, 0)
+    return () => clearTimeout(timer)
+  }, [loading, userRole, syncPermissions])
+
+  // Live sync: pick up Access-Map grants/revokes without a manual reload. We poll the effective
+  // map (server-side, so it respects auth — unlike client realtime, which can't read the
+  // server-only permission tables under RLS) on a short interval and whenever the tab regains
+  // focus. router.refresh() only fires when the map actually changed, so idle tabs cost nothing.
   useEffect(() => {
     if (loading || !userRole) return
 
-    let cancelled = false
-    fetch('/api/auth/permissions')
-      .then((response) => response.ok ? response.json() : null)
-      .then((data: { permissions?: Record<string, boolean> | null } | null) => {
-        if (!cancelled && data?.permissions) setPermissionMap(data.permissions)
-      })
-      .catch(() => {
-        if (!cancelled) setPermissionMap(null)
-      })
+    const onChange = () => { void syncPermissions(true) }
+    const onFocus = () => onChange()
+    const onVisible = () => { if (document.visibilityState === 'visible') onChange() }
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    const interval = window.setInterval(onChange, 15_000)
 
     return () => {
-      cancelled = true
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.clearInterval(interval)
     }
-  }, [loading, userRole])
+  }, [loading, userRole, syncPermissions])
 
   const hasPermission = (permissionKey: string) => {
-    if (hasGlobalAccessRole(userRole)) return true
+    // Only Super Admins (developer, md) bypass the map. Other global-access roles (ceo/ea/eba)
+    // now defer to their effective permission map, so an explicit Deny from the Access Map
+    // actually hides the section. Map still fail-opens while it loads (null).
+    if (isSuperAdminRole(userRole)) return true
     if (!permissionMap) return true
     return permissionMap[permissionKey] === true
   }
@@ -364,16 +400,17 @@ export function Sidebar() {
     const commonNodes: NavNode[] = []
     if (hasPermission('purchase_orders.view')) commonNodes.push({ key: '/purchase-orders', label: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart, external: true, active: pathname === '/purchase-orders' })
     if ((canAccessFinanceOrders || permissionMap) && hasPermission('finance_orders.view')) commonNodes.push({ key: '/finance-orders', label: 'Finance Orders', href: '/finance-orders', icon: Landmark, external: true, active: pathname === '/finance-orders' })
+    // Petty Cash is a single section — the former "Status Tracker" sub-page is now the
+    // "Status" tab inside the workspace.
     if ((canAccessPettyCash || permissionMap) && hasPermission('petty_cash.view')) commonNodes.push({
-      key: 'petty-cash',
+      key: '/petty-cash',
       label: 'Petty Cash',
+      href: '/petty-cash',
       icon: Banknote,
-      children: [
-        { key: '/petty-cash', label: 'Overview', href: '/petty-cash', external: true, active: pathname === '/petty-cash' },
-        { key: '/petty-cash/status', label: 'Status Tracker', href: '/petty-cash/status', external: true, active: pathname === '/petty-cash/status' },
-      ],
+      external: true,
+      active: pathname.startsWith('/petty-cash'),
     })
-    if (canAccessAmFinance) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
+    if ((canAccessAmFinance || permissionMap) && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
     if (canAccessAdmin) {
       const adminActive = Boolean(pathname?.startsWith('/admin'))
       const adminChildren: NavNode[] = [

@@ -40,6 +40,8 @@ type DemoCarRow = {
   currentReadingKms?: number | string | null
   onRoadPrice?: number | string | null
   vehicleStatus?: 'active' | 'sold' | null
+  soldAmount?: number | string | null
+  remarks?: string | null
   detailsUpdatedBy?: string | null
   detailsUpdatedAt?: string | null
 }
@@ -195,6 +197,8 @@ function VehicleDetailsModal({
   const [onRoadPrice, setOnRoadPrice] = useState(row.onRoadPrice ? String(row.onRoadPrice) : '')
   const [vehicleStatus, setVehicleStatus] = useState(row.vehicleStatus || '')
   const [registrationNumber, setRegistrationNumber] = useState(row.registrationNumber || '')
+  const [soldAmount, setSoldAmount] = useState(row.soldAmount ? String(row.soldAmount) : '')
+  const [remarks, setRemarks] = useState(row.remarks || '')
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -210,6 +214,8 @@ function VehicleDetailsModal({
           onRoadPrice,
           vehicleStatus,
           registrationNumber,
+          soldAmount: vehicleStatus === 'sold' ? soldAmount : null,
+          remarks: remarks || null,
         }),
       })
       const payload = await response.json().catch(() => null)
@@ -246,6 +252,8 @@ function VehicleDetailsModal({
               ['Transporter', row.transporterName || '-'],
               ['Invoice Date', formatDate(row.invoiceDate)],
               ['Amount', formatAmount(row.amount)],
+              ['Sold Amount', row.soldAmount ? formatAmount(String(row.soldAmount)) : '-'],
+              ['Remarks', row.remarks || '-'],
             ].filter(([, value]) => value && value !== '-').map(([label, value]) => (
               <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
@@ -290,6 +298,32 @@ function VehicleDetailsModal({
                   <option value="active">Active</option>
                   <option value="sold">Sold</option>
                 </select>
+              </label>
+
+              {vehicleStatus === 'sold' && (
+                <label className="space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Sold Amount</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={soldAmount}
+                    onChange={(event) => setSoldAmount(event.target.value)}
+                    placeholder="Enter sold amount"
+                    className="h-12 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold outline-none focus:border-[var(--dashboard-action-bg)]"
+                    required
+                  />
+                </label>
+              )}
+
+              <label className="space-y-2 sm:col-span-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Remarks</span>
+                <input
+                  type="text"
+                  value={remarks}
+                  onChange={(event) => setRemarks(event.target.value)}
+                  placeholder="Enter remarks"
+                  className="h-12 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold outline-none focus:border-[var(--dashboard-action-bg)]"
+                />
               </label>
               <label className="space-y-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Service Date</span>
@@ -529,7 +563,31 @@ export function DemoCarsListPage() {
                         <td className="whitespace-nowrap border border-slate-200 px-4 py-4 text-center font-bold text-slate-700">{formatDate(row.serviceDate)}</td>
                         <td className="whitespace-nowrap border border-slate-200 px-4 py-4 text-center font-bold text-slate-700">{row.currentReadingKms ? numberFormat(row.currentReadingKms) : '-'}</td>
                         <td className="whitespace-nowrap border border-slate-200 px-4 py-4 text-center font-bold text-slate-700">{formatAmount(row.onRoadPrice)}</td>
-                        <td className="whitespace-nowrap border border-slate-200 px-4 py-4 text-center font-bold text-slate-700">{labelizeStatus(row.vehicleStatus)}</td>
+                        <td className="whitespace-nowrap border border-slate-200 px-4 py-4 text-center font-bold text-slate-700">
+                          <div>
+                            <span className={cn(
+                              row.vehicleStatus === 'sold'
+                                ? 'rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-700 border border-amber-200'
+                                : row.vehicleStatus === 'active'
+                                  ? 'rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 border border-emerald-200'
+                                  : 'text-slate-500'
+                            )}>
+                              {labelizeStatus(row.vehicleStatus)}
+                            </span>
+                            {(row.vehicleStatus === 'sold' || row.remarks) && (
+                              <div className="mt-2.5 space-y-0.5 text-[10px] font-bold text-slate-500 leading-snug">
+                                {row.vehicleStatus === 'sold' && row.soldAmount && (
+                                  <div className="font-black text-emerald-600">{formatAmount(String(row.soldAmount))}</div>
+                                )}
+                                {row.remarks && (
+                                  <div className="max-w-[160px] truncate font-medium text-slate-400" title={row.remarks}>
+                                    {row.remarks}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </td>
                         <td className="whitespace-nowrap border border-slate-200 px-4 py-4 text-center text-[11px] font-bold text-slate-500">{formatDateTime(row.detailsUpdatedAt)}</td>
                         <td className="sticky right-0 z-10 whitespace-nowrap border border-slate-200 bg-white px-4 py-4 text-center shadow-[-10px_0_18px_rgba(15,23,42,0.08)]">
                           <Button

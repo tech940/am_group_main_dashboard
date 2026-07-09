@@ -10,15 +10,17 @@ export function useUserRole() {
     queryFn: async () => {
       const response = await fetch('/api/auth/user')
       if (!response.ok) return null
-      return await response.json() as { role?: string; brand?: string }
+      return await response.json() as { id?: string; role?: string; brand?: string }
     },
     staleTime: DASHBOARD_STALE_TIME_MS,
   })
 
+  const userId = currentUser?.id || null
   const userRole = currentUser?.role || null
   const userBrand = currentUser?.brand || null
 
   return {
+    userId,
     userRole,
     userBrand,
     loading,

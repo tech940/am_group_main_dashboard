@@ -67,7 +67,7 @@ async function fetchJson<T>(url: string, label: string): Promise<T> {
   }
 }
 
-export function PettyCashStatusBoard() {
+export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean } = {}) {
   const [payload, setPayload] = useState<StatusBoardPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -159,25 +159,31 @@ export function PettyCashStatusBoard() {
     )
   }
 
+  const refreshButton = (
+    <Button
+      variant="outline"
+      onClick={() => void load({ preserveData: true })}
+      disabled={refreshing}
+      className={cn('gap-2 border-slate-200 font-bold', embedded ? 'h-9 rounded-xl text-xs' : 'h-11 rounded-2xl')}
+    >
+      <RefreshCw className={cn(embedded ? 'h-3.5 w-3.5' : 'h-4 w-4', refreshing && 'animate-spin')} /> Refresh
+    </Button>
+  )
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-950">Approval Status Tracker</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">
-            Every petty cash request, its current stage, who it is waiting on, and how long it has been there.
-          </p>
+      {/* Header — hidden when embedded as a workspace tab (the workspace supplies its own). */}
+      {!embedded && (
+        <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-3xl font-black tracking-tight text-slate-950">Approval Status Tracker</h1>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              Every petty cash request, its current stage, who it is waiting on, and how long it has been there.
+            </p>
+          </div>
+          {refreshButton}
         </div>
-        <Button
-          variant="outline"
-          onClick={() => void load({ preserveData: true })}
-          disabled={refreshing}
-          className="h-11 gap-2 rounded-2xl border-slate-200 font-bold"
-        >
-          <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} /> Refresh
-        </Button>
-      </div>
+      )}
 
       {error && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</div>
@@ -227,6 +233,7 @@ export function PettyCashStatusBoard() {
         subtitle="Pending requests first — longest waiting on top"
         icon={ClipboardList}
         iconTone="violet"
+        toolbar={embedded ? refreshButton : undefined}
       >
         <RecordTable
           rows={visibleRequests}

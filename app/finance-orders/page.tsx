@@ -1,6 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessFinanceOrders } from '@/lib/finance-orders/access'
+import { isPermissionDenied } from '@/lib/permissions/deny'
 import { FinanceOrdersPageContent } from '@/features/finance-orders/finance-orders-page'
 
 export default async function FinanceOrdersPage() {
@@ -10,7 +11,8 @@ export default async function FinanceOrdersPage() {
     redirect('/auth/login')
   }
 
-  if (!canAccessFinanceOrders(appUser.role)) {
+  // Role gate is the default; an explicit Access-Map Deny then revokes it (per-user).
+  if (!canAccessFinanceOrders(appUser.role) || await isPermissionDenied(appUser, 'finance_orders.view')) {
     forbidden()
   }
 

@@ -1010,7 +1010,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   const topConsultantList = summary?.team.leaderboard.slice(0, 10) || []
   const teamRows = summary?.team.leaderboard || []
   const teamTotalPages = Math.max(1, Math.ceil(teamRows.length / SALES_REPORT_TABLE_PAGE_SIZE))
-  const pagedTeamRows = teamRows.slice((teamPage - 1) * SALES_REPORT_TABLE_PAGE_SIZE, teamPage * SALES_REPORT_TABLE_PAGE_SIZE)
+  const pagedTeamRows = teamRows
   const heatmapRows = summary?.sources.dealerMatrix || []
   const heatmapTotalPages = Math.max(1, Math.ceil(heatmapRows.length / SALES_REPORT_TABLE_PAGE_SIZE))
   const pagedHeatmapRows = heatmapRows.slice((heatmapPage - 1) * SALES_REPORT_TABLE_PAGE_SIZE, heatmapPage * SALES_REPORT_TABLE_PAGE_SIZE)
@@ -2021,7 +2021,6 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
 
             <ChartCard title={`Consultant Performance Report — ${activePeriodLabel}`} subtitle="Enquiry → Test Drive → Booking conversion · Walk-in breakdown">
               {pagedTeamRows.length ? (
-                <>
                 <div className="overflow-hidden rounded-[1.5rem] border border-slate-200">
                   <Table className="[&_td]:text-[11px] [&_td]:font-medium [&_th]:text-[10px]">
                     <TableHeader>
@@ -2055,13 +2054,6 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                     </TableBody>
                   </Table>
                 </div>
-                <TablePagination
-                  page={teamPage}
-                  totalPages={teamTotalPages}
-                  onPrevious={() => setTeamPage((current) => Math.max(1, current - 1))}
-                  onNext={() => setTeamPage((current) => Math.min(teamTotalPages, current + 1))}
-                />
-                </>
               ) : (
                 <EmptyState title="No consultant rows" body="Consultant leaderboard data is not available for this month." />
               )}

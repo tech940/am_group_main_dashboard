@@ -909,7 +909,7 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
         teamBase.set(consultantKey, current)
       }
 
-      for (const row of bookingRows) {
+      for (const row of bookingRowsRaw) {
         const source = normalizeSource(getFirstText(row, ['main_source', 'source']))
         const consultant = normalizeConsultant(row.consultant_name)
         // Same case-insensitive grouping key as the enquiry loop above so a
@@ -1435,9 +1435,6 @@ export async function getKiaSalesReportTable(input: {
         buildDateClause(config, context),
         buildDealerClause(config, dealerCode),
         buildSearchClause(config, safeText(input.search)),
-        buildOptionalFilter(config.sourceColumn, input.source),
-        buildOptionalFilter(config.modelColumn, input.model),
-        buildOptionalFilter(config.consultantColumn, input.consultant),
       ]
 
       const whereSql = sql.join(whereParts.filter(Boolean), sql` `)
@@ -1446,7 +1443,23 @@ export async function getKiaSalesReportTable(input: {
         FROM ${sql.raw(config.table)}
         WHERE ${whereSql}
       `)
-      const dedupedRows = dedupeRows(config, resultRows(rows))
+      let dedupedRows = dedupeRows(config, resultRows(rows))
+
+      if (input.source && config.sourceColumn) {
+        dedupedRows = dedupedRows.filter((row) => {
+          return upperText(row[config.sourceColumn!]) === upperText(input.source)
+        })
+      }
+      if (input.model && config.modelColumn) {
+        dedupedRows = dedupedRows.filter((row) => {
+          return upperText(row[config.modelColumn!]) === upperText(input.model)
+        })
+      }
+      if (input.consultant && config.consultantColumn) {
+        dedupedRows = dedupedRows.filter((row) => {
+          return upperText(row[config.consultantColumn!]) === upperText(input.consultant)
+        })
+      }
 
       // Extract unique values from dedupedRows for each column before filters/missedFollowups are applied
       const uniqueValues: Record<string, string[]> = {}
@@ -1539,9 +1552,6 @@ export async function getKiaSalesReportCsv(input: {
     buildDateClause(config, context),
     buildDealerClause(config, dealerCode),
     buildSearchClause(config, safeText(input.search)),
-    buildOptionalFilter(config.sourceColumn, input.source),
-    buildOptionalFilter(config.modelColumn, input.model),
-    buildOptionalFilter(config.consultantColumn, input.consultant),
   ]
   const whereSql = sql.join(whereParts.filter(Boolean), sql` `)
   const rows = await analyticsDb.execute(sql`
@@ -1550,7 +1560,23 @@ export async function getKiaSalesReportCsv(input: {
     WHERE ${whereSql}
     LIMIT 20000
   `)
-  const dedupedRows = dedupeRows(config, resultRows(rows))
+  let dedupedRows = dedupeRows(config, resultRows(rows))
+
+  if (input.source && config.sourceColumn) {
+    dedupedRows = dedupedRows.filter((row) => {
+      return upperText(row[config.sourceColumn!]) === upperText(input.source)
+    })
+  }
+  if (input.model && config.modelColumn) {
+    dedupedRows = dedupedRows.filter((row) => {
+      return upperText(row[config.modelColumn!]) === upperText(input.model)
+    })
+  }
+  if (input.consultant && config.consultantColumn) {
+    dedupedRows = dedupedRows.filter((row) => {
+      return upperText(row[config.consultantColumn!]) === upperText(input.consultant)
+    })
+  }
 
   // Filter for missed follow ups
   let filteredRows = dedupedRows

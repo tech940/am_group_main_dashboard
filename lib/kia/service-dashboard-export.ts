@@ -845,52 +845,6 @@ async function buildLiveMetrics(endDate: string | null, dealerCode: DealerFilter
     ],
   }
 
-  // Force overrides for June 30th, 2026, to align with the correct DMS data
-  if (exportDate === '2026-06-30' && (effectiveDealerCode === 'JK402' || !dealerCode)) {
-    metrics.intake = {
-      'Free Service': { today: 2, mtd: 72 },
-      'Paid Service': { today: 1, mtd: 74 },
-      'Running Repair': { today: 4, mtd: 60 },
-      'Accidental Repair': { today: 2, mtd: 47 },
-    }
-    metrics.pending = {
-      accidental: { today: 0, mtd: 5 },
-      mechanical: { today: 0, mtd: 1 },
-    }
-    metrics.addons = {
-      ew: { today: 1, mtd: 6 },
-      rsa: { today: 2, mtd: 25 },
-      mcp: { today: 0, mtd: 1 },
-      bodyshopMcp: { today: 0, mtd: 0 },
-    }
-    metrics.revenue = {
-      delivered: {
-        'Free Service': { today: 2, mtd: 72 },
-        'Paid Service': { today: 1, mtd: 76 },
-        'Running Repair': { today: 4, mtd: 60 },
-        'Accidental Repair': { today: 6, mtd: 56 },
-      },
-      mechanicalLabour: { today: 17311, mtd: 536298 },
-      mechanicalParts: { today: 43961, mtd: 840288 },
-      bodyshopLabour: { today: 108939, mtd: 756580 },
-      bodyshopParts: { today: 74366, mtd: 1039367 },
-    }
-    metrics.operations = {
-      alignmentCount: 97,
-      balancingCount: 79,
-      alignmentLabour: 60507,
-      balancingLabour: 51109,
-    }
-    metrics.oil = {
-      engineOilQty: { today: 518, mtd: 518 },
-      syntheticOilQty: { today: 0, mtd: 0 },
-    }
-    metrics.vasAmount = 112270
-    metrics.bodyshopPnaCases = 3
-    metrics.sourceWarnings = [
-      'Data corrected to align with DMS records for June 30th, 2026.',
-    ]
-  }
 
   return metrics
 }

@@ -31,7 +31,7 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-const PERMISSION_CACHE_VERSION = 'v7'
+const PERMISSION_CACHE_VERSION = 'v8'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 const ADMIN_ONLY_PERMISSION_GROUPS = new Set(['user_management', 'access_control', 'admin_audit'])
 
@@ -184,7 +184,27 @@ export async function clearUserPermissionCache(userId: string) {
   await invalidateCache(getPermissionCacheKey(userId))
 }
 
-export async function ensurePermissionRegistrySynced() {
+// The permission registry (groups / permissions / role-template seeds) is defined in CODE and
+// only changes on deploy — yet its ~dozens of idempotent upserts used to run on EVERY permission
+// read, snapshot build, catalog fetch and per-user Save. Against a ~225ms pooler RTT that was the
+// dominant cost behind the slow Access Map (load + save) and guarded pages. Throttle it to once
+// per process window and de-dupe concurrent callers, so the sync happens right after a deploy and
+// then effectively for free until the window lapses.
+let registrySyncPromise: Promise<void> | null = null
+let registrySyncedUntil = 0
+const REGISTRY_SYNC_TTL_MS = 10 * 60 * 1000
+
+export async function ensurePermissionRegistrySynced(): Promise<void> {
+  if (Date.now() < registrySyncedUntil) return
+  if (registrySyncPromise) return registrySyncPromise
+  registrySyncPromise = (async () => {
+    await syncPermissionRegistry()
+    registrySyncedUntil = Date.now() + REGISTRY_SYNC_TTL_MS
+  })().finally(() => { registrySyncPromise = null })
+  return registrySyncPromise
+}
+
+async function syncPermissionRegistry() {
   const now = new Date()
 
   if (PERMISSION_GROUPS.length > 0) {
@@ -389,10 +409,11 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
 
 /**
  * Pure permission resolution — no database. Layers role defaults → branch role defaults →
- * brand default → branch scope, then merges the user's explicit overrides LAST so that an
- * explicit Deny (allowed=false) wins over the brand default. Super Admins always resolve to
- * all-true; global-access roles resolve to everything except admin-only. Exported so the
- * resolution rules can be unit-tested without standing up the database.
+ * brand default → global-access default → branch scope, then merges the user's explicit
+ * overrides LAST so that an explicit Deny (allowed=false) wins over every default. Super Admins
+ * (developer, md) always resolve to all-true and cannot be restricted. Other global-access roles
+ * (ceo, ea, eba) DEFAULT to everything-except-admin-only but ARE restrictable via a Deny
+ * override. Exported so the resolution rules can be unit-tested without standing up the database.
  */
 export function resolveEffectiveSnapshot(
   baseRoleDefaults: Record<string, boolean>,
@@ -403,18 +424,27 @@ export function resolveEffectiveSnapshot(
   const roleDefaults = { ...baseRoleDefaults }
   applyBranchRoleDefaults(roleDefaults, role, branchAccess)
   applyBrandDefault(roleDefaults, role, branchAccess)
+  // Non-super global-access roles (ceo/ea/eba) default to seeing everything except admin-only.
+  // This used to live in the EFFECTIVE layer (after overrides merged), which silently clobbered
+  // an explicit Deny — so the Access Map could never revoke a section from these roles. Applying
+  // it to the DEFAULT layer instead lets a Deny override win, while everything else still
+  // defaults to visible. It also makes the Access Map's `defaultVisible` correct, so unticking a
+  // box computes a real Deny delta (false) rather than "inherit" (null).
+  if (hasGlobalAccessRole(role) && !isSuperAdminRole(role)) {
+    for (const key of Object.keys(roleDefaults)) roleDefaults[key] = !isAdminOnlyPermission(key)
+  }
   constrainSnapshotToBranch(roleDefaults, role, branchAccess)
 
-  // Overrides merge LAST, so an explicit Deny wins over the brand default.
+  // Overrides merge LAST, so an explicit Deny wins over the role / brand / global default.
   const effective = { ...roleDefaults, ...overrides }
   constrainSnapshotToBranch(effective, role, branchAccess)
+  // Super Admins (developer, md) are never restrictable — the final guardrail so the top
+  // administrators cannot be locked out of the console by a stray override.
   if (isSuperAdminRole(role)) {
     for (const key of Object.keys(effective)) effective[key] = true
-  } else if (hasGlobalAccessRole(role)) {
-    for (const key of Object.keys(effective)) effective[key] = !isAdminOnlyPermission(key)
   }
   // Sensitive KIA reports are restricted to developer/md/eba even for global roles — applied
-  // last so it overrides the brand default, overrides, and the global-access grant.
+  // last so it overrides every other layer.
   applySensitiveSectionRules(effective, role)
 
   return { effective, roleDefaults, overrides }
@@ -431,11 +461,11 @@ export async function getUserPermissionSnapshot(userId: string) {
 export async function canUserAccessPermission(appUser: AppUser | null, permissionKey: string): Promise<boolean> {
   if (!appUser || !appUser.isActive) return false
   if (isSuperAdminRole(appUser.role)) return true
-  if (hasGlobalAccessRole(appUser.role)) return !isAdminOnlyPermission(permissionKey)
 
-  // Brand no longer short-circuits to `true` here. A user's brand still grants default
-  // visibility of its own sections, but that default lives in the snapshot's roleDefaults,
-  // so an explicit Deny override can now take precedence. See buildUserPermissionSnapshot.
+  // Neither brand NOR global-access roles short-circuit to `true` here anymore. Global roles
+  // (ceo/ea/eba) still DEFAULT to seeing everything (except admin-only), but that default now
+  // lives in the snapshot's roleDefaults, so an explicit Deny override can take precedence.
+  // See resolveEffectiveSnapshot.
   const snapshot = await getUserPermissionSnapshot(appUser.id)
   return snapshot.effective[permissionKey] === true
 }

@@ -75,6 +75,14 @@ async function ensureDemoVehicleDetailsSchema() {
     ALTER TABLE public.demo_vehicle_details
       ADD COLUMN IF NOT EXISTS registration_number text
   `)
+  await db.execute(sql`
+    ALTER TABLE public.demo_vehicle_details
+      ADD COLUMN IF NOT EXISTS sold_amount numeric
+  `)
+  await db.execute(sql`
+    ALTER TABLE public.demo_vehicle_details
+      ADD COLUMN IF NOT EXISTS remarks text
+  `)
 
   await db.execute(sql`
     CREATE INDEX IF NOT EXISTS demo_vehicle_details_registration_number_idx
@@ -142,6 +150,8 @@ function vehicleDetailsCte(hasDetailsTable: boolean) {
         NULL::numeric AS current_reading_kms,
         NULL::numeric AS on_road_price,
         NULL::text AS vehicle_status,
+        NULL::numeric AS sold_amount,
+        NULL::text AS remarks,
         NULL::text AS updated_by_name,
         NULL::timestamptz AS updated_at
       WHERE false
@@ -157,6 +167,8 @@ function vehicleDetailsCte(hasDetailsTable: boolean) {
       current_reading_kms,
       on_road_price,
       vehicle_status,
+      sold_amount,
+      remarks,
       updated_by_name,
       updated_at
     FROM demo_vehicle_details
@@ -251,6 +263,8 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
         vehicle_details.current_reading_kms,
         vehicle_details.on_road_price,
         vehicle_details.vehicle_status,
+        vehicle_details.sold_amount,
+        vehicle_details.remarks,
         vehicle_details.updated_by_name AS details_updated_by,
         vehicle_details.updated_at AS details_updated_at
       FROM latest_vehicle
@@ -307,6 +321,8 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
         'currentReadingKms', current_reading_kms,
         'onRoadPrice', on_road_price,
         'vehicleStatus', vehicle_status,
+        'soldAmount', sold_amount,
+        'remarks', remarks,
         'detailsUpdatedBy', details_updated_by,
         'detailsUpdatedAt', details_updated_at
       ) ORDER BY age DESC NULLS LAST, location ASC, model ASC, variant ASC, vin_no ASC) FROM paged), '[]'::jsonb) AS rows,
@@ -457,6 +473,8 @@ export async function POST(request: Request) {
   const onRoadPrice = body?.onRoadPrice === '' || body?.onRoadPrice === null || body?.onRoadPrice === undefined ? null : Number(body.onRoadPrice)
   const vehicleStatus = String(body?.vehicleStatus || '').trim()
   const registrationNumber = String(body?.registrationNumber || '').trim().toUpperCase() || null
+  const soldAmount = body?.soldAmount === '' || body?.soldAmount === null || body?.soldAmount === undefined ? null : Number(body.soldAmount)
+  const remarks = String(body?.remarks || '').trim() || null
 
   if (!vehicleKey) return NextResponse.json({ error: 'Vehicle key is required' }, { status: 400 })
   if (trackerStatus && !['installed', 'not_installed'].includes(trackerStatus)) {
@@ -471,6 +489,9 @@ export async function POST(request: Request) {
   if (onRoadPrice !== null && (!Number.isFinite(onRoadPrice) || onRoadPrice < 0)) {
     return NextResponse.json({ error: 'On road price must be a valid amount' }, { status: 400 })
   }
+  if (soldAmount !== null && (!Number.isFinite(soldAmount) || soldAmount < 0)) {
+    return NextResponse.json({ error: 'Sold amount must be a valid numeric value' }, { status: 400 })
+  }
 
   try {
     const result = await db.execute(sql`
@@ -483,6 +504,8 @@ export async function POST(request: Request) {
         current_reading_kms,
         on_road_price,
         vehicle_status,
+        sold_amount,
+        remarks,
         updated_by,
         updated_by_name,
         updated_at
@@ -496,6 +519,8 @@ export async function POST(request: Request) {
         ${currentReadingKms},
         ${onRoadPrice},
         ${vehicleStatus || null},
+        ${soldAmount},
+        ${remarks},
         ${appUser.id},
         ${appUser.fullName},
         now()
@@ -508,6 +533,8 @@ export async function POST(request: Request) {
         current_reading_kms = excluded.current_reading_kms,
         on_road_price = excluded.on_road_price,
         vehicle_status = excluded.vehicle_status,
+        sold_amount = excluded.sold_amount,
+        remarks = excluded.remarks,
         updated_by = excluded.updated_by,
         updated_by_name = excluded.updated_by_name,
         updated_at = now()
@@ -520,6 +547,8 @@ export async function POST(request: Request) {
         current_reading_kms AS "currentReadingKms",
         on_road_price AS "onRoadPrice",
         vehicle_status AS "vehicleStatus",
+        sold_amount AS "soldAmount",
+        remarks AS "remarks",
         updated_by_name AS "detailsUpdatedBy",
         updated_at AS "detailsUpdatedAt"
     `)

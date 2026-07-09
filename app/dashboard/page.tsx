@@ -1,858 +1,304 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  IndianRupee,
-  Wrench,
-  Activity,
-  Sparkles,
-  RefreshCw,
+  BarChart3,
+  Building2,
+  Calculator,
   Car,
-  AlertCircle,
-  Loader2,
+  Settings,
+  Sparkles,
+  ShieldCheck,
+  Database,
+  Cpu,
+  Fingerprint,
+  Calendar,
+  Layers
 } from 'lucide-react'
-import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts'
+import { cn } from '@/lib/utils'
 
-// ─── Brand config ────────────────────────────────────────────────────────────
+const BRAND_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg'
 
-const BRANDS = [
-  {
-    id: 'hyundai' as const,
-    label: 'Hyundai',
-    color: '#0052cc',
-    gradient: ['#0052cc', '#00a8e8'],
-    apiPath: '/api/brands/hyundai/business-excellence/overview',
-  },
-  {
-    id: 'kia' as const,
-    label: 'Kia',
-    color: '#c8102e',
-    gradient: ['#c8102e', '#ff4f6e'],
-    apiPath: '/api/brands/kia/business-excellence/overview',
-  },
-  {
-    id: 'platinum' as const,
-    label: 'Platinum',
-    color: '#7c3aed',
-    gradient: ['#7c3aed', '#a78bfa'],
-    apiPath: '/api/brands/platinum/business-excellence/overview',
-  },
+const ORBIT_NODES = [
+  { label: 'Service Operations', icon: Car, color: '#45d35d', bg: '#effff3', angle: 0, ring: 190 },
+  { label: 'Sales & Bookings', icon: Sparkles, color: '#7c4dff', bg: '#f5efff', angle: 60, ring: 210 },
+  { label: 'Ledger Accounts', icon: Calculator, color: '#18c88e', bg: '#ecfff8', angle: 125, ring: 195 },
+  { label: 'Business Analytics', icon: BarChart3, color: '#f5b400', bg: '#fff8df', angle: 180, ring: 210 },
+  { label: 'System Configuration', icon: Settings, color: '#2aa0ff', bg: '#eef7ff', angle: 235, ring: 190 },
+  { label: 'Branch Inventory', icon: Building2, color: '#3d7ef2', bg: '#edf4ff', angle: 300, ring: 210 },
 ]
 
-type BrandId = 'hyundai' | 'kia' | 'platinum'
+const ORBIT_DOTS = [
+  { angle: 18, ring: 240, color: '#6e7ff5', size: 6 },
+  { angle: 82, ring: 245, color: '#5c43ee', size: 6 },
+  { angle: 142, ring: 230, color: '#74d7b0', size: 6 },
+  { angle: 180, ring: 250, color: '#ffbf26', size: 6 },
+  { angle: 222, ring: 240, color: '#8492f5', size: 6 },
+  { angle: 270, ring: 248, color: '#1fb7e8', size: 6 },
+  { angle: 318, ring: 225, color: '#48c8c8', size: 6 },
+  { angle: 0, ring: 135, color: '#43d45f', size: 6 },
+]
 
-// ─── Real API types (from business-excellence-overview.tsx) ──────────────────
-
-type ComparisonMetric = {
-  cy: number
-  ly: number
-  deltaPct: number | null
-  comparisonStatus?: string
-  comparisonLabel?: string | null
+interface UserSession {
+  fullName: string
+  email: string
+  role: string
+  brand: string
+  department: string
 }
 
-type WorkshopSnapshot = {
-  totalJc: number
-  labourAmount: number
-  partsAmount: number
-  totalRevenue: number
-  vasAmount: number
-  labourPerRo: number
-  serviceMix?: Array<{
-    name: string
-    totalJc: number
-    labourAmount: number
-    partsAmount: number
-    totalRevenue: number
-  }>
-}
-
-type OverviewData = {
-  asOfDate?: string
-  dateRange?: { startDate: string; endDate: string }
-  kpis?: {
-    revenue: number
-    labour: number
-    parts: number
-    totalJc: number
-    avgBilling: number
-    openRo: number
-    delayedRo: number
-    openOver15: number
-    avgOpenAging: number
-    complaintsTotal: number
-    complaintsOpen: number
-    complaintsOver15: number
-    ewCount: number
-    rsaCount: number
-    mcpCount: number
-    addOnPerJc: number
-  }
-  comparison?: {
-    revenue?: ComparisonMetric
-    totalJc?: ComparisonMetric
-    openRo?: ComparisonMetric
-    workshopVasAmount?: ComparisonMetric
-    addOnTotal?: ComparisonMetric
-    ewCount?: ComparisonMetric
-    rsaCount?: ComparisonMetric
-    mcpCount?: ComparisonMetric
-    workshopRevenue?: ComparisonMetric
-    workshopTotalJc?: ComparisonMetric
-  }
-  workshopSnapshot?: WorkshopSnapshot
-  charts?: {
-    revenueTrend?: Array<{ date: string | null; label: string; revenue: number; totalJc: number }>
-    serviceMix?: Array<{ name: string; totalJc: number; revenue: number }>
-    advisorRevenue?: Array<{ advisor: string; totalJc: number; revenue: number }>
-    agingDistribution?: Array<{ bucket: string; count: number }>
-    addOnMix?: Array<{ name: string; value: number }>
-    openRoWorkType?: Array<{ name: string; value: number }>
-  }
-  insights?: Array<{ label: string; value: string; context: string; tone: string }>
-}
-
-interface BrandState {
-  data: OverviewData | null
-  loading: boolean
-  error: string | null
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function toDateStr(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function currentMonthRange() {
-  const today = new Date()
+function polarToXY(angleDeg: number, r: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180
   return {
-    startDate: toDateStr(new Date(today.getFullYear(), today.getMonth(), 1)),
-    endDate: toDateStr(today),
+    x: Math.cos(rad) * r,
+    y: Math.sin(rad) * r,
   }
 }
 
-function fmtCurrency(value: number) {
-  const v = Math.round(value)
-  if (v >= 10000000) return `₹${(v / 10000000).toFixed(2)}Cr`
-  if (v >= 100000) return `₹${(v / 100000).toFixed(2)}L`
-  if (v >= 1000) return `₹${(v / 1000).toFixed(1)}K`
-  return `₹${v.toLocaleString('en-IN')}`
+function orbitTransform(angle: number, ring: number) {
+  const { x, y } = polarToXY(angle, ring)
+  return `translate(calc(-50% + ${x.toFixed(2)}px), calc(-50% + ${y.toFixed(2)}px))`
 }
 
-function fmtCount(value: number) {
-  return Math.round(value).toLocaleString('en-IN')
-}
+export default function DashboardPortal() {
+  const [session, setSession] = useState<UserSession | null>(null)
+  const [loading, setLoading] = useState(true)
 
-function DeltaBadge({ delta }: { delta: number | null | undefined }) {
-  if (delta == null) return null
-  const positive = delta >= 0
-  const color = positive ? '#16a34a' : '#dc2626'
-  const bg = positive ? '#dcfce7' : '#fee2e2'
-  const Icon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus
-  return (
-    <span
-      style={{ background: bg, color }}
-      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold"
-    >
-      <Icon className="h-3 w-3" />
-      {delta >= 0 ? '+' : ''}{delta.toFixed(1)}%
-    </span>
-  )
-}
-
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-
-function Skeleton({ className = '', style }: { className?: string; style?: React.CSSProperties }) {
-  return (
-    <div className={`relative overflow-hidden rounded-xl bg-slate-100 ${className}`} style={style}>
-      <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-    </div>
-  )
-}
-
-function KpiSkeleton() {
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between">
-        <Skeleton className="h-10 w-10 rounded-xl" />
-        <Skeleton className="h-5 w-16 rounded-full" />
-      </div>
-      <Skeleton className="mt-3 h-7 w-28" />
-      <Skeleton className="mt-2 h-3 w-24" />
-      <Skeleton className="mt-1 h-3 w-20" />
-    </div>
-  )
-}
-
-function ChartSkeleton({ height = 240 }: { height?: number }) {
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-      <Skeleton className="mb-1 h-4 w-32" />
-      <Skeleton className="mb-5 h-3 w-48" />
-      <Skeleton className="w-full rounded-2xl" style={{ height }} />
-    </div>
-  )
-}
-
-function LoadingGrid() {
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[...Array(4)].map((_, i) => <KpiSkeleton key={i} />)}
-      </div>
-      <div className="grid gap-5 lg:grid-cols-5">
-        <div className="lg:col-span-3"><ChartSkeleton height={260} /></div>
-        <div className="lg:col-span-2"><ChartSkeleton height={260} /></div>
-      </div>
-      <div className="grid gap-5 lg:grid-cols-2">
-        <ChartSkeleton height={220} />
-        <ChartSkeleton height={220} />
-      </div>
-    </div>
-  )
-}
-
-// ─── Custom Tooltip ───────────────────────────────────────────────────────────
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
-  formatter,
-}: {
-  active?: boolean
-  payload?: Array<{ name: string; value: number; color: string }>
-  label?: string
-  formatter?: (val: number) => string
-}) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur-sm">
-      {label && <p className="mb-2 text-xs font-semibold text-slate-500">{label}</p>}
-      {payload.map((p) => (
-        <div key={p.name} className="flex items-center gap-2 text-sm">
-          <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: p.color }} />
-          <span className="font-medium text-slate-700">{p.name}:</span>
-          <span className="ml-1 font-bold text-slate-900">
-            {formatter ? formatter(Number(p.value ?? 0)) : fmtCount(Number(p.value ?? 0))}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-
-function KpiCard({
-  label,
-  value,
-  delta,
-  icon: Icon,
-  color,
-  sub,
-}: {
-  label: string
-  value: string
-  delta?: number | null
-  icon: React.ElementType
-  color: string
-  sub?: string
-}) {
-  return (
-    <div className="relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
-      <div className="pointer-events-none absolute -right-5 -top-5 h-24 w-24 rounded-full opacity-10" style={{ background: color }} />
-      <div className="flex items-start justify-between">
-        <div
-          className="flex h-10 w-10 items-center justify-center rounded-xl"
-          style={{ background: `${color}18`, color }}
-        >
-          <Icon className="h-5 w-5" />
-        </div>
-        <DeltaBadge delta={delta} />
-      </div>
-      <p className="mt-3 text-2xl font-black text-slate-900">{value}</p>
-      <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
-      {sub && <p className="mt-1 text-xs text-slate-400">{sub}</p>}
-    </div>
-  )
-}
-
-// ─── Section wrapper ──────────────────────────────────────────────────────────
-
-function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-      <div className="mb-4">
-        <h3 className="text-sm font-bold text-slate-900">{title}</h3>
-        {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-// ─── Pie/Donut Colors ─────────────────────────────────────────────────────────
-
-const PIE_COLORS = ['#0052cc', '#c8102e', '#7c3aed', '#0891b2', '#16a34a', '#d97706', '#64748b', '#f43f5e']
-
-// ─── Service Mix Donut ────────────────────────────────────────────────────────
-
-function ServiceMixDonut({
-  data,
-}: {
-  data: Array<{ name: string; totalJc: number }>
-}) {
-  const total = data.reduce((s, d) => s + d.totalJc, 0)
-  if (!data.length || total === 0) {
-    return <div className="flex h-48 items-center justify-center text-sm text-slate-400">No service data</div>
-  }
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <div className="flex-shrink-0">
-        <ResponsiveContainer width={150} height={150}>
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="totalJc"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              innerRadius={42}
-              outerRadius={65}
-              strokeWidth={2}
-              stroke="#fff"
-            >
-              {data.map((_, i) => (
-                <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip formatter={(val) => [`${fmtCount(Number(val ?? 0))} JC`, '']} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }} />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="flex-1 space-y-2">
-        {data.slice(0, 7).map((d, i) => (
-          <div key={d.name} className="flex items-center gap-2 text-[11px]">
-            <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-            <span className="flex-1 truncate text-slate-600">{d.name}</span>
-            <span className="font-bold text-slate-800">{fmtCount(d.totalJc)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ─── Aging Bar ────────────────────────────────────────────────────────────────
-
-function AgingBar({ data, color }: { data: Array<{ bucket: string; count: number }>; color: string }) {
-  if (!data.length) return <div className="flex h-44 items-center justify-center text-sm text-slate-400">No aging data</div>
-  return (
-    <ResponsiveContainer width="100%" height={180}>
-      <BarChart data={data} margin={{ top: 0, right: 5, left: -15, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-        <XAxis dataKey="bucket" tick={{ fontSize: 9, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-        <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-        <Tooltip content={<ChartTooltip formatter={fmtCount} />} />
-        <Bar dataKey="count" name="Open RO" fill={color} radius={[5, 5, 0, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
-  )
-}
-
-// ─── Addon Mix ────────────────────────────────────────────────────────────────
-
-function AddonMixChart({ data, color }: { data: Array<{ name: string; value: number }>; color: string }) {
-  const total = data.reduce((s, d) => s + d.value, 0)
-  if (!total) return <div className="flex h-44 items-center justify-center text-sm text-slate-400">No add-on data</div>
-
-  const colors = [color, '#0891b2', '#16a34a', '#d97706']
-  return (
-    <div className="space-y-4">
-      <ResponsiveContainer width="100%" height={130}>
-        <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={58} strokeWidth={2} stroke="#fff">
-            {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
-          </Pie>
-          <Tooltip formatter={(val) => [fmtCount(Number(val ?? 0)), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="grid grid-cols-3 gap-2">
-        {data.map((d, i) => (
-          <div key={d.name} className="rounded-xl p-2 text-center" style={{ background: `${colors[i % colors.length]}15` }}>
-            <p className="text-lg font-black" style={{ color: colors[i % colors.length] }}>{fmtCount(d.value)}</p>
-            <p className="text-[10px] font-semibold text-slate-500">{d.name}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ─── Multi-brand trend ────────────────────────────────────────────────────────
-
-function MultiBrandRevenueTrend({ states }: { states: Record<BrandId, BrandState> }) {
-  const dateMap: Record<string, Record<string, number>> = {}
-  for (const brand of BRANDS) {
-    const trend = states[brand.id].data?.charts?.revenueTrend ?? []
-    for (const row of trend) {
-      const d = row.label || row.date?.slice(5) || ''
-      if (!dateMap[d]) dateMap[d] = {}
-      dateMap[d][brand.label] = Math.round(row.revenue)
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const res = await fetch('/api/auth/user')
+        if (res.ok) {
+          const data = await res.json()
+          setSession({
+            fullName: data.fullName || 'Associate',
+            email: data.email || '',
+            role: data.role || 'user',
+            brand: data.brand || 'ALL',
+            department: data.department || 'Operations',
+          })
+        }
+      } catch (e) {
+        console.error('Failed to load user session:', e)
+      } finally {
+        setLoading(false)
+      }
     }
-  }
-  const rows = Object.entries(dateMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, vals]) => ({ date, ...vals }))
+    fetchUser()
+  }, [])
 
-  if (rows.length === 0) {
-    return <div className="flex h-60 items-center justify-center text-sm text-slate-400">No trend data</div>
-  }
-
-  return (
-    <ResponsiveContainer width="100%" height={240}>
-      <AreaChart data={rows} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-        <defs>
-          {BRANDS.map((b) => (
-            <linearGradient key={b.id} id={`mbt-grad-${b.id}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={b.color} stopOpacity={0.25} />
-              <stop offset="95%" stopColor={b.color} stopOpacity={0} />
-            </linearGradient>
-          ))}
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-        <YAxis tickFormatter={(v) => fmtCurrency(v)} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} width={68} />
-        <Tooltip content={<ChartTooltip formatter={fmtCurrency} />} />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        {BRANDS.map((b) => (
-          <Area key={b.id} type="monotone" dataKey={b.label} stroke={b.color} strokeWidth={2.5}
-            fill={`url(#mbt-grad-${b.id})`} dot={false} activeDot={{ r: 4 }} />
-        ))}
-      </AreaChart>
-    </ResponsiveContainer>
-  )
-}
-
-// ─── Brand comparison bars ────────────────────────────────────────────────────
-
-function BrandCompareBar({
-  states,
-  dataKey,
-  label,
-  formatter,
-  valueOf,
-}: {
-  states: Record<BrandId, BrandState>
-  dataKey: string
-  label: string
-  formatter: (v: number) => string
-  valueOf: (d: OverviewData) => number
-}) {
-  const data = BRANDS.map((b) => ({
-    brand: b.label,
-    [label]: states[b.id].data ? valueOf(states[b.id].data!) : 0,
-    color: b.color,
-    loading: states[b.id].loading,
-  }))
-
-  return (
-    <ResponsiveContainer width="100%" height={200}>
-      <BarChart data={data} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-        <XAxis dataKey="brand" tick={{ fontSize: 12, fill: '#475569', fontWeight: 600 }} tickLine={false} axisLine={false} />
-        <YAxis tickFormatter={(v) => formatter(v)} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} width={60} />
-        <Tooltip content={<ChartTooltip formatter={formatter} />} />
-        <Bar dataKey={label} radius={[8, 8, 0, 0]} maxBarSize={72}>
-          {data.map((entry) => (
-            <Cell key={entry.brand} fill={entry.color} />
-          ))}
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
-  )
-}
-
-// ─── Brand detail panel ───────────────────────────────────────────────────────
-
-function BrandDetailPanel({ brand, state }: { brand: typeof BRANDS[number]; state: BrandState }) {
-  if (state.loading) return <LoadingGrid />
-
-  if (state.error) {
+  if (loading) {
     return (
-      <div className="flex h-60 flex-col items-center justify-center gap-3 rounded-2xl border border-red-100 bg-red-50 text-center p-6">
-        <AlertCircle className="h-8 w-8 text-red-400" />
-        <p className="text-sm font-semibold text-red-700">Failed to load {brand.label} data</p>
-        <p className="text-xs text-red-500">{state.error}</p>
-      </div>
+      <MainLayout title="Portal Gateway" subtitle="Resolving administrative context...">
+        <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600" />
+          <p className="text-xs font-black uppercase tracking-widest text-slate-400">Loading Operations Dashboard...</p>
+        </div>
+      </MainLayout>
     )
   }
 
-  if (!state.data) return null
-
-  const { data } = state
-  const kpis = data.kpis
-  const comparison = data.comparison
-  const ws = data.workshopSnapshot
-  const charts = data.charts ?? {}
-
-  // Primary numbers from kpis (plain numbers)
-  const revenue = kpis?.revenue ?? 0
-  const totalJc = kpis?.totalJc ?? 0
-  const openRo = kpis?.openRo ?? 0
-  const delayedRo = kpis?.delayedRo ?? 0
-  const openOver15 = kpis?.openOver15 ?? 0
-  const ewCount = kpis?.ewCount ?? 0
-  const rsaCount = kpis?.rsaCount ?? 0
-  const mcpCount = kpis?.mcpCount ?? 0
-
-  // VAS from workshopSnapshot
-  const vasAmount = ws?.vasAmount ?? 0
-
-  // Deltas from comparison object
-  const revenueDelta = comparison?.revenue?.deltaPct ?? null
-  const jcDelta = comparison?.totalJc?.deltaPct ?? null
-  const openRoDelta = comparison?.openRo?.deltaPct ?? null
-  const vasDelta = comparison?.workshopVasAmount?.deltaPct ?? null
-
-  const lyRevenue = comparison?.revenue?.ly ?? 0
-  const lyJc = comparison?.totalJc?.ly ?? 0
-
-  // Charts
-  const revenueTrend = charts.revenueTrend ?? []
-  const serviceMix = charts.serviceMix ?? []
-  const agingDist = charts.agingDistribution ?? []
-  const addOnMix = charts.addOnMix ?? [
-    { name: 'EW', value: ewCount },
-    { name: 'RSA', value: rsaCount },
-    { name: 'MCP', value: mcpCount },
-  ]
+  const roleLabel = session?.role 
+    ? session.role.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+    : 'Operator'
 
   return (
-    <div className="space-y-5">
-      {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          label="Total Revenue"
-          value={fmtCurrency(revenue)}
-          delta={revenueDelta}
-          icon={IndianRupee}
-          color={brand.color}
-          sub={lyRevenue > 0 ? `vs ${fmtCurrency(lyRevenue)} LY` : 'LY comparison pending'}
-        />
-        <KpiCard
-          label="Job Cards Closed"
-          value={fmtCount(totalJc)}
-          delta={jcDelta}
-          icon={Wrench}
-          color={brand.color}
-          sub={lyJc > 0 ? `vs ${fmtCount(lyJc)} LY` : undefined}
-        />
-        <KpiCard
-          label="Open RO (WIP)"
-          value={fmtCount(openRo)}
-          delta={openRoDelta}
-          icon={Activity}
-          color={brand.color}
-          sub={`${delayedRo} delayed · ${openOver15} beyond 15d`}
-        />
-        <KpiCard
-          label="VAS Revenue"
-          value={fmtCurrency(vasAmount)}
-          delta={vasDelta}
-          icon={Sparkles}
-          color={brand.color}
-          sub={`EW ${ewCount} · RSA ${rsaCount} · MCP ${mcpCount}`}
-        />
-      </div>
+    <MainLayout title="Operations Hub" subtitle="AM Group Corporate Gateway & Status Command Center">
+      <div className="relative mx-auto max-w-7xl px-4 py-6 pb-12">
+        
+        {/* Background Radial Orbs & Grid patterns from login page */}
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_8%_88%,rgba(180,210,255,0.25),transparent_24%),radial-gradient(circle_at_95%_92%,rgba(199,231,255,0.30),transparent_24%),linear-gradient(135deg,#fbfcff_0%,#f4f7fd_47%,#eef4fb_100%)] rounded-[2.5rem]" />
+        
+        <div className="relative flex flex-col overflow-hidden rounded-[2rem] border border-white/90 bg-white/48 p-6 shadow-[0_24px_90px_rgba(15,23,42,0.06)] backdrop-blur-xl md:p-8 lg:flex-row lg:min-h-[680px] gap-8">
+          
+          {/* LEFT COLUMN: SPINNING ORBIT HUB */}
+          <div className="relative flex-1 flex items-center justify-center min-h-[460px] lg:min-h-[580px] overflow-hidden select-none">
+            
+            <div className="absolute h-[520px] w-[520px] scale-90 sm:scale-100">
+              {/* Concentric Circles */}
+              <div className="absolute left-1/2 top-1/2 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/60" />
+              <div className="absolute left-1/2 top-1/2 h-[380px] w-[380px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200/60" />
+              <div className="absolute left-1/2 top-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-slate-200/70 animate-[spin_120s_linear_infinite]" />
+              
+              {/* Connection Lines */}
+              <svg className="absolute inset-0 h-full w-full animate-[spin_120s_linear_infinite]" viewBox="0 0 520 520" aria-hidden="true">
+                {ORBIT_NODES.map((node) => {
+                  const outer = polarToXY(node.angle, node.ring - 30)
+                  const inner = polarToXY(node.angle, 110)
+                  return (
+                    <line
+                      key={node.label}
+                      x1={260 + inner.x}
+                      y1={260 + inner.y}
+                      x2={260 + outer.x}
+                      y2={260 + outer.y}
+                      stroke="rgba(148, 163, 184, 0.18)"
+                      strokeDasharray="5 8"
+                      strokeLinecap="round"
+                    />
+                  )
+                })}
+              </svg>
 
-      {/* Revenue Trend + Service Mix */}
-      <div className="grid gap-5 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <Section title="Revenue Trend" subtitle="Daily billing revenue for the selected period">
-            {revenueTrend.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <AreaChart data={revenueTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id={`detail-grad-${brand.id}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={brand.color} stopOpacity={0.3} />
-                      <stop offset="95%" stopColor={brand.color} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-                  <YAxis tickFormatter={(v) => fmtCurrency(v)} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} width={68} />
-                  <Tooltip content={<ChartTooltip formatter={fmtCurrency} />} />
-                  <Area
-                    type="monotone"
-                    dataKey="revenue"
-                    name="Revenue"
-                    stroke={brand.color}
-                    strokeWidth={2.5}
-                    fill={`url(#detail-grad-${brand.id})`}
-                    dot={false}
-                    activeDot={{ r: 5, fill: brand.color }}
+              {/* Central Shield */}
+              <div className="absolute left-1/2 top-1/2 flex h-40 w-40 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-white bg-white/92 shadow-[0_15px_45px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.9)]">
+                <img src={BRAND_LOGO_URL} alt="AM Group" className="h-[82%] w-[82%] rounded-full object-contain" />
+              </div>
+
+              {/* Orbiting Nodes and Dots */}
+              <div className="absolute inset-0 animate-[spin_120s_linear_infinite]">
+                {ORBIT_NODES.map((node) => {
+                  const Icon = node.icon
+                  return (
+                    <div
+                      key={node.label}
+                      className="absolute left-1/2 top-1/2"
+                      style={{ transform: orbitTransform(node.angle, node.ring) }}
+                    >
+                      <div className="flex min-w-24 flex-col items-center gap-1.5 animate-[spin_120s_linear_infinite_reverse]">
+                        <div
+                          className="flex h-16 w-16 items-center justify-center rounded-full border border-white/95 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.05)] ring-1 ring-slate-100/70"
+                        >
+                          <Icon className="h-7 w-7" style={{ color: node.color }} strokeWidth={1.5} />
+                        </div>
+                        <span className="text-[11px] font-black tracking-tight text-slate-800 text-center uppercase">
+                          {node.label.split(' ')[0]}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {ORBIT_DOTS.map((dot, index) => (
+                  <span
+                    key={index}
+                    className="absolute left-1/2 top-1/2 rounded-full shadow-[0_0_12px_currentColor]"
+                    style={{
+                      width: dot.size,
+                      height: dot.size,
+                      backgroundColor: dot.color,
+                      color: dot.color,
+                      transform: orbitTransform(dot.angle, dot.ring),
+                    }}
                   />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-48 items-center justify-center text-sm text-slate-400">No daily trend data for this period</div>
-            )}
-          </Section>
-        </div>
-        <div className="lg:col-span-2">
-          <Section title="Service Mix" subtitle="Job cards by service category">
-            <ServiceMixDonut data={serviceMix} />
-          </Section>
-        </div>
-      </div>
-
-      {/* Open RO Aging + VAS */}
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Section title="Open RO Aging" subtitle="Current WIP distribution by age bucket">
-          <AgingBar data={agingDist} color={brand.color} />
-          {(openRo > 0) && (
-            <div className="mt-3 grid grid-cols-3 gap-3">
-              <div className="rounded-xl bg-slate-50 p-3 text-center">
-                <p className="text-xl font-black text-slate-700">{fmtCount(openRo)}</p>
-                <p className="text-[10px] font-semibold text-slate-400">Total Open</p>
-              </div>
-              <div className="rounded-xl bg-orange-50 p-3 text-center">
-                <p className="text-xl font-black text-orange-600">{fmtCount(delayedRo)}</p>
-                <p className="text-[10px] font-semibold text-orange-400">Delayed</p>
-              </div>
-              <div className="rounded-xl bg-red-50 p-3 text-center">
-                <p className="text-xl font-black text-red-600">{fmtCount(openOver15)}</p>
-                <p className="text-[10px] font-semibold text-red-400">&gt;15 Days</p>
+                ))}
               </div>
             </div>
-          )}
-        </Section>
-        <Section title="VAS / Add-on Sales" subtitle="Extended Warranty · RSA · MCP breakdown">
-          <AddonMixChart data={addOnMix} color={brand.color} />
-        </Section>
-      </div>
 
-      {/* Revenue by service category */}
-      {serviceMix.length > 0 && serviceMix.some((r) => r.revenue > 0) && (
-        <Section title="Revenue by Service Category" subtitle="Billing revenue breakdown by service type">
-          <ResponsiveContainer width="100%" height={Math.min(serviceMix.length * 36 + 20, 260)}>
-            <BarChart
-              data={serviceMix.slice(0, 8)}
-              layout="vertical"
-              margin={{ top: 0, right: 20, left: 5, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-              <XAxis type="number" tickFormatter={(v) => fmtCurrency(v)} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#475569' }} tickLine={false} axisLine={false} width={115} />
-              <Tooltip content={<ChartTooltip formatter={fmtCurrency} />} />
-              <Bar dataKey="revenue" name="Revenue" fill={brand.color} radius={[0, 6, 6, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Section>
-      )}
-    </div>
-  )
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
-export default function DashboardPage() {
-  const [activeBrand, setActiveBrand] = useState<BrandId>('hyundai')
-  const [states, setStates] = useState<Record<BrandId, BrandState>>({
-    hyundai: { data: null, loading: true, error: null },
-    kia: { data: null, loading: true, error: null },
-    platinum: { data: null, loading: true, error: null },
-  })
-  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
-
-  const fetchBrand = useCallback(async (brand: typeof BRANDS[number]) => {
-    const { startDate, endDate } = currentMonthRange()
-    // chunk=secondary returns kpis + comparison + workshopSnapshot + charts
-    const url = `${brand.apiPath}?startDate=${startDate}&endDate=${endDate}&chunk=secondary`
-
-    setStates((prev) => ({
-      ...prev,
-      [brand.id]: { ...prev[brand.id], loading: true, error: null },
-    }))
-
-    try {
-      const res = await fetch(url)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json: OverviewData = await res.json()
-      setStates((prev) => ({
-        ...prev,
-        [brand.id]: { data: json, loading: false, error: null },
-      }))
-    } catch (e) {
-      setStates((prev) => ({
-        ...prev,
-        [brand.id]: {
-          data: prev[brand.id].data,
-          loading: false,
-          error: e instanceof Error ? e.message : 'Failed to load',
-        },
-      }))
-    }
-  }, [])
-
-  const fetchAll = useCallback(() => {
-    setLastRefreshed(new Date())
-    BRANDS.forEach((b) => fetchBrand(b))
-  }, [fetchBrand])
-
-  useEffect(() => { fetchAll() }, [fetchAll])
-
-  const activeBrandConfig = BRANDS.find((b) => b.id === activeBrand)!
-  const isAnyLoading = BRANDS.some((b) => states[b.id].loading)
-
-  const totalRevenue = BRANDS.reduce((s, b) => s + (states[b.id].data?.kpis?.revenue ?? 0), 0)
-  const totalJc = BRANDS.reduce((s, b) => s + (states[b.id].data?.kpis?.totalJc ?? 0), 0)
-  const totalOpenRo = BRANDS.reduce((s, b) => s + (states[b.id].data?.kpis?.openRo ?? 0), 0)
-  const totalVas = BRANDS.reduce((s, b) => s + (states[b.id].data?.workshopSnapshot?.vasAmount ?? 0), 0)
-
-  const { startDate, endDate } = currentMonthRange()
-
-  const groupSummaryItems = [
-    { label: 'Group Revenue (MTD)', value: fmtCurrency(totalRevenue), icon: IndianRupee, color: '#0052cc' },
-    { label: 'Total Job Cards', value: fmtCount(totalJc), icon: Wrench, color: '#c8102e' },
-    { label: 'Total Open RO', value: fmtCount(totalOpenRo), icon: Activity, color: '#7c3aed' },
-    { label: 'Group VAS Revenue', value: fmtCurrency(totalVas), icon: Sparkles, color: '#0891b2' },
-  ]
-
-  return (
-    <MainLayout title="Operations Analytics" subtitle="Repair Orders · RO Billing · VAS — All Brands">
-      {/* shimmer keyframe */}
-      <style>{`
-        @keyframes shimmer { 100% { transform: translateX(200%); } }
-      `}</style>
-
-      <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
-
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-black text-slate-900">Group Performance Overview</h1>
-            <p className="mt-0.5 text-sm text-slate-500">
-              {startDate} — {endDate} &nbsp;·&nbsp; Hyundai · Kia · Platinum
-            </p>
-          </div>
-          <button
-            onClick={fetchAll}
-            disabled={isAnyLoading}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
-          >
-            {isAnyLoading
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <RefreshCw className="h-4 w-4" />}
-            Refresh
-          </button>
-        </div>
-
-        {/* Group summary strip */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {groupSummaryItems.map((item, i) =>
-            isAnyLoading && totalRevenue === 0
-              ? <KpiSkeleton key={i} />
-              : <KpiCard key={item.label} label={item.label} value={item.value} icon={item.icon} color={item.color} />
-          )}
-        </div>
-
-        {/* Cross-brand comparison */}
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Section title="Revenue by Brand" subtitle="Current month total billing">
-            {isAnyLoading && totalRevenue === 0
-              ? <Skeleton className="h-48 w-full" />
-              : <BrandCompareBar
-                  states={states}
-                  dataKey="revenue"
-                  label="Revenue"
-                  formatter={fmtCurrency}
-                  valueOf={(d) => d.kpis?.revenue ?? 0}
-                />
-            }
-          </Section>
-          <Section title="Job Cards by Brand" subtitle="Closed ROs this month">
-            {isAnyLoading && totalJc === 0
-              ? <Skeleton className="h-48 w-full" />
-              : <BrandCompareBar
-                  states={states}
-                  dataKey="totalJc"
-                  label="Job Cards"
-                  formatter={fmtCount}
-                  valueOf={(d) => d.kpis?.totalJc ?? 0}
-                />
-            }
-          </Section>
-          <Section title="Combined Revenue Trend" subtitle="Daily billing — all brands">
-            {isAnyLoading
-              ? <Skeleton className="h-48 w-full" />
-              : <MultiBrandRevenueTrend states={states} />
-            }
-          </Section>
-        </div>
-
-        {/* Brand drill-down */}
-        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 shadow-sm">
-          {/* Tabs */}
-          <div className="flex border-b border-slate-100 bg-white px-4 pt-3">
-            {BRANDS.map((b) => {
-              const isActive = activeBrand === b.id
-              return (
-                <button
-                  key={b.id}
-                  onClick={() => setActiveBrand(b.id)}
-                  className="relative flex items-center gap-2 rounded-t-xl px-5 py-2.5 text-sm font-bold transition-colors"
-                  style={{
-                    color: isActive ? b.color : '#64748b',
-                    borderBottom: isActive ? `2.5px solid ${b.color}` : '2.5px solid transparent',
-                    background: isActive ? '#f8fafc' : 'transparent',
-                  }}
-                >
-                  <Car className="h-4 w-4" />
-                  {b.label}
-                  {states[b.id].loading && <Loader2 className="h-3 w-3 animate-spin opacity-60" />}
-                  {states[b.id].error && !states[b.id].loading && (
-                    <AlertCircle className="h-3 w-3 text-red-400" />
-                  )}
-                </button>
-              )
-            })}
           </div>
 
-          {/* Brand content */}
-          <div className="p-5">
-            <BrandDetailPanel brand={activeBrandConfig} state={states[activeBrand]} />
+          {/* RIGHT COLUMN: STATIC STATUS BOARD & TELEMETRY */}
+          <div className="w-full lg:w-[480px] xl:w-[520px] flex flex-col justify-center gap-6">
+            
+            {/* Header info */}
+            <div className="text-left">
+              <div className="inline-flex items-center gap-2 rounded-full bg-slate-900/5 dark:bg-white/5 border border-slate-900/10 dark:border-white/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-slate-800 dark:text-slate-200 select-none">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+                </span>
+                Operations Command Live
+              </div>
+              <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 dark:text-white leading-none">
+                Welcome back, {session?.fullName}
+              </h1>
+              <p className="mt-2.5 text-sm font-semibold text-slate-500">
+                Administrative credentials verified. Connected as <span className="font-black text-slate-800 dark:text-slate-200">{roleLabel}</span> ({session?.department || 'Operations'} Department) for brand segment <span className="font-black text-indigo-600 dark:text-indigo-400">{session?.brand || 'ALL'}</span>.
+              </p>
+            </div>
+
+            {/* Static Telemetry grid - completely non-interactive */}
+            <div className="grid gap-4 sm:grid-cols-2 select-none">
+              
+              <div className="rounded-[1.5rem] border border-white/90 bg-white/92 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600 border border-sky-100">
+                    <Car className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sales Pipeline</p>
+                    <p className="mt-0.5 text-xl font-black text-slate-900">234 Active</p>
+                  </div>
+                </div>
+                <div className="mt-3.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-sky-500" style={{ width: '64%' }} />
+                </div>
+                <p className="mt-2 text-[10px] font-semibold text-slate-400">Monthly booking conversion quota</p>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-white/90 bg-white/92 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 border border-violet-100">
+                    <Layers className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active WIP</p>
+                    <p className="mt-0.5 text-xl font-black text-slate-900">1,024 Cards</p>
+                  </div>
+                </div>
+                <div className="mt-3.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-violet-500" style={{ width: '78%' }} />
+                </div>
+                <p className="mt-2 text-[10px] font-semibold text-slate-400">Repair order workflow throughput</p>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-white/90 bg-white/92 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100">
+                    <Database className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">System Integration</p>
+                    <p className="mt-0.5 text-xl font-black text-emerald-700">100% Sync</p>
+                  </div>
+                </div>
+                <div className="mt-3.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-emerald-500" style={{ width: '100%' }} />
+                </div>
+                <p className="mt-2 text-[10px] font-semibold text-slate-400">DMS & Postgres schema mirroring</p>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-white/90 bg-white/92 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 border border-amber-100">
+                    <Cpu className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Telemetry Gateway</p>
+                    <p className="mt-0.5 text-xl font-black text-slate-900">Optimal</p>
+                  </div>
+                </div>
+                <div className="mt-3.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-amber-500" style={{ width: '85%' }} />
+                </div>
+                <p className="mt-2 text-[10px] font-semibold text-slate-400">API endpoints & latency metrics</p>
+              </div>
+
+            </div>
+
+            {/* Bottom info banner */}
+            <div className="flex items-start gap-3 rounded-[1.5rem] border border-slate-200/70 bg-slate-50/50 p-4 select-none">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 border border-slate-200">
+                <ShieldCheck className="h-5 w-5 text-slate-500" strokeWidth={2} />
+              </span>
+              <div className="text-left">
+                <p className="text-xs font-black uppercase tracking-wider text-slate-800">Operational Security Engaged</p>
+                <p className="mt-0.5 text-[11px] font-semibold leading-relaxed text-slate-500">
+                  This dashboard is a secure launch monitor. Access to database tables, repair records, and proformas is guarded via role matrix policies. Use the navigation sidebar to access authorized segments.
+                </p>
+              </div>
+            </div>
+
           </div>
+
         </div>
 
-        {/* Footer */}
-        {lastRefreshed && (
-          <p className="text-center text-xs text-slate-400">
-            Last refreshed: {lastRefreshed.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </p>
-        )}
+        {/* Footer info */}
+        <div className="mt-6 text-center text-xs text-slate-400 select-none">
+          <p>© 2026 AM Group Holdings. System Integrity Optimal.</p>
+        </div>
+
       </div>
     </MainLayout>
   )

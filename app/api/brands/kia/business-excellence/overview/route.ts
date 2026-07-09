@@ -773,29 +773,29 @@ async function buildOverviewPayload(
   const lyOpenKpis = resultRows(lyOpenKpiRows)[0] || {}
   const lyComplaintKpis = resultRows(lyComplaintKpiRows)[0] || {}
 
-  let totalJc = billingKpis.deliveredCount
-  let revenue = billingKpis.revenue
-  let labour = billingKpis.labour
-  let parts = billingKpis.parts
-  let totalOpenRo = numberValue(openKpis.total_open_ro)
-  let delayedRo = numberValue(openKpis.delayed)
-  let openOver15 = numberValue(openKpis.over_15)
+  const totalJc = billingKpis.deliveredCount
+  const revenue = billingKpis.revenue
+  const labour = billingKpis.labour
+  const parts = billingKpis.parts
+  const totalOpenRo = numberValue(openKpis.total_open_ro)
+  const delayedRo = numberValue(openKpis.delayed)
+  const openOver15 = numberValue(openKpis.over_15)
   const complaintsTotal = numberValue(complaintKpis.total)
   const complaintsOpen = numberValue(complaintKpis.open)
   const complaintsOver15 = numberValue(complaintKpis.over_15)
   const bucketOrder = ['0-4D', '5-7D', '8-15D', '>15D']
   const bucketMap = new Map(resultRows(agingRows).map((row) => [String(row.bucket), numberValue(row.count)]))
-  let addonKpisFinal = {
+  const addonKpisFinal = {
     ewCount: addonKpis.ewCount,
     rsaCount: addonKpis.rsaCount,
     mcpCount: addonKpis.mcpCount,
     rsaAmount: addonKpis.rsaAmount
   }
-  let addOnTotal = addonKpis.ewCount + addonKpis.rsaCount + addonKpis.mcpCount
-  let avgBilling = billingKpis.avgBilling
-  let labourPerVehicle = billingKpis.labourPerVehicle
-  let partsPerVehicle = billingKpis.partsPerVehicle
-  let accidentOpenJobs = numberValue(openKpis.accident_jobs)
+  const addOnTotal = addonKpis.ewCount + addonKpis.rsaCount + addonKpis.mcpCount
+  const avgBilling = billingKpis.avgBilling
+  const labourPerVehicle = billingKpis.labourPerVehicle
+  const partsPerVehicle = billingKpis.partsPerVehicle
+  const accidentOpenJobs = numberValue(openKpis.accident_jobs)
 
   const lyTotalJc = lyBillingKpis?.deliveredCount ?? 0
   const lyRevenue = lyBillingKpis?.revenue ?? 0
@@ -811,43 +811,13 @@ async function buildOverviewPayload(
   const hasComparableWorkshopVasLy = lyWorkshopSnapshot.vasAvailable
   const workshopVasLyAmount = hasComparableWorkshopVasLy ? lyWorkshopSnapshot.vasAmount : null
 
-  let alignedWorkshopSnapshot = {
+  const alignedWorkshopSnapshot = {
     ...workshopSnapshot,
     totalJc: billingKpis.deliveredCount,
     labourAmount: billingKpis.labour,
     partsAmount: billingKpis.parts,
     totalRevenue: billingKpis.revenue,
     labourPerRo: billingKpis.labourPerVehicle,
-  }
-
-  if (startDate === '2026-06-01' && endDate === '2026-06-30' && (dealerCode === 'JK402' || !dealerCode)) {
-    totalJc = 264
-    revenue = 1292878 + 1879655
-    labour = 1292878
-    parts = 1879655
-    totalOpenRo = 6
-    delayedRo = 0
-    openOver15 = 0
-    addonKpisFinal = {
-      ewCount: 6,
-      rsaCount: 25,
-      mcpCount: 1,
-      rsaAmount: 25 * 1698
-    }
-    addOnTotal = 6 + 25 + 1
-    avgBilling = (1292878 + 1879655) / 264
-    labourPerVehicle = 1292878 / 264
-    partsPerVehicle = 1879655 / 264
-    accidentOpenJobs = 5
-    alignedWorkshopSnapshot = {
-      ...alignedWorkshopSnapshot,
-      totalJc: 264,
-      labourAmount: 1292878,
-      partsAmount: 1879655,
-      totalRevenue: 1292878 + 1879655,
-      labourPerRo: 1292878 / 264,
-      vasAmount: 112270,
-    }
   }
 
   const alignedLyWorkshopSnapshot = lyBillingKpis ? {

@@ -43,7 +43,7 @@
     --dashboard-danger-soft: rgba(239, 68, 68, 0.10);
     --dashboard-danger-border: rgba(239, 68, 68, 0.32);
     --dashboard-risk-text: var(--dashboard-danger-text);
-    --background: 0 0% 98.5%; /* #FBFCFC - Emptiness */
+    --background: 0 0% 100%; /* #ffffff - Pure White */
     --foreground: 211 96% 16%; /* Deep #023468 family text */
     --card: 0 0% 100%;
     --card-foreground: 211 96% 16%;
@@ -614,21 +614,45 @@
   }
 
   .app-outline-action {
+    background: rgba(255, 255, 255, 0.92) !important;
     background-color: rgba(255, 255, 255, 0.92) !important;
     border-color: var(--dashboard-primary-border) !important;
     color: var(--dashboard-action-bg) !important;
   }
 
   .app-outline-action:hover {
+    background: var(--dashboard-primary-soft) !important;
     background-color: var(--dashboard-primary-soft) !important;
     color: var(--dashboard-action-hover) !important;
   }
 
   .app-outline-action:disabled {
+    background: #eef2f7 !important;
     background-color: #eef2f7 !important;
     border-color: #94a3b8 !important;
     color: #334155 !important;
     opacity: 1 !important;
+  }
+
+  .dark .app-outline-action {
+    background: rgba(15, 23, 42, 0.42) !important;
+    background-color: rgba(15, 23, 42, 0.42) !important;
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    color: rgb(241, 245, 249) !important;
+  }
+
+  .dark .app-outline-action:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.28) !important;
+    color: #ffffff !important;
+  }
+
+  .dark .app-outline-action:disabled {
+    background: rgba(15, 23, 42, 0.2) !important;
+    background-color: rgba(15, 23, 42, 0.2) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    color: rgb(148, 163, 184) !important;
   }
 
   .kia-proforma-primary-action {
@@ -920,24 +944,20 @@
   }
 
   .dashboard-shell {
-    background:
-      radial-gradient(circle at 12% 8%, rgba(var(--dashboard-primary-rgb), 0.10), transparent 30%),
-      radial-gradient(circle at 82% 4%, rgba(var(--dashboard-primary-light-rgb), 0.10), transparent 28%),
-      radial-gradient(circle at 88% 82%, rgba(191, 219, 254, 0.14), transparent 34%),
-      linear-gradient(135deg, #ffffff 0%, #f8fafc 46%, var(--dashboard-primary-soft) 100%);
+    background: #ffffff;
     transition: background 220ms ease, color 220ms ease;
   }
 
   .dashboard-orb-left {
-    background-color: rgba(var(--dashboard-primary-rgb), 0.10);
+    background-color: transparent;
   }
 
   .dashboard-orb-right {
-    background-color: rgba(var(--dashboard-primary-light-rgb), 0.12);
+    background-color: transparent;
   }
 
   .dashboard-orb-bottom {
-    background-color: rgba(219, 234, 254, 0.22);
+    background-color: transparent;
   }
 
   .dark .dashboard-shell {
@@ -1001,12 +1021,22 @@
     @apply bg-white/70 backdrop-blur-md border border-white/20;
   }
 
-  .glass-dashboard-content [class*="bg-white"],
-  .glass-dashboard-content [class*="bg-slate-50"],
+  .glass-dashboard-content [class*="bg-white"] {
+    background-color: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-dashboard-content [class*="bg-slate-50"] {
+    background-color: #f8fafc !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
   .glass-dashboard-content [class*="bg-slate-100"] {
-    background-color: rgba(255, 255, 255, 0.34) !important;
-    backdrop-filter: blur(22px) saturate(1.18);
-    -webkit-backdrop-filter: blur(22px) saturate(1.18);
+    background-color: #f1f5f9 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   .glass-dashboard-content .demo-remarks-modal,
@@ -1060,17 +1090,23 @@
     color: var(--dashboard-action-fg) !important;
   }
 
-  .glass-dashboard-content [class*="border-slate-100"],
-  .glass-dashboard-content [class*="border-slate-200"],
+  .glass-dashboard-content [class*="border-slate-100"] {
+    border-color: #f1f5f9 !important;
+  }
+
+  .glass-dashboard-content [class*="border-slate-200"] {
+    border-color: #e2e8f0 !important;
+  }
+
   .glass-dashboard-content [class*="border-white"] {
-    border-color: rgba(255, 255, 255, 0.62) !important;
+    border-color: #ffffff !important;
   }
 
   .glass-dashboard-content [class*="shadow-slate-200"],
   .glass-dashboard-content [class*="shadow-xl"],
   .glass-dashboard-content [class*="shadow-lg"],
   .glass-dashboard-content [class*="shadow-sm"] {
-    box-shadow: 0 22px 70px rgba(2, 52, 104, 0.10) !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.05) !important;
   }
 
   .app-sidebar-brand {

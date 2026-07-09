@@ -4,8 +4,14 @@ import { db } from '@/lib/db'
 import { analyticsDb } from '@/lib/analytics/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { getAdminCapabilities } from '@/lib/admin/authorization'
+import { getCachedData } from '@/lib/redis/cache-utils'
 
 export const dynamic = 'force-dynamic'
+
+// Freshness only changes when a report is uploaded (infrequent) and is identical for every admin,
+// so cache it. Repeat loads are then instant instead of re-scanning ~20 tables across two DBs.
+const FRESHNESS_CACHE_KEY = 'admin:data-freshness'
+const FRESHNESS_TTL_SECONDS = 90
 
 type FreshnessResult = {
   table: string
@@ -14,14 +20,22 @@ type FreshnessResult = {
   rowCount: number
 }
 
+// `MAX(dateCol)` uses the column index (instant) where one exists; a bare `COUNT(*)` would force
+// a full table scan regardless, so we take an approximate row count from the planner statistics
+// (pg_class.reltuples) instead — plenty accurate for a freshness dashboard and effectively free.
+// Table names are hardcoded constants below, not user input.
+function freshnessSql(table: string, dateCol: string) {
+  return `
+    SELECT
+      MAX("${dateCol}") AS "lastUpdated",
+      COALESCE((SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = to_regclass('"${table}"')), 0) AS "rowCount"
+    FROM "${table}"
+  `
+}
+
 async function queryAppTable(table: string, label: string, dateCol: string): Promise<FreshnessResult> {
   try {
-    const result = await db.execute(sql.raw(`
-      SELECT 
-        MAX("${dateCol}") AS "lastUpdated",
-        COUNT(*)::int AS "rowCount"
-      FROM "${table}"
-    `))
+    const result = await db.execute(sql.raw(freshnessSql(table, dateCol)))
     return {
       table,
       label,
@@ -36,12 +50,7 @@ async function queryAppTable(table: string, label: string, dateCol: string): Pro
 
 async function queryAnalyticsTable(table: string, label: string, dateCol: string): Promise<FreshnessResult> {
   try {
-    const result = await analyticsDb.execute(sql.raw(`
-      SELECT 
-        MAX("${dateCol}") AS "lastUpdated",
-        COUNT(*)::int AS "rowCount"
-      FROM "${table}"
-    `))
+    const result = await analyticsDb.execute(sql.raw(freshnessSql(table, dateCol)))
     return {
       table,
       label,
@@ -60,47 +69,50 @@ export async function GET() {
     const actorCapabilities = actor ? getAdminCapabilities(actor) : null
     if (!actor || !actorCapabilities) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-    const [kiaAnalytics, hyundaiAnalytics, platinumAnalytics, kiaApp] = await Promise.all([
-      // Kia Analytics
-      Promise.all([
-        queryAnalyticsTable('ro_billing_report', 'RO Billing', 'uploaded_at'),
-        queryAnalyticsTable('open_ro_yearly', 'Open RO', 'uploaded_at'),
-        queryAnalyticsTable('kia_call_center_complaints', 'Complaints', 'uploaded_at'),
-        queryAnalyticsTable('operation_wise_analysis_report', 'Operation Analysis', 'uploaded_at'),
-        queryAnalyticsTable('ew_report', 'Extended Warranty', 'uploaded_at'),
-        queryAnalyticsTable('rsa_report', 'RSA', 'uploaded_at'),
-        queryAnalyticsTable('mcp_report', 'MCP', 'uploaded_at'),
-      ]),
-      // Hyundai Analytics
-      Promise.all([
-        queryAnalyticsTable('hyundai_ro_billing_report', 'RO Billing', 'uploaded_at'),
-        queryAnalyticsTable('hyundai_repair_order_list', 'Open RO', 'uploaded_at'),
-        queryAnalyticsTable('hyundai_call_center_complaints', 'Complaints', 'uploaded_at'),
-        queryAnalyticsTable('hyundai_operation_wise_analysis_report', 'Operation Analysis', 'uploaded_at'),
-        queryAnalyticsTable('hyundai_ew_report', 'Extended Warranty', 'uploaded_at'),
-      ]),
-      // Platinum Analytics
-      Promise.all([
-        queryAnalyticsTable('am_platinum_ro_billing_report', 'RO Billing', 'uploaded_at'),
-        queryAnalyticsTable('am_platinum_repair_order_list', 'Open RO', 'uploaded_at'),
-        queryAnalyticsTable('am_platinum_call_center_complaints', 'Complaints', 'uploaded_at'),
-        queryAnalyticsTable('am_platinum_operation_wise_analysis_report', 'Operation Analysis', 'uploaded_at'),
-        queryAnalyticsTable('am_platinum_ew_report', 'Extended Warranty', 'uploaded_at'),
-      ]),
-      // Kia App DB
-      Promise.all([
-        queryAppTable('kia_stock_management', 'Vehicle Stock Inventory', 'uploaded_at'),
-        queryAppTable('kia_bookings', 'Bookings List', 'updated_at'),
-        queryAppTable('kia_vehicle_allocations', 'Vehicle Journey Allocations', 'created_at'),
+    const freshness = await getCachedData(FRESHNESS_CACHE_KEY, async () => {
+      const [kiaAnalytics, hyundaiAnalytics, platinumAnalytics, kiaApp] = await Promise.all([
+        // Kia Analytics
+        Promise.all([
+          queryAnalyticsTable('ro_billing_report', 'RO Billing', 'uploaded_at'),
+          queryAnalyticsTable('open_ro_yearly', 'Open RO', 'uploaded_at'),
+          queryAnalyticsTable('kia_call_center_complaints', 'Complaints', 'uploaded_at'),
+          queryAnalyticsTable('operation_wise_analysis_report', 'Operation Analysis', 'uploaded_at'),
+          queryAnalyticsTable('ew_report', 'Extended Warranty', 'uploaded_at'),
+          queryAnalyticsTable('rsa_report', 'RSA', 'uploaded_at'),
+          queryAnalyticsTable('mcp_report', 'MCP', 'uploaded_at'),
+        ]),
+        // Hyundai Analytics
+        Promise.all([
+          queryAnalyticsTable('hyundai_ro_billing_report', 'RO Billing', 'uploaded_at'),
+          queryAnalyticsTable('hyundai_repair_order_list', 'Open RO', 'uploaded_at'),
+          queryAnalyticsTable('hyundai_call_center_complaints', 'Complaints', 'uploaded_at'),
+          queryAnalyticsTable('hyundai_operation_wise_analysis_report', 'Operation Analysis', 'uploaded_at'),
+          queryAnalyticsTable('hyundai_ew_report', 'Extended Warranty', 'uploaded_at'),
+        ]),
+        // Platinum Analytics
+        Promise.all([
+          queryAnalyticsTable('am_platinum_ro_billing_report', 'RO Billing', 'uploaded_at'),
+          queryAnalyticsTable('am_platinum_repair_order_list', 'Open RO', 'uploaded_at'),
+          queryAnalyticsTable('am_platinum_call_center_complaints', 'Complaints', 'uploaded_at'),
+          queryAnalyticsTable('am_platinum_operation_wise_analysis_report', 'Operation Analysis', 'uploaded_at'),
+          queryAnalyticsTable('am_platinum_ew_report', 'Extended Warranty', 'uploaded_at'),
+        ]),
+        // Kia App DB
+        Promise.all([
+          queryAppTable('kia_stock_management', 'Vehicle Stock Inventory', 'uploaded_at'),
+          queryAppTable('kia_bookings', 'Bookings List', 'updated_at'),
+          queryAppTable('kia_vehicle_allocations', 'Vehicle Journey Allocations', 'created_at'),
+        ]),
       ])
-    ])
 
-    return NextResponse.json({
-      actorCapabilities,
-      kia: [...kiaApp, ...kiaAnalytics],
-      hyundai: hyundaiAnalytics,
-      platinum: platinumAnalytics,
-    })
+      return {
+        kia: [...kiaApp, ...kiaAnalytics],
+        hyundai: hyundaiAnalytics,
+        platinum: platinumAnalytics,
+      }
+    }, FRESHNESS_TTL_SECONDS)
+
+    return NextResponse.json({ actorCapabilities, ...freshness })
   } catch (error) {
     console.error('GET /api/admin/data-freshness failed:', error)
     return NextResponse.json({ error: 'Failed to load data freshness logs.' }, { status: 500 })
