@@ -562,6 +562,9 @@ export type PettyCashExpenseFormData = {
   vendorName?: string | null
   receivedBy?: string | null
   purposeOfExpense?: string | null
+  // Per-expense location: the location the money was actually spent for (may differ from the
+  // originating allocation/request location). Captured on the expense form for spend tracking.
+  location?: string | null
   uploadBillUrls?: string[]
 }
 

@@ -89,6 +89,17 @@ export function getPettyCashLocationOptions(branchId: string | null | undefined)
   return ['Main Location']
 }
 
+// Every petty-cash location across all branches (KIA incl. Banihal, Hyundai, Platinum) — used to
+// seed the cross-branch Location filters so every location is always selectable, even before any
+// expense/allocation exists for it (e.g. a freshly added location like Banihal with no data yet).
+export function getAllPettyCashLocationOptions() {
+  return Array.from(new Set([
+    ...getPettyCashLocationOptions('kia'),
+    ...getPettyCashLocationOptions('hyundai'),
+    ...getPettyCashLocationOptions('platinum'),
+  ]))
+}
+
 export function getPettyCashStatusLabel(status: string | null | undefined) {
   if (!status) return 'Unknown'
   return status

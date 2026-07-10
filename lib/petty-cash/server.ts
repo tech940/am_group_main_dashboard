@@ -56,6 +56,8 @@ export const createPettyCashExpenseSchema = z.object({
   vendorName: optionalText,
   receivedBy: optionalText,
   purpose: z.string().trim().min(2).max(2000),
+  // Location the money was spent for (tracked per expense; stored inside expenseForm.location).
+  location: optionalText,
   expenseForm: z.record(z.string(), z.unknown()).default({}),
   billFiles: z
     .array(z.string().trim().min(1, 'Bill file URL cannot be empty.'))
@@ -436,13 +438,13 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
   const whereExpression = and(...filters)
   const offset = (query.page - 1) * query.pageSize
   const [{ total }] = await db.select({ total: count() }).from(pettyCashExpenses).where(whereExpression)
-  // Location + department live on the originating request (requestForm.location / department);
-  // surface them on each expense (via allocation -> request) so back-office roles can see and
-  // filter by both — department is as prominent as location.
+  // Department lives on the originating request; location is now captured per-expense
+  // (expenseForm.location) with a fallback to the request's location for legacy expenses, so
+  // back-office roles can see and filter by the location the money was actually spent for.
   const rows = await db
     .select({
       expense: pettyCashExpenses,
-      location: sql<string | null>`${pettyCashRequests.requestForm} ->> 'location'`,
+      location: sql<string | null>`COALESCE(${pettyCashExpenses.expenseForm} ->> 'location', ${pettyCashRequests.requestForm} ->> 'location')`,
       department: pettyCashRequests.department,
     })
     .from(pettyCashExpenses)
@@ -726,7 +728,8 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
       vendorName: input.vendorName || null,
       receivedBy: input.receivedBy || null,
       purpose: input.purpose,
-      expenseForm: input.expenseForm,
+      // Persist the per-expense location in the form JSON (mirrors requestForm.location).
+      expenseForm: { ...input.expenseForm, location: input.location || null },
       billFiles: input.billFiles,
       createdBy: appUser.id,
       submittedAt: now,
@@ -1186,7 +1189,11 @@ export async function getPettyCashRequestDetails(appUser: AppUser, requestId: st
   const userMap = await getUserMap(history.map((item) => item.performedBy).concat([request.createdBy]))
 
   return {
-    request: serializeRequest(request),
+    request: {
+      ...serializeRequest(request),
+      location: request.requestForm?.location ?? null,
+      typeOfPayment: request.requestForm?.typeOfPayment ?? null,
+    },
     allocation: allocation ? serializeAllocation(allocation) : null,
     history: history.map((item) => ({
       ...serializeHistory(item),
@@ -1207,7 +1214,9 @@ export async function getPettyCashExpenseDetails(appUser: AppUser, expenseId: st
   const userMap = await getUserMap(history.map((item) => item.performedBy).concat([expense.createdBy]))
 
   return {
-    expense: serializeExpense(expense),
+    // Surface the per-expense location (stored in expenseForm) so the detail drawer shows where
+    // the money was spent; the list row's fallback covers legacy expenses without it.
+    expense: { ...serializeExpense(expense), location: expense.expenseForm?.location ?? null },
     attachments,
     history: history.map((item) => ({
       ...serializeHistory(item),

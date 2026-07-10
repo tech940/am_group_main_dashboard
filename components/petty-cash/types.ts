@@ -135,6 +135,7 @@ export type ExpenseFormState = {
   amount: string
   vendorName: string
   receivedBy: string
+  location: string
   purpose: string
 }
 
@@ -153,6 +154,7 @@ export const EMPTY_EXPENSE_FORM: ExpenseFormState = {
   amount: '',
   vendorName: '',
   receivedBy: '',
+  location: '',
   purpose: '',
 }
 

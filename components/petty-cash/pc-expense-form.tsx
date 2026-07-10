@@ -1,6 +1,6 @@
 'use client'
 
-import { FileText, Loader2, ReceiptText, UploadCloud, X } from 'lucide-react'
+import { FileText, Loader2, MapPin, ReceiptText, UploadCloud, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -41,6 +41,7 @@ export function ExpenseFormDialog({
   onSubmit,
   submitting,
   categories,
+  locationOptions,
   allocationNumber,
   remainingAmount,
   expenseFiles,
@@ -54,6 +55,7 @@ export function ExpenseFormDialog({
   onSubmit: () => void
   submitting: boolean
   categories: PettyCashCategory[]
+  locationOptions: string[]
   allocationNumber: string
   remainingAmount: number
   expenseFiles: string[]
@@ -104,6 +106,18 @@ export function ExpenseFormDialog({
                   <SelectTrigger className="h-11 rounded-xl border-slate-200 font-bold"><SelectValue placeholder={categories.length ? 'Select category' : 'No categories'} /></SelectTrigger>
                   <SelectContent>
                     {categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Location" required>
+                <Select value={form.location} onValueChange={(value) => onChange('location', value)}>
+                  <SelectTrigger className="h-11 rounded-xl border-slate-200 font-bold">
+                    {/* A <div> (not <span>) so the trigger's [&>span]:line-clamp-1 rule can't
+                        override this flex row and stack the icon above the text. */}
+                    <div className="flex min-w-0 items-center gap-2"><MapPin className="h-4 w-4 shrink-0 text-slate-400" /><SelectValue placeholder="Where was it spent?" /></div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {locationOptions.map((location) => <SelectItem key={location} value={location}>{location}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>

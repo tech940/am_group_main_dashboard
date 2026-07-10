@@ -9,6 +9,7 @@ import {
   FileText,
   ImageOff,
   Loader2,
+  MapPin,
   Receipt,
   User2,
   Wallet,
@@ -187,8 +188,10 @@ export function PettyCashDetailDialog({
               <div className="grid grid-cols-2 gap-3">
                 <DetailField icon={User2} label="Requested By" value={field(fetched, row, 'requestedByName', 'requested_by_name') || '—'} />
                 <DetailField icon={Building2} label="Department" value={field(fetched, row, 'department') || '—'} />
+                <DetailField icon={MapPin} label="Location" value={field(fetched, row, 'location') || '—'} />
                 <DetailField icon={CalendarClock} label="Submitted" value={formatDateTime(field(fetched, row, 'submittedAt', 'submitted_at', 'createdAt', 'created_at')) || '—'} />
                 <DetailField icon={Wallet} label="Allocated" value={allocation ? formatCurrency(str(allocation.allocatedAmount)) : '—'} />
+                <DetailField icon={Wallet} label="Payment Type" value={field(fetched, row, 'typeOfPayment') || '—'} />
               </div>
               <div className="rounded-2xl bg-slate-50 p-4">
                 <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Purpose</p>

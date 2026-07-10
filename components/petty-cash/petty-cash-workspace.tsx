@@ -22,7 +22,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
 import { getBranchLabel } from '@/lib/branches'
-import { getPettyCashLocationOptions, PETTY_CASH_DEPARTMENT_OPTIONS } from '@/lib/petty-cash/constants'
+import { getAllPettyCashLocationOptions, getPettyCashLocationOptions, PETTY_CASH_DEPARTMENT_OPTIONS } from '@/lib/petty-cash/constants'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { RequestFormDialog } from './pc-request-form'
@@ -262,8 +262,10 @@ export function PettyCashWorkspace() {
   const isAllBranchViewer = ['ea', 'md', 'eba', 'developer'].includes(userRole) || currentBranchId === 'all'
   // Back-office reviewers can filter the cross-branch expense feed location-wise.
   const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'eba', 'developer'].includes(userRole)
+  // Seed with the full cross-branch location list (incl. Banihal) so every location is always
+  // selectable in the filter, then add any ad-hoc locations that appear in the data.
   const expenseLocationOptions = useMemo(
-    () => Array.from(new Set(allExpenses.map((expense) => (expense.location || '').trim()).filter(Boolean))).sort(),
+    () => Array.from(new Set([...getAllPettyCashLocationOptions(), ...allExpenses.map((expense) => (expense.location || '').trim()).filter(Boolean)])).sort(),
     [allExpenses],
   )
   const expenseDepartmentOptions = useMemo(
@@ -277,7 +279,7 @@ export function PettyCashWorkspace() {
       && (expenseDepartmentFilter === 'all' || (expense.department || '').trim() === expenseDepartmentFilter))
   }, [allExpenses, canFilterExpensesByLocation, expenseLocationFilter, expenseDepartmentFilter])
   const allocationLocationOptions = useMemo(
-    () => Array.from(new Set(allocations.map((allocation) => (allocation.location || '').trim()).filter(Boolean))).sort(),
+    () => Array.from(new Set([...getAllPettyCashLocationOptions(), ...allocations.map((allocation) => (allocation.location || '').trim()).filter(Boolean)])).sort(),
     [allocations],
   )
   const allocationDepartmentOptions = useMemo(
@@ -364,7 +366,9 @@ export function PettyCashWorkspace() {
   const submitExpense = useCallback(async () => {
     const amount = Number(expenseForm.amount)
     const purpose = expenseForm.purpose.trim()
+    const location = expenseForm.location.trim()
     if (!currentAllocation) { setError('No active allocation to post against.'); return }
+    if (!location || !requestLocationOptions.includes(location)) { setError('Please select the location where the money was spent.'); return }
     if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a valid amount greater than 0.'); return }
     if (amount > remainingAmount) { setError('Amount exceeds the remaining balance.'); return }
     if (purpose.length < 5) { setError('Purpose must be at least 5 characters.'); return }
@@ -384,11 +388,13 @@ export function PettyCashWorkspace() {
           vendorName: expenseForm.vendorName || null,
           receivedBy: expenseForm.receivedBy || null,
           purpose,
+          location,
           expenseForm: {
             date: expenseForm.expenseDate,
             vendorName: expenseForm.vendorName || null,
             receivedBy: expenseForm.receivedBy || null,
             purposeOfExpense: purpose,
+            location,
             uploadBillUrls: expenseFiles,
           },
           billFiles: expenseFiles,
@@ -408,7 +414,7 @@ export function PettyCashWorkspace() {
     } finally {
       setSubmitting(false)
     }
-  }, [expenseForm, currentAllocation, remainingAmount, expenseFiles, refreshAfterMutation])
+  }, [expenseForm, currentAllocation, remainingAmount, expenseFiles, requestLocationOptions, refreshAfterMutation])
 
   const applyRequestWorkflow = useCallback(async (id: string, stage: ApprovalStage, action: 'approve' | 'reject' | 'hold', remarks = '') => {
     setSubmitting(true)
@@ -760,6 +766,7 @@ export function PettyCashWorkspace() {
         onSubmit={submitExpense}
         submitting={submitting}
         categories={categoryOptions}
+        locationOptions={requestLocationOptions}
         allocationNumber={currentAllocation?.allocationNumber || currentAllocation?.allocation_number || ''}
         remainingAmount={remainingAmount}
         expenseFiles={expenseFiles}
