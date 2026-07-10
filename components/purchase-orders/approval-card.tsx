@@ -133,9 +133,10 @@ export function ApprovalCard({ order, userRole, onApprove, onReject }: ApprovalC
               />
               <div className="grid grid-cols-2 gap-2">
                 <Button
+                  variant="ghost"
                   onClick={() => void handleApprove()}
                   disabled={isLoading}
-                  className="rounded-2xl bg-white text-[#012348] hover:bg-[#edf4fb]"
+                  className="rounded-2xl bg-white border border-slate-200 text-[#012348] hover:bg-[#edf4fb] shadow-sm"
                 >
                   {isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -147,9 +148,10 @@ export function ApprovalCard({ order, userRole, onApprove, onReject }: ApprovalC
                   )}
                 </Button>
                 <Button
+                  variant="destructive"
                   onClick={() => void handleReject()}
                   disabled={isLoading}
-                  className="rounded-2xl bg-rose-500 text-white hover:bg-rose-600"
+                  className="rounded-2xl shadow-sm"
                 >
                   <XCircle className="mr-2 h-4 w-4" />
                   Reject

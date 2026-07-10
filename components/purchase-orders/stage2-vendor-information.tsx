@@ -251,7 +251,7 @@ export function Stage2VendorInformation({ orderId, initialData, onSubmit, isLoad
             )}
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               disabled={isLoading}
               onClick={() => void submitVendorInformation('push_to_grn_images')}
               className="mr-3 rounded-2xl border border-[#b9ccde] bg-[#edf4fb] px-8 py-6 text-lg font-semibold text-[#023468] hover:bg-[#dbeafe]"

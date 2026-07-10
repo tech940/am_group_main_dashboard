@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { CheckCircle, XCircle, PauseCircle, Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface Stage3EAFormData {
   action: 'approve' | 'deny' | 'hold'
@@ -109,6 +110,7 @@ export function Stage3EAApproval({ orderDetails, onSubmit, isLoading }: Stage3EA
           </Button>
           <Button
             type="button"
+            variant="ghost"
             onClick={() => {
               setFormData(prev => ({ ...prev, action: 'hold' }))
             }}
@@ -120,6 +122,7 @@ export function Stage3EAApproval({ orderDetails, onSubmit, isLoading }: Stage3EA
           </Button>
           <Button
             type="button"
+            variant="ghost"
             onClick={() => {
               setFormData(prev => ({ ...prev, action: 'deny' }))
             }}
@@ -148,8 +151,13 @@ export function Stage3EAApproval({ orderDetails, onSubmit, isLoading }: Stage3EA
               type="button"
               onClick={() => handleSubmit(formData.action)}
               disabled={isLoading}
-              variant={formData.action === 'deny' ? 'destructive' : 'default'}
-              className="w-full py-3 text-base font-semibold"
+              variant="ghost"
+              className={cn(
+                "w-full py-3 text-base font-semibold text-white",
+                formData.action === 'deny' 
+                  ? "bg-rose-500 hover:bg-rose-600" 
+                  : "bg-amber-500 hover:bg-amber-600"
+              )}
             >
               {isLoading ? (
                 <>

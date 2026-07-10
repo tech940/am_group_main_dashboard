@@ -351,6 +351,7 @@ export function MDTableView({
             <Button
               onClick={() => void handleBulkAction('hold')}
               disabled={bulkActionLoading !== null || loading}
+              variant="ghost"
               className="gap-2 rounded-xl bg-amber-500 text-xs font-black text-white shadow-lg shadow-amber-100 hover:bg-amber-600"
             >
               {bulkActionLoading === 'hold' ? (
@@ -512,10 +513,10 @@ export function MDTableView({
                             </Button>
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant="ghost"
                               onClick={() => openRemarksDialog('hold', order.id)}
                               disabled={isLoading || bulkActionLoading !== null || loading}
-                              className="h-8 w-8 rounded-xl border-amber-400 bg-amber-50 p-0 text-amber-600 shadow-lg shadow-amber-100 hover:bg-amber-100"
+                              className="h-8 w-8 rounded-xl border border-amber-400 bg-amber-50 p-0 text-amber-600 shadow-lg shadow-amber-100 hover:bg-amber-100"
                               title={`Hold ${transactionLabel}`}
                             >
                               <Pause className="h-3 w-3" />

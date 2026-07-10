@@ -272,6 +272,7 @@ export function MDGridView({
       <Button
         onClick={() => void handleBulkAction('hold')}
         disabled={isLoading || bulkActionLoading !== null || !onHold}
+        variant="ghost"
         className="rounded-2xl bg-amber-500 text-white hover:bg-amber-600"
       >
         {bulkActionLoading === 'hold' ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PauseCircle className="mr-2 h-5 w-5" />}
@@ -280,6 +281,7 @@ export function MDGridView({
       <Button
         onClick={() => void handleBulkAction('deny')}
         disabled={isLoading || bulkActionLoading !== null}
+        variant="ghost"
         className="rounded-2xl bg-rose-500 text-white hover:bg-rose-600"
       >
         {bulkActionLoading === 'deny' ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <XOctagon className="mr-2 h-5 w-5" />}
@@ -422,6 +424,7 @@ export function MDGridView({
                         <Button
                           onClick={() => void handleHold(order.id)}
                           disabled={isProcessing || !onHold}
+                          variant="ghost"
                           className="rounded-2xl bg-amber-500 text-white hover:bg-amber-600"
                         >
                           <PauseCircle className="mr-1 h-4 w-4" />
@@ -430,6 +433,7 @@ export function MDGridView({
                         <Button
                           onClick={() => void handleDeny(order.id)}
                           disabled={isProcessing}
+                          variant="ghost"
                           className="rounded-2xl bg-rose-500 text-white hover:bg-rose-600"
                         >
                           <XCircle className="mr-1 h-4 w-4" />
