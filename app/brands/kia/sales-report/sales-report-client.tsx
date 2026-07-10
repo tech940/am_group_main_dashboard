@@ -777,7 +777,7 @@ function ModelStoryCard({ item }: { item: SalesReportSummaryPayload['retail']['m
   )
 }
 
-export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParams: SearchParamsInput }) {
+export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { initialSearchParams: SearchParamsInput; currentUserRole?: string }) {
   const router = useRouter()
   const pathname = usePathname()
 

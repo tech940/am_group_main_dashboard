@@ -1238,12 +1238,21 @@ export async function getPettyCashLedger(appUser: AppUser, allocationId?: string
       ? eq(pettyCashLedgerEntries.branchId, appUser.brand as string)
       : undefined
 
+  // Location is derived like the Expenses/Allocations feeds: prefer the expense's own location
+  // (for expense entries), else the originating request's location (via allocation → request).
+  // This lets the Ledger tab filter by location without a dedicated column.
   const rows = await db
-    .select()
+    .select({
+      ledger: pettyCashLedgerEntries,
+      location: sql<string | null>`COALESCE(${pettyCashExpenses.expenseForm} ->> 'location', ${pettyCashRequests.requestForm} ->> 'location')`,
+    })
     .from(pettyCashLedgerEntries)
+    .leftJoin(pettyCashAllocations, eq(pettyCashAllocations.id, pettyCashLedgerEntries.allocationId))
+    .leftJoin(pettyCashRequests, eq(pettyCashRequests.id, pettyCashAllocations.requestId))
+    .leftJoin(pettyCashExpenses, eq(pettyCashExpenses.id, pettyCashLedgerEntries.expenseId))
     .where(ledgerFilter)
     .orderBy(desc(pettyCashLedgerEntries.createdAt))
     .limit(100)
 
-  return rows.map((row) => serializeLedger(row))
+  return rows.map((row) => ({ ...serializeLedger(row.ledger as Record<string, unknown>), location: row.location || null }))
 }

@@ -252,7 +252,7 @@ const EMPTY_FORM: FormState = {
   exShowroom: '0',
   tcsValue: '0',
   registrationCharges: '0',
-  insuranceValue: '3000',
+  insuranceValue: '0',
   fastagValue: '0',
   accessoriesKit: '0',
   extWarranty: '0',
@@ -863,6 +863,7 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
     if (form.trimDescription.trim() && !pricing.trimIsValid) next.trimDescription = 'Select a valid trim'
     if (form.bankName.trim() && !pricing.bankIsValid) next.bankName = 'Select a valid bank'
     if (form.bankBranch.trim() && !pricing.branchIsValid) next.bankBranch = 'Select a valid branch for this bank'
+    if (Number(form.insuranceValue || 0) < 3000) next.insuranceValue = 'Value must be greater than 3000'
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -1038,7 +1039,7 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
               ['accessoriesKit', 'Accessories'],
               ['extWarranty', 'Extended Warranty'],
             ].map(([key, label]) => (
-              <Field key={key} label={key === 'insuranceValue' ? `${label} (editable)` : label}>
+              <Field key={key} label={key === 'insuranceValue' ? `${label} (editable)` : label} error={errors[key]}>
                 {/* Auto-fetched from the price sheet by model + variant and locked. Editable only
                     for CSD / Bharat Series, as a fallback when the DB has no matching price row
                     (so the form is never a dead-end), or for Insurance — which is quote-dependent
@@ -2041,6 +2042,7 @@ function GMEditForm({
     ;(['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'bankName', 'vehicleStatus'] as (keyof FormState)[]).forEach((key) => {
       if (!String(form[key] || '').trim()) next[key] = 'Required'
     })
+    if (Number(form.insuranceValue || 0) < 3000) next.insuranceValue = 'Value must be greater than 3000'
     setErrors(next)
     return Object.keys(next).length === 0
   }

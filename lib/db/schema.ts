@@ -1500,6 +1500,11 @@ export const kiaVehicleAllocations = pgTable('kia_vehicle_allocations', {
   releasedBy: uuid('released_by').references(() => users.id),
   releasedAt: timestamp('released_at', { withTimezone: true }),
   releaseReason: text('release_reason'),
+  // Stock-presence tracking: the vehicle is retained here even after it leaves the DMS feed.
+  // stockStatus 'sold' + stockMissingAt are set when the VIN is no longer in kia_stock_management.
+  stockLastSeenAt: timestamp('stock_last_seen_at', { withTimezone: true }),
+  stockMissingAt: timestamp('stock_missing_at', { withTimezone: true }),
+  stockStatus: text('stock_status'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })

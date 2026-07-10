@@ -178,6 +178,10 @@ type VehicleAllocation = {
   status?: string | null
   allocatedAt?: string | null
   expiresAt?: string | null
+  // Set when the allotted VIN disappears from the DMS stock feed (likely sold).
+  stockStatus?: string | null
+  stockMissingAt?: string | null
+  stockLastSeenAt?: string | null
 }
 
 type LinkedRecord = {
@@ -264,6 +268,20 @@ type CreateBookingForm = {
   waitingPeriod: string
   dealerCode: string
   notes: string
+  // Customer ID documents (uploaded on the Customer stage). Numbers are read by AI from the
+  // PAN/Aadhaar card image and editable by the user. All persist into kia_bookings.metadata.
+  panCardUrl: string
+  panCardName: string
+  panNumber: string
+  aadhaarCardUrl: string
+  aadhaarCardName: string
+  aadhaarNumber: string
+  employeeIdUrl: string
+  employeeIdName: string
+  // Exchange (trade-in): 'Yes' | 'No'. When 'Yes', the old-vehicle name + value are required.
+  exchange: string
+  exchangeVehicleName: string
+  exchangeValue: string
 }
 
 const DEFAULT_PAGE_SIZE = 10
@@ -1078,6 +1096,17 @@ function initialCreateForm(): CreateBookingForm {
     waitingPeriod: '',
     dealerCode: 'JK402',
     notes: '',
+    panCardUrl: '',
+    panCardName: '',
+    panNumber: '',
+    aadhaarCardUrl: '',
+    aadhaarCardName: '',
+    aadhaarNumber: '',
+    employeeIdUrl: '',
+    employeeIdName: '',
+    exchange: 'No',
+    exchangeVehicleName: '',
+    exchangeValue: '',
   }
 }
 
@@ -1437,6 +1466,10 @@ export function KiaBookingsClient({
       ['countryCode', 'Country Code'],
       ['customerPhone', 'Mobile number'],
       ['customerEmailId', 'Customer Email Id'],
+      ['panCardUrl', 'PAN Card upload'],
+      ['panNumber', 'PAN Number'],
+      ['aadhaarCardUrl', 'Aadhaar Card upload'],
+      ['aadhaarNumber', 'Aadhaar Number'],
       ['model', 'Model'],
       ['year', 'YEAR'],
       ['variant', 'Variant'],
@@ -1486,9 +1519,32 @@ export function KiaBookingsClient({
         otherDealerDetails: 'Delivery',
         dealerCode: 'Customer',
         notes: 'Delivery',
+        panCardUrl: 'Customer',
+        panCardName: 'Customer',
+        panNumber: 'Customer',
+        aadhaarCardUrl: 'Customer',
+        aadhaarCardName: 'Customer',
+        aadhaarNumber: 'Customer',
+        employeeIdUrl: 'Customer',
+        employeeIdName: 'Customer',
+        exchange: 'Customer',
+        exchangeVehicleName: 'Customer',
+        exchangeValue: 'Customer',
       }
       setCreateTab(tabByField[missing[0]] || 'Customer')
       return
+    }
+    // Format checks for the AI-read / user-entered ID numbers (both required).
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(createForm.panNumber.trim().toUpperCase())) {
+      setFormError('Enter a valid PAN (e.g. ABCDE1234F).'); setCreateTab('Customer'); return
+    }
+    if (createForm.aadhaarNumber.replace(/\D/g, '').length !== 12) {
+      setFormError('Enter a valid 12-digit Aadhaar number.'); setCreateTab('Customer'); return
+    }
+    // Exchange (trade-in): when opted in, the old-vehicle name + value are required.
+    if (createForm.exchange === 'Yes') {
+      if (!createForm.exchangeVehicleName.trim()) { setFormError('Enter the exchange vehicle name.'); setCreateTab('Customer'); return }
+      if (!(Number(createForm.exchangeValue) > 0)) { setFormError('Enter a valid exchange value.'); setCreateTab('Customer'); return }
     }
     // Consultant is always the logged-in user — never chosen in the form — so ownership is accurate.
     createMutation.mutate({ ...createForm, consultantName: currentUserName || createForm.consultantName })
@@ -2187,7 +2243,18 @@ function getBookingStepError(tab: (typeof CREATE_TABS)[number], form: CreateBook
     if (digits.length !== 10) return 'Mobile Number must be exactly 10 digits.'
     if (!String(form.customerEmailId || '').trim()) return 'Customer Email is required.'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmailId.trim())) return 'Enter a valid email address.'
-    return req('dealerCode', 'Dealer')
+    const dealerErr = req('dealerCode', 'Dealer')
+    if (dealerErr) return dealerErr
+    // PAN + Aadhaar are mandatory (upload + a valid number). Employee ID is optional.
+    if (!String(form.panCardUrl || '').trim()) return 'Please upload the PAN card.'
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(String(form.panNumber || '').trim().toUpperCase())) return 'Enter a valid PAN number (e.g. ABCDE1234F).'
+    if (!String(form.aadhaarCardUrl || '').trim()) return 'Please upload the Aadhaar card.'
+    if (String(form.aadhaarNumber || '').replace(/\D/g, '').length !== 12) return 'Enter a valid 12-digit Aadhaar number.'
+    if (form.exchange === 'Yes') {
+      if (!String(form.exchangeVehicleName || '').trim()) return 'Enter the exchange vehicle name.'
+      if (!(Number(form.exchangeValue) > 0)) return 'Enter a valid exchange value.'
+    }
+    return null
   }
   if (tab === 'Vehicle') return req('model', 'Model') || req('variant', 'Variant') || req('color', 'Colour')
   if (tab === 'Sales Team') return req('managerName', 'Manager') || req('tlName', 'Team Leader') || req('consultantName', 'Consultant') || req('leadSource', 'Lead Source')
@@ -2206,6 +2273,25 @@ function BookingReviewRow({ label, value }: { label: string; value: string }) {
       <span className="text-xs font-semibold text-slate-500">{label}</span>
       <span className="max-w-[60%] truncate text-right text-xs font-bold text-slate-800">{value}</span>
     </div>
+  )
+}
+
+function IdDocUploadButton({ label, uploading, fileName, onSelect }: {
+  label: string
+  uploading: boolean
+  fileName?: string
+  onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void
+}) {
+  return (
+    <label className={cn(
+      'flex h-11 cursor-pointer items-center gap-2 rounded-2xl border border-dashed px-3 text-xs font-bold transition-colors',
+      fileName ? 'border-emerald-300 bg-emerald-50/50 text-emerald-700' : 'border-slate-300 bg-white text-slate-600 hover:border-slate-400',
+      uploading && 'pointer-events-none opacity-70',
+    )}>
+      {uploading ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" /> : <Upload className="h-4 w-4 shrink-0 text-slate-400" />}
+      <span className="min-w-0 flex-1 truncate">{uploading ? 'Reading…' : fileName || label}</span>
+      <input type="file" accept="image/*,application/pdf" className="hidden" onChange={onSelect} disabled={uploading} />
+    </label>
   )
 }
 
@@ -2250,6 +2336,7 @@ function CreateBookingDialog({
 
   const [costSheetVerifying, setCostSheetVerifying] = useState(false)
   const [costSheetFile, setCostSheetFile] = useState<File | null>(null)
+  const [idDocUploading, setIdDocUploading] = useState<'pan' | 'aadhaar' | 'employee_id' | null>(null)
   const [stockChecking, setStockChecking] = useState(false)
   const [stockCheckResult, setStockCheckResult] = useState<{ available: boolean; count: number } | null>(null)
   const [hasDraft, setHasDraft] = useState(false)
@@ -2367,6 +2454,44 @@ function CreateBookingDialog({
       })
     } finally {
       setCostSheetVerifying(false)
+    }
+  }
+
+  // Upload a customer ID document, and for PAN/Aadhaar images let the AI pre-fill the number
+  // (editable). The number field stays user-correctable; PDFs are stored but not OCR'd.
+  const handleIdDocUpload = async (docType: 'pan' | 'aadhaar' | 'employee_id', e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIdDocUploading(docType)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('docType', docType)
+      const res = await fetch('/api/brands/kia/bookings/extract-id-document', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data?.error || 'Upload failed')
+      const urlKey: keyof CreateBookingForm = docType === 'pan' ? 'panCardUrl' : docType === 'aadhaar' ? 'aadhaarCardUrl' : 'employeeIdUrl'
+      const nameKey: keyof CreateBookingForm = docType === 'pan' ? 'panCardName' : docType === 'aadhaar' ? 'aadhaarCardName' : 'employeeIdName'
+      onChange(urlKey, data.url || file.name)
+      onChange(nameKey, file.name)
+      if (docType === 'pan' && data.number) onChange('panNumber', data.number)
+      if (docType === 'aadhaar' && data.number) onChange('aadhaarNumber', data.number)
+      toast({
+        title: 'Document uploaded',
+        description: data.pdfManual
+          ? 'PDF stored — please type the number manually.'
+          : data.number
+            ? `Read the ${docType === 'pan' ? 'PAN' : 'Aadhaar'} number automatically — please verify it.`
+            : docType === 'employee_id'
+              ? `"${file.name}" attached.`
+              : 'Uploaded — could not read the number, please type it manually.',
+        variant: 'success',
+      })
+    } catch (err) {
+      e.target.value = ''
+      toast({ title: 'Upload failed', description: err instanceof Error ? err.message : 'Please try again.', variant: 'error' })
+    } finally {
+      setIdDocUploading(null)
     }
   }
 
@@ -2516,6 +2641,49 @@ function CreateBookingDialog({
                       </SelectContent>
                     </Select>
                   </Field>
+
+                  {/* Customer identity documents — PAN & Aadhaar required (AI reads the number). */}
+                  <div className="md:col-span-2 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                    <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Customer Documents</p>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <Field label="PAN Card" required>
+                        <IdDocUploadButton label="Upload PAN (image / PDF)" uploading={idDocUploading === 'pan'} fileName={form.panCardName} onSelect={(e) => handleIdDocUpload('pan', e)} />
+                      </Field>
+                      <Field label="PAN Number" required>
+                        <Input value={form.panNumber} onChange={(e) => onChange('panNumber', e.target.value.toUpperCase().slice(0, 10))} className={INPUT_STYLE} placeholder="ABCDE1234F" maxLength={10} />
+                      </Field>
+                      <Field label="Aadhaar Card" required>
+                        <IdDocUploadButton label="Upload Aadhaar (image / PDF)" uploading={idDocUploading === 'aadhaar'} fileName={form.aadhaarCardName} onSelect={(e) => handleIdDocUpload('aadhaar', e)} />
+                      </Field>
+                      <Field label="Aadhaar Number" required>
+                        <Input value={form.aadhaarNumber} onChange={(e) => onChange('aadhaarNumber', e.target.value.replace(/\D/g, '').slice(0, 12))} className={INPUT_STYLE} placeholder="12-digit number" inputMode="numeric" maxLength={12} />
+                      </Field>
+                      <Field label="Employee ID Card (optional)">
+                        <IdDocUploadButton label="Upload Employee ID" uploading={idDocUploading === 'employee_id'} fileName={form.employeeIdName} onSelect={(e) => handleIdDocUpload('employee_id', e)} />
+                      </Field>
+                    </div>
+                    <p className="text-[11px] font-semibold text-slate-400">PAN &amp; Aadhaar numbers are read automatically from the uploaded card — please verify them. Accepts JPG, PNG or PDF (numbers on PDFs must be typed in).</p>
+                  </div>
+
+                  {/* Exchange / trade-in */}
+                  <div className="md:col-span-2 grid gap-4 md:grid-cols-2 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                    <Field label="Exchange / Trade-in" required>
+                      <select value={form.exchange || 'No'} onChange={(e) => onChange('exchange', e.target.value)} className={cn(INPUT_STYLE, 'cursor-pointer appearance-none')}>
+                        <option value="No">No</option>
+                        <option value="Yes">Yes</option>
+                      </select>
+                    </Field>
+                    {form.exchange === 'Yes' && (
+                      <>
+                        <Field label="Exchange Vehicle Name" required>
+                          <Input value={form.exchangeVehicleName} onChange={(e) => onChange('exchangeVehicleName', e.target.value)} className={INPUT_STYLE} placeholder="e.g. Maruti Swift 2019" />
+                        </Field>
+                        <Field label="Exchange Value (₹)" required>
+                          <Input type="number" min={0} value={form.exchangeValue} onChange={(e) => onChange('exchangeValue', e.target.value)} className={INPUT_STYLE} placeholder="Model / exchange value" />
+                        </Field>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -3080,6 +3248,16 @@ function BookingDrawer({
             ) : null}
           </div>
         </section>
+        {allocation?.stockStatus === 'sold' && (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3">
+            <p className="flex items-center gap-2 text-sm font-black text-amber-800">
+              <XCircle className="h-4 w-4" /> Allotted vehicle no longer in DMS stock
+            </p>
+            <p className="mt-1 text-xs font-semibold text-amber-700">
+              VIN {allocation.vinNumber} has disappeared from the DMS stock list{allocation.stockMissingAt ? ` (detected ${new Date(allocation.stockMissingAt).toLocaleDateString('en-IN')})` : ''} — it was likely sold. Please verify and update its status.
+            </p>
+          </div>
+        )}
         {actionMessage && <div className="rounded-2xl border px-3 py-2.5 text-sm font-semibold" style={toneSoftStyle('success')}>{actionMessage}</div>}
         {(() => {
           const meta = (booking.metadata || {}) as Record<string, unknown>
@@ -3093,6 +3271,12 @@ function BookingDrawer({
                 ['Phone', maskKiaPii(booking.customerPhone, canViewPii)],
                 ['Email', maskKiaPii(booking.customerEmail || String(meta.customerEmailId || ''), canViewPii)],
                 ['Address', booking.customerAddress || '-'],
+                ['PAN', maskKiaPii(String(meta.panNumber || ''), canViewPii)],
+                ['Aadhaar', maskKiaPii(String(meta.aadhaarNumber || ''), canViewPii)],
+                ['Exchange', String(meta.exchange || 'No')],
+                ...(String(meta.exchange || '') === 'Yes'
+                  ? ([['Exchange Vehicle', String(meta.exchangeVehicleName || '-')], ['Exchange Value', String(meta.exchangeValue || '-')]] as Array<[string, string]>)
+                  : []),
               ]} />
               <InfoCard title="Vehicle" icon={Car} items={[
                 ['DealerCode', booking.dealerCode],
@@ -3148,6 +3332,32 @@ function BookingDrawer({
               />
               <ActionCard title="Accounts · Payment & Invoice" icon={ShieldCheck} value={accountsDone ? 'Invoice recorded' : allocation ? allocation.vinNumber : 'No active VIN'} status={accountsDone ? 'Payment released · Verified' : 'Pending Accounts'} action={accountsDone ? 'Completed' : 'Confirm Payment & Invoice'} disabled={actionLoading || !canActAsAccountsVerify || !allocation || accountsDone || !(booking.status === 'vehicle_allocated' || booking.status === 'transfer_requested' || booking.status === 'payment_confirmed')} loading={actionLoading} onClick={() => onAction('accounts')} />
             </div>
+          )
+        })()}
+
+        {/* Uploaded ID documents — links gated to PII-authorized viewers (MD / Super Admin). */}
+        {(() => {
+          const meta = (booking.metadata || {}) as Record<string, unknown>
+          const docs = [
+            { label: 'PAN Card', url: String(meta.panCardUrl || '') },
+            { label: 'Aadhaar Card', url: String(meta.aadhaarCardUrl || '') },
+            { label: 'Employee ID', url: String(meta.employeeIdUrl || '') },
+          ].filter((d) => d.url)
+          if (!docs.length || !canViewPii) return null
+          return (
+            <section className="kia-surface p-4 sm:p-5">
+              <div className="flex items-center gap-3 border-b pb-3" style={{ borderColor: 'var(--kia-hairline)' }}>
+                <IconTile icon={FileText} tone="accent" size="sm" />
+                <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)]">Customer Documents</h3>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {docs.map((d) => (
+                  <a key={d.label} href={d.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold text-[var(--kia-text-soft)] transition-colors hover:bg-slate-50" style={{ borderColor: 'var(--kia-hairline)' }}>
+                    <FileText className="h-4 w-4" /> {d.label}
+                  </a>
+                ))}
+              </div>
+            </section>
           )
         })()}
 
@@ -3304,6 +3514,7 @@ function BookingDrawer({
 
 function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDetailPayload['booking']; open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient()
+  const canViewPii = useCanViewPii()
 
   const buildForm = () => {
     const meta = (booking.metadata || {}) as Record<string, unknown>
@@ -3335,13 +3546,18 @@ function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDe
   const mutation = useMutation({
     mutationFn: async () => {
       const bankTrimmed = form.bankName.trim()
+      const payload: Record<string, any> = {
+        ...form,
+        financeRequired: Boolean(bankTrimmed) && bankTrimmed.toUpperCase() !== 'CASH',
+      }
+      if (!canViewPii) {
+        delete payload.customerPhone
+        delete payload.customerEmail
+      }
       const response = await fetch(`/api/brands/kia/bookings/${booking.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          financeRequired: Boolean(bankTrimmed) && bankTrimmed.toUpperCase() !== 'CASH',
-        }),
+        body: JSON.stringify(payload),
       })
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: string } | null
@@ -3364,8 +3580,10 @@ function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDe
 
   const save = () => {
     if (!form.customerName.trim()) { toast({ title: 'Customer name required', variant: 'error' }); return }
-    if (phoneInvalid) { toast({ title: 'Invalid mobile', description: 'Mobile number must be exactly 10 digits.', variant: 'error' }); return }
-    if (emailInvalid) { toast({ title: 'Invalid email', description: 'Enter a valid email address.', variant: 'error' }); return }
+    if (canViewPii) {
+      if (phoneInvalid) { toast({ title: 'Invalid mobile', description: 'Mobile number must be exactly 10 digits.', variant: 'error' }); return }
+      if (emailInvalid) { toast({ title: 'Invalid email', description: 'Enter a valid email address.', variant: 'error' }); return }
+    }
     mutation.mutate()
   }
 
@@ -3383,11 +3601,11 @@ function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDe
             <Field label="Customer Name" required><Input value={form.customerName} onChange={(event) => set('customerName', event.target.value)} className={INPUT_STYLE} /></Field>
           </div>
           <Field label="Mobile Number" required>
-            <Input value={form.customerPhone} onChange={(event) => set('customerPhone', event.target.value.replace(/\D/g, '').slice(0, 10))} className={INPUT_STYLE} inputMode="numeric" maxLength={10} />
-            {form.customerPhone.length > 0 && phoneInvalid && <p className="mt-1 text-[11px] font-bold text-rose-600">Mobile number must be exactly 10 digits.</p>}
+            <Input value={canViewPii ? form.customerPhone : '••••••'} onChange={(event) => set('customerPhone', event.target.value.replace(/\D/g, '').slice(0, 10))} className={INPUT_STYLE} inputMode="numeric" maxLength={10} disabled={!canViewPii} readOnly={!canViewPii} />
+            {canViewPii && form.customerPhone.length > 0 && phoneInvalid && <p className="mt-1 text-[11px] font-bold text-rose-600">Mobile number must be exactly 10 digits.</p>}
           </Field>
           <Field label="Customer Email">
-            <Input value={form.customerEmail} onChange={(event) => set('customerEmail', event.target.value)} className={INPUT_STYLE} type="email" />
+            <Input value={canViewPii ? form.customerEmail : '••••••'} onChange={(event) => set('customerEmail', event.target.value)} className={INPUT_STYLE} type="email" disabled={!canViewPii} readOnly={!canViewPii} />
             {emailInvalid && <p className="mt-1 text-[11px] font-bold text-rose-600">Enter a valid email address.</p>}
           </Field>
           <div className="sm:col-span-2">

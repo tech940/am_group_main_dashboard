@@ -200,9 +200,31 @@ export async function GET(request: Request) {
       SELECT DISTINCT model FROM kia_stock_management WHERE model IS NOT NULL ORDER BY model
     `))
 
+    // 6. Sold / missing-from-DMS: allotted vehicles flagged by the sweep because their VIN has
+    // disappeared from kia_stock_management. These CANNOT appear in the queries above (which start
+    // FROM kia_stock_management) — the allocation's vehicle_snapshot is our only remaining record.
+    const soldDealerClause = dealerScope && dealerScope.length
+      ? `AND va.dealer_code IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''")}'`).join(', ')})`
+      : ''
+    const soldMissing = await db.execute(sql.raw(`
+      SELECT
+        va.id AS allocation_id, va.vin_number, va.model, va.variant, va.color, va.engine_no,
+        va.dealer_code, va.stock_missing_at, va.allocated_at, va.vehicle_snapshot,
+        kb.id AS booking_id, kb.booking_number, kb.customer_name, kb.consultant_name, kb.status AS booking_status
+      FROM kia_vehicle_allocations va
+      JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
+      WHERE va.released_at IS NULL
+        AND va.stock_status = 'sold'
+        AND kb.status NOT IN ('delivered', 'cancelled')
+        ${soldDealerClause}
+      ORDER BY va.stock_missing_at DESC NULLS LAST
+      LIMIT 200
+    `))
+
     return NextResponse.json({
-      metrics,
+      metrics: { ...metrics, sold_missing: soldMissing.length },
       rows,
+      soldMissing,
       activities,
       filters: {
         dealers: filtersResult.map((r) => (r as { dealer: string }).dealer),

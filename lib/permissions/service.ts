@@ -113,19 +113,6 @@ function constrainSnapshotToBranch(
 // resolution layer: branch_admin (Petty Cash only) and sales_executive (Bookings only).
 const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive'])
 
-// Sensitive KIA report sections that only developer/md/eba may see (formerly the
-// `isKiaSalesReportRoleAllowed` sidebar hardcode). They are excluded from the brand default
-// and force-set by applySensitiveSectionRules so no other role — brand user or global — sees them.
-const SENSITIVE_REPORT_ROLES = new Set<string>(['developer', 'md', 'eba'])
-function isSensitiveReportKey(key: string) {
-  return key.startsWith('kia.sales_report.') || key.startsWith('kia.stock_report.')
-}
-function applySensitiveSectionRules(effective: Record<string, boolean>, role: PermissionRole) {
-  const allowed = SENSITIVE_REPORT_ROLES.has(role)
-  for (const key of Object.keys(effective)) {
-    if (isSensitiveReportKey(key)) effective[key] = allowed
-  }
-}
 
 // A user's brand grants default visibility of that brand's own sections. This is applied to
 // the DEFAULT layer (before overrides) so an explicit Deny wins. Template-only roles and the
@@ -142,7 +129,6 @@ function applyBrandDefault(
   if (!prefixes.length) return
   for (const key of Object.keys(values)) {
     if (!prefixes.some((prefix) => key.startsWith(`${prefix}.`))) continue
-    if (isSensitiveReportKey(key)) continue
     values[key] = true
   }
 }
@@ -443,9 +429,6 @@ export function resolveEffectiveSnapshot(
   if (isSuperAdminRole(role)) {
     for (const key of Object.keys(effective)) effective[key] = true
   }
-  // Sensitive KIA reports are restricted to developer/md/eba even for global roles — applied
-  // last so it overrides every other layer.
-  applySensitiveSectionRules(effective, role)
 
   return { effective, roleDefaults, overrides }
 }

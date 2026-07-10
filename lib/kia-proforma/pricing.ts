@@ -176,7 +176,7 @@ export function calculateKiaProformaPricing(
         exShowroom: String(price.newExShowroomPrice ?? price.exShowroomPrice ?? 0),
         tcsValue: String(price.tcs ?? 0),
         registrationCharges: String(registration),
-        insuranceValue: '3000',
+        insuranceValue: String(price.insurance ?? 0),
         fastagValue: String(price.fastag ?? 0),
         accessoriesKit: String(price.accessoriesKit ?? 0),
         extWarranty: String(price.extendedWarranty4thYear ?? 0),

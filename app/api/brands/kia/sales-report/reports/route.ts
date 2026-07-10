@@ -4,6 +4,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { requirePermission } from '@/lib/permissions/service'
 import { getKiaSalesReportCsv, getKiaSalesReportTable } from '@/lib/kia/sales-report'
+import { canViewKiaCustomerPii } from '@/lib/kia/pii'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -23,10 +24,6 @@ function parseDate(value: string | null) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null
 }
 
-function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
-  return role === 'developer' || role === 'md' || role === 'eba'
-}
-
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-sales-report-reports')
 
@@ -35,10 +32,6 @@ export async function GET(request: Request) {
     if (accessResponse) return accessResponse
 
     const appUser = await getAuthenticatedAppUser()
-    if (!isKiaSalesReportRoleAllowed(appUser?.role)) {
-      const timing = timer.finish()
-      return withServerTiming(NextResponse.json({ error: 'Unauthorized' }, { status: 403 }), timing.serverTiming)
-    }
     const permission = await timer.time('permission', () => requirePermission(appUser, 'kia.sales_report.view'))
     if (!permission.allowed) {
       const timing = timer.finish()
@@ -76,8 +69,13 @@ export async function GET(request: Request) {
       missedFollowups: url.searchParams.get('missedFollowups') === 'true',
     }
 
+    const canViewPii = canViewKiaCustomerPii(appUser?.role)
+
     if (url.searchParams.get('format') === 'csv') {
-      const result = await timer.time('csv', () => getKiaSalesReportCsv(params))
+      const result = await timer.time('csv', () => getKiaSalesReportCsv({
+        ...params,
+        canViewPii,
+      }))
       const timing = timer.finish()
       return withServerTiming(new NextResponse(result.content, {
         status: 200,
@@ -92,6 +90,7 @@ export async function GET(request: Request) {
       ...params,
       page: url.searchParams.get('page'),
       pageSize: url.searchParams.get('pageSize'),
+      canViewPii,
     }))
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data), timing.serverTiming)

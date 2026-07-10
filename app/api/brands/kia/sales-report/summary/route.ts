@@ -23,10 +23,6 @@ function parseDate(value: string | null) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null
 }
 
-function isKiaSalesReportRoleAllowed(role: string | null | undefined) {
-  return role === 'developer' || role === 'md' || role === 'eba'
-}
-
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-sales-report-summary')
 
@@ -35,10 +31,6 @@ export async function GET(request: Request) {
     if (accessResponse) return accessResponse
 
     const appUser = await getAuthenticatedAppUser()
-    if (!isKiaSalesReportRoleAllowed(appUser?.role)) {
-      const timing = timer.finish()
-      return withServerTiming(NextResponse.json({ error: 'Unauthorized' }, { status: 403 }), timing.serverTiming)
-    }
     const permission = await timer.time('permission', () => requirePermission(appUser, 'kia.sales_report.view'))
     if (!permission.allowed) {
       const timing = timer.finish()

@@ -201,7 +201,8 @@ export async function invalidateCache(key: string): Promise<void> {
 }
 
 export async function invalidateCachePattern(pattern: string): Promise<void> {
-  const regexPattern = new RegExp('^' + pattern.replace(/:/g, '\\:').replace(/\*/g, '.*') + '$')
+  // Build a regex that treats ':' literally (no escaping needed — only '*' is a wildcard)
+  const regexPattern = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$')
   for (const key of l1Cache.keys()) {
     if (regexPattern.test(key)) {
       l1Cache.delete(key)
@@ -224,7 +225,9 @@ export async function invalidateCachePattern(pattern: string): Promise<void> {
       cursor = nextCursor
 
       if (keys.length > 0) {
-        await redis.del(...keys)
+        // Also delete the stale twin keys so SWR doesn't serve stale data after invalidation
+        const staleKeys = keys.map((k) => `${k}:stale`)
+        await redis.del(...keys, ...staleKeys)
         deletedCount += keys.length
       }
     } while (cursor !== '0')

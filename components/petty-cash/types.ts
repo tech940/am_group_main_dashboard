@@ -93,6 +93,7 @@ export type PettyCashLedgerEntry = {
   balanceAfter?: string
   balance_after?: string
   description: string
+  location?: string | null
   createdAt?: string
   created_at?: string
 }

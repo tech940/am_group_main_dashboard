@@ -23,6 +23,8 @@
     "db:setup-platinum-be": "node scripts/setup-platinum-business-excellence.js",
     "db:refresh-dashboard-views": "node scripts/refresh-dashboard-materialized-views.js",
     "db:refresh-dashboard-views:scheduler": "node scripts/refresh-dashboard-materialized-views-scheduler.js",
+    "db:detect-kia-sold": "node scripts/kia-detect-sold-allocations.mjs",
+    "db:detect-kia-sold:scheduler": "node scripts/kia-detect-sold-allocations-scheduler.mjs",
     "verify:platinum-be": "node scripts/verify-platinum-business-excellence.js",
     "verify:platinum-be-api": "node scripts/verify-platinum-be-api.js",
     "verify:platinum-vas": "tsx scripts/verify-platinum-vas-identifiers.ts",

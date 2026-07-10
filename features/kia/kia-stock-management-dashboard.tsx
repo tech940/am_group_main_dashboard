@@ -75,6 +75,24 @@ type StockRow = {
   to_dealer_code: string | null
 }
 
+type SoldMissingRow = {
+  allocation_id: string
+  vin_number: string
+  model: string | null
+  variant: string | null
+  color: string | null
+  engine_no: string | null
+  dealer_code: string | null
+  stock_missing_at: string | null
+  allocated_at: string | null
+  vehicle_snapshot: Record<string, unknown> | null
+  booking_id: string | null
+  booking_number: string | null
+  customer_name: string | null
+  consultant_name: string | null
+  booking_status: string | null
+}
+
 type StockPayload = {
   metrics: {
     total_vins: number
@@ -84,8 +102,10 @@ type StockPayload = {
     paid_to_deliver: number
     delivered: number
     transfers: number
+    sold_missing?: number
   }
   rows: StockRow[]
+  soldMissing?: SoldMissingRow[]
   activities: {
     id: string
     title: string
@@ -1528,6 +1548,46 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                 <div className="mt-1 text-xl font-black tracking-tight" style={{ color: s.accent }}>{s.val}</div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Sold / Missing from DMS — allotted vehicles whose VIN left the DMS feed (retained via
+            the allocation snapshot; they can't appear in the stock table which reads FROM DMS). */}
+        {data?.soldMissing && data.soldMissing.length > 0 && (
+          <div className="mb-6 overflow-hidden rounded-2xl border border-amber-300 bg-amber-50/60 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-800">Sold / Missing from DMS</span>
+                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-black text-amber-800">{data.soldMissing.length}</span>
+              </div>
+              <span className="text-[10px] font-semibold text-amber-700">Allotted vehicles no longer in the DMS stock feed — likely sold. Verify &amp; update status.</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-[10px]">
+                <thead>
+                  <tr className="bg-amber-100 text-[9px] font-black uppercase tracking-[0.12em] text-amber-800">
+                    <th className="px-4 py-2.5">VIN</th>
+                    <th className="px-4 py-2.5">Car</th>
+                    <th className="px-4 py-2.5">Dealer</th>
+                    <th className="px-4 py-2.5">Booking</th>
+                    <th className="px-4 py-2.5">Customer</th>
+                    <th className="px-4 py-2.5">Missing Since</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.soldMissing.map((v) => (
+                    <tr key={v.allocation_id} className="border-t border-amber-100 text-slate-700">
+                      <td className="px-4 py-2.5 font-mono font-bold">{v.vin_number}</td>
+                      <td className="px-4 py-2.5 font-semibold">{[v.model, v.variant, v.color].filter(Boolean).join(' · ') || '—'}</td>
+                      <td className="px-4 py-2.5">{v.dealer_code || '—'}</td>
+                      <td className="px-4 py-2.5 font-mono">{v.booking_number || '—'}</td>
+                      <td className="px-4 py-2.5">{v.customer_name || '—'}</td>
+                      <td className="px-4 py-2.5">{v.stock_missing_at ? new Date(v.stock_missing_at).toLocaleDateString('en-IN') : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 

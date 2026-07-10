@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { sql } from 'drizzle-orm'
-import { unstable_cache } from 'next/cache'
+
 import { analyticsDb } from '@/lib/analytics/db'
 import { analyticsTableColumns } from '@/lib/analytics/table-columns'
 import { getCachedData } from '@/lib/redis/cache-utils'
@@ -486,14 +486,7 @@ export async function buildKiaSalesReportFreshness(normalizedDealerCode: string 
   } satisfies SalesReportFreshnessPayload
 }
 
-const readCachedKiaSalesReportFreshness = unstable_cache(
-  async (dealerCodeKey: string) => {
-    const normalizedDealerCode = dealerCodeKey === ALL_DEALERS_CACHE_KEY ? null : dealerCodeKey
-    return await buildKiaSalesReportFreshness(normalizedDealerCode)
-  },
-  ['kia-sales-report-freshness-v7-accessories-csr-date'],
-  { revalidate: KIA_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS }
-)
+
 
 async function resolveMonthContext(year: number | null | undefined, month: number | null | undefined, dealerCode: string | null) {
   if (year !== null && year !== undefined && month !== null && month !== undefined) {
@@ -577,14 +570,19 @@ async function resolveDateContext(input: {
 
 export async function getKiaSalesReportFreshness(dealerCode?: string | null) {
   const normalizedDealerCode = normalizeKiaDealerCode(dealerCode) || null
-  const cacheKey = normalizedDealerCode || ALL_DEALERS_CACHE_KEY
+  const dealerCacheKey = normalizedDealerCode || ALL_DEALERS_CACHE_KEY
+  const cacheKey = `kia:sales-report:freshness:${dealerCacheKey}`
 
   try {
-    const payload = await readCachedKiaSalesReportFreshness(cacheKey)
-    kiaSalesReportFreshnessFallback.set(cacheKey, payload)
+    const payload = await getCachedData(
+      cacheKey,
+      () => buildKiaSalesReportFreshness(normalizedDealerCode),
+      KIA_SALES_REPORT_FRESHNESS_CACHE_TTL_SECONDS
+    )
+    kiaSalesReportFreshnessFallback.set(dealerCacheKey, payload)
     return payload
   } catch (error) {
-    const fallback = kiaSalesReportFreshnessFallback.get(cacheKey)
+    const fallback = kiaSalesReportFreshnessFallback.get(dealerCacheKey)
     if (fallback) {
       console.warn('[kia-sales-report:freshness] serving last known good snapshot after live read failure', {
         dealerCode: normalizedDealerCode || 'all',
@@ -1285,16 +1283,6 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
       } satisfies SalesReportSummaryPayload
 }
 
-const readCachedKiaSalesReportSummary = unstable_cache(
-  async (year: number, month: number, dealerCodeKey: string) => {
-    const normalizedDealerCode = dealerCodeKey === ALL_DEALERS_CACHE_KEY ? null : dealerCodeKey
-    const context = await resolveDateContext({ year, month, dealerCode: normalizedDealerCode })
-    return await buildKiaSalesReportSummary(context, normalizedDealerCode)
-  },
-  ['kia-sales-report-summary-v10-lost-reason-only'],
-  { revalidate: KIA_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS }
-)
-
 export async function getKiaSalesReportSummary(input: {
   year?: number | null
   month?: number | null
@@ -1311,16 +1299,18 @@ export async function getKiaSalesReportSummary(input: {
     dealerCode: normalizedDealerCode,
   })
   const dealerCacheKey = normalizedDealerCode || ALL_DEALERS_CACHE_KEY
-  const cacheKey = buildSummaryCacheKey(context, normalizedDealerCode)
+  const summaryCacheKey = `kia:sales-report:summary:${context.key}:${dealerCacheKey}`
 
   try {
-    const payload = context.rangeMode === 'custom'
-      ? await buildKiaSalesReportSummary(context, normalizedDealerCode)
-      : await readCachedKiaSalesReportSummary(context.year, context.month, dealerCacheKey)
-    kiaSalesReportSummaryFallback.set(cacheKey, payload)
+    const payload = await getCachedData(
+      summaryCacheKey,
+      () => buildKiaSalesReportSummary(context, normalizedDealerCode),
+      KIA_SALES_REPORT_SUMMARY_CACHE_TTL_SECONDS
+    )
+    kiaSalesReportSummaryFallback.set(summaryCacheKey, payload)
     return payload
   } catch (error) {
-    const fallback = kiaSalesReportSummaryFallback.get(cacheKey)
+    const fallback = kiaSalesReportSummaryFallback.get(summaryCacheKey)
     if (fallback) {
       console.warn('[kia-sales-report:summary] serving last known good snapshot after live read failure', {
         dealerCode: normalizedDealerCode || 'all',
@@ -1401,6 +1391,7 @@ export async function getKiaSalesReportTable(input: {
   pageSize?: string | null
   filters?: Record<string, string[]> | null
   missedFollowups?: boolean | null
+  canViewPii?: boolean
 }) {
   const report = normalizeReportKey(input.report)
   const config = TABLES[report]
@@ -1467,7 +1458,10 @@ export async function getKiaSalesReportTable(input: {
         const valuesSet = new Set<string>()
         for (const row of dedupedRows) {
           const rawVal = row[col]
-          const val = rawVal === null || rawVal === undefined ? '' : String(rawVal).trim()
+          let val = rawVal === null || rawVal === undefined ? '' : String(rawVal).trim()
+          if (input.canViewPii === false && (col === 'phone' || col === 'customerPhone' || col === 'customerEmail' || col === 'email')) {
+            val = val ? '••••••' : ''
+          }
           valuesSet.add(val)
         }
         uniqueValues[col] = Array.from(valuesSet).sort((a, b) => a.localeCompare(b))
@@ -1497,7 +1491,16 @@ export async function getKiaSalesReportTable(input: {
       const totalRows = sortedRows.length
       const pagedRows = sortedRows
         .slice(offset, offset + pageSize)
-        .map((row) => normalizeRowForOutput(row, columns))
+        .map((row) => {
+          const norm = normalizeRowForOutput(row, columns)
+          if (input.canViewPii === false) {
+            if (norm.phone) norm.phone = '••••••'
+            if (norm.customerPhone) norm.customerPhone = '••••••'
+            if (norm.customerEmail) norm.customerEmail = '••••••'
+            if (norm.email) norm.email = '••••••'
+          }
+          return norm
+        })
 
       return {
         report,
@@ -1533,6 +1536,7 @@ export async function getKiaSalesReportCsv(input: {
   direction?: string | null
   filters?: Record<string, string[]> | null
   missedFollowups?: boolean | null
+  canViewPii?: boolean
 }) {
   const report = normalizeReportKey(input.report)
   const config = TABLES[report]
@@ -1599,7 +1603,16 @@ export async function getKiaSalesReportCsv(input: {
   }
 
   const normalizedRows = sortRows(filteredRows, sortColumn, direction)
-    .map((row) => normalizeRowForOutput(row, columns))
+    .map((row) => {
+      const norm = normalizeRowForOutput(row, columns)
+      if (input.canViewPii === false) {
+        if (norm.phone) norm.phone = '••••••'
+        if (norm.customerPhone) norm.customerPhone = '••••••'
+        if (norm.customerEmail) norm.customerEmail = '••••••'
+        if (norm.email) norm.email = '••••••'
+      }
+      return norm
+    })
   const csvLines = [
     columns.map(escapeCsvCell).join(','),
     ...normalizedRows.map((row) => columns.map((column) => escapeCsvCell(row[column])).join(',')),

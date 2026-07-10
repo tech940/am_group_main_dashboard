@@ -10,10 +10,6 @@ export const maxDuration = 60
 
 
 
-function isKiaStockReportRoleAllowed(role: string | null | undefined) {
-  return role === 'developer' || role === 'md' || role === 'eba'
-}
-
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-stock-report-reports')
 
@@ -22,11 +18,6 @@ export async function GET(request: Request) {
     if (accessResponse) return accessResponse
 
     const appUser = await getAuthenticatedAppUser()
-    if (!isKiaStockReportRoleAllowed(appUser?.role)) {
-      const timing = timer.finish()
-      return withServerTiming(NextResponse.json({ error: 'Unauthorized' }, { status: 403 }), timing.serverTiming)
-    }
-
     const permission = await timer.time('permission', () => requirePermission(appUser, 'kia.stock_report.view'))
     if (!permission.allowed) {
       const timing = timer.finish()

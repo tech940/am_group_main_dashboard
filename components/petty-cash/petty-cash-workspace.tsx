@@ -157,6 +157,7 @@ export function PettyCashWorkspace() {
   const [allocationsLoading, setAllocationsLoading] = useState(false)
   const [allocationLocationFilter, setAllocationLocationFilter] = useState('all')
   const [allocationDepartmentFilter, setAllocationDepartmentFilter] = useState('all')
+  const [ledgerLocationFilter, setLedgerLocationFilter] = useState('all')
 
   const refreshLedger = useCallback(async (allocationId?: string | null) => {
     setLedgerLoading(true)
@@ -291,6 +292,15 @@ export function PettyCashWorkspace() {
       (allocationLocationFilter === 'all' || (allocation.location || '').trim() === allocationLocationFilter)
       && (allocationDepartmentFilter === 'all' || (allocation.department || '').trim() === allocationDepartmentFilter))
   }, [allocations, allocationLocationFilter, allocationDepartmentFilter])
+  // Ledger location filter — seed with all locations (incl. Banihal) + any ad-hoc ones present.
+  const ledgerLocationOptions = useMemo(
+    () => Array.from(new Set([...getAllPettyCashLocationOptions(), ...ledger.map((entry) => (entry.location || '').trim()).filter(Boolean)])).sort(),
+    [ledger],
+  )
+  const visibleLedger = useMemo(
+    () => ledger.filter((entry) => ledgerLocationFilter === 'all' || (entry.location || '').trim() === ledgerLocationFilter),
+    [ledger, ledgerLocationFilter],
+  )
   const allocationTotals = useMemo(() => allocations.reduce((acc, allocation) => {
     acc.allocated += Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
     acc.spent += Number(allocation.spentAmount || allocation.spent_amount || 0)
@@ -728,9 +738,15 @@ export function PettyCashWorkspace() {
       )}
 
       {activeTab === 'ledger' && (
-        <SectionCard title="Allocation Ledger" subtitle={isAllBranchViewer ? 'Immutable running record of every movement, across all branches' : 'Immutable running record of every movement'} icon={Wallet} iconTone="blue">
+        <SectionCard
+          title="Allocation Ledger"
+          subtitle={isAllBranchViewer ? 'Immutable running record of every movement, across all branches' : 'Immutable running record of every movement'}
+          icon={Wallet}
+          iconTone="blue"
+          toolbar={<PillFilter label="Location" allLabel="All Locations" value={ledgerLocationFilter} options={ledgerLocationOptions} onChange={setLedgerLocationFilter} />}
+        >
           <RecordTable
-            rows={ledger}
+            rows={visibleLedger}
             loading={ledgerLoading}
             rowKey={(entry) => entry.id}
             empty={<EmptyState icon={Wallet} title="No ledger entries" description="Ledger movements appear here once an allocation is created or spent." />}
@@ -739,6 +755,7 @@ export function PettyCashWorkspace() {
                 ? [{ header: 'Branch', cell: (entry: PettyCashLedgerEntry) => <span className="font-bold text-slate-800">{getBranchLabel(normalizeBranchId(entry))}</span> }]
                 : []),
               { header: 'Type', cell: (entry) => <span className="font-bold capitalize text-slate-800">{ledgerEntryType(entry).replace(/_/g, ' ')}</span> },
+              { header: 'Location', cell: (entry) => <span className="font-semibold text-slate-700">{entry.location || '—'}</span> },
               { header: 'Description', cell: (entry) => <span className="line-clamp-1 block max-w-[280px] text-slate-600">{entry.description || '—'}</span> },
               { header: 'Amount', align: 'right', cell: (entry) => <span className={cn('font-black tabular-nums', Number(entry.amount) < 0 ? 'text-rose-600' : 'text-slate-900')}>{formatCurrency(entry.amount)}</span> },
               { header: 'Balance After', align: 'right', cell: (entry) => <span className="font-black tabular-nums text-emerald-600">{formatCurrency(ledgerBalanceAfter(entry))}</span> },

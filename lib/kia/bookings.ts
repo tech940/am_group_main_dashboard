@@ -15,6 +15,7 @@ import {
   kiaPriceDetails,
 } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
+import { createKiaSoldVehicleNotifications, type KiaSoldVehicle } from '@/lib/notifications/kia-callback'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import {
   canAllotKiaVehicle,
@@ -208,6 +209,88 @@ export async function expireKiaTemporaryAllocations() {
   })
 }
 
+// Detects allotted vehicles whose VIN has DISAPPEARED from the DMS stock feed (kia_stock_management)
+// and flags them 'sold'. Retention itself is already handled by the allocation row's vehicleSnapshot;
+// this adds the per-allocation "sold" status + a booking-activity timeline row. Idempotent (the
+// stock_missing_at guard). Returns the rows that transitioned to 'sold' so the caller can alert.
+export async function markKiaSoldAllocations(): Promise<KiaSoldVehicle[]> {
+  // 1. Refresh "last seen in stock" for active allocations whose VIN is currently present. A VIN
+  //    must have been seen at least once before it can be marked missing (guards against allocations
+  //    whose VIN never appears in this feed, and against the very first sweep).
+  await db.execute(sql`
+    UPDATE kia_vehicle_allocations va
+    SET stock_last_seen_at = now(), updated_at = now()
+    WHERE va.released_at IS NULL
+      AND EXISTS (
+        SELECT 1 FROM kia_stock_management sm
+        WHERE upper(trim(sm.vin_number)) = upper(trim(va.vin_number))
+      )
+  `)
+
+  // Freshness gate: never mass-flag when the DMS table is empty (a failed / partial load).
+  const stockCountRes = await db.execute<{ stock_count: number }>(sql`SELECT count(*)::int AS stock_count FROM kia_stock_management`)
+  const stockCount = Number((stockCountRes as unknown as Array<{ stock_count: number }>)[0]?.stock_count || 0)
+  if (stockCount === 0) return []
+
+  // 2. Flag active, non-delivered allocations whose (previously seen) VIN is now gone from stock.
+  const soldRes = await db.execute(sql`
+    WITH sold AS (
+      UPDATE kia_vehicle_allocations va
+      SET stock_missing_at = now(), stock_status = 'sold', updated_at = now()
+      FROM kia_bookings kb
+      WHERE va.booking_id = kb.id
+        AND va.released_at IS NULL
+        AND va.stock_missing_at IS NULL
+        AND va.stock_last_seen_at IS NOT NULL
+        AND kb.deleted_at IS NULL
+        AND kb.status NOT IN ('delivered', 'cancelled')
+        AND NOT EXISTS (
+          SELECT 1 FROM kia_stock_management sm
+          WHERE upper(trim(sm.vin_number)) = upper(trim(va.vin_number))
+        )
+      RETURNING va.id, va.vin_number, va.booking_id, kb.dealer_code, kb.booking_number,
+                kb.customer_name, kb.model, kb.created_by
+    ),
+    activity AS (
+      INSERT INTO kia_booking_activity (booking_id, activity_type, title, description, actor_name, actor_role, after_value)
+      SELECT booking_id, 'stock_missing', 'Allotted vehicle no longer in DMS stock',
+             'VIN ' || vin_number || ' disappeared from DMS stock — likely sold',
+             'System', 'system',
+             jsonb_build_object('vinNumber', vin_number, 'reason', 'absent from kia_stock_management')
+      FROM sold
+    )
+    SELECT id, vin_number, booking_id, dealer_code, booking_number, customer_name, model, created_by FROM sold
+  `)
+
+  return (soldRes as unknown as Array<Record<string, unknown>>).map((row) => ({
+    id: String(row.id),
+    vinNumber: String(row.vin_number),
+    bookingId: String(row.booking_id),
+    dealerCode: row.dealer_code ? String(row.dealer_code) : null,
+    bookingNumber: String(row.booking_number),
+    customerName: String(row.customer_name),
+    model: String(row.model),
+    createdBy: row.created_by ? String(row.created_by) : null,
+  }))
+}
+
+// Debounced self-heal: run the sold-vehicle sweep at most once per window so booking-detail /
+// stock reads keep a fresh "sold" badge without a full-table scan on every request. The scheduled
+// script (scripts/kia-detect-sold-allocations.mjs) is the primary, reliable trigger.
+let lastSoldSweepAt = 0
+const SOLD_SWEEP_INTERVAL_MS = 5 * 60 * 1000
+async function maybeSweepSoldAllocations() {
+  const now = Date.now()
+  if (now - lastSoldSweepAt < SOLD_SWEEP_INTERVAL_MS) return
+  lastSoldSweepAt = now
+  try {
+    const sold = await markKiaSoldAllocations()
+    if (sold.length) await createKiaSoldVehicleNotifications(sold)
+  } catch (error) {
+    console.error('Sold-allocation sweep failed:', error)
+  }
+}
+
 function listFilters(input: BookingListInput) {
   const filters = [isNull(kiaBookings.deletedAt)]
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
@@ -370,6 +453,8 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
 
 export async function getKiaBookingDetail(id: string) {
   await expireKiaTemporaryAllocations()
+  // Fire-and-forget, debounced: refresh "sold" flags for allotted vehicles gone from DMS stock.
+  void maybeSweepSoldAllocations()
   const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
   if (!booking) return null
 
@@ -416,6 +501,9 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     if (input.bankName !== undefined) updates.bankName = nullableText(input.bankName)
     if (input.loanAmount !== undefined) updates.loanAmount = numericText(input.loanAmount)
     if (input.notes !== undefined) updates.notes = nullableText(input.notes)
+    // Merge (not replace) metadata so edits to extra fields (PAN/Aadhaar, exchange, document URLs)
+    // persist without clobbering existing keys like costSheet / accountsVerification.
+    if (input.metadata !== undefined) updates.metadata = { ...(before.metadata || {}), ...(input.metadata || {}) } as JsonRecord
     if (input.deliveryTargetDate !== undefined) updates.deliveryTargetDate = input.deliveryTargetDate ? input.deliveryTargetDate : null
     if (input.status !== undefined) updates.status = normalizeStatus(input.status)
     if (input.delivered) {
@@ -590,7 +678,7 @@ export async function getKiaBookingMatchingVehicles(id: string) {
         sm.uploaded_at,
         to_jsonb(sm) AS snapshot,
         'dms'::text AS source
-      FROM kia_stock_report sm
+      FROM kia_stock_management sm
       LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
       WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
         AND coalesce(ls.local_status, '') <> 'retail'

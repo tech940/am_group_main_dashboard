@@ -8,10 +8,6 @@ export const metadata = {
   description: 'AM Kia vehicle stock analytics and purchase report table',
 }
 
-function isKiaStockReportRoleAllowed(role: string | null | undefined) {
-  return role === 'developer' || role === 'md' || role === 'eba'
-}
-
 export default async function KiaStockReportRoute({
   searchParams,
 }: {
@@ -20,7 +16,6 @@ export default async function KiaStockReportRoute({
   const access = await getBrandAccess('kia')
   if (!access.appUser) redirect('/auth/login')
   if (!access.allowed) forbidden()
-  if (!isKiaStockReportRoleAllowed(access.appUser.role)) forbidden()
 
   const permission = await requirePermission(access.appUser, 'kia.stock_report.view')
   if (!permission.allowed) forbidden()

@@ -8,10 +8,6 @@ import { getKiaStockReportFreshness } from '@/lib/kia/stock-report'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-function isKiaStockReportRoleAllowed(role: string | null | undefined) {
-  return role === 'developer' || role === 'md' || role === 'eba'
-}
-
 export async function GET(request: Request) {
   const timer = createApiTimer('kia-stock-report-freshness')
 
@@ -20,11 +16,6 @@ export async function GET(request: Request) {
     if (accessResponse) return accessResponse
 
     const appUser = await getAuthenticatedAppUser()
-    if (!isKiaStockReportRoleAllowed(appUser?.role)) {
-      const timing = timer.finish()
-      return withServerTiming(NextResponse.json({ error: 'Unauthorized' }, { status: 403 }), timing.serverTiming)
-    }
-
     const permission = await timer.time('permission', () => requirePermission(appUser, 'kia.stock_report.view'))
     if (!permission.allowed) {
       const timing = timer.finish()
@@ -32,6 +23,10 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url)
+    if (url.searchParams.get('refresh') === 'true') {
+      const { invalidateCachePattern } = await import('@/lib/redis/cache-utils')
+      await invalidateCachePattern('kia:stock-report:*')
+    }
     const data = await timer.time('freshness', () => getKiaStockReportFreshness(url.searchParams.get('dealer_code')))
     const timing = timer.finish()
     return withServerTiming(NextResponse.json(data), timing.serverTiming)

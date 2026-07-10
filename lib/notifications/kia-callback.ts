@@ -134,3 +134,76 @@ export async function createKiaCallbackNotifications(params: {
     })))
     .onConflictDoNothing({ target: [notifications.userId, notifications.dedupeKey] })
 }
+
+export type KiaSoldVehicle = {
+  id: string // allocation id — drives the dedupe key
+  bookingId: string
+  vinNumber: string
+  bookingNumber: string
+  customerName: string
+  model: string
+  dealerCode: string | null
+  createdBy: string | null
+}
+
+/**
+ * Notify the booking's sales person + the dealer's Sales Manager / Sales GM / MD + oversight that an
+ * allotted vehicle has disappeared from the DMS stock feed (likely sold, "update its status"). Basic
+ * content only. Idempotent via (userId, dedupeKey='sold:<allocationId>') so repeated sweeps never spam.
+ */
+export async function createKiaSoldVehicleNotifications(vehicles: KiaSoldVehicle[]) {
+  if (!vehicles.length) return
+  const oversight = await getOversightUsers()
+  const createdAt = new Date()
+  const seen = new Set<string>()
+  const rows: Array<typeof notifications.$inferInsert> = []
+
+  for (const vehicle of vehicles) {
+    const dealerCode = String(vehicle.dealerCode || '').trim()
+    const [salesPerson, managers] = await Promise.all([
+      getSalesPerson(vehicle.createdBy),
+      dealerCode ? getDealerScopedManagers(dealerCode) : Promise.resolve([] as Recipient[]),
+    ])
+    const recipients = new Map<string, Recipient>()
+    if (salesPerson) recipients.set(salesPerson.id, salesPerson)
+    for (const manager of managers) recipients.set(manager.id, manager)
+    for (const admin of oversight) recipients.set(admin.id, admin)
+
+    const dedupeKey = `sold:${vehicle.id}`
+    const model = String(vehicle.model || '').trim()
+    const message = `Allotted vehicle no longer in DMS stock (likely sold) · ${vehicle.customerName} · ${vehicle.bookingNumber}${model ? ` (${model})` : ''} · VIN ${vehicle.vinNumber}`
+    for (const recipient of recipients.values()) {
+      const key = `${recipient.id}|${dedupeKey}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      rows.push({
+        userId: recipient.id,
+        title: 'Allotted vehicle sold / missing from stock',
+        message,
+        type: 'warning' as const,
+        actionUrl: `/brands/kia/bookings?bookingId=${vehicle.bookingId}`,
+        entityType: 'kia_sold_vehicle',
+        entityId: vehicle.bookingId,
+        referenceNumber: vehicle.bookingNumber,
+        targetRole: recipient.role,
+        dedupeKey,
+        createdAt,
+        metadata: {
+          module: 'kia_bookings',
+          event: 'stock_missing',
+          allocationId: vehicle.id,
+          bookingId: vehicle.bookingId,
+          vinNumber: vehicle.vinNumber,
+          model: vehicle.model,
+          dealerCode: vehicle.dealerCode,
+        },
+      })
+    }
+  }
+
+  if (!rows.length) return
+  await db
+    .insert(notifications)
+    .values(rows)
+    .onConflictDoNothing({ target: [notifications.userId, notifications.dedupeKey] })
+}

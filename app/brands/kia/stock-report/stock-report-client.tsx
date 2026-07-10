@@ -23,6 +23,7 @@ import {
   Clock,
   TriangleAlert,
   CheckCircle2,
+  Info,
 } from 'lucide-react'
 import {
   Bar,
@@ -42,6 +43,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { logApiTimings } from '@/lib/api/client-timing'
@@ -55,6 +57,13 @@ import type {
 
 function isInputDate(value: string | null | undefined) {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value))
+}
+
+// 'YYYY-MM' -> 'June 2026'
+function formatMonthYear(value: string | null | undefined) {
+  const [year, month] = String(value || '').split('-').map(Number)
+  if (!year || !month) return value || ''
+  return new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })
 }
 
 function formatDate(value: string | null | undefined) {
@@ -270,6 +279,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const router = useRouter()
   const pathname = usePathname()
   const [selectedDealer, setSelectedDealer] = useState(firstParam(initialSearchParams, 'dealer_code') || 'all')
+  const [explainKpi, setExplainKpi] = useState<string | null>(null)
   const [status, setStatus] = useState(firstParam(initialSearchParams, 'status') || 'all')
   const [model, setModel] = useState(firstParam(initialSearchParams, 'model') || 'all')
   const [search, setSearch] = useState(firstParam(initialSearchParams, 'search') || '')
@@ -280,6 +290,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const [fastMovingMode, setFastMovingMode] = useState<'models' | 'trims'>('models')
   const [slowMovingMode, setSlowMovingMode] = useState<'models' | 'trims'>('models')
   const [viewMode, setViewMode] = useState<'dashboard' | 'explorer'>('dashboard')
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const deferredSearch = useDeferredValue(search)
 
@@ -359,10 +370,20 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const modelOptions = useMemo(() => summary?.overview.modelMix.map((item) => item.name) || [], [summary])
   const displayedColumns = report?.defaultVisibleColumns?.length ? report.defaultVisibleColumns : report?.columns.slice(0, 10) || []
 
-  const handleRefresh = () => {
-    freshnessQuery.refetch()
-    summaryQuery.refetch()
-    reportQuery.refetch()
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await fetch(`/api/brands/kia/stock-report/freshness?refresh=true&dealer_code=${selectedDealer}`)
+      await Promise.all([
+        freshnessQuery.refetch(),
+        summaryQuery.refetch(),
+        reportQuery.refetch(),
+      ])
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
   const scrollToSection = (section: string) => {
@@ -412,7 +433,12 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const availableStock = kpiValue('Available Stock')
   const stockValue = kpiValue('Stock Value')
   const avgStockAge = kpiValue('Avg Stock Age')
-  const soldThisMonth = summary?.movement.monthly[0]?.retail || 0
+  // Use the latest month we actually HAVE retail data for (monthly[0]) for BOTH the value and its
+  // label, so they never diverge. (The stock feed's context month can run ahead of the retail feed,
+  // which previously showed last month's number under this month's label.)
+  const retailMonth = summary?.movement.monthly?.[0]
+  const soldThisMonth = retailMonth?.retail ?? 0
+  const retailMonthLabel = retailMonth ? formatMonthYear(retailMonth.month) : (summary?.context.selectedMonthLabel || '')
   const agedRows = summary?.aging.rows || []
   const rows90Plus = summary?.aging?.rows90Plus || []
   const aged90Rows = agedRows.filter((row) => row.stockAge >= 90)
@@ -426,6 +452,52 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const avgDailySales = retailed90 / 90
   const daysOfSupply = avgDailySales > 0 ? Math.round(availableStock / avgDailySales) : 0
   const annualizedTurns = avgDailySales > 0 ? ((avgDailySales * 365) / Math.max(1, availableStock)).toFixed(1) : '0'
+  const aged60Count = agedRows.filter((row) => row.stockAge >= 60).length
+
+  // Click-to-explain: how each KPI card is computed, with the LIVE inputs behind the number.
+  const kpiExplanations: Record<string, { title: string; formula: string; inputs: Array<[string, string]> }> = {
+    units: {
+      title: 'Units in stock',
+      formula: 'Count of VINs in the latest DMS stock feed that are not yet delivered (includes booked-but-not-delivered and in-transit cars), de-duplicated one per VIN.',
+      inputs: [['Live units', String(availableStock)], ['Scope', selectedDealer === 'all' ? 'All dealers' : selectedDealer]],
+    },
+    value: {
+      title: 'Inventory value',
+      formula: 'Sum over every in-stock car of (ex-factory base price × 1.36). The ×1.36 is a flat GST/cess estimate; a car with only a KIN invoice amount (already GST-inclusive) is counted as-is. This is an estimate, not exact on-road value.',
+      inputs: [['Units', String(availableStock)], ['Total est. value', formatMoney(stockValue)], ['Avg / car', formatMoney(availableStock ? stockValue / availableStock : 0)]],
+    },
+    avgAge: {
+      title: 'Avg days in stock',
+      formula: 'Average of (today − KIN invoice date) across all in-stock cars — i.e. days since KIA invoiced each car to the dealership.',
+      inputs: [['Units', String(availableStock)], ['Average age', `${avgStockAge} days`]],
+    },
+    retailed: {
+      title: 'Retailed this month',
+      formula: 'Cars delivered/retailed (kia_purchase_report.retail_date) during the latest month with retail data, scoped to the selected dealer. (This now measures deliveries, not bookings.)',
+      inputs: [['Month', retailMonthLabel || '—'], ['Retailed', String(soldThisMonth)]],
+    },
+    daysSupply: {
+      title: 'Lot days of supply',
+      formula: 'Units in stock ÷ average cars retailed per day over the trailing 90 days. Lower = leaner lot. Healthy band ≈ 21–45 days.',
+      inputs: [['Units in stock', String(availableStock)], ['Retailed last 90d', String(retailed90)], ['Retail / day', avgDailySales.toFixed(2)], ['Days of supply', `${daysOfSupply} days`]],
+    },
+    turns: {
+      title: 'Inventory turns',
+      formula: 'Annualised: (cars retailed per day over the last 90 days × 365) ÷ units in stock. Uses the SAME 90-day rate as Lot days of supply, so the two always agree (turns ≈ 365 ÷ days of supply).',
+      inputs: [['Retail / day (90d)', avgDailySales.toFixed(2)], ['Units in stock', String(availableStock)], ['Turns', `${annualizedTurns}x/yr`], ['Implied days of supply', `${daysOfSupply} days`]],
+    },
+    aged60: {
+      title: 'Aged 60+ days',
+      formula: 'Count of in-stock cars aged ≥ 60 days (cumulative — includes the 90+ cars). % of lot = that count ÷ units in stock.',
+      inputs: [['Units ≥ 60d', String(aged60Count)], ['Units in stock', String(availableStock)], ['% of lot', `${availableStock ? Math.round((aged60Count / availableStock) * 100) : 0}%`]],
+    },
+    aged90: {
+      title: 'Aged 90+ days',
+      formula: 'Count of in-stock cars aged ≥ 90 days; "capital frozen" = sum of their estimated value (same base × 1.36).',
+      inputs: [['Units ≥ 90d', String(aged90Rows.length)], ['Capital frozen', formatMoney(aged90Value)]],
+    },
+  }
+  const activeExplain = explainKpi ? kpiExplanations[explainKpi] : null
 
   const stockByModel = summary?.overview.modelMix || []
   const modelCards = summary?.models.cards || []
@@ -495,8 +567,8 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                     </SelectContent>
                   </Select>
                 </label>
-                <Button onClick={handleRefresh} className="h-12 rounded-2xl bg-[var(--dashboard-action-bg)] font-black text-white hover:bg-[var(--dashboard-action-hover)] px-6">
-                  <RefreshCw className={cn('mr-2 h-4 w-4', (summaryQuery.isFetching || freshnessQuery.isFetching) && 'animate-spin')} /> Refresh
+                <Button onClick={handleRefresh} className="h-12 rounded-2xl bg-[var(--dashboard-action-bg)] font-black text-white hover:bg-[var(--dashboard-action-hover)] px-6" disabled={isRefreshing}>
+                  <RefreshCw className={cn('mr-2 h-4 w-4', (summaryQuery.isFetching || freshnessQuery.isFetching || isRefreshing) && 'animate-spin')} /> Refresh
                 </Button>
               </div>
             </div>
@@ -547,9 +619,10 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
           <Button
             variant="outline"
             onClick={handleRefresh}
+            disabled={isRefreshing}
             className="h-10 rounded-xl border-[var(--kia-hairline)] bg-[var(--kia-surface)] font-bold text-[var(--kia-text)]"
           >
-            <RefreshCw className={cn('mr-2 h-4 w-4', freshnessQuery.isFetching && 'animate-spin')} /> Re-check
+            <RefreshCw className={cn('mr-2 h-4 w-4', (freshnessQuery.isFetching || isRefreshing) && 'animate-spin')} /> Re-check
           </Button>
         </div>
 
@@ -595,24 +668,44 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
               <>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {[
-                { label: 'Units in stock', value: availableStock, helper: `live vehicles at ${selectedDealer === 'all' ? 'all dealers' : selectedDealer}`, dark: true },
-                { label: 'Inventory value', value: formatMoney(stockValue), helper: 'landed cost incl GST · purchase report', dark: true },
-                { label: 'Avg days in stock', value: `${avgStockAge}d`, helper: 'current available stock age' },
-                { label: 'Retailed this month', value: soldThisMonth, helper: summary.context.selectedMonthLabel },
-                { label: 'Lot days of supply', value: `${daysOfSupply}d`, helper: `${availableStock} units ÷ daily sales rate`, dark: true },
-                { label: 'Inventory turns', value: soldThisMonth ? `${((soldThisMonth * 12) / Math.max(1, availableStock)).toFixed(1)}x/yr` : '0x/yr', helper: 'run-rate' },
-                { label: 'Aged 60+ days', value: agedRows.filter((row) => row.stockAge >= 60).length, helper: `${availableStock ? Math.round((agedRows.filter((row) => row.stockAge >= 60).length / availableStock) * 100) : 0}% of lot` },
-                { label: 'Aged 90+ days', value: aged90Rows.length, helper: `${formatMoney(aged90Value)} frozen` },
+                { key: 'units', label: 'Units in stock', value: availableStock, helper: `live vehicles at ${selectedDealer === 'all' ? 'all dealers' : selectedDealer}`, dark: true },
+                { key: 'value', label: 'Inventory value', value: formatMoney(stockValue), helper: '≈ base price × 1.36 (GST est.)', dark: true },
+                { key: 'avgAge', label: 'Avg days in stock', value: `${avgStockAge}d`, helper: 'days since KIN invoice' },
+                { key: 'retailed', label: 'Retailed this month', value: soldThisMonth, helper: `delivered · ${retailMonthLabel}` },
+                { key: 'daysSupply', label: 'Lot days of supply', value: `${daysOfSupply}d`, helper: `${availableStock} units ÷ retail/day (90d)`, dark: true },
+                { key: 'turns', label: 'Inventory turns', value: `${annualizedTurns}x/yr`, helper: 'trailing 90-day retail, annualized' },
+                { key: 'aged60', label: 'Aged 60+ days', value: agedRows.filter((row) => row.stockAge >= 60).length, helper: `${availableStock ? Math.round((agedRows.filter((row) => row.stockAge >= 60).length / availableStock) * 100) : 0}% of lot` },
+                { key: 'aged90', label: 'Aged 90+ days', value: aged90Rows.length, helper: `${formatMoney(aged90Value)} frozen` },
               ].map((item, index) => (
-                <Card key={item.label} className={cn('rounded-[1.2rem] border bg-[var(--kia-surface)] shadow-[0_10px_24px_rgba(15,23,42,0.08)]', item.dark && 'bg-[var(--dashboard-action-bg)] text-white', index >= 6 && 'border-l-4 border-l-[var(--dashboard-danger)]')}>
+                <Card key={item.label} onClick={() => setExplainKpi(item.key)} title="Click to see how this is calculated" className={cn('cursor-pointer rounded-[1.2rem] border bg-[var(--kia-surface)] shadow-[0_10px_24px_rgba(15,23,42,0.08)] transition-shadow hover:shadow-[0_14px_32px_rgba(15,23,42,0.16)]', item.dark && 'bg-[var(--dashboard-action-bg)] text-white', index >= 6 && 'border-l-4 border-l-[var(--dashboard-danger)]')}>
                   <CardContent className="p-5">
-                    <p className={cn('text-[11px] font-black uppercase tracking-[0.12em]', item.dark ? 'text-slate-300' : 'text-[var(--kia-text-soft)]')}>{item.label}</p>
+                    <p className={cn('flex items-center justify-between text-[11px] font-black uppercase tracking-[0.12em]', item.dark ? 'text-slate-300' : 'text-[var(--kia-text-soft)]')}>{item.label}<Info className="h-3.5 w-3.5 opacity-50" /></p>
                     <p className={cn('mt-3 text-[28px] font-black leading-none', item.dark ? 'text-white' : 'text-[var(--kia-text)]')}>{item.value}</p>
                     <p className={cn('mt-2 text-[13px] font-semibold', item.dark ? 'text-slate-300' : 'text-[var(--kia-text-soft)]')}>{item.helper}</p>
                   </CardContent>
                 </Card>
               ))}
             </div>
+
+            {/* Click-to-explain: how the selected KPI is calculated, with its live inputs. */}
+            <Dialog open={explainKpi !== null} onOpenChange={(open) => { if (!open) setExplainKpi(null) }}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-[var(--kia-text)]"><Info className="h-5 w-5 text-[var(--dashboard-action-bg)]" /> {activeExplain?.title || 'How this is calculated'}</DialogTitle>
+                  <DialogDescription className="pt-2 text-[14px] leading-relaxed text-[var(--kia-text-soft)]">{activeExplain?.formula}</DialogDescription>
+                </DialogHeader>
+                {activeExplain && (
+                  <div className="mt-2 overflow-hidden rounded-xl border border-[var(--kia-hairline)]">
+                    {activeExplain.inputs.map(([label, value], i) => (
+                      <div key={label} className={cn('flex items-center justify-between px-4 py-2.5 text-[14px]', i % 2 === 0 && 'bg-[var(--kia-surface-sunken)]')}>
+                        <span className="font-semibold text-[var(--kia-text-soft)]">{label}</span>
+                        <span className="font-black tabular-nums text-[var(--kia-text)]">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
 
             <section id="stock-aging" className="scroll-mt-24">
               <div className="mb-4 flex items-end justify-between gap-4">
@@ -730,7 +823,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
                   <CardContent className="grid gap-3 sm:grid-cols-3">
                     {[
                       [`${daysOfSupply}d`, 'Days of supply on lot'],
-                      [soldThisMonth ? `${((soldThisMonth * 12) / Math.max(1, availableStock)).toFixed(1)}x` : '0x', 'Annualized turns'],
+                      [`${annualizedTurns}x`, 'Annualized turns'],
                       [soldThisMonth, 'Sold · 30 days'],
                       [summary.movement.monthly.slice(0, 3).reduce((sum, row) => sum + row.retail, 0), 'Sold · 90 days'],
                       [summary.movement.monthly.slice(0, 12).reduce((sum, row) => sum + row.retail, 0), 'Sold · 12 months'],

@@ -19,13 +19,17 @@ import type {
 
 type Row = Record<string, unknown>
 
-const TABLE = 'kia_stock_report'
+const TABLE = 'kia_stock_management'
+// Approx landed value. Base (ex-factory) prices get a flat ~36% GST/cess uplift; the KIN invoice
+// amount is ALREADY GST-inclusive so it is used as-is. Previously the whole COALESCE (incl.
+// kin_invoice_amt) was multiplied by 1.36, double-counting tax on any base-price-null row.
+// This is an ESTIMATE — real KIA GST+cess varies by model (~29%..50%).
 const VALUE_SQL = sql`COALESCE(
-  sm.basic_price,
-  pr.basic_price,
+  sm.basic_price * 1.36,
+  pr.basic_price * 1.36,
   NULLIF(regexp_replace(sm.kin_invoice_amt::text, '[^0-9.-]', '', 'g'), '')::numeric,
   0
-) * 1.36`
+)`
 
 // ── Single source of truth for KIA current stock ──────────────────────────────
 // Both the Stock Report and the Bookings → Stock section resolve "in stock" from
@@ -218,7 +222,7 @@ async function latestMonthFallback() {
   const result = rows(await analyticsDb.execute(sql`
     SELECT EXTRACT(YEAR FROM MAX(COALESCE(${parsedInvoiceDateSql('')}, sign_off_date)))::int AS year,
            (EXTRACT(MONTH FROM MAX(COALESCE(${parsedInvoiceDateSql('')}, sign_off_date)))::int - 1) AS month
-    FROM kia_stock_report
+    FROM kia_stock_management
   `))[0] || {}
   const year = Number(result.year)
   const month = Number(result.month)
@@ -248,7 +252,9 @@ function purchaseDealerClause(dealerCode: string | null) {
 
 function salesReportDealerClause(dealerCode: string | null) {
   const normalized = normalizeKiaDealerCode(dealerCode) || null
-  if (!normalized || normalized === 'JK402') return sql``
+  // kia_sales_report DOES carry JK402 rows, so scope it like any other dealer. (Previously JK402
+  // was skipped, so selecting Jammu silently mixed group-wide sales with Jammu-only stock.)
+  if (!normalized) return sql``
   return sql`AND UPPER(TRIM(dealer_code)) = ${normalized}`
 }
 
@@ -332,25 +338,25 @@ export async function getKiaStockReportFreshness(dealerCode?: string | null): Pr
                MIN(COALESCE(${parsedInvoiceDateSql('')}, sign_off_date)) AS min_date,
                MAX(COALESCE(${parsedInvoiceDateSql('')}, sign_off_date)) AS max_date,
                MAX(uploaded_at) AS source_updated_at
-        FROM kia_stock_report
+        FROM kia_stock_management
         WHERE TRUE ${freshnessDealerClause}
       `),
       analyticsDb.execute(sql`
         SELECT DISTINCT EXTRACT(YEAR FROM COALESCE(${parsedInvoiceDateSql('')}, sign_off_date))::int AS year,
                         (EXTRACT(MONTH FROM COALESCE(${parsedInvoiceDateSql('')}, sign_off_date))::int - 1) AS month
-        FROM kia_stock_report
+        FROM kia_stock_management
         WHERE COALESCE(${parsedInvoiceDateSql('')}, sign_off_date) IS NOT NULL ${freshnessDealerClause}
         ORDER BY year DESC, month DESC
       `),
       analyticsDb.execute(sql`
         SELECT DISTINCT UPPER(TRIM(COALESCE(NULLIF(TRIM(order_dealer), ''), 'Unknown'))) AS dealer
-        FROM kia_stock_report
+        FROM kia_stock_management
         WHERE order_dealer IS NOT NULL
         ORDER BY dealer
       `),
       analyticsDb.execute(sql`
         SELECT DISTINCT COALESCE(NULLIF(TRIM(stock_status), ''), 'Unknown') AS status
-        FROM kia_stock_report
+        FROM kia_stock_management
         ORDER BY status
       `),
     ])
@@ -389,7 +395,7 @@ export async function getKiaStockReportSummary(input: {
   const fallback = await latestMonthFallback()
   const context = resolveDateContext(input, fallback)
   const dateMode = normalizeDateMode(input.dateMode)
-  const cacheKey = `kia:stock-report:summary:v14:${dealerCode || 'all'}`
+  const cacheKey = `kia:stock-report:summary:v15:${dealerCode || 'all'}`
   return getCachedData(cacheKey, async () => {
     const currentRows = await readCurrentRows(dealerCode)
     const currentVehicles = currentRows.map(normalizeVehicle)
@@ -441,7 +447,7 @@ export async function getKiaStockReportSummary(input: {
       agingModelRows.set(vehicle.model, agingModel)
     }
 
-    const [movementStatus, movementMonthly, movementDaily, salesReportMonthly, sales90dResult, trimSalesResult] = await Promise.all([
+    const [movementStatus, movementMonthly, movementDaily, sales90dResult, trimSalesResult] = await Promise.all([
       analyticsDb.execute(sql`
         SELECT COALESCE(NULLIF(TRIM(stock_status), ''), 'Unknown') AS name, COUNT(*)::int AS value
         FROM kia_purchase_report
@@ -452,7 +458,7 @@ export async function getKiaStockReportSummary(input: {
         WITH months AS (
           SELECT DISTINCT to_char(d, 'YYYY-MM') AS month
           FROM generate_series(
-            (SELECT MIN(COALESCE(grn_date, retail_date)) FROM kia_purchase_report),
+            DATE_TRUNC('month', (SELECT MIN(COALESCE(grn_date, retail_date)) FROM kia_purchase_report))::date,
             CURRENT_DATE,
             '1 month'::interval
           ) d
@@ -465,10 +471,10 @@ export async function getKiaStockReportSummary(input: {
           GROUP BY 1
         ),
         ret AS (
-          SELECT to_char(date_trunc('month', retail_date), 'YYYY-MM') AS month, COUNT(*)::int AS cnt
-          FROM kia_purchase_report
-          WHERE retail_date IS NOT NULL
-            ${purchaseDealerClause(dealerCode)}
+          SELECT to_char(date_trunc('month', delivery_date), 'YYYY-MM') AS month, COUNT(DISTINCT vin_number)::int AS cnt
+          FROM kia_sales_report
+          WHERE delivery_date IS NOT NULL
+            ${salesReportDealerClause(dealerCode)}
           GROUP BY 1
         ),
         trn AS (
@@ -506,34 +512,21 @@ export async function getKiaStockReportSummary(input: {
         ORDER BY ${sql.raw(dateMode)}
       `),
       analyticsDb.execute(sql`
-        SELECT to_char(date_trunc('month', booking_date), 'YYYY-MM') AS month, COUNT(*)::int AS cnt
+        SELECT COUNT(DISTINCT vin_number)::int AS cnt
         FROM kia_sales_report
-        WHERE booking_date IS NOT NULL ${salesReportDealerClause(dealerCode)}
-        GROUP BY 1
-      `),
-      analyticsDb.execute(sql`
-        SELECT COUNT(*)::int AS cnt
-        FROM kia_sales_report
-        WHERE booking_date >= CURRENT_DATE - INTERVAL '90 days'
-          AND booking_date IS NOT NULL
+        WHERE delivery_date >= CURRENT_DATE - INTERVAL '90 days'
+          AND delivery_date IS NOT NULL
           ${salesReportDealerClause(dealerCode)}
       `),
       analyticsDb.execute(sql`
-        SELECT UPPER(TRIM(model)) AS model, UPPER(TRIM(variant)) AS variant, COUNT(*)::int AS sales_count
+        SELECT UPPER(TRIM(model)) AS model, UPPER(TRIM(variant)) AS variant, COUNT(DISTINCT vin_number)::int AS sales_count
         FROM kia_sales_report
-        WHERE booking_date >= CURRENT_DATE - INTERVAL '90 days'
-          AND booking_date IS NOT NULL
+        WHERE delivery_date >= CURRENT_DATE - INTERVAL '90 days'
+          AND delivery_date IS NOT NULL
           ${salesReportDealerClause(dealerCode)}
         GROUP BY 1, 2
       `),
     ])
-
-    const salesMap = new Map<string, number>()
-    for (const row of rows(salesReportMonthly)) {
-      if (row.month) {
-        salesMap.set(String(row.month), Number(row.cnt) || 0)
-      }
-    }
 
     const retailed90 = Number(rows(sales90dResult)[0]?.cnt) || 0
     const trimSalesMap = new Map<string, number>()
@@ -610,7 +603,7 @@ export async function getKiaStockReportSummary(input: {
       })
       .slice(0, 5)
 
-    const updatedRow = rows(await analyticsDb.execute(sql`SELECT MAX(uploaded_at) AS updated_at FROM kia_stock_report sm WHERE TRUE ${dealerClause(dealerCode)}`))[0] || {}
+    const updatedRow = rows(await analyticsDb.execute(sql`SELECT MAX(uploaded_at) AS updated_at FROM kia_stock_management sm WHERE TRUE ${dealerClause(dealerCode)}`))[0] || {}
 
     return {
       context: {
@@ -669,7 +662,10 @@ export async function getKiaStockReportSummary(input: {
         monthly: rows(movementMonthly).map((row) => ({
           month: safeText(row.month),
           arrivals: Number(row.arrivals) || 0,
-          retail: salesMap.get(safeText(row.month)) || 0,
+          // TRUE retail: units delivered (kia_purchase_report.retail_date, dealer-scoped in the `ret`
+          // CTE). Previously overridden with a booking-date count from kia_sales_report ("bookings",
+          // not retail). This feeds Retailed-this-month, days-of-supply and turns.
+          retail: Number(row.retail) || 0,
           transfers: Number(row.transfers) || 0,
           testDrive: Number(row.test_drive) || 0,
         })),
