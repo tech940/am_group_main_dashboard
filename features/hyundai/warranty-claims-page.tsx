@@ -227,9 +227,10 @@ function formatDate(value: unknown) {
 
 function formatDateTime(value: unknown) {
   if (!value) return '-'
-  return new Date(String(value)).toLocaleString('en-IN', {
+  return `${new Date(String(value)).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
+  })} IST`
 }
 
 function buildQuery(source: Source, filters: Filters) {

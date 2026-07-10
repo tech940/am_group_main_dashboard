@@ -12,7 +12,9 @@ export default async function Page() {
   const access = await getBrandAccess('kia')
   if (!access.appUser) redirect('/auth/login')
   if (!access.allowed) forbidden()
-  const permission = await requirePermission(access.appUser, 'kia.bookings.view')
+  // The whole Proforma module is gated by kia.proforma.view so the Access Map "Proforma" toggle
+  // actually hides/blocks it (previously used kia.bookings.view, so denying Proforma did nothing).
+  const permission = await requirePermission(access.appUser, 'kia.proforma.view')
   if (!permission.allowed) forbidden()
 
   if (access.appUser.role === 'manager') {

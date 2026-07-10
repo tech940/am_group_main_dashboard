@@ -25,11 +25,9 @@ export default async function Page({ params }: { params: Promise<{ section: stri
   const { section } = await params
   const resolved = SECTION_MAP[section]
   if (!resolved) redirect('/brands/kia/proforma/bookings')
-  const permissionKey = resolved === 'bookings'
-      ? 'kia.bookings.view'
-      : resolved === 'pending-approval'
-      ? 'kia.proforma.approve'
-      : 'kia.proforma.view'
+  // Every proforma view (incl. the internal "bookings" tab) is gated by kia.proforma.view so the
+  // Access Map "Proforma" toggle governs the whole module; only the approval queue needs approve.
+  const permissionKey = resolved === 'pending-approval' ? 'kia.proforma.approve' : 'kia.proforma.view'
   const permission = await requirePermission(access.appUser, permissionKey)
   if (!permission.allowed) forbidden()
 

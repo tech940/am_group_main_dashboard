@@ -145,9 +145,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       approvalStageActed = stage
       approvalDeclined = declined
     } else if (action === 'edit') {
-      // Only general_manager, admin, or developer can edit a proforma in-place.
-      const GM_EDIT_ROLES = ['general_manager', 'admin', 'developer']
-      if (!GM_EDIT_ROLES.includes(appUser.role)) {
+      // ONLY the General Manager can edit a proforma in-place — no other role, not even admins.
+      if (appUser.role !== 'general_manager') {
         return NextResponse.json({ error: 'Only the General Manager can edit a proforma.' }, { status: 403 })
       }
       // Apply all editable fields and reset approval chain back to PENDING.

@@ -207,7 +207,7 @@ const EMPTY_FORM: FormState = {
   exShowroom: '0',
   tcsValue: '0',
   registrationCharges: '0',
-  insuranceValue: '0',
+  insuranceValue: '3000',
   fastagValue: '0',
   accessoriesKit: '0',
   extWarranty: '0',
@@ -283,7 +283,7 @@ function formatDateTime(value?: string | null) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return `${date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} IST`
 }
 
 function dateKey(value?: string | null) {

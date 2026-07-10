@@ -49,6 +49,26 @@ function prefixLabel(prefix: string) {
 const ADMIN_VIEW_KEYS = ['user_management', 'access_control', 'admin_audit', 'dashboard_settings']
 const ADMIN_PRIMARY_KEY = 'user_management'
 const ADMIN_HIDDEN_KEYS = new Set(['access_control', 'admin_audit', 'dashboard_settings'])
+
+// KIA's user-facing "Bookings" screen IS the Proforma module (the sidebar "Bookings" link points
+// to /brands/kia/proforma), whose landing tab embeds the Booking CRM. That embedded list is served
+// by /api/brands/kia/bookings (guarded by kia.bookings.view), while the page + sidebar link are
+// guarded by kia.proforma.view — so the one screen needs BOTH keys. We collapse them into a single
+// "Bookings" column (kia.proforma) that grants/denies both together, and hide the separate
+// "Bookings CRM" (kia.bookings) column. data.access still carries kia.bookings (read on save).
+const BOOKINGS_PRIMARY_KEY = 'kia.proforma'
+const BOOKINGS_VIEW_KEYS = ['kia.proforma', 'kia.bookings']
+const BOOKINGS_HIDDEN_KEYS = new Set(['kia.bookings'])
+
+// A display column can control several underlying permission keys. Toggling it moves ALL of them
+// together, and it reads as "on" only when EVERY underlying key is granted — so the checkbox always
+// reflects whether the whole screen actually works (no half-granted "looks on but broken" state).
+function columnKeys(columnKey: string): string[] {
+  if (columnKey === ADMIN_PRIMARY_KEY) return ADMIN_VIEW_KEYS
+  if (columnKey === BOOKINGS_PRIMARY_KEY) return BOOKINGS_VIEW_KEYS
+  return [columnKey]
+}
+
 function groupOf(sectionKey: string) {
   return sectionKey === ADMIN_PRIMARY_KEY ? 'admin' : sectionKey.split('.')[0]
 }
@@ -80,8 +100,12 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
   // and relabel the representative. data.access still carries all four keys (used on save).
   const displaySections = useMemo(() =>
     data.sections
-      .filter((section) => !ADMIN_HIDDEN_KEYS.has(section.key))
-      .map((section) => (section.key === ADMIN_PRIMARY_KEY ? { ...section, name: 'Admin Panel' } : section)),
+      .filter((section) => !ADMIN_HIDDEN_KEYS.has(section.key) && !BOOKINGS_HIDDEN_KEYS.has(section.key))
+      .map((section) => {
+        if (section.key === ADMIN_PRIMARY_KEY) return { ...section, name: 'Admin Panel' }
+        if (section.key === BOOKINGS_PRIMARY_KEY) return { ...section, name: 'Bookings' }
+        return section
+      }),
   [data.sections])
 
   const groups = useMemo(() => {
@@ -106,21 +130,30 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
   }, [data.users, userQuery])
 
   // --- edit helpers ---
-  const desired = (userId: string, key: string) => {
+  // desired state of ONE underlying permission key (a pending edit wins over the saved value).
+  const desiredKey = (userId: string, key: string) => {
     const pending = edits[userId]?.[key]
     if (pending !== undefined) return pending
     return data.access[userId]?.[key]?.visible ?? false
   }
-  const isDirty = (userId: string, key: string) => edits[userId]?.[key] !== undefined
+  // A column is "on" only when every key it controls is granted; dirty if any of them is edited.
+  const desired = (userId: string, columnKey: string) => columnKeys(columnKey).every((key) => desiredKey(userId, key))
+  const isDirty = (userId: string, columnKey: string) => columnKeys(columnKey).some((key) => edits[userId]?.[key] !== undefined)
+  // A column's default (for the override dot) is on only when every underlying key defaults on.
+  const columnDefault = (userId: string, columnKey: string) =>
+    columnKeys(columnKey).every((key) => data.access[userId]?.[key]?.defaultVisible ?? false)
 
-  const toggle = (user: MatrixUser, key: string) => {
+  const toggle = (user: MatrixUser, columnKey: string) => {
     if (!user.canManage) return
-    const original = data.access[user.id]?.[key]?.visible ?? false
-    const next = !desired(user.id, key)
+    const next = !desired(user.id, columnKey)
     setEdits((current) => {
       const forUser = { ...(current[user.id] || {}) }
-      if (next === original) delete forUser[key]
-      else forUser[key] = next
+      // Move every underlying key to `next`, dropping the edit where it already matches the saved value.
+      for (const key of columnKeys(columnKey)) {
+        const original = data.access[user.id]?.[key]?.visible ?? false
+        if (next === original) delete forUser[key]
+        else forUser[key] = next
+      }
       const draft = { ...current }
       if (Object.keys(forUser).length) draft[user.id] = forUser
       else delete draft[user.id]
@@ -138,13 +171,11 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
     try {
       await Promise.all(Object.entries(edits).map(([userId, sectionMap]) => {
         const permissions: Record<string, boolean | null> = {}
+        // `sectionMap` is already keyed by underlying permission keys — toggle() expands merged
+        // columns (Admin Panel, Bookings) into their individual keys before they land here.
         for (const [key, want] of Object.entries(sectionMap)) {
-          // The single "Admin Panel" column fans out to all four admin permission keys.
-          const targetKeys = key === ADMIN_PRIMARY_KEY ? ADMIN_VIEW_KEYS : [key]
-          for (const targetKey of targetKeys) {
-            const def = data.access[userId]?.[targetKey]?.defaultVisible ?? false
-            permissions[`${targetKey}.view`] = want === def ? null : want
-          }
+          const def = data.access[userId]?.[key]?.defaultVisible ?? false
+          permissions[`${key}.view`] = want === def ? null : want
         }
         return fetch('/api/admin/permissions', {
           method: 'PATCH',
@@ -171,7 +202,8 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
     const withAccess: MatrixUser[] = []
     const without: MatrixUser[] = []
     for (const user of filteredUsers) {
-      ;(data.access[user.id]?.[sectionKey]?.visible ? withAccess : without).push(user)
+      const canAccess = columnKeys(sectionKey).every((key) => data.access[user.id]?.[key]?.visible)
+      ;(canAccess ? withAccess : without).push(user)
     }
     return { withAccess, without }
   }, [sectionKey, filteredUsers, data.access])
@@ -397,10 +429,9 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
 
                     {/* Checkbox columns */}
                     {columns.map((s, i) => {
-                      const cell = data.access[user.id]?.[s.key]
                       const checked = desired(user.id, s.key)
                       const dirty = isDirty(user.id, s.key)
-                      const override = checked !== (cell?.defaultVisible ?? false)
+                      const override = checked !== columnDefault(user.id, s.key)
                       
                       return (
                         <td
@@ -494,7 +525,7 @@ export function AccessMap({ data, roleLabels, onEditUser, onReload }: AccessMapP
                         </span>
                       </div>
                     </div>
-                    {data.access[u.id]?.[sectionKey]?.override && (
+                    {columnKeys(sectionKey).some((key) => data.access[u.id]?.[key]?.override) && (
                       <span className="rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[8.5px] font-black uppercase tracking-wider text-indigo-600">
                         override
                       </span>

@@ -739,7 +739,7 @@ function WorkshopTrendValueLabel({
 }
 
 function canAccessExecutiveDashboard(role?: string | null) {
-  return ['developer', 'ceo', 'md', 'ea'].includes(String(role || '').trim().toLowerCase())
+  return ['developer', 'ceo', 'md', 'ea', 'eba'].includes(String(role || '').trim().toLowerCase())
 }
 
 function getBusinessExcellenceReportOptions(sheets: SavedSheetMetadata[], role?: string | null) {
@@ -1532,7 +1532,8 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
   const [appliedDateFilter, setAppliedDateFilter] = useState<BusinessDateFilter>(null)
   const [selectedDealerCode, setSelectedDealerCode] = useState<string | null>(() => {
     const normalized = clampDealer(normalizeKiaDealerCode(searchParams.get('dealer_code')))
-    return normalized || scopedDefaultDealer
+    // Executive Dashboard defaults to All Locations (null); other reports default to a dealer.
+    return normalized || (initialReportName === EXECUTIVE_DASHBOARD_REPORT && !isDealerRestricted ? null : scopedDefaultDealer)
   })
   const [isApplyingFilter, setIsApplyingFilter] = useState(false)
   const [showDateControls, setShowDateControls] = useState(false)
@@ -1549,7 +1550,8 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
     const params = new URLSearchParams(queryDateFilterKey)
     const hasDateParams = params.has('startDate') || params.has('endDate') || params.has('compareStartDate') || params.has('compareEndDate') || params.get('periodMode') === 'year' || params.has('year')
     const timeout = window.setTimeout(() => {
-      setSelectedDealerCode(clampDealer(normalizeKiaDealerCode(params.get('dealer_code'))) || scopedDefaultDealer)
+      const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
+      setSelectedDealerCode(clampDealer(normalizeKiaDealerCode(params.get('dealer_code'))) || (activeReport === EXECUTIVE_DASHBOARD_REPORT && !isDealerRestricted ? null : scopedDefaultDealer))
       if (!hasDateParams) {
         setSelectedPreset('mtd')
         setSelectedYear(null)
@@ -1726,10 +1728,13 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
   }, [activeTab, initialReportName, router, selectedDealerCode])
 
   const handleDealerChange = useCallback((dealerCode: string | null) => {
-    const nextDealerCode = normalizeKiaDealerCode(dealerCode) || 'JAMMU'
+    // Clicking "All Locations" passes null — keep it null on the Executive Dashboard instead of
+    // snapping back to a dealer. Other reports still fall back to the default dealer.
+    const activeReport = getBusinessExcellenceReportName(activeTab || initialReportName)
+    const nextDealerCode = normalizeKiaDealerCode(dealerCode) || (activeReport === EXECUTIVE_DASHBOARD_REPORT ? null : scopedDefaultDealer)
     setSelectedDealerCode(nextDealerCode)
     router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(activeTab || initialReportName), appliedDateFilter, nextDealerCode), { scroll: false })
-  }, [activeTab, appliedDateFilter, initialReportName, router])
+  }, [activeTab, appliedDateFilter, initialReportName, router, scopedDefaultDealer])
 
   const resolveCurrentRange = useCallback(() => {
     if (startDate && endDate) return { startDate, endDate }
@@ -1932,7 +1937,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
   const handleTabChange = (sheetName: string) => {
     const nextDealerCode = sheetName === EXECUTIVE_DASHBOARD_REPORT
       ? normalizeKiaDealerCode(searchParams.get('dealer_code'))
-      : normalizeKiaDealerCode(selectedDealerCode) || 'JAMMU'
+      : normalizeKiaDealerCode(selectedDealerCode) || scopedDefaultDealer
     setSelectedDealerCode(nextDealerCode)
     router.push(appendBusinessExcellenceDateQuery(getBusinessExcellenceReportPath(sheetName), appliedDateFilter, nextDealerCode))
   }
@@ -3781,33 +3786,48 @@ function ExecutiveGrowthBadge({ value }: { value: number | string | 'N/A' }) {
   )
 }
 
+const EXEC_METRIC_TONES = {
+  emerald: { bar: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-600', value: 'text-emerald-900', prev: 'border-emerald-100 bg-emerald-50/50' },
+  blue:    { bar: 'bg-blue-500',    chip: 'bg-blue-50 text-blue-600',       value: 'text-blue-900',    prev: 'border-blue-100 bg-blue-50/50' },
+  amber:   { bar: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-600',     value: 'text-amber-900',   prev: 'border-amber-100 bg-amber-50/50' },
+} as const
+
 function ExecutiveMetricCard({
   label,
   value,
   previous,
   growth,
   helper,
+  tone = 'emerald',
+  icon: Icon,
 }: {
   label: string
   value: string
   previous: string
   growth: number | string | 'N/A'
   helper: string
+  tone?: keyof typeof EXEC_METRIC_TONES
+  icon?: typeof Wrench
 }) {
+  const t = EXEC_METRIC_TONES[tone]
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{label}</p>
-          <p className="mt-3 text-2xl font-black text-slate-950">{value}</p>
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
+      <div className={cn('absolute inset-x-0 top-0 h-1', t.bar)} />
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            {Icon && <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-xl', t.chip)}><Icon className="h-[18px] w-[18px]" /></span>}
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
+          </div>
+          <ExecutiveGrowthBadge value={growth} />
         </div>
-        <ExecutiveGrowthBadge value={growth} />
+        <p className={cn('mt-3 text-3xl font-black', t.value)}>{value}</p>
+        <div className={cn('mt-3 flex items-center justify-between rounded-xl border px-3 py-2', t.prev)}>
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Previous</span>
+          <span className="text-sm font-black text-slate-700">{previous}</span>
+        </div>
+        <p className="mt-3 text-xs font-bold text-slate-500">{helper}</p>
       </div>
-      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Previous</p>
-        <p className="mt-1 text-sm font-black text-slate-800">{previous}</p>
-      </div>
-      <p className="mt-3 text-xs font-bold text-slate-500">{helper}</p>
     </div>
   )
 }
@@ -4320,6 +4340,8 @@ function BusinessExecutiveDashboard({
           <div className="grid gap-4 xl:grid-cols-3">
             <ExecutiveMetricCard
               label="Total Revenue"
+              tone="emerald"
+              icon={IndianRupee}
               value={formatCurrency(revenueMtd.cy)}
               previous={formatCurrency(revenueMtd.ly)}
               growth={revenueMtd.growth}
@@ -4327,6 +4349,8 @@ function BusinessExecutiveDashboard({
             />
             <ExecutiveMetricCard
               label="Parts Revenue"
+              tone="amber"
+              icon={Wrench}
               value={formatCurrency(Number(partsMtd.cy || 0))}
               previous={formatCurrency(Number(partsMtd.ly === 'N/A' ? 0 : partsMtd.ly || 0))}
               growth={partsMtd.growth}
@@ -4334,6 +4358,8 @@ function BusinessExecutiveDashboard({
             />
             <ExecutiveMetricCard
               label="Labour Revenue"
+              tone="blue"
+              icon={Activity}
               value={formatCurrency(Number(labourMtd.cy || 0))}
               previous={formatCurrency(Number(labourMtd.ly === 'N/A' ? 0 : labourMtd.ly || 0))}
               growth={labourMtd.growth}

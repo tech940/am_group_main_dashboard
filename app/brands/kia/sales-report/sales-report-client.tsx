@@ -1,7 +1,7 @@
 'use client'
 
 import type { ComponentProps, ReactNode } from 'react'
-import { startTransition, useDeferredValue, useEffect, useState, useRef } from 'react'
+import { startTransition, useDeferredValue, useEffect, useState, useRef, useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -203,13 +203,14 @@ function formatDateTime(value: string | null | undefined) {
   if (!value) return 'NA'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'NA'
-  return date.toLocaleString('en-IN', {
+  return `${date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-  })
+  })} IST`
 }
 
 function toColumnLabel(column: string) {
@@ -1017,6 +1018,39 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   const retailByConsultant = buildRetailBreakdown(summary?.retail.transactions || [], 'consultant')
   const topConsultantList = summary?.team.leaderboard.slice(0, 10) || []
   const teamRows = summary?.team.leaderboard || []
+  const teamGrandTotal = useMemo(() => {
+    if (!teamRows.length) return null
+    const totals = {
+      enquiries: 0,
+      testDrives: 0,
+      bookings: 0,
+      walkinEnquiries: 0,
+      walkinBookings: 0,
+    }
+    teamRows.forEach(row => {
+      totals.enquiries += row.enquiries || 0
+      totals.testDrives += row.testDrives || 0
+      totals.bookings += row.bookings || 0
+      totals.walkinEnquiries += row.walkinEnquiries || 0
+      totals.walkinBookings += row.walkinBookings || 0
+    })
+    
+    const tdRatePct = totals.enquiries > 0 ? (totals.testDrives / totals.enquiries) * 100 : 0
+    const bookingRatePct = totals.enquiries > 0 ? (totals.bookings / totals.enquiries) * 100 : 0
+    const walkinConversionPct = totals.walkinEnquiries > 0 ? (totals.walkinBookings / totals.walkinEnquiries) * 100 : 0
+    
+    return {
+      consultant: 'Grand Total',
+      enquiries: totals.enquiries,
+      testDrives: totals.testDrives,
+      tdRatePct,
+      bookings: totals.bookings,
+      bookingRatePct,
+      walkinEnquiries: totals.walkinEnquiries,
+      walkinBookings: totals.walkinBookings,
+      walkinConversionPct,
+    }
+  }, [teamRows])
   const teamTotalPages = Math.max(1, Math.ceil(teamRows.length / SALES_REPORT_TABLE_PAGE_SIZE))
   const pagedTeamRows = teamRows
   const heatmapRows = summary?.sources.dealerMatrix || []
@@ -2054,8 +2088,8 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pagedTeamRows.map((item, index) => (
-                        <TableRow key={item.consultant} className={cn(index === pagedTeamRows.length - 1 && 'border-t-2 border-[#071a2b]', 'odd:bg-white even:bg-[#fbfdff]')}>
+                      {pagedTeamRows.map((item) => (
+                        <TableRow key={item.consultant} className="odd:bg-white even:bg-[#fbfdff]">
                           <TableCell className="font-black text-slate-950">{item.consultant}</TableCell>
                           <TableCell>{formatNumber(item.enquiries)}</TableCell>
                           <TableCell>
@@ -2074,6 +2108,26 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                           <TableCell><span className="rounded-full px-3 py-1 text-[12px] font-black" style={{ backgroundColor: item.walkinConversionPct >= 30 ? '#edf8f0' : item.walkinConversionPct >= 15 ? '#fff4e8' : '#fdecee', color: item.walkinConversionPct >= 30 ? '#0f8d63' : item.walkinConversionPct >= 15 ? '#c96e11' : '#d90416' }}>{formatPercent(item.walkinConversionPct)}</span></TableCell>
                         </TableRow>
                       ))}
+                      {teamGrandTotal && (
+                        <TableRow style={{ backgroundColor: '#dbeafe' }} className="border-t-2 border-[#071a2b] font-black [&_td]:font-black hover:!bg-[#c7d2fe]">
+                          <TableCell className="font-black text-[#071a2b]">{teamGrandTotal.consultant}</TableCell>
+                          <TableCell className="text-[11px] font-black text-slate-900">{formatNumber(teamGrandTotal.enquiries)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-16 rounded-full bg-[#eef2f7]">
+                                <div className="h-1.5 rounded-full bg-[#8835a7]" style={{ width: `${Math.min(100, teamGrandTotal.enquiries > 0 ? (teamGrandTotal.testDrives / teamGrandTotal.enquiries) * 100 : 0)}%` }} />
+                              </div>
+                              <span className="font-black text-[#8835a7]">{formatNumber(teamGrandTotal.testDrives)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell><span className="rounded-full bg-[#edf8f0] px-3 py-1 text-[12px] font-black text-[#0f8d63]">{formatPercent(teamGrandTotal.tdRatePct)}</span></TableCell>
+                          <TableCell className="font-black text-[#10b981]">{formatNumber(teamGrandTotal.bookings)}</TableCell>
+                          <TableCell><span className="rounded-full bg-[#fff4e8] px-3 py-1 text-[12px] font-black text-[#c96e11]">{formatPercent(teamGrandTotal.bookingRatePct)}</span></TableCell>
+                          <TableCell><span className="rounded-full bg-[#edf8f0] px-3 py-1 text-[12px] font-black text-[#269442]">{formatNumber(teamGrandTotal.walkinEnquiries)}</span></TableCell>
+                          <TableCell className="font-black text-[#269442]">{formatNumber(teamGrandTotal.walkinBookings)}</TableCell>
+                          <TableCell><span className="rounded-full px-3 py-1 text-[12px] font-black" style={{ backgroundColor: teamGrandTotal.walkinConversionPct >= 30 ? '#edf8f0' : teamGrandTotal.walkinConversionPct >= 15 ? '#fff4e8' : '#fdecee', color: teamGrandTotal.walkinConversionPct >= 30 ? '#0f8d63' : teamGrandTotal.walkinConversionPct >= 15 ? '#c96e11' : '#d90416' }}>{formatPercent(teamGrandTotal.walkinConversionPct)}</span></TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>

@@ -750,6 +750,12 @@ function buildFiscalTrendRows(rows: FiscalAggregateRow[], analysisType: Analysis
 }
 
 async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
+  // Fiscal-year totals are DATE-INDEPENDENT (a full-table dedup scan grouped by FY, ~2s over 140k
+  // rows), yet they were recomputed for every distinct date range. Cache per dealer so date-range
+  // changes on the Executive Dashboard reuse the same fiscal result instead of re-scanning.
+  return getCachedData(
+    `hyundai:business-excellence:ro-billing:fiscal:v2:${dealerCode || 'all'}`,
+    async (): Promise<FiscalAggregateRow[]> => {
   const useDailySummary = false
   const result = await db.execute(useDailySummary && HAS_DAILY_SUMMARY_V2 && !dealerCode ? sql`
     WITH fiscal AS (
@@ -825,6 +831,9 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
   `)
 
   return (result as unknown as FiscalAggregateRow[]) || []
+    },
+    CACHE_TTL_SECONDS,
+  )
 }
 
 async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date, dealerCode: DealerFilter = null): Promise<AnalyticsQualitySummary> {

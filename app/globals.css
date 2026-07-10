@@ -509,14 +509,46 @@
      cell fully opaque, so scrolling content never shows through the pinned header/column. */
   .access-map-grid thead tr { background-color: transparent !important; }
   .access-map-grid th {
-    color: hsl(var(--muted-foreground)) !important;
-    font-weight: 600 !important;
-    letter-spacing: normal !important;
-    text-transform: none !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
   }
-  .access-map-grid thead th { background-color: color-mix(in srgb, hsl(var(--muted)) 70%, hsl(var(--card))) !important; }
-  .access-map-grid thead th.am-group { background-color: hsl(var(--muted)) !important; }
-  .access-map-grid tbody td.am-user { background-color: color-mix(in srgb, hsl(var(--muted)) 45%, hsl(var(--card))) !important; }
+  
+  /* Row 1: Groups (Darkest Slate) */
+  .access-map-grid thead tr:first-child th {
+    background-color: #020617 !important;
+    color: #ffffff !important;
+    border-bottom: 1px solid #1e293b !important;
+    border-right: 1px solid #1e293b !important;
+    border-left: 1px solid #1e293b !important;
+  }
+  .access-map-grid thead tr:first-child th span {
+    color: #94a3b8 !important; /* slate-400 for user count text */
+  }
+
+  /* Row 2: Sections (Medium Slate) */
+  .access-map-grid thead tr:last-child th {
+    background-color: #0f172a !important;
+    color: #cbd5e1 !important;
+    border-bottom: 1px solid #334155 !important;
+    border-right: 1px solid #1e293b !important;
+    border-left: 1px solid #1e293b !important;
+  }
+  .access-map-grid thead tr:last-child th span {
+    color: #cbd5e1 !important;
+  }
+
+  /* Left Sidebar: Clean white sidebar with distinct slate-300 vertical divider border */
+  .access-map-grid tbody td.am-user {
+    background-color: #ffffff !important;
+    border-right: 2px solid #cbd5e1 !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+  }
+  
+  /* Hover effect for row items */
+  .access-map-grid tbody tr:hover td.am-user {
+    background-color: #f8fafc !important; /* light slate-50 */
+  }
 
   /* Checkbox cells: force the fill/tick colours so the button preflight (transparent bg) and
      any global button styling can't blank them out. Tick uses currentColor. */
@@ -980,18 +1012,18 @@
     background-color: rgba(37, 99, 235, 0.10);
   }
 
-  .dark [role="dialog"][class*="bg-white"],
-  .dark [role="dialog"] [class*="bg-white"],
-  .dark [role="menu"][class*="bg-white"],
-  .dark [role="listbox"][class*="bg-white"] {
+  .dark [role="dialog"][class~="bg-white"],
+  .dark [role="dialog"] [class~="bg-white"],
+  .dark [role="menu"][class~="bg-white"],
+  .dark [role="listbox"][class~="bg-white"] {
     background-color: rgb(15, 23, 42) !important;
     color: rgb(248, 250, 252) !important;
   }
 
-  .dark [role="dialog"] [class*="bg-slate-50"],
-  .dark [role="dialog"] [class*="bg-slate-100"],
-  .dark [role="dialog"] [class*="bg-gray-50"],
-  .dark [role="dialog"] [class*="bg-gray-100"] {
+  .dark [role="dialog"] [class~="bg-slate-50"],
+  .dark [role="dialog"] [class~="bg-slate-100"],
+  .dark [role="dialog"] [class~="bg-gray-50"],
+  .dark [role="dialog"] [class~="bg-gray-100"] {
     background-color: rgba(30, 41, 59, 0.82) !important;
   }
 
@@ -1021,49 +1053,49 @@
     @apply bg-white/70 backdrop-blur-md border border-white/20;
   }
 
-  .glass-dashboard-content [class*="bg-white"] {
+  .glass-dashboard-content [class~="bg-white"] {
     background-color: #ffffff !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
-  .glass-dashboard-content [class*="bg-slate-50"] {
+  .glass-dashboard-content [class~="bg-slate-50"] {
     background-color: #f8fafc !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
-  .glass-dashboard-content [class*="bg-slate-100"] {
+  .glass-dashboard-content [class~="bg-slate-100"] {
     background-color: #f1f5f9 !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
   .glass-dashboard-content .demo-remarks-modal,
-  .glass-dashboard-content .demo-remarks-modal [class*="bg-white"],
-  .glass-dashboard-content .demo-remarks-modal [class*="bg-slate-50"],
-  .glass-dashboard-content .demo-remarks-modal [class*="bg-slate-100"] {
+  .glass-dashboard-content .demo-remarks-modal [class~="bg-white"],
+  .glass-dashboard-content .demo-remarks-modal [class~="bg-slate-50"],
+  .glass-dashboard-content .demo-remarks-modal [class~="bg-slate-100"] {
     background-color: #ffffff !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
   .glass-dashboard-content .solid-calendar-surface,
-  .glass-dashboard-content .solid-calendar-surface [class*="bg-white"] {
+  .glass-dashboard-content .solid-calendar-surface [class~="bg-white"] {
     background: #ffffff !important;
     background-color: #ffffff !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
-  .glass-dashboard-content .solid-calendar-surface [class*="bg-slate-50"] {
+  .glass-dashboard-content .solid-calendar-surface [class~="bg-slate-50"] {
     background: #f8fafc !important;
     background-color: #f8fafc !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
-  .glass-dashboard-content .solid-calendar-surface [class*="bg-slate-100"] {
+  .glass-dashboard-content .solid-calendar-surface [class~="bg-slate-100"] {
     background: #f1f5f9 !important;
     background-color: #f1f5f9 !important;
     backdrop-filter: none !important;
@@ -1288,37 +1320,37 @@
   }
 
   .glass-dashboard-content .diagnostics-panel-body,
-  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-slate-50"],
-  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-slate-100"] {
+  .glass-dashboard-content .diagnostics-panel-shell [class~="bg-slate-50"],
+  .glass-dashboard-content .diagnostics-panel-shell [class~="bg-slate-100"] {
     background: #f8fafc !important;
     background-color: #f8fafc !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
-  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-white"] {
+  .glass-dashboard-content .diagnostics-panel-shell [class~="bg-white"] {
     background: #ffffff !important;
     background-color: #ffffff !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
-  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-emerald-50"] {
+  .glass-dashboard-content .diagnostics-panel-shell [class~="bg-emerald-50"] {
     background: #ecfdf5 !important;
     background-color: #ecfdf5 !important;
   }
 
-  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-blue-50"] {
+  .glass-dashboard-content .diagnostics-panel-shell [class~="bg-blue-50"] {
     background: #eff6ff !important;
     background-color: #eff6ff !important;
   }
 
-  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-amber-50"] {
+  .glass-dashboard-content .diagnostics-panel-shell [class~="bg-amber-50"] {
     background: #fffbeb !important;
     background-color: #fffbeb !important;
   }
 
-  .glass-dashboard-content .diagnostics-panel-shell [class*="bg-rose-50"] {
+  .glass-dashboard-content .diagnostics-panel-shell [class~="bg-rose-50"] {
     background: #fff1f2 !important;
     background-color: #fff1f2 !important;
   }
@@ -1327,9 +1359,9 @@
     color: rgba(226, 232, 240, 0.94);
   }
 
-  .dark .glass-dashboard-content [class*="bg-white"],
-  .dark .glass-dashboard-content [class*="bg-slate-50"],
-  .dark .glass-dashboard-content [class*="bg-slate-100"] {
+  .dark .glass-dashboard-content [class~="bg-white"],
+  .dark .glass-dashboard-content [class~="bg-slate-50"],
+  .dark .glass-dashboard-content [class~="bg-slate-100"] {
     background-color: rgba(15, 23, 42, 0.58) !important;
     backdrop-filter: blur(24px) saturate(1.18);
     -webkit-backdrop-filter: blur(24px) saturate(1.18);
@@ -1516,15 +1548,15 @@
   }
 
   .dark .glass-dashboard-content .diagnostics-panel-body,
-  .dark .glass-dashboard-content .diagnostics-panel-shell [class*="bg-slate-50"],
-  .dark .glass-dashboard-content .diagnostics-panel-shell [class*="bg-slate-100"] {
+  .dark .glass-dashboard-content .diagnostics-panel-shell [class~="bg-slate-50"],
+  .dark .glass-dashboard-content .diagnostics-panel-shell [class~="bg-slate-100"] {
     background: #0f172a !important;
     background-color: #0f172a !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
-  .dark .glass-dashboard-content .diagnostics-panel-shell [class*="bg-white"] {
+  .dark .glass-dashboard-content .diagnostics-panel-shell [class~="bg-white"] {
     background: #111827 !important;
     background-color: #111827 !important;
     backdrop-filter: none !important;

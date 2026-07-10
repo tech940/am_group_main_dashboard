@@ -20,6 +20,7 @@ import {
   UserCog,
   Users,
   Wrench,
+  X,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Badge } from '@/components/ui/badge'
@@ -29,9 +30,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { BRANCH_OPTIONS } from '@/lib/branches'
 import { getBrandDealers } from '@/lib/dealers/registry'
+import { formatIstDateTime } from '@/lib/date-time'
 import { cn } from '@/lib/utils'
 import { AccessControlPanel } from './access-control-panel'
 import { AccessMap, type AccessMatrixData } from './access-map'
@@ -162,6 +163,23 @@ const TAB_DEFINITIONS: Array<{
   { key: 'settings', label: 'Settings', icon: Settings, superOnly: true },
 ]
 
+// The only dashboard setting today: dates excluded from KIA Business Excellence working-day math
+// (in addition to Sundays). Stored in dashboard_settings as a JSON array of 'YYYY-MM-DD' strings.
+const KIA_BE_HOLIDAYS_KEY = 'kiaBusinessExcellenceHolidays'
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function normalizeHolidayList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const valid = value.map((item) => String(item || '').trim()).filter((item) => ISO_DATE_RE.test(item))
+  return Array.from(new Set(valid)).sort()
+}
+
+function formatHolidayLabel(date: string) {
+  const parsed = new Date(`${date}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return date
+  return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'short' })
+}
+
 function branchLabel(branch: string | null) {
   if (!branch) return 'Unassigned'
   if (branch === 'all') return 'All Branches'
@@ -174,15 +192,126 @@ function branchLabel(branch: string | null) {
   return BRANCH_OPTIONS.find((item) => item.value === branch)?.label || 'Unassigned'
 }
 
-function StatCard({ label, value, icon: Icon }: { label: string; value: number; icon: typeof Users }) {
+// Semantic accent tones — drawn from the palette already used across the app (badges, pills,
+// petty cash). Each admin section / KPI gets a consistent colour so the console reads as a
+// colour-coded map rather than a wall of grey.
+type AccentTone = 'indigo' | 'emerald' | 'slate' | 'violet' | 'amber' | 'rose' | 'blue' | 'cyan' | 'orange' | 'teal'
+
+const STAT_TONES: Record<AccentTone, { bar: string; chip: string; value: string }> = {
+  indigo:  { bar: 'bg-indigo-500',  chip: 'bg-indigo-50 text-indigo-600',   value: 'text-indigo-950' },
+  emerald: { bar: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-600', value: 'text-emerald-950' },
+  slate:   { bar: 'bg-slate-300',   chip: 'bg-slate-100 text-slate-500',    value: 'text-slate-800' },
+  violet:  { bar: 'bg-violet-500',  chip: 'bg-violet-50 text-violet-600',   value: 'text-violet-950' },
+  amber:   { bar: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-600',     value: 'text-amber-950' },
+  rose:    { bar: 'bg-rose-500',    chip: 'bg-rose-50 text-rose-600',       value: 'text-rose-950' },
+  blue:    { bar: 'bg-blue-500',    chip: 'bg-blue-50 text-blue-600',       value: 'text-blue-950' },
+  cyan:    { bar: 'bg-cyan-500',    chip: 'bg-cyan-50 text-cyan-600',       value: 'text-cyan-950' },
+  orange:  { bar: 'bg-orange-500',  chip: 'bg-orange-50 text-orange-600',   value: 'text-orange-950' },
+  teal:    { bar: 'bg-teal-500',    chip: 'bg-teal-50 text-teal-600',       value: 'text-teal-950' },
+}
+
+// Per-tab accent — the active pill is filled with the tone, inactive tabs keep a tinted icon so
+// every sub-section has a recognisable colour identity.
+const TAB_TONES: Record<string, { icon: string; active: string }> = {
+  overview:        { icon: 'text-indigo-500',  active: 'bg-indigo-600 hover:bg-indigo-600 ring-indigo-600/20 shadow-indigo-500/30' },
+  users:           { icon: 'text-blue-500',    active: 'bg-blue-600 hover:bg-blue-600 ring-blue-600/20 shadow-blue-500/30' },
+  'branch-admins': { icon: 'text-cyan-500',    active: 'bg-cyan-600 hover:bg-cyan-600 ring-cyan-600/20 shadow-cyan-500/30' },
+  access:          { icon: 'text-violet-500',  active: 'bg-violet-600 hover:bg-violet-600 ring-violet-600/20 shadow-violet-500/30' },
+  'access-map':    { icon: 'text-violet-500',  active: 'bg-violet-600 hover:bg-violet-600 ring-violet-600/20 shadow-violet-500/30' },
+  roles:           { icon: 'text-amber-500',   active: 'bg-amber-500 hover:bg-amber-500 ring-amber-500/20 shadow-amber-500/30' },
+  audit:           { icon: 'text-rose-500',    active: 'bg-rose-600 hover:bg-rose-600 ring-rose-600/20 shadow-rose-500/30' },
+  'sync-logs':     { icon: 'text-emerald-500', active: 'bg-emerald-600 hover:bg-emerald-600 ring-emerald-600/20 shadow-emerald-500/30' },
+  system:          { icon: 'text-orange-500',  active: 'bg-orange-600 hover:bg-orange-600 ring-orange-600/20 shadow-orange-500/30' },
+  settings:        { icon: 'text-teal-500',    active: 'bg-teal-600 hover:bg-teal-600 ring-teal-600/20 shadow-teal-500/30' },
+}
+
+function toneFor(key: string) {
+  return TAB_TONES[key] || TAB_TONES.overview
+}
+
+// Soft badge/avatar styling per tone (tinted fill + inset ring), used for role chips and avatars.
+const BADGE_TONES: Record<AccentTone, string> = {
+  indigo:  'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  slate:   'bg-slate-100 text-slate-600 ring-slate-200',
+  violet:  'bg-violet-50 text-violet-700 ring-violet-200',
+  amber:   'bg-amber-50 text-amber-700 ring-amber-200',
+  rose:    'bg-rose-50 text-rose-700 ring-rose-200',
+  blue:    'bg-blue-50 text-blue-700 ring-blue-200',
+  cyan:    'bg-cyan-50 text-cyan-700 ring-cyan-200',
+  orange:  'bg-orange-50 text-orange-700 ring-orange-200',
+  teal:    'bg-teal-50 text-teal-700 ring-teal-200',
+}
+
+// Role → tone, grouped by function so the Users table reads as colour families:
+// leadership=violet, sales=blue, finance=emerald/teal, service=cyan, ops=amber, rest=slate.
+const ROLE_TONE: Record<string, AccentTone> = {
+  developer: 'violet', md: 'violet', admin: 'violet', branch_admin: 'violet', ceo: 'violet',
+  sales_head: 'blue', general_manager: 'blue', sales_manager: 'blue', sales_executive: 'blue',
+  finance_head: 'emerald', finance_team: 'emerald', accounts: 'teal',
+  service_general_manager: 'cyan', service_manager: 'cyan',
+  ea: 'amber', eba: 'amber', purchase_manager: 'amber', manager: 'amber',
+  viewer: 'slate', technician: 'slate',
+}
+
+function initialsOf(name: string) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+function RoleBadge({ role }: { role: string }) {
   return (
-    <Card className="border-slate-200/80 bg-white/85 shadow-sm">
+    <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ring-1 ring-inset', BADGE_TONES[ROLE_TONE[role] || 'slate'])}>
+      {ROLE_LABELS[role] || role}
+    </span>
+  )
+}
+
+// Colour an audit action by intent: destructive=rose, create=emerald, update=amber, else violet.
+function auditActionTone(action: string): AccentTone {
+  const a = action.toLowerCase()
+  if (/(delete|remove|reset|deactivat|revoke|cancel|denied|declin)/.test(a)) return 'rose'
+  if (/(creat|add|approv|grant|allocat|activ)/.test(a)) return 'emerald'
+  if (/(updat|edit|chang|set|transfer|releas)/.test(a)) return 'amber'
+  return 'violet'
+}
+
+function ActionBadge({ action }: { action: string }) {
+  return (
+    <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs font-bold ring-1 ring-inset', BADGE_TONES[auditActionTone(action)])}>
+      {action}
+    </span>
+  )
+}
+
+// A colour-chipped section heading — a tinted icon tile + title, so each card announces its
+// section instead of relying on plain bold text.
+function SectionHeading({ icon: Icon, tone, title, subtitle }: { icon: typeof Users; tone: AccentTone; title: string; subtitle?: string }) {
+  const t = STAT_TONES[tone]
+  return (
+    <div className="flex items-center gap-3">
+      <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-xl', t.chip)}><Icon className="h-4.5 w-4.5" /></span>
+      <div>
+        <CardTitle className="text-base">{title}</CardTitle>
+        {subtitle && <p className="mt-0.5 text-xs font-medium text-slate-500">{subtitle}</p>}
+      </div>
+    </div>
+  )
+}
+
+function StatCard({ label, value, icon: Icon, tone = 'indigo' }: { label: string; value: number; icon: typeof Users; tone?: AccentTone }) {
+  const t = STAT_TONES[tone]
+  return (
+    <Card className="relative overflow-hidden border-slate-200/80 bg-white shadow-sm transition-shadow hover:shadow-md">
+      <div className={cn('absolute inset-x-0 top-0 h-1', t.bar)} />
       <CardContent className="flex items-center justify-between p-5">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
-          <p className="mt-2 text-3xl font-black text-slate-950">{value}</p>
+          <p className={cn('mt-2 text-3xl font-black', t.value)}>{value}</p>
         </div>
-        <div className="rounded-2xl bg-indigo-50 p-3 text-indigo-700"><Icon className="h-5 w-5" /></div>
+        <div className={cn('rounded-2xl p-3', t.chip)}><Icon className="h-5 w-5" /></div>
       </CardContent>
     </Card>
   )
@@ -315,7 +444,8 @@ export function AdminConsole() {
   const [priceUploading, setPriceUploading] = useState(false)
   const [priceUploadResult, setPriceUploadResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [settingsData, setSettingsData] = useState<Record<string, unknown> | null>(null)
-  const [settingsText, setSettingsText] = useState('')
+  const [holidays, setHolidays] = useState<string[]>([])
+  const [newHoliday, setNewHoliday] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -397,7 +527,7 @@ export function AdminConsole() {
         if (emailResponse.ok) setEmailLogs(await emailResponse.json())
       } else {
         setSettingsData(payload)
-        setSettingsText(JSON.stringify(payload, null, 2))
+        setHolidays(normalizeHolidayList((payload as Record<string, unknown>)?.[KIA_BE_HOLIDAYS_KEY]))
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load the Admin Console.')
@@ -589,24 +719,38 @@ export function AdminConsole() {
     }
   }
 
-  async function saveSettings() {
-    if (!settingsText) return
+  // Persist the KIA BE holidays list. The settings PUT merges per-key, so sending only this key
+  // leaves any other stored settings untouched.
+  async function persistHolidays(next: string[]) {
+    const normalized = normalizeHolidayList(next)
     setSaving(true)
+    setError('')
     try {
-      const parsedSettings = JSON.parse(settingsText) as Record<string, unknown>
       const response = await fetch('/api/admin/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: parsedSettings }),
+        body: JSON.stringify({ settings: { [KIA_BE_HOLIDAYS_KEY]: normalized } }),
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Failed to save settings.')
-      setSettingsData(parsedSettings)
+      setHolidays(normalized)
+      setSettingsData((current) => ({ ...(current || {}), [KIA_BE_HOLIDAYS_KEY]: normalized }))
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to save settings.')
     } finally {
       setSaving(false)
     }
+  }
+
+  async function addHoliday() {
+    const date = newHoliday.trim()
+    if (!ISO_DATE_RE.test(date) || holidays.includes(date)) return
+    await persistHolidays([...holidays, date])
+    setNewHoliday('')
+  }
+
+  async function removeHoliday(date: string) {
+    await persistHolidays(holidays.filter((item) => item !== date))
   }
 
   return (
@@ -616,17 +760,21 @@ export function AdminConsole() {
           <div className="flex flex-wrap gap-1">
             {visibleTabs.map((tab) => {
               const Icon = tab.icon
+              const tone = toneFor(tab.key)
+              const isActive = activeTab === tab.key
               return (
                 <Button
                   key={tab.key}
                   variant="ghost"
                   onClick={() => router.replace(`/admin?tab=${tab.key}`)}
                   className={cn(
-                    'gap-2 rounded-xl',
-                    activeTab === tab.key ? 'bg-slate-950 text-white hover:bg-slate-800 hover:text-white' : 'text-slate-600'
+                    'gap-2 rounded-xl font-semibold transition-all',
+                    isActive
+                      ? cn('text-white shadow-md ring-1 hover:text-white', tone.active)
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   )}
                 >
-                  <Icon className="h-4 w-4" /> {tab.label}
+                  <Icon className={cn('h-4 w-4', isActive ? 'text-white' : tone.icon)} /> {tab.label}
                 </Button>
               )
             })}
@@ -647,33 +795,43 @@ export function AdminConsole() {
             {activeTab === 'overview' && overview && (
               <div className="space-y-5">
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                  <StatCard label="Users" value={overview.summary.totalUsers} icon={Users} />
-                  <StatCard label="Active" value={overview.summary.activeUsers} icon={Check} />
-                  <StatCard label="Inactive" value={overview.summary.inactiveUsers} icon={Activity} />
-                  <StatCard label="Administrators" value={overview.summary.administrators} icon={Shield} />
-                  <StatCard label="Permission Exceptions" value={overview.summary.permissionExceptions} icon={KeyRound} />
+                  <StatCard label="Users" value={overview.summary.totalUsers} icon={Users} tone="indigo" />
+                  <StatCard label="Active" value={overview.summary.activeUsers} icon={Check} tone="emerald" />
+                  <StatCard label="Inactive" value={overview.summary.inactiveUsers} icon={Activity} tone="slate" />
+                  <StatCard label="Administrators" value={overview.summary.administrators} icon={Shield} tone="violet" />
+                  <StatCard label="Permission Exceptions" value={overview.summary.permissionExceptions} icon={KeyRound} tone="amber" />
                 </div>
                 <div className="grid gap-5 lg:grid-cols-2">
-                  <Card>
-                    <CardHeader><CardTitle>Branch Distribution</CardTitle></CardHeader>
-                    <CardContent className="space-y-3">
-                      {overview.branches.map((row) => (
-                        <div key={row.branch || 'none'} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                          <span className="font-semibold text-slate-700">{branchLabel(row.branch)}</span>
-                          <span className="text-sm text-slate-500">{row.active} active / {row.total} total</span>
-                        </div>
-                      ))}
+                  <Card className="overflow-hidden">
+                    <CardHeader><SectionHeading icon={LayoutGrid} tone="blue" title="Branch Distribution" subtitle="Active vs. total users per branch" /></CardHeader>
+                    <CardContent className="space-y-2.5">
+                      {overview.branches.map((row) => {
+                        const ratio = row.total > 0 ? Math.round((row.active / row.total) * 100) : 0
+                        return (
+                          <div key={row.branch || 'none'} className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+                            <div className="flex items-center justify-between">
+                              <span className="flex items-center gap-2 font-semibold text-slate-700">
+                                <span className="h-2 w-2 rounded-full bg-blue-500" />{branchLabel(row.branch)}
+                              </span>
+                              <span className="text-sm font-semibold text-slate-500"><span className="text-emerald-600">{row.active}</span> / {row.total}</span>
+                            </div>
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                              <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500" style={{ width: `${ratio}%` }} />
+                            </div>
+                          </div>
+                        )
+                      })}
                     </CardContent>
                   </Card>
-                  <Card>
-                    <CardHeader><CardTitle>Recent Administrative Activity</CardTitle></CardHeader>
-                    <CardContent className="space-y-3">
+                  <Card className="overflow-hidden">
+                    <CardHeader><SectionHeading icon={Activity} tone="rose" title="Recent Administrative Activity" subtitle="Latest changes across the console" /></CardHeader>
+                    <CardContent className="space-y-2.5">
                       {overview.recentActivity.length ? overview.recentActivity.map((entry) => (
-                        <div key={entry.id} className="rounded-xl border border-slate-100 px-4 py-3">
+                        <div key={entry.id} className="rounded-xl border border-slate-100 border-l-[3px] border-l-rose-400 bg-white px-4 py-3">
                           <p className="font-semibold text-slate-800">{entry.action}</p>
-                          <p className="mt-1 text-xs text-slate-500">{branchLabel(entry.branch)} · {new Date(entry.createdAt).toLocaleString()}</p>
+                          <p className="mt-1 text-xs text-slate-500">{branchLabel(entry.branch)} · {formatIstDateTime(entry.createdAt)}</p>
                         </div>
-                      )) : <p className="text-sm text-slate-500">No administrative activity recorded yet.</p>}
+                      )) : <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center text-sm text-slate-500">No administrative activity recorded yet.</p>}
                     </CardContent>
                   </Card>
                 </div>
@@ -683,10 +841,12 @@ export function AdminConsole() {
             {(activeTab === 'users' || activeTab === 'branch-admins') && usersData && (
               <Card>
                 <CardHeader className="flex-row items-center justify-between gap-4">
-                  <div>
-                    <CardTitle>{activeTab === 'branch-admins' ? 'Branch Administrators' : 'Users'}</CardTitle>
-                    <p className="mt-1 text-sm text-slate-500">Authority is enforced by the server for every action.</p>
-                  </div>
+                  <SectionHeading
+                    icon={activeTab === 'branch-admins' ? UserCog : Users}
+                    tone={activeTab === 'branch-admins' ? 'cyan' : 'blue'}
+                    title={activeTab === 'branch-admins' ? 'Branch Administrators' : 'Users'}
+                    subtitle="Authority is enforced by the server for every action."
+                  />
                   <Button onClick={() => {
                     setCreateForm((current) => ({
                       ...current,
@@ -705,19 +865,24 @@ export function AdminConsole() {
                     <Search className="h-4 w-4 text-slate-400" />
                     <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search users..." className="border-0 shadow-none focus-visible:ring-0" />
                   </div>
-                  <div className="overflow-x-auto rounded-xl border">
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
                     <table className="w-full text-sm">
-                      <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                        <tr><th className="p-3">User</th><th className="p-3">Role</th><th className="p-3">Branch</th><th className="p-3">Department</th><th className="p-3">Status</th><th className="p-3 text-right">Actions</th></tr>
+                      <thead className="bg-gradient-to-r from-blue-50 to-slate-50 text-left text-xs font-bold uppercase tracking-wide text-blue-700/80">
+                        <tr className="border-b-2 border-blue-100"><th className="p-3">User</th><th className="p-3">Role</th><th className="p-3">Branch</th><th className="p-3">Department</th><th className="p-3">Status</th><th className="p-3 text-right">Actions</th></tr>
                       </thead>
-                      <tbody className="divide-y">
+                      <tbody className="divide-y divide-slate-100">
                         {filteredUsers.map((user) => (
-                          <tr key={user.id} className="hover:bg-slate-50/70">
-                            <td className="p-3"><p className="font-semibold text-slate-900">{user.fullName}</p><p className="text-xs text-slate-500">{user.email}</p></td>
-                            <td className="p-3"><Badge variant="outline">{ROLE_LABELS[user.role] || user.role}</Badge></td>
-                            <td className="p-3">{branchLabel(user.brand)}</td>
+                          <tr key={user.id} className="transition-colors even:bg-slate-50/40 hover:bg-blue-50/50">
+                            <td className="p-3">
+                              <div className="flex items-center gap-3">
+                                <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-black ring-1 ring-inset', BADGE_TONES[ROLE_TONE[user.role] || 'slate'])}>{initialsOf(user.fullName)}</span>
+                                <div><p className="font-semibold text-slate-900">{user.fullName}</p><p className="text-xs text-slate-500">{user.email}</p></div>
+                              </div>
+                            </td>
+                            <td className="p-3"><RoleBadge role={user.role} /></td>
+                            <td className="p-3 font-medium text-slate-600">{branchLabel(user.brand)}</td>
                             <td className="p-3 text-slate-600">{user.department || '-'}</td>
-                            <td className="p-3"><Badge className={user.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}>{user.isActive ? 'Active' : 'Inactive'}</Badge></td>
+                            <td className="p-3"><Badge className={user.isActive ? 'bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-200'}>{user.isActive ? '● Active' : '○ Inactive'}</Badge></td>
                             <td className="p-3 text-right">
                               {user.capabilities.canManage ? (
                                 <div className="flex justify-end gap-2">
@@ -769,14 +934,14 @@ export function AdminConsole() {
             {activeTab === 'audit' && auditData && (
               <Card>
                 <CardHeader className="flex-row items-center justify-between gap-3">
-                  <div>
-                    <CardTitle>{auditSource === 'kia' ? 'KIA Booking Activity' : 'Administrative Audit'}</CardTitle>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {auditSource === 'kia'
-                        ? 'Every booking lifecycle event — created, allocated, approved, payment confirmed, delivered.'
-                        : 'User, permission and maintenance actions across the console.'}
-                    </p>
-                  </div>
+                  <SectionHeading
+                    icon={ShieldCheck}
+                    tone="rose"
+                    title={auditSource === 'kia' ? 'KIA Booking Activity' : 'Administrative Audit'}
+                    subtitle={auditSource === 'kia'
+                      ? 'Every booking lifecycle event — created, allocated, approved, payment confirmed, delivered.'
+                      : 'User, permission and maintenance actions across the console.'}
+                  />
                   <div className="inline-flex rounded-lg border border-slate-200 p-1">
                     {([['admin', 'Admin actions'], ['kia', 'Booking activity']] as const).map(([value, label]) => (
                       <button
@@ -794,20 +959,20 @@ export function AdminConsole() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto rounded-xl border">
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
                     <table className="w-full text-sm">
-                      <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="p-3">Time</th><th className="p-3">Actor</th><th className="p-3">Action</th><th className="p-3">{auditSource === 'kia' ? 'Booking / Customer' : 'Target'}</th><th className="p-3">Branch</th><th className="p-3">{auditSource === 'kia' ? 'Detail' : 'Reason'}</th></tr></thead>
-                      <tbody className="divide-y">
+                      <thead className="bg-gradient-to-r from-rose-50 to-slate-50 text-left text-xs font-bold uppercase tracking-wide text-rose-700/80"><tr className="border-b-2 border-rose-100"><th className="p-3">Time</th><th className="p-3">Actor</th><th className="p-3">Action</th><th className="p-3">{auditSource === 'kia' ? 'Booking / Customer' : 'Target'}</th><th className="p-3">Branch</th><th className="p-3">{auditSource === 'kia' ? 'Detail' : 'Reason'}</th></tr></thead>
+                      <tbody className="divide-y divide-slate-100">
                         {auditData.entries.length === 0 && (
                           <tr><td colSpan={6} className="p-6 text-center text-slate-400">No entries yet.</td></tr>
                         )}
                         {auditData.entries.map((entry) => (
-                          <tr key={entry.id}>
-                            <td className="p-3 text-slate-500">{new Date(entry.createdAt).toLocaleString()}</td>
-                            <td className="p-3 font-medium">{entry.actor?.fullName || 'System'}</td>
-                            <td className="p-3"><Badge variant="outline">{entry.action}</Badge></td>
-                            <td className="p-3">{entry.target?.fullName || '-'}</td>
-                            <td className="p-3">{branchLabel(entry.branch)}</td>
+                          <tr key={entry.id} className="transition-colors even:bg-slate-50/40 hover:bg-rose-50/40">
+                            <td className="whitespace-nowrap p-3 text-slate-500">{formatIstDateTime(entry.createdAt)}</td>
+                            <td className="p-3 font-semibold text-slate-800">{entry.actor?.fullName || 'System'}</td>
+                            <td className="p-3"><ActionBadge action={entry.action} /></td>
+                            <td className="p-3 text-slate-600">{entry.target?.fullName || '-'}</td>
+                            <td className="p-3 font-medium text-slate-600">{branchLabel(entry.branch)}</td>
                             <td className="p-3 text-slate-500">{entry.reason || '-'}</td>
                           </tr>
                         ))}
@@ -860,7 +1025,7 @@ export function AdminConsole() {
                                   </div>
                                   <div className="mt-1.5 flex items-center justify-between">
                                     <span className="text-[11px] font-semibold text-slate-500">
-                                      {date ? date.toLocaleString() : 'Not available'}
+                                      {date ? formatIstDateTime(date) : 'Not available'}
                                     </span>
                                     {date ? (
                                       <span className={cn(
@@ -886,8 +1051,7 @@ export function AdminConsole() {
             {activeTab === 'system' && (
               <Card>
                 <CardHeader>
-                  <CardTitle>KIA Price Master · Replace Prices</CardTitle>
-                  <p className="mt-1 text-sm text-slate-500">Upload the KIA price workbook to replace the current price master (only the <strong>PRICE DETAILS</strong> sheet is imported). Used by Bookings and Proforma pricing. Moved here from the Booking section.</p>
+                  <SectionHeading icon={Upload} tone="orange" title="KIA Price Master · Replace Prices" subtitle="Upload the KIA price workbook to replace the current price master (only the PRICE DETAILS sheet is imported). Used by Bookings and Proforma pricing." />
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <label className={cn('inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800', priceUploading && 'pointer-events-none opacity-60')}>
@@ -913,8 +1077,7 @@ export function AdminConsole() {
             {activeTab === 'system' && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Maintenance · Reset Test Data</CardTitle>
-                  <p className="mt-1 text-sm text-slate-500">Super-Admin-only. Wipes KIA test bookings and their allocations/transfers/activity, and clears the &lsquo;retail&rsquo; stock markers created while testing (returning those vehicles to available stock). Proformas, users, permissions and real inventory are not touched.</p>
+                  <SectionHeading icon={Wrench} tone="rose" title="Maintenance · Reset Test Data" subtitle="Super-Admin-only. Wipes KIA test bookings and their allocations/transfers/activity, and clears the ‘retail’ stock markers created while testing. Proformas, users, permissions and real inventory are not touched." />
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -925,8 +1088,8 @@ export function AdminConsole() {
                       { label: 'Transfers', value: systemCounts?.transfers },
                       { label: 'Retail markers', value: systemCounts?.retailMarks },
                     ].map((item) => (
-                      <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
-                        <p className="text-2xl font-black text-slate-900">{item.value ?? '—'}</p>
+                      <div key={item.label} className="rounded-xl border border-orange-200/70 bg-orange-50/40 p-4 text-center">
+                        <p className="text-2xl font-black text-orange-700">{item.value ?? '—'}</p>
                         <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
                       </div>
                     ))}
@@ -947,10 +1110,7 @@ export function AdminConsole() {
             {activeTab === 'system' && (
               <Card>
                 <CardHeader className="flex-row items-center justify-between">
-                  <div>
-                    <CardTitle>Email Delivery</CardTitle>
-                    <p className="mt-1 text-sm text-slate-500">Every proforma-approval and quote email is logged here. Watch for failures so a bounced customer email doesn&rsquo;t go unnoticed.</p>
-                  </div>
+                  <SectionHeading icon={Activity} tone="amber" title="Email Delivery" subtitle="Every proforma-approval and quote email is logged here. Watch for failures so a bounced customer email doesn’t go unnoticed." />
                   {emailLogs && emailLogs.last24h.failed > 0 && (
                     <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-black text-rose-700">{emailLogs.last24h.failed} failed in last 24h</span>
                   )}
@@ -958,12 +1118,12 @@ export function AdminConsole() {
                 <CardContent className="space-y-5">
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     {[
-                      { label: 'Sent', value: emailLogs?.counts.sent, cls: 'text-emerald-600' },
-                      { label: 'Failed', value: emailLogs?.counts.failed, cls: 'text-rose-600' },
-                      { label: 'Pending', value: emailLogs?.counts.pending, cls: 'text-amber-600' },
-                      { label: 'Total', value: emailLogs?.counts.total, cls: 'text-slate-900' },
+                      { label: 'Sent', value: emailLogs?.counts.sent, cls: 'text-emerald-600', tile: 'border-emerald-200 bg-emerald-50/60' },
+                      { label: 'Failed', value: emailLogs?.counts.failed, cls: 'text-rose-600', tile: 'border-rose-200 bg-rose-50/60' },
+                      { label: 'Pending', value: emailLogs?.counts.pending, cls: 'text-amber-600', tile: 'border-amber-200 bg-amber-50/60' },
+                      { label: 'Total', value: emailLogs?.counts.total, cls: 'text-slate-900', tile: 'border-slate-200 bg-slate-50' },
                     ].map((item) => (
-                      <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+                      <div key={item.label} className={cn('rounded-xl border p-4 text-center', item.tile)}>
                         <p className={cn('text-2xl font-black', item.cls)}>{item.value ?? '—'}</p>
                         <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
                       </div>
@@ -971,8 +1131,8 @@ export function AdminConsole() {
                   </div>
                   <div className="overflow-x-auto rounded-xl border border-slate-200">
                     <table className="w-full min-w-[720px] text-sm">
-                      <thead className="bg-slate-100 text-left text-[11px] font-black uppercase tracking-wide text-slate-500">
-                        <tr>
+                      <thead className="bg-gradient-to-r from-amber-50 to-slate-50 text-left text-[11px] font-black uppercase tracking-wide text-amber-700/80">
+                        <tr className="border-b-2 border-amber-100">
                           <th className="px-3 py-2">Status</th>
                           <th className="px-3 py-2">Type</th>
                           <th className="px-3 py-2">Recipient</th>
@@ -980,9 +1140,9 @@ export function AdminConsole() {
                           <th className="px-3 py-2">When</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-slate-100">
                         {(emailLogs?.rows || []).slice(0, 30).map((row) => (
-                          <tr key={row.id} className="border-t border-slate-100 align-top">
+                          <tr key={row.id} className="align-top transition-colors even:bg-slate-50/40 hover:bg-amber-50/40">
                             <td className="px-3 py-2">
                               <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-black uppercase',
                                 row.status === 'sent' ? 'bg-emerald-50 text-emerald-700'
@@ -995,7 +1155,7 @@ export function AdminConsole() {
                               <div className="max-w-[280px] truncate">{row.subject}</div>
                               {row.error && <div className="mt-0.5 max-w-[280px] truncate text-[11px] font-semibold text-rose-600" title={row.error}>{row.error}</div>}
                             </td>
-                            <td className="px-3 py-2 whitespace-nowrap text-slate-500">{new Date(row.sentAt || row.createdAt).toLocaleString()}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-slate-500">{formatIstDateTime(row.sentAt || row.createdAt)}</td>
                           </tr>
                         ))}
                         {!emailLogs?.rows.length && (
@@ -1010,16 +1170,63 @@ export function AdminConsole() {
 
             {activeTab === 'settings' && settingsData && (
               <Card>
-                <CardHeader className="flex-row items-center justify-between">
-                  <div><CardTitle>System Settings</CardTitle><p className="mt-1 text-sm text-slate-500">Super-Admin-only dashboard configuration.</p></div>
-                  <Button onClick={() => void saveSettings()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save Settings</Button>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <SectionHeading icon={Settings} tone="teal" title="KIA Business Excellence · Holidays" subtitle="Non-working days excluded from working-day counts and per-day averages, in addition to every Sunday. Changes apply immediately." />
+                    {saving && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
+                  </div>
                 </CardHeader>
-                <CardContent>
-                  <Textarea
-                    className="min-h-[480px] font-mono text-xs"
-                    value={settingsText}
-                    onChange={(event) => setSettingsText(event.target.value)}
-                  />
+                <CardContent className="space-y-6">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-black uppercase tracking-wider text-slate-500">Add a holiday</Label>
+                      <Input
+                        type="date"
+                        value={newHoliday}
+                        onChange={(event) => setNewHoliday(event.target.value)}
+                        onKeyDown={(event) => { if (event.key === 'Enter') void addHoliday() }}
+                        className="h-11 w-52 rounded-xl border-slate-200 font-semibold"
+                      />
+                    </div>
+                    <Button
+                      className="h-11 rounded-xl px-5 font-bold"
+                      onClick={() => void addHoliday()}
+                      disabled={saving || !ISO_DATE_RE.test(newHoliday.trim()) || holidays.includes(newHoliday.trim())}
+                    >
+                      Add Holiday
+                    </Button>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
+                      Configured Holidays ({holidays.length})
+                    </p>
+                    {holidays.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-4 text-sm text-slate-500">
+                        No holidays configured. Only Sundays are treated as non-working days.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {holidays.map((date) => (
+                          <span
+                            key={date}
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1.5 pl-3.5 pr-1.5 text-sm font-bold text-slate-700 shadow-sm"
+                          >
+                            {formatHolidayLabel(date)}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${date}`}
+                              onClick={() => void removeHoliday(date)}
+                              disabled={saving}
+                              className="grid h-6 w-6 place-items-center rounded-full text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}

@@ -139,9 +139,9 @@ export function getPurchaseOrderDocuments(order: PurchaseOrderDocumentSource): P
 
   const seen = new Set<string>()
   return documents.filter((document) => {
-    const key = `${document.label}:${document.file}`
-    if (seen.has(key)) return false
-    seen.add(key)
+    const normalizedFile = document.file.split('?')[0].trim().toLowerCase()
+    if (seen.has(normalizedFile)) return false
+    seen.add(normalizedFile)
     return true
   })
 }

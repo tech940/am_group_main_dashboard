@@ -10,7 +10,7 @@ import {
   isMissingPermissionTableError,
   resolveEffectiveSnapshot,
 } from '@/lib/permissions/service'
-import type { PermissionRole } from '@/lib/permissions/registry'
+import { SECTION_ROUTES, type PermissionRole } from '@/lib/permissions/registry'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,10 +49,16 @@ async function buildMatrix(
     // getPermissionCatalog runs the registry sync once for the whole request.
     const catalog = await getPermissionCatalog()
 
-    const parentKeys = new Set(catalog.groups.map((group) => group.parentKey).filter(Boolean) as string[])
+    const routeKeys = new Set(Object.keys(SECTION_ROUTES))
+    // Kept in the payload (never shown as a column) so the single "Admin Panel" toggle's save
+    // fan-out can read their defaultVisible — the UI hides them (features/admin/access-map.tsx).
+    const ADMIN_FANOUT_KEYS = new Set(['access_control', 'admin_audit', 'dashboard_settings'])
     const branch = capabilities.branch
     const sections = catalog.groups
-      .filter((group) => !parentKeys.has(group.key)) // leaf sections only
+      // The Access Map controls only TOP-LEVEL navigable pages — exactly one toggle per sidebar
+      // route (SECTION_ROUTES). Sub-sections (BE sub-reports, booking sub-stages, stock management,
+      // empty brands, internal grouping nodes, …) are NOT toggleable here — they're handled in code.
+      .filter((group) => routeKeys.has(group.key) || ADMIN_FANOUT_KEYS.has(group.key))
       .filter((group) => capabilities.authority === 'developer'
         || Boolean(branch && (group.key === branch || group.key.startsWith(`${branch}.`))))
       .filter((group) => isDelegablePermission(actor, `${group.key}.view`))

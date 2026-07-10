@@ -178,13 +178,14 @@ function formatDateTime(value: string | null | undefined) {
   if (!value) return 'NA'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'NA'
-  return date.toLocaleString('en-IN', {
+  return `${date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-  })
+  })} IST`
 }
 
 function toColumnLabel(column: string) {

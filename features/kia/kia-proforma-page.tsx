@@ -252,7 +252,7 @@ const EMPTY_FORM: FormState = {
   exShowroom: '0',
   tcsValue: '0',
   registrationCharges: '0',
-  insuranceValue: '0',
+  insuranceValue: '3000',
   fastagValue: '0',
   accessoriesKit: '0',
   extWarranty: '0',
@@ -325,7 +325,7 @@ function formatDateTime(value?: string | null) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return `${date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} IST`
 }
 
 function dateKey(value?: string | null) {
@@ -1592,7 +1592,8 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   const [declineReason, setDeclineReason] = useState('')
   const [editingRow, setEditingRow] = useState<KiaProformaRow | null>(null)
   const [isSavingEdit, setIsSavingEdit] = useState(false)
-  const isGmRole = ['general_manager', 'admin', 'developer'].includes(options.currentUser.role)
+  // Only the General Manager may edit an approved proforma in-place (server enforces the same).
+  const isGmRole = options.currentUser.role === 'general_manager'
   const canViewPii = canViewKiaCustomerPii(options.currentUser.role)
   const verifyStage = verifying ? pendingStageOf(verifying.approvalStatus) : 'approval'
   // Stage 1 (Sales Manager / GM): the Sales Manager sees the discount-verification checklist and
@@ -1920,11 +1921,13 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
 
       {/* ── GM Edit Dialog ────────────────────────────────────────────────── */}
       <Dialog open={!!editingRow} onOpenChange={(open) => { if (!open) setEditingRow(null) }}>
-        <DialogContent className="kia-premium max-h-[92vh] max-w-4xl overflow-y-auto rounded-3xl p-0">
+        <DialogContent className="kia-premium max-h-[92vh] max-w-4xl overflow-y-auto rounded-3xl p-0 [&>button]:hidden">
           <LoaderOverlay show={isSavingEdit} variant="proforma" label="Saving edits…" sublabel="Updating proforma and resetting approval to PENDING" />
           {editingRow && (
             <GMEditForm
               row={editingRow}
+              models={options.models}
+              trims={options.trims}
               onClose={() => setEditingRow(null)}
               onSaved={async () => {
                 setEditingRow(null)
@@ -1941,17 +1944,30 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
   )
 }
 
+// KIA colour options for the GM edit form's Colour dropdown (mirrors the booking form list).
+const KIA_COLORS = [
+  'SNOW WHITE PEARL', 'GRAVITY GREY', 'AURORA BLACK PEARL', 'GLACIER WHITE PEARL', 'PEWTER OLIVE',
+  'INTENSE RED (B) WITH AURORA BLACK PEARL (R)', 'IMPERIAL BLUE', 'CLEAR WHITE', 'FROST BLUE',
+  'FUSION BLACK', 'INTENSE RED', 'SPARKLING SILVER', 'MATTE GRAPHITE', 'Metalic', 'Two Tone',
+  'Morning Haze', 'Magma Red', 'Forst Blue', 'Ivory Silver gloss', 'Piter olive', 'Imperial blue',
+  'Gravity grey', 'Aurora black pearl', 'Glacier white pearl', 'Mattee Graphite',
+]
+
 // ── GM Edit Form ──────────────────────────────────────────────────────────────
 // Renders a pre-filled proforma form inside the GM Edit Dialog. On save it
 // PATCHes `action: 'edit'` which resets approval to PENDING.
 function GMEditForm({
   row,
+  models,
+  trims,
   onClose,
   onSaved,
   isSaving,
   setIsSaving,
 }: {
   row: KiaProformaRow
+  models: string[]
+  trims: { model: string; trim_description: string }[]
   onClose: () => void
   onSaved: () => Promise<void>
   isSaving: boolean
@@ -1993,6 +2009,29 @@ function GMEditForm({
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
   }
+
+  // Cascading dropdown choices (Model → Variant → Colour), like the booking form. Each list
+  // always includes the proforma's current value so an existing (possibly legacy) selection
+  // never disappears from its dropdown.
+  const modelChoices = useMemo(() => {
+    const set = new Set(models.filter(Boolean))
+    if (form.modelName) set.add(form.modelName)
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [models, form.modelName])
+
+  const variantChoices = useMemo(() => {
+    const set = new Set(
+      trims.filter((trim) => trim.model === form.modelName).map((trim) => trim.trim_description).filter(Boolean)
+    )
+    if (form.trimDescription) set.add(form.trimDescription)
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [trims, form.modelName, form.trimDescription])
+
+  const colorChoices = useMemo(() => {
+    const set = new Set<string>(KIA_COLORS)
+    if (form.vehicleColor) set.add(form.vehicleColor)
+    return Array.from(set)
+  }, [form.vehicleColor])
 
   function validate() {
     const next: Record<string, string> = {}
@@ -2065,7 +2104,7 @@ function GMEditForm({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--kia-text-faint)]">General Manager Edit</p>
-          <h2 className="mt-0.5 text-xl font-extrabold tracking-tight text-[var(--kia-text)]">Edit Proforma #{row.id.slice(0, 8).toUpperCase()}</h2>
+          <DialogTitle className="mt-0.5 text-xl font-extrabold tracking-tight text-[var(--kia-text)]">Edit Proforma #{row.id.slice(0, 8).toUpperCase()}</DialogTitle>
           <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
             <AlertTriangle className="h-3 w-3" /> Saving will reset approval to PENDING
           </div>
@@ -2098,15 +2137,34 @@ function GMEditForm({
         {/* Vehicle Details */}
         <FormSection title="Vehicle & Bank">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Model Name" error={errors.modelName}><TextInput value={form.modelName} onChange={(e) => update('modelName', e.target.value)} /></Field>
-            <Field label="Trim / Variant" error={errors.trimDescription}><TextInput value={form.trimDescription} onChange={(e) => update('trimDescription', e.target.value)} /></Field>
+            <Field label="Model Name" error={errors.modelName}>
+              <Select value={form.modelName} onValueChange={(v) => { update('modelName', v); update('trimDescription', '') }}>
+                <SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue placeholder="Select model" /></SelectTrigger>
+                <SelectContent>{modelChoices.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            <Field label="Trim / Variant" error={errors.trimDescription}>
+              <Select value={form.trimDescription} onValueChange={(v) => update('trimDescription', v)} disabled={!form.modelName}>
+                <SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue placeholder={form.modelName ? 'Select variant' : 'Select model first'} /></SelectTrigger>
+                <SelectContent>
+                  {variantChoices.length
+                    ? variantChoices.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)
+                    : <div className="px-3 py-2 text-xs font-semibold text-slate-400">No variants found for this model</div>}
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label="Fuel Type" error={errors.fuelType}>
               <Select value={form.fuelType} onValueChange={(v) => update('fuelType', v)}>
                 <SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>{['PETROL', 'DIESEL', 'ELECTRIC', 'HYBRID'].map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field label="Vehicle Color" error={errors.vehicleColor}><TextInput value={form.vehicleColor} onChange={(e) => update('vehicleColor', e.target.value)} /></Field>
+            <Field label="Vehicle Color" error={errors.vehicleColor}>
+              <Select value={form.vehicleColor} onValueChange={(v) => update('vehicleColor', v)}>
+                <SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue placeholder="Select colour" /></SelectTrigger>
+                <SelectContent>{colorChoices.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
             <Field label="Vehicle Status" error={errors.vehicleStatus}>
               <Select value={form.vehicleStatus} onValueChange={(v) => update('vehicleStatus', v)}>
                 <SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger>

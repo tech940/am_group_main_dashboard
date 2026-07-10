@@ -97,6 +97,26 @@ export function formatIndiaDateTime(
   }).format(timestamp)
 }
 
+/**
+ * "07 Jul 2026, 11:02 am IST" — India Standard Time with an explicit IST suffix. Use this for
+ * every "last updated / data freshness / source updated" label so the timezone is unambiguous
+ * (a bare toLocaleString renders in UTC during SSR and in the visitor's zone in the browser).
+ * Returns '-' when the value is empty/invalid.
+ */
+export function formatIstDateTime(value: Date | string | null | undefined): string {
+  const timestamp = parseAppDate(value)
+  if (!timestamp) return '-'
+  return `${new Intl.DateTimeFormat('en-IN', {
+    timeZone: INDIA_TIME_ZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(timestamp)} IST`
+}
+
 export function getIndiaDatePart(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: INDIA_TIME_ZONE,

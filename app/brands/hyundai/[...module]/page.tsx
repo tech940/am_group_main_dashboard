@@ -2,6 +2,7 @@ import { forbidden, redirect } from 'next/navigation'
 import { getBrandAccess } from '@/lib/auth/brand-access'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 import { getBrandDealers } from '@/lib/dealers/registry'
+import { requirePermission } from '@/lib/permissions/service'
 import { HyundaiModulePlaceholder } from '@/features/hyundai/hyundai-module-placeholder'
 import HyundaiBusinessExcellencePage from '@/features/hyundai/business-excellence-page'
 import { HyundaiWarrantyClaimsPage } from '@/features/hyundai/warranty-claims-page'
@@ -150,11 +151,12 @@ export default async function Page({
     forbidden()
   }
 
-  // Bypass role-based permission checks for matching branch users for now
-  // const permission = await requirePermission(access.appUser, definition.permission)
-  // if (!permission.allowed) {
-  //   forbidden()
-  // }
+  // Enforce the per-section permission so an Access Map deny actually blocks direct access
+  // (matches platinum/mg). Brand users get the section by default; only an explicit deny blocks.
+  const permission = await requirePermission(access.appUser, definition.permission)
+  if (!permission.allowed) {
+    forbidden()
+  }
 
   if (definition.component === 'business-excellence') {
     const dealerScope = getUserDealerScope(access.appUser, 'hyundai')

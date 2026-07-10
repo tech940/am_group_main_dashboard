@@ -125,11 +125,11 @@ async function fetchJson<T>(url: string, label: string) {
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return 'Updated NA'
-  return new Intl.DateTimeFormat('en-IN', {
+  return `${new Intl.DateTimeFormat('en-IN', {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: 'Asia/Kolkata',
-  }).format(new Date(value))
+  }).format(new Date(value))} IST`
 }
 
 function formatMoney(value: number) {

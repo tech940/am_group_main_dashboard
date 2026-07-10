@@ -23,17 +23,17 @@ export function formatBusinessFreshness(value?: string | null): string {
   })} IST`
 }
 
-/** Short form: "07 Jul, 11:02 am". Used for the per-source freshness pills. */
+/** Short form: "07 Jul, 11:02 am IST". Used for the per-source freshness pills. */
 export function formatBusinessFreshnessShort(value?: string | null): string {
   if (!value) return 'Not available'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Not available'
-  return date.toLocaleString('en-IN', {
+  return `${date.toLocaleString('en-IN', {
     timeZone: IST,
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
-  })
+  })} IST`
 }

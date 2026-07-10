@@ -7,6 +7,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Edit3, Loader2, Plus, RefreshCw, 
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -533,6 +534,8 @@ function PurchaseOrdersPageContent() {
   const [userRole, setUserRole] = useState('')
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null)
+  const selectedOrderRef = useRef<PurchaseOrder | null>(null)
+  selectedOrderRef.current = selectedOrder
   const [workflowHistory, setWorkflowHistory] = useState<WorkflowHistoryItem[]>([])
   const [personnel, setPersonnel] = useState<Personnel | null>(null)
   const [allPersonnel, setAllPersonnel] = useState<Map<string, Personnel>>(new Map())
@@ -549,6 +552,7 @@ function PurchaseOrdersPageContent() {
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
   const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
+  const [fetchedOrderId, setFetchedOrderId] = useState<string | null>(null)
   const [isSwitchingView, setIsSwitchingView] = useState(false)
   const [showPOTableView, setShowPOTableView] = useState(false)
   const [workflowStageFilter, setWorkflowStageFilter] = useState<WorkflowStageFilter>('all')
@@ -886,7 +890,10 @@ function PurchaseOrdersPageContent() {
 
     try {
       topLoaderRef.current.start()
-      setIsLoadingDetails(true)
+      const hasLocalOrder = selectedOrderRef.current?.id === orderId
+      if (!hasLocalOrder) {
+        setIsLoadingDetails(true)
+      }
       setLoadingOrderId(orderId)
       const data = await queryClient.fetchQuery({
         queryKey: ['purchase-orders', 'workflow', orderId],
@@ -909,6 +916,7 @@ function PurchaseOrdersPageContent() {
       setSelectedOrder(data.order)
       setWorkflowHistory(data.history || [])
       setPersonnel(data.personnel || null)
+      setFetchedOrderId(orderId)
       setIsEditingOrder(false)
       setIsEditOrderDirty(false)
       setIsEditingVendorInfo(false)
@@ -930,30 +938,15 @@ function PurchaseOrdersPageContent() {
   }, [queryClient, router])
 
   useEffect(() => {
-    if (selectedOrderId) {
-      const timer = window.setTimeout(() => {
-        void fetchOrderDetails(selectedOrderId)
-      }, 0)
-
-      return () => window.clearTimeout(timer)
+    const initialOrderId = searchParams.get('orderId')
+    if (initialOrderId) {
+      const localOrder = orders.find((o) => o.id === initialOrderId)
+      if (localOrder) {
+        setSelectedOrder(localOrder)
+      }
+      void fetchOrderDetails(initialOrderId)
     }
-
-    const timer = window.setTimeout(() => {
-      activeOrderRequestRef.current?.abort()
-      setSelectedOrder(null)
-      setWorkflowHistory([])
-      setPersonnel(null)
-      setIsEditingOrder(false)
-      setIsEditOrderDirty(false)
-      setIsEditingVendorInfo(false)
-      setIsEditingGrn(false)
-      setIsLoadingDetails(false)
-      setLoadingOrderId(null)
-      topLoaderRef.current.done()
-    }, 0)
-
-    return () => window.clearTimeout(timer)
-  }, [fetchOrderDetails, selectedOrderId])
+  }, [fetchOrderDetails, searchParams, orders])
 
   useEffect(() => {
     const supabase = createClient()
@@ -970,8 +963,8 @@ function PurchaseOrdersPageContent() {
           void queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
           void queryClient.invalidateQueries({ queryKey: ['purchase-orders', 'workflow'] })
           void fetchOrders(false, true)
-          if (selectedOrderId) {
-            void fetchOrderDetails(selectedOrderId)
+          if (selectedOrderRef.current?.id) {
+            void fetchOrderDetails(selectedOrderRef.current.id)
           }
         }
       )
@@ -980,7 +973,7 @@ function PurchaseOrdersPageContent() {
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [fetchOrderDetails, fetchOrders, queryClient, selectedOrderId])
+  }, [fetchOrderDetails, fetchOrders, queryClient])
 
   useEffect(() => {
     return () => {
@@ -1020,15 +1013,15 @@ function PurchaseOrdersPageContent() {
   }, [isPettyCashApprover])
 
   const openOrderDetails = async (orderId: string) => {
+    const localOrder = orders.find((o) => o.id === orderId)
+    if (localOrder) {
+      setSelectedOrder(localOrder)
+    }
+
     setLoadingOrderId(orderId)
     topLoaderRef.current.start()
 
-    if (selectedOrderId === orderId) {
-      void fetchOrderDetails(orderId)
-      return
-    }
-
-    router.push(`/purchase-orders?orderId=${orderId}`)
+    void fetchOrderDetails(orderId)
   }
 
   const closeOrderDetails = () => {
@@ -1039,11 +1032,11 @@ function PurchaseOrdersPageContent() {
     setSelectedOrder(null)
     setWorkflowHistory([])
     setPersonnel(null)
+    setFetchedOrderId(null)
     setIsEditingOrder(false)
     setIsEditOrderDirty(false)
     setIsEditingVendorInfo(false)
     setIsEditingGrn(false)
-    router.push('/purchase-orders')
   }
 
   const openFreshNewOrderForm = () => {
@@ -1985,7 +1978,7 @@ function PurchaseOrdersPageContent() {
   return (
     <MainLayout>
       <div className="space-y-6">
-        {isPettyCashApprover && !selectedOrder && !showNewOrderForm && (
+        {isPettyCashApprover && !showNewOrderForm && (
           <div className="rounded-[28px] bg-white p-4 shadow-sm">
             <ApprovalCategoryTabs
               active={approvalCategory}
@@ -2080,11 +2073,11 @@ function PurchaseOrdersPageContent() {
           </div>
         )}
 
-        {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && !selectedOrder && (
+        {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && (
           isCompletionTrackingView ? renderCompletionStateFilters() : renderWorkflowStageFilters()
         )}
 
-        {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && !selectedOrder && renderPurchaseOrderPaginationControls()}
+        {userRole !== 'md' && userRole !== 'ea' && !showNewOrderForm && renderPurchaseOrderPaginationControls()}
 
         {userRole !== 'md' && userRole !== 'ea' && isCompletionTrackingView && renderCompletedAnalyticsControls()}
 
@@ -2097,16 +2090,19 @@ function PurchaseOrdersPageContent() {
           />
         )}
 
-        {selectedOrder && (
-          <div className="space-y-6">
-            <Button
-              onClick={closeOrderDetails}
-              variant="outline"
-              className="rounded-2xl border-slate-300 hover:bg-slate-50"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to List
-            </Button>
+        <Dialog open={Boolean(selectedOrder)} onOpenChange={(open) => { if (!open) closeOrderDetails() }}>
+          <DialogContent className="fixed inset-y-0 !left-0 sm:!left-auto !right-0 !top-0 z-50 !flex min-w-0 h-dvh max-h-dvh w-full max-w-full sm:max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-l border-slate-200 bg-white p-0 shadow-[0_30px_110px_rgba(15,23,42,0.32)] duration-300 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right dark:border-white/10 dark:bg-slate-950 sm:!w-[min(940px,calc(100vw-2rem))] sm:rounded-l-[2rem]">
+            <DialogTitle className="sr-only">Purchase Order Details</DialogTitle>
+            {selectedOrder && (
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                <Button
+                  onClick={closeOrderDetails}
+                  variant="outline"
+                  className="rounded-2xl border-slate-300 hover:bg-slate-50"
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Close
+                </Button>
 
             {isLoadingDetails ? (
               <Card className="rounded-[28px]">
@@ -2224,34 +2220,50 @@ function PurchaseOrdersPageContent() {
 
                 {personnel && (
                   <Card className="rounded-[28px] border-none bg-gradient-to-r from-sky-50 to-cyan-50 shadow-sm">
-                    <CardHeader>
+                    <CardHeader className="p-4 pb-0 sm:p-6">
                       <CardTitle className="text-xl font-black text-slate-900">Workflow People</CardTitle>
                     </CardHeader>
-                    <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-2xl bg-white p-4 shadow-sm">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Submitted By</p>
-                        <p className="mt-1 font-semibold text-slate-900">{personnel.createdBy}</p>
-                        {personnel.createdByEmail && <p className="text-xs text-slate-500">{personnel.createdByEmail}</p>}
+                    <CardContent className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4 sm:p-6">
+                      <div className="rounded-2xl bg-white p-4 shadow-sm min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 truncate">Submitted By</p>
+                        <p className="mt-1 font-semibold text-slate-900 truncate" title={personnel.createdBy}>{personnel.createdBy}</p>
+                        {personnel.createdByEmail && (
+                          <p className="text-xs text-slate-500 truncate" title={personnel.createdByEmail}>
+                            {personnel.createdByEmail}
+                          </p>
+                        )}
                       </div>
                       {personnel.purchaseManager && (
-                        <div className="rounded-2xl bg-white p-4 shadow-sm">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Purchase Manager</p>
-                          <p className="mt-1 font-semibold text-slate-900">{personnel.purchaseManager}</p>
-                          {personnel.purchaseManagerEmail && <p className="text-xs text-slate-500">{personnel.purchaseManagerEmail}</p>}
+                        <div className="rounded-2xl bg-white p-4 shadow-sm min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 truncate">Purchase Manager</p>
+                          <p className="mt-1 font-semibold text-slate-900 truncate" title={personnel.purchaseManager}>{personnel.purchaseManager}</p>
+                          {personnel.purchaseManagerEmail && (
+                            <p className="text-xs text-slate-500 truncate" title={personnel.purchaseManagerEmail}>
+                              {personnel.purchaseManagerEmail}
+                            </p>
+                          )}
                         </div>
                       )}
                       {personnel.eaApprover && (
-                        <div className="rounded-2xl bg-white p-4 shadow-sm">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">EA Review</p>
-                          <p className="mt-1 font-semibold text-slate-900">{personnel.eaApprover}</p>
-                          {personnel.eaApproverEmail && <p className="text-xs text-slate-500">{personnel.eaApproverEmail}</p>}
+                        <div className="rounded-2xl bg-white p-4 shadow-sm min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 truncate">EA Review</p>
+                          <p className="mt-1 font-semibold text-slate-900 truncate" title={personnel.eaApprover}>{personnel.eaApprover}</p>
+                          {personnel.eaApproverEmail && (
+                            <p className="text-xs text-slate-500 truncate" title={personnel.eaApproverEmail}>
+                              {personnel.eaApproverEmail}
+                            </p>
+                          )}
                         </div>
                       )}
                       {personnel.mdApprover && (
-                        <div className="rounded-2xl bg-white p-4 shadow-sm">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">MD Review</p>
-                          <p className="mt-1 font-semibold text-slate-900">{personnel.mdApprover}</p>
-                          {personnel.mdApproverEmail && <p className="text-xs text-slate-500">{personnel.mdApproverEmail}</p>}
+                        <div className="rounded-2xl bg-white p-4 shadow-sm min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 truncate">MD Review</p>
+                          <p className="mt-1 font-semibold text-slate-900 truncate" title={personnel.mdApprover}>{personnel.mdApprover}</p>
+                          {personnel.mdApproverEmail && (
+                            <p className="text-xs text-slate-500 truncate" title={personnel.mdApproverEmail}>
+                              {personnel.mdApproverEmail}
+                            </p>
+                          )}
                         </div>
                       )}
                     </CardContent>
@@ -2287,9 +2299,11 @@ function PurchaseOrdersPageContent() {
             )}
           </div>
         )}
+      </DialogContent>
+    </Dialog>
 
-        {!showNewOrderForm && !selectedOrder && (
-          <>
+    {!showNewOrderForm && (
+      <>
             {(userRole === 'ea' || userRole === 'md') ? (
               <div className="space-y-4">
                 <div className="flex flex-col gap-4 rounded-[28px] border border-[var(--dashboard-primary-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--dashboard-primary)_10%,white),color-mix(in_srgb,var(--dashboard-primary-light)_18%,white))] p-6 shadow-xl shadow-[color-mix(in_srgb,var(--dashboard-primary)_12%,transparent)] lg:flex-row lg:items-center lg:justify-between">

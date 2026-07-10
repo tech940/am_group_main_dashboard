@@ -163,7 +163,7 @@ export function calculateMgProformaPricing(
         exShowroom: String(price.newExShowroomPrice ?? price.exShowroomPrice ?? 0),
         tcsValue: String(price.tcs ?? 0),
         registrationCharges: String(registration),
-        insuranceValue: String(price.insurance ?? 0),
+        insuranceValue: '3000',
         fastagValue: String(price.fastag ?? 0),
         accessoriesKit: String(price.accessoriesKit ?? 0),
         extWarranty: String(price.extendedWarranty4thYear ?? 0),

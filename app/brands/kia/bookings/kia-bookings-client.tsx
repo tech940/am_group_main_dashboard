@@ -965,7 +965,7 @@ function SearchableVariantSelect({
   const containerRef = useRef<HTMLDivElement>(null)
   const [openUpwards, setOpenUpwards] = useState(false)
 
-  const selectedDisplay = value === 'OTHER' ? 'Other / Custom' : (value || 'Select Variant...')
+  const selectedDisplay = value || 'Select Variant...'
 
   const filtered = useMemo(() => {
     const query = search.toLowerCase().trim()
@@ -1041,34 +1041,8 @@ function SearchableVariantSelect({
                 </button>
               ))
             )}
-            <div className="border-t border-slate-100 my-1 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  onChange('OTHER')
-                  setOpen(false)
-                  setSearch('')
-                }}
-                className={cn(
-                  "w-full rounded-lg px-3 py-1.5 text-left text-xs font-black transition-colors hover:bg-slate-100 text-indigo-700 hover:text-indigo-800",
-                  value === 'OTHER' ? "bg-indigo-50" : ""
-                )}
-              >
-                + Other / Custom Variant
-              </button>
-            </div>
           </div>
         </div>
-      )}
-
-      {value && !filtered.includes(value) && (
-        <Input
-          value={value === 'OTHER' ? '' : value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Type custom variant..."
-          className={cn(INPUT_STYLE, 'mt-2')}
-          required
-        />
       )}
     </div>
   )

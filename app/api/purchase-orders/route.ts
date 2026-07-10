@@ -138,7 +138,10 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
       case 'pending':
         return eq(purchaseOrders.status, 'awaiting_ea_approval')
       case 'approved':
-        return eq(purchaseOrders.eaApprovalStatus, 'approved')
+        return and(
+          eq(purchaseOrders.eaApprovalStatus, 'approved'),
+          sql`${purchaseOrders.status} NOT IN ('completed', 'ea_denied', 'md_denied', 'ea_on_hold', 'md_on_hold')`
+        )
       case 'rejected':
         return or(eq(purchaseOrders.status, 'ea_denied'), eq(purchaseOrders.status, 'md_denied'))
       case 'hold':
@@ -146,6 +149,7 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
       case 'completed':
         return eq(purchaseOrders.status, 'completed')
       case 'all':
+        return sql`${purchaseOrders.status} NOT IN ('submitted', 'vendor_info_pending')`
       default:
         return null
     }
@@ -155,7 +159,10 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
     case 'pending':
       return eq(purchaseOrders.status, 'awaiting_md_approval')
     case 'approved':
-      return eq(purchaseOrders.mdApprovalStatus, 'approved')
+      return and(
+        eq(purchaseOrders.mdApprovalStatus, 'approved'),
+        sql`${purchaseOrders.status} NOT IN ('completed', 'md_denied', 'md_on_hold')`
+      )
     case 'rejected':
       return eq(purchaseOrders.status, 'md_denied')
     case 'hold':
@@ -163,6 +170,7 @@ function getApprovalFilterExpression(role: string, filter: string | null) {
     case 'completed':
       return eq(purchaseOrders.status, 'completed')
     case 'all':
+      return sql`${purchaseOrders.status} NOT IN ('submitted', 'vendor_info_pending', 'awaiting_ea_approval', 'ea_denied', 'ea_on_hold')`
     default:
       return null
   }
@@ -174,30 +182,58 @@ async function fetchApprovalCounts(role: string, baseFilters: WhereFilter[]) {
   }
 
   const isEa = role === 'ea'
-  const pendingStatus = isEa ? 'awaiting_ea_approval' : 'awaiting_md_approval'
-  const approvedColumn = isEa ? purchaseOrders.eaApprovalStatus : purchaseOrders.mdApprovalStatus
-  const rejectedExpression = isEa
+
+  const pendingCond = isEa
+    ? eq(purchaseOrders.status, 'awaiting_ea_approval')
+    : eq(purchaseOrders.status, 'awaiting_md_approval')
+
+  const approvedCond = isEa
+    ? and(
+        eq(purchaseOrders.eaApprovalStatus, 'approved'),
+        sql`${purchaseOrders.status} NOT IN ('completed', 'ea_denied', 'md_denied', 'ea_on_hold', 'md_on_hold')`
+      )
+    : and(
+        eq(purchaseOrders.mdApprovalStatus, 'approved'),
+        sql`${purchaseOrders.status} NOT IN ('completed', 'md_denied', 'md_on_hold')`
+      )
+
+  const rejectedCond = isEa
     ? sql`${purchaseOrders.status} IN ('ea_denied', 'md_denied')`
     : eq(purchaseOrders.status, 'md_denied')
-  const holdExpression = isEa
+
+  const holdCond = isEa
     ? sql`${purchaseOrders.status} IN ('ea_on_hold', 'md_on_hold')`
     : eq(purchaseOrders.status, 'md_on_hold')
 
+  const completedCond = eq(purchaseOrders.status, 'completed')
+
   const [row] = await db
     .select({
-      all: count(),
-      pending: count(sql`CASE WHEN ${purchaseOrders.status} = ${pendingStatus} THEN 1 END`),
-      approved: count(sql`CASE WHEN ${approvedColumn} = 'approved' THEN 1 END`),
-      rejected: count(sql`CASE WHEN ${rejectedExpression} THEN 1 END`),
-      hold: count(sql`CASE WHEN ${holdExpression} THEN 1 END`),
-      completed: count(sql`CASE WHEN ${purchaseOrders.status} = 'completed' THEN 1 END`),
+      pending: count(sql`CASE WHEN ${pendingCond} THEN 1 END`),
+      approved: count(sql`CASE WHEN ${approvedCond} THEN 1 END`),
+      rejected: count(sql`CASE WHEN ${rejectedCond} THEN 1 END`),
+      hold: count(sql`CASE WHEN ${holdCond} THEN 1 END`),
+      completed: count(sql`CASE WHEN ${completedCond} THEN 1 END`),
     })
     .from(purchaseOrders)
     .where(and(...baseFilters))
 
-  return Object.fromEntries(
-    APPROVAL_FILTER_VALUES.map((filter) => [filter, Number(row?.[filter] || 0)])
-  )
+  const pending = Number(row?.pending || 0)
+  const approved = Number(row?.approved || 0)
+  const rejected = Number(row?.rejected || 0)
+  const hold = Number(row?.hold || 0)
+  const completed = Number(row?.completed || 0)
+
+  const all = pending + approved + rejected + hold + completed
+
+  return {
+    all,
+    pending,
+    approved,
+    rejected,
+    hold,
+    completed,
+  }
 }
 
 export async function GET(request: NextRequest) {
