@@ -83,6 +83,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     let isApproved = false
     let approvalStageActed: string | null = null
     let approvalDeclined = false
+    // Non-empty customer-document fields the GM edited, to sync onto the linked booking's metadata.
+    let bookingDocPatch: Record<string, unknown> | null = null
 
     if (action === 'finance') {
       const permission = await requirePermission(appUser, 'kia.proforma.edit')
@@ -181,6 +183,23 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       updates.additionalDiscount = readAmount(body.additionalDiscount)
       updates.totalCustomerCost = readAmount(body.totalCustomerCost)
       updates.grandTotalCost = readAmount(body.grandTotalCost)
+      // Customer identity documents (PAN / Aadhaar / Employee ID) + exchange details — the GM can
+      // add or edit them here. Store the full snapshot on the proforma's importMetadata, and sync the
+      // provided (non-empty) values onto the linked booking's metadata below (booking = canonical).
+      const customerDocuments = {
+        panNumber: text(body.panNumber) || null,
+        panCardUrl: text(body.panCardUrl) || null,
+        panCardName: text(body.panCardName) || null,
+        aadhaarNumber: text(body.aadhaarNumber) || null,
+        aadhaarCardUrl: text(body.aadhaarCardUrl) || null,
+        aadhaarCardName: text(body.aadhaarCardName) || null,
+        employeeIdUrl: text(body.employeeIdUrl) || null,
+        employeeIdName: text(body.employeeIdName) || null,
+        exchange: text(body.exchange) || 'No',
+        exchangeVehicleName: text(body.exchangeVehicleName) || null,
+      }
+      updates.importMetadata = { ...(row.importMetadata || {}), customerDocuments }
+      bookingDocPatch = Object.fromEntries(Object.entries(customerDocuments).filter(([, v]) => v !== null && v !== ''))
       // Reset approval so the edited proforma goes back through the approval chain.
       updates.approvalStatus = 'PENDING'
       updates.approvedBy = null
@@ -217,6 +236,19 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
             .update(kiaBookings)
             .set({
               status: 'proforma_generated',
+              updatedAt: new Date(),
+              updatedBy: appUser.id,
+            })
+            .where(eq(kiaBookings.id, linkedBooking.id))
+        }
+
+        // Sync GM-edited customer documents / exchange onto the booking (merge; never nulls out
+        // existing values, so a blank field on the form can't wipe the customer's document).
+        if (bookingDocPatch && Object.keys(bookingDocPatch).length > 0) {
+          await db
+            .update(kiaBookings)
+            .set({
+              metadata: { ...((linkedBooking.metadata as Record<string, unknown> | null) || {}), ...bookingDocPatch },
               updatedAt: new Date(),
               updatedBy: appUser.id,
             })

@@ -169,6 +169,7 @@ type KiaProformaRow = {
   financeRemarks: string | null
   financeUpdatedTime: string | null
   addDiscApproval?: Record<string, unknown> | null
+  importMetadata?: Record<string, unknown> | null
 }
 
 type OptionsPayload = {
@@ -1957,6 +1958,35 @@ const KIA_COLORS = [
 // ── GM Edit Form ──────────────────────────────────────────────────────────────
 // Renders a pre-filled proforma form inside the GM Edit Dialog. On save it
 // PATCHes `action: 'edit'` which resets approval to PENDING.
+type ProformaDocForm = {
+  panCardUrl: string; panCardName: string; panNumber: string
+  aadhaarCardUrl: string; aadhaarCardName: string; aadhaarNumber: string
+  employeeIdUrl: string; employeeIdName: string
+  exchange: string; exchangeVehicleName: string
+}
+const EMPTY_PROFORMA_DOCS: ProformaDocForm = {
+  panCardUrl: '', panCardName: '', panNumber: '',
+  aadhaarCardUrl: '', aadhaarCardName: '', aadhaarNumber: '',
+  employeeIdUrl: '', employeeIdName: '', exchange: 'No', exchangeVehicleName: '',
+}
+// Pull the known document keys out of a metadata blob (booking.metadata or proforma.importMetadata).
+function pickProformaDocs(source: Record<string, unknown> | null | undefined): Partial<ProformaDocForm> {
+  const m = (source || {}) as Record<string, unknown>
+  const keys: (keyof ProformaDocForm)[] = ['panCardUrl', 'panCardName', 'panNumber', 'aadhaarCardUrl', 'aadhaarCardName', 'aadhaarNumber', 'employeeIdUrl', 'employeeIdName', 'exchange', 'exchangeVehicleName']
+  const out: Partial<ProformaDocForm> = {}
+  for (const k of keys) { const v = m[k]; if (v !== null && v !== undefined && v !== '') out[k] = String(v) }
+  return out
+}
+function ProformaDocUpload({ label, uploading, fileName, onSelect }: { label: string; uploading: boolean; fileName?: string; onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+  return (
+    <label className={`flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-dashed px-3 text-xs font-bold transition-colors ${fileName ? 'border-emerald-300 bg-emerald-50/60 text-emerald-700' : 'border-[var(--dashboard-primary-border)] bg-white text-[var(--kia-text-soft)] hover:border-slate-400'} ${uploading ? 'pointer-events-none opacity-70' : ''}`}>
+      {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4 shrink-0 opacity-70" />}
+      <span className="min-w-0 flex-1 truncate">{uploading ? 'Reading…' : fileName || label}</span>
+      <input type="file" accept="image/*,application/pdf" className="hidden" onChange={onSelect} disabled={uploading} />
+    </label>
+  )
+}
+
 function GMEditForm({
   row,
   models,
@@ -2009,6 +2039,61 @@ function GMEditForm({
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  // Customer documents (PAN / Aadhaar / Employee ID + exchange) live on the booking; the GM can add
+  // or edit them here. Seed from the proforma's own snapshot, then override with the linked booking's
+  // canonical metadata once fetched.
+  const [docForm, setDocForm] = useState<ProformaDocForm>(() => ({
+    ...EMPTY_PROFORMA_DOCS,
+    ...pickProformaDocs((row.importMetadata as Record<string, unknown> | null)?.customerDocuments as Record<string, unknown> | undefined),
+  }))
+  const [idDocUploading, setIdDocUploading] = useState<'pan' | 'aadhaar' | 'employee_id' | null>(null)
+  const updateDoc = <K extends keyof ProformaDocForm>(key: K, value: ProformaDocForm[K]) => setDocForm((c) => ({ ...c, [key]: value }))
+
+  useEffect(() => {
+    if (!row.linkedBookingId) return
+    let cancelled = false
+    fetch(`/api/brands/kia/bookings/${row.linkedBookingId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        setDocForm((c) => ({ ...c, ...pickProformaDocs((data.booking?.metadata || {}) as Record<string, unknown>) }))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [row.linkedBookingId])
+
+  async function handleIdDocUpload(docType: 'pan' | 'aadhaar' | 'employee_id', e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIdDocUploading(docType)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('docType', docType)
+      const res = await fetch('/api/brands/kia/bookings/extract-id-document', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data?.error || 'Upload failed')
+      setDocForm((c) => ({
+        ...c,
+        ...(docType === 'pan' ? { panCardUrl: data.url || file.name, panCardName: file.name } : {}),
+        ...(docType === 'aadhaar' ? { aadhaarCardUrl: data.url || file.name, aadhaarCardName: file.name } : {}),
+        ...(docType === 'employee_id' ? { employeeIdUrl: data.url || file.name, employeeIdName: file.name } : {}),
+        ...(docType === 'pan' && data.number ? { panNumber: data.number } : {}),
+        ...(docType === 'aadhaar' && data.number ? { aadhaarNumber: data.number } : {}),
+      }))
+      toast({
+        title: 'Document uploaded',
+        description: data.pdfManual ? 'PDF stored — please type the number manually.' : data.number ? 'Read the number automatically — please verify it.' : 'Uploaded.',
+        variant: 'success',
+      })
+    } catch (err) {
+      e.target.value = ''
+      toast({ title: 'Upload failed', description: err instanceof Error ? err.message : 'Please try again.', variant: 'error' })
+    } finally {
+      setIdDocUploading(null)
+    }
   }
 
   // Cascading dropdown choices (Model → Variant → Colour), like the booking form. Each list
@@ -2068,6 +2153,7 @@ function GMEditForm({
       const payload = {
         action: 'edit',
         ...form,
+        ...docForm,
         totalCustomerCost: totals.totalCustomerCost,
         grandTotalCost: totals.grandTotalCost,
       }
@@ -2179,6 +2265,40 @@ function GMEditForm({
           </div>
         </FormSection>
       </div>
+
+      {/* Customer Documents — GM can add or edit; saved onto the customer's booking. */}
+      <FormSection title="Customer Documents">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field label="PAN Card">
+            <ProformaDocUpload label="Upload PAN (image / PDF)" uploading={idDocUploading === 'pan'} fileName={docForm.panCardName} onSelect={(e) => handleIdDocUpload('pan', e)} />
+          </Field>
+          <Field label="PAN Number">
+            <TextInput value={docForm.panNumber} onChange={(e) => updateDoc('panNumber', e.target.value.toUpperCase().slice(0, 10))} placeholder="ABCDE1234F" maxLength={10} />
+          </Field>
+          <div className="hidden md:block" />
+          <Field label="Aadhaar Card">
+            <ProformaDocUpload label="Upload Aadhaar (image / PDF)" uploading={idDocUploading === 'aadhaar'} fileName={docForm.aadhaarCardName} onSelect={(e) => handleIdDocUpload('aadhaar', e)} />
+          </Field>
+          <Field label="Aadhaar Number">
+            <TextInput inputMode="numeric" value={docForm.aadhaarNumber} onChange={(e) => updateDoc('aadhaarNumber', e.target.value.replace(/\D/g, '').slice(0, 12))} placeholder="12-digit number" maxLength={12} />
+          </Field>
+          <Field label="Employee ID (optional)">
+            <ProformaDocUpload label="Upload Employee ID" uploading={idDocUploading === 'employee_id'} fileName={docForm.employeeIdName} onSelect={(e) => handleIdDocUpload('employee_id', e)} />
+          </Field>
+          <Field label="Exchange / Trade-in">
+            <Select value={docForm.exchange || 'No'} onValueChange={(v) => updateDoc('exchange', v)}>
+              <SelectTrigger className="rounded-xl border-[var(--dashboard-primary-border)] bg-white shadow-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>{['No', 'Yes'].map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+          {docForm.exchange === 'Yes' && (
+            <Field label="Exchange Vehicle Name">
+              <TextInput value={docForm.exchangeVehicleName} onChange={(e) => updateDoc('exchangeVehicleName', e.target.value)} placeholder="e.g. Maruti Swift 2019" />
+            </Field>
+          )}
+        </div>
+        <p className="mt-2 text-[11px] font-semibold text-[var(--kia-text-faint)]">PAN &amp; Aadhaar numbers are read from the uploaded card — please verify. Accepts JPG, PNG or PDF (type the number for PDFs). Saved to the customer&apos;s booking.</p>
+      </FormSection>
 
       {/* Pricing */}
       <FormSection title="Pricing & Discounts">
