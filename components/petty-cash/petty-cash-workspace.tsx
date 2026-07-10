@@ -22,7 +22,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
 import { getBranchLabel } from '@/lib/branches'
-import { getPettyCashLocationOptions } from '@/lib/petty-cash/constants'
+import { getPettyCashLocationOptions, PETTY_CASH_DEPARTMENT_OPTIONS } from '@/lib/petty-cash/constants'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { RequestFormDialog } from './pc-request-form'
@@ -77,6 +77,7 @@ type PettyCashAllocationRow = {
   spent_amount?: string
   remainingAmount?: string
   location?: string | null
+  department?: string | null
   allocatedToName?: string | null
   allocatedAt?: string
   allocated_at?: string
@@ -138,6 +139,7 @@ export function PettyCashWorkspace() {
   const [ledger, setLedger] = useState<PettyCashLedgerEntry[]>([])
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [expenseLocationFilter, setExpenseLocationFilter] = useState('all')
+  const [expenseDepartmentFilter, setExpenseDepartmentFilter] = useState('all')
   const [requestForm, setRequestForm] = useState<RequestFormState>(EMPTY_REQUEST_FORM)
   const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(EMPTY_EXPENSE_FORM)
   const [expenseFiles, setExpenseFiles] = useState<string[]>([])
@@ -154,6 +156,7 @@ export function PettyCashWorkspace() {
   const [allocations, setAllocations] = useState<PettyCashAllocationRow[]>([])
   const [allocationsLoading, setAllocationsLoading] = useState(false)
   const [allocationLocationFilter, setAllocationLocationFilter] = useState('all')
+  const [allocationDepartmentFilter, setAllocationDepartmentFilter] = useState('all')
 
   const refreshLedger = useCallback(async (allocationId?: string | null) => {
     setLedgerLoading(true)
@@ -263,18 +266,29 @@ export function PettyCashWorkspace() {
     () => Array.from(new Set(allExpenses.map((expense) => (expense.location || '').trim()).filter(Boolean))).sort(),
     [allExpenses],
   )
+  const expenseDepartmentOptions = useMemo(
+    () => Array.from(new Set(allExpenses.map((expense) => (expense.department || '').trim()).filter(Boolean))).sort(),
+    [allExpenses],
+  )
   const visibleExpenses = useMemo(() => {
-    if (!canFilterExpensesByLocation || expenseLocationFilter === 'all') return allExpenses
-    return allExpenses.filter((expense) => (expense.location || '').trim() === expenseLocationFilter)
-  }, [allExpenses, canFilterExpensesByLocation, expenseLocationFilter])
+    if (!canFilterExpensesByLocation) return allExpenses
+    return allExpenses.filter((expense) =>
+      (expenseLocationFilter === 'all' || (expense.location || '').trim() === expenseLocationFilter)
+      && (expenseDepartmentFilter === 'all' || (expense.department || '').trim() === expenseDepartmentFilter))
+  }, [allExpenses, canFilterExpensesByLocation, expenseLocationFilter, expenseDepartmentFilter])
   const allocationLocationOptions = useMemo(
     () => Array.from(new Set(allocations.map((allocation) => (allocation.location || '').trim()).filter(Boolean))).sort(),
     [allocations],
   )
+  const allocationDepartmentOptions = useMemo(
+    () => Array.from(new Set(allocations.map((allocation) => (allocation.department || '').trim()).filter(Boolean))).sort(),
+    [allocations],
+  )
   const visibleAllocations = useMemo(() => {
-    if (allocationLocationFilter === 'all') return allocations
-    return allocations.filter((allocation) => (allocation.location || '').trim() === allocationLocationFilter)
-  }, [allocations, allocationLocationFilter])
+    return allocations.filter((allocation) =>
+      (allocationLocationFilter === 'all' || (allocation.location || '').trim() === allocationLocationFilter)
+      && (allocationDepartmentFilter === 'all' || (allocation.department || '').trim() === allocationDepartmentFilter))
+  }, [allocations, allocationLocationFilter, allocationDepartmentFilter])
   const allocationTotals = useMemo(() => allocations.reduce((acc, allocation) => {
     acc.allocated += Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
     acc.spent += Number(allocation.spentAmount || allocation.spent_amount || 0)
@@ -307,9 +321,11 @@ export function PettyCashWorkspace() {
   const submitRequest = useCallback(async () => {
     if (!canRequestTopUp) { setError(topUpReason || 'Top-up not available right now.'); return }
     const location = requestForm.location.trim()
+    const department = requestForm.department.trim()
     const amount = Number(requestForm.requestedAmount)
     const purpose = requestForm.purpose.trim()
     if (!location || !requestLocationOptions.includes(location)) { setError('Please select a valid location.'); return }
+    if (!department || !PETTY_CASH_DEPARTMENT_OPTIONS.includes(department as typeof PETTY_CASH_DEPARTMENT_OPTIONS[number])) { setError('Please select a department (Sales or Service).'); return }
     if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a valid amount greater than 0.'); return }
     if (purpose.length < 5) { setError('Purpose must be at least 5 characters.'); return }
 
@@ -605,7 +621,10 @@ export function PettyCashWorkspace() {
                           <span className="truncate font-black text-slate-800">{allocation.location || getBranchLabel(normalizeBranchId(allocation))}</span>
                           <StatusPill status={allocation.status} />
                         </div>
-                        <p className="mt-0.5 text-xs font-semibold text-slate-500">{getBranchLabel(normalizeBranchId(allocation))}</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <p className="text-xs font-semibold text-slate-500">{getBranchLabel(normalizeBranchId(allocation))}</p>
+                          <DepartmentBadge department={allocation.department} />
+                        </div>
                         <p className="mt-3 text-2xl font-black tracking-tight text-emerald-600">{formatCurrency(remaining)}</p>
                         <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Remaining</p>
                         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs font-semibold text-slate-500">
@@ -659,7 +678,10 @@ export function PettyCashWorkspace() {
           icon={ReceiptText}
           iconTone="emerald"
           toolbar={canFilterExpensesByLocation ? (
-            <LocationFilter value={expenseLocationFilter} options={expenseLocationOptions} onChange={setExpenseLocationFilter} />
+            <div className="flex flex-wrap items-center gap-2">
+              <PillFilter label="Location" allLabel="All Locations" value={expenseLocationFilter} options={expenseLocationOptions} onChange={setExpenseLocationFilter} />
+              <PillFilter label="Department" allLabel="All Departments" value={expenseDepartmentFilter} options={expenseDepartmentOptions} onChange={setExpenseDepartmentFilter} />
+            </div>
           ) : undefined}
         >
           {renderExpenseTable(visibleExpenses)}
@@ -672,7 +694,12 @@ export function PettyCashWorkspace() {
           subtitle="Active petty cash allocations across every branch and dealership"
           icon={Banknote}
           iconTone="blue"
-          toolbar={<LocationFilter value={allocationLocationFilter} options={allocationLocationOptions} onChange={setAllocationLocationFilter} />}
+          toolbar={(
+            <div className="flex flex-wrap items-center gap-2">
+              <PillFilter label="Location" allLabel="All Locations" value={allocationLocationFilter} options={allocationLocationOptions} onChange={setAllocationLocationFilter} />
+              <PillFilter label="Department" allLabel="All Departments" value={allocationDepartmentFilter} options={allocationDepartmentOptions} onChange={setAllocationDepartmentFilter} />
+            </div>
+          )}
         >
           <RecordTable
             rows={visibleAllocations}
@@ -682,6 +709,7 @@ export function PettyCashWorkspace() {
             columns={[
               { header: 'Branch', cell: (allocation) => <span className="font-bold text-slate-800">{getBranchLabel(normalizeBranchId(allocation))}</span> },
               { header: 'Location', cell: (allocation) => <span className="font-semibold text-slate-700">{allocation.location || '—'}</span> },
+              { header: 'Department', cell: (allocation) => <DepartmentBadge department={allocation.department} /> },
               { header: 'Allocation #', cell: (allocation) => <span className="font-mono text-xs font-bold text-slate-500">{allocation.allocationNumber || allocation.allocation_number || '—'}</span> },
               { header: 'Allocated', align: 'right', cell: (allocation) => <span className="font-black tabular-nums text-slate-900">{formatCurrency(allocation.allocatedAmount || allocation.allocated_amount)}</span> },
               { header: 'Spent', align: 'right', cell: (allocation) => <span className="font-black tabular-nums text-rose-600">{formatCurrency(allocation.spentAmount || allocation.spent_amount)}</span> },
@@ -770,6 +798,7 @@ export function PettyCashWorkspace() {
         columns={[
           { header: 'Request #', cell: (request) => <span className="font-mono text-xs font-bold text-slate-500">{normalizeRequestNumber(request)}</span> },
           { header: 'Requested By', cell: (request) => <span className="font-bold text-slate-800">{requestedByName(request)}</span> },
+          { header: 'Department', cell: (request) => <DepartmentBadge department={request.department} /> },
           { header: 'Purpose', cell: (request) => <span className="line-clamp-1 max-w-[220px] text-slate-600">{request.purpose || '—'}</span> },
           { header: 'Amount', align: 'right', cell: (request) => <span className="font-black tabular-nums text-slate-900">{formatCurrency(requestedAmount(request))}</span> },
           ...(withActions
@@ -820,6 +849,7 @@ export function PettyCashWorkspace() {
           { header: 'Expense #', cell: (expense) => <span className="font-mono text-xs font-bold text-slate-500">{normalizeExpenseNumber(expense)}</span> },
           { header: 'Date', cell: (expense) => <span className="text-slate-600">{formatDateTime(expenseDate(expense))}</span> },
           ...(canFilterExpensesByLocation ? [{ header: 'Location', cell: (expense: import('./types').PettyCashExpense) => <span className="font-semibold text-slate-700">{expense.location || '—'}</span> }] : []),
+          { header: 'Department', cell: (expense) => <DepartmentBadge department={expense.department} /> },
           { header: 'Description', cell: (expense) => <span className="line-clamp-1 max-w-[220px] text-slate-600">{expense.particulars || expense.purpose || '—'}</span> },
           { header: 'Vendor', cell: (expense) => <span className="text-slate-600">{expenseVendor(expense)}</span> },
           { header: 'Amount', align: 'right', cell: (expense) => <span className="font-black tabular-nums text-slate-900">{formatCurrency(expense.amount)}</span> },
@@ -830,20 +860,32 @@ export function PettyCashWorkspace() {
   }
 }
 
-function LocationFilter({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
+function PillFilter({ label, allLabel, value, options, onChange }: { label: string; allLabel: string; value: string; options: string[]; onChange: (value: string) => void }) {
   return (
     <div className="inline-flex items-center gap-2">
-      <span className="text-xs font-bold text-slate-500">Location</span>
+      <span className="text-xs font-bold text-slate-500">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="h-9 cursor-pointer rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm outline-none focus:border-slate-400"
       >
-        <option value="all">All Locations</option>
-        {options.map((location) => <option key={location} value={location}>{location}</option>)}
+        <option value="all">{allLabel}</option>
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
     </div>
   )
+}
+
+// Department badge — Sales / Service colour-coded so the department reads at a glance in tables.
+function DepartmentBadge({ department }: { department?: string | null }) {
+  const value = (department || '').trim()
+  if (!value) return <span className="text-slate-400">—</span>
+  const tone = /service/i.test(value)
+    ? 'bg-amber-50 text-amber-700 ring-amber-200'
+    : /sales/i.test(value)
+      ? 'bg-blue-50 text-blue-700 ring-blue-200'
+      : 'bg-slate-100 text-slate-600 ring-slate-200'
+  return <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ring-1 ring-inset', tone)}>{value}</span>
 }
 
 function ScopeToggle({ scope, onChange }: { scope: 'all' | 'mine'; onChange: (scope: 'all' | 'mine') => void }) {

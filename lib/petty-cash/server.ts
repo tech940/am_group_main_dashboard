@@ -436,12 +436,14 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
   const whereExpression = and(...filters)
   const offset = (query.page - 1) * query.pageSize
   const [{ total }] = await db.select({ total: count() }).from(pettyCashExpenses).where(whereExpression)
-  // Location lives on the originating request (requestForm.location); surface it on
-  // each expense (via allocation -> request) so back-office roles can filter by it.
+  // Location + department live on the originating request (requestForm.location / department);
+  // surface them on each expense (via allocation -> request) so back-office roles can see and
+  // filter by both — department is as prominent as location.
   const rows = await db
     .select({
       expense: pettyCashExpenses,
       location: sql<string | null>`${pettyCashRequests.requestForm} ->> 'location'`,
+      department: pettyCashRequests.department,
     })
     .from(pettyCashExpenses)
     .leftJoin(pettyCashAllocations, eq(pettyCashAllocations.id, pettyCashExpenses.allocationId))
@@ -452,7 +454,7 @@ export async function listPettyCashExpenses(appUser: AppUser, input: z.input<typ
     .offset(offset)
 
   return {
-    expenses: rows.map((row) => ({ ...serializeExpense(row.expense as Record<string, unknown>), location: row.location || null })),
+    expenses: rows.map((row) => ({ ...serializeExpense(row.expense as Record<string, unknown>), location: row.location || null, department: row.department || null })),
     pagination: {
       page: query.page,
       pageSize: query.pageSize,
@@ -516,6 +518,7 @@ export async function listPettyCashAllocations(appUser: AppUser, input?: { branc
     .select({
       allocation: pettyCashAllocations,
       location: sql<string | null>`${pettyCashRequests.requestForm} ->> 'location'`,
+      department: pettyCashRequests.department,
       allocatedToName: users.fullName,
     })
     .from(pettyCashAllocations)
@@ -529,6 +532,7 @@ export async function listPettyCashAllocations(appUser: AppUser, input?: { branc
     allocations: rows.map((row) => ({
       ...serializeAllocation(row.allocation as Record<string, unknown>),
       location: row.location || null,
+      department: row.department || null,
       allocatedToName: row.allocatedToName || null,
       remainingAmount: toMoney(getRemainingBalance(row.allocation)),
     })),

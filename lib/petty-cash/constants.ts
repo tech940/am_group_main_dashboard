@@ -33,23 +33,8 @@ export const PETTY_CASH_EXPENSE_STAGES = ['ea_approval', 'md_approval', 'account
 export const PETTY_CASH_TOP_UP_THRESHOLD = 1000
 
 export const PETTY_CASH_DEPARTMENT_OPTIONS = [
-  'HR',
-  'ADMIN',
-  'SALES',
-  'SERVICE',
-  'H PROMISE',
-  'BODY SHOP',
-  'ACCOUNTS',
-  'CRM',
-  'INSURANCE',
-  'EDP / IT',
-  'SPARE PARTS',
-  'SALES & SERVICE',
-  'Accessories',
-  'EMI',
-  'NEW JOINING',
-  'LABOUR CHARGES',
-  'OTHER',
+  'Sales',
+  'Service',
 ] as const
 
 export const PETTY_CASH_KIA_LOCATION_OPTIONS = ['JAMMU', 'UDHAMPUR'] as const

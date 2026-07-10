@@ -61,14 +61,16 @@ export function RequestFormDialog({
               <Field label="Location" required>
                 <Select value={form.location} onValueChange={(value) => onChange('location', value)}>
                   <SelectTrigger className="h-11 rounded-xl border-slate-200 font-bold">
-                    <span className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400" /><SelectValue placeholder="Select location" /></span>
+                    {/* A <div> (not <span>) so the trigger's [&>span]:line-clamp-1 rule can't
+                        override this flex row and stack the icon above the text. */}
+                    <div className="flex min-w-0 items-center gap-2"><MapPin className="h-4 w-4 shrink-0 text-slate-400" /><SelectValue placeholder="Select location" /></div>
                   </SelectTrigger>
                   <SelectContent>
                     {locationOptions.map((location) => <SelectItem key={location} value={location}>{location}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Department">
+              <Field label="Department" required>
                 <Select value={form.department} onValueChange={(value) => onChange('department', value)}>
                   <SelectTrigger className="h-11 rounded-xl border-slate-200 font-bold"><SelectValue placeholder="Select department" /></SelectTrigger>
                   <SelectContent>
