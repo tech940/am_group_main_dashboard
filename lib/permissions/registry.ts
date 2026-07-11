@@ -26,6 +26,14 @@ export type PermissionDefinition = {
 
 export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
   {
+    key: 'cockpit',
+    name: 'Group Cockpit',
+    parentKey: null,
+    description: 'Executive cross-brand cockpit: group service revenue, approved cash, and KIA sales & stock, month-to-date.',
+    sortOrder: 5,
+    actions: ['view'],
+  },
+  {
     key: 'kia',
     name: 'KIA',
     parentKey: null,
@@ -226,6 +234,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'kia.sales_performance',
+    name: 'Sales Performance',
+    parentKey: 'kia.sales',
+    description: 'AM KIA consultant sales targets and leaderboard (bookings, deliveries, conversion).',
+    sortOrder: 38,
+    actions: ['view'],
+  },
+  {
     key: 'kia.stock_management',
     name: 'Stock Management',
     parentKey: 'kia.sales',
@@ -242,19 +258,35 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'create', 'edit', 'audit'],
   },
   {
+    key: 'kia.call_center',
+    name: 'Call Center',
+    parentKey: 'kia.sales',
+    description: 'AM KIA masked click-to-call — agents call customers without ever seeing the number.',
+    sortOrder: 41,
+    actions: ['view'],
+  },
+  {
+    key: 'kia.lead_followups',
+    name: 'Follow-ups',
+    parentKey: 'kia.sales',
+    description: 'AM KIA lead follow-up pipeline — scheduled next-touch on bookings so no lead goes cold.',
+    sortOrder: 42,
+    actions: ['view', 'create', 'edit'],
+  },
+  {
+    key: 'kia.call_analytics',
+    name: 'Call & Follow-up Analytics',
+    parentKey: 'kia.sales',
+    description: 'AM KIA manager analytics — call volume, contact rate, dispositions, follow-up completion and leaderboards.',
+    sortOrder: 43,
+    actions: ['view'],
+  },
+  {
     key: 'kia.h_promise',
     name: 'H Promise',
     parentKey: 'kia',
     description: 'AM KIA H Promise department modules.',
     sortOrder: 41,
-    actions: ['view'],
-  },
-  {
-    key: 'kia.insurance',
-    name: 'Insurance',
-    parentKey: 'kia',
-    description: 'AM KIA insurance operations and reporting section.',
-    sortOrder: 42,
     actions: ['view'],
   },
   {
@@ -634,6 +666,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'create', 'edit', 'audit'],
   },
   {
+    key: 'ca',
+    name: 'CA',
+    parentKey: null,
+    description: 'Read-only chartered-accountant view of approved purchase orders and petty cash, branch-wise.',
+    sortOrder: 56,
+    actions: ['view'],
+  },
+  {
     key: 'reports',
     name: 'Reports',
     parentKey: null,
@@ -681,10 +721,11 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
 // separate hand-maintained map in the sidebar. `aliases` are additional paths that resolve to
 // the same section (e.g. a Business Excellence landing page vs. its /overview route).
 export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }> = {
+  cockpit: { href: '/cockpit' },
   purchase_orders: { href: '/purchase-orders' },
-  finance_orders: { href: '/finance-orders' },
   petty_cash: { href: '/petty-cash' },
   am_finance: { href: '/am-finance' },
+  ca: { href: '/ca' },
   user_management: { href: '/admin' },
   'kia.business_excellence': { href: '/brands/kia/business-excellence', aliases: ['/brands/kia/business-excellence/executive-dashboard', '/brands/kia/business-excellence/overview'] },
   'kia.service_appointment': { href: '/brands/kia/service-appointment' },
@@ -692,9 +733,12 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   'kia.demo_cars_list': { href: '/brands/kia/demo-cars-list' },
   'kia.sales_report': { href: '/brands/kia/sales-report' },
   'kia.stock_report': { href: '/brands/kia/stock-report' },
+  'kia.sales_performance': { href: '/brands/kia/sales-performance' },
+  'kia.call_center': { href: '/brands/kia/call-center' },
+  'kia.lead_followups': { href: '/brands/kia/follow-ups' },
+  'kia.call_analytics': { href: '/brands/kia/call-analytics' },
   'kia.bookings': { href: '/brands/kia/bookings' },
   'kia.proforma': { href: '/brands/kia/proforma' },
-  'kia.insurance': { href: '/brands/kia/insurance' },
   'hyundai.business_excellence': { href: '/brands/hyundai/business-excellence', aliases: ['/brands/hyundai/business-excellence/executive-dashboard', '/brands/hyundai/business-excellence/overview'] },
   'hyundai.service_appointment': { href: '/brands/hyundai/service-appointment' },
   'hyundai.demo_job_cards': { href: '/brands/hyundai/demo-job-cards' },
@@ -728,6 +772,51 @@ export const PERMISSIONS: PermissionDefinition[] = PERMISSION_GROUPS.flatMap((gr
   }))
 )
 
+// --- Default section visibility (DENY-BY-DEFAULT for new sidebar sections) ---------------------
+// Sidebar sections are visible-by-default ONLY if their key is on this frozen allowlist. Everything
+// else — including every NEW section added to SECTION_ROUTES from now on — is restricted to MD &
+// Developer (super admins, who can never be locked out) until it is either (a) added here to make
+// it broadly visible again, or (b) granted per-user / per-role in Admin → Access.
+//
+// IMPORTANT: this is a FROZEN list, intentionally hand-maintained. Do NOT replace it with a
+// computed `Object.keys(SECTION_ROUTES)` expression — that would re-grant every future section by
+// default and defeat the deny-by-default guarantee. To expose a new section to everyone, add its
+// key here deliberately.
+export const DEFAULT_VISIBLE_SECTIONS = new Set<string>([
+  'purchase_orders', 'finance_orders', 'petty_cash', 'am_finance', 'user_management',
+  'kia.business_excellence', 'kia.service_appointment', 'kia.demo_job_cards', 'kia.demo_cars_list',
+  'kia.sales_report', 'kia.stock_report', 'kia.bookings', 'kia.proforma',
+  'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.demo_job_cards',
+  'hyundai.demo_cars_list', 'hyundai.proforma', 'hyundai.warranty_list', 'hyundai.warranty_claim_list',
+  'platinum.business_excellence', 'platinum.service_appointment', 'platinum.demo_job_cards',
+  'platinum.demo_cars_list', 'platinum.proforma', 'platinum.warranty_list', 'platinum.warranty_claim_list',
+  'mg.business_excellence', 'mg.service_appointment', 'mg.demo_job_cards', 'mg.demo_cars_list', 'mg.proforma',
+])
+
+// Every navigable section NOT on the allowlist is restricted-by-default. Derived from SECTION_ROUTES
+// so a newly-added section automatically lands here (deny-by-default) with no extra wiring.
+export const RESTRICTED_DEFAULT_SECTIONS = new Set<string>(
+  Object.keys(SECTION_ROUTES).filter((key) => !DEFAULT_VISIBLE_SECTIONS.has(key))
+)
+
+// The concrete permission keys (e.g. 'kia.call_center.view') under restricted sections. The resolver
+// uses this to exclude them from the blanket brand-default and global-access-role defaults, so only
+// super admins (MD/Developer) and explicitly-granted users/roles get them.
+export const RESTRICTED_DEFAULT_PERMISSION_KEYS = new Set<string>(
+  PERMISSIONS.filter((permission) => RESTRICTED_DEFAULT_SECTIONS.has(permission.groupKey)).map((permission) => permission.key)
+)
+
+// Sensitive analytics sections: visible by DEFAULT only to top management — MD & Developer (super
+// admins) plus EBA. Denied by default to everyone else, including CEO/EA and every brand role, but
+// still grantable per-user via the Access Map. Distinct from RESTRICTED_DEFAULT_SECTIONS (super
+// admins only) because EBA is additionally allowed. The allowed-role set lives in
+// lib/permissions/service.ts (SENSITIVE_REPORT_DEFAULT_ROLES).
+export const SENSITIVE_REPORT_SECTIONS = new Set<string>(['kia.sales_report', 'kia.stock_report'])
+
+export const SENSITIVE_REPORT_PERMISSION_KEYS = new Set<string>(
+  PERMISSIONS.filter((permission) => SENSITIVE_REPORT_SECTIONS.has(permission.groupKey)).map((permission) => permission.key)
+)
+
 const permissionKeysByGroup = new Map(
   PERMISSION_GROUPS.map((group) => [group.key, group.actions.map((action) => `${group.key}.${action}`)])
 )
@@ -759,12 +848,14 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   technician: 'Technician',
   viewer: 'Employee',
   service_manager: 'Service Manager',
-  general_manager: 'Sales General Manager',
-  service_general_manager: 'Service General Manager',
+  general_manager: 'General Sales Manager',
+  service_general_manager: 'General Service Manager',
   sales_head: 'Sales Head',
   sales_executive: 'Sales Executive',
   sales_manager: 'Sales Manager',
   finance_team: 'Finance Team',
+  call_agent: 'Call Agent',
+  ca: 'CA',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -830,7 +921,6 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.service_appointment',
     'kia.demo_cars_list',
     'kia.proforma',
-    'kia.insurance',
     ...hyundaiPlatinumExecutiveGroups,
     'purchase_orders',
     'finance_orders',
@@ -854,7 +944,6 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.stock_management',
     'kia.bookings',
     'kia.proforma',
-    'kia.insurance',
     ...hyundaiPlatinumExecutiveGroups,
     'purchase_orders',
     'finance_orders',
@@ -878,7 +967,6 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.stock_management',
     'kia.bookings',
     'kia.proforma',
-    'kia.insurance',
     ...hyundaiPlatinumExecutiveGroups,
     'purchase_orders',
     'finance_orders',
@@ -896,7 +984,6 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'kia.service_appointment',
     'kia.demo_cars_list',
     'kia.proforma',
-    'kia.insurance',
     'purchase_orders',
     'finance_orders',
     'petty_cash',
@@ -920,26 +1007,32 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['am_finance'], ['view', 'create', 'edit']),
   ],
   manager: [
-    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit', 'approve']),
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.sales', 'kia.stock_management', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit', 'approve']),
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
   ],
   technician: [
-    ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.service', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.proforma'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   viewer: [
-    ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.bookings', 'kia.proforma', 'kia.insurance'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.service', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   service_manager: [
-    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.insurance', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   general_manager: [
-    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'kia.insurance', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list', 'kia.stock_management', 'kia.bookings', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
+    ...keysForGroups(['petty_cash'], ['view', 'edit', 'approve', 'audit']),
   ],
-  // Service General Manager: service-side oversight. Views KIA service modules; the
+  // General Service Manager: service-side oversight. Views KIA service modules; the
   // Vehicle Tracker is additionally role-gated in lib/kia/vehicle-tracker-access.ts.
   service_general_manager: [
     ...keysForGroups(['kia', 'kia.service', 'kia.business_excellence', 'kia.demo_job_cards', 'kia.service_appointment', 'kia.demo_cars_list'], ['view']),
@@ -947,16 +1040,21 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ],
   sales_head: [
     ...keysForGroups(['kia', 'kia.proforma', 'tata', 'hyundai', 'platinum', 'honda', 'ktm', 'triumph', 'bajaj', 'mg'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   // KIA Proforma workflow: front-line executive — locked to the Bookings section
   // (Booking CRM + generating proformas). No stock, insurance, approve or audit.
   sales_executive: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
   ],
   // KIA Proforma workflow: reviews & approves/declines proformas.
   sales_manager: [
-    ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management', 'kia.insurance'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.call_analytics'], ['view']),
     ...keysForGroups(['am_finance'], ['view']),
   ],
   // KIA Proforma workflow: final approver alongside the Finance Head — reviews & approves/declines
@@ -967,6 +1065,16 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
     ...keysForGroups(['kia.proforma'], ['view', 'approve']),
     ...keysForGroups(['am_finance'], ['view']),
+  ],
+  // Call Agent (telecaller): the masked Call Center + the follow-up pipeline they schedule from
+  // calls — no numbers, no other modules.
+  call_agent: [
+    ...keysForGroups(['kia.call_center'], ['view']),
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+  ],
+  // CA (Chartered Accountant): read-only, cross-branch, ONLY the CA section (approved POs + petty cash).
+  ca: [
+    ...keysForGroups(['ca'], ['view']),
   ],
 }
 

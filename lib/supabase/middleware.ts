@@ -45,7 +45,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Protected routes
-  const protectedPaths = ['/dashboard', '/workshop', '/recon', '/inventory', '/reports', '/team', '/admin', '/brands', '/purchase-orders', '/finance-orders', '/am-finance']
+  const protectedPaths = ['/dashboard', '/workshop', '/recon', '/inventory', '/reports', '/team', '/admin', '/brands', '/purchase-orders', '/am-finance']
   const isProtectedPath = protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))
   const hasAuthCookie = request.cookies.getAll().some(({ name, value }) => (
     name.startsWith('sb-')

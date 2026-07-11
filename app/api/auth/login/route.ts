@@ -42,11 +42,9 @@ export async function POST(request: NextRequest) {
       ))
       .limit(1)
 
-    const redirectTo = appUser?.role === 'finance_head'
-      ? '/finance-orders'
-      : appUser?.role === 'md'
-        ? '/purchase-orders'
-        : '/dashboard'
+    const redirectTo = appUser?.role === 'md'
+      ? '/purchase-orders'
+      : '/dashboard'
 
     await logUserActivity({
       actor: {

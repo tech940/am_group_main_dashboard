@@ -134,7 +134,16 @@ function AccordionRow({
         </span>
       )}
       <span className="flex-1 truncate text-left">{node.label}</span>
-      {node.badge && <span className="text-[8px] font-black uppercase tracking-widest text-indigo-50/50">{node.badge}</span>}
+      {node.badge && (
+        <span className={cn(
+          "ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider",
+          node.badge === 'TEST'
+            ? "bg-amber-500/20 text-amber-200 border border-amber-500/30"
+            : "bg-white/10 text-indigo-50/70"
+        )}>
+          {node.badge}
+        </span>
+      )}
       {hasChildren && <ChevronDown className={cn('h-4 w-4 flex-shrink-0 text-indigo-50/60 transition-transform', expanded && 'rotate-180')} />}
     </>
   )

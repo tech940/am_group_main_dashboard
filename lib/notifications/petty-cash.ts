@@ -233,39 +233,6 @@ export async function createPettyCashNotifications({
   historyId,
   remarks,
 }: CreatePettyCashNotificationParams) {
-  const recipients = (await resolveRecipients(event, entity)).filter((recipient) => recipient.id !== actor.id)
-
-  if (recipients.length === 0) return
-
-  const content = buildContent(event, entity, actor, remarks)
-  const referenceNumber = isExpense(entity) ? entity.expenseNumber : entity.requestNumber
-  const actionUrl = `/petty-cash?${entityType}Id=${entity.id}`
-  const createdAt = new Date()
-
-  await db.insert(notifications).values(recipients.map((recipient) => ({
-    userId: recipient.id,
-    title: content.title,
-    message: content.message,
-    type: content.type,
-    actionUrl,
-    entityType: `petty_cash_${entityType}`,
-    entityId: entity.id,
-    referenceNumber,
-    workflowStage: content.workflowStage,
-    targetRole: recipient.role,
-    dedupeKey: `petty-cash:${historyId}:${recipient.id}`,
-    createdAt,
-    metadata: {
-      event,
-      entityType,
-      historyId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      actorName: getActorName(actor),
-      branchId: entity.branchId,
-      amount: isExpense(entity) ? entity.amount : entity.requestedAmount,
-    },
-  }))).onConflictDoNothing({
-    target: [notifications.userId, notifications.dedupeKey],
-  })
+  // Disabled globally: we don't need petty cash notifications at all for anybody.
+  return
 }

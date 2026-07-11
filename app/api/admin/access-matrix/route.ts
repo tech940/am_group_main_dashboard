@@ -8,7 +8,7 @@ import { getUserBranchLabel } from '@/lib/dashboard-config'
 import {
   getPermissionCatalog,
   isMissingPermissionTableError,
-  resolveEffectiveSnapshot,
+  resolveEffectiveSnapshotForMode,
 } from '@/lib/permissions/service'
 import { SECTION_ROUTES, type PermissionRole } from '@/lib/permissions/registry'
 
@@ -117,7 +117,7 @@ async function buildMatrix(
     for (const user of userRows) {
       const base = { ...allFalse, ...(roleDefaultsByRole.get(user.role) || {}) }
       const overrides = overridesByUser.get(user.id) || {}
-      const snapshot = resolveEffectiveSnapshot(base, overrides, user.role as PermissionRole, user.brand)
+      const snapshot = resolveEffectiveSnapshotForMode(base, overrides, user.role as PermissionRole, user.brand)
       const row: Record<string, { visible: boolean; override: boolean; defaultVisible: boolean }> = {}
       for (const { section, viewKey } of viewKeyBySection) {
         row[section.key] = {

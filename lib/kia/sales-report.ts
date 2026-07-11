@@ -24,8 +24,13 @@ import type {
   TemperatureKey,
 } from '@/lib/kia/sales-report-types'
 import { KIA_BRANCH_DEALERS, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import { getSalesStockSource } from '@/lib/brands/sales-stock-sources'
 
 type Row = Record<string, unknown>
+
+// Table names come from the brand sales/stock registry (single source of truth) so going multi-brand
+// is a config change. KIA is guaranteed present.
+const KIA_TABLES = getSalesStockSource('kia')!.tables
 
 type TableConfig = {
   key: SourceKey
@@ -70,7 +75,7 @@ const TABLES: Record<SourceKey, TableConfig> = {
   enquiry: {
     key: 'enquiry',
     label: 'Enquiry Report',
-    table: 'kia_enquiry_report',
+    table: KIA_TABLES.enquiry,
     dateColumn: 'enquiry_date',
     dealerColumns: ['dealer_code', 'dealer_code_2', 'main_dealer_code'],
     defaultVisibleColumns: ['enquiry_date', 'enquiry_no', 'name_of_the_customer', 'contact_number', 'model', 'source', 'consultant_name', 'enquiry_status', 'booking_date', 'retail_date', 'lost_reason'],
@@ -83,7 +88,7 @@ const TABLES: Record<SourceKey, TableConfig> = {
   booking: {
     key: 'booking',
     label: 'Booking Report',
-    table: 'kia_booking_report',
+    table: KIA_TABLES.booking,
     dateColumn: 'booking_date',
     dealerColumns: ['dealer_code', 'dealer_code_2', 'main_dealer'],
     defaultVisibleColumns: ['booking_date', 'booking_no', 'name_of_the_customer', 'contact_number', 'model', 'main_source', 'consultant_name', 'status', 'amount_received', 'mode_of_purchase'],
@@ -96,7 +101,7 @@ const TABLES: Record<SourceKey, TableConfig> = {
   sales: {
     key: 'sales',
     label: 'Sales Report',
-    table: 'kia_sales_report',
+    table: KIA_TABLES.sales,
     dateColumn: 'delivery_date',
     dealerColumns: ['dealer_code', 'dealer_code_2', 'main_dealer_code'],
     defaultVisibleColumns: ['delivery_date', 'invoice_date', 'invoice_no', 'registration_name', 'contact_num1', 'model', 'variant', 'color', 'consultant_name', 'source', 'mode_of_purchase', 'dsa_financier', 'ex_showroom_price'],
@@ -109,7 +114,7 @@ const TABLES: Record<SourceKey, TableConfig> = {
   accessories: {
     key: 'accessories',
     label: 'Accessories Counter Sales Report',
-    table: 'kia_accessories_counter_sales_report',
+    table: KIA_TABLES.accessories,
     dateColumn: 'csr_date',
     dealerColumns: ['dealer_code', 'dealer_code_2'],
     defaultVisibleColumns: ['csr_date', 'csr_bill_no', 'accessories_invoice_no', 'customer_name', 'customer_mobile', 'model', 'variant', 'vin', 'accessories_description', 'accessories_qty', 'accessory_taxable_amount', 'tax_amount', 'bill_status'],

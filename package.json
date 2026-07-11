@@ -25,6 +25,8 @@
     "db:refresh-dashboard-views:scheduler": "node scripts/refresh-dashboard-materialized-views-scheduler.js",
     "db:detect-kia-sold": "node scripts/kia-detect-sold-allocations.mjs",
     "db:detect-kia-sold:scheduler": "node scripts/kia-detect-sold-allocations-scheduler.mjs",
+    "kia:followup-reminders": "node scripts/kia-followup-reminders.mjs",
+    "kia:followup-reminders:scheduler": "node scripts/kia-followup-reminders-scheduler.mjs",
     "verify:platinum-be": "node scripts/verify-platinum-business-excellence.js",
     "verify:platinum-be-api": "node scripts/verify-platinum-be-api.js",
     "verify:platinum-vas": "tsx scripts/verify-platinum-vas-identifiers.ts",
@@ -50,7 +52,10 @@
     "warranty:cleanup-remarks": "tsx scripts/cleanup-warranty-remarks.ts",
     "verify:permissions": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-permission-resolution.ts",
     "verify:roles": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-restricted-roles.ts",
+    "verify:sections": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-restricted-default-sections.ts",
     "verify:nav-map": "tsx scripts/verify-nav-map.ts",
+    "verify:guard-parity": "tsx scripts/verify-guard-parity.ts",
+    "verify:snapshot-parity": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-snapshot-parity.ts",
     "verify:dealers": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-dealer-scope.ts"
   },
   "dependencies": {

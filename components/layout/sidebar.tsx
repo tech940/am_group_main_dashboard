@@ -10,6 +10,8 @@ import {
   ShoppingCart,
   Banknote,
   Landmark,
+  Calculator,
+  Gauge,
 } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
@@ -20,12 +22,13 @@ import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
+import { isAmFinanceViewRole, isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
 
 const VEHICLE_TRACKER_HREF = '/brands/kia/vehicle-tracker'
 
 const HYUNDAI_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_hyundai.svg'
 
-type SidebarSubmenu = { name: string; href: string }
+type SidebarSubmenu = { name: string; href: string; badge?: string }
 type SidebarSection = { name: string; key: string; href?: string; submenus: SidebarSubmenu[] }
 type SidebarBrand = {
   name: string
@@ -68,6 +71,10 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Bookings', href: '/brands/kia/proforma' },
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
+          { name: 'Sales Performance', href: '/brands/kia/sales-performance', badge: 'TEST' },
+          { name: 'Call Center', href: '/brands/kia/call-center', badge: 'TEST' },
+          { name: 'Follow-ups', href: '/brands/kia/follow-ups', badge: 'TEST' },
+          { name: 'Call & Follow-up Analytics', href: '/brands/kia/call-analytics', badge: 'TEST' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
         ],
@@ -214,19 +221,19 @@ export function Sidebar() {
   const router = useRouter()
   const { collapsed, setCollapsed } = useSidebar()
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
+  const [permissionsReady, setPermissionsReady] = useState(false)
   const permissionMapRef = useRef<Record<string, boolean> | null>(null)
   const { userRole, canAccessAdmin, userBrand, loading } = useUserRole()
   const {
     value: favouriteHrefsValue,
     savePreference: saveFavouriteHrefs,
   } = useUserPreferences<string[]>('sidebar_favourites', DEFAULT_SIDEBAR_FAVOURITES)
-  // Common-module role gates (unchanged). Brand-section visibility is now driven entirely by
-  // the effective permission map — the former branch_admin (Petty-Cash-only), sales_executive
-  // (Bookings-only) and sales/stock-report hardcodes moved into the resolution layer
-  // (lib/permissions/service.ts), so a per-section Deny and restricted-role defaults apply here.
-  const canAccessFinanceOrders = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba', 'accounts', 'finance_head'].includes(userRole || '')
-  const canAccessPettyCash = ['admin', 'developer', 'branch_admin', 'ea', 'md', 'eba', 'accounts'].includes(userRole || '')
-  const canAccessAmFinance = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba'].includes(userRole || '')
+  // Common-module role gates. Petty Cash & AM Finance pages guard on a ROLE allowlist (not the
+  // permission snapshot), so the sidebar link MUST use the identical rule or it shows a link the
+  // page rejects. These predicates are the single source of truth shared with the page guards
+  // (lib/permissions/legacy-module-roles.ts) so they can never drift.
+  const canAccessPettyCash = isPettyCashViewRole(userRole)
+  const canAccessAmFinance = isAmFinanceViewRole(userRole)
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
   // Fetch the effective permission map. When `refreshOnChange` and the map actually changed
@@ -245,7 +252,11 @@ export function Sidebar() {
       setPermissionMap(next)
       if (refreshOnChange) router.refresh()
     } catch {
-      /* keep the last-known map; fail-open elsewhere */
+      /* keep the last-known map (do NOT fail open — hasPermission is fail-closed) */
+    } finally {
+      // First attempt resolved (success or error): the nav may render. On error with no prior map,
+      // hasPermission stays fail-closed so brand links are hidden rather than wrongly shown.
+      setPermissionsReady(true)
     }
   }, [router])
 
@@ -279,11 +290,12 @@ export function Sidebar() {
   }, [loading, userRole, syncPermissions])
 
   const hasPermission = (permissionKey: string) => {
-    // Only Super Admins (developer, md) bypass the map. Other global-access roles (ceo/ea/eba)
-    // now defer to their effective permission map, so an explicit Deny from the Access Map
-    // actually hides the section. Map still fail-opens while it loads (null).
+    // Only Super Admins (developer, md) bypass the map. Everyone else defers to their effective
+    // permission map, so an explicit Deny hides the section. FAIL-CLOSED while the map is still
+    // loading (null) — return false so links never flash visible before permissions resolve; the
+    // nav renders a skeleton until `permissionsReady`.
     if (isSuperAdminRole(userRole)) return true
-    if (!permissionMap) return true
+    if (!permissionMap) return false
     return permissionMap[permissionKey] === true
   }
 
@@ -395,11 +407,15 @@ export function Sidebar() {
 
     // ── Common / global modules (shared across every branch) ──
     const commonNodes: NavNode[] = []
+    if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, external: true, active: pathname === '/cockpit' })
     if (hasPermission('purchase_orders.view')) commonNodes.push({ key: '/purchase-orders', label: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart, external: true, active: pathname === '/purchase-orders' })
-    if ((canAccessFinanceOrders || permissionMap) && hasPermission('finance_orders.view')) commonNodes.push({ key: '/finance-orders', label: 'Finance Orders', href: '/finance-orders', icon: Landmark, external: true, active: pathname === '/finance-orders' })
     // Petty Cash is a single section — the former "Status Tracker" sub-page is now the
     // "Status" tab inside the workspace.
-    if ((canAccessPettyCash || permissionMap) && hasPermission('petty_cash.view')) commonNodes.push({
+    // Petty Cash & AM Finance are guarded server-side by a ROLE allowlist (canAccessX), not by the
+    // permission snapshot. Gate the sidebar link on the IDENTICAL role rule (AND the effective view
+    // key, so an explicit per-user Deny still hides it) — otherwise the link showed for roles the
+    // page rejects and they got bounced to /forbidden. See scripts/verify-guard-parity.ts.
+    if (canAccessPettyCash && hasPermission('petty_cash.view')) commonNodes.push({
       key: '/petty-cash',
       label: 'Petty Cash',
       href: '/petty-cash',
@@ -407,7 +423,10 @@ export function Sidebar() {
       external: true,
       active: pathname.startsWith('/petty-cash'),
     })
-    if ((canAccessAmFinance || permissionMap) && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
+    if (canAccessAmFinance && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
+    // CA — independent read-only approved-finance view. Deny-by-default section (only the `ca` role +
+    // MD/Developer), so gate purely on the permission (mirrors Purchase Orders above).
+    if (hasPermission('ca.view')) commonNodes.push({ key: '/ca', label: 'CA', href: '/ca', icon: Calculator, badge: 'TEST', external: true, active: pathname === '/ca' })
     if (canAccessAdmin) {
       // Single link — the Admin page exposes all sections (Users, Access, Branch Admins, System,
       // Settings) as in-page tabs, so no sidebar dropdown is needed.
@@ -448,6 +467,7 @@ export function Sidebar() {
               key: sub.href,
               label: sub.name,
               href: sub.href,
+              badge: sub.badge,
               external: true,
               active: isSidebarHrefActive(sub.href, pathname),
               favourite: isEligibleFavouriteHref(sub.href) ? { active: favouriteHrefs.includes(sub.href), onToggle: () => void toggleFavourite(sub.href) } : undefined,
@@ -472,7 +492,7 @@ export function Sidebar() {
 
     return groups
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, canAccessFinanceOrders, canAccessPettyCash, canAccessAmFinance, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
+  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, canAccessPettyCash, canAccessAmFinance, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
 
   return (
     <>
@@ -526,9 +546,26 @@ export function Sidebar() {
           "flex-1 overflow-y-auto py-6 scrollbar-none transition-all duration-500",
           collapsed ? "px-0" : "px-4"
         )}>
-          <CascadingNav groups={navGroups} collapsed={collapsed} onNavigate={handleSidebarLinkClick} />
+          {permissionsReady || isSuperAdminRole(userRole) ? (
+            <CascadingNav groups={navGroups} collapsed={collapsed} onNavigate={handleSidebarLinkClick} />
+          ) : (
+            <SidebarNavSkeleton collapsed={collapsed} />
+          )}
         </div>
       </div>
     </>
+  )
+}
+
+// Placeholder shown while the effective permission map is still loading, so the nav never flashes
+// links the user may not have (hasPermission is fail-closed until permissions resolve).
+function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
+  if (collapsed) return null
+  return (
+    <div className="space-y-3 px-1" aria-hidden>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="h-9 w-full animate-pulse rounded-xl bg-white/10" />
+      ))}
+    </div>
   )
 }

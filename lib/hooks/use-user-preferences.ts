@@ -40,7 +40,12 @@ export function useUserPreferences<T = Record<string, unknown>>(
         const response = await fetch(`/api/user-preferences?key=${encodeURIComponent(key)}`)
         
         if (!response.ok) {
-          throw new Error('Failed to load preference')
+          console.warn(`Failed to load preference for key "${key}":`, response.statusText)
+          if (isActive) {
+            setError(`Failed to load preference: ${response.status}`)
+            setValue((current) => preferenceValuesEqual(current, defaultValueRef.current) ? current : defaultValueRef.current)
+          }
+          return
         }
 
         const data = await response.json()

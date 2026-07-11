@@ -98,6 +98,22 @@ async function ensureDemoVehicleDetailsSchema() {
   `)
 }
 
+// The schema above only changes on deploy, yet the 4 idempotent DDL round-trips ran on EVERY GET
+// (~700ms of the request). Throttle to once per process window + dedupe concurrent callers, exactly
+// like ensurePermissionRegistrySynced — so it syncs right after a deploy and is then ~free.
+let demoSchemaSyncedUntil = 0
+let demoSchemaSyncPromise: Promise<void> | null = null
+const DEMO_SCHEMA_SYNC_TTL_MS = 10 * 60 * 1000
+async function ensureDemoVehicleDetailsSchemaThrottled() {
+  if (Date.now() < demoSchemaSyncedUntil) return
+  if (demoSchemaSyncPromise) return demoSchemaSyncPromise
+  demoSchemaSyncPromise = (async () => {
+    await ensureDemoVehicleDetailsSchema()
+    demoSchemaSyncedUntil = Date.now() + DEMO_SCHEMA_SYNC_TTL_MS
+  })().finally(() => { demoSchemaSyncPromise = null })
+  return demoSchemaSyncPromise
+}
+
 function hasColumn(columns: Set<string>, columnName: string) {
   return columns.has(columnName)
 }
@@ -442,7 +458,7 @@ export async function GET(request: Request) {
     const filters = getFilters(searchParams)
     const hasDetailsTable = await timer.time('details-table-check', () => tableExists('demo_vehicle_details'))
     if (hasDetailsTable) {
-      await timer.time('details-schema-sync', ensureDemoVehicleDetailsSchema)
+      await timer.time('details-schema-sync', ensureDemoVehicleDetailsSchemaThrottled)
     }
     const columns = await timer.time('columns', () => getTableColumns('demo_car_list'))
     const payload = await timer.time('vehicle-cache', () => getCachedData(

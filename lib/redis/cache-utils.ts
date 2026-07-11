@@ -1,6 +1,7 @@
 import { getRedisClient, CACHE_TTL } from './client'
 import { recordCacheStatus } from '@/lib/api/timing'
 
+// Force-reload memory cache (v2) to clear any stale in-memory fallbacks after SQL/UI updates
 const L1_MAX_ENTRIES = 250
 const STALE_TTL_SECONDS = 2 * 60 * 60
 

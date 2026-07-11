@@ -4,6 +4,7 @@ async function run() {
   console.log('Invalidating cache patterns...')
   await invalidateCachePattern('kia:stock-report:*')
   await invalidateCachePattern('kia:sales-report:*')
+  await invalidateCachePattern('kia:business-excellence:workshop-summary:*')
   console.log('Cache invalidated successfully.')
   process.exit(0)
 }

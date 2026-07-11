@@ -5,6 +5,15 @@ import { ChevronDown, Loader2, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { ROLE_PROFILE } from '@/lib/permissions/tiers'
+
+const TIER_LABEL: Record<number, string> = { 0: 'Employee', 1: 'Supervisor', 2: 'Manager', 3: 'Head / GM', 4: 'Leadership', 5: 'Super-admin' }
+function tierInfo(roleKey: string): { tier: string; track: string } | null {
+  const profile = ROLE_PROFILE[roleKey as keyof typeof ROLE_PROFILE]
+  if (!profile) return null
+  const track = profile.family === 'super' ? 'all access' : profile.family === 'special' ? 'standalone' : (profile.track || '')
+  return { tier: TIER_LABEL[profile.tier], track }
+}
 
 type PermissionRow = { key: string; groupKey: string; label: string; action: string }
 type GroupRow = { key: string; name: string; parentKey: string | null; description?: string; sortOrder?: number }
@@ -31,6 +40,7 @@ export function RolesPanel({ data }: { data: RolesData }) {
 
   const role = data.roles.find((r) => r.key === selectedRole)
   const editable = role?.editable ?? false
+  const selectedTier = tierInfo(selectedRole)
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string | null, GroupRow[]>()
@@ -149,17 +159,23 @@ export function RolesPanel({ data }: { data: RolesData }) {
         <CardContent className="space-y-1 p-3">
           <p className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">Roles</p>
           <div className="max-h-[620px] space-y-1 overflow-y-auto">
-            {data.roles.map((r) => (
-              <button
-                key={r.key}
-                onClick={() => onSelectRole(r.key)}
-                className={cn('flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left transition',
-                  selectedRole === r.key ? 'border-indigo-300 bg-indigo-50' : 'border-transparent hover:bg-slate-50')}
-              >
-                <span className="text-[13px] font-semibold text-slate-800">{r.label}</span>
-                {!r.editable && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-400">auto</span>}
-              </button>
-            ))}
+            {data.roles.map((r) => {
+              const ti = tierInfo(r.key)
+              return (
+                <button
+                  key={r.key}
+                  onClick={() => onSelectRole(r.key)}
+                  className={cn('flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left transition',
+                    selectedRole === r.key ? 'border-indigo-300 bg-indigo-50' : 'border-transparent hover:bg-slate-50')}
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-[13px] font-semibold text-slate-800">{r.label}</span>
+                    {ti && <span className="truncate text-[10px] font-medium text-slate-400">{ti.tier}{ti.track ? ` · ${ti.track}` : ''}</span>}
+                  </span>
+                  {!r.editable && <span className="ml-2 shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-400">auto</span>}
+                </button>
+              )
+            })}
           </div>
         </CardContent>
       </Card>
@@ -169,6 +185,9 @@ export function RolesPanel({ data }: { data: RolesData }) {
         <div className="flex flex-wrap items-center gap-3">
           <div>
             <p className="text-[15px] font-bold text-slate-900">{role?.label} <span className="text-[12px] font-medium text-slate-400">default access</span></p>
+            {selectedTier && (
+              <p className="text-[11px] font-medium text-indigo-600">Tier: {selectedTier.tier}{selectedTier.track ? ` · ${selectedTier.track}` : ''} — inherits lower tiers in its track.</p>
+            )}
             <p className="text-[11px] text-slate-500">Applies to every user with this role. Per-user exceptions live in the Access tab.</p>
           </div>
           <div className="ml-auto flex items-center gap-2 rounded-lg border bg-white px-2.5 py-1.5">

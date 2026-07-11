@@ -41,6 +41,8 @@ import { ExecutiveTableShell, type ExecutiveDashboardTableId } from '@/features/
 import { OpenRoSection } from '@/features/kia/open-ro-section'
 import { KiaComplaintsSection } from '@/features/kia/kia-complaints-section'
 import { KiaServiceDashboardPreviewSection } from '@/features/kia/service-dashboard-preview-section'
+import { WorkshopSummarySection } from '@/features/kia/workshop-summary-section'
+import { RoDayWiseTrendChart } from '@/features/kia/ro-billing-day-wise-trend'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   LineChart,
@@ -317,11 +319,13 @@ const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const KIA_COMPLAINTS_REPORT = 'Kia Complaints'
 const SERVICE_DASHBOARD_REPORT = 'Service Dashboard'
+const WORKSHOP_SUMMARY_REPORT = 'Workshop Summary'
 const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [BUSINESS_EXCELLENCE_OVERVIEW_REPORT]: 'overview',
   [EXECUTIVE_DASHBOARD_REPORT]: 'executive-dashboard',
   [DEFAULT_BUSINESS_EXCELLENCE_SHEET]: 'ro-billing-report',
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
+  [WORKSHOP_SUMMARY_REPORT]: 'workshop-summary',
   [OPEN_RO_REPORT]: 'open-ro',
   [KIA_COMPLAINTS_REPORT]: 'kia-complaints',
   [SERVICE_DASHBOARD_REPORT]: 'service-dashboard',
@@ -389,6 +393,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     brand: 'kia',
     sheetName: SERVICE_DASHBOARD_REPORT,
     tableName: 'service_dashboard_export',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'workshop-summary',
+    brand: 'kia',
+    sheetName: WORKSHOP_SUMMARY_REPORT,
+    tableName: 'ro_billing_report',
     columns: [],
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
@@ -1824,7 +1837,16 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === KIA_COMPLAINTS_REPORT || activeTab === SERVICE_DASHBOARD_REPORT) {
+      if (
+        activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT ||
+        activeTab === EXECUTIVE_DASHBOARD_REPORT ||
+        activeTab === WORKSHOP_PERFORMANCE_REPORT ||
+        activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET ||
+        activeTab === OPEN_RO_REPORT ||
+        activeTab === KIA_COMPLAINTS_REPORT ||
+        activeTab === SERVICE_DASHBOARD_REPORT ||
+        activeTab === WORKSHOP_SUMMARY_REPORT
+      ) {
         setFetchingRows(null)
         return
       }
@@ -1876,7 +1898,8 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
               const isKiaComplaintsSheet = selectedSheet.sheetName === KIA_COMPLAINTS_REPORT
               const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
               const isServiceDashboardSheet = selectedSheet.sheetName === SERVICE_DASHBOARD_REPORT
-              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet
+              const isWorkshopSummarySheet = selectedSheet.sheetName === WORKSHOP_SUMMARY_REPORT
+              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet || isWorkshopSummarySheet
               const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
               const branchOptions = (isExecutiveDashboardSheet && !isDealerRestricted)
                 ? [{ label: 'All Locations', dealerCode: null as string | null }, ...scopedDealers]
@@ -2340,6 +2363,15 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                             <SheetContentSkeleton />
                           ) : (
                             <KiaComplaintsSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isWorkshopSummarySheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <WorkshopSummarySection
+                              endDate={appliedDateFilter?.endDate || null}
+                              dealerCode={selectedDealerCode}
+                            />
                           )
                         ) : isServiceDashboardSheet ? (
                           isApplyingFilter ? (
@@ -7789,83 +7821,12 @@ function ServiceTypePerformance({
                   </div>
                 </div>
               ) : (
-              <div className="p-8">
-                <div className="mb-8 flex items-center justify-between gap-4 pr-10">
-                  <div />
-                  <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full border-2 border-[#0B5D7A] bg-white" />
-                      <span className="text-[10px] font-bold text-slate-600">This Year</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full border-2 border-amber-600 bg-white" />
-                      <span className="text-[10px] font-bold text-slate-600">Last Year</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-0.5 w-6 bg-rose-400 border-t border-dashed border-rose-600" />
-                      <span className="text-[10px] font-bold text-slate-600">Target</span>
-                    </div>
-                    {renderExpandButton('Day Wise Trend', 'analysis-day-wise-trend-chart')}
-                  </div>
-                </div>
-
-                <div id="analysis-day-wise-trend-chart" className="h-[350px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={trendData} margin={{ top: 28, right: 28, bottom: 10, left: 18 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis
-                        dataKey="day"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={<TrendAxisTick />}
-                        tickMargin={12}
-                        interval={0}
-                        minTickGap={0}
-                        height={44}
-                      />
-                      <YAxis
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
-                        width={54}
-                      />
-                      <Tooltip
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
-                      />
-                      <ReferenceLine y={dailyTarget} stroke="#f43f5e" strokeDasharray="5 5" label={{ position: 'right', value: 'Target', fill: '#f43f5e', fontSize: 10, fontWeight: 900 }} />
-                      <Line
-                        type="monotone"
-                        dataKey="cy"
-                        stroke="#0B5D7A"
-                        strokeWidth={3}
-                        dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}
-                        activeDot={{ r: 6, strokeWidth: 0 }}
-                      >
-                        <LabelList dataKey="cy" content={<SmartTrendValueLabel total={trendData.length} series="cy" />} />
-                      </Line>
-                      <Line
-                        type="monotone"
-                        dataKey="ly"
-                        stroke="#D97706"
-                        strokeWidth={3}
-                        dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}
-                        activeDot={{ r: 6, strokeWidth: 0 }}
-                      >
-                        <LabelList dataKey="ly" content={<SmartTrendValueLabel total={trendData.length} series="ly" />} />
-                      </Line>
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="grid grid-cols-7 gap-3 mt-10">
-                  {kpiStats.map((kpi, kIdx) => (
-                    <div key={kIdx} className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 text-center shadow-sm">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">{kpi.label}</p>
-                      <p className={cn("text-lg font-black tracking-tight", kpi.color || "text-slate-800")}>{kpi.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                <RoDayWiseTrendChart
+                  trendData={trendData}
+                  dailyTarget={dailyTarget}
+                  kpiStats={kpiStats}
+                  expandButton={renderExpandButton('Day Wise Trend', 'analysis-day-wise-trend-chart')}
+                />
               )
             ) : false ? (
               isCalendarSummaryPending || (isServerViewLoading && trendData.length === 0) ? (

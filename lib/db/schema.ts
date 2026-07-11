@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager'])
+export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -981,6 +981,23 @@ export const kiaProformas = pgTable('kia_proformas', {
   kiaProformasCustomerIdx: index('kia_proformas_customer_idx').on(table.customerName, table.mobileNumber),
 }))
 
+// Per-consultant monthly sales targets (bookings + deliveries) for the KIA Sales Performance page.
+// Actuals come from kia_sales_report; this only holds the targets a manager sets.
+export const kiaSalesTargets = pgTable('kia_sales_targets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  dealerCode: text('dealer_code').notNull(),
+  consultantName: text('consultant_name').notNull(),
+  year: integer('year').notNull(),
+  month: integer('month').notNull(), // 1..12
+  bookingTarget: integer('booking_target').default(0).notNull(),
+  deliveryTarget: integer('delivery_target').default(0).notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaSalesTargetsUniqueIdx: uniqueIndex('kia_sales_targets_unique_idx').on(table.dealerCode, table.consultantName, table.year, table.month),
+}))
+
 export const mgUserProfiles = pgTable('mg_user_profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
   authUserId: uuid('auth_user_id').references(() => users.id, { onDelete: 'cascade' }),
@@ -1631,6 +1648,67 @@ export const kiaCallbackRequests = pgTable('kia_callback_requests', {
 }, (table) => ({
   kiaCallbackRequestsBookingIdx: index('kia_callback_requests_booking_idx').on(table.bookingId),
   kiaCallbackRequestsStatusIdx: index('kia_callback_requests_status_idx').on(table.status),
+}))
+
+// KIA Call Center — masked click-to-call. A call agent's OWN phone (what the system rings to
+// connect them). The customer's number is never stored anywhere; it's looked up server-side only.
+export const kiaCallAgentPhones = pgTable('kia_call_agent_phones', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  agentPhone: text('agent_phone').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// One row per masked call attempt. NO customer phone is stored (booking_id links the customer).
+export const kiaCallLogs = pgTable('kia_call_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id),
+  callbackRequestId: uuid('callback_request_id').references(() => kiaCallbackRequests.id),
+  agentId: uuid('agent_id').references(() => users.id).notNull(),
+  provider: text('provider').default('simulation').notNull(),
+  providerCallId: text('provider_call_id'),
+  status: text('status').default('initiated').notNull(),
+  durationSec: integer('duration_sec').default(0).notNull(),
+  disposition: text('disposition'),
+  notes: text('notes'),
+  startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+  connectedAt: timestamp('connected_at', { withTimezone: true }),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaCallLogsAgentIdx: index('kia_call_logs_agent_idx').on(table.agentId, table.createdAt),
+  kiaCallLogsBookingIdx: index('kia_call_logs_booking_idx').on(table.bookingId),
+  kiaCallLogsProviderCallIdx: index('kia_call_logs_provider_call_idx').on(table.providerCallId),
+}))
+
+// KIA Lead Follow-up pipeline — a staff-scheduled "next touch" on a booking so no lead goes cold.
+// No customer phone stored (booking_id links the customer; number stays server-only / masked).
+export const kiaLeadFollowups = pgTable('kia_lead_followups', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id).notNull(),
+  assignedTo: uuid('assigned_to').references(() => users.id),
+  assignedName: text('assigned_name'),
+  assignedEmail: text('assigned_email'),
+  dealerCode: text('dealer_code'),
+  dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+  status: text('status').default('pending').notNull(), // 'pending' | 'done' | 'cancelled'
+  reason: text('reason').default('general').notNull(), // 'callback' | 'payment_pending' | 'document_pending' | 'delivery' | 'general'
+  priority: text('priority').default('normal').notNull(), // 'low' | 'normal' | 'high'
+  notes: text('notes'),
+  source: text('source').default('manual').notNull(), // 'manual' | 'call' | 'callback_request'
+  sourceCallId: uuid('source_call_id').references(() => kiaCallLogs.id),
+  outcome: text('outcome'),
+  completedBy: uuid('completed_by').references(() => users.id),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaLeadFollowupsStatusDueIdx: index('kia_lead_followups_status_due_idx').on(table.status, table.dueAt),
+  kiaLeadFollowupsAssignedIdx: index('kia_lead_followups_assigned_idx').on(table.assignedTo, table.status),
+  kiaLeadFollowupsBookingIdx: index('kia_lead_followups_booking_idx').on(table.bookingId),
 }))
 
 // Vehicle Tracker (Service floor): logs a vehicle leaving and returning, with an

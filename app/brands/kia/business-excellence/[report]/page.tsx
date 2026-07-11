@@ -10,6 +10,7 @@ const REPORT_TITLES: Record<string, string> = {
   'executive-dashboard': 'Executive Dashboard',
   'ro-billing-report': 'RO Billing Report',
   'workshop-performance': 'Workshop Performance',
+  'workshop-summary': 'Workshop Summary',
   'open-ro': 'Open RO (Repair Orders)',
   'kia-complaints': 'Kia Complaints',
   'service-dashboard': 'Service Dashboard',

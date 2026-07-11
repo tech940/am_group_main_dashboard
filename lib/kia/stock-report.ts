@@ -19,7 +19,12 @@ import type {
 
 type Row = Record<string, unknown>
 
-const TABLE = 'kia_stock_management'
+// This is the KIA STOCK reader implementation. The per-brand table names + valuation profile are
+// declared in the brand registry (lib/brands/sales-stock-sources.ts) — the contract for going
+// multi-brand; consumers go through lib/brands/sales-stock.ts. The KIA reader below inlines the KIA
+// table names directly (kia_stock_management / kia_purchase_report); a new brand needs its own reader
+// (or this one generalized to registry table names) once its feed lands. See
+// docs/multi-brand-sales-stock-readiness.md.
 // Approx landed value. Base (ex-factory) prices get a flat ~36% GST/cess uplift; the KIN invoice
 // amount is ALREADY GST-inclusive so it is used as-is. Previously the whole COALESCE (incl.
 // kin_invoice_amt) was multiplied by 1.36, double-counting tax on any base-price-null row.

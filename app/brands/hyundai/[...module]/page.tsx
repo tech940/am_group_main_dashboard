@@ -12,7 +12,7 @@ type HyundaiModuleDefinition = {
   permission: string
   component?: 'business-excellence' | 'warranty-claims'
   warrantySource?: 'ytp' | 'claim_list'
-  report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'open-ro' | 'workshop-performance' | 'hyundai-complaints' | 'sot-analysis' | 'service-dashboard'
+  report?: 'overview' | 'executive-dashboard' | 'ro-billing-report' | 'open-ro' | 'workshop-performance' | 'workshop-summary' | 'hyundai-complaints' | 'sot-analysis' | 'service-dashboard'
 }
 
 const HYUNDAI_MODULES: Record<string, HyundaiModuleDefinition> = {
@@ -43,6 +43,12 @@ const HYUNDAI_MODULES: Record<string, HyundaiModuleDefinition> = {
     permission: 'hyundai.business_excellence.view',
     component: 'business-excellence',
     report: 'workshop-performance',
+  },
+  'business-excellence/workshop-summary': {
+    title: 'Workshop Summary',
+    permission: 'hyundai.business_excellence.view',
+    component: 'business-excellence',
+    report: 'workshop-summary',
   },
   'business-excellence/hyundai-complaints': {
     title: 'Hyundai Complaints',

@@ -10,9 +10,12 @@ import { getCachedData, invalidateCache } from '@/lib/redis/cache-utils'
 import {
   PERMISSION_GROUPS,
   PERMISSIONS,
+  RESTRICTED_DEFAULT_PERMISSION_KEYS,
+  SENSITIVE_REPORT_PERMISSION_KEYS,
   ROLE_PERMISSION_TEMPLATES,
   type PermissionRole,
 } from '@/lib/permissions/registry'
+import { getRoleProfile, tierBundleKeys } from '@/lib/permissions/tiers'
 
 export type PermissionSnapshot = {
   effective: Record<string, boolean>
@@ -31,13 +34,27 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-const PERMISSION_CACHE_VERSION = 'v8'
+const PERMISSION_CACHE_VERSION = 'v11'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
+
+// Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
+// built from the inherited TIER bundle (lib/permissions/tiers.ts) UNIONED with the role's DB defaults,
+// so V2 effective is a provable SUPERSET of the old flat model (nobody loses access; see
+// scripts/verify-snapshot-parity.ts → 0 losses). Instant rollback: set PERMISSIONS_RESOLVER=v1 to
+// fall back to the legacy per-role-template resolver (kept intact for exactly this reason).
+const USE_TIERED_RESOLVER = process.env.PERMISSIONS_RESOLVER !== 'v1'
 const ADMIN_ONLY_PERMISSION_GROUPS = new Set(['user_management', 'access_control', 'admin_audit'])
 
 function isAdminOnlyPermission(permissionKey: string) {
   const permission = PERMISSIONS.find((item) => item.key === permissionKey)
   return Boolean(permission && ADMIN_ONLY_PERMISSION_GROUPS.has(permission.groupKey))
+}
+
+// Sections that are deny-by-default: excluded from EVERY blanket default (brand + global-access) so
+// only super admins (MD/Developer) and explicitly-granted users/roles see them. New sidebar sections
+// land here automatically (see RESTRICTED_DEFAULT_SECTIONS in the registry).
+function isRestrictedDefaultPermission(permissionKey: string) {
+  return RESTRICTED_DEFAULT_PERMISSION_KEYS.has(permissionKey)
 }
 
 export function isMissingPermissionTableError(error: unknown) {
@@ -111,7 +128,20 @@ function constrainSnapshotToBranch(
 // Roles whose access is defined purely by their role template — they do NOT receive the
 // blanket "see your whole brand" default. This moves two former sidebar hardcodes into the
 // resolution layer: branch_admin (Petty Cash only) and sales_executive (Bookings only).
-const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive'])
+const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca'])
+
+// Sensitive analytics (Sales Report, Stock Report) are visible by default ONLY to top management:
+// super admins (MD/Developer) and EBA. Every other role — including CEO/EA and all brand roles — is
+// denied by default and must be granted explicitly in the Access Map. Applied to the DEFAULT layer
+// (after the brand/global blanket grants) so an explicit Allow override still wins.
+const SENSITIVE_REPORT_DEFAULT_ROLES = new Set<PermissionRole>(['developer', 'md', 'eba'])
+
+function applySensitiveReportDefaults(values: Record<string, boolean>, role: PermissionRole) {
+  if (isSuperAdminRole(role) || SENSITIVE_REPORT_DEFAULT_ROLES.has(role)) return
+  for (const key of SENSITIVE_REPORT_PERMISSION_KEYS) {
+    if (key in values) values[key] = false
+  }
+}
 
 
 // A user's brand grants default visibility of that brand's own sections. This is applied to
@@ -129,6 +159,7 @@ function applyBrandDefault(
   if (!prefixes.length) return
   for (const key of Object.keys(values)) {
     if (!prefixes.some((prefix) => key.startsWith(`${prefix}.`))) continue
+    if (isRestrictedDefaultPermission(key)) continue // deny-by-default sections (e.g. new sidebar sections)
     values[key] = true
   }
 }
@@ -147,13 +178,15 @@ function buildRoleTemplateSnapshot(role: PermissionRole, branchAccess?: string |
   if (isSuperAdminRole(role)) {
     for (const key of Object.keys(roleDefaults)) roleDefaults[key] = true
   } else if (hasGlobalAccessRole(role)) {
-    for (const key of Object.keys(roleDefaults)) roleDefaults[key] = !isAdminOnlyPermission(key)
+    for (const key of Object.keys(roleDefaults)) roleDefaults[key] = !isAdminOnlyPermission(key) && !isRestrictedDefaultPermission(key)
   } else {
     const prefixes = getBranchPermissionPrefixes(branchAccess)
     for (const key of Object.keys(roleDefaults)) {
+      if (isRestrictedDefaultPermission(key)) continue // deny-by-default sections
       if (prefixes.some((prefix) => key.startsWith(`${prefix}.`))) roleDefaults[key] = true
     }
   }
+  applySensitiveReportDefaults(roleDefaults, role)
 
   return {
     effective: { ...roleDefaults },
@@ -390,7 +423,7 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
     if (key) overrides[key] = row.allowed
   }
 
-  return resolveEffectiveSnapshot(baseRoleDefaults, overrides, targetUser.role, targetUser.brand)
+  return resolveEffectiveSnapshotForMode(baseRoleDefaults, overrides, targetUser.role, targetUser.brand)
 }
 
 /**
@@ -417,8 +450,10 @@ export function resolveEffectiveSnapshot(
   // defaults to visible. It also makes the Access Map's `defaultVisible` correct, so unticking a
   // box computes a real Deny delta (false) rather than "inherit" (null).
   if (hasGlobalAccessRole(role) && !isSuperAdminRole(role)) {
-    for (const key of Object.keys(roleDefaults)) roleDefaults[key] = !isAdminOnlyPermission(key)
+    for (const key of Object.keys(roleDefaults)) roleDefaults[key] = !isAdminOnlyPermission(key) && !isRestrictedDefaultPermission(key)
   }
+  // Sensitive reports: deny by default to roles outside the top-management allowlist (still grantable).
+  applySensitiveReportDefaults(roleDefaults, role)
   constrainSnapshotToBranch(roleDefaults, role, branchAccess)
 
   // Overrides merge LAST, so an explicit Deny wins over the role / brand / global default.
@@ -431,6 +466,59 @@ export function resolveEffectiveSnapshot(
   }
 
   return { effective, roleDefaults, overrides }
+}
+
+// ── Tiered (V2) resolver ───────────────────────────────────────────────────────────────────────
+// The role's base defaults come from its INHERITED tier bundle (cumulative union of same-family
+// templates at tier ≤ its own) instead of its single flat template — so higher tiers automatically
+// include lower-tier access (the pyramid) and no role loses a grant it has today (the bundle is a
+// superset of its own template). Every downstream layer (brand/dealer scope, global-access, sensitive
+// gating, overrides, super-admin) is the SAME as V1, so the only behavioural delta is the inheritance
+// gain. Special roles (branch_admin/call_agent/ca) use their own template (no inheritance).
+export function buildTierRoleDefaults(role: PermissionRole): Record<string, boolean> {
+  const base = Object.fromEntries(PERMISSIONS.map((permission) => [permission.key, false])) as Record<string, boolean>
+  const profile = getRoleProfile(role)
+  if (!profile) return base
+  if (profile.family === 'super') {
+    for (const key of Object.keys(base)) base[key] = true
+    return base
+  }
+  // Tracked roles inherit their FUNCTION TRACK (service/sales/branch/finance) up to their tier;
+  // special roles use their own template (no inheritance).
+  const keys = profile.family === 'tracked' && profile.track
+    ? tierBundleKeys(profile.track, profile.tier)
+    : new Set(ROLE_PERMISSION_TEMPLATES[role] || [])
+  for (const key of keys) if (key in base) base[key] = true
+  return base
+}
+
+export function resolveEffectiveSnapshotV2(
+  baseRoleDefaults: Record<string, boolean>,
+  overrides: Record<string, boolean>,
+  role: PermissionRole,
+  branchAccess: string | null | undefined,
+): PermissionSnapshot {
+  // Union the DB role defaults with the inherited tier bundle, so nothing an admin granted at the
+  // role level is lost AND the tier inheritance is added. The resolution pipeline is monotonic in its
+  // base, so V2 effective is a provable SUPERSET of V1 — the flag flip cannot revoke anyone's access.
+  const tierBase = buildTierRoleDefaults(role)
+  const merged: Record<string, boolean> = { ...baseRoleDefaults }
+  for (const key of Object.keys(tierBase)) if (tierBase[key]) merged[key] = true
+  return resolveEffectiveSnapshot(merged, overrides, role, branchAccess)
+}
+
+// Flag-aware resolver: picks V2 (tiered, default) or V1 (legacy, PERMISSIONS_RESOLVER=v1). Use this at
+// ANY call site that must match the LIVE resolution — e.g. the Access Map's bulk snapshot — so the
+// admin UI's roleDefaults/defaultVisible track whatever resolver is actually live.
+export function resolveEffectiveSnapshotForMode(
+  baseRoleDefaults: Record<string, boolean>,
+  overrides: Record<string, boolean>,
+  role: PermissionRole,
+  branchAccess: string | null | undefined,
+): PermissionSnapshot {
+  return USE_TIERED_RESOLVER
+    ? resolveEffectiveSnapshotV2(baseRoleDefaults, overrides, role, branchAccess)
+    : resolveEffectiveSnapshot(baseRoleDefaults, overrides, role, branchAccess)
 }
 
 export async function getUserPermissionSnapshot(userId: string) {

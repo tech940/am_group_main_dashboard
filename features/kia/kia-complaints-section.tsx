@@ -716,14 +716,14 @@ export function KiaComplaintsSection({ dateFilter, dealerCode }: { dateFilter: C
         {kpiCards.map((card) => {
           const Icon = card.icon
           return (
-            <div key={card.label} className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div key={card.label} className={cn('rounded-[1.25rem] border p-4 shadow-sm transition hover:shadow-md duration-200', card.tone)}>
               <div className="flex items-center justify-between gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-950">
-                  <Icon className="h-4 w-4 text-slate-950" />
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/40 bg-white/60">
+                  <Icon className="h-4.5 w-4.5" />
                 </span>
-                <span className="text-2xl font-black tracking-tight text-slate-950">{card.value}</span>
+                <span className="text-2xl font-black tracking-tight">{card.value}</span>
               </div>
-              <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-500">{card.label}</p>
+              <p className="mt-3 text-[10px] font-black uppercase tracking-widest opacity-80">{card.label}</p>
             </div>
           )
         })}

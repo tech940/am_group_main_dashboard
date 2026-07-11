@@ -41,6 +41,7 @@ import { ExecutiveTableShell, type ExecutiveDashboardTableId } from '@/features/
 import { OpenRoSection } from '@/features/hyundai/open-ro-section'
 import { KiaComplaintsSection } from '@/features/hyundai/hyundai-complaints-section'
 import { HyundaiSotAnalysisSection } from '@/features/hyundai/sot-analysis-section'
+import { WorkshopSummarySection } from '@/features/hyundai/workshop-summary-section'
 import { ServiceDashboardPreviewSection } from '@/features/kia/service-dashboard-preview-section'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -326,6 +327,7 @@ const BUSINESS_EXCELLENCE_OVERVIEW_REPORT = 'Business Excellence Overview'
 const EXECUTIVE_DASHBOARD_REPORT = 'Executive Dashboard'
 const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
+const WORKSHOP_SUMMARY_REPORT = 'Workshop Summary'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const HYUNDAI_COMPLAINTS_REPORT = 'Hyundai Complaints'
 const HYUNDAI_SOT_REPORT = 'SOT Analysis'
@@ -335,6 +337,7 @@ const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [EXECUTIVE_DASHBOARD_REPORT]: 'executive-dashboard',
   [DEFAULT_BUSINESS_EXCELLENCE_SHEET]: 'ro-billing-report',
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
+  [WORKSHOP_SUMMARY_REPORT]: 'workshop-summary',
   [OPEN_RO_REPORT]: 'open-ro',
   [HYUNDAI_COMPLAINTS_REPORT]: 'hyundai-complaints',
   [HYUNDAI_SOT_REPORT]: 'sot-analysis',
@@ -376,6 +379,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     brand: 'hyundai',
     sheetName: WORKSHOP_PERFORMANCE_REPORT,
     tableName: 'workshop_performance',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'workshop-summary',
+    brand: 'hyundai',
+    sheetName: WORKSHOP_SUMMARY_REPORT,
+    tableName: 'hyundai_ro_billing_report',
     columns: [],
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
@@ -1922,6 +1934,7 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
         || activeTab === HYUNDAI_COMPLAINTS_REPORT
         || activeTab === HYUNDAI_SOT_REPORT
         || activeTab === SERVICE_DASHBOARD_REPORT
+        || activeTab === WORKSHOP_SUMMARY_REPORT
       ) {
         setFetchingRows(null)
         return
@@ -1970,13 +1983,14 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
               const isOverviewSheet = selectedSheet.sheetName === BUSINESS_EXCELLENCE_OVERVIEW_REPORT
               const isROBillingSheet = selectedSheet.sheetName.toLowerCase().includes('ro billing')
               const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
+              const isWorkshopSummarySheet = selectedSheet.sheetName === WORKSHOP_SUMMARY_REPORT
               const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
               const isKiaComplaintsSheet = selectedSheet.sheetName === HYUNDAI_COMPLAINTS_REPORT
               const isSotSheet = selectedSheet.sheetName === HYUNDAI_SOT_REPORT
               const isServiceDashboardSheet = selectedSheet.sheetName === SERVICE_DASHBOARD_REPORT
               const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
-              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet || isSotSheet
-              const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet
+              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isWorkshopSummarySheet || isOpenRoSheet || isKiaComplaintsSheet || isServiceDashboardSheet || isSotSheet
+              const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isWorkshopSummarySheet || isKiaComplaintsSheet
               const supportsHealthPanel = false
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
@@ -2437,6 +2451,15 @@ export default function HyundaiBusinessExcellencePage({ initialReport, currentUs
                             <SheetContentSkeleton />
                           ) : (
                             <KiaComplaintsSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isWorkshopSummarySheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <WorkshopSummarySection
+                              endDate={appliedDateFilter?.endDate || null}
+                              dealerCode={selectedDealerCode}
+                            />
                           )
                         ) : isServiceDashboardSheet ? (
                           isApplyingFilter ? (

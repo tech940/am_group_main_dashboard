@@ -41,6 +41,7 @@ import { ExecutiveTableShell, type ExecutiveDashboardTableId } from '@/features/
 import { OpenRoSection } from '@/features/platinum/open-ro-section'
 import { KiaComplaintsSection } from '@/features/platinum/platinum-complaints-section'
 import { PlatinumSotAnalysisSection } from '@/features/platinum/sot-analysis-section'
+import { WorkshopSummarySection } from '@/features/platinum/workshop-summary-section'
 import { ServiceDashboardPreviewSection } from '@/features/kia/service-dashboard-preview-section'
 import { readPlatinumJson } from '@/features/platinum/api-client'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -324,6 +325,7 @@ const BUSINESS_EXCELLENCE_OVERVIEW_REPORT = 'Business Excellence Overview'
 const EXECUTIVE_DASHBOARD_REPORT = 'Executive Dashboard'
 const DEFAULT_BUSINESS_EXCELLENCE_SHEET = 'RO Billing Report'
 const WORKSHOP_PERFORMANCE_REPORT = 'Workshop Performance'
+const WORKSHOP_SUMMARY_REPORT = 'Workshop Summary'
 const OPEN_RO_REPORT = 'Open RO (Repair Orders)'
 const PLATINUM_COMPLAINTS_REPORT = 'Platinum Complaints'
 const PLATINUM_SOT_REPORT = 'SOT Analysis'
@@ -333,6 +335,7 @@ const REPORT_ROUTE_SLUGS: Record<string, string> = {
   [EXECUTIVE_DASHBOARD_REPORT]: 'executive-dashboard',
   [DEFAULT_BUSINESS_EXCELLENCE_SHEET]: 'ro-billing-report',
   [WORKSHOP_PERFORMANCE_REPORT]: 'workshop-performance',
+  [WORKSHOP_SUMMARY_REPORT]: 'workshop-summary',
   [OPEN_RO_REPORT]: 'open-ro',
   [PLATINUM_COMPLAINTS_REPORT]: 'platinum-complaints',
   [PLATINUM_SOT_REPORT]: 'sot-analysis',
@@ -374,6 +377,15 @@ const BUSINESS_EXCELLENCE_REPORTS: SavedSheetMetadata[] = [
     brand: 'platinum',
     sheetName: WORKSHOP_PERFORMANCE_REPORT,
     tableName: 'workshop_performance',
+    columns: [],
+    uploadedAt: new Date(0).toISOString(),
+    totalRows: 0,
+  },
+  {
+    id: 'workshop-summary',
+    brand: 'platinum',
+    sheetName: WORKSHOP_SUMMARY_REPORT,
+    tableName: 'am_platinum_ro_billing_report',
     columns: [],
     uploadedAt: new Date(0).toISOString(),
     totalRows: 0,
@@ -1904,7 +1916,7 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
 
   useEffect(() => {
     if (activeTab && savedSheets.length > 0) {
-      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === PLATINUM_COMPLAINTS_REPORT || activeTab === PLATINUM_SOT_REPORT || activeTab === SERVICE_DASHBOARD_REPORT) {
+      if (activeTab === BUSINESS_EXCELLENCE_OVERVIEW_REPORT || activeTab === EXECUTIVE_DASHBOARD_REPORT || activeTab === WORKSHOP_PERFORMANCE_REPORT || activeTab === DEFAULT_BUSINESS_EXCELLENCE_SHEET || activeTab === OPEN_RO_REPORT || activeTab === PLATINUM_COMPLAINTS_REPORT || activeTab === PLATINUM_SOT_REPORT || activeTab === SERVICE_DASHBOARD_REPORT || activeTab === WORKSHOP_SUMMARY_REPORT) {
         setFetchingRows(null)
         return
       }
@@ -1950,13 +1962,14 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
               const isOverviewSheet = selectedSheet.sheetName === BUSINESS_EXCELLENCE_OVERVIEW_REPORT
               const isROBillingSheet = selectedSheet.sheetName.toLowerCase().includes('ro billing')
               const isWorkshopPerformanceSheet = selectedSheet.sheetName === WORKSHOP_PERFORMANCE_REPORT
+              const isWorkshopSummarySheet = selectedSheet.sheetName === WORKSHOP_SUMMARY_REPORT
               const isOpenRoSheet = selectedSheet.sheetName === OPEN_RO_REPORT
               const isKiaComplaintsSheet = selectedSheet.sheetName === PLATINUM_COMPLAINTS_REPORT
               const isSotSheet = selectedSheet.sheetName === PLATINUM_SOT_REPORT
               const isExecutiveDashboardSheet = selectedSheet.sheetName === EXECUTIVE_DASHBOARD_REPORT
               const isServiceDashboardSheet = selectedSheet.sheetName === SERVICE_DASHBOARD_REPORT
-              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isOpenRoSheet || isKiaComplaintsSheet || isSotSheet || isServiceDashboardSheet
-              const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isKiaComplaintsSheet || isSotSheet
+              const usesDateControls = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isWorkshopSummarySheet || isOpenRoSheet || isKiaComplaintsSheet || isSotSheet || isServiceDashboardSheet
+              const supportsComparison = isOverviewSheet || isExecutiveDashboardSheet || isROBillingSheet || isWorkshopPerformanceSheet || isWorkshopSummarySheet || isKiaComplaintsSheet || isSotSheet
               const supportsHealthPanel = false
               const activeComparisonText = appliedDateFilter?.comparison?.previousStartDate && appliedDateFilter.comparison.previousEndDate
                 ? `Compare ${appliedDateFilter.comparison.previousStartDate} - ${appliedDateFilter.comparison.previousEndDate}`
@@ -2420,6 +2433,15 @@ export default function KiaBusinessExcellencePage({ initialReport, currentUserRo
                             <SheetContentSkeleton />
                           ) : (
                             <KiaComplaintsSection dateFilter={appliedDateFilter} dealerCode={selectedDealerCode} />
+                          )
+                        ) : isWorkshopSummarySheet ? (
+                          isApplyingFilter ? (
+                            <SheetContentSkeleton />
+                          ) : (
+                            <WorkshopSummarySection
+                              endDate={appliedDateFilter?.endDate || null}
+                              dealerCode={selectedDealerCode}
+                            />
                           )
                         ) : isSotSheet ? (
                           isApplyingFilter ? (

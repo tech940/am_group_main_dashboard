@@ -9,7 +9,7 @@ import { parseUserDealers } from '@/lib/dealers/registry'
 
 const KIA_BRAND = 'kia'
 // Managers to notify besides the booking's assigned sales person. `general_manager` is the
-// "Sales General Manager" (service_general_manager is deliberately NOT included). These are
+// "General Sales Manager" (service_general_manager is deliberately NOT included). These are
 // DEALER-SCOPED to the booking's dealer.
 const MANAGER_ROLES = ['sales_manager', 'general_manager', 'md'] as const
 // Oversight roles notified for EVERY callback regardless of dealer scope — the tech/admin team

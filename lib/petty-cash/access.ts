@@ -3,20 +3,16 @@ import type { SQL } from 'drizzle-orm'
 import type { AppUser } from '@/lib/auth/app-user'
 import { hasAllBranchAccess } from '@/lib/branches'
 import { pettyCashAllocations, pettyCashExpenses, pettyCashRequests } from '@/lib/db/schema'
+import { isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
 
 type PettyCashRole = AppUser['role']
 type PettyCashRequestRecord = typeof pettyCashRequests.$inferSelect
 type PettyCashExpenseRecord = typeof pettyCashExpenses.$inferSelect
 type PettyCashAllocationRecord = typeof pettyCashAllocations.$inferSelect
 
+// Shared with the sidebar so the link and the page guard can never drift. See legacy-module-roles.ts.
 export function canAccessPettyCash(role: PettyCashRole | null | undefined) {
-  return role === 'admin'
-    || role === 'developer'
-    || role === 'branch_admin'
-    || role === 'ea'
-    || role === 'md'
-    || role === 'eba'
-    || role === 'accounts'
+  return isPettyCashViewRole(role)
 }
 
 // Org-level roles that supervise petty cash across the WHOLE system. In petty
@@ -52,7 +48,7 @@ export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined
 
 export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {
   // Super admin is a universal supervisor and may act on any stage.
-  if (role === 'developer') return true
+  if (role === 'developer' || role === 'manager' || role === 'general_manager') return true
   switch (stage) {
     case 'ea_approval':
       return role === 'ea'
@@ -79,7 +75,13 @@ export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unkno
     return and(...baseFilters)!
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'accounts') {
+  if (
+    appUser.role === 'admin' ||
+    appUser.role === 'branch_admin' ||
+    appUser.role === 'accounts' ||
+    appUser.role === 'manager' ||
+    appUser.role === 'general_manager'
+  ) {
     return and(...baseFilters, eq(pettyCashRequests.branchId, appUser.brand || ''))!
   }
 
@@ -94,7 +96,13 @@ export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unkno
     return and(...baseFilters)!
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'accounts') {
+  if (
+    appUser.role === 'admin' ||
+    appUser.role === 'branch_admin' ||
+    appUser.role === 'accounts' ||
+    appUser.role === 'manager' ||
+    appUser.role === 'general_manager'
+  ) {
     return and(...baseFilters, eq(pettyCashExpenses.branchId, appUser.brand || ''))!
   }
 

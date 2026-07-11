@@ -132,13 +132,15 @@ const ROLE_LABELS: Record<string, string> = {
   technician: 'Technician',
   viewer: 'Employee / Viewer',
   service_manager: 'Service Manager',
-  general_manager: 'Sales General Manager',
-  service_general_manager: 'Service General Manager',
+  general_manager: 'General Sales Manager',
+  service_general_manager: 'General Service Manager',
   sales_head: 'Sales Head',
   sales_executive: 'Sales Executive',
   sales_manager: 'Sales Manager',
   finance_team: 'Finance Team',
   eba: 'EBA',
+  call_agent: 'Call Agent',
+  ca: 'CA',
 }
 
 const TAB_DEFINITIONS: Array<{

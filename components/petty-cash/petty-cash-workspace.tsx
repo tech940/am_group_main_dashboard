@@ -89,14 +89,14 @@ type PettyCashAllocationRow = {
 // Only the Branch Admin (branch_admin) may submit petty cash requests / expenses.
 const isCreatorRole = (role: string) => role === 'branch_admin'
 const isApproverRole = (role: string) => role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts'
-const isExpenseFeedRole = (role: string) => isApproverRole(role) || role === 'developer'
+const isExpenseFeedRole = (role: string) => isApproverRole(role) || role === 'developer' || role === 'manager' || role === 'general_manager'
 
 const PENDING_STATUSES = ['ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold']
 const OPEN_REQUEST_STATUSES = ['draft', 'submitted', ...PENDING_STATUSES]
 
 function canActOnRequest(role: string, request: PettyCashRequest) {
   const status = request.status
-  if (role === 'developer') return PENDING_STATUSES.includes(status)
+  if (role === 'developer' || role === 'manager' || role === 'general_manager') return PENDING_STATUSES.includes(status)
   if (role === 'ea') return status === 'ea_pending' || status === 'ea_on_hold'
   if (role === 'md') return status === 'md_pending' || status === 'md_on_hold'
   if (role === 'accounts') return status === 'accounts_pending' || status === 'accounts_on_hold'
@@ -246,7 +246,7 @@ export function PettyCashWorkspace() {
   const spendPercentage = allocationAmount > 0 ? Math.min(100, Math.round((spentAmount / allocationAmount) * 100)) : 0
   const userRole = payload?.user.role || ''
   const currentBranchId = payload?.user.brand || ''
-  const isSuperAdmin = userRole === 'developer'
+  const isSuperAdmin = userRole === 'developer' || userRole === 'manager' || userRole === 'general_manager'
   // Creation is a branch action driven by the user's own login branch.
   // Super admins have no single branch (brand = 'all'), so they review/approve
   // across every branch instead of creating.
@@ -262,7 +262,7 @@ export function PettyCashWorkspace() {
   // EA / MD / EBA / Developer supervise every branch & dealership; 'all' users too.
   const isAllBranchViewer = ['ea', 'md', 'eba', 'developer'].includes(userRole) || currentBranchId === 'all'
   // Back-office reviewers can filter the cross-branch expense feed location-wise.
-  const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'eba', 'developer'].includes(userRole)
+  const canFilterExpensesByLocation = ['admin', 'md', 'ea', 'eba', 'developer', 'manager', 'general_manager'].includes(userRole)
   // Seed with the full cross-branch location list (incl. Banihal) so every location is always
   // selectable in the filter, then add any ad-hoc locations that appear in the data.
   const expenseLocationOptions = useMemo(
@@ -576,7 +576,7 @@ export function PettyCashWorkspace() {
       </div>
 
       {/* Segmented tabs */}
-      <div className="w-full overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="w-full overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-x">
         <div className="inline-flex min-w-max sm:min-w-0 sm:w-full max-w-2xl items-center gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1 shadow-sm">
           {tabs.map((tab) => {
             const isActive = tab.key === activeTab

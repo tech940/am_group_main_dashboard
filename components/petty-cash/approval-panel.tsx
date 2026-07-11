@@ -102,7 +102,7 @@ function statusMeta(status: string) {
 }
 
 function canActOnStage(role: string, stage: ApprovalStage | null) {
-  if (role === 'developer') return true
+  if (role === 'developer' || role === 'manager' || role === 'general_manager') return true
   if (stage === 'ea_approval') return role === 'ea'
   if (stage === 'md_approval') return role === 'md' || role === 'eba'
   if (stage === 'accounts') return role === 'accounts'

@@ -10,10 +10,11 @@ import { SIDEBAR_PERMISSION_BY_HREF } from '../lib/permissions/navigation'
 // Verbatim snapshot of the map currently in components/layout/sidebar.tsx (the baseline we
 // must reproduce exactly).
 const CURRENT: Record<string, string> = {
+  '/cockpit': 'cockpit.view',
   '/purchase-orders': 'purchase_orders.view',
-  '/finance-orders': 'finance_orders.view',
   '/petty-cash': 'petty_cash.view',
   '/am-finance': 'am_finance.view',
+  '/ca': 'ca.view',
   '/brands/kia/business-excellence': 'kia.business_excellence.view',
   '/brands/kia/business-excellence/executive-dashboard': 'kia.business_excellence.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',
@@ -22,9 +23,12 @@ const CURRENT: Record<string, string> = {
   '/brands/kia/demo-cars-list': 'kia.demo_cars_list.view',
   '/brands/kia/sales-report': 'kia.sales_report.view',
   '/brands/kia/stock-report': 'kia.stock_report.view',
+  '/brands/kia/sales-performance': 'kia.sales_performance.view',
+  '/brands/kia/call-center': 'kia.call_center.view',
+  '/brands/kia/follow-ups': 'kia.lead_followups.view',
+  '/brands/kia/call-analytics': 'kia.call_analytics.view',
   '/brands/kia/bookings': 'kia.bookings.view',
   '/brands/kia/proforma': 'kia.proforma.view',
-  '/brands/kia/insurance': 'kia.insurance.view',
   '/brands/hyundai/business-excellence': 'hyundai.business_excellence.view',
   '/brands/hyundai/business-excellence/executive-dashboard': 'hyundai.business_excellence.view',
   '/brands/hyundai/business-excellence/overview': 'hyundai.business_excellence.view',

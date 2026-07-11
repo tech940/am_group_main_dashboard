@@ -1,5 +1,7 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+
+export const dynamic = 'force-dynamic'
 import { canAccessPettyCash } from '@/lib/petty-cash/access'
 import { isPermissionDenied } from '@/lib/permissions/deny'
 import { MainLayout } from '@/components/layout/main-layout'

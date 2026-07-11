@@ -3,6 +3,8 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessPettyCash } from '@/lib/petty-cash/access'
 import { createPettyCashRequest, getPettyCashRequestDetails, listPettyCashRequests } from '@/lib/petty-cash/server'
 
+export const dynamic = 'force-dynamic'
+
 function getListInput(request: NextRequest) {
   const params = request.nextUrl.searchParams
   return {

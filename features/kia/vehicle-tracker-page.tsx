@@ -275,7 +275,7 @@ export function VehicleTrackerPage({ canFill = false }: { canFill?: boolean }) {
           <section className="space-y-3">
             {!canFill && (
               <div className="flex items-center gap-2 rounded-xl bg-[var(--kia-surface-sunken)] px-3 py-2 text-xs font-bold text-[var(--kia-text-soft)]">
-                <Eye className="h-4 w-4" /> View only — Service General Manager
+                <Eye className="h-4 w-4" /> View only — General Service Manager
               </div>
             )}
             <div className="flex flex-wrap items-center justify-between gap-2">

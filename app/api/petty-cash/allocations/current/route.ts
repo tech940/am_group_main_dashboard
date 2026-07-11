@@ -3,6 +3,8 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessPettyCash } from '@/lib/petty-cash/access'
 import { getCurrentPettyCashAllocation } from '@/lib/petty-cash/server'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     const appUser = await getAuthenticatedAppUser()
