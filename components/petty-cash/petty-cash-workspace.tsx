@@ -85,9 +85,8 @@ type PettyCashAllocationRow = {
   created_at?: string
 }
 
-/* ---- role gating (ported verbatim) ---- */
-// Only the Branch Admin (branch_admin) may submit petty cash requests / expenses.
-const isCreatorRole = (role: string) => role === 'branch_admin'
+// Only the Branch Admin (branch_admin) or Sales Manager (sales_manager) may submit petty cash requests / expenses.
+const isCreatorRole = (role: string) => role === 'branch_admin' || role === 'sales_manager'
 const isApproverRole = (role: string) => role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts'
 const isExpenseFeedRole = (role: string) => isApproverRole(role) || role === 'developer' || role === 'manager' || role === 'general_manager'
 

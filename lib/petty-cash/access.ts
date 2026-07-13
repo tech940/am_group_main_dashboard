@@ -36,14 +36,14 @@ export function canViewPettyCashBranch(appUser: AppUser, branchId: string | null
   return hasPettyCashAllBranchAccess(appUser) || appUser.brand === branchId
 }
 
-// Only the Branch Admin (branch_admin) submits petty cash requests and expenses.
+// Only the Branch Admin (branch_admin) or Sales Manager (sales_manager) submits petty cash requests and expenses.
 // Everyone else in the chain (EA, MD/EBA, Accounts, developer) reviews/approves.
 export function canCreatePettyCashRequest(role: PettyCashRole | null | undefined) {
-  return role === 'branch_admin'
+  return role === 'branch_admin' || role === 'sales_manager'
 }
 
 export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined) {
-  return role === 'branch_admin'
+  return role === 'branch_admin' || role === 'sales_manager'
 }
 
 export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {
@@ -117,7 +117,7 @@ export function getPettyCashAllocationVisibilityFilter(appUser: AppUser): SQL<un
     return eq(pettyCashAllocations.status, 'active')
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'sales_manager') {
     return and(
       eq(pettyCashAllocations.status, 'active'),
       eq(pettyCashAllocations.allocatedTo, appUser.id),

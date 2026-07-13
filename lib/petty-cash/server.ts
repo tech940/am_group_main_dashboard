@@ -199,7 +199,7 @@ function filterDashboardRequests(appUser: AppUser, requests: Array<Record<string
     return requests.filter((request) => ['accounts_pending', 'accounts_on_hold'].includes(String(request.status || '')))
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'sales_manager') {
     return requests.filter((request) => (
       String(request.createdBy || '') === appUser.id
       && CREATOR_REQUEST_QUEUE_STATUSES.has(String(request.status || ''))
@@ -213,7 +213,7 @@ function filterDashboardExpenses(appUser: AppUser, expenses: Array<Record<string
   // Only the Branch Admin (the submitter) is limited to their own expenses.
   // Admin / MD / EA / Accounts / super admin see the full (branch-scoped) feed so
   // they can review and filter location-wise.
-  if (appUser.role === 'branch_admin') {
+  if (appUser.role === 'branch_admin' || appUser.role === 'sales_manager') {
     return expenses.filter((expense) => String(expense.createdBy || '') === appUser.id)
   }
 
@@ -480,7 +480,7 @@ export async function getCurrentPettyCashAllocation(appUser: AppUser, branchId?:
     filters.push(eq(pettyCashAllocations.branchId, branchId))
   }
 
-  if (appUser.role === 'admin' || appUser.role === 'branch_admin') {
+  if (appUser.role === 'admin' || appUser.role === 'branch_admin' || appUser.role === 'sales_manager') {
     filters.push(eq(pettyCashAllocations.allocatedTo, appUser.id))
   }
 
