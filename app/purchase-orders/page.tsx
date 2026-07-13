@@ -950,6 +950,46 @@ function PurchaseOrdersPageContent() {
 
   useEffect(() => {
     const supabase = createClient()
+    // This subscription is intentionally unfiltered (approvers must see org-wide PO changes live), so
+    // every open tab reacts to every change. To keep that from turning into a refetch storm on Vercel:
+    //  (1) DEBOUNCE — coalesce a burst of changes (a batch update, rapid workflow steps) into ONE
+    //      refetch instead of one per row-change event.
+    //  (2) VISIBILITY GUARD — never refetch while the tab is hidden; mark it pending and do a single
+    //      catch-up when the tab becomes visible again. (Realtime keeps delivering events to a hidden
+    //      tab, but there is no reason to burn a fetch nobody is looking at.)
+    let refetchTimer: ReturnType<typeof setTimeout> | null = null
+    let pendingWhileHidden = false
+
+    const runRefetch = () => {
+      void queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      void queryClient.invalidateQueries({ queryKey: ['purchase-orders', 'workflow'] })
+      void fetchOrders(false, true)
+      if (selectedOrderRef.current?.id) {
+        void fetchOrderDetails(selectedOrderRef.current.id)
+      }
+    }
+
+    const fireDebounced = () => {
+      refetchTimer = null
+      if (document.visibilityState !== 'visible') {
+        pendingWhileHidden = true
+        return
+      }
+      runRefetch()
+    }
+
+    const scheduleRefetch = () => {
+      if (refetchTimer) clearTimeout(refetchTimer)
+      refetchTimer = setTimeout(fireDebounced, 800)
+    }
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && pendingWhileHidden) {
+        pendingWhileHidden = false
+        scheduleRefetch()
+      }
+    }
+
     const channel = supabase
       .channel('purchase-orders-workflow')
       .on(
@@ -959,18 +999,15 @@ function PurchaseOrdersPageContent() {
           schema: 'public',
           table: 'purchase_orders',
         },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
-          void queryClient.invalidateQueries({ queryKey: ['purchase-orders', 'workflow'] })
-          void fetchOrders(false, true)
-          if (selectedOrderRef.current?.id) {
-            void fetchOrderDetails(selectedOrderRef.current.id)
-          }
-        }
+        scheduleRefetch,
       )
       .subscribe()
 
+    document.addEventListener('visibilitychange', onVisible)
+
     return () => {
+      if (refetchTimer) clearTimeout(refetchTimer)
+      document.removeEventListener('visibilitychange', onVisible)
       void supabase.removeChannel(channel)
     }
   }, [fetchOrderDetails, fetchOrders, queryClient])

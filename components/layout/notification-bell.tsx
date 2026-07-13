@@ -524,8 +524,12 @@ export function NotificationBell({ userId, userRole }: NotificationBellProps) {
       }
 
       void reloadNotifications()
+      // Only poll while the tab is actually VISIBLE. This fallback starts when the Supabase realtime
+      // websocket drops — which is exactly what browsers do to BACKGROUND tabs — so without this guard
+      // a hidden tab would hammer /api/notifications every 15s. A returning tab catches up via the
+      // focus/visibilitychange refresh below.
       fallbackInterval = setInterval(() => {
-        void reloadNotifications()
+        if (document.visibilityState === 'visible') void reloadNotifications()
       }, 15_000)
     }
 
@@ -587,13 +591,18 @@ export function NotificationBell({ userId, userRole }: NotificationBellProps) {
     const refreshOnFocus = () => {
       void reloadNotifications()
     }
+    // visibilitychange fires on BOTH hide and show; only refetch when the tab becomes visible so we
+    // don't waste an /api/notifications call every time the user switches AWAY from the tab.
+    const refreshOnVisible = () => {
+      if (document.visibilityState === 'visible') void reloadNotifications()
+    }
 
     window.addEventListener('focus', refreshOnFocus)
-    document.addEventListener('visibilitychange', refreshOnFocus)
+    document.addEventListener('visibilitychange', refreshOnVisible)
 
     return () => {
       window.removeEventListener('focus', refreshOnFocus)
-      document.removeEventListener('visibilitychange', refreshOnFocus)
+      document.removeEventListener('visibilitychange', refreshOnVisible)
     }
   }, [reloadNotifications, userId, userRole])
 

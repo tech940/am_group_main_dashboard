@@ -222,6 +222,12 @@ export function Sidebar() {
   const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
   const [permissionsReady, setPermissionsReady] = useState(false)
   const permissionMapRef = useRef<Record<string, boolean> | null>(null)
+  // Event-driven sync bookkeeping: coalesce rapid triggers (browsers fire focus + visibilitychange
+  // together; a nav often follows a focus) into a single fetch, and mark the first sync so it doesn't
+  // needlessly router.refresh() on initial page load.
+  const syncingRef = useRef(false)
+  const lastSyncAtRef = useRef(0)
+  const didInitialSyncRef = useRef(false)
   const { userRole, canAccessAdmin, userBrand, loading } = useUserRole()
   const {
     value: favouriteHrefsValue,
@@ -240,6 +246,14 @@ export function Sidebar() {
   // pages update in place — this is what makes an admin's grant/revoke apply to this user's
   // open tab without a manual reload.
   const syncPermissions = useCallback(async (refreshOnChange: boolean) => {
+    // Coalesce rapid triggers into ONE call: skip if a sync is already in flight, or if we synced
+    // within the last 10s (collapses the focus+visibilitychange pair and a nav that lands right after
+    // a focus). The server-side guards are the real access boundary, so ≤10s link-visibility staleness
+    // is harmless.
+    if (syncingRef.current) return
+    if (Date.now() - lastSyncAtRef.current < 10_000) return
+    syncingRef.current = true
+    lastSyncAtRef.current = Date.now()
     try {
       const response = await fetch('/api/auth/permissions', { cache: 'no-store' })
       if (!response.ok) return
@@ -253,44 +267,41 @@ export function Sidebar() {
     } catch {
       /* keep the last-known map (do NOT fail open — hasPermission is fail-closed) */
     } finally {
+      syncingRef.current = false
       // First attempt resolved (success or error): the nav may render. On error with no prior map,
       // hasPermission stays fail-closed so brand links are hidden rather than wrongly shown.
       setPermissionsReady(true)
     }
   }, [router])
 
-  // Initial load (no refresh — nothing to update yet).
+  // Sync the effective permission map on INITIAL load and on every NAVIGATION (route change) — the
+  // natural "reload / navigate" trigger. There is NO fixed-interval poll, so an idle tab — and any
+  // BACKGROUND tab — makes zero /api/auth/permissions calls by construction. This is safe because the
+  // sidebar map is UX-only: it only decides which links show. The real access boundary is server-side
+  // and re-runs on every navigation (each guarded page re-executes requirePermission()/forbidden()
+  // against a snapshot cache that is invalidated on every grant/revoke), so a revoked user is blocked
+  // on their next page load regardless of this. The first run passes refreshOnChange=false (nothing is
+  // open to update yet); navigations pass true so an admin's grant/revoke re-runs the current page's
+  // Server Components in place.
   useEffect(() => {
     if (loading || !userRole) return
-    const timer = setTimeout(() => { void syncPermissions(false) }, 0)
-    return () => clearTimeout(timer)
-  }, [loading, userRole, syncPermissions])
+    const isFirst = !didInitialSyncRef.current
+    didInitialSyncRef.current = true
+    void syncPermissions(!isFirst)
+  }, [pathname, loading, userRole, syncPermissions])
 
-  // Live sync: pick up Access-Map grants/revokes without a manual reload. We poll the effective
-  // map (server-side, so it respects auth — unlike client realtime, which can't read the
-  // server-only permission tables under RLS) on an interval, and immediately whenever the tab
-  // regains focus / becomes visible. router.refresh() only fires when the map actually changed.
-  // Cost control (Vercel): the poll only fires while the tab is VISIBLE (background tabs stop
-  // polling), and the interval is 60s — Access-Map changes still propagate within 60s, or instantly
-  // when the user switches back to the tab (the focus/visibility handlers). This is the single
-  // biggest driver of /api/auth/permissions invocations, so keep it lazy.
+  // Catch up when the user returns to the tab (focus / becomes visible) — covers an admin grant that
+  // lands while the user sits idle on one page without navigating. Event-driven, NO timer, so
+  // hidden/background tabs never fetch. syncPermissions coalesces the focus+visibility pair into one.
   useEffect(() => {
     if (loading || !userRole) return
-
-    const onChange = () => { void syncPermissions(true) }
-    const onFocus = () => onChange()
-    const onVisible = () => { if (document.visibilityState === 'visible') onChange() }
-
+    const onFocus = () => { void syncPermissions(true) }
+    const onVisible = () => { if (document.visibilityState === 'visible') void syncPermissions(true) }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisible)
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') onChange()
-    }, 60_000)
-
     return () => {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisible)
-      window.clearInterval(interval)
     }
   }, [loading, userRole, syncPermissions])
 
