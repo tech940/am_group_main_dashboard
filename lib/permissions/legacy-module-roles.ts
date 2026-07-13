@@ -23,3 +23,12 @@ export function isAmFinanceViewRole(role: string | null | undefined): boolean {
 export function isPettyCashViewRole(role: string | null | undefined): boolean {
   return Boolean(role && (PETTY_CASH_VIEW_ROLES as readonly string[]).includes(role))
 }
+
+// CA (Chartered Accountant) — deliberately HARDCODED to exactly these roles (per product decision), so
+// no tier/permission/override can widen it. The CA link is nested under Purchase Orders; the page +
+// every /api/ca route gate on this list (not on the `ca.view` permission).
+export const CA_VIEW_ROLES = ['ca', 'md', 'developer'] as const
+
+export function isCaViewRole(role: string | null | undefined): boolean {
+  return Boolean(role && (CA_VIEW_ROLES as readonly string[]).includes(role))
+}

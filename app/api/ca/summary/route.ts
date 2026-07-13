@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { requirePermission } from '@/lib/permissions/service'
+import { isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 import { getCaBranchSummary } from '@/lib/ca/ca-data'
 
 export const dynamic = 'force-dynamic'
@@ -10,8 +10,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const permission = await requirePermission(appUser, 'ca.view')
-  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+  if (!isCaViewRole(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   try {
     const { searchParams } = new URL(request.url)
     const from = searchParams.get('from')

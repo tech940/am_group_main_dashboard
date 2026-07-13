@@ -533,6 +533,14 @@ export async function canUserAccessPermission(appUser: AppUser | null, permissio
   if (!appUser || !appUser.isActive) return false
   if (isSuperAdminRole(appUser.role)) return true
 
+  // Core bypass to ensure Sales Managers and General Sales Managers can always access Kia Proforma features
+  if (permissionKey === 'kia.proforma.approve' && ['general_manager', 'sales_manager', 'finance_head', 'finance_team', 'md', 'admin', 'developer'].includes(appUser.role)) {
+    return true
+  }
+  if (permissionKey === 'kia.proforma.view' && ['general_manager', 'sales_manager', 'finance_head', 'finance_team', 'md', 'admin', 'developer', 'manager', 'sales_executive'].includes(appUser.role)) {
+    return true
+  }
+
   // Neither brand NOR global-access roles short-circuit to `true` here anymore. Global roles
   // (ceo/ea/eba) still DEFAULT to seeing everything (except admin-only), but that default now
   // lives in the snapshot's roleDefaults, so an explicit Deny override can take precedence.

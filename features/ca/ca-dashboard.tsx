@@ -43,22 +43,24 @@ function qs(params: Record<string, string | number | null | undefined>) {
 
 export function CaDashboard() {
   const [branch, setBranch] = useState('all')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  const [fromInput, setFromInput] = useState('')
+  const [toInput, setToInput] = useState('')
+  const [appliedFrom, setAppliedFrom] = useState('')
+  const [appliedTo, setAppliedTo] = useState('')
   const [tab, setTab] = useState<'po' | 'petty'>('po')
   const [pcDataset, setPcDataset] = useState<'funding' | 'expenses'>('expenses')
   const [poPage, setPoPage] = useState(1)
   const [pcPage, setPcPage] = useState(1)
 
-  const summaryQ = useQuery<Summary>({ queryKey: ['ca', 'summary', from, to], queryFn: () => fetchJson(`/api/ca/summary?${qs({ from, to })}`) })
+  const summaryQ = useQuery<Summary>({ queryKey: ['ca', 'summary', appliedFrom, appliedTo], queryFn: () => fetchJson(`/api/ca/summary?${qs({ from: appliedFrom, to: appliedTo })}`) })
   const poQ = useQuery<{ rows: PoRow[]; pagination: Pagination }>({
-    queryKey: ['ca', 'po', branch, from, to, poPage],
-    queryFn: () => fetchJson(`/api/ca/purchase-orders?${qs({ branch, from, to, page: poPage })}`),
+    queryKey: ['ca', 'po', branch, appliedFrom, appliedTo, poPage],
+    queryFn: () => fetchJson(`/api/ca/purchase-orders?${qs({ branch, from: appliedFrom, to: appliedTo, page: poPage })}`),
     placeholderData: keepPreviousData, enabled: tab === 'po',
   })
   const pcQ = useQuery<{ rows: (FundingRow | ExpenseRow)[]; pagination: Pagination }>({
-    queryKey: ['ca', 'petty', pcDataset, branch, from, to, pcPage],
-    queryFn: () => fetchJson(`/api/ca/petty-cash?${qs({ dataset: pcDataset, branch, from, to, page: pcPage })}`),
+    queryKey: ['ca', 'petty', pcDataset, branch, appliedFrom, appliedTo, pcPage],
+    queryFn: () => fetchJson(`/api/ca/petty-cash?${qs({ dataset: pcDataset, branch, from: appliedFrom, to: appliedTo, page: pcPage })}`),
     placeholderData: keepPreviousData, enabled: tab === 'petty',
   })
 
@@ -71,7 +73,24 @@ export function CaDashboard() {
       : summary.branches.find((b) => b.branch === branch) || ZERO_SCOPE
 
   function onBranch(v: string) { setBranch(v); setPoPage(1); setPcPage(1) }
-  function onDate(setter: (s: string) => void, v: string) { setter(v); setPoPage(1); setPcPage(1) }
+
+  function handleApplyDates() {
+    setAppliedFrom(fromInput)
+    setAppliedTo(toInput)
+    setPoPage(1)
+    setPcPage(1)
+  }
+
+  function handleClearDates() {
+    setFromInput('')
+    setToInput('')
+    setAppliedFrom('')
+    setAppliedTo('')
+    setPoPage(1)
+    setPcPage(1)
+  }
+
+  const isDatesDirty = fromInput !== appliedFrom || toInput !== appliedTo
 
   return (
     <div className="space-y-6">
@@ -86,13 +105,14 @@ export function CaDashboard() {
         </div>
         <div>
           <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Approved from</label>
-          <input type="date" value={from} onChange={(e) => onDate(setFrom, e.target.value)} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-semibold outline-none focus:border-slate-400" />
+          <input type="date" value={fromInput} onChange={(e) => setFromInput(e.target.value)} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-semibold outline-none focus:border-slate-400" />
         </div>
         <div>
           <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">to</label>
-          <input type="date" value={to} onChange={(e) => onDate(setTo, e.target.value)} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-semibold outline-none focus:border-slate-400" />
+          <input type="date" value={toInput} onChange={(e) => setToInput(e.target.value)} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-semibold outline-none focus:border-slate-400" />
         </div>
-        {(from || to) && <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={() => { onDate(setFrom, ''); onDate(setTo, '') }}>Clear dates</Button>}
+        <Button onClick={handleApplyDates} disabled={!isDatesDirty} className="app-primary-action h-9 rounded-xl text-xs font-bold shadow-sm">Apply Filters</Button>
+        {(appliedFrom || appliedTo || fromInput || toInput) && <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={handleClearDates}>Clear dates</Button>}
       </div>
 
       {/* Headline KPI cards (selected scope) */}

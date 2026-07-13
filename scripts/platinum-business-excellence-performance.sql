@@ -60,7 +60,11 @@ CREATE INDEX IF NOT EXISTS am_platinum_service_appointment_resolution_idx
   );
 
 DROP VIEW IF EXISTS am_platinum_service_appointment_resolved_v1 CASCADE;
-CREATE OR REPLACE VIEW am_platinum_service_appointment_resolved_v1 AS
+-- security_invoker = true: the view runs with the QUERYING role's permissions/RLS, not the owner's
+-- (Supabase linter 0010). Server reads use the service role (bypasses RLS + has SELECT on the base
+-- table), so this only restricts untrusted PostgREST/API callers. Requires Postgres 15+.
+CREATE OR REPLACE VIEW am_platinum_service_appointment_resolved_v1
+  WITH (security_invoker = true) AS
 SELECT
   source.*,
   CASE

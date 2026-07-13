@@ -333,7 +333,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
   const where = listFilters(input)
   // Same branch boundary applied to the KPI counts and filter-option lists below.
   const dealerScope = input.allowedDealers && input.allowedDealers.length
-    ? sql`AND dealer_code = ANY(${input.allowedDealers})`
+    ? sql`AND dealer_code IN ${input.allowedDealers}`
     : sql``
 
   // Page load is dominated by pooler round-trip latency (~225ms/query), not the

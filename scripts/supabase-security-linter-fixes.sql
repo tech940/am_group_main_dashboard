@@ -205,9 +205,26 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ============================================================================
+-- 5. SECURITY DEFINER view → security_invoker (lint 0010)
+-- ============================================================================
+-- am_platinum_service_appointment_resolved_v1 is a plain view; without security_invoker it enforces
+-- the view OWNER's permissions/RLS instead of the querying role's. Switch it to invoker semantics so
+-- PostgREST/API callers only see what their own role allows. Safe for the app: server reads go through
+-- the service role (bypasses RLS + has SELECT on the base table am_platinum_service_appointment), and
+-- the materialized views built on it refresh as their owner. Requires Postgres 15+ (Supabase qualifies).
+-- The view's source-of-truth definition lives in scripts/platinum-business-excellence-performance.sql.
+
+DO $$
+BEGIN
+  IF to_regclass('public.am_platinum_service_appointment_resolved_v1') IS NOT NULL THEN
+    ALTER VIEW public.am_platinum_service_appointment_resolved_v1 SET (security_invoker = on);
+  END IF;
+END $$;
+
 -- Post-run verification:
---   Re-run Supabase Database Linter; function search_path and RLS warnings should clear.
---   Smoke-test: Kia/Hyundai analytics APIs, purchase orders, proforma flows.
+--   Re-run Supabase Database Linter; function search_path, RLS, and security-definer-view warnings should clear.
+--   Smoke-test: Kia/Hyundai/Platinum analytics APIs, purchase orders, proforma flows.
 --
 -- Manual (Supabase Dashboard — cannot be applied via SQL):
 --   Authentication → Providers → Email → Enable leaked password protection

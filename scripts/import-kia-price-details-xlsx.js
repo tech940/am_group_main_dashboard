@@ -119,6 +119,32 @@ function buildRows(rows) {
   return { values, failures }
 }
 
+// The PRICE DETAILS sheet co-locates a full bank-branch master list (HYP + BANK BRACH columns) that
+// extends well past the priced rows. Capture EVERY distinct (bank, branch) so the proforma HYP
+// dropdown offers them all, not only the branches attached to a priced car. Stored in
+// kia_proforma_lookup_options (category 'bank_branch') so a price re-import never wipes it.
+function buildBranchList(rows) {
+  const seen = new Set()
+  const values = []
+  for (const row of rows) {
+    const bank = toText(get(row, 'hyp'))
+    const branch = toText(get(row, 'bankBranch'))
+    if (!branch) continue
+    const key = `${bank.toLowerCase()}||${branch.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    values.push({
+      category: 'bank_branch',
+      value: branch,
+      label: bank || null,
+      source_sheet: row.__sheetName,
+      source_row: row.__rowNumber,
+      metadata: { bank_name: bank || null },
+    })
+  }
+  return values
+}
+
 async function main() {
   const workbook = XLSX.readFile(filePath, { cellDates: true })
   const sheetName = workbook.SheetNames.length === 1
@@ -127,7 +153,8 @@ async function main() {
   if (!sheetName) throw new Error('Workbook must contain a PRICE DETAILS sheet.')
   const sourceRows = readRows(workbook, sheetName)
   const { values, failures } = buildRows(sourceRows)
-  console.log(JSON.stringify({ filePath, sheetName, processed: sourceRows.length, importable: values.length, failed: failures.length, failures: failures.slice(0, 10), mode: shouldApply ? 'apply' : 'dry-run' }, null, 2))
+  const branchValues = buildBranchList(sourceRows)
+  console.log(JSON.stringify({ filePath, sheetName, processed: sourceRows.length, importable: values.length, failed: failures.length, bankBranches: branchValues.length, failures: failures.slice(0, 10), mode: shouldApply ? 'apply' : 'dry-run' }, null, 2))
   if (!shouldApply) return
   if (!databaseUrl) throw new Error('DATABASE_URL is missing in .env')
   const sql = postgres(databaseUrl, { ssl: 'require', max: 1, prepare: false, connect_timeout: 20 })
@@ -154,6 +181,14 @@ async function main() {
       for (let i = 0; i < values.length; i += 500) {
         const chunk = values.slice(i, i + 500)
         await tx`INSERT INTO ${tx('kia_price_details')} ${tx(chunk, columns)}`
+      }
+
+      // Full bank-branch master list → kia_proforma_lookup_options (scoped to 'bank_branch' only).
+      await tx`DELETE FROM kia_proforma_lookup_options WHERE category = 'bank_branch'`
+      const lookupColumns = ['category', 'value', 'label', 'source_sheet', 'source_row', 'metadata']
+      for (let i = 0; i < branchValues.length; i += 500) {
+        const chunk = branchValues.slice(i, i + 500)
+        await tx`INSERT INTO ${tx('kia_proforma_lookup_options')} ${tx(chunk, lookupColumns)}`
       }
     })
   } finally {

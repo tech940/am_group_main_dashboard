@@ -1,8 +1,9 @@
 import 'server-only'
 
 import * as XLSX from 'xlsx'
+import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { kiaPriceDetails } from '@/lib/db/schema'
+import { kiaPriceDetails, kiaProformaLookupOptions } from '@/lib/db/schema'
 import { invalidateCache } from '@/lib/redis/cache-utils'
 
 type RawRow = Record<string, unknown> & {
@@ -22,10 +23,39 @@ export type KiaPriceImportSummary = {
   totalRowsProcessed: number
   importedRows: number
   failedRows: number
+  bankBranches: number
   failures: KiaPriceImportFailure[]
   startedAt: string
   completedAt: string
   durationMs: number
+}
+
+type LookupInsert = typeof kiaProformaLookupOptions.$inferInsert
+
+// The PRICE DETAILS sheet co-locates a full bank-branch master list (HYP + BANK BRACH columns) that
+// runs well past the priced rows. Capture every distinct (bank, branch) so the proforma HYP dropdown
+// offers them all — stored in kia_proforma_lookup_options (category 'bank_branch') so a price
+// re-import never wipes it. See app/api/brands/kia/proforma/options/route.ts.
+function buildBranchInserts(rows: RawRow[]): LookupInsert[] {
+  const seen = new Set<string>()
+  const out: LookupInsert[] = []
+  for (const row of rows) {
+    const bank = toText(valueFor(row, 'hyp'))
+    const branch = toText(valueFor(row, 'bankBranch'))
+    if (!branch) continue
+    const key = `${bank.toLowerCase()}||${branch.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({
+      category: 'bank_branch',
+      value: branch,
+      label: bank || null,
+      sourceSheet: row.__sheetName,
+      sourceRow: row.__rowNumber,
+      metadata: { bank_name: bank || null },
+    })
+  }
+  return out
 }
 
 const PRICE_SHEET_NAME = 'PRICE DETAILS'
@@ -177,11 +207,17 @@ export async function importKiaPriceDetailsFromWorkbook(buffer: Buffer): Promise
     if (result.value) values.push(result.value)
     if (result.failure) failures.push(result.failure)
   }
+  const branchValues = buildBranchInserts(rows)
 
   await db.transaction(async (tx) => {
     await tx.delete(kiaPriceDetails)
     for (let index = 0; index < values.length; index += 500) {
       await tx.insert(kiaPriceDetails).values(values.slice(index, index + 500))
+    }
+    // Full bank-branch master list (scoped to 'bank_branch' only — other lookup categories untouched).
+    await tx.delete(kiaProformaLookupOptions).where(eq(kiaProformaLookupOptions.category, 'bank_branch'))
+    for (let index = 0; index < branchValues.length; index += 500) {
+      await tx.insert(kiaProformaLookupOptions).values(branchValues.slice(index, index + 500))
     }
   })
   await invalidateCache('kia:proforma:options:data')
@@ -192,6 +228,7 @@ export async function importKiaPriceDetailsFromWorkbook(buffer: Buffer): Promise
     totalRowsProcessed: rows.length,
     importedRows: values.length,
     failedRows: failures.length,
+    bankBranches: branchValues.length,
     failures: failures.slice(0, 25),
     startedAt: startedAt.toISOString(),
     completedAt: new Date(completed).toISOString(),

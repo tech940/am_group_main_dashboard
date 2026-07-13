@@ -1,6 +1,6 @@
 import { forbidden, redirect } from 'next/navigation'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { requirePermission } from '@/lib/permissions/service'
+import { isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 import { MainLayout } from '@/components/layout/main-layout'
 import { CaDashboard } from '@/features/ca/ca-dashboard'
 
@@ -13,8 +13,9 @@ export default async function CaPage() {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) redirect('/auth/login')
 
-  const permission = await requirePermission(appUser, 'ca.view')
-  if (!permission.allowed) forbidden()
+  // HARDCODED access: CA is restricted to exactly CA / MD / Developer — not the tier/permission system,
+  // so no override or role change can widen it. Mirrored on every /api/ca route.
+  if (!isCaViewRole(appUser.role)) forbidden()
 
   return (
     <MainLayout title="CA" subtitle="Approved purchase orders & petty cash — branch-wise">

@@ -1,10 +1,11 @@
 import 'server-only'
 
-import { and, eq, isNull, like, or } from 'drizzle-orm'
+import { and, eq, inArray, isNull, like, or } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { AppUser } from '@/lib/auth/app-user'
 import { kiaProformas } from '@/lib/db/schema'
 import { canUserAccessPermission } from '@/lib/permissions/service'
+import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 
 type KiaProformaRole = AppUser['role']
 
@@ -27,6 +28,13 @@ export async function canApproveKiaProformaForUser(appUser: AppUser, profileAppr
 
 export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = false): SQL<unknown> {
   const base = [isNull(kiaProformas.deletedAt)]
+
+  // Branch boundary: if the user is dealer-scoped, restrict visibility to their allowed branch locations.
+  const dealerScope = getUserDealerScope(appUser, 'kia')
+  if (dealerScope && dealerScope.length > 0) {
+    base.push(inArray(kiaProformas.location, dealerScope))
+  }
+
   // Back office sees all proformas; the Sales Executive sees only the ones they generated.
   const isBackOffice = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba', 'manager', 'accounts', 'viewer', 'service_manager', 'purchase_manager', 'sales_manager', 'general_manager', 'finance_head', 'finance_team'].includes(appUser.role)
   if (canApprove || isBackOffice) return and(...base)!

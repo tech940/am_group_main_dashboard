@@ -10,7 +10,6 @@ import {
   ShoppingCart,
   Banknote,
   Landmark,
-  Calculator,
   Gauge,
 } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
@@ -408,6 +407,8 @@ export function Sidebar() {
     // ── Common / global modules (shared across every branch) ──
     const commonNodes: NavNode[] = []
     if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, external: true, active: pathname === '/cockpit' })
+    // Purchase Orders — CA lives as a TAB inside this page (app/purchase-orders/page.tsx) for CA/MD/
+    // Developer only; it is deliberately NOT a sidebar option.
     if (hasPermission('purchase_orders.view')) commonNodes.push({ key: '/purchase-orders', label: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart, external: true, active: pathname === '/purchase-orders' })
     // Petty Cash is a single section — the former "Status Tracker" sub-page is now the
     // "Status" tab inside the workspace.
@@ -424,9 +425,6 @@ export function Sidebar() {
       active: pathname.startsWith('/petty-cash'),
     })
     if (canAccessAmFinance && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
-    // CA — independent read-only approved-finance view. Deny-by-default section (only the `ca` role +
-    // MD/Developer), so gate purely on the permission (mirrors Purchase Orders above).
-    if (hasPermission('ca.view')) commonNodes.push({ key: '/ca', label: 'CA', href: '/ca', icon: Calculator, badge: 'TEST', external: true, active: pathname === '/ca' })
     if (canAccessAdmin) {
       // Single link — the Admin page exposes all sections (Users, Access, Branch Admins, System,
       // Settings) as in-page tabs, so no sidebar dropdown is needed.

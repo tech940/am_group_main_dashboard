@@ -1,17 +1,17 @@
 'use client'
 
 import { motion } from 'motion/react'
-import { FileText, Wallet } from 'lucide-react'
+import { FileText, Calculator } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type ApprovalCategory = 'purchase_orders' | 'petty_cash'
+export type ApprovalCategory = 'purchase_orders' | 'ca'
 
 type TabDef = {
   key: ApprovalCategory
   label: string
   shortLabel: string
   icon: typeof FileText
-  count: number
+  count: number | null
 }
 
 function CountBadge({ count, active }: { count: number; active: boolean }) {
@@ -39,16 +39,14 @@ export function ApprovalCategoryTabs({
   active,
   onChange,
   purchaseOrderCount,
-  pettyCashCount,
 }: {
   active: ApprovalCategory
   onChange: (category: ApprovalCategory) => void
   purchaseOrderCount: number
-  pettyCashCount: number
 }) {
   const tabs: TabDef[] = [
     { key: 'purchase_orders', label: 'Purchase Orders', shortLabel: 'Orders', icon: FileText, count: purchaseOrderCount },
-    { key: 'petty_cash', label: 'Petty Cash', shortLabel: 'Petty Cash', icon: Wallet, count: pettyCashCount },
+    { key: 'ca', label: 'CA', shortLabel: 'CA', icon: Calculator, count: null },
   ]
 
   return (
@@ -77,7 +75,7 @@ export function ApprovalCategoryTabs({
               <Icon className="mr-2 h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">{tab.label}</span>
               <span className="sm:hidden">{tab.shortLabel}</span>
-              <CountBadge count={tab.count} active={isActive} />
+              {tab.count !== null && <CountBadge count={tab.count} active={isActive} />}
             </span>
           </button>
         )

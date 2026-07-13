@@ -44,6 +44,8 @@ const EXCEPTIONS: Record<string, { reason: string; requireToken?: string }> = {
   purchase_orders: { reason: 'client page, gated client-side' },
   // The Admin console is gated by isSuperAdminRole (matches the sidebar's canAccessAdmin), not a `.view` key.
   user_management: { reason: 'super-admin gated', requireToken: 'isSuperAdminRole' },
+  // CA is HARDCODED to CA/MD/Developer via isCaViewRole (product decision), not the `ca.view` permission.
+  ca: { reason: 'hardcoded role gate (CA/MD/Developer)', requireToken: 'isCaViewRole' },
 }
 
 console.log('\n=== Guard parity (sidebar visibility ↔ page guard) ===\n')

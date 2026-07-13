@@ -31,7 +31,7 @@ export default async function Page({ params }: { params: Promise<{ section: stri
   const permission = await requirePermission(access.appUser, permissionKey)
   if (!permission.allowed) forbidden()
 
-  if (resolved === 'bookings' && access.appUser.role === 'manager') {
+  if (resolved === 'bookings' && (access.appUser.role === 'manager' || access.appUser.role === 'general_manager')) {
     redirect('/brands/kia/proforma/pending-approval')
   }
 

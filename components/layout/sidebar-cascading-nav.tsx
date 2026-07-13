@@ -144,12 +144,16 @@ function AccordionRow({
           {node.badge}
         </span>
       )}
-      {hasChildren && <ChevronDown className={cn('h-4 w-4 flex-shrink-0 text-indigo-50/60 transition-transform', expanded && 'rotate-180')} />}
     </>
   )
+  // A node can be a direct LINK, an expandable GROUP, or BOTH (link + a separate chevron toggle) —
+  // e.g. "Purchase Orders" navigates to its page and expands to show the nested "CA" child.
+  const chevron = hasChildren ? (
+    <ChevronDown className={cn('h-4 w-4 flex-shrink-0 text-indigo-50/60 transition-transform', expanded && 'rotate-180')} />
+  ) : null
   return (
     <div style={{ paddingLeft: depth === 0 ? 0 : 10 }}>
-      {node.href && !hasChildren && !node.disabled ? (
+      {node.href && !node.disabled ? (
         <div className="flex items-center gap-1">
           <Link
             href={node.href}
@@ -161,6 +165,16 @@ function AccordionRow({
           >
             {label}
           </Link>
+          {hasChildren && (
+            <button
+              type="button"
+              onClick={() => onToggle(pathKey)}
+              aria-label={`Toggle ${node.label}`}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-indigo-50/70 transition-colors hover:bg-white/12 hover:text-white"
+            >
+              {chevron}
+            </button>
+          )}
           {node.favourite && <FavStar favourite={node.favourite} label={node.label} />}
         </div>
       ) : (
@@ -171,6 +185,7 @@ function AccordionRow({
           className={cn(rowClass, 'w-full')}
         >
           {label}
+          {chevron}
         </button>
       )}
       {expanded && hasChildren && (

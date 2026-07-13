@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
-import { requirePermission } from '@/lib/permissions/service'
+import { isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 import { isBranchValue } from '@/lib/branches'
 import { listCaPurchaseOrders } from '@/lib/ca/ca-data'
 
@@ -16,8 +16,7 @@ function normalizeBranch(value: string | null): string {
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const permission = await requirePermission(appUser, 'ca.view')
-  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+  if (!isCaViewRole(appUser.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   try {
     const { searchParams } = new URL(request.url)
     const from = searchParams.get('from')

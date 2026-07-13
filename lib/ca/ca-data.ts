@@ -99,8 +99,8 @@ export async function getCaBranchSummary(filters: Pick<CaFilters, 'from' | 'to'>
     SELECT branch_id AS branch, COUNT(*)::int AS cnt, COALESCE(SUM(requested_amount), 0)::float AS total
     FROM petty_cash_requests
     WHERE status = 'approved' AND deleted_at IS NULL
-      ${from ? sql`AND accounts_approved_at >= ${istStart(from)}` : sql``}
-      ${to ? sql`AND accounts_approved_at <= ${istEnd(to)}` : sql``}
+      ${from ? sql`AND accounts_approved_at >= ${istStart(from).toISOString()}::timestamptz` : sql``}
+      ${to ? sql`AND accounts_approved_at <= ${istEnd(to).toISOString()}::timestamptz` : sql``}
     GROUP BY branch_id`)
   for (const r of rows(fundingResult)) {
     const row = ensure(branchKey(String(r.branch || '')))
