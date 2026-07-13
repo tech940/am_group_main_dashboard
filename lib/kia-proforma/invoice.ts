@@ -607,19 +607,283 @@ export type KiaQuotePdfRow = KiaProformaInvoiceRow & {
 }
 
 export function buildKiaQuotePdf(row: KiaQuotePdfRow) {
-  const quoteRow: KiaProformaInvoiceRow = {
-    ...row,
-    id: row.quoteNumber,
-    proformaDate: row.quoteDate,
-    documentTitle: 'PRICE QUOTATION',
-    disclaimerLines: [
-      'THIS IS JUST A QUOTATION AND CANNOT BE USED FOR BANK PURPOSE.',
-      'This is only an indicative quote and is valid for 1 day only.',
-      'Prices, schemes, and availability may change.'
-    ]
+  const width = 595
+  const height = 842
+  const margin = 32
+  const borderX = 28
+  const borderY = 28
+  const borderW = width - borderX * 2
+  const borderH = height - borderY * 2
+  const pages: PdfPage[] = [{ commands: [] }]
+  let page = pages[0]
+  let y = height - margin
+
+  const addPage = () => {
+    page = { commands: [] }
+    pages.push(page)
+    y = height - borderY - 30
   }
-  return buildKiaProformaPdf(quoteRow)
+  const ensure = (space: number) => {
+    if (y - space < margin) addPage()
+  }
+  const textAt = (x: number, yy: number, value: string, size = 10, bold = false) => {
+    page.commands.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${yy} Td (${pdfEscape(value)}) Tj ET`)
+  }
+  const textAtRed = (x: number, yy: number, value: string, size = 10, bold = false) => {
+    page.commands.push(`1 0 0 rg BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${yy} Td (${pdfEscape(value)}) Tj ET 0 g`)
+  }
+  const getTextWidth = (text: string, size: number) => {
+    let textWidth = 0
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i]
+      if (char >= 'A' && char <= 'Z') {
+        textWidth += 0.62 * size
+      } else if (char === 'f' || char === 'i' || char === 'j' || char === 'l' || char === 't' || char === 'I' || char === '.' || char === ',' || char === ':' || char === '!' || char === ';' || char === '-' || char === '|' || char === '/') {
+        textWidth += 0.25 * size
+      } else if (char === 'w' || char === 'm' || char === 'W' || char === 'M' || char === '@' || char === '&') {
+        textWidth += 0.80 * size
+      } else if (char === ' ') {
+        textWidth += 0.28 * size
+      } else {
+        textWidth += 0.50 * size
+      }
+    }
+    return textWidth
+  }
+  const center = (yy: number, value: string, size = 10, bold = false) => {
+    const textWidth = getTextWidth(value, size)
+    textAt((width / 2) - (textWidth / 2), yy, value, size, bold)
+  }
+  const rect = (x: number, yy: number, w: number, h: number, fill = false) => {
+    page.commands.push(fill ? `0.91 g ${x} ${yy} ${w} ${h} re f 0 g` : `${x} ${yy} ${w} ${h} re S`)
+  }
+  const rectRed = (x: number, yy: number, w: number, h: number) => {
+    // Light red/pink fill: 1 0.92 0.92 rg
+    page.commands.push(`1 0.92 0.92 rg ${x} ${yy} ${w} ${h} re f 0 g`)
+    // Red border
+    page.commands.push(`1 0 0 RG ${x} ${yy} ${w} ${h} re S 0 G`)
+  }
+  const drawImage = (asset: PdfImageAsset | null, x: number, yy: number, w: number, h: number, opacityName?: string, rotate = 0) => {
+    if (!asset) return
+    const radians = (rotate * Math.PI) / 180
+    const cos = Math.cos(radians)
+    const sin = Math.sin(radians)
+    const gs = opacityName ? `/${opacityName} gs ` : ''
+    page.commands.push(`q ${gs}${(w * cos).toFixed(3)} ${(w * sin).toFixed(3)} ${(-h * sin).toFixed(3)} ${(h * cos).toFixed(3)} ${x.toFixed(3)} ${yy.toFixed(3)} cm /${asset.name} Do Q`)
+  }
+  const imageCommand = (asset: PdfImageAsset | null, x: number, yy: number, w: number, h: number, opacityName?: string, rotate = 0) => {
+    if (!asset) return null
+    const radians = (rotate * Math.PI) / 180
+    const cos = Math.cos(radians)
+    const sin = Math.sin(radians)
+    const gs = opacityName ? `/${opacityName} gs ` : ''
+    return `q ${gs}${(w * cos).toFixed(3)} ${(w * sin).toFixed(3)} ${(-h * sin).toFixed(3)} ${(h * cos).toFixed(3)} ${x.toFixed(3)} ${yy.toFixed(3)} cm /${asset.name} Do Q`
+  }
+  const WM_W = 310
+  const WM_H = 205
+  const WM_ROT = 40
+  const wmRad = (WM_ROT * Math.PI) / 180
+  const wmX = width / 2 - ((WM_W / 2) * Math.cos(wmRad) - (WM_H / 2) * Math.sin(wmRad))
+  const wmY = height / 2 - ((WM_W / 2) * Math.sin(wmRad) + (WM_H / 2) * Math.cos(wmRad))
+  const pageBaseCommands = () => [
+    ...(pdfWatermarkLogo ? [imageCommand(pdfWatermarkLogo, wmX, wmY, WM_W, WM_H, 'GSWatermark', WM_ROT) || ''] : []),
+    '0 g',
+    `1.1 w ${borderX} ${borderY} ${borderW} ${borderH} re S`,
+    '0.5 w',
+  ]
+
+  const address = addressBlock(row)
+  drawImage(pdfHeaderLogo, borderX + 32, y - 58, 74, 48)
+  drawImage(pdfHeaderLogo, width - borderX - 106, y - 58, 74, 48)
+  center(y - 10, address.name, 14, true)
+  y -= 20
+  address.pdfLines.forEach((line) => {
+    center(y, line, 8)
+    y -= 11
+  })
+  y -= 8
+  center(y, 'PRICE QUOTATION', 12, true)
+  y -= 28
+
+  // ── Red disclaimer box ──────────────────────────────────────────────────────
+  const disclaimerLines = [
+    'THIS IS JUST A QUOTATION AND CANNOT BE USED FOR BANK PURPOSE.',
+    'This is only an indicative quote and is valid for 1 day only.',
+    'Prices, schemes, and availability may change.',
+  ]
+  ensure(52)
+  const disclaimerH = 12 + disclaimerLines.length * 13
+  rectRed(margin, y - disclaimerH, width - margin * 2, disclaimerH)
+  disclaimerLines.forEach((line, index) => {
+    textAtRed(margin + 8, y - 13 - (index * 13), line, 8, index === 0)
+  })
+  y -= disclaimerH + 10
+
+  // ── Customer info table ─────────────────────────────────────────────────────
+  const infoRows = [
+    [`QUOTE NO. ${row.quoteNumber.slice(-8).toUpperCase()}`, `DATE: ${dateLabel(row.quoteDate)}`],
+    [`CUSTOMER NAME: ${text(row.customerName)}`, `Bank/Financer: ${text(row.bankName)}`],
+    [`ADDRESS: ${text(row.customerAddress)}`, `Branch: ${text(row.bankBranch || '')}`],
+    [`MOBILE NO.: ${text(row.mobileNumber)}`, `Email: ${text(row.customerEmail)}`],
+  ]
+  const tableX = margin
+  const tableW = width - margin * 2
+  const half = tableW / 2
+  infoRows.forEach((cells) => {
+    const wrappedCells = cells.map((cell, index) => wrap(cell, index === 0 ? 34 : 28))
+    const rowH = Math.max(...wrappedCells.map((lines) => lines.length)) * 11 + 10
+    ensure(rowH)
+    rect(tableX, y - rowH, half, rowH)
+    rect(tableX + half, y - rowH, half, rowH)
+    wrappedCells.forEach((lines, index) => {
+      lines.forEach((line, lineIndex) => textAt(tableX + (index * half) + 7, y - 14 - (lineIndex * 11), line, 8.5, lineIndex === 0 && line.includes(':')))
+    })
+    y -= rowH
+  })
+  y -= 14
+
+  // ── Particulars / Amount table ──────────────────────────────────────────────
+  ensure(24)
+  rect(tableX, y - 22, tableW * 0.6, 22, true)
+  rect(tableX + tableW * 0.6, y - 22, tableW * 0.4, 22, true)
+  rect(tableX, y - 22, tableW * 0.6, 22)
+  rect(tableX + tableW * 0.6, y - 22, tableW * 0.4, 22)
+  textAt(tableX + tableW * 0.3 - 34, y - 14, 'PARTICULARS', 10, true)
+  textAt(tableX + tableW * 0.8 - 34, y - 14, 'AMOUNT (INR)', 10, true)
+  y -= 22
+  FIELD_MAP.forEach((item) => {
+    const raw = row[item.key]
+    const display = item.money ? amount(raw) : text(raw) || '-'
+    const bold = item.key === 'totalCustomerCost' || item.key === 'grandTotalCost'
+    const leftWidth = tableW * 0.6
+    const rightWidth = tableW * 0.4
+    const labelLines = wrap(item.label, 34)
+    const valueLines = wrap(display, item.money ? 18 : 24)
+    const rowHeight = Math.max(labelLines.length, valueLines.length) * 11 + 8
+    ensure(rowHeight)
+    rect(tableX, y - rowHeight, leftWidth, rowHeight)
+    rect(tableX + leftWidth, y - rowHeight, rightWidth, rowHeight)
+    labelLines.forEach((line, index) => textAt(tableX + 8, y - 13 - (index * 11), line, 8.5, bold))
+    valueLines.forEach((line, index) => textAt(tableX + leftWidth + 8, y - 13 - (index * 11), line, 8.5, bold))
+    y -= rowHeight
+  })
+
+  // ── Dealer Stamp ────────────────────────────────────────────────────────────
+  y -= 16
+  ensure(56)
+  rect(width / 2 - 70, y - 42, 140, 42)
+  center(y - 16, 'Dealer Stamp', 10, true)
+  center(y - 30, '(Signature/Seal)', 9)
+  y -= 58
+
+  // ── Payment details ─────────────────────────────────────────────────────────
+  const dealershipCode = isJkBank(text(row.bankName)) ? 'JKB0993J003' : 'NOT APPLICABLE'
+  ensure(82)
+  center(y, 'PAYMENT DETAILS: All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD. Payable at Jammu', 9, true)
+  y -= 15
+  center(y, 'AC. No. 43418019645 | BRANCH: SBI-SME-JAMMU | IFSC: SBIN0014501', 8, true)
+  y -= 24
+  center(y, `DEALERSHIP CODE: ${dealershipCode}`, 9, true)
+  y -= 24
+  center(y, 'Sales: 9484211111 | Finance: 9484111111', 9)
+  y -= 13
+  center(y, 'Complete payment must be made 24 hours prior to delivery.', 9)
+  y -= 13
+
+  // ── Terms & Conditions ──────────────────────────────────────────────────────
+  y -= 8
+  ensure(14)
+  center(y, 'Terms & Conditions:', 9, true)
+  y -= 14
+
+  const terms = [
+    '1. The above prices are for Jammu until otherwise indicated.',
+    '2. Prices valid at the time of delivery will be applicable.',
+    '3. Any changes in taxes and/or levies shall be borne by the customer.',
+    '4. Prices and specifications are subject to change without notice.',
+    '5. Vehicle/model/color delivery subject to certain conditions.',
+    '6. Once the car is allotted & in transit, payment to be made within 3 days or the car will be transferred to next booking.',
+  ]
+  terms.forEach((line) => {
+    wrap(line, 85).forEach((part) => {
+      ensure(13)
+      center(y, part, 8)
+      y -= 12
+    })
+  })
+
+  // ── Footer docs ─────────────────────────────────────────────────────────────
+  y -= 8
+  ensure(56)
+  textAt(width / 2 - 140, y, 'For Exchange:', 9, true)
+  textAt(width / 2 - 140, y - 13, '- RC', 8)
+  textAt(width / 2 - 140, y - 25, '- Insurance (6 months old)', 8)
+  textAt(width / 2 - 140, y - 37, '- Chassis traces', 8)
+  textAt(width / 2 + 20, y, 'For Govt. Employee:', 9, true)
+  textAt(width / 2 + 20, y - 13, '- Aadhar Card', 8)
+  textAt(width / 2 + 20, y - 25, '- PAN Card', 8)
+  textAt(width / 2 + 20, y - 37, '- Latest Salary Slip', 8)
+  textAt(width / 2 + 20, y - 49, '- ID Card', 8)
+
+  // ── PDF object assembly ─────────────────────────────────────────────────────
+  const objects: Buffer[] = []
+  const addObject = (body: PdfObjectBody) => {
+    objects.push(Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8'))
+    return objects.length
+  }
+
+  const font1 = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+  const font2 = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>')
+  const imageObjectIds = new Map<string, number>()
+  const addImageObject = (asset: PdfImageAsset | null) => {
+    if (!asset) return null
+    const imageId = addObject(Buffer.concat([
+      Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${asset.width} /Height ${asset.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${asset.bytes.length} >>\nstream\n`, 'utf8'),
+      asset.bytes,
+      Buffer.from('\nendstream', 'utf8'),
+    ]))
+    imageObjectIds.set(asset.name, imageId)
+    return imageId
+  }
+  addImageObject(pdfHeaderLogo)
+  addImageObject(pdfWatermarkLogo)
+  const xObjectResources = imageObjectIds.size > 0
+    ? `/XObject << ${Array.from(imageObjectIds.entries()).map(([name, id]) => `/${name} ${id} 0 R`).join(' ')} >>`
+    : ''
+  const graphicsStateResources = '/ExtGState << /GSWatermark << /Type /ExtGState /CA 0.10 /ca 0.10 >> >>'
+  const pageObjectIds: number[] = []
+  pages.forEach((pdfPage) => {
+    const content = [...pageBaseCommands(), ...pdfPage.commands].join('\n')
+    const streamId = addObject(`<< /Length ${Buffer.byteLength(content, 'utf8')} >>\nstream\n${content}\nendstream`)
+    const pageId = addObject(`<< /Type /Page /Parent 0 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> ${xObjectResources} ${graphicsStateResources} >> /Contents ${streamId} 0 R >>`)
+    pageObjectIds.push(pageId)
+  })
+  const pagesId = addObject(`<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageObjectIds.length} >>`)
+  pageObjectIds.forEach((id) => {
+    objects[id - 1] = Buffer.from(objects[id - 1].toString('utf8').replace('/Parent 0 0 R', `/Parent ${pagesId} 0 R`), 'utf8')
+  })
+  const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`)
+
+  const chunks: Buffer[] = [Buffer.from('%PDF-1.4\n', 'utf8')]
+  const offsets: number[] = [0]
+  let byteOffset = chunks[0].length
+  objects.forEach((body, index) => {
+    offsets.push(byteOffset)
+    const prefix = Buffer.from(`${index + 1} 0 obj\n`, 'utf8')
+    const suffix = Buffer.from('\nendobj\n', 'utf8')
+    chunks.push(prefix, body, suffix)
+    byteOffset += prefix.length + body.length + suffix.length
+  })
+  const xref = byteOffset
+  let trailer = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  offsets.slice(1).forEach((offset) => {
+    trailer += `${String(offset).padStart(10, '0')} 00000 n \n`
+  })
+  trailer += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`
+  chunks.push(Buffer.from(trailer, 'utf8'))
+  return Buffer.concat(chunks)
 }
+
 
 
 export async function saveKiaProformaPdf(row: KiaProformaInvoiceRow) {
