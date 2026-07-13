@@ -268,8 +268,12 @@ export function Sidebar() {
 
   // Live sync: pick up Access-Map grants/revokes without a manual reload. We poll the effective
   // map (server-side, so it respects auth — unlike client realtime, which can't read the
-  // server-only permission tables under RLS) on a short interval and whenever the tab regains
-  // focus. router.refresh() only fires when the map actually changed, so idle tabs cost nothing.
+  // server-only permission tables under RLS) on an interval, and immediately whenever the tab
+  // regains focus / becomes visible. router.refresh() only fires when the map actually changed.
+  // Cost control (Vercel): the poll only fires while the tab is VISIBLE (background tabs stop
+  // polling), and the interval is 60s — Access-Map changes still propagate within 60s, or instantly
+  // when the user switches back to the tab (the focus/visibility handlers). This is the single
+  // biggest driver of /api/auth/permissions invocations, so keep it lazy.
   useEffect(() => {
     if (loading || !userRole) return
 
@@ -279,7 +283,9 @@ export function Sidebar() {
 
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisible)
-    const interval = window.setInterval(onChange, 15_000)
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') onChange()
+    }, 60_000)
 
     return () => {
       window.removeEventListener('focus', onFocus)

@@ -349,6 +349,29 @@ async function maybeSweepSoldAllocations() {
   }
 }
 
+// Debounced housekeeping: expire lapsed temporary allocations (#13/#14) and unpaid 48h dealer holds
+// (#12) at most once per window, instead of running a DB transaction + delete on EVERY read. The
+// scheduled script is the reliable global trigger; this just keeps interactive reads reasonably fresh
+// without burning Vercel CPU on every booking-detail / match-vehicle view. (Serverless: the timestamp
+// is per warm instance, which is exactly what we want — one sweep amortised across a burst of requests.)
+let lastReservationExpiryAt = 0
+const RESERVATION_EXPIRY_INTERVAL_MS = 2 * 60 * 1000
+async function maybeExpireKiaReservations() {
+  const now = Date.now()
+  if (now - lastReservationExpiryAt < RESERVATION_EXPIRY_INTERVAL_MS) return
+  lastReservationExpiryAt = now
+  try {
+    await expireKiaTemporaryAllocations()
+  } catch (error) {
+    console.error('Allocation-expiry sweep failed:', error)
+  }
+  try {
+    await expireKiaStockHolds()
+  } catch (error) {
+    console.error('Hold-expiry sweep failed:', error)
+  }
+}
+
 function listFilters(input: BookingListInput) {
   const filters = [isNull(kiaBookings.deletedAt)]
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
@@ -643,7 +666,8 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
 }
 
 export async function getKiaBookingDetail(id: string) {
-  await expireKiaTemporaryAllocations()
+  // Debounced: don't run an expiry transaction on every single detail view (Vercel CPU).
+  await maybeExpireKiaReservations()
   // Fire-and-forget, debounced: refresh "sold" flags for allotted vehicles gone from DMS stock.
   void maybeSweepSoldAllocations()
   const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
@@ -867,9 +891,9 @@ async function readMatchingVehicle(vinNumber: string) {
 }
 
 export async function getKiaBookingMatchingVehicles(id: string) {
-  await expireKiaTemporaryAllocations()
-  // Release any dealer holds past their 48h window so the freed VIN appears as matchable again.
-  await expireKiaStockHolds().catch((error) => console.error('Hold-expiry sweep failed:', error))
+  // Debounced: expire lapsed allocations + unpaid dealer holds so freed VINs become matchable, without
+  // running a transaction on every match-vehicle read.
+  await maybeExpireKiaReservations()
   const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
   if (!booking) throw new Error('Booking not found')
   if (!booking.proformaId) return []
