@@ -868,6 +868,8 @@ async function readMatchingVehicle(vinNumber: string) {
 
 export async function getKiaBookingMatchingVehicles(id: string) {
   await expireKiaTemporaryAllocations()
+  // Release any dealer holds past their 48h window so the freed VIN appears as matchable again.
+  await expireKiaStockHolds().catch((error) => console.error('Hold-expiry sweep failed:', error))
   const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
   if (!booking) throw new Error('Booking not found')
   if (!booking.proformaId) return []
@@ -1162,19 +1164,23 @@ async function readStockVehicleRow(vin: string) {
   return rows<{ vin_number: string; dealer_code: string | null; model: string | null; variant: string | null; color: string | null; engine_no: string | null; snapshot: JsonRecord }>(res)[0] || null
 }
 
-// #12 Put a stock vehicle on hold (Customer or Dealer). Modelled in kia_stock_local_statuses like
-// 'retail' — one row per VIN, carrying a vehicle_snapshot so the hold survives the VIN leaving DMS.
-// A held VIN is excluded from the matchable list + allot validator, so no one else can allot it.
+// #12 The hold reservation window: a dealer hold auto-releases back to stock after this many hours
+// unless payment is recorded within it (exactly like an unpaid temporary allocation).
+export const KIA_HOLD_WINDOW_HOURS = 48
+
+// #12 Put a stock vehicle on HOLD for a dealer. Modelled in kia_stock_local_statuses (local_status
+// 'hold_dealer') with a vehicle_snapshot so the hold survives the VIN leaving DMS. A held VIN is
+// excluded from the matchable list + allot validator, so no one else can allot it. The hold expires
+// KIA_HOLD_WINDOW_HOURS after marked_at UNLESS payment is recorded (stock_status_at_mark = 'PAID') —
+// see expireKiaStockHolds / markKiaStockHoldPaymentReceived. (Customer holds were removed by request.)
 export async function holdKiaStockVehicle(
   vinNumber: string,
-  opts: { holdFor: 'customer' | 'dealer'; bookingId?: string | null; customerName?: string | null; notes?: string | null },
+  opts: { notes?: string | null },
   appUser: AppUser,
 ) {
   if (!canAllotKiaVehicle(appUser.role)) throw new Error('You are not allowed to hold stock vehicles.')
   const vin = text(vinNumber).toUpperCase()
   if (!vin) throw new Error('VIN is required')
-  const holdFor = opts.holdFor === 'dealer' ? 'dealer' : 'customer'
-  const localStatus = holdFor === 'dealer' ? 'hold_dealer' : 'hold_customer'
 
   const [activeVin] = await db.select({ id: kiaVehicleAllocations.id }).from(kiaVehicleAllocations)
     .where(and(eq(kiaVehicleAllocations.vinNumber, vin), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
@@ -1185,48 +1191,73 @@ export async function holdKiaStockVehicle(
   if (existing?.localStatus === 'retail') throw new Error('This vehicle is already retailed and cannot be held.')
 
   const vehicle = await readStockVehicleRow(vin)
-  let customerName = nullableText(opts.customerName)
-  let bookingNo: string | null = null
-  if (holdFor === 'customer' && opts.bookingId) {
-    const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, opts.bookingId), isNull(kiaBookings.deletedAt))).limit(1)
-    if (booking) { customerName = customerName || booking.customerName; bookingNo = booking.bookingNumber }
-  }
-
   const base = {
-    localStatus,
+    localStatus: 'hold_dealer',
     dealerCode: nullableText(vehicle?.dealer_code),
     model: nullableText(vehicle?.model),
     variant: nullableText(vehicle?.variant),
     color: nullableText(vehicle?.color),
     engineNo: nullableText(vehicle?.engine_no),
     vehicleSnapshot: (vehicle?.snapshot || {}) as JsonRecord,
-    bookingNo,
-    customerName,
     notes: nullableText(opts.notes),
+    // A fresh hold is unpaid — clear any prior PAID marker so the 48h window restarts.
+    stockStatusAtMark: null,
     markedBy: appUser.id,
     markedByName: appUser.fullName,
     markedByRole: appUser.role,
     updatedAt: new Date(),
   }
-  await db.insert(kiaStockLocalStatuses).values({ vinNumber: vin, ...base }).onConflictDoUpdate({
+  await db.insert(kiaStockLocalStatuses).values({ vinNumber: vin, ...base, markedAt: new Date() }).onConflictDoUpdate({
     target: kiaStockLocalStatuses.vinNumber,
+    // markedAt is the hold-start clock — reset it on a new hold so the 48h window restarts.
     set: { ...base, markedAt: new Date() },
   })
-  return { vinNumber: vin, holdFor }
+  return { vinNumber: vin, holdFor: 'dealer' }
 }
 
-// Release a Customer/Dealer hold — deletes the local-status row so the VIN becomes matchable again.
+// Release a dealer hold — deletes the local-status row so the VIN becomes matchable again.
 export async function releaseKiaStockHold(vinNumber: string, appUser: AppUser) {
   if (!canAllotKiaVehicle(appUser.role)) throw new Error('You are not allowed to release holds.')
   const vin = text(vinNumber).toUpperCase()
   if (!vin) throw new Error('VIN is required')
   const [existing] = await db.select({ localStatus: kiaStockLocalStatuses.localStatus }).from(kiaStockLocalStatuses)
     .where(eq(kiaStockLocalStatuses.vinNumber, vin)).limit(1)
-  if (!existing || (existing.localStatus !== 'hold_customer' && existing.localStatus !== 'hold_dealer')) {
+  if (!existing || (existing.localStatus !== 'hold_dealer' && existing.localStatus !== 'hold_customer')) {
     throw new Error('This vehicle is not on hold.')
   }
   await db.delete(kiaStockLocalStatuses).where(eq(kiaStockLocalStatuses.vinNumber, vin))
   return { vinNumber: vin, released: true }
+}
+
+// #12 Record payment against a held vehicle within the 48h window. Marks stock_status_at_mark='PAID'
+// so expireKiaStockHolds keeps it (it no longer auto-releases). The vehicle stays held for the dealer.
+export async function markKiaStockHoldPaymentReceived(vinNumber: string, appUser: AppUser) {
+  if (!canAllotKiaVehicle(appUser.role)) throw new Error('You are not allowed to update holds.')
+  const vin = text(vinNumber).toUpperCase()
+  if (!vin) throw new Error('VIN is required')
+  const [existing] = await db.select({ localStatus: kiaStockLocalStatuses.localStatus }).from(kiaStockLocalStatuses)
+    .where(eq(kiaStockLocalStatuses.vinNumber, vin)).limit(1)
+  if (!existing || (existing.localStatus !== 'hold_dealer' && existing.localStatus !== 'hold_customer')) {
+    throw new Error('This vehicle is not on hold.')
+  }
+  await db.update(kiaStockLocalStatuses)
+    .set({ stockStatusAtMark: 'PAID', updatedAt: new Date() })
+    .where(eq(kiaStockLocalStatuses.vinNumber, vin))
+  return { vinNumber: vin, paid: true }
+}
+
+// #12 Auto-release holds that were NOT paid within the 48h window — the row is deleted so the VIN
+// returns to matchable stock, exactly like an unpaid temporary allocation. 'PAID' holds are kept.
+export async function expireKiaStockHolds(): Promise<number> {
+  const res = await db.execute(sql`
+    DELETE FROM kia_stock_local_statuses
+    WHERE local_status IN ('hold_dealer', 'hold_customer')
+      AND coalesce(stock_status_at_mark, '') <> 'PAID'
+      AND marked_at IS NOT NULL
+      AND marked_at + make_interval(hours => ${KIA_HOLD_WINDOW_HOURS}) <= now()
+    RETURNING vin_number
+  `)
+  return rows(res).length
 }
 
 // #8 Allot a BBND (Booked-But-Not-in-DMS) vehicle: register the manually-entered VIN in

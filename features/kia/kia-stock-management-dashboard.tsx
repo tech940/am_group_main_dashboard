@@ -121,6 +121,8 @@ type HeldRow = {
   notes: string | null
   marked_by_name: string | null
   marked_at: string | null
+  hold_expires_at: string | null
+  paid: boolean
   vehicle_snapshot: Record<string, unknown> | null
 }
 
@@ -222,11 +224,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const [transferDealerOther, setTransferDealerOther] = useState('')
   const [transferNotes, setTransferNotes] = useState('')
 
-  // #12 Hold (Customer / Dealer) dialog state.
+  // #12 Dealer-hold dialog state.
   const [holdDialogOpen, setHoldDialogOpen] = useState(false)
   const [holdVin, setHoldVin] = useState('')
-  const [holdFor, setHoldFor] = useState<'customer' | 'dealer'>('customer')
-  const [holdBookingId, setHoldBookingId] = useState('')
   const [holdNotes, setHoldNotes] = useState('')
 
   // #8 BBND (Booked-But-Not-in-DMS) allot dialog state.
@@ -358,9 +358,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
 
-  // #12 Hold / release-hold. #8 BBND allot.
+  // #12 Hold (dealer) / release-hold / payment-received. #8 BBND allot.
   const holdMutation = useMutation({
-    mutationFn: async (payload: { vinNumber: string; holdFor: 'customer' | 'dealer'; bookingId?: string; notes?: string }) => {
+    mutationFn: async (payload: { vinNumber: string; notes?: string }) => {
       const res = await fetch('/api/brands/kia/stock/hold', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -370,9 +370,26 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       return res.json()
     },
     onSuccess: () => {
-      toast({ title: 'Vehicle held', description: 'The vehicle is on hold and no longer matchable.', variant: 'success' })
+      toast({ title: 'Vehicle held for dealer', description: 'On hold for 48h — record payment within the window or it returns to stock.', variant: 'success' })
       setHoldDialogOpen(false)
-      setHoldBookingId(''); setHoldNotes('')
+      setHoldNotes('')
+      queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+    },
+    onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
+  })
+
+  const holdPaymentMutation = useMutation({
+    mutationFn: async (vinNumber: string) => {
+      const res = await fetch('/api/brands/kia/stock/hold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'payment', vinNumber }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Failed to record payment')
+      return res.json()
+    },
+    onSuccess: () => {
+      toast({ title: 'Payment recorded', description: 'The hold is confirmed and will not auto-release.', variant: 'success' })
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
@@ -921,8 +938,6 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                                 className="h-7 rounded-lg border-amber-200 px-2 text-[10px] font-black text-amber-700 hover:bg-amber-50"
                                 onClick={() => {
                                   setHoldVin(row.vin_number)
-                                  setHoldFor('customer')
-                                  setHoldBookingId('')
                                   setHoldNotes('')
                                   setHoldDialogOpen(true)
                                 }}
@@ -1160,9 +1175,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
         <DialogContent className="kia-premium max-w-md rounded-3xl border-0 bg-white p-6 shadow-2xl">
           <LoaderOverlay show={holdMutation.isPending} variant="generic" label="Holding vehicle…" sublabel="Marking the VIN on hold" />
           <DialogHeader className="space-y-2">
-            <DialogTitle className="text-lg font-extrabold tracking-tight text-[var(--kia-text)]">Hold Vehicle</DialogTitle>
+            <DialogTitle className="text-lg font-extrabold tracking-tight text-[var(--kia-text)]">Hold Vehicle for Dealer</DialogTitle>
             <DialogDescription className="text-xs font-medium leading-relaxed text-[var(--kia-text-soft)]">
-              Put this VIN on hold for a customer or a dealer. A held vehicle can&apos;t be allotted until released.
+              Hold this VIN for a dealer. It is reserved for 48 hours — record payment within the window or it automatically returns to stock.
             </DialogDescription>
           </DialogHeader>
 
@@ -1171,60 +1186,19 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             <code className="mt-1 block font-mono text-xs font-extrabold">{holdVin}</code>
           </div>
 
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-              {(['customer', 'dealer'] as const).map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() => setHoldFor(opt)}
-                  className={cn(
-                    'h-10 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-colors',
-                    holdFor === opt ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
-                  )}
-                >
-                  {opt === 'customer' ? 'For Customer' : 'For Dealer'}
-                </button>
-              ))}
-            </div>
-
-            {holdFor === 'customer' && (
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">Link a Booking (optional)</label>
-                <Select value={holdBookingId} onValueChange={setHoldBookingId}>
-                  <SelectTrigger className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold">
-                    <SelectValue placeholder="Choose a booking…" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border border-slate-200 bg-white shadow-xl max-h-[250px] z-[120]">
-                    {bookingsList.map((b) => (
-                      <SelectItem key={b.id} value={b.id} className="text-xs p-3">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="font-black text-slate-950 text-[11px] uppercase">{b.bookingNumber}</div>
-                          <div className="font-bold text-slate-800 text-[11px]">{b.customerName}</div>
-                          <div className="text-[10px] text-slate-500 font-semibold">{b.model} • {b.variant}</div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                    {bookingsList.length === 0 && <div className="text-xs font-semibold text-slate-400 text-center py-4">No bookings available.</div>}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">{holdFor === 'dealer' ? 'Dealer / Reason' : 'Notes (optional)'}</label>
-              <Input value={holdNotes} onChange={(e) => setHoldNotes(e.target.value)} placeholder={holdFor === 'dealer' ? 'Dealer name / reason for hold' : 'Optional note'} className="h-11 rounded-xl border-slate-200 text-xs" />
-            </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">Dealer / Reason</label>
+            <Input value={holdNotes} onChange={(e) => setHoldNotes(e.target.value)} placeholder="Dealer name / reason for hold" className="h-11 rounded-xl border-slate-200 text-xs" />
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0 mt-5 pt-2 border-t border-slate-100">
             <Button variant="outline" className="h-10 rounded-xl text-xs font-black px-4" onClick={() => setHoldDialogOpen(false)}>Cancel</Button>
             <Button
               className="h-10 rounded-xl px-5 text-xs font-bold"
-              disabled={holdMutation.isPending || (holdFor === 'dealer' && !holdNotes.trim())}
-              onClick={() => holdMutation.mutate({ vinNumber: holdVin, holdFor, bookingId: holdFor === 'customer' ? (holdBookingId || undefined) : undefined, notes: holdNotes || undefined })}
+              disabled={holdMutation.isPending || !holdNotes.trim()}
+              onClick={() => holdMutation.mutate({ vinNumber: holdVin, notes: holdNotes || undefined })}
             >
-              {holdMutation.isPending ? 'Holding…' : 'Confirm Hold'}
+              {holdMutation.isPending ? 'Holding…' : 'Confirm Hold (48h)'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1936,15 +1910,15 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
           </div>
         )}
 
-        {/* #12 Held vehicles — Customer / Dealer holds with a Release control. */}
+        {/* #12 Dealer holds — 48h reservation with Payment Received / Release controls. */}
         {data?.heldVehicles && data.heldVehicles.length > 0 && (
           <div className="mb-6 overflow-hidden rounded-2xl border border-amber-300 bg-amber-50/40 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 px-4 py-3">
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-800">On Hold</span>
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-800">Dealer Holds</span>
                 <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-black text-amber-800">{data.heldVehicles.length}</span>
               </div>
-              <span className="text-[10px] font-semibold text-amber-700">Held for a customer or dealer — not matchable until released.</span>
+              <span className="text-[10px] font-semibold text-amber-700">Reserved for a dealer — record payment within 48h or it returns to stock automatically.</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-[10px]">
@@ -1952,33 +1926,59 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                   <tr className="bg-amber-100 text-[9px] font-black uppercase tracking-[0.12em] text-amber-800">
                     <th className="px-4 py-2.5">VIN</th>
                     <th className="px-4 py-2.5">Car</th>
-                    <th className="px-4 py-2.5">Hold Type</th>
-                    <th className="px-4 py-2.5">For</th>
+                    <th className="px-4 py-2.5">Dealer / Reason</th>
                     <th className="px-4 py-2.5">By</th>
-                    <th className="px-4 py-2.5 text-right">Action</th>
+                    <th className="px-4 py-2.5">Window</th>
+                    <th className="px-4 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.heldVehicles.map((v) => (
-                    <tr key={v.vin_number} className="border-t border-amber-100 text-slate-700">
-                      <td className="px-4 py-2.5 font-mono font-bold">{v.vin_number}</td>
-                      <td className="px-4 py-2.5 font-semibold">{[v.model, v.variant, v.color].filter(Boolean).join(' · ') || '—'}</td>
-                      <td className="px-4 py-2.5">{v.local_status === 'hold_dealer' ? 'Dealer' : 'Customer'}</td>
-                      <td className="px-4 py-2.5">{v.customer_name || v.notes || '—'}</td>
-                      <td className="px-4 py-2.5">{v.marked_by_name || '—'}</td>
-                      <td className="px-4 py-2.5 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 rounded-lg border-slate-200 px-2.5 text-[10px] font-black text-slate-800"
-                          disabled={releaseHoldMutation.isPending}
-                          onClick={() => releaseHoldMutation.mutate(v.vin_number)}
-                        >
-                          Release
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {data.heldVehicles.map((v) => {
+                    const expMs = v.hold_expires_at ? new Date(v.hold_expires_at).getTime() : NaN
+                    const hoursLeft = Number.isFinite(expMs) ? Math.round((expMs - Date.now()) / 3_600_000) : null
+                    return (
+                      <tr key={v.vin_number} className="border-t border-amber-100 text-slate-700">
+                        <td className="px-4 py-2.5 font-mono font-bold">{v.vin_number}</td>
+                        <td className="px-4 py-2.5 font-semibold">{[v.model, v.variant, v.color].filter(Boolean).join(' · ') || '—'}</td>
+                        <td className="px-4 py-2.5">{v.notes || v.customer_name || '—'}</td>
+                        <td className="px-4 py-2.5">{v.marked_by_name || '—'}</td>
+                        <td className="px-4 py-2.5">
+                          {v.paid ? (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-black text-emerald-700">
+                              <CheckCircle2 className="h-2.5 w-2.5" /> PAID
+                            </span>
+                          ) : hoursLeft == null ? '—' : hoursLeft <= 0 ? (
+                            <span className="font-black text-rose-600">expiring…</span>
+                          ) : (
+                            <span className="font-bold text-amber-700">{hoursLeft}h left</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {!v.paid && (
+                              <Button
+                                size="sm"
+                                className="h-7 rounded-lg bg-emerald-600 px-2.5 text-[10px] font-black text-white hover:bg-emerald-700"
+                                disabled={holdPaymentMutation.isPending}
+                                onClick={() => holdPaymentMutation.mutate(v.vin_number)}
+                              >
+                                Payment Received
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 rounded-lg border-slate-200 px-2.5 text-[10px] font-black text-slate-800"
+                              disabled={releaseHoldMutation.isPending}
+                              onClick={() => releaseHoldMutation.mutate(v.vin_number)}
+                            >
+                              Release
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

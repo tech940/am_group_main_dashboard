@@ -5,6 +5,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 import { requirePermission } from '@/lib/permissions/service'
+import { expireKiaStockHolds, KIA_HOLD_WINDOW_HOURS } from '@/lib/kia/bookings'
 
 export const dynamic = 'force-dynamic'
 
@@ -264,16 +265,21 @@ export async function GET(request: Request) {
       console.error('transferMissing overlay skipped (migration 0013 may be pending):', err)
     }
 
-    // 6d. #12 Held vehicles — Customer / Dealer holds recorded in kia_stock_local_statuses. Shown with
-    // a Release control; retained via the snapshot so they persist even once the VIN leaves DMS.
+    // 6d. #12 Dealer holds recorded in kia_stock_local_statuses, shown with a 48h countdown + Payment
+    // Received / Release controls. First auto-release any unpaid holds past their window (returns the
+    // VIN to stock). hold_expires_at = marked_at + 48h; paid = stock_status_at_mark 'PAID'.
     let heldVehicles: unknown[] = []
     try {
+      await expireKiaStockHolds()
       const heldDealerClause = dealerScope && dealerScope.length
         ? `AND ls.dealer_code IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''")}'`).join(', ')})`
         : ''
       heldVehicles = await db.execute(sql.raw(`
         SELECT ls.vin_number, ls.local_status, ls.dealer_code, ls.model, ls.variant, ls.color,
-               ls.customer_name, ls.booking_no, ls.notes, ls.marked_by_name, ls.marked_at, ls.vehicle_snapshot
+               ls.customer_name, ls.booking_no, ls.notes, ls.marked_by_name, ls.marked_at,
+               (ls.marked_at + interval '${KIA_HOLD_WINDOW_HOURS} hours') AS hold_expires_at,
+               (coalesce(ls.stock_status_at_mark, '') = 'PAID') AS paid,
+               ls.vehicle_snapshot
         FROM kia_stock_local_statuses ls
         WHERE ls.local_status IN ('hold_customer', 'hold_dealer')
           ${heldDealerClause}

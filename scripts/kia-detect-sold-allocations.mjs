@@ -13,6 +13,18 @@ async function main() {
   if (!url) throw new Error('DATABASE_URL is not configured')
   const sql = postgres(url, { max: 1, prepare: false })
   try {
+    // 0. #12 Auto-release dealer holds unpaid past their 48h window — the VIN returns to matchable
+    //    stock (row deleted), exactly like an unpaid temporary allocation. 'PAID' holds are kept.
+    const releasedHolds = await sql.unsafe(`
+      DELETE FROM kia_stock_local_statuses
+      WHERE local_status IN ('hold_dealer', 'hold_customer')
+        AND coalesce(stock_status_at_mark, '') <> 'PAID'
+        AND marked_at IS NOT NULL
+        AND marked_at + interval '48 hours' <= now()
+      RETURNING vin_number
+    `)
+    if (releasedHolds.length) console.log(`[hold-expiry] released ${releasedHolds.length} unpaid hold(s) back to stock.`)
+
     // 1. Refresh "last seen in stock" for active allocations whose VIN is currently present. A VIN
     //    must have been seen at least once before it can be marked missing.
     await sql.unsafe(`
