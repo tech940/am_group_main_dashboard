@@ -84,6 +84,8 @@ type SoldMissingRow = {
   engine_no: string | null
   dealer_code: string | null
   stock_missing_at: string | null
+  // Present on the "No Payment Received" overlay (reservation-window expiry) instead of stock_missing_at.
+  expires_at?: string | null
   allocated_at: string | null
   vehicle_snapshot: Record<string, unknown> | null
   booking_id: string | null
@@ -91,6 +93,35 @@ type SoldMissingRow = {
   customer_name: string | null
   consultant_name: string | null
   booking_status: string | null
+}
+
+type TransferMissingRow = {
+  transfer_id: string
+  vin_number: string | null
+  dealer_code: string | null
+  from_dealer_code: string | null
+  stock_missing_at: string | null
+  requested_at: string | null
+  vehicle_snapshot: Record<string, unknown> | null
+  booking_id: string | null
+  booking_number: string | null
+  customer_name: string | null
+  booking_status: string | null
+}
+
+type HeldRow = {
+  vin_number: string
+  local_status: string
+  dealer_code: string | null
+  model: string | null
+  variant: string | null
+  color: string | null
+  customer_name: string | null
+  booking_no: string | null
+  notes: string | null
+  marked_by_name: string | null
+  marked_at: string | null
+  vehicle_snapshot: Record<string, unknown> | null
 }
 
 type StockPayload = {
@@ -103,9 +134,15 @@ type StockPayload = {
     delivered: number
     transfers: number
     sold_missing?: number
+    no_payment?: number
+    transfer_missing?: number
+    held?: number
   }
   rows: StockRow[]
   soldMissing?: SoldMissingRow[]
+  noPayment?: SoldMissingRow[]
+  transferMissing?: TransferMissingRow[]
+  heldVehicles?: HeldRow[]
   activities: {
     id: string
     title: string
@@ -184,6 +221,21 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const [transferDealer, setTransferDealer] = useState('')
   const [transferDealerOther, setTransferDealerOther] = useState('')
   const [transferNotes, setTransferNotes] = useState('')
+
+  // #12 Hold (Customer / Dealer) dialog state.
+  const [holdDialogOpen, setHoldDialogOpen] = useState(false)
+  const [holdVin, setHoldVin] = useState('')
+  const [holdFor, setHoldFor] = useState<'customer' | 'dealer'>('customer')
+  const [holdBookingId, setHoldBookingId] = useState('')
+  const [holdNotes, setHoldNotes] = useState('')
+
+  // #8 BBND (Booked-But-Not-in-DMS) allot dialog state.
+  const [bbndDialogOpen, setBbndDialogOpen] = useState(false)
+  const [bbndBookingId, setBbndBookingId] = useState('')
+  const [bbndVin, setBbndVin] = useState('')
+  const [bbndModel, setBbndModel] = useState('')
+  const [bbndVariant, setBbndVariant] = useState('')
+  const [bbndColor, setBbndColor] = useState('')
 
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [paymentBookingId, setPaymentBookingId] = useState('')
@@ -301,6 +353,62 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setTransferDialogOpen(false)
       setTransferNotes('')
       setStockSuccess('transfer')
+      queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+    },
+    onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
+  })
+
+  // #12 Hold / release-hold. #8 BBND allot.
+  const holdMutation = useMutation({
+    mutationFn: async (payload: { vinNumber: string; holdFor: 'customer' | 'dealer'; bookingId?: string; notes?: string }) => {
+      const res = await fetch('/api/brands/kia/stock/hold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Failed to hold vehicle')
+      return res.json()
+    },
+    onSuccess: () => {
+      toast({ title: 'Vehicle held', description: 'The vehicle is on hold and no longer matchable.', variant: 'success' })
+      setHoldDialogOpen(false)
+      setHoldBookingId(''); setHoldNotes('')
+      queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+    },
+    onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
+  })
+
+  const releaseHoldMutation = useMutation({
+    mutationFn: async (vinNumber: string) => {
+      const res = await fetch('/api/brands/kia/stock/hold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'release', vinNumber }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Failed to release hold')
+      return res.json()
+    },
+    onSuccess: () => {
+      toast({ title: 'Hold released', description: 'The vehicle is matchable again.', variant: 'success' })
+      queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+    },
+    onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
+  })
+
+  const bbndMutation = useMutation({
+    mutationFn: async (payload: { bookingId: string; vinNumber: string; model: string; variant: string; color: string }) => {
+      const res = await fetch('/api/brands/kia/stock/bbnd-allot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Failed to allot BBND vehicle')
+      return res.json()
+    },
+    onSuccess: () => {
+      toast({ title: 'BBND vehicle allotted', description: 'The vehicle was allotted and saved durably.', variant: 'success' })
+      setBbndDialogOpen(false)
+      setBbndBookingId(''); setBbndVin(''); setBbndModel(''); setBbndVariant(''); setBbndColor('')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
@@ -712,6 +820,16 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                         <code className="mt-0.5 inline-block font-mono text-[9px] bg-slate-100 px-1 py-0.5 rounded border border-slate-200 text-slate-600">
                           {row.vin_number}
                         </code>
+                        {/* Confirmed booking against this vehicle (allotted) — an unmistakable flag. */}
+                        {row.booking_id && (
+                          <span
+                            className="mt-1.5 flex w-fit items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-black text-emerald-700"
+                            title={`Booked against ${row.booking_number ? `#${row.booking_number}` : 'a booking'}${row.customer_name ? ` · ${row.customer_name}` : ''}`}
+                          >
+                            <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-emerald-600" />
+                            <span>BOOKED{row.booking_number ? ` · #${row.booking_number}` : ''}</span>
+                          </span>
+                        )}
                         {(() => {
                           const count = getMatchingBookingsCount(row)
                           if (count === 0) return null
@@ -786,16 +904,30 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                               >
                                 Allot
                               </Button>
-                              <Button 
-                                size="sm" 
-                                variant="outline" 
+                              <Button
+                                size="sm"
+                                variant="outline"
                                 className="h-7 rounded-lg border-slate-200 px-2 text-[10px] font-black text-slate-800"
-                                onClick={() => { 
+                                onClick={() => {
                                   setTransferVin(row.vin_number)
-                                  setTransferDialogOpen(true) 
+                                  setTransferDialogOpen(true)
                                 }}
                               >
                                 Transfer
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 rounded-lg border-amber-200 px-2 text-[10px] font-black text-amber-700 hover:bg-amber-50"
+                                onClick={() => {
+                                  setHoldVin(row.vin_number)
+                                  setHoldFor('customer')
+                                  setHoldBookingId('')
+                                  setHoldNotes('')
+                                  setHoldDialogOpen(true)
+                                }}
+                              >
+                                Hold
                               </Button>
                             </>
                           ) : row.booking_status === 'ready_delivery' ? (
@@ -1018,6 +1150,135 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
               onClick={() => allotMutation.mutate({ bookingId: selectedBookingId, vin: allotVin })}
             >
               {allotMutation.isPending ? 'Allotting…' : 'Confirm Allotment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* #12 HOLD DIALOG (Customer / Dealer) */}
+      <Dialog open={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
+        <DialogContent className="kia-premium max-w-md rounded-3xl border-0 bg-white p-6 shadow-2xl">
+          <LoaderOverlay show={holdMutation.isPending} variant="generic" label="Holding vehicle…" sublabel="Marking the VIN on hold" />
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="text-lg font-extrabold tracking-tight text-[var(--kia-text)]">Hold Vehicle</DialogTitle>
+            <DialogDescription className="text-xs font-medium leading-relaxed text-[var(--kia-text-soft)]">
+              Put this VIN on hold for a customer or a dealer. A held vehicle can&apos;t be allotted until released.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="my-4 rounded-2xl border p-4" style={toneSoftStyle('accent')}>
+            <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">Selected VIN</div>
+            <code className="mt-1 block font-mono text-xs font-extrabold">{holdVin}</code>
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              {(['customer', 'dealer'] as const).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setHoldFor(opt)}
+                  className={cn(
+                    'h-10 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-colors',
+                    holdFor === opt ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
+                  )}
+                >
+                  {opt === 'customer' ? 'For Customer' : 'For Dealer'}
+                </button>
+              ))}
+            </div>
+
+            {holdFor === 'customer' && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">Link a Booking (optional)</label>
+                <Select value={holdBookingId} onValueChange={setHoldBookingId}>
+                  <SelectTrigger className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold">
+                    <SelectValue placeholder="Choose a booking…" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border border-slate-200 bg-white shadow-xl max-h-[250px] z-[120]">
+                    {bookingsList.map((b) => (
+                      <SelectItem key={b.id} value={b.id} className="text-xs p-3">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="font-black text-slate-950 text-[11px] uppercase">{b.bookingNumber}</div>
+                          <div className="font-bold text-slate-800 text-[11px]">{b.customerName}</div>
+                          <div className="text-[10px] text-slate-500 font-semibold">{b.model} • {b.variant}</div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                    {bookingsList.length === 0 && <div className="text-xs font-semibold text-slate-400 text-center py-4">No bookings available.</div>}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">{holdFor === 'dealer' ? 'Dealer / Reason' : 'Notes (optional)'}</label>
+              <Input value={holdNotes} onChange={(e) => setHoldNotes(e.target.value)} placeholder={holdFor === 'dealer' ? 'Dealer name / reason for hold' : 'Optional note'} className="h-11 rounded-xl border-slate-200 text-xs" />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 mt-5 pt-2 border-t border-slate-100">
+            <Button variant="outline" className="h-10 rounded-xl text-xs font-black px-4" onClick={() => setHoldDialogOpen(false)}>Cancel</Button>
+            <Button
+              className="h-10 rounded-xl px-5 text-xs font-bold"
+              disabled={holdMutation.isPending || (holdFor === 'dealer' && !holdNotes.trim())}
+              onClick={() => holdMutation.mutate({ vinNumber: holdVin, holdFor, bookingId: holdFor === 'customer' ? (holdBookingId || undefined) : undefined, notes: holdNotes || undefined })}
+            >
+              {holdMutation.isPending ? 'Holding…' : 'Confirm Hold'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* #8 BBND ALLOT DIALOG (Booked-But-Not-in-DMS) */}
+      <Dialog open={bbndDialogOpen} onOpenChange={setBbndDialogOpen}>
+        <DialogContent className="kia-premium max-w-md rounded-3xl border-0 bg-white p-6 shadow-2xl">
+          <LoaderOverlay show={bbndMutation.isPending} variant="vin-match" label="Allotting BBND…" sublabel="Registering the vehicle and linking the booking" />
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="text-lg font-extrabold tracking-tight text-[var(--kia-text)]">Allot BBND Vehicle</DialogTitle>
+            <DialogDescription className="text-xs font-medium leading-relaxed text-[var(--kia-text-soft)]">
+              Allot a Booked-But-Not-in-DMS vehicle: enter the VIN and details, and link it to an approved booking. It is saved durably like an allotment.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 my-3">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">Approved Booking</label>
+              <Select value={bbndBookingId} onValueChange={setBbndBookingId}>
+                <SelectTrigger className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold"><SelectValue placeholder="Choose an approved booking…" /></SelectTrigger>
+                <SelectContent className="rounded-xl border border-slate-200 bg-white shadow-xl max-h-[250px] z-[120]">
+                  {bookingsList.map((b) => (
+                    <SelectItem key={b.id} value={b.id} className="text-xs p-3">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="font-black text-slate-950 text-[11px] uppercase">{b.bookingNumber}</div>
+                        <div className="font-bold text-slate-800 text-[11px]">{b.customerName}</div>
+                        <div className="text-[10px] text-slate-500 font-semibold">{b.model} • {b.variant}</div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                  {bookingsList.length === 0 && <div className="text-xs font-semibold text-slate-400 text-center py-4">No bookings available.</div>}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 block">VIN Number</label>
+              <Input value={bbndVin} onChange={(e) => setBbndVin(e.target.value.toUpperCase())} placeholder="Full VIN" className="h-11 rounded-xl border-slate-200 text-xs font-mono" />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Input value={bbndModel} onChange={(e) => setBbndModel(e.target.value)} placeholder="Model" className="h-11 rounded-xl border-slate-200 text-xs" />
+              <Input value={bbndVariant} onChange={(e) => setBbndVariant(e.target.value)} placeholder="Variant" className="h-11 rounded-xl border-slate-200 text-xs" />
+              <Input value={bbndColor} onChange={(e) => setBbndColor(e.target.value)} placeholder="Color" className="h-11 rounded-xl border-slate-200 text-xs" />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 mt-4 pt-2 border-t border-slate-100">
+            <Button variant="outline" className="h-10 rounded-xl text-xs font-black px-4" onClick={() => setBbndDialogOpen(false)}>Cancel</Button>
+            <Button
+              className="h-10 rounded-xl px-5 text-xs font-bold"
+              disabled={bbndMutation.isPending || !bbndBookingId || !bbndVin.trim()}
+              onClick={() => bbndMutation.mutate({ bookingId: bbndBookingId, vinNumber: bbndVin.trim(), model: bbndModel.trim(), variant: bbndVariant.trim(), color: bbndColor.trim() })}
+            >
+              {bbndMutation.isPending ? 'Allotting…' : 'Allot BBND'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1590,6 +1851,151 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             </div>
           </div>
         )}
+
+        {/* No Payment Received — allocations kept after the reservation window lapsed without payment
+            (#13). Retained via the allocation snapshot so they persist even once the VIN leaves DMS. */}
+        {data?.noPayment && data.noPayment.length > 0 && (
+          <div className="mb-6 overflow-hidden rounded-2xl border border-rose-300 bg-rose-50/60 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-rose-800">No Payment Received</span>
+                <span className="rounded-full bg-rose-200 px-2 py-0.5 text-[10px] font-black text-rose-800">{data.noPayment.length}</span>
+              </div>
+              <span className="text-[10px] font-semibold text-rose-700">Held after the 72h / 5-day reservation window lapsed with no payment. Follow up or release.</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-[10px]">
+                <thead>
+                  <tr className="bg-rose-100 text-[9px] font-black uppercase tracking-[0.12em] text-rose-800">
+                    <th className="px-4 py-2.5">VIN</th>
+                    <th className="px-4 py-2.5">Car</th>
+                    <th className="px-4 py-2.5">Dealer</th>
+                    <th className="px-4 py-2.5">Booking</th>
+                    <th className="px-4 py-2.5">Customer</th>
+                    <th className="px-4 py-2.5">Window Expired</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.noPayment.map((v) => (
+                    <tr key={v.allocation_id} className="border-t border-rose-100 text-slate-700">
+                      <td className="px-4 py-2.5 font-mono font-bold">{v.vin_number}</td>
+                      <td className="px-4 py-2.5 font-semibold">{[v.model, v.variant, v.color].filter(Boolean).join(' · ') || '—'}</td>
+                      <td className="px-4 py-2.5">{v.dealer_code || '—'}</td>
+                      <td className="px-4 py-2.5 font-mono">{v.booking_number || '—'}</td>
+                      <td className="px-4 py-2.5">{v.customer_name || '—'}</td>
+                      <td className="px-4 py-2.5">{v.expires_at ? new Date(v.expires_at).toLocaleDateString('en-IN') : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Transferred / Missing from DMS — vehicles transferred to this dealer whose VIN left the DMS
+            feed (#9). Retained via the transfer snapshot and shown under the DESTINATION dealer. */}
+        {data?.transferMissing && data.transferMissing.length > 0 && (
+          <div className="mb-6 overflow-hidden rounded-2xl border border-sky-300 bg-sky-50/60 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-sky-800">Transferred · Not in DMS</span>
+                <span className="rounded-full bg-sky-200 px-2 py-0.5 text-[10px] font-black text-sky-800">{data.transferMissing.length}</span>
+              </div>
+              <span className="text-[10px] font-semibold text-sky-700">Transferred to this dealer but no longer in the DMS feed — retained from the transfer record.</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-[10px]">
+                <thead>
+                  <tr className="bg-sky-100 text-[9px] font-black uppercase tracking-[0.12em] text-sky-800">
+                    <th className="px-4 py-2.5">VIN</th>
+                    <th className="px-4 py-2.5">Car</th>
+                    <th className="px-4 py-2.5">From → To</th>
+                    <th className="px-4 py-2.5">Booking</th>
+                    <th className="px-4 py-2.5">Customer</th>
+                    <th className="px-4 py-2.5">Missing Since</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.transferMissing.map((v) => {
+                    const snap = (v.vehicle_snapshot || {}) as Record<string, unknown>
+                    const car = [snap.model, snap.variant, snap.color].map((x) => (x == null ? '' : String(x))).filter(Boolean).join(' · ')
+                    return (
+                      <tr key={v.transfer_id} className="border-t border-sky-100 text-slate-700">
+                        <td className="px-4 py-2.5 font-mono font-bold">{v.vin_number || '—'}</td>
+                        <td className="px-4 py-2.5 font-semibold">{car || '—'}</td>
+                        <td className="px-4 py-2.5">{(v.from_dealer_code || '—')} → {(v.dealer_code || '—')}</td>
+                        <td className="px-4 py-2.5 font-mono">{v.booking_number || '—'}</td>
+                        <td className="px-4 py-2.5">{v.customer_name || '—'}</td>
+                        <td className="px-4 py-2.5">{v.stock_missing_at ? new Date(v.stock_missing_at).toLocaleDateString('en-IN') : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* #12 Held vehicles — Customer / Dealer holds with a Release control. */}
+        {data?.heldVehicles && data.heldVehicles.length > 0 && (
+          <div className="mb-6 overflow-hidden rounded-2xl border border-amber-300 bg-amber-50/40 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-800">On Hold</span>
+                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-black text-amber-800">{data.heldVehicles.length}</span>
+              </div>
+              <span className="text-[10px] font-semibold text-amber-700">Held for a customer or dealer — not matchable until released.</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-[10px]">
+                <thead>
+                  <tr className="bg-amber-100 text-[9px] font-black uppercase tracking-[0.12em] text-amber-800">
+                    <th className="px-4 py-2.5">VIN</th>
+                    <th className="px-4 py-2.5">Car</th>
+                    <th className="px-4 py-2.5">Hold Type</th>
+                    <th className="px-4 py-2.5">For</th>
+                    <th className="px-4 py-2.5">By</th>
+                    <th className="px-4 py-2.5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.heldVehicles.map((v) => (
+                    <tr key={v.vin_number} className="border-t border-amber-100 text-slate-700">
+                      <td className="px-4 py-2.5 font-mono font-bold">{v.vin_number}</td>
+                      <td className="px-4 py-2.5 font-semibold">{[v.model, v.variant, v.color].filter(Boolean).join(' · ') || '—'}</td>
+                      <td className="px-4 py-2.5">{v.local_status === 'hold_dealer' ? 'Dealer' : 'Customer'}</td>
+                      <td className="px-4 py-2.5">{v.customer_name || v.notes || '—'}</td>
+                      <td className="px-4 py-2.5">{v.marked_by_name || '—'}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 rounded-lg border-slate-200 px-2.5 text-[10px] font-black text-slate-800"
+                          disabled={releaseHoldMutation.isPending}
+                          onClick={() => releaseHoldMutation.mutate(v.vin_number)}
+                        >
+                          Release
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* #8 BBND allot launcher */}
+        <div className="mb-3 flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 rounded-lg border-slate-300 px-3 text-[11px] font-black text-slate-800"
+            onClick={() => { setBbndBookingId(''); setBbndVin(''); setBbndModel(''); setBbndVariant(''); setBbndColor(''); setBbndDialogOpen(true) }}
+          >
+            + Allot BBND Vehicle
+          </Button>
+        </div>
 
         {/* Stock Table */}
         <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">

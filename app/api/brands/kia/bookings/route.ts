@@ -51,6 +51,7 @@ export async function GET(request: Request) {
       pageSize: data.pagination.pageSize,
       totalPages: data.pagination.totalPages,
       kpis: data.kpis,
+      summary: data.summary,
       filters: data.filters,
     }
 

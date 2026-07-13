@@ -237,7 +237,7 @@ function filteredWhere(filters: DemoCarsFilters, columns: Set<string>) {
   return sql.join(clauses, sql` AND `)
 }
 
-function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, columns: Set<string>) {
+function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, columns: Set<string>, exportAll = false) {
   const whereSql = filteredWhere(filters, columns)
   const offset = (filters.page - 1) * PAGE_SIZE
   const amountColumn = firstExistingColumn(columns, ['kin_invoice_amount', 'total_invoice_value'])
@@ -309,8 +309,7 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
       SELECT *
       FROM filtered
       ORDER BY age DESC NULLS LAST, location ASC, model ASC, variant ASC, vin_no ASC
-      LIMIT ${PAGE_SIZE}
-      OFFSET ${offset}
+      ${exportAll ? sql`` : sql`LIMIT ${PAGE_SIZE} OFFSET ${offset}`}
     ),
     counts AS (
       SELECT
@@ -447,6 +446,24 @@ async function buildPayload(filters: DemoCarsFilters, hasDetailsTable: boolean, 
   }
 }
 
+function csvCell(value: unknown): string {
+  const s = value == null ? '' : String(value)
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+// Full (unpaginated) demo-cars list serialized to CSV, honouring the current location/status/search
+// filters. Column set + order mirror the on-screen table (buildDisplayColumns).
+async function buildDemoCarsCsv(filters: DemoCarsFilters, hasDetailsTable: boolean, columns: Set<string>): Promise<string> {
+  const displayColumns = buildDisplayColumns(columns)
+  const header = displayColumns.map((c) => csvCell(c.label)).join(',')
+  if (!hasColumn(columns, 'test_drive_vin') || !hasColumn(columns, 'vin_no')) return `${header}\n`
+  const result = await db.execute(buildDemoCarsSql(filters, hasDetailsTable, columns, true))
+  const row = resultRows(result)[0] || {}
+  const rows = asArray(row.rows) as Record<string, unknown>[]
+  const lines = rows.map((r) => displayColumns.map((c) => csvCell(r[c.key])).join(','))
+  return [header, ...lines].join('\n') + '\n'
+}
+
 export async function GET(request: Request) {
   const timer = createApiTimer('demo-cars-list')
 
@@ -461,6 +478,20 @@ export async function GET(request: Request) {
       await timer.time('details-schema-sync', ensureDemoVehicleDetailsSchemaThrottled)
     }
     const columns = await timer.time('columns', () => getTableColumns('demo_car_list'))
+
+    // CSV export — the full filtered list (no pagination), streamed as a download.
+    if ((searchParams.get('format') || '').toLowerCase() === 'csv') {
+      const csv = await timer.time('csv', () => buildDemoCarsCsv(filters, hasDetailsTable, columns))
+      const stamp = new Date().toISOString().slice(0, 10)
+      return new NextResponse(csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="kia-demo-cars-${filters.location}-${stamp}.csv"`,
+          'Cache-Control': 'no-store',
+        },
+      })
+    }
+
     const payload = await timer.time('vehicle-cache', () => getCachedData(
       createCacheKey(filters, hasDetailsTable, columns),
       () => buildPayload(filters, hasDetailsTable, columns),

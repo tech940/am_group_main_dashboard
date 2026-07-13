@@ -17,7 +17,9 @@ import {
   ClipboardList,
   FileText,
   Loader2,
+  PauseCircle,
   Pencil,
+  PlayCircle,
   Plus,
   RefreshCw,
   Search,
@@ -127,6 +129,8 @@ type BookingRow = {
   consultantEmail?: string | null
   status: BookingStatus | string
   proformaNumber?: string | null
+  /** The linked proforma's approval status — lets the waiting indicator refine 'proforma_generated'. */
+  proformaApprovalStatus?: string | null
   financeOrderNumber?: string | null
   allocatedVin?: string | null
   deliveredAt?: string | null
@@ -148,6 +152,15 @@ type BookingListPayload = {
     readyDelivery: number
     delivered: number
     cancelled: number
+  }
+  summary?: {
+    totalBookings: number
+    statusCounts: Record<string, number>
+    onHold: number
+    activeAllocations: number
+    noPayment: number
+    notInStock: number
+    topModels: { model: string; count: number }[]
   }
   filters: {
     dealers: string[]
@@ -559,8 +572,7 @@ function BookingMobileCard({
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <StatusBadge status={row.status} />
-          {/* List rows don't carry the proforma approval, so approvalStatus is omitted. */}
-          <BookingWaitingIndicator status={row.status} updatedAt={row.updatedAt} now={now} align="right" />
+          <BookingWaitingIndicator status={row.status} approvalStatus={row.proformaApprovalStatus} updatedAt={row.updatedAt} now={now} align="right" />
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2.5 text-xs">
@@ -1550,10 +1562,23 @@ export function KiaBookingsClient({
     createMutation.mutate({ ...createForm, consultantName: currentUserName || createForm.consultantName })
   }
 
-  function runAction(action: 'proforma' | 'finance' | 'payment' | 'accounts' | 'release' | 'deliver' | 'cancel' | 'transfer') {
+  function runAction(action: 'proforma' | 'finance' | 'payment' | 'accounts' | 'release' | 'deliver' | 'cancel' | 'transfer' | 'hold' | 'resume') {
     if (!selectedBookingId) return
     if (action === 'proforma') {
       router.push(`/brands/kia/proforma/generate?bookingId=${selectedBookingId}`)
+      return
+    }
+    if (action === 'hold') {
+      const reason = window.prompt('Put this booking on hold? Optionally add a reason:', '')
+      if (reason === null) return // user cancelled the prompt
+      setLoaderVariant('generic')
+      actionMutation.mutate({ endpoint: `/api/brands/kia/bookings/${selectedBookingId}/hold`, body: { action: 'hold', reason } })
+      return
+    }
+    if (action === 'resume') {
+      if (!window.confirm('Resume this booking from hold?')) return
+      setLoaderVariant('generic')
+      actionMutation.mutate({ endpoint: `/api/brands/kia/bookings/${selectedBookingId}/hold`, body: { action: 'resume' } })
       return
     }
     if (action === 'payment') {
@@ -1771,6 +1796,46 @@ export function KiaBookingsClient({
           />
         )}
 
+        {/* ── #10 Bookings & Vehicles summary ── */}
+        {!stockMode && data?.summary && (
+          <section className={cn(PRIMARY_SURFACE, 'p-4 sm:p-5')}>
+            <div className="flex items-center gap-2.5 border-b pb-3" style={{ borderColor: 'var(--kia-hairline)' }}>
+              <IconTile icon={ClipboardList} tone="accent" size="sm" />
+              <div>
+                <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)]">Bookings &amp; Vehicles Summary</h3>
+                <p className="text-[11px] font-semibold text-[var(--kia-text-faint)]">Across all bookings in your scope</p>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+              {([
+                { label: 'Total Bookings', value: data.summary.totalBookings },
+                { label: 'On Hold', value: data.summary.onHold },
+                { label: 'Vehicles Allotted', value: data.summary.activeAllocations },
+                { label: 'No Payment', value: data.summary.noPayment },
+                { label: 'Not in Stock', value: data.summary.notInStock },
+                { label: 'Delivered', value: data.summary.statusCounts.delivered || 0 },
+              ]).map((s) => (
+                <div key={s.label} className="kia-surface-flush px-3 py-2.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--kia-text-faint)]">{s.label}</p>
+                  <p className="mt-0.5 text-xl font-extrabold text-[var(--kia-text)]">{s.value}</p>
+                </div>
+              ))}
+            </div>
+            {data.summary.topModels.length > 0 && (
+              <div className="mt-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--kia-text-faint)]">Top Models Booked</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {data.summary.topModels.map((m) => (
+                    <span key={m.model} className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-bold text-[var(--kia-text-soft)]" style={{ borderColor: 'var(--kia-hairline)' }}>
+                      {m.model} <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-700">{m.count}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
         <AnimatePresence>
           {actionMessage && !selectedBookingId && (
             <motion.div
@@ -1912,8 +1977,7 @@ export function KiaBookingsClient({
                       <TableCell className="px-3 py-3">
                         <div className="flex flex-col gap-1.5">
                           <StatusBadge status={row.status} />
-                          {/* List rows don't carry the proforma approval, so approvalStatus is omitted. */}
-                          <BookingWaitingIndicator status={row.status} updatedAt={row.updatedAt} now={nowTick} />
+                          <BookingWaitingIndicator status={row.status} approvalStatus={row.proformaApprovalStatus} updatedAt={row.updatedAt} now={nowTick} />
                         </div>
                       </TableCell>
                       <TableCell className="px-3 py-3 text-xs font-semibold text-[var(--kia-text-soft)]">{formatDate(row.createdAt || row.updatedAt)}</TableCell>
@@ -2802,8 +2866,8 @@ function CreateBookingDialog({
                 <Field label="Cost Sheet" required>
                   <div className="space-y-2">
                     <label className={`flex items-center justify-center gap-3 cursor-pointer h-11 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:border-slate-400 hover:bg-white transition-all ${costSheetVerifying ? 'opacity-60 pointer-events-none' : ''}`}>
-                      <input type="file" accept="image/*" onChange={handleCostSheetUpload} className="sr-only" />
-                      {costSheetVerifying ? '⏳ Verifying...' : costSheetFile ? `✅ ${costSheetFile.name}` : '📷 Upload Cost Sheet Image'}
+                      <input type="file" accept="image/*,application/pdf" onChange={handleCostSheetUpload} className="sr-only" />
+                      {costSheetVerifying ? '⏳ Verifying...' : costSheetFile ? `✅ ${costSheetFile.name}` : '📷 Upload Cost Sheet (Image or PDF)'}
                     </label>
                   </div>
                 </Field>
@@ -3006,7 +3070,7 @@ function BookingDrawer({
   actionLoading: boolean
   actionLoaderVariant: LoaderVariant
   actionMessage: string
-  onAction: (action: 'proforma' | 'finance' | 'payment' | 'accounts' | 'release' | 'deliver' | 'cancel' | 'transfer') => void
+  onAction: (action: 'proforma' | 'finance' | 'payment' | 'accounts' | 'release' | 'deliver' | 'cancel' | 'transfer' | 'hold' | 'resume') => void
   onAllot: (vinNumber: string) => void
   onOpenTransfer: (vehicle?: MatchingVehicle | null) => void
   onPaymentNotReceived: () => void
@@ -3066,7 +3130,7 @@ function BookingDrawer({
   const canActAsAccounts = effectivePersona === 'actual' ? roleCanActAsAccounts(currentUserRole) : effectivePersona === 'accounts'
   // New role-model gates (backend enforces the same):
   const canActAsAccountsVerify = effectivePersona === 'actual' ? canVerifyKiaAccounts(currentUserRole) : effectivePersona === 'accounts'
-  const canDeliver = effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : effectivePersona === 'sales_person'
+  const canDeliver = effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : (effectivePersona === 'sales_person' || effectivePersona === 'sales_manager')
   const canActOnStock = effectivePersona === 'actual' ? canAllotKiaVehicle(currentUserRole) : effectivePersona !== 'sales_person'
   // Sales persons (and managers/admin) can edit booking details until the booking is closed.
   const canEditBooking = !isTerminal && (canActAsSalesPerson || canActAsSalesManager)
@@ -3194,6 +3258,9 @@ function BookingDrawer({
                 {sharingLink ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Share2 className="mr-1.5 h-3.5 w-3.5" />}
                 Share tracking link
               </Button>
+              {Boolean((booking.metadata as Record<string, unknown> | null)?.vehicleNotInStock) && (
+                <Chip tone="warning">Vehicle not in stock</Chip>
+              )}
               {financeOrder?.number && <Chip tone="info">{financeOrder.number}</Chip>}
               {canUseTestPersona && <Chip tone="warning">{TEST_PERSONA_LABELS[effectivePersona]}</Chip>}
               {canUseTestPersona && (
@@ -3335,7 +3402,7 @@ function BookingDrawer({
           )
         })()}
 
-        {/* Uploaded ID documents — links gated to PII-authorized viewers (MD / Super Admin). */}
+        {/* Uploaded ID documents — links gated to PII-authorized viewers (MD / Super Admin / Finance Head). */}
         {(() => {
           const meta = (booking.metadata || {}) as Record<string, unknown>
           const docs = [
@@ -3499,6 +3566,17 @@ function BookingDrawer({
                     <Pencil className="h-4 w-4" /> Edit Booking
                   </Button>
                 )}
+                {(canActAsSalesManager || canActAsAccounts) && !isTerminal && (
+                  booking.status === 'on_hold' ? (
+                    <Button variant="outline" className="h-10 rounded-2xl border-sky-200 text-xs font-bold text-sky-700 hover:bg-sky-50" disabled={actionLoading} onClick={() => onAction('resume')}>
+                      <PlayCircle className="h-4 w-4" /> Resume Booking
+                    </Button>
+                  ) : (
+                    <Button variant="outline" className="h-10 rounded-2xl border-amber-200 text-xs font-bold text-amber-700 hover:bg-amber-50" disabled={actionLoading} onClick={() => onAction('hold')}>
+                      <PauseCircle className="h-4 w-4" /> Put on Hold
+                    </Button>
+                  )
+                )}
                 <Button variant="outline" className="h-10 rounded-2xl border-rose-200 text-xs font-bold text-rose-700 hover:bg-rose-50" disabled={actionLoading || isTerminal} onClick={() => onAction('cancel')}>
                   Cancel Booking
                 </Button>
@@ -3546,7 +3624,7 @@ function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDe
   const mutation = useMutation({
     mutationFn: async () => {
       const bankTrimmed = form.bankName.trim()
-      const payload: Record<string, any> = {
+      const payload: Record<string, unknown> = {
         ...form,
         financeRequired: Boolean(bankTrimmed) && bankTrimmed.toUpperCase() !== 'CASH',
       }

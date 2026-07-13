@@ -16,6 +16,39 @@ export async function POST(request: Request) {
     const base64 = Buffer.from(buffer).toString('base64')
     const mimeType = file.type || 'image/jpeg'
 
+    // PDFs can't be OCR'd by the image vision model — store-and-trust (mirrors the ID-document PDF
+    // path). The uploader affirms it's the cost sheet; we skip the "COST SHEET" heading gate for PDFs.
+    const isPdf = mimeType === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    if (isPdf) {
+      const timestamp = Date.now()
+      const randomStr = Math.random().toString(36).substring(7)
+      const extension = file.name.split('.').pop() || 'pdf'
+      const filename = `cost_sheet_${timestamp}_${randomStr}.${extension}`
+      const filePath = `cost-sheets/${filename}`
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from('purchase-orders')
+        .upload(filePath, buffer, { contentType: mimeType, upsert: false })
+
+      if (uploadError) {
+        console.error('Supabase upload error:', uploadError)
+        return NextResponse.json({ error: 'Failed to upload to storage: ' + uploadError.message }, { status: 500 })
+      }
+
+      const { data: urlData } = supabaseAdmin.storage
+        .from('purchase-orders')
+        .getPublicUrl(filePath)
+
+      return NextResponse.json({
+        valid: true,
+        message: 'PDF cost sheet accepted and stored.',
+        url: urlData.publicUrl,
+        path: filePath,
+        filename: file.name,
+        pdfManual: true,
+      })
+    }
+
     const apiKey = process.env.GROQ_API_KEY
     if (!apiKey) {
       return NextResponse.json({ error: 'GROQ API key not configured' }, { status: 500 })

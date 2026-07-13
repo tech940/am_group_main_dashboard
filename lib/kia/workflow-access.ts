@@ -7,7 +7,7 @@
 //   sales_manager / general_manager / md -> Approve / Decline Proforma
 //   (anyone except sales_executive) -> Allot Vehicle / Request Transfer
 //   accounts -> Confirm Payment Release + Invoice # + Invoice PDF (single step)
-//   sales_executive -> Mark Delivered
+//   sales_executive / sales_manager / general_manager / md -> Mark Delivered
 // admin / developer bypass everything.
 
 function norm(role?: string | null) {
@@ -48,10 +48,10 @@ export function canConfirmKiaPayment(role?: string | null) {
   return canVerifyKiaAccounts(role)
 }
 
-/** Sales Executive (+ admin): mark the vehicle delivered. */
+/** Sales Executive, Sales Manager / General Manager / MD (+ admin): mark the vehicle delivered. */
 export function canDeliverKiaBooking(role?: string | null) {
   const r = norm(role)
-  return isKiaWorkflowAdmin(r) || r === 'sales_executive'
+  return isKiaWorkflowAdmin(r) || r === 'sales_executive' || canApproveKiaProforma(r)
 }
 
 /** Vehicle allotment — any workflow participant EXCEPT the Sales Executive. */

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Car,
   Clock,
+  Download,
   MapPin,
   RefreshCw,
   Save,
@@ -428,6 +429,18 @@ export function DemoCarsListPage() {
     setPage(1)
   }
 
+  // Export the FULL filtered list (all rows, not just the current page) as a CSV download. The
+  // route returns an attachment, so a same-origin anchor click with cookies is enough.
+  const handleExport = () => {
+    const exportQuery = buildQueryString({ location, status, search, format: 'csv' })
+    const anchor = document.createElement('a')
+    anchor.href = `/api/brands/kia/demo-cars-list?${exportQuery}`
+    anchor.rel = 'noopener'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  }
+
   return (
     <MainLayout title="Demo Cars List" subtitle="AM Kia test-drive VIN tracker">
       <div className="space-y-6">
@@ -451,10 +464,16 @@ export function DemoCarsListPage() {
                 Source last updated: {formatDateTime(data?.meta.sourceUpdatedAt)}
               </p>
             </div>
-            <Button type="button" onClick={() => void refetch()} className="app-outline-action rounded-2xl px-4 py-2" disabled={isFetching}>
-              <RefreshCw className={cn('mr-2 h-4 w-4', isFetching && 'animate-spin')} />
-              Refresh
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="button" onClick={handleExport} className="app-outline-action rounded-2xl px-4 py-2" disabled={isFetching || (data?.summary.total || 0) === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+              <Button type="button" onClick={() => void refetch()} className="app-outline-action rounded-2xl px-4 py-2" disabled={isFetching}>
+                <RefreshCw className={cn('mr-2 h-4 w-4', isFetching && 'animate-spin')} />
+                Refresh
+              </Button>
+            </div>
           </div>
         </section>
 

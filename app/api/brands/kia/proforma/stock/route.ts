@@ -221,10 +221,76 @@ export async function GET(request: Request) {
       LIMIT 200
     `))
 
+    // 6b. #13 No Payment Received: allocations held after the reservation window lapsed without
+    // payment. Kept (not released) so the vehicle stays visible from its snapshot even once the VIN
+    // leaves the DMS feed. Same shape as soldMissing so the dashboard can render it identically.
+    const noPayment = await db.execute(sql.raw(`
+      SELECT
+        va.id AS allocation_id, va.vin_number, va.model, va.variant, va.color, va.engine_no,
+        va.dealer_code, va.expires_at, va.allocated_at, va.vehicle_snapshot,
+        kb.id AS booking_id, kb.booking_number, kb.customer_name, kb.consultant_name, kb.status AS booking_status
+      FROM kia_vehicle_allocations va
+      JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
+      WHERE va.released_at IS NULL
+        AND va.allocation_status = 'no_payment'
+        AND kb.status NOT IN ('delivered', 'cancelled')
+        ${soldDealerClause}
+      ORDER BY va.expires_at DESC NULLS LAST
+      LIMIT 200
+    `))
+
+    // 6c. #9 Transferred vehicles whose VIN has left the DMS feed — retained via the transfer's
+    // vehicle_snapshot and shown under the DESTINATION dealer (to_dealer_code). Guarded: degrades to
+    // an empty list if migration 0013 (the transfer retention columns) has not been applied yet.
+    let transferMissing: unknown[] = []
+    try {
+      const transferDealerClause = dealerScope && dealerScope.length
+        ? `AND vt.to_dealer_code IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''")}'`).join(', ')})`
+        : ''
+      transferMissing = await db.execute(sql.raw(`
+        SELECT
+          vt.id AS transfer_id, vt.vin_number, vt.to_dealer_code AS dealer_code, vt.from_dealer_code,
+          vt.stock_missing_at, vt.requested_at, vt.vehicle_snapshot,
+          kb.id AS booking_id, kb.booking_number, kb.customer_name, kb.status AS booking_status
+        FROM kia_vehicle_transfers vt
+        LEFT JOIN kia_bookings kb ON kb.id = vt.booking_id AND kb.deleted_at IS NULL
+        WHERE vt.stock_missing_at IS NOT NULL
+          AND LOWER(coalesce(vt.transfer_status, '')) IN ('transferred', 'requested')
+          ${transferDealerClause}
+        ORDER BY vt.stock_missing_at DESC NULLS LAST
+        LIMIT 200
+      `)) as unknown[]
+    } catch (err) {
+      console.error('transferMissing overlay skipped (migration 0013 may be pending):', err)
+    }
+
+    // 6d. #12 Held vehicles — Customer / Dealer holds recorded in kia_stock_local_statuses. Shown with
+    // a Release control; retained via the snapshot so they persist even once the VIN leaves DMS.
+    let heldVehicles: unknown[] = []
+    try {
+      const heldDealerClause = dealerScope && dealerScope.length
+        ? `AND ls.dealer_code IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''")}'`).join(', ')})`
+        : ''
+      heldVehicles = await db.execute(sql.raw(`
+        SELECT ls.vin_number, ls.local_status, ls.dealer_code, ls.model, ls.variant, ls.color,
+               ls.customer_name, ls.booking_no, ls.notes, ls.marked_by_name, ls.marked_at, ls.vehicle_snapshot
+        FROM kia_stock_local_statuses ls
+        WHERE ls.local_status IN ('hold_customer', 'hold_dealer')
+          ${heldDealerClause}
+        ORDER BY ls.marked_at DESC NULLS LAST
+        LIMIT 200
+      `)) as unknown[]
+    } catch (err) {
+      console.error('heldVehicles overlay skipped (migration 0013 may be pending):', err)
+    }
+
     return NextResponse.json({
-      metrics: { ...metrics, sold_missing: soldMissing.length },
+      metrics: { ...metrics, sold_missing: soldMissing.length, no_payment: noPayment.length, transfer_missing: transferMissing.length, held: heldVehicles.length },
       rows,
       soldMissing,
+      noPayment,
+      transferMissing,
+      heldVehicles,
       activities,
       filters: {
         dealers: filtersResult.map((r) => (r as { dealer: string }).dealer),

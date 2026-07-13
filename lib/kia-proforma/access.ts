@@ -41,16 +41,34 @@ export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = fa
   return and(...base, eq(kiaProformas.loginEmail, appUser.email))!
 }
 
-// Every approver (Sales Manager, GM, Finance Head, Finance Team, MD, admin) sees EVERY in-flight
-// proforma. In-flight = awaiting stage 1 (PENDING / '') OR stage 2 (MANAGER_APPROVED) OR declined
-// (restarts). The per-stage role gate lives in roleActsOnKiaStage; the server enforces it on approve.
-export function getKiaProformaPendingApprovalFilter(_appUser?: AppUser): SQL<unknown> {
-  const allInFlight = or(
+// The Pending Approval queue is scoped to the stage the viewer actually acts on, so each approver
+// sees only what is waiting on THEM:
+//   • Sales Manager / General Manager → stage 1 only (PENDING / '' / declined-restart / legacy
+//     FINANCE_APPROVED). They do NOT see proformas already handed off to Finance.
+//   • Finance Head / Finance Team → stage 2 only (MANAGER_APPROVED). They do NOT see the Sales
+//     Manager / GM queue.
+//   • MD / admin / developer (and any other approver) → EVERY in-flight proforma.
+// The per-stage role gate that enforces WHO may approve lives in roleActsOnKiaStage; this only
+// controls WHAT each role sees in the queue.
+export function getKiaProformaPendingApprovalFilter(appUser?: AppUser): SQL<unknown> {
+  // Stage 1 — awaiting Sales Manager / GM (PENDING, blank, declined restart, legacy FINANCE_APPROVED).
+  const stage1 = or(
     eq(kiaProformas.approvalStatus, 'PENDING'),
     eq(kiaProformas.approvalStatus, ''),
     like(kiaProformas.approvalStatus, 'NOT APPROVED%'),
     eq(kiaProformas.approvalStatus, 'FINANCE_APPROVED'),
-    eq(kiaProformas.approvalStatus, 'MANAGER_APPROVED'),
   )!
-  return and(isNull(kiaProformas.deletedAt), allInFlight)!
+  // Stage 2 — Manager-approved, awaiting Finance.
+  const stage2 = eq(kiaProformas.approvalStatus, 'MANAGER_APPROVED')
+
+  const role = String(appUser?.role || '').trim().toLowerCase()
+  let stageFilter: SQL<unknown>
+  if (role === 'finance_head' || role === 'finance_team') {
+    stageFilter = stage2
+  } else if (role === 'sales_manager' || role === 'general_manager') {
+    stageFilter = stage1
+  } else {
+    stageFilter = or(stage1, stage2)!
+  }
+  return and(isNull(kiaProformas.deletedAt), stageFilter)!
 }

@@ -60,7 +60,7 @@ import {
 import { cn } from '@/lib/utils'
 import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
 import { kiaApprovalStage, KIA_APPROVAL_STAGE_LABELS, kiaStageActorLabel, pendingStageOf } from '@/lib/kia-proforma/approval'
-import { calculateKiaProformaPricing, getKiaBankOptions } from '@/lib/kia-proforma/pricing'
+import { calculateKiaProformaPricing, getKiaBankOptions, getBranchesForBank } from '@/lib/kia-proforma/pricing'
 import {
   AnimatedNumber,
   Chip,
@@ -714,6 +714,8 @@ type BookingPrefill = {
   bankName?: string | null
   bankBranch?: string | null
   bookingAmount?: string | null
+  /** True when the booking is a CASH payment (no bank finance) — bank/branch are then optional. */
+  isCash?: boolean
 }
 
 function GenerateProforma({ options, onSaved, bookingPrefill }: { options: OptionsPayload; onSaved: () => void; bookingPrefill?: BookingPrefill | null }) {
@@ -752,6 +754,8 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
   }, [form, options.banks, options.prices])
   const filteredBranches = pricing.branchOptions
   const bankOptions = useMemo(() => getKiaBankOptions(options.banks), [options.banks])
+  // CASH bookings (or an explicit CASH bank) don't require bank/branch on the proforma.
+  const isCashPayment = Boolean(bookingPrefill?.isCash) || form.bankName.trim().toUpperCase() === 'CASH'
   const prefillExShowroom = pricing.prefill?.exShowroom
   const prefillTcsValue = pricing.prefill?.tcsValue
   const prefillRegistrationCharges = pricing.prefill?.registrationCharges
@@ -848,7 +852,9 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
     setForm((current) => {
       const result = calculateKiaProformaPricing(current, options.prices, options.banks)
       if (!current.bankBranch.trim()) return current
-      if (!result.branchIsValid) return { ...current, bankBranch: '' }
+      // Manual entry is allowed: a typed branch that isn't in the DB list is KEPT as-is. Only snap
+      // to the canonical spelling when it matches a known branch for the selected bank.
+      if (!result.branchIsValid) return current
       return { ...current, bankBranch: result.canonicalBranch }
     })
   }
@@ -858,12 +864,15 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
     if (!form.customerName.trim()) next.customerName = 'Customer name is required'
     if (!/^\d{10}$/.test(form.mobileNumber)) next.mobileNumber = 'Mobile number must be 10 digits'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) next.customerEmail = 'Valid email is required'
-    ;(['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'bankName', 'vehicleStatus'] as (keyof FormState)[]).forEach((key) => {
+    const requiredKeys: (keyof FormState)[] = ['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'vehicleStatus']
+    // Bank is required only for finance bookings; a CASH payment leaves bank + branch optional.
+    if (!isCashPayment) requiredKeys.push('bankName')
+    requiredKeys.forEach((key) => {
       if (!String(form[key] || '').trim()) next[key] = 'Required'
     })
     if (form.trimDescription.trim() && !pricing.trimIsValid) next.trimDescription = 'Select a valid trim'
     if (form.bankName.trim() && !pricing.bankIsValid) next.bankName = 'Select a valid bank'
-    if (form.bankBranch.trim() && !pricing.branchIsValid) next.bankBranch = 'Select a valid branch for this bank'
+    // Bank Branch accepts manual entry (not restricted to the DB dropdown), so no validity gate here.
     if (Number(form.insuranceValue || 0) < 3000) next.insuranceValue = 'Value must be greater than 3000'
     setErrors(next)
     return Object.keys(next).length === 0
@@ -889,6 +898,7 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
         totalCustomerCost: totals.totalCustomerCost,
         grandTotalCost: totals.grandTotalCost,
         bookingId: bookingPrefill?.bookingId || undefined,
+        paymentMode: isCashPayment ? 'cash' : 'finance',
         forceSave,
       }
       const response = await fetch('/api/brands/kia/proforma', {
@@ -1930,6 +1940,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
               row={editingRow}
               models={options.models}
               trims={options.trims}
+              banks={options.banks}
               onClose={() => setEditingRow(null)}
               onSaved={async () => {
                 setEditingRow(null)
@@ -1991,6 +2002,7 @@ function GMEditForm({
   row,
   models,
   trims,
+  banks,
   onClose,
   onSaved,
   isSaving,
@@ -1999,6 +2011,7 @@ function GMEditForm({
   row: KiaProformaRow
   models: string[]
   trims: { model: string; trim_description: string }[]
+  banks: { bank_name: string; bank_branch: string | null }[]
   onClose: () => void
   onSaved: () => Promise<void>
   isSaving: boolean
@@ -2119,12 +2132,30 @@ function GMEditForm({
     return Array.from(set)
   }, [form.vehicleColor])
 
+  // Bank + branch dropdowns backed by the DB lookup (kia_price_details + kia_proforma_lookup_options),
+  // same source as the create form. Branch list is scoped to the chosen bank; both always include the
+  // current value so an existing selection never disappears. Free-typed (manual) entries are allowed.
+  const bankChoices = useMemo(() => {
+    const set = new Set(getKiaBankOptions(banks))
+    if (form.bankName) set.add(form.bankName)
+    return Array.from(set)
+  }, [banks, form.bankName])
+
+  const branchChoices = useMemo(() => {
+    const set = new Set(getBranchesForBank(form.bankName, banks))
+    if (form.bankBranch) set.add(form.bankBranch)
+    return Array.from(set)
+  }, [banks, form.bankName, form.bankBranch])
+
   function validate() {
     const next: Record<string, string> = {}
     if (!form.customerName.trim()) next.customerName = 'Customer name is required'
     if (!/^\d{10}$/.test(form.mobileNumber)) next.mobileNumber = 'Mobile number must be 10 digits'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) next.customerEmail = 'Valid email is required'
-    ;(['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'bankName', 'vehicleStatus'] as (keyof FormState)[]).forEach((key) => {
+    const req: (keyof FormState)[] = ['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'vehicleStatus']
+    // Bank is required only for finance bookings; a CASH payment leaves bank + branch optional.
+    if (form.bankName.trim().toUpperCase() !== 'CASH') req.push('bankName')
+    req.forEach((key) => {
       if (!String(form[key] || '').trim()) next[key] = 'Required'
     })
     if (Number(form.insuranceValue || 0) < 3000) next.insuranceValue = 'Value must be greater than 3000'
@@ -2259,8 +2290,22 @@ function GMEditForm({
                 <SelectContent>{['IN HOUSE', 'IN TRANSIT', 'INDENT'].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field label="Bank Name" error={errors.bankName}><TextInput value={form.bankName} onChange={(e) => update('bankName', e.target.value)} /></Field>
-            <Field label="Bank Branch"><TextInput value={form.bankBranch} onChange={(e) => update('bankBranch', e.target.value)} /></Field>
+            <Field label="Bank Name" error={errors.bankName}>
+              <DataListInput
+                listId="kia-edit-banks"
+                value={form.bankName}
+                onChange={(value) => setForm((current) => ({ ...current, bankName: value, bankBranch: '' }))}
+                options={bankChoices}
+              />
+            </Field>
+            <Field label="Bank Branch">
+              <DataListInput
+                listId="kia-edit-bank-branches"
+                value={form.bankBranch}
+                onChange={(value) => update('bankBranch', value)}
+                options={branchChoices}
+              />
+            </Field>
             <Field label="Insurance Company"><TextInput value={form.insuranceCompany} onChange={(e) => update('insuranceCompany', e.target.value)} /></Field>
           </div>
         </FormSection>
@@ -2681,6 +2726,10 @@ function useBookingPrefill(bookingId: string | null) {
         if (!data?.booking) return
         const b = data.booking
         const meta = (b.metadata || {}) as Record<string, unknown>
+        const bankValue = String(b.bankName || meta.bankFinance || '').trim()
+        // Mirror the booking form's own rule (kia-bookings-client): finance is required only when a
+        // real bank (not CASH) is named. Anything else — blank or "CASH" — is a cash payment.
+        const isCash = !bankValue || bankValue.toUpperCase() === 'CASH'
         setPrefill({
           bookingId,
           bookingNumber: b.bookingNumber,
@@ -2694,6 +2743,7 @@ function useBookingPrefill(bookingId: string | null) {
           bankName: b.bankName || String(meta.bankFinance || ''),
           bankBranch: String(meta.bankBranch || ''),
           bookingAmount: String(meta.bookingAmount || ''),
+          isCash,
         })
       })
       .catch(() => setPrefill(null))

@@ -12,11 +12,25 @@ import { getBrandDealers, parseUserDealers } from '@/lib/dealers/registry'
  * restricted. A user pinned to dealers of a DIFFERENT brand is treated as unrestricted for
  * this brand (their brand gate stops them elsewhere).
  */
+// A restricted user whose dealer pin resolves to NO valid code for this brand is scoped to this
+// impossible code, so every consumer (inArray / IN(...) filters, canAccessDealer, UI selectors) shows
+// NOTHING rather than falling through to all-branch access. (Consumers guard on `scope.length`, so an
+// empty array would read as "unrestricted" — hence a non-matching sentinel instead of [].)
+export const DEALER_SCOPE_NONE = ['__no_dealer__'] as const
+
 export function getUserDealerScope(appUser: AppUser | null, brand: string): string[] | null {
   if (!appUser) return null
   if (isSuperAdminRole(appUser.role) || hasGlobalAccessRole(appUser.role) || hasAllBranchAccess(appUser.brand)) return null
   const scoped = parseUserDealers(brand, appUser.dealers)
-  return scoped.length ? scoped : null
+  if (scoped.length) return scoped
+  // No valid dealer code for this brand. No pin at all → unrestricted within the brand (existing
+  // behavior). A pin that resolves to nothing valid → fail CLOSED for single-brand users (a typo'd or
+  // stale pin must not silently grant all-branch visibility). Multi-brand users stay lenient: their
+  // pin is for one of their other brands, and the brand gate governs access here.
+  const hasPin = Boolean(String(appUser.dealers || '').trim())
+  if (!hasPin) return null
+  const brandCount = String(appUser.brand || '').split(',').map((b) => b.trim()).filter(Boolean).length
+  return brandCount > 1 ? null : [...DEALER_SCOPE_NONE]
 }
 
 /** True if the user may see data for `dealerCode` within `brand`. */

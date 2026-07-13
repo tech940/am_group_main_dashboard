@@ -80,7 +80,8 @@ export function getPettyCashRequestVisibilityFilter(appUser: AppUser): SQL<unkno
     appUser.role === 'branch_admin' ||
     appUser.role === 'accounts' ||
     appUser.role === 'manager' ||
-    appUser.role === 'general_manager'
+    appUser.role === 'general_manager' ||
+    appUser.role === 'sales_manager'
   ) {
     return and(...baseFilters, eq(pettyCashRequests.branchId, appUser.brand || ''))!
   }
@@ -101,7 +102,8 @@ export function getPettyCashExpenseVisibilityFilter(appUser: AppUser): SQL<unkno
     appUser.role === 'branch_admin' ||
     appUser.role === 'accounts' ||
     appUser.role === 'manager' ||
-    appUser.role === 'general_manager'
+    appUser.role === 'general_manager' ||
+    appUser.role === 'sales_manager'
   ) {
     return and(...baseFilters, eq(pettyCashExpenses.branchId, appUser.brand || ''))!
   }

@@ -162,13 +162,17 @@ async function nextBookingNumber(tx: DbTx, dealerCode: string) {
 
 export async function expireKiaTemporaryAllocations() {
   await db.transaction(async (tx) => {
+    // #13 No-payment persistence: when the 72h/120h reservation window lapses with no payment, the
+    // allocation is NOT released. It is kept (released_at stays NULL) and flagged 'no_payment' so the
+    // vehicleSnapshot + stock-presence tracking retain the record — the vehicle stays visible as
+    // "No Payment Received" even if its VIN later drops out of the DMS feed, exactly like an allotment.
     await tx.execute(sql`
       WITH expired AS (
         UPDATE kia_vehicle_allocations
         SET
-          released_at = now(),
-          release_reason = 'Temporary allocation expired after 72 hours without payment confirmation',
-          allocation_status = 'expired',
+          allocation_status = 'no_payment',
+          stock_status = 'no_payment',
+          release_reason = 'No payment received within the reservation window',
           updated_at = now()
         WHERE released_at IS NULL
           AND payment_confirmed_at IS NULL
@@ -180,11 +184,11 @@ export async function expireKiaTemporaryAllocations() {
       updated_bookings AS (
         UPDATE kia_bookings kb
         SET
-          allocated_vin = NULL,
           status = 'on_hold',
           updated_at = now()
         FROM expired e
         WHERE kb.id = e.booking_id
+          AND kb.status NOT IN ('delivered', 'cancelled')
         RETURNING kb.id, e.vin_number
       )
       INSERT INTO kia_booking_activity (
@@ -198,12 +202,12 @@ export async function expireKiaTemporaryAllocations() {
       )
       SELECT
         id,
-        'allocation_expired',
-        'Temporary allocation expired',
-        'VIN ' || vin_number || ' released after 72 hours without payment confirmation',
+        'no_payment',
+        'No payment received',
+        'VIN ' || vin_number || ' — no payment received within the reservation window; held as No Payment Received',
         'System',
         'system',
-        jsonb_build_object('vinNumber', vin_number, 'reason', '72-hour payment window expired')
+        jsonb_build_object('vinNumber', vin_number, 'reason', 'payment window expired', 'status', 'no_payment')
       FROM updated_bookings
     `)
   })
@@ -242,6 +246,9 @@ export async function markKiaSoldAllocations(): Promise<KiaSoldVehicle[]> {
         AND va.released_at IS NULL
         AND va.stock_missing_at IS NULL
         AND va.stock_last_seen_at IS NOT NULL
+        -- A No-Payment-Received allocation keeps its own status; don't relabel it 'sold' when its VIN
+        -- leaves the DMS feed (its snapshot already retains the vehicle for visibility).
+        AND coalesce(va.allocation_status, '') <> 'no_payment'
         AND kb.deleted_at IS NULL
         AND kb.status NOT IN ('delivered', 'cancelled')
         AND NOT EXISTS (
@@ -250,6 +257,16 @@ export async function markKiaSoldAllocations(): Promise<KiaSoldVehicle[]> {
         )
       RETURNING va.id, va.vin_number, va.booking_id, kb.dealer_code, kb.booking_number,
                 kb.customer_name, kb.model, kb.created_by
+    ),
+    -- #15 Mark the BOOKING itself so the UI can badge it "Vehicle not in stock" (the allotted VIN
+    -- left the DMS feed). Merged into metadata so no existing field is lost.
+    mark_bookings AS (
+      UPDATE kia_bookings kb
+      SET metadata = coalesce(kb.metadata, '{}'::jsonb)
+                     || jsonb_build_object('vehicleNotInStock', true, 'vehicleNotInStockAt', now()),
+          updated_at = now()
+      FROM sold
+      WHERE kb.id = sold.booking_id
     ),
     activity AS (
       INSERT INTO kia_booking_activity (booking_id, activity_type, title, description, actor_name, actor_role, after_value)
@@ -274,6 +291,41 @@ export async function markKiaSoldAllocations(): Promise<KiaSoldVehicle[]> {
   }))
 }
 
+// #9 Transfer retention: same primitive as markKiaSoldAllocations but for transferred vehicles. Keeps
+// stock_last_seen_at fresh while the transferred VIN is still in the DMS feed, and stamps
+// stock_missing_at + stock_status='missing' once it disappears — so the destination dealer keeps
+// seeing it from vehicle_snapshot. Guarded by the same freshness gate. Safe no-op if migration 0013
+// (the retention columns) has not been applied yet — the caller swallows the missing-column error.
+export async function markKiaTransferMissing(): Promise<void> {
+  await db.execute(sql`
+    UPDATE kia_vehicle_transfers vt
+    SET stock_last_seen_at = now(), updated_at = now()
+    WHERE LOWER(coalesce(vt.transfer_status, '')) IN ('transferred', 'requested')
+      AND vt.vin_number IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM kia_stock_management sm
+        WHERE upper(trim(sm.vin_number)) = upper(trim(vt.vin_number))
+      )
+  `)
+
+  const stockCountRes = await db.execute<{ stock_count: number }>(sql`SELECT count(*)::int AS stock_count FROM kia_stock_management`)
+  const stockCount = Number((stockCountRes as unknown as Array<{ stock_count: number }>)[0]?.stock_count || 0)
+  if (stockCount === 0) return
+
+  await db.execute(sql`
+    UPDATE kia_vehicle_transfers vt
+    SET stock_missing_at = now(), stock_status = 'missing', updated_at = now()
+    WHERE LOWER(coalesce(vt.transfer_status, '')) IN ('transferred', 'requested')
+      AND vt.vin_number IS NOT NULL
+      AND vt.stock_missing_at IS NULL
+      AND vt.stock_last_seen_at IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM kia_stock_management sm
+        WHERE upper(trim(sm.vin_number)) = upper(trim(vt.vin_number))
+      )
+  `)
+}
+
 // Debounced self-heal: run the sold-vehicle sweep at most once per window so booking-detail /
 // stock reads keep a fresh "sold" badge without a full-table scan on every request. The scheduled
 // script (scripts/kia-detect-sold-allocations.mjs) is the primary, reliable trigger.
@@ -288,6 +340,12 @@ async function maybeSweepSoldAllocations() {
     if (sold.length) await createKiaSoldVehicleNotifications(sold)
   } catch (error) {
     console.error('Sold-allocation sweep failed:', error)
+  }
+  try {
+    await markKiaTransferMissing()
+  } catch (error) {
+    // Missing retention columns (migration 0013 pending) or transient error — never break the read.
+    console.error('Transfer-presence sweep failed:', error)
   }
 }
 
@@ -335,6 +393,10 @@ export async function getKiaBookingsList(input: BookingListInput) {
   const dealerScope = input.allowedDealers && input.allowedDealers.length
     ? sql`AND dealer_code IN ${input.allowedDealers}`
     : sql``
+  // Same boundary, but qualified for the allocation join sub-selects (kb.dealer_code).
+  const dealerScopeKb = input.allowedDealers && input.allowedDealers.length
+    ? sql`AND kb.dealer_code IN ${input.allowedDealers}`
+    : sql``
 
   // Page load is dominated by pooler round-trip latency (~225ms/query), not the
   // queries themselves. The status counts, filter option lists and today count
@@ -358,7 +420,18 @@ export async function getKiaBookingsList(input: BookingListInput) {
         COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (
           SELECT DISTINCT consultant_name AS value FROM kia_bookings WHERE deleted_at IS NULL AND consultant_name IS NOT NULL ${dealerScope}
         ) c), '[]'::jsonb) AS consultants,
-        (SELECT count(*)::int FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC' ${dealerScope}) AS today_count
+        (SELECT count(*)::int FROM kia_bookings WHERE deleted_at IS NULL AND created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC' ${dealerScope}) AS today_count,
+        -- #10 Summary: top models booked + allocation state across all (non-deleted) bookings.
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'count', cnt)) FROM (
+          SELECT model, count(*)::int AS cnt FROM kia_bookings WHERE deleted_at IS NULL AND model IS NOT NULL ${dealerScope}
+          GROUP BY model ORDER BY count(*) DESC, model ASC LIMIT 12
+        ) mm), '[]'::jsonb) AS model_counts,
+        (SELECT count(*)::int FROM kia_vehicle_allocations va JOIN kia_bookings kb ON kb.id = va.booking_id
+          WHERE va.released_at IS NULL AND kb.deleted_at IS NULL ${dealerScopeKb}) AS active_allocations,
+        (SELECT count(*)::int FROM kia_vehicle_allocations va JOIN kia_bookings kb ON kb.id = va.booking_id
+          WHERE va.released_at IS NULL AND va.allocation_status = 'no_payment' AND kb.deleted_at IS NULL ${dealerScopeKb}) AS no_payment_count,
+        (SELECT count(*)::int FROM kia_vehicle_allocations va JOIN kia_bookings kb ON kb.id = va.booking_id
+          WHERE va.released_at IS NULL AND va.stock_status = 'sold' AND kb.deleted_at IS NULL ${dealerScopeKb}) AS not_in_stock_count
     `),
   ])
 
@@ -368,17 +441,38 @@ export async function getKiaBookingsList(input: BookingListInput) {
     models: string[] | null
     consultants: string[] | null
     today_count: number
+    model_counts: { model: string; count: number }[] | null
+    active_allocations: number
+    no_payment_count: number
+    not_in_stock_count: number
   }>(aggRows)[0]
   const statusCounts = agg?.status_counts || {}
   const todayCount = Number(agg?.today_count || 0)
+  const totalBookings = Number(totalRows[0]?.value || 0)
+
+  // #2 Attach each booking's proforma approval status so the CRM waiting indicator can tell "pending
+  // approval" from "approved, awaiting allocation" — both sit at booking status 'proforma_generated'.
+  const proformaIds = Array.from(new Set(bookingRows.map((b) => b.proformaId).filter(Boolean))) as string[]
+  const approvalByProforma = new Map<string, string | null>()
+  if (proformaIds.length) {
+    const statuses = await db
+      .select({ id: kiaProformas.id, approvalStatus: kiaProformas.approvalStatus })
+      .from(kiaProformas)
+      .where(inArray(kiaProformas.id, proformaIds))
+    for (const s of statuses) approvalByProforma.set(s.id, s.approvalStatus)
+  }
+  const rowsWithApproval = bookingRows.map((b) => ({
+    ...b,
+    proformaApprovalStatus: b.proformaId ? (approvalByProforma.get(b.proformaId) ?? null) : null,
+  }))
 
   return {
-    rows: bookingRows,
+    rows: rowsWithApproval,
     pagination: {
       page,
       pageSize,
-      total: Number(totalRows[0]?.value || 0),
-      totalPages: Math.max(1, Math.ceil(Number(totalRows[0]?.value || 0) / pageSize)),
+      total: totalBookings,
+      totalPages: Math.max(1, Math.ceil(totalBookings / pageSize)),
     },
     kpis: {
       today: todayCount,
@@ -388,6 +482,16 @@ export async function getKiaBookingsList(input: BookingListInput) {
       readyDelivery: statusCounts.ready_delivery || 0,
       delivered: statusCounts.delivered || 0,
       cancelled: statusCounts.cancelled || 0,
+    },
+    // #10 Bookings & vehicles summary — full status distribution, allocation state, and top models.
+    summary: {
+      totalBookings,
+      statusCounts: statusCounts as Record<string, number>,
+      onHold: statusCounts.on_hold || 0,
+      activeAllocations: Number(agg?.active_allocations || 0),
+      noPayment: Number(agg?.no_payment_count || 0),
+      notInStock: Number(agg?.not_in_stock_count || 0),
+      topModels: (agg?.model_counts || []).map((m) => ({ model: text(m.model), count: Number(m.count || 0) })).filter((m) => m.model),
     },
     filters: {
       dealers: (agg?.dealers || []).map((value) => text(value)).filter(Boolean),
@@ -625,6 +729,7 @@ async function readMatchingVehicle(vinNumber: string) {
   // stock_status text. Previously this read kia_stock_report and only accepted
   // 'free stock'/'in transit', so vehicles that showed a badge + Allot button
   // failed with "Vehicle is not available for allocation". Same logic → no gap.
+  const vin = String(vinNumber).toUpperCase()
   const result = await analyticsDb.execute(sql`
     SELECT
       sm.vin_number,
@@ -639,12 +744,39 @@ async function readMatchingVehicle(vinNumber: string) {
     FROM kia_stock_management sm
     LEFT JOIN kia_vehicle_allocations va
       ON va.vin_number = sm.vin_number AND va.released_at IS NULL
-    WHERE upper(sm.vin_number) = ${vinNumber}
+    LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+    WHERE upper(sm.vin_number) = ${vin}
       AND va.id IS NULL
+      -- Not matchable if retailed or on hold (#12).
+      AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
     ORDER BY sm.id DESC
     LIMIT 1
   `)
-  return rows(result)[0] || null
+  const dmsRow = rows(result)[0]
+  if (dmsRow) return dmsRow
+
+  // #8 BBND fallback — a Booked-But-Not-in-DMS vehicle registered in kia_stock_local_statuses. Lets a
+  // booking be allotted a VIN that isn't in the DMS feed; the snapshot makes it survive like an allotment.
+  const bbnd = await analyticsDb.execute(sql`
+    SELECT
+      ls.vin_number,
+      ls.dealer_code,
+      ls.model,
+      ls.variant,
+      ls.color,
+      ls.engine_no,
+      coalesce(ls.stock_status_at_mark, 'BBND') AS stock_status,
+      ls.vehicle_snapshot AS snapshot,
+      'bbnd'::text AS source
+    FROM kia_stock_local_statuses ls
+    LEFT JOIN kia_vehicle_allocations va
+      ON va.vin_number = ls.vin_number AND va.released_at IS NULL
+    WHERE upper(ls.vin_number) = ${vin}
+      AND ls.local_status = 'bbnd'
+      AND va.id IS NULL
+    LIMIT 1
+  `)
+  return rows(bbnd)[0] || null
 }
 
 export async function getKiaBookingMatchingVehicles(id: string) {
@@ -681,9 +813,17 @@ export async function getKiaBookingMatchingVehicles(id: string) {
       FROM kia_stock_management sm
       LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
       WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-        AND coalesce(ls.local_status, '') <> 'retail'
+        -- Exclude retailed vehicles AND vehicles on hold (#12) — a held VIN is not matchable.
+        AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
         AND NOT EXISTS (SELECT 1 FROM active_allocations aa WHERE aa.vin_number = sm.vin_number)
         AND sm.model ILIKE ${modelPattern}
+        -- #1 Only the proforma's variant is matchable (either side contained in the other; an empty
+        -- vehicle variant is left in, matching the server's allot guard which can't gate a blank).
+        AND (
+          coalesce(sm.variant, '') = ''
+          OR sm.variant ILIKE ${variantPattern}
+          OR ${text(booking.variant)} ILIKE '%' || sm.variant || '%'
+        )
       ORDER BY sm.vin_number, sm.uploaded_at DESC NULLS LAST, sm.id DESC
     ),
     bbnd AS (
@@ -704,6 +844,11 @@ export async function getKiaBookingMatchingVehicles(id: string) {
         AND NOT EXISTS (SELECT 1 FROM active_allocations aa WHERE aa.vin_number = ls.vin_number)
         AND NOT EXISTS (SELECT 1 FROM dms d WHERE d.vin_number = ls.vin_number)
         AND ls.model ILIKE ${modelPattern}
+        AND (
+          coalesce(ls.variant, '') = ''
+          OR ls.variant ILIKE ${variantPattern}
+          OR ${text(booking.variant)} ILIKE '%' || ls.variant || '%'
+        )
     )
     SELECT *
     FROM (
@@ -727,6 +872,27 @@ export async function getKiaBookingMatchingVehicles(id: string) {
   `))
 }
 
+// #1 Guard: the allotted vehicle must be the model AND variant selected on the proforma. Comparison is
+// case/punctuation-insensitive (alphanumeric only). Model must match exactly; variant must match with
+// either side contained in the other (tolerates DMS vs proforma formatting differences). Empty wanted
+// values are not enforced (a proforma with a blank model/variant can't gate).
+function alnumKey(value: unknown) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+function assertKiaVehicleMatchesProforma(vehicle: JsonRecord, wanted: { model: string; variant: string }) {
+  const vehModel = alnumKey(vehicle.model)
+  const vehVariant = alnumKey(vehicle.variant)
+  const wantModel = alnumKey(wanted.model)
+  const wantVariant = alnumKey(wanted.variant)
+
+  if (wantModel && vehModel && wantModel !== vehModel) {
+    throw new Error(`This vehicle is a ${text(vehicle.model) || 'different model'} but the proforma is for a ${wanted.model}. Only the selected model can be allotted.`)
+  }
+  if (wantVariant && vehVariant && !(vehVariant.includes(wantVariant) || wantVariant.includes(vehVariant))) {
+    throw new Error(`This vehicle's variant (${text(vehicle.variant) || '—'}) does not match the proforma variant (${wanted.variant}). Only the selected variant can be allotted.`)
+  }
+}
+
 export async function allotKiaBookingVehicle(id: string, vinNumber: string, appUser: AppUser) {
   if (!canAllotKiaVehicle(appUser.role)) {
     throw new Error('The Sales Executive cannot allot vehicles. Allotment is done by an approving/finance/accounts role.')
@@ -741,10 +907,16 @@ export async function allotKiaBookingVehicle(id: string, vinNumber: string, appU
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
     if (!booking.proformaId) throw new Error('Generate and approve the proforma before vehicle allocation.')
-    const [proforma] = await tx.select({ approvalStatus: kiaProformas.approvalStatus }).from(kiaProformas).where(eq(kiaProformas.id, booking.proformaId)).limit(1)
+    const [proforma] = await tx
+      .select({ approvalStatus: kiaProformas.approvalStatus, modelName: kiaProformas.modelName, trimDescription: kiaProformas.trimDescription })
+      .from(kiaProformas).where(eq(kiaProformas.id, booking.proformaId)).limit(1)
     if (text(proforma?.approvalStatus).toUpperCase() !== 'APPROVED') {
       throw new Error('Vehicle allocation opens only after Sales Manager / Manager approval.')
     }
+
+    // #1 Strict model + variant lock: only a vehicle whose model AND variant match the one selected on
+    // the proforma may be allotted — no other model/variant can be pulled from stock.
+    assertKiaVehicleMatchesProforma(vehicle, { model: text(proforma?.modelName), variant: text(proforma?.trimDescription) })
 
     const [activeVin] = await tx.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.vinNumber, normalizedVin), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
     if (activeVin) throw new Error('This VIN is already allocated to another active booking')
@@ -817,6 +989,199 @@ export async function releaseKiaBookingVehicle(id: string, reason: string | null
     })
     return updated
   })
+}
+
+// Put a booking on hold — pauses its workflow at whatever stage it is in. The pre-hold status is
+// remembered in metadata so Resume can restore it. Allotment/transfer rows are left untouched (a
+// held booking keeps its VIN); only the workflow status changes.
+export async function holdKiaBookingVehicle(id: string, reason: string | null, appUser: AppUser) {
+  return db.transaction(async (tx) => {
+    const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
+    if (!booking) throw new Error('Booking not found')
+    if (booking.status === 'on_hold') throw new Error('Booking is already on hold')
+    if (booking.status === 'delivered' || booking.status === 'cancelled') {
+      throw new Error(`A ${booking.status} booking cannot be put on hold`)
+    }
+    const meta = (booking.metadata as Record<string, unknown> | null) || {}
+    const [updated] = await tx.update(kiaBookings).set({
+      status: 'on_hold',
+      metadata: { ...meta, heldFromStatus: booking.status, heldReason: nullableText(reason) },
+      updatedBy: appUser.id,
+      updatedAt: new Date(),
+    }).where(eq(kiaBookings.id, id)).returning()
+
+    await addActivity(tx, {
+      bookingId: id,
+      type: 'hold',
+      title: 'Booking put on hold',
+      description: reason || null,
+      appUser,
+    })
+    return updated
+  })
+}
+
+// Resume a held booking back to the stage it was at (or the natural stage for its progress). If a VIN
+// is still actively allocated, resume straight to 'vehicle_allocated'.
+export async function resumeKiaBookingVehicle(id: string, appUser: AppUser) {
+  return db.transaction(async (tx) => {
+    const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
+    if (!booking) throw new Error('Booking not found')
+    if (booking.status !== 'on_hold') throw new Error('Booking is not on hold')
+
+    const meta = (booking.metadata as Record<string, unknown> | null) || {}
+    const [activeAlloc] = await tx
+      .select({ id: kiaVehicleAllocations.id })
+      .from(kiaVehicleAllocations)
+      .where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt)))
+      .limit(1)
+    const remembered = typeof meta.heldFromStatus === 'string' && meta.heldFromStatus ? normalizeStatus(meta.heldFromStatus) : null
+    const fallback: KiaBookingStatus = booking.proformaId ? 'proforma_generated' : 'booking_created'
+    const resumeStatus: KiaBookingStatus = activeAlloc ? 'vehicle_allocated' : (remembered ?? fallback)
+
+    const nextMeta = { ...meta }
+    delete nextMeta.heldFromStatus
+    delete nextMeta.heldReason
+
+    const [updated] = await tx.update(kiaBookings).set({
+      status: resumeStatus,
+      metadata: nextMeta,
+      updatedBy: appUser.id,
+      updatedAt: new Date(),
+    }).where(eq(kiaBookings.id, id)).returning()
+
+    await addActivity(tx, {
+      bookingId: id,
+      type: 'resume',
+      title: 'Booking resumed from hold',
+      description: `Resumed to ${resumeStatus.replace(/_/g, ' ')}`,
+      appUser,
+    })
+    return updated
+  })
+}
+
+// Read the latest DMS row for a VIN (for a hold snapshot). Held vehicles are in the DMS feed; the
+// snapshot is what keeps them visible if the VIN later drops out.
+async function readStockVehicleRow(vin: string) {
+  const res = await analyticsDb.execute(sql`
+    SELECT sm.vin_number, sm.order_dealer AS dealer_code, sm.model, sm.variant,
+           sm.exterior_color_name AS color, sm.engine_no, to_jsonb(sm) AS snapshot
+    FROM kia_stock_management sm
+    WHERE upper(trim(sm.vin_number)) = ${vin}
+    ORDER BY sm.uploaded_at DESC NULLS LAST, sm.id DESC
+    LIMIT 1
+  `)
+  return rows<{ vin_number: string; dealer_code: string | null; model: string | null; variant: string | null; color: string | null; engine_no: string | null; snapshot: JsonRecord }>(res)[0] || null
+}
+
+// #12 Put a stock vehicle on hold (Customer or Dealer). Modelled in kia_stock_local_statuses like
+// 'retail' — one row per VIN, carrying a vehicle_snapshot so the hold survives the VIN leaving DMS.
+// A held VIN is excluded from the matchable list + allot validator, so no one else can allot it.
+export async function holdKiaStockVehicle(
+  vinNumber: string,
+  opts: { holdFor: 'customer' | 'dealer'; bookingId?: string | null; customerName?: string | null; notes?: string | null },
+  appUser: AppUser,
+) {
+  if (!canAllotKiaVehicle(appUser.role)) throw new Error('You are not allowed to hold stock vehicles.')
+  const vin = text(vinNumber).toUpperCase()
+  if (!vin) throw new Error('VIN is required')
+  const holdFor = opts.holdFor === 'dealer' ? 'dealer' : 'customer'
+  const localStatus = holdFor === 'dealer' ? 'hold_dealer' : 'hold_customer'
+
+  const [activeVin] = await db.select({ id: kiaVehicleAllocations.id }).from(kiaVehicleAllocations)
+    .where(and(eq(kiaVehicleAllocations.vinNumber, vin), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
+  if (activeVin) throw new Error('This VIN is already allocated to an active booking and cannot be held.')
+
+  const [existing] = await db.select({ localStatus: kiaStockLocalStatuses.localStatus }).from(kiaStockLocalStatuses)
+    .where(eq(kiaStockLocalStatuses.vinNumber, vin)).limit(1)
+  if (existing?.localStatus === 'retail') throw new Error('This vehicle is already retailed and cannot be held.')
+
+  const vehicle = await readStockVehicleRow(vin)
+  let customerName = nullableText(opts.customerName)
+  let bookingNo: string | null = null
+  if (holdFor === 'customer' && opts.bookingId) {
+    const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, opts.bookingId), isNull(kiaBookings.deletedAt))).limit(1)
+    if (booking) { customerName = customerName || booking.customerName; bookingNo = booking.bookingNumber }
+  }
+
+  const base = {
+    localStatus,
+    dealerCode: nullableText(vehicle?.dealer_code),
+    model: nullableText(vehicle?.model),
+    variant: nullableText(vehicle?.variant),
+    color: nullableText(vehicle?.color),
+    engineNo: nullableText(vehicle?.engine_no),
+    vehicleSnapshot: (vehicle?.snapshot || {}) as JsonRecord,
+    bookingNo,
+    customerName,
+    notes: nullableText(opts.notes),
+    markedBy: appUser.id,
+    markedByName: appUser.fullName,
+    markedByRole: appUser.role,
+    updatedAt: new Date(),
+  }
+  await db.insert(kiaStockLocalStatuses).values({ vinNumber: vin, ...base }).onConflictDoUpdate({
+    target: kiaStockLocalStatuses.vinNumber,
+    set: { ...base, markedAt: new Date() },
+  })
+  return { vinNumber: vin, holdFor }
+}
+
+// Release a Customer/Dealer hold — deletes the local-status row so the VIN becomes matchable again.
+export async function releaseKiaStockHold(vinNumber: string, appUser: AppUser) {
+  if (!canAllotKiaVehicle(appUser.role)) throw new Error('You are not allowed to release holds.')
+  const vin = text(vinNumber).toUpperCase()
+  if (!vin) throw new Error('VIN is required')
+  const [existing] = await db.select({ localStatus: kiaStockLocalStatuses.localStatus }).from(kiaStockLocalStatuses)
+    .where(eq(kiaStockLocalStatuses.vinNumber, vin)).limit(1)
+  if (!existing || (existing.localStatus !== 'hold_customer' && existing.localStatus !== 'hold_dealer')) {
+    throw new Error('This vehicle is not on hold.')
+  }
+  await db.delete(kiaStockLocalStatuses).where(eq(kiaStockLocalStatuses.vinNumber, vin))
+  return { vinNumber: vin, released: true }
+}
+
+// #8 Allot a BBND (Booked-But-Not-in-DMS) vehicle: register the manually-entered VIN in
+// kia_stock_local_statuses (local_status='bbnd', with a snapshot), then allot it to the booking via
+// the normal flow (readMatchingVehicle now has a BBND branch). Persists durably like an allotment.
+export async function allotKiaBbndVehicle(
+  bookingId: string,
+  details: { vinNumber: string; model?: string | null; variant?: string | null; color?: string | null; engineNo?: string | null; dealerCode?: string | null },
+  appUser: AppUser,
+) {
+  if (!canAllotKiaVehicle(appUser.role)) throw new Error('You are not allowed to allot vehicles.')
+  const vin = text(details.vinNumber).toUpperCase()
+  if (!vin) throw new Error('VIN is required')
+
+  const snapshot: JsonRecord = {
+    vin_number: vin,
+    model: nullableText(details.model),
+    variant: nullableText(details.variant),
+    color: nullableText(details.color),
+    engine_no: nullableText(details.engineNo),
+    dealer_code: nullableText(details.dealerCode),
+    source: 'bbnd',
+  }
+  const base = {
+    localStatus: 'bbnd' as const,
+    dealerCode: nullableText(details.dealerCode),
+    model: nullableText(details.model),
+    variant: nullableText(details.variant),
+    color: nullableText(details.color),
+    engineNo: nullableText(details.engineNo),
+    vehicleSnapshot: snapshot,
+    markedBy: appUser.id,
+    markedByName: appUser.fullName,
+    markedByRole: appUser.role,
+    updatedAt: new Date(),
+  }
+  await db.insert(kiaStockLocalStatuses).values({ vinNumber: vin, ...base }).onConflictDoUpdate({
+    target: kiaStockLocalStatuses.vinNumber,
+    set: base,
+  })
+
+  return allotKiaBookingVehicle(bookingId, vin, appUser)
 }
 
 export async function confirmKiaBookingPayment(
@@ -1072,6 +1437,10 @@ export async function requestKiaVehicleTransfer(
         transferStatus: 'Transferred',
         notes: nullableText(input.notes),
         requestedBy: appUser.id,
+        // Retention snapshot (#9): keeps the vehicle visible under the destination dealer even if the
+        // VIN later leaves the DMS feed. Seed stock_last_seen_at since it is in stock right now.
+        vehicleSnapshot: (vehicle.snapshot || {}) as JsonRecord,
+        stockLastSeenAt: new Date(),
         metadata: { source: 'direct_stock_transfer' },
       }).returning()
 
@@ -1171,6 +1540,9 @@ export async function requestKiaVehicleTransfer(
       toDealerCode,
       notes: nullableText(input.notes),
       requestedBy: appUser.id,
+      // Retention snapshot (#9) — reuse the allocation's snapshot (or the freshly matched vehicle).
+      vehicleSnapshot: (allocation?.vehicleSnapshot || vehicle?.snapshot || {}) as JsonRecord,
+      stockLastSeenAt: new Date(),
       metadata: {
         source: allocation?.stockSource || 'booking',
         requestedFromStatus: booking.status,

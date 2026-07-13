@@ -18,10 +18,19 @@ import { saveKiaProformaPdf, buildKiaProformaPdf } from '@/lib/kia-proforma/invo
 import { sendTrackedEmail } from '@/lib/email/email-log'
 import { buildCallbackUrl, buildTrackingUrl } from '@/lib/kia/tracking'
 import { getKiaBranchLabel, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
-import { buildApprovedProformaEmail } from '@/lib/email/templates'
+import { buildApprovedProformaEmail, buildUpdatedProformaEmail } from '@/lib/email/templates'
 import { requirePermission } from '@/lib/permissions/service'
 
 export const dynamic = 'force-dynamic'
+
+// Fixed CC on every customer proforma email (final-approval + GM-edit resend).
+const PROFORMA_EMAIL_CC = [
+  'sales@amkia.in',
+  'financeofficer@amhyundai.com',
+  'aryan@jammuautomart.com',
+  'edp@amkia.in',
+  'sanjay@amgroupind.com',
+] as const
 
 const VERIFY_FIELDS = [
   ['cashDiscount', 'CASH DISCOUNT'],
@@ -285,53 +294,63 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       }
     }
 
-    // Trigger 1: on FINAL approval (Pending → Approved), email the customer.
-    // Fire-and-forget — sendTrackedEmail logs the outcome and never throws, so a
-    // mail failure can never break the approval workflow.
-    if (isApproved) {
+    // Email the customer their proforma PDF (with the fixed CC list) on two triggers:
+    //   'approved' — FINAL approval (Pending → Approved).
+    //   'updated'  — a General (Sales) Manager EDITED the proforma; the customer gets the revised copy.
+    // Fire-and-forget — sendTrackedEmail logs the outcome and never throws, so a mail failure can
+    // never break the approval/edit workflow.
+    const emailCustomerProforma = async (kind: 'approved' | 'updated') => {
       const customerEmail = text(updated.customerEmail)
-      if (customerEmail) {
-        const bookingDate = linkedBookingRow?.createdAt || updated.proformaDate
-        // Dealer shown to the customer comes from the BOOKING's dealer code (authoritative), mapped
-        // to a friendly branch name. The proforma's own `location` is an unreliable source — legacy
-        // rows stored a brand value like "all" there.
-        const dealerCode = normalizeKiaDealerCode(linkedBookingRow?.dealerCode ?? updated.location)
-        const dealerDisplayName = dealerCode ? `AM Kia ${getKiaBranchLabel(dealerCode)}` : 'AM Kia'
-        const email = buildApprovedProformaEmail({
-          customerName: text(updated.customerName) || 'Customer',
-          proformaNumber: String(updated.id).slice(0, 8).toUpperCase(),
-          model: text(updated.modelName),
-          variant: text(updated.trimDescription),
-          color: text(updated.vehicleColor),
-          bookingDate: bookingDate ? new Date(bookingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null,
-          consultantName: text(updated.consultant),
-          dealerName: dealerDisplayName,
-          trackingUrl: linkedBookingRow?.id ? buildTrackingUrl(linkedBookingRow.id) : null,
-          callbackUrl: linkedBookingRow?.id ? buildCallbackUrl(linkedBookingRow.id) : null,
-        })
-        // Attach the approved proforma PDF so the customer receives it directly.
-        let attachments: { filename: string; content: Buffer; contentType: string }[] | undefined
-        try {
-          const pdfBuffer = buildKiaProformaPdf(updated)
-          attachments = [{
-            filename: `Kia-Proforma-${String(updated.id).slice(0, 8).toUpperCase()}.pdf`,
-            content: pdfBuffer,
-            contentType: 'application/pdf',
-          }]
-        } catch (pdfError) {
-          // Never let a PDF failure block the notification — send without it.
-          console.error('Failed to build proforma PDF for approval email:', pdfError)
-        }
-        await sendTrackedEmail({
-          to: customerEmail,
-          subject: email.subject,
-          html: email.html,
-          text: email.text,
-          emailType: 'approved_proforma',
-          bookingId: linkedBookingRow?.id || null,
-          attachments,
-        })
+      if (!customerEmail) return
+      const bookingDate = linkedBookingRow?.createdAt || updated.proformaDate
+      // Dealer shown to the customer comes from the BOOKING's dealer code (authoritative), mapped
+      // to a friendly branch name. The proforma's own `location` is an unreliable source — legacy
+      // rows stored a brand value like "all" there.
+      const dealerCode = normalizeKiaDealerCode(linkedBookingRow?.dealerCode ?? updated.location)
+      const dealerDisplayName = dealerCode ? `AM Kia ${getKiaBranchLabel(dealerCode)}` : 'AM Kia'
+      const proformaNumber = String(updated.id).slice(0, 8).toUpperCase()
+      const data = {
+        customerName: text(updated.customerName) || 'Customer',
+        proformaNumber,
+        model: text(updated.modelName),
+        variant: text(updated.trimDescription),
+        color: text(updated.vehicleColor),
+        bookingDate: bookingDate ? new Date(bookingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null,
+        consultantName: text(updated.consultant),
+        dealerName: dealerDisplayName,
+        trackingUrl: linkedBookingRow?.id ? buildTrackingUrl(linkedBookingRow.id) : null,
+        callbackUrl: linkedBookingRow?.id ? buildCallbackUrl(linkedBookingRow.id) : null,
       }
+      const email = kind === 'approved' ? buildApprovedProformaEmail(data) : buildUpdatedProformaEmail(data)
+      // Attach the proforma PDF so the customer receives it directly.
+      let attachments: { filename: string; content: Buffer; contentType: string }[] | undefined
+      try {
+        const pdfBuffer = buildKiaProformaPdf(updated)
+        attachments = [{
+          filename: `Kia-Proforma-${proformaNumber}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        }]
+      } catch (pdfError) {
+        // Never let a PDF failure block the notification — send without it.
+        console.error('Failed to build proforma PDF for customer email:', pdfError)
+      }
+      await sendTrackedEmail({
+        to: customerEmail,
+        cc: [...PROFORMA_EMAIL_CC],
+        subject: email.subject,
+        html: email.html,
+        text: email.text,
+        emailType: kind === 'approved' ? 'approved_proforma' : 'updated_proforma',
+        bookingId: linkedBookingRow?.id || null,
+        attachments,
+      })
+    }
+
+    if (isApproved) {
+      await emailCustomerProforma('approved')
+    } else if (approvalStageActed === 'edit') {
+      await emailCustomerProforma('updated')
     }
 
     return NextResponse.json({ row: serialize(updated as Record<string, unknown>) })

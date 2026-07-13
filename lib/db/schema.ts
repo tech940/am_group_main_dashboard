@@ -1539,6 +1539,12 @@ export const kiaVehicleTransfers = pgTable('kia_vehicle_transfers', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
   notes: text('notes'),
   metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  // Transfer retention primitive (#9, migration 0013) — mirrors kia_vehicle_allocations. The
+  // destination dealer keeps the vehicle (from vehicle_snapshot) even after the VIN leaves the DMS feed.
+  vehicleSnapshot: jsonb('vehicle_snapshot').$type<Record<string, unknown>>().default({}).notNull(),
+  stockLastSeenAt: timestamp('stock_last_seen_at', { withTimezone: true }),
+  stockMissingAt: timestamp('stock_missing_at', { withTimezone: true }),
+  stockStatus: text('stock_status'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })

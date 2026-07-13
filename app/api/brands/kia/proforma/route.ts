@@ -36,7 +36,7 @@ function readDate(body: Record<string, unknown>, key: string) {
 }
 
 function validatePayload(body: Record<string, unknown>) {
-  const required = [
+  const required: string[] = [
     'customerType',
     'proformaDate',
     'customerName',
@@ -47,9 +47,13 @@ function validatePayload(body: Record<string, unknown>) {
     'trimDescription',
     'fuelType',
     'vehicleColor',
-    'bankName',
     'vehicleStatus',
-  ] as const
+  ]
+  // Bank (and branch) are only mandatory for finance bookings. A CASH payment — flagged by the client
+  // via `paymentMode`, or an explicit CASH bank name — leaves them optional.
+  const isCash = readText(body, 'paymentMode').toLowerCase() === 'cash'
+    || readText(body, 'bankName').toUpperCase() === 'CASH'
+  if (!isCash) required.push('bankName')
   const errors: Record<string, string> = {}
   required.forEach((key) => {
     if (!readText(body, key)) errors[key] = 'Required'
