@@ -8,6 +8,7 @@ import { ChangeEvent, createContext, FormEvent, useContext, useEffect, useMemo, 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
 import {
+  AlertTriangle,
   ArrowRight,
   BadgeIndianRupee,
   CalendarCheck,
@@ -103,6 +104,11 @@ import {
   getKiaBookingStageInfo,
   isKiaBookingWaitLong,
 } from '@/lib/kia/booking-status-tracking'
+import {
+  calculateKiaProformaPricing,
+  getKiaBankOptions,
+  getBranchesForBank,
+} from '@/lib/kia-proforma/pricing'
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
 
@@ -131,6 +137,8 @@ type BookingRow = {
   proformaNumber?: string | null
   /** The linked proforma's approval status — lets the waiting indicator refine 'proforma_generated'. */
   proformaApprovalStatus?: string | null
+  /** True when no stock is available for this booking (allotted VIN gone from DMS, or no free match). */
+  stockNotAvailable?: boolean
   financeOrderNumber?: string | null
   allocatedVin?: string | null
   deliveredAt?: string | null
@@ -250,6 +258,8 @@ type ProformaOptionsPayload = {
   models: string[]
   trims: { model: string; trim_description: string }[]
   banks: { bank_name: string; bank_branch: string | null }[]
+  prices: any[]
+  insuranceCompanies: string[]
 }
 
 type CreateBookingForm = {
@@ -320,6 +330,7 @@ const STATUS_LABELS: Record<string, string> = {
   ready_delivery: 'Ready Delivery',
   delivered: 'Delivered',
   cancelled: 'Cancelled',
+  not_in_stock: 'Not in Stock',
 }
 
 // Maps a booking status to a premium chip tone (theme-token driven).
@@ -329,12 +340,12 @@ const STATUS_TONE: Record<string, Tone> = {
   proforma_generated: 'indigo',
   on_hold: 'amber',
   vehicle_allocated: 'sky',
-  transfer_requested: 'teal',
   finance_pending: 'amber',
-  payment_confirmed: 'blue',
+  payment_confirmed: 'teal',
   ready_delivery: 'violet',
   delivered: 'emerald',
   cancelled: 'rose',
+  not_in_stock: 'rose',
 }
 
 function dealerCity(code?: string | null) {
@@ -369,6 +380,7 @@ const KPI_CONFIG: {
   { key: 'readyDelivery', label: 'Ready to Deliver', icon: Truck, tone: 'violet', hint: 'Paid · deliverable', statusFilter: 'ready_delivery' },
   { key: 'delivered', label: 'Delivered', icon: CheckCircle2, tone: 'emerald', hint: 'Completed', statusFilter: 'delivered' },
   { key: 'cancelled', label: 'Cancelled', icon: XCircle, tone: 'rose', hint: 'Closed / lost', statusFilter: 'cancelled' },
+  { key: 'notInStock', label: 'Not in Stock', icon: XCircle, tone: 'rose', hint: 'Vehicle not in inventory', statusFilter: 'not_in_stock' },
 ]
 
 const CREATE_TABS = ['Customer', 'Vehicle', 'Sales Team', 'Payment', 'Delivery', 'Review'] as const
@@ -550,6 +562,20 @@ function BookingWaitingIndicator({
   )
 }
 
+// Red flag shown in the CRM booking list when no stock is available for a booking — the allotted
+// vehicle left the DMS feed, or there is no free matching vehicle in stock.
+function StockUnavailableFlag({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn('inline-flex w-fit items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-black text-rose-700', className)}
+      title="No stock available for this booking"
+    >
+      <AlertTriangle className="h-2.5 w-2.5 shrink-0 text-rose-600" />
+      NO STOCK
+    </span>
+  )
+}
+
 function BookingMobileCard({
   row,
   onOpen,
@@ -572,6 +598,7 @@ function BookingMobileCard({
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <StatusBadge status={row.status} />
+          {row.stockNotAvailable && <StockUnavailableFlag />}
           <BookingWaitingIndicator status={row.status} approvalStatus={row.proformaApprovalStatus} updatedAt={row.updatedAt} now={now} align="right" />
         </div>
       </div>
@@ -1257,7 +1284,7 @@ export function KiaBookingsClient({
 
   const proformaOptionsQuery = useQuery({
     queryKey: ['kia-proforma-options-for-bookings'],
-    queryFn: () => fetchJson<ProformaOptionsPayload>('/api/brands/kia/proforma/options?lite=1', 'kia-proforma-options'),
+    queryFn: () => fetchJson<ProformaOptionsPayload>('/api/brands/kia/proforma/options', 'kia-proforma-options'),
     staleTime: 5 * 60 * 1000,
     retry: 2,
     refetchOnWindowFocus: false,
@@ -1430,6 +1457,7 @@ export function KiaBookingsClient({
     readyDelivery: 0,
     delivered: 0,
     cancelled: 0,
+    notInStock: 0,
   }
 
   useEffect(() => {
@@ -1796,45 +1824,7 @@ export function KiaBookingsClient({
           />
         )}
 
-        {/* ── #10 Bookings & Vehicles summary ── */}
-        {!stockMode && data?.summary && (
-          <section className={cn(PRIMARY_SURFACE, 'p-4 sm:p-5')}>
-            <div className="flex items-center gap-2.5 border-b pb-3" style={{ borderColor: 'var(--kia-hairline)' }}>
-              <IconTile icon={ClipboardList} tone="accent" size="sm" />
-              <div>
-                <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)]">Bookings &amp; Vehicles Summary</h3>
-                <p className="text-[11px] font-semibold text-[var(--kia-text-faint)]">Across all bookings in your scope</p>
-              </div>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
-              {([
-                { label: 'Total Bookings', value: data.summary.totalBookings },
-                { label: 'On Hold', value: data.summary.onHold },
-                { label: 'Vehicles Allotted', value: data.summary.activeAllocations },
-                { label: 'No Payment', value: data.summary.noPayment },
-                { label: 'Not in Stock', value: data.summary.notInStock },
-                { label: 'Delivered', value: data.summary.statusCounts.delivered || 0 },
-              ]).map((s) => (
-                <div key={s.label} className="kia-surface-flush px-3 py-2.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--kia-text-faint)]">{s.label}</p>
-                  <p className="mt-0.5 text-xl font-extrabold text-[var(--kia-text)]">{s.value}</p>
-                </div>
-              ))}
-            </div>
-            {data.summary.topModels.length > 0 && (
-              <div className="mt-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--kia-text-faint)]">Top Models Booked</p>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {data.summary.topModels.map((m) => (
-                    <span key={m.model} className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-bold text-[var(--kia-text-soft)]" style={{ borderColor: 'var(--kia-hairline)' }}>
-                      {m.model} <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-700">{m.count}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
-        )}
+
 
         <AnimatePresence>
           {actionMessage && !selectedBookingId && (
@@ -1977,6 +1967,7 @@ export function KiaBookingsClient({
                       <TableCell className="px-3 py-3">
                         <div className="flex flex-col gap-1.5">
                           <StatusBadge status={row.status} />
+                          {row.stockNotAvailable && <StockUnavailableFlag />}
                           <BookingWaitingIndicator status={row.status} approvalStatus={row.proformaApprovalStatus} updatedAt={row.updatedAt} now={nowTick} />
                         </div>
                       </TableCell>
@@ -2051,6 +2042,10 @@ export function KiaBookingsClient({
         onOpenChange={setQuoteOpen}
         modelOptions={bookingModelOptions}
         trims={priceTrims}
+        prefill={detailQuery.data?.booking}
+        prices={proformaOptionsQuery.data?.prices || []}
+        banks={proformaOptionsQuery.data?.banks || []}
+        insuranceCompanies={proformaOptionsQuery.data?.insuranceCompanies || []}
       />
 
       {/* FINANCE stage — confirm payment received only (no invoice) */}
@@ -3027,7 +3022,7 @@ function CreateBookingDialog({
   )
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, required, children, error }: { label: string; required?: boolean; children: React.ReactNode; error?: string }) {
   return (
     <div className="space-y-2 flex flex-col">
       <Label className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
@@ -3037,6 +3032,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
       <div className="relative rounded-2xl transition-all duration-200 focus-within:shadow-md focus-within:shadow-red-500/5">
         {children}
       </div>
+      {error && <p className="text-[10px] font-bold text-red-500">{error}</p>}
     </div>
   )
 }
@@ -3429,21 +3425,12 @@ function BookingDrawer({
         })()}
 
         <section className="kia-surface p-4 sm:p-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-start gap-3">
-              <IconTile icon={Car} tone="info" />
-              <div>
-                <h3 className="text-base font-extrabold tracking-tight text-[var(--kia-text)] sm:text-lg">Vehicle Allocation</h3>
-                <p className="text-xs font-medium leading-5 text-[var(--kia-text-soft)]">
-                  {proformaApproved ? 'Matchable VINs exclude local Retail and active allocations.' : 'Allocation unlocks after Sales Manager / Manager approval.'}
-                </p>
-              </div>
-            </div>
-            {allocation && (
-              <Button variant="outline" className="h-10 shrink-0 rounded-2xl text-xs font-bold sm:text-sm" disabled={actionLoading || !canActOnStock} onClick={() => onAction('release')}>
-                {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />} Release VIN
-              </Button>
-            )}
+          <div className="flex items-center gap-3">
+            <IconTile icon={Car} tone="info" />
+            <h3 className="text-base font-extrabold tracking-tight text-[var(--kia-text)] sm:text-lg">Vehicle Allocation</h3>
+            <p className="text-xs font-medium leading-5 text-[var(--kia-text-soft)]">
+              {proformaApproved ? 'Matchable VINs exclude local Retail and active allocations.' : 'Allocation unlocks after Sales Manager / Manager approval.'}
+            </p>
           </div>
           {allocation ? (
             <div className="mt-4 rounded-2xl border p-3.5" style={toneSoftStyle('success')}>
@@ -3751,22 +3738,71 @@ function ActionCard({ title, icon: Icon, value, status, action, disabled, loadin
   )
 }
 
+function asNumber(value: unknown): number {
+  const parsed = Number(String(value ?? '0').replace(/,/g, ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formatCurrency(value: unknown) {
+  return `Rs ${Math.round(asNumber(value)).toLocaleString('en-IN')}`
+}
+
 interface EmailQuoteForm {
+  customerType: string
+  proformaDate: string
   customerName: string
   customerPhone: string
+  customerAddress: string
   customerEmail: string
-  model: string
-  variant: string
-  price: string
+  modelName: string
+  trimDescription: string
+  fuelType: string
+  vehicleColor: string
+  bankName: string
+  bankBranch: string
+  loanAmount: string
+  insuranceCompany: string
+  exShowroom: string
+  tcsValue: string
+  registrationCharges: string
+  insuranceValue: string
+  fastagValue: string
+  accessoriesKit: string
+  extWarranty: string
+  cashDiscount: string
+  exchangeValue: string
+  bookingAmount: string
+  govtEmployeeDiscount: string
+  additionalDiscount: string
 }
 
 const EMPTY_QUOTE_FORM: EmailQuoteForm = {
+  customerType: 'Customer',
+  proformaDate: new Date().toISOString().slice(0, 10),
   customerName: '',
   customerPhone: '',
   customerEmail: '',
-  model: '',
-  variant: '',
-  price: '',
+  customerAddress: '',
+  modelName: '',
+  trimDescription: '',
+  fuelType: 'DIESEL',
+  vehicleColor: '',
+  bankName: 'CASH',
+  bankBranch: '',
+  insuranceCompany: '',
+  loanAmount: '',
+  exShowroom: '0',
+  tcsValue: '0',
+  registrationCharges: '0',
+  insuranceValue: '0',
+  fastagValue: '0',
+  accessoriesKit: '0',
+  extWarranty: '0',
+  cashDiscount: '0',
+  exchangeValue: '0',
+  bookingAmount: '0',
+  govtEmployeeDiscount: '0',
+  additionalDiscount: '0',
 }
 
 function EmailQuoteDialog({
@@ -3774,17 +3810,25 @@ function EmailQuoteDialog({
   onOpenChange,
   modelOptions,
   trims,
+  prefill,
+  prices = [],
+  banks = [],
+  insuranceCompanies = [],
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   modelOptions: string[]
   trims: { model: string; trim_description: string }[]
+  prefill?: any
+  prices?: any[]
+  banks?: any[]
+  insuranceCompanies?: string[]
 }) {
   const [form, setForm] = useState<EmailQuoteForm>(EMPTY_QUOTE_FORM)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const update = <K extends keyof EmailQuoteForm>(key: K, value: EmailQuoteForm[K]) => {
+  const update = (key: keyof EmailQuoteForm, value: string) => {
     setForm((current) => ({ ...current, [key]: value }))
     if (errors[key]) {
       setErrors((current) => {
@@ -3794,6 +3838,75 @@ function EmailQuoteDialog({
       })
     }
   }
+
+  useEffect(() => {
+    if (open) {
+      if (prefill) {
+        const meta = (prefill.metadata || {}) as Record<string, any>
+        setForm({
+          customerType: meta.customerType || 'Customer',
+          proformaDate: new Date().toISOString().slice(0, 10),
+          customerName: prefill.customerName || '',
+          customerPhone: prefill.customerPhone || '',
+          customerEmail: prefill.customerEmail || '',
+          customerAddress: prefill.customerAddress || '',
+          modelName: prefill.model || '',
+          trimDescription: prefill.variant || '',
+          fuelType: prefill.fuelType || meta.fuelType || 'PETROL',
+          vehicleColor: prefill.color || meta.color || '',
+          bankName: prefill.bankName || 'CASH',
+          bankBranch: meta.bankBranch || '',
+          insuranceCompany: meta.insuranceCompany || '',
+          loanAmount: String(prefill.loanAmount || '0'),
+          exShowroom: '0',
+          tcsValue: '0',
+          registrationCharges: '0',
+          insuranceValue: '0',
+          fastagValue: '0',
+          accessoriesKit: '0',
+          extWarranty: '0',
+          cashDiscount: '0',
+          exchangeValue: '0',
+          bookingAmount: String(meta.bookingAmount || '0'),
+          govtEmployeeDiscount: '0',
+          additionalDiscount: '0',
+        })
+      } else {
+        setForm(EMPTY_QUOTE_FORM)
+      }
+      setErrors({})
+    }
+  }, [open, prefill])
+
+  const pricing = useMemo(() => {
+    return calculateKiaProformaPricing(form, prices, banks)
+  }, [form, prices, banks])
+
+  const totals = pricing.totals
+  const bankOptions = useMemo(() => getKiaBankOptions(banks), [banks])
+  const filteredBranches = pricing.branchOptions
+  const isCashPayment = form.bankName.toUpperCase() === 'CASH'
+  const filteredTrims = useMemo(() => {
+    return trims.filter((t) => !form.modelName || t.model === form.modelName).map((t) => t.trim_description)
+  }, [form.modelName, trims])
+
+  const [lastPrefilledTrim, setLastPrefilledTrim] = useState<string | null>(null)
+  useEffect(() => {
+    if (pricing.prefill && pricing.canonicalTrim !== lastPrefilledTrim) {
+      setLastPrefilledTrim(pricing.canonicalTrim)
+      setForm((current) => ({
+        ...current,
+        exShowroom: pricing.prefill!.exShowroom,
+        tcsValue: pricing.prefill!.tcsValue,
+        registrationCharges: pricing.prefill!.registrationCharges,
+        insuranceValue: pricing.prefill!.insuranceValue,
+        fastagValue: pricing.prefill!.fastagValue,
+        accessoriesKit: pricing.prefill!.accessoriesKit,
+        extWarranty: pricing.prefill!.extWarranty,
+        insuranceCompany: pricing.prefill!.insuranceCompany,
+      }))
+    }
+  }, [pricing.prefill, pricing.canonicalTrim, lastPrefilledTrim])
 
   const validate = () => {
     const nextErrors: Record<string, string> = {}
@@ -3811,14 +3924,9 @@ function EmailQuoteDialog({
       nextErrors.customerEmail = 'Enter a valid email address'
     }
 
-    if (!form.model) nextErrors.model = 'Please select a model'
-    if (!form.variant) nextErrors.variant = 'Please select a variant'
-
-    if (!form.price.trim()) {
-      nextErrors.price = 'Price is required'
-    } else if (isNaN(Number(form.price.replace(/,/g, '')))) {
-      nextErrors.price = 'Enter a valid number'
-    }
+    if (!form.modelName) nextErrors.modelName = 'Please select a model'
+    if (!form.trimDescription) nextErrors.trimDescription = 'Please select a variant'
+    if (!isCashPayment && !form.bankName) nextErrors.bankName = 'Bank name is required'
 
     setErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
@@ -3831,105 +3939,182 @@ function EmailQuoteDialog({
     try {
       const response = await fetch('/api/brands/kia/proforma/quote', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
-          customerPhone: form.customerPhone.replace(/\D/g, ''),
-          price: Number(form.price.replace(/,/g, '')),
+          totalCustomerCost: totals.totalCustomerCost,
+          grandTotalCost: totals.grandTotalCost,
         }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Failed to submit quote')
 
-      const pdfBytesStr = data.pdf
-      const filename = data.filename || 'AM-KIA-Quotation.pdf'
-      const binaryString = atob(pdfBytesStr)
-      const len = binaryString.length
-      const bytes = new Uint8Array(len)
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i)
-      }
-      const blob = new Blob([bytes], { type: 'application/pdf' })
-      const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
-      link.href = url
-      link.download = filename
+      link.href = `data:application/pdf;base64,${data.pdf}`
+      link.download = data.filename
+      document.body.appendChild(link)
       link.click()
-      window.URL.revokeObjectURL(url)
+      document.body.removeChild(link)
 
       toast({ title: 'Quotation Generated', description: 'Quote generated, saved in database, and downloaded successfully!', variant: 'success' })
-      setForm(EMPTY_QUOTE_FORM)
       onOpenChange(false)
     } catch (err) {
-      toast({ title: 'Generation Failed', description: err instanceof Error ? err.message : 'Something went wrong', variant: 'error' })
+      toast({ title: 'Quote Generation Failed', description: err instanceof Error ? err.message : 'Error generating quote', variant: 'error' })
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const vehicles = modelOptions.length > 0 ? modelOptions : ['CARENS', 'CARNIVAL', 'EV6', 'SELTOS', 'SONET', 'SYROS']
-  const quoteVariantOptions = useMemo(() => {
-    return Array.from(new Set(trims
-      .filter((trim) => !form.model || trim.model === form.model)
-      .map((trim) => trim.trim_description)
-      .filter(Boolean)))
-  }, [form.model, trims])
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="kia-premium flex max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-2xl flex-col overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+      <DialogContent className="kia-premium flex max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-4xl flex-col overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
         <LoaderOverlay show={isSubmitting} variant="proforma" label="Generating quotation…" sublabel="Preparing and stamping the PDF" />
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader className="relative shrink-0 overflow-hidden border-b border-slate-100 bg-[radial-gradient(circle_at_top_right,#e0f2fe,transparent_35%),linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-7">
             <div className="absolute -left-20 -top-24 h-56 w-56 rounded-full bg-cyan-200/30 blur-3xl" />
             <Badge variant="outline" className="relative mb-3 w-fit rounded-full border-cyan-100 bg-cyan-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700 sm:mb-4">Indicative Quote</Badge>
             <DialogTitle className="relative text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Create Price Quotation</DialogTitle>
-            <DialogDescription className="relative mt-2 text-xs font-semibold leading-5 text-slate-500 sm:text-sm">Send a simple quote PDF. It is not a proforma and does not allocate stock.</DialogDescription>
+            <DialogDescription className="relative mt-2 text-xs font-semibold leading-5 text-slate-500 sm:text-sm">Send a quotation PDF looking like a proforma with bank/validity restrictions.</DialogDescription>
           </DialogHeader>
           
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-3 sm:space-y-5 sm:p-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Customer Name <span className="text-red-500 font-bold">*</span></Label>
-                <Input className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-slate-50/50 font-bold focus:border-[#c8102e] focus:bg-white focus:ring-2 focus:ring-[#c8102e]/10 transition-all" value={form.customerName} onChange={(e) => update('customerName', e.target.value)} placeholder="e.g. John Doe" />
-                {errors.customerName && <p className="mt-1 text-xs font-semibold text-red-500">{errors.customerName}</p>}
-              </div>
-
-              <div>
-                <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Mobile Number <span className="text-red-500 font-bold">*</span></Label>
-                <Input className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-slate-50/50 font-bold focus:border-[#c8102e] focus:bg-white focus:ring-2 focus:ring-[#c8102e]/10 transition-all" inputMode="numeric" maxLength={10} value={form.customerPhone} onChange={(e) => update('customerPhone', e.target.value.replace(/\D/g, ''))} placeholder="10-digit mobile number" />
-                {errors.customerPhone && <p className="mt-1 text-xs font-semibold text-red-500">{errors.customerPhone}</p>}
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Customer Email <span className="text-red-500 font-bold">*</span></Label>
-              <Input className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-slate-50/50 font-bold focus:border-[#c8102e] focus:bg-white focus:ring-2 focus:ring-[#c8102e]/10 transition-all" type="email" value={form.customerEmail} onChange={(e) => update('customerEmail', e.target.value)} placeholder="name@domain.com" />
-              {errors.customerEmail && <p className="mt-1 text-xs font-semibold text-red-500">{errors.customerEmail}</p>}
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Model <span className="text-red-500 font-bold">*</span></Label>
-                <Select value={form.model} onValueChange={(val) => { update('model', val); update('variant', '') }}>
-                <SelectTrigger className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-white font-bold focus:border-slate-950 focus:bg-white focus:ring-2 focus:ring-slate-950/10 transition-all"><SelectValue placeholder="Select vehicle model" /></SelectTrigger>
-                <SelectContent>
-                  {vehicles.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                </SelectContent>
-              </Select>
-                {errors.model && <p className="mt-1 text-xs font-semibold text-red-500">{errors.model}</p>}
-              </div>
-              <div>
-                <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Variant <span className="text-red-500 font-bold">*</span></Label>
-                <SearchableVariantSelect value={form.variant} onChange={(val) => update('variant', val)} options={quoteVariantOptions} />
-                {errors.variant && <p className="mt-1 text-xs font-semibold text-red-500">{errors.variant}</p>}
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-4 sm:p-6">
+            {/* Customer Details */}
+            <div className="rounded-2xl border border-slate-100 bg-white/60 p-4 shadow-sm">
+              <h4 className="text-xs font-black uppercase tracking-[0.16em] text-slate-800 mb-3">Customer Details</h4>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Customer Type">
+                  <Select value={form.customerType} onValueChange={(val) => update('customerType', val)}>
+                    <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {['Customer', 'CSD', 'Bharat Series'].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Customer Name" error={errors.customerName}>
+                  <Input className="h-11 rounded-xl border-slate-200 bg-white font-bold" value={form.customerName} onChange={(e) => update('customerName', e.target.value)} placeholder="e.g. John Doe" />
+                </Field>
+                <Field label="Mobile Number" error={errors.customerPhone}>
+                  <Input className="h-11 rounded-xl border-slate-200 bg-white font-bold" inputMode="numeric" maxLength={10} value={form.customerPhone} onChange={(e) => update('customerPhone', e.target.value.replace(/\D/g, ''))} placeholder="10-digit mobile" />
+                </Field>
+                <Field label="Customer Email" error={errors.customerEmail}>
+                  <Input className="h-11 rounded-xl border-slate-200 bg-white font-bold" type="email" value={form.customerEmail} onChange={(e) => update('customerEmail', e.target.value)} placeholder="name@domain.com" />
+                </Field>
+                <div className="md:col-span-2">
+                  <Field label="Customer Address">
+                    <Input className="h-11 rounded-xl border-slate-200 bg-white font-bold" value={form.customerAddress} onChange={(e) => update('customerAddress', e.target.value)} placeholder="Full Customer Address" />
+                  </Field>
+                </div>
               </div>
             </div>
 
-            <div>
-              <Label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Vehicle Price <span className="text-red-500 font-bold">*</span></Label>
-              <Input className="mt-1.5 h-11 rounded-2xl border-slate-200 bg-white font-bold focus:border-slate-950 focus:bg-white focus:ring-2 focus:ring-slate-950/10 transition-all" inputMode="numeric" value={form.price} onChange={(e) => update('price', e.target.value)} placeholder="Indicative ex-showroom / quote amount" />
-              {errors.price && <p className="mt-1 text-xs font-semibold text-red-500">{errors.price}</p>}
+            {/* Vehicle & Financer */}
+            <div className="rounded-2xl border border-slate-100 bg-white/60 p-4 shadow-sm">
+              <h4 className="text-xs font-black uppercase tracking-[0.16em] text-slate-800 mb-3">Vehicle & Bank details</h4>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Model" error={errors.modelName}>
+                  <Select value={form.modelName} onValueChange={(val) => { update('modelName', val); update('trimDescription', '') }}>
+                    <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white"><SelectValue placeholder="Select Model" /></SelectTrigger>
+                    <SelectContent>
+                      {modelOptions.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Variant / Trim" error={errors.trimDescription}>
+                  <SearchableVariantSelect value={form.trimDescription} onChange={(val) => update('trimDescription', val)} options={filteredTrims} />
+                </Field>
+                <Field label="Vehicle Color">
+                  <Input className="h-11 rounded-xl border-slate-200 bg-white font-bold" value={form.vehicleColor} onChange={(e) => update('vehicleColor', e.target.value)} placeholder="e.g. Gravity Grey" />
+                </Field>
+                <Field label="Fuel Type">
+                  <Select value={form.fuelType} onValueChange={(val) => update('fuelType', val)}>
+                    <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {['DIESEL', 'PETROL', 'ELECTRIC'].map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Bank / Financer" error={errors.bankName}>
+                  <Select value={form.bankName} onValueChange={(val) => { update('bankName', val); update('bankBranch', ''); if (val === 'CASH') update('loanAmount', '0') }}>
+                    <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {bankOptions.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                {!isCashPayment && (
+                  <Field label="Bank Branch">
+                    <Select value={form.bankBranch} onValueChange={(val) => update('bankBranch', val)}>
+                      <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white"><SelectValue placeholder="Select Branch" /></SelectTrigger>
+                      <SelectContent>
+                        {filteredBranches.map((br) => <SelectItem key={br} value={br}>{br}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                )}
+                <Field label="Loan Amount">
+                  <Input className="h-11 rounded-xl border-slate-200 bg-white font-bold" type="number" disabled={isCashPayment} value={form.loanAmount} onChange={(e) => update('loanAmount', e.target.value)} />
+                </Field>
+                <Field label="Insurance Company">
+                  <Select value={form.insuranceCompany} onValueChange={(val) => update('insuranceCompany', val)}>
+                    <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white"><SelectValue placeholder="Select Insurance" /></SelectTrigger>
+                    <SelectContent>
+                      {insuranceCompanies.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+            </div>
+
+            {/* Price Details */}
+            <div className="rounded-2xl border border-slate-100 bg-white/60 p-4 shadow-sm">
+              <h4 className="text-xs font-black uppercase tracking-[0.16em] text-slate-800 mb-3">Price Particulars</h4>
+              <div className="grid gap-4 md:grid-cols-2">
+                {[
+                  ['exShowroom', 'Ex-Showroom'],
+                  ['tcsValue', 'TCS'],
+                  ['registrationCharges', 'RTO / Registration'],
+                  ['insuranceValue', 'Insurance (Approx)'],
+                  ['fastagValue', 'Fastag / Number Plate'],
+                  ['accessoriesKit', 'Accessories Kit'],
+                  ['extWarranty', 'Extended Warranty'],
+                ].map(([key, label]) => (
+                  <Field key={key} label={label}>
+                    <Input className="h-11 rounded-xl border-slate-200 bg-white font-bold" type="number" value={form[key as keyof EmailQuoteForm]} onChange={(e) => update(key as keyof EmailQuoteForm, e.target.value)} />
+                  </Field>
+                ))}
+              </div>
+            </div>
+
+            {/* Discounts */}
+            <div className="rounded-2xl border border-slate-100 bg-white/60 p-4 shadow-sm">
+              <h4 className="text-xs font-black uppercase tracking-[0.16em] text-slate-800 mb-3">Discounts & Deductions</h4>
+              <div className="grid gap-4 md:grid-cols-2">
+                {[
+                  ['cashDiscount', 'Consumer / Cash Offer'],
+                  ['exchangeValue', 'Exchange Bonus'],
+                  ['bookingAmount', 'Booking Amount'],
+                  ['govtEmployeeDiscount', 'Corporate / Govt Discount'],
+                  ['additionalDiscount', 'Dealer / Additional Adjustment'],
+                ].map(([key, label]) => (
+                  <Field key={key} label={label}>
+                    <Input className="h-11 rounded-xl border-slate-200 bg-white font-bold" type="number" value={form[key as keyof EmailQuoteForm]} onChange={(e) => update(key as keyof EmailQuoteForm, e.target.value)} />
+                  </Field>
+                ))}
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl bg-slate-100/50 p-4 border border-slate-100">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">To Be Borne By Customer</p>
+                  <p className="mt-1 text-2xl font-extrabold tracking-tight text-slate-950">
+                    {formatCurrency(totals.totalCustomerCost)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border p-4 border-slate-200 bg-slate-950">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Grand Total</p>
+                  <p className="mt-1 text-2xl font-extrabold tracking-tight text-white">
+                    {formatCurrency(totals.grandTotalCost)}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 

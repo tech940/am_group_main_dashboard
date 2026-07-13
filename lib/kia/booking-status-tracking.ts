@@ -58,7 +58,7 @@ export function getKiaBookingStageInfo(
       // Refine using the single shared approval stage when we know it.
       const stage = kiaApprovalStage(approvalStatus)
       if (stage === 'approved') {
-        return { stageLabel: 'Vehicle Allocation', pendingWith: 'Stock / Sales Manager', state: 'pending' }
+        return { stageLabel: 'Vehicle Allocation', pendingWith: 'Stock Manager', state: 'pending' }
       }
       if (stage === 'declined') {
         return { stageLabel: 'Proforma Declined', pendingWith: 'Sales Executive', state: 'pending' }
@@ -71,7 +71,7 @@ export function getKiaBookingStageInfo(
       return { stageLabel: 'Proforma Approval', pendingWith: kiaStageActorLabel('approval'), state: 'pending' }
     }
     case 'on_hold':
-      return { stageLabel: 'On Hold · Reallocation', pendingWith: 'Stock / Sales Manager', state: 'pending' }
+      return { stageLabel: 'On Hold · Reallocation', pendingWith: 'Stock Manager', state: 'pending' }
     case 'vehicle_allocated':
       return { stageLabel: 'Payment & Invoice', pendingWith: 'Accounts', state: 'pending' }
     case 'transfer_requested':

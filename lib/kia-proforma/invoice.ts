@@ -600,126 +600,27 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   return Buffer.concat(chunks)
 }
 
-export type KiaQuotePdfRow = {
+export type KiaQuotePdfRow = KiaProformaInvoiceRow & {
   quoteNumber: string
   quoteDate: Date | string
-  customerName: string
   customerPhone: string
-  customerEmail: string
-  modelName: string
-  trimDescription: string
-  vehiclePrice: string | number
-  location?: string | null
-  consultant?: string | null
 }
 
 export function buildKiaQuotePdf(row: KiaQuotePdfRow) {
-  const width = 595
-  const height = 842
-  const margin = 46
-  const commands: string[] = []
-  const textAt = (x: number, y: number, value: string, size = 10, bold = false) => {
-    commands.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${pdfEscape(value)}) Tj ET`)
+  const quoteRow: KiaProformaInvoiceRow = {
+    ...row,
+    id: row.quoteNumber,
+    proformaDate: row.quoteDate,
+    documentTitle: 'PRICE QUOTATION',
+    disclaimerLines: [
+      'THIS IS JUST A QUOTATION AND CANNOT BE USED FOR BANK PURPOSE.',
+      'This is only an indicative quote and is valid for 1 day only.',
+      'Prices, schemes, and availability may change.'
+    ]
   }
-  const rect = (x: number, y: number, w: number, h: number, fillColor?: string) => {
-    commands.push(fillColor ? `${fillColor} ${x} ${y} ${w} ${h} re f 0 g` : `${x} ${y} ${w} ${h} re S`)
-  }
-  const drawImage = (asset: PdfImageAsset | null, x: number, y: number, w: number, h: number, opacityName?: string, rotate = 0) => {
-    if (!asset) return
-    const radians = (rotate * Math.PI) / 180
-    const cos = Math.cos(radians)
-    const sin = Math.sin(radians)
-    const gs = opacityName ? `/${opacityName} gs ` : ''
-    commands.push(`q ${gs}${(w * cos).toFixed(3)} ${(w * sin).toFixed(3)} ${(-h * sin).toFixed(3)} ${(h * cos).toFixed(3)} ${x.toFixed(3)} ${y.toFixed(3)} cm /${asset.name} Do Q`)
-  }
-
-  drawImage(pdfWatermarkLogo, 236, 214, 360, 238, 'GSWatermark', 40)
-  commands.push('1.2 w 0.08 0.13 0.22 RG')
-  rect(30, 30, width - 60, height - 60)
-  drawImage(pdfHeaderLogo, margin, height - 118, 88, 58)
-  textAt(margin, height - 150, 'AM KIA PRICE QUOTE', 28, true)
-  textAt(margin, height - 172, `Quote ${row.quoteNumber} · ${dateLabel(row.quoteDate)}`, 11)
-  textAt(margin, height - 190, `Location: ${text(row.location) || 'AM Kia'}${row.consultant ? ` · Consultant: ${row.consultant}` : ''}`, 10)
-
-  commands.push('0.78 0.04 0.12 rg')
-  rect(margin, height - 260, width - (margin * 2), 56, '0.98 0.90 0.91 rg')
-  commands.push('0.78 0.04 0.12 rg')
-  textAt(margin + 18, height - 224, 'IMPORTANT: THIS IS NOT AN ACTUAL PROFORMA.', 13, true)
-  textAt(margin + 18, height - 244, 'This is only an indicative quote. Prices, schemes, availability, taxes, and final delivery terms may change at booking/invoicing.', 8)
-  commands.push('0 g')
-
-  const rows = [
-    ['Customer', row.customerName],
-    ['Mobile', row.customerPhone],
-    ['Email', row.customerEmail],
-    ['Model', row.modelName],
-    ['Variant', row.trimDescription || '-'],
-    ['Indicative Vehicle Price', `Rs ${amount(row.vehiclePrice)}`],
-  ]
-  let y = height - 330
-  rows.forEach(([label, value], index) => {
-    const shade = index % 2 === 0 ? '0.96 0.97 0.99 rg' : undefined
-    if (shade) rect(margin, y - 8, width - margin * 2, 34, shade)
-    commands.push('0.84 0.88 0.94 RG 0.5 w')
-    rect(margin, y - 8, width - margin * 2, 34)
-    commands.push('0 g')
-    textAt(margin + 16, y + 5, label, 9, true)
-    textAt(margin + 205, y + 5, value, index === rows.length - 1 ? 14 : 10, index === rows.length - 1)
-    y -= 34
-  })
-
-  textAt(margin, 128, 'Next step: create a booking and generate an official proforma for senior approval.', 10, true)
-  textAt(margin, 108, 'AM Group · Authorized Kia Dealer', 9)
-  textAt(margin, 88, 'This document is generated from the KIA Bookings CRM quote form.', 8)
-
-  const objects: Buffer[] = []
-  const addObject = (body: PdfObjectBody) => {
-    objects.push(Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8'))
-    return objects.length
-  }
-  const font1 = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
-  const font2 = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>')
-  const imageObjectIds = new Map<string, number>()
-  const addImageObject = (asset: PdfImageAsset | null) => {
-    if (!asset) return
-    const imageId = addObject(Buffer.concat([
-      Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${asset.width} /Height ${asset.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${asset.bytes.length} >>\nstream\n`, 'utf8'),
-      asset.bytes,
-      Buffer.from('\nendstream', 'utf8'),
-    ]))
-    imageObjectIds.set(asset.name, imageId)
-  }
-  addImageObject(pdfHeaderLogo)
-  addImageObject(pdfWatermarkLogo)
-  const xObjectResources = imageObjectIds.size > 0
-    ? `/XObject << ${Array.from(imageObjectIds.entries()).map(([name, id]) => `/${name} ${id} 0 R`).join(' ')} >>`
-    : ''
-  const graphicsStateResources = '/ExtGState << /GSWatermark << /Type /ExtGState /CA 0.06 /ca 0.06 >> >>'
-  const content = commands.join('\n')
-  const streamId = addObject(`<< /Length ${Buffer.byteLength(content, 'utf8')} >>\nstream\n${content}\nendstream`)
-  const pageId = addObject(`<< /Type /Page /Parent 0 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> ${xObjectResources} ${graphicsStateResources} >> /Contents ${streamId} 0 R >>`)
-  const pagesId = addObject(`<< /Type /Pages /Kids [${pageId} 0 R] /Count 1 >>`)
-  objects[pageId - 1] = Buffer.from(objects[pageId - 1].toString('utf8').replace('/Parent 0 0 R', `/Parent ${pagesId} 0 R`), 'utf8')
-  const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`)
-  const chunks: Buffer[] = [Buffer.from('%PDF-1.4\n', 'utf8')]
-  const offsets: number[] = [0]
-  let byteOffset = chunks[0].length
-  objects.forEach((body, index) => {
-    offsets.push(byteOffset)
-    const prefix = Buffer.from(`${index + 1} 0 obj\n`, 'utf8')
-    const suffix = Buffer.from('\nendobj\n', 'utf8')
-    chunks.push(prefix, body, suffix)
-    byteOffset += prefix.length + body.length + suffix.length
-  })
-  const xref = byteOffset
-  let trailer = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
-  offsets.slice(1).forEach((offset) => {
-    trailer += `${String(offset).padStart(10, '0')} 00000 n \n`
-  })
-  trailer += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`
-  chunks.push(Buffer.from(trailer, 'utf8'))
-  return Buffer.concat(chunks)
+  return buildKiaProformaPdf(quoteRow)
 }
+
 
 export async function saveKiaProformaPdf(row: KiaProformaInvoiceRow) {
   const pdf = buildKiaProformaPdf(row)

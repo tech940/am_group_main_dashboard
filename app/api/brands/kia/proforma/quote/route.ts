@@ -24,30 +24,44 @@ function readAmount(body: Record<string, unknown>, key: string) {
 }
 
 function buildQuoteRow(body: Record<string, unknown>, location: string | null, consultant?: string | null): KiaQuotePdfRow {
-  const price = readAmount(body, 'price')
-  const customerName = readText(body, 'customerName')
-  const customerPhone = readText(body, 'customerPhone')
-  const customerEmail = readText(body, 'customerEmail')
-  const model = readText(body, 'model') || readText(body, 'vehicle')
-  const variant = readText(body, 'variant')
-
   return {
+    id: `KIA-QUOTE-${Date.now()}`,
+    proformaDate: new Date(),
     quoteNumber: `KIA-QUOTE-${Date.now()}`,
     quoteDate: new Date(),
-    customerName,
-    customerPhone,
-    customerEmail,
-    modelName: model,
-    trimDescription: variant,
-    vehiclePrice: price,
+    customerName: readText(body, 'customerName'),
+    customerPhone: readText(body, 'customerPhone'),
+    mobileNumber: readText(body, 'customerPhone'),
+    customerAddress: readText(body, 'customerAddress'),
+    customerEmail: readText(body, 'customerEmail'),
+    modelName: readText(body, 'modelName'),
+    trimDescription: readText(body, 'trimDescription'),
+    fuelType: readText(body, 'fuelType') || 'PETROL',
+    vehicleColor: readText(body, 'vehicleColor'),
+    bankName: readText(body, 'bankName'),
+    bankBranch: readText(body, 'bankBranch') || null,
+    insuranceCompany: readText(body, 'insuranceCompany') || null,
+    exShowroom: readAmount(body, 'exShowroom'),
+    tcsValue: readAmount(body, 'tcsValue'),
+    registrationCharges: readAmount(body, 'registrationCharges'),
+    insuranceValue: readAmount(body, 'insuranceValue'),
+    fastagValue: readAmount(body, 'fastagValue'),
+    accessoriesKit: readAmount(body, 'accessoriesKit'),
+    extWarranty: readAmount(body, 'extWarranty'),
+    cashDiscount: readAmount(body, 'cashDiscount'),
+    exchangeValue: readAmount(body, 'exchangeValue'),
+    bookingAmount: readAmount(body, 'bookingAmount'),
+    govtEmployeeDiscount: readAmount(body, 'govtEmployeeDiscount'),
+    additionalDiscount: readAmount(body, 'additionalDiscount'),
+    totalCustomerCost: readAmount(body, 'totalCustomerCost'),
+    grandTotalCost: readAmount(body, 'grandTotalCost'),
     location,
-    consultant,
   }
 }
 
 function validateQuote(body: Record<string, unknown>) {
   const errors: Record<string, string> = {}
-  ;['customerName', 'customerPhone', 'customerEmail', 'model', 'variant', 'price'].forEach((key) => {
+  ;['customerName', 'customerPhone', 'customerEmail', 'modelName', 'trimDescription'].forEach((key) => {
     if (!readText(body, key)) errors[key] = 'Required'
   })
   if (!/^\d{10}$/.test(readText(body, 'customerPhone'))) errors.customerPhone = 'Mobile number must be 10 digits'
@@ -76,9 +90,9 @@ export async function POST(request: NextRequest) {
       customerName: readText(body, 'customerName'),
       customerPhone: readText(body, 'customerPhone'),
       customerEmail: readText(body, 'customerEmail'),
-      vehicle: `${readText(body, 'model')} ${readText(body, 'variant')}`.trim(),
-      budget: readAmount(body, 'price'),
-      price: readAmount(body, 'price'),
+      vehicle: `${readText(body, 'modelName')} ${readText(body, 'trimDescription')}`.trim(),
+      budget: readAmount(body, 'grandTotalCost'),
+      price: readAmount(body, 'grandTotalCost'),
       createdBy: appUser.id,
     })
 
