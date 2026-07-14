@@ -147,6 +147,10 @@ export type SalesReportSummaryPayload = {
     sourceOptions: string[]
     items: Array<{ model: string; enquiries: number; bookings: number }>
     topFive: SalesReportMetricPoint[]
+    /** Completed test drives (td_status = "Done") grouped by model, ranked high → low. */
+    testDrivesByModel: Array<{ model: string; testDrives: number }>
+    /** Completed test drives grouped by model + variant, ranked high → low. */
+    testDrivesByModelVariant: Array<{ model: string; variant: string; testDrives: number }>
     sourceBreakdown: Record<string, Array<{ model: string; enquiries: number; bookings: number }>>
   }
   sources: {
@@ -202,7 +206,8 @@ export type SalesReportSummaryPayload = {
 }
 
 export type SalesReportListPayload = {
-  report: ReportKey
+  // 'test_drives' is a filtered view of the enquiry report (td_status = "Done"), not a real source.
+  report: ReportKey | 'test_drives'
   title: string
   columns: string[]
   defaultVisibleColumns: string[]

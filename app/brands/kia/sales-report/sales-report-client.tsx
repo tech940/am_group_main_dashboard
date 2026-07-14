@@ -60,13 +60,14 @@ import type {
 import { cn } from '@/lib/utils'
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
-type PageTab = 'overview' | 'models' | 'sources' | 'team' | 'trend' | 'lost' | 'retail' | 'reports'
+type PageTab = 'overview' | 'models' | 'sources' | 'team' | 'testdrives' | 'trend' | 'lost' | 'retail' | 'reports'
 
 const PAGE_TABS: Array<{ key: PageTab; label: string }> = [
   { key: 'overview', label: 'Overview' },
   { key: 'models', label: 'Models' },
   { key: 'sources', label: 'Sources' },
   { key: 'team', label: 'Team' },
+  { key: 'testdrives', label: 'Test Drives' },
   { key: 'trend', label: 'Trend' },
   { key: 'lost', label: 'Lost' },
   { key: 'retail', label: 'Retail' },
@@ -830,9 +831,17 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
   const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({})
   const [missedFollowupsOnly, setMissedFollowupsOnly] = useState(false)
   const shouldRefreshNext = useRef(false)
+  // Dedicated Test Drives tab — its own isolated filters + pagination (independent of the Reports tab).
+  const [tdSource, setTdSource] = useState('all')
+  const [tdModel, setTdModel] = useState('all')
+  const [tdConsultant, setTdConsultant] = useState('all')
+  const [tdSearch, setTdSearch] = useState('')
+  const [tdPage, setTdPage] = useState(1)
+  const [tdPageSize, setTdPageSize] = useState(25)
 
 
   const deferredReportSearch = useDeferredValue(reportSearch)
+  const deferredTdSearch = useDeferredValue(tdSearch)
   const deferredLostSearch = useDeferredValue(lostSearch)
   const deferredRetailSearch = useDeferredValue(retailSearch)
 
@@ -943,6 +952,42 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
     placeholderData: (previousData) => previousData,
   })
 
+  // Dedicated Test Drives tab: the enquiry table filtered to td_status = "Done", with its own filters
+  // + pagination. Reuses the /reports endpoint (report=test_drives) so the table shape is identical.
+  const testDriveQuery = useQuery({
+    queryKey: [
+      'kia-sales-report-test-drives',
+      hasCompleteCustomRange ? selectedRangeStart : effectiveSelectedYear,
+      hasCompleteCustomRange ? selectedRangeEnd : effectiveSelectedMonth,
+      selectedDealerCode || 'all',
+      tdSource,
+      tdModel,
+      tdConsultant,
+      deferredTdSearch,
+      tdPage,
+      tdPageSize,
+    ],
+    enabled: periodReady && activeTab === 'testdrives' && summaryQuery.isSuccess,
+    queryFn: () => fetchReportJson<SalesReportListPayload>(`/api/brands/kia/sales-report/reports?${buildQueryString({
+      report: 'test_drives',
+      ...periodQueryParams,
+      dealer_code: selectedDealerCode,
+      source: tdSource,
+      model: tdModel,
+      consultant: tdConsultant,
+      search: deferredTdSearch,
+      page: tdPage,
+      pageSize: tdPageSize,
+    })}`, 'kia-sales-report-test-drives', 25000),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 20 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    placeholderData: (previousData) => previousData,
+  })
+  const tdVisibleColumns = testDriveQuery.data?.defaultVisibleColumns || []
+
   // Reset column filters when active report tab, date, or dealer changes
   useEffect(() => {
     setColumnFilters({})
@@ -979,6 +1024,10 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
   const modelBreakdown = modelSourceFilter === 'all'
     ? summary?.models.items.map((item) => ({ model: item.model, enquiries: item.enquiries, bookings: item.bookings })) || []
     : summary?.models.sourceBreakdown[modelSourceFilter] || []
+  // Model-wise test drives (ranked high → low) + the total, for the Test Drives tab + Overview card.
+  const testDrivesByModel = summary?.models.testDrivesByModel || []
+  const testDrivesByModelVariant = summary?.models.testDrivesByModelVariant || []
+  const testDrivesTotal = testDrivesByModel.reduce((sum, item) => sum + item.testDrives, 0)
   const filteredLostRows = summary?.lost.rows.filter((row) => {
     const needle = deferredLostSearch.trim().toLowerCase()
     if (!needle) return true
@@ -2134,6 +2183,164 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
               ) : (
                 <EmptyState title="No consultant rows" body="Consultant leaderboard data is not available for this month." />
               )}
+            </ChartCard>
+          </TabsContent>
+
+          <TabsContent value="testdrives" className="space-y-5">
+            <ChartCard
+              title="Test Drives by Model"
+              subtitle={`Completed test drives per model · ${testDrivesTotal.toLocaleString('en-IN')} total`}
+            >
+              {renderBarChart({
+                data: testDrivesByModel,
+                xKey: 'model',
+                bars: [{ key: 'testDrives', label: 'Test Drives', color: CHART_COLORS[3] }],
+                height: 320,
+              })}
+            </ChartCard>
+
+            <ChartCard
+              title="Model & Variant Test Drive Count"
+              subtitle={`Completed test drives per model and variant · ${testDrivesTotal.toLocaleString('en-IN')} total`}
+            >
+              {testDrivesByModelVariant.length ? (
+                <div className="overflow-hidden rounded-[1.5rem] border border-slate-200">
+                  <Table className="[&_td]:text-[11px] [&_td]:font-medium [&_th]:text-[10px]">
+                    <TableHeader>
+                      <TableRow className="border-b-2 border-[#071a2b] bg-white hover:bg-white">
+                        {['#', 'Model', 'Variant', 'Test Drives', 'Share'].map((label) => (
+                          <TableHead key={label} className="text-[10px] font-black text-[#071a2b]">{label}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {testDrivesByModelVariant.map((item, index) => {
+                        const sharePct = testDrivesTotal > 0 ? (item.testDrives / testDrivesTotal) * 100 : 0
+                        return (
+                          <TableRow key={`${item.model}-${item.variant}`} className="odd:bg-white even:bg-[#fbfdff]">
+                            <TableCell className="text-[11px] font-black text-slate-400">{index + 1}</TableCell>
+                            <TableCell className="font-black text-slate-950">{item.model}</TableCell>
+                            <TableCell className="text-slate-700">{item.variant}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div className="h-1.5 w-16 rounded-full bg-[#eef2f7]">
+                                  <div className="h-1.5 rounded-full bg-[#8835a7]" style={{ width: `${Math.min(100, sharePct)}%` }} />
+                                </div>
+                                <span className="font-black text-[#8835a7]">{item.testDrives.toLocaleString('en-IN')}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="rounded-full bg-[#edf8f0] px-3 py-1 text-[12px] font-black text-[#0f8d63]">
+                                {sharePct.toFixed(1)}%
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                      <TableRow style={{ backgroundColor: '#dbeafe' }} className="border-t-2 border-[#071a2b] font-black [&_td]:font-black hover:!bg-[#c7d2fe]">
+                        <TableCell className="font-black text-[#071a2b]" colSpan={3}>Total</TableCell>
+                        <TableCell className="font-black text-[#071a2b]">{testDrivesTotal.toLocaleString('en-IN')}</TableCell>
+                        <TableCell><span className="rounded-full bg-[#edf8f0] px-3 py-1 text-[12px] font-black text-[#0f8d63]">100%</span></TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <EmptyState title="No test drive data" body="Model and variant breakdown will appear when test drive records are available for this period." />
+              )}
+            </ChartCard>
+
+            <ChartCard title="Test Drive Records" subtitle="Every completed test drive with customer, model, variant and consultant — filterable">
+              <div className="grid gap-3 xl:grid-cols-5">
+                <div className="relative xl:col-span-2">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={tdSearch}
+                    onChange={(event) => { setTdSearch(event.target.value); setTdPage(1) }}
+                    placeholder="Search test drives..."
+                    className="rounded-2xl pl-10"
+                  />
+                </div>
+                <Select value={tdSource} onValueChange={(value) => { setTdSource(value); setTdPage(1) }}>
+                  <SelectTrigger className="rounded-2xl"><SelectValue placeholder="Source" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All sources</SelectItem>
+                    {metricOptions.source.map((item, index) => <SelectItem key={`${item}-${index}`} value={item}>{item}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={tdModel} onValueChange={(value) => { setTdModel(value); setTdPage(1) }}>
+                  <SelectTrigger className="rounded-2xl"><SelectValue placeholder="Model" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All models</SelectItem>
+                    {metricOptions.model.map((item, index) => <SelectItem key={`${item}-${index}`} value={item}>{item}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={tdConsultant} onValueChange={(value) => { setTdConsultant(value); setTdPage(1) }}>
+                  <SelectTrigger className="rounded-2xl"><SelectValue placeholder="Consultant" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All consultants</SelectItem>
+                    {metricOptions.consultant.map((item, index) => <SelectItem key={`${item}-${index}`} value={item}>{item}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <Badge className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-black text-slate-700">
+                  {(testDriveQuery.data?.pagination.totalRows || 0).toLocaleString('en-IN')} test drives
+                </Badge>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Page Size</span>
+                  <Select value={String(tdPageSize)} onValueChange={(value) => { setTdPageSize(Number(value)); setTdPage(1) }}>
+                    <SelectTrigger className="w-24 rounded-2xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>{[25, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {testDriveQuery.isLoading ? (
+                <div className="flex h-72 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-[var(--dashboard-action-bg)]" /></div>
+              ) : testDriveQuery.error ? (
+                <div className="rounded-[1.5rem] border border-rose-200 bg-rose-50 p-5 text-sm font-semibold text-rose-700">
+                  {testDriveQuery.error instanceof Error ? testDriveQuery.error.message : 'Unable to load test drives'}
+                </div>
+              ) : testDriveQuery.data && testDriveQuery.data.rows.length > 0 ? (
+                <div className="mt-4 overflow-hidden rounded-[1.5rem] border border-slate-200">
+                  <Table className="[&_td]:text-[13px] [&_td]:font-medium [&_th]:text-[10px]">
+                    <TableHeader>
+                      <TableRow className="border-b border-white/10 bg-[var(--dashboard-action-bg)] hover:bg-[var(--dashboard-action-bg)]">
+                        {tdVisibleColumns.map((column) => (
+                          <TableHead key={column} className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--dashboard-action-fg)]">
+                            {toColumnLabel(column)}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {testDriveQuery.data.rows.map((row, rowIndex) => (
+                        <TableRow key={`td-${rowIndex}`} className="odd:bg-white even:bg-[color-mix(in_srgb,var(--dashboard-primary-soft)_38%,white)]">
+                          {tdVisibleColumns.map((column) => (
+                            <TableCell key={`${rowIndex}-${column}`} className="max-w-[240px] truncate text-[13px] font-medium text-slate-700" title={String(row[column] ?? '')}>
+                              {formatCellValue(column, row[column])}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <EmptyState title="No test drives" body="No completed test drives for the selected period and filters." />
+              )}
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-500">
+                  Page {testDriveQuery.data?.pagination.page || 1} of {testDriveQuery.data?.pagination.totalPages || 1}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" className="app-outline-action rounded-2xl px-4" disabled={(testDriveQuery.data?.pagination.page || 1) <= 1} onClick={() => setTdPage((current) => Math.max(1, current - 1))}>Previous</Button>
+                  <Button type="button" variant="outline" className="app-outline-action rounded-2xl px-4" disabled={(testDriveQuery.data?.pagination.page || 1) >= (testDriveQuery.data?.pagination.totalPages || 1)} onClick={() => setTdPage((current) => current + 1)}>Next</Button>
+                </div>
+              </div>
             </ChartCard>
           </TabsContent>
 

@@ -124,6 +124,34 @@ const TABLES: Record<SourceKey, TableConfig> = {
   },
 }
 
+// "Test Drives" is a VIEW of the enquiry table: the same rows, filtered to those whose td_status is
+// "Done" (see isTestDriveDone). It is NOT a separate data source, so it is intentionally kept OUT of
+// TABLES (freshness/month-availability iterate TABLES and must stay the 4 real sources). It reuses the
+// enquiry table config but surfaces consultant + model + variant + the test-drive fields by default.
+const TEST_DRIVES_CONFIG: TableConfig = {
+  key: 'enquiry',
+  label: 'Test Drives',
+  table: TABLES.enquiry.table,
+  dateColumn: 'enquiry_date',
+  dealerColumns: TABLES.enquiry.dealerColumns,
+  defaultVisibleColumns: ['enquiry_date', 'name_of_the_customer', 'contact_number', 'model', 'variant', 'consultant_name', 'source', 'td_date', 'td_status'],
+  searchColumns: TABLES.enquiry.searchColumns,
+  sourceColumn: 'source',
+  consultantColumn: 'consultant_name',
+  modelColumn: 'model',
+  sortColumn: 'enquiry_date',
+}
+
+type TableReportKey = SourceKey | 'test_drives'
+
+function resolveReportKey(value: string | null | undefined): TableReportKey {
+  return value === 'test_drives' ? 'test_drives' : normalizeReportKey(value)
+}
+
+function getReportConfig(report: TableReportKey): TableConfig {
+  return report === 'test_drives' ? TEST_DRIVES_CONFIG : TABLES[report]
+}
+
 function resultRows(result: unknown) {
   return Array.isArray(result) ? result as Row[] : []
 }
@@ -860,6 +888,10 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
       const temperatureMap = new Map<TemperatureKey, number>([['Hot', 0], ['Warm', 0], ['Cold', 0]])
       const modelMap = new Map<string, number>()
       const modelBySourceMap = new Map<string, Map<string, number>>()
+      // Model-wise test drives: count enquiry rows whose td_status is "Done", grouped by model.
+      const testDrivesByModelMap = new Map<string, number>()
+      // Model+Variant breakdown for test drives (composite key "MODEL||VARIANT").
+      const testDrivesByModelVariantMap = new Map<string, number>()
       const dailyMap = new Map<string, number>()
       const lostReasonMap = new Map<string, number>()
       const lostConsultantMap = new Map<string, number>()
@@ -892,6 +924,11 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
         increment(modelMap, model)
         if (!modelBySourceMap.has(source)) modelBySourceMap.set(source, new Map())
         increment(modelBySourceMap.get(source) as Map<string, number>, model)
+        if (isTestDriveDone(row)) {
+          increment(testDrivesByModelMap, model)
+          const variant = safeText(row.variant) || '-'
+          increment(testDrivesByModelVariantMap, `${model}||${variant}`)
+        }
         increment(temperatureMap as Map<string, number>, getLeadTemperature(row))
         if (date) increment(dailyMap, date)
 
@@ -1185,6 +1222,11 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
             bookings: bookingsByModel.get(item.name) || 0,
           })),
           topFive: buildCounts(modelMap).slice(0, 5),
+          testDrivesByModel: buildCounts(testDrivesByModelMap).map((item) => ({ model: item.name, testDrives: item.value })),
+          testDrivesByModelVariant: buildCounts(testDrivesByModelVariantMap).map((item) => {
+            const [model, variant] = item.name.split('||')
+            return { model: model || '', variant: variant || '-', testDrives: item.value }
+          }),
           sourceBreakdown: Object.fromEntries(Array.from(modelBySourceMap.entries()).map(([source, counts]) => ([
             source,
             buildCounts(counts).map((item) => ({
@@ -1304,7 +1346,9 @@ export async function getKiaSalesReportSummary(input: {
     dealerCode: normalizedDealerCode,
   })
   const dealerCacheKey = normalizedDealerCode || ALL_DEALERS_CACHE_KEY
-  const summaryCacheKey = `kia:sales-report:summary:${context.key}:${dealerCacheKey}`
+  // Bump the version segment whenever the summary SHAPE changes so stale-shaped cached entries are not
+  // served (v2 added models.testDrivesByModel, v3 added models.testDrivesByModelVariant).
+  const summaryCacheKey = `kia:sales-report:summary:v3:${context.key}:${dealerCacheKey}`
 
   try {
     const payload = await getCachedData(
@@ -1398,8 +1442,8 @@ export async function getKiaSalesReportTable(input: {
   missedFollowups?: boolean | null
   canViewPii?: boolean
 }) {
-  const report = normalizeReportKey(input.report)
-  const config = TABLES[report]
+  const report = resolveReportKey(input.report)
+  const config = getReportConfig(report)
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
   const context = await resolveDateContext({
     year: input.year,
@@ -1440,6 +1484,9 @@ export async function getKiaSalesReportTable(input: {
         WHERE ${whereSql}
       `)
       let dedupedRows = dedupeRows(config, resultRows(rows))
+
+      // Test Drives report: keep only enquiry rows whose td_status is "Done".
+      if (report === 'test_drives') dedupedRows = dedupedRows.filter(isTestDriveDone)
 
       if (input.source && config.sourceColumn) {
         dedupedRows = dedupedRows.filter((row) => {
@@ -1543,8 +1590,8 @@ export async function getKiaSalesReportCsv(input: {
   missedFollowups?: boolean | null
   canViewPii?: boolean
 }) {
-  const report = normalizeReportKey(input.report)
-  const config = TABLES[report]
+  const report = resolveReportKey(input.report)
+  const config = getReportConfig(report)
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
   const context = await resolveDateContext({
     year: input.year,
@@ -1570,6 +1617,9 @@ export async function getKiaSalesReportCsv(input: {
     LIMIT 20000
   `)
   let dedupedRows = dedupeRows(config, resultRows(rows))
+
+  // Test Drives report: keep only enquiry rows whose td_status is "Done".
+  if (report === 'test_drives') dedupedRows = dedupedRows.filter(isTestDriveDone)
 
   if (input.source && config.sourceColumn) {
     dedupedRows = dedupedRows.filter((row) => {
