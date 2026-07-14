@@ -385,26 +385,31 @@ function listFilters(input: BookingListInput) {
     filters.push(sql`
       (
         kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
-        AND (kia_bookings.allocated_vin IS NULL OR kia_bookings.allocated_vin = '')
-        AND NOT EXISTS (
-          SELECT 1 FROM kia_vehicle_allocations va
-          WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM kia_stock_management sm
-          LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-          WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-            AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-            AND sm.model ILIKE '%' || kia_bookings.model || '%'
-            AND (
-              coalesce(sm.variant, '') = ''
-              OR sm.variant ILIKE '%' || kia_bookings.variant || '%'
-              OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
+        AND (
+          (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
+          OR
+          (
+            NOT EXISTS (
+              SELECT 1 FROM kia_vehicle_allocations va
+              WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
             )
             AND NOT EXISTS (
-              SELECT 1 FROM kia_vehicle_allocations aa
-              WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
+              SELECT 1 FROM kia_stock_management sm
+              LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+              WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
+                AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+                AND (sm.model ILIKE '%' || kia_bookings.model || '%' OR kia_bookings.model ILIKE '%' || sm.model || '%')
+                AND (
+                  coalesce(sm.variant, '') = ''
+                  OR sm.variant ILIKE '%' || kia_bookings.variant || '%'
+                  OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM kia_vehicle_allocations aa
+                  WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
+                )
             )
+          )
         )
       )
     `)
@@ -491,26 +496,36 @@ export async function getKiaBookingsList(input: BookingListInput) {
         (SELECT count(*)::int FROM kia_bookings kb
           WHERE kb.deleted_at IS NULL
             AND kb.status NOT IN ('draft', 'delivered', 'cancelled')
-            AND (kb.allocated_vin IS NULL OR kb.allocated_vin = '')
-            AND NOT EXISTS (
-              SELECT 1 FROM kia_vehicle_allocations va
-              WHERE va.booking_id = kb.id AND va.released_at IS NULL
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM kia_stock_management sm
-              LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-              WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-                AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-                AND sm.model ILIKE '%' || kb.model || '%'
-                AND (
-                  coalesce(sm.variant, '') = ''
-                  OR sm.variant ILIKE '%' || kb.variant || '%'
-                  OR kb.variant ILIKE '%' || sm.variant || '%'
+            AND (
+              -- Path 1: allocated VIN left the DMS (metadata flag set by stock-watcher job)
+              (kb.metadata->>'vehicleNotInStock')::boolean IS TRUE
+              OR
+              -- Path 2: no active allocation AND no matching free stock right now
+              (
+                NOT EXISTS (
+                  SELECT 1 FROM kia_vehicle_allocations va
+                  WHERE va.booking_id = kb.id AND va.released_at IS NULL
                 )
                 AND NOT EXISTS (
-                  SELECT 1 FROM kia_vehicle_allocations aa
-                  WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
+                  SELECT 1 FROM kia_stock_management sm
+                  LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+                  WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
+                    AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+                    -- Model match is BIDIRECTIONAL (like the variant match below): a booking model may
+                    -- carry an extra token vs the stock name (e.g. 'SONET PETROL'/'NEW SELTOS DIESEL'
+                    -- booking vs 'SONET'/'NEW SELTOS' stock), so match either way round.
+                    AND (sm.model ILIKE '%' || kb.model || '%' OR kb.model ILIKE '%' || sm.model || '%')
+                    AND (
+                      coalesce(sm.variant, '') = ''
+                      OR sm.variant ILIKE '%' || kb.variant || '%'
+                      OR kb.variant ILIKE '%' || sm.variant || '%'
+                    )
+                    AND NOT EXISTS (
+                      SELECT 1 FROM kia_vehicle_allocations aa
+                      WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
+                    )
                 )
+              )
             )
             ${dealerScopeKb}) AS not_in_stock_count,
         COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'variant', variant, 'count', cnt) ORDER BY cnt DESC, model ASC, variant ASC) FROM (
@@ -518,26 +533,30 @@ export async function getKiaBookingsList(input: BookingListInput) {
           FROM kia_bookings
           WHERE deleted_at IS NULL
             AND status NOT IN ('draft', 'delivered', 'cancelled')
-            AND (allocated_vin IS NULL OR allocated_vin = '')
-            AND NOT EXISTS (
-              SELECT 1 FROM kia_vehicle_allocations va
-              WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM kia_stock_management sm
-              LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-              WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-                AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-                AND sm.model ILIKE '%' || kia_bookings.model || '%'
-                AND (
-                  coalesce(sm.variant, '') = ''
-                  OR sm.variant ILIKE '%' || kia_bookings.variant || '%'
-                  OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
+            AND (
+              (metadata->>'vehicleNotInStock')::boolean IS TRUE
+              OR (
+                NOT EXISTS (
+                  SELECT 1 FROM kia_vehicle_allocations va
+                  WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
                 )
                 AND NOT EXISTS (
-                  SELECT 1 FROM kia_vehicle_allocations aa
-                  WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
+                  SELECT 1 FROM kia_stock_management sm
+                  LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+                  WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
+                    AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+                    AND (sm.model ILIKE '%' || kia_bookings.model || '%' OR kia_bookings.model ILIKE '%' || sm.model || '%')
+                    AND (
+                      coalesce(sm.variant, '') = ''
+                      OR sm.variant ILIKE '%' || kia_bookings.variant || '%'
+                      OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
+                    )
+                    AND NOT EXISTS (
+                      SELECT 1 FROM kia_vehicle_allocations aa
+                      WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
+                    )
                 )
+              )
             )
             ${dealerScope}
           GROUP BY model, variant
@@ -569,6 +588,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
   // (#15 `vehicleNotInStock` flag) OR the booking has no active allocation AND no free matching vehicle
   // in stock. Computed for the page's in-flight bookings in ONE query (page size is small).
   const stockFlagMap = new Map<string, boolean>()
+  const stockAvailableMap = new Map<string, boolean>()
   const flagCandidates = bookingRows.filter((b) => !['draft', 'delivered', 'cancelled'].includes(String(b.status || '')))
 
   // #2 (proforma approval status) and the stock-availability flag both depend ONLY on bookingRows and
@@ -588,26 +608,29 @@ export async function getKiaBookingsList(input: BookingListInput) {
       const flagRows = await analyticsDb.execute(sql`
       WITH wanted(id, model, variant) AS (VALUES ${sql.join(tuples, sql`, `)})
       SELECT w.id::text AS id,
-        (
-          NOT EXISTS (SELECT 1 FROM kia_vehicle_allocations va WHERE va.booking_id = w.id AND va.released_at IS NULL)
-          AND NOT EXISTS (
-            SELECT 1 FROM kia_stock_management sm
-            LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-            WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-              AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-              AND sm.model ILIKE '%' || w.model || '%'
-              AND (
-                coalesce(sm.variant, '') = ''
-                OR sm.variant ILIKE '%' || w.variant || '%'
-                OR w.variant ILIKE '%' || sm.variant || '%'
-              )
-              AND NOT EXISTS (SELECT 1 FROM kia_vehicle_allocations aa WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL)
-          )
-        ) AS stock_not_available
+        NOT EXISTS (SELECT 1 FROM kia_vehicle_allocations va WHERE va.booking_id = w.id AND va.released_at IS NULL) AS no_allocation,
+        EXISTS (
+          SELECT 1 FROM kia_stock_management sm
+          LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+          WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
+            AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+            -- Bidirectional model match (booking model may carry a fuel suffix vs stock name).
+            AND (sm.model ILIKE '%' || w.model || '%' OR w.model ILIKE '%' || sm.model || '%')
+            AND (
+              coalesce(sm.variant, '') = ''
+              OR sm.variant ILIKE '%' || w.variant || '%'
+              OR w.variant ILIKE '%' || sm.variant || '%'
+            )
+            AND NOT EXISTS (SELECT 1 FROM kia_vehicle_allocations aa WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL)
+        ) AS has_matching_stock
       FROM wanted w
     `)
-      for (const r of rows<{ id: string; stock_not_available: boolean }>(flagRows)) {
-        stockFlagMap.set(String(r.id), Boolean(r.stock_not_available))
+      for (const r of rows<{ id: string; no_allocation: boolean; has_matching_stock: boolean }>(flagRows)) {
+        const noAlloc = Boolean(r.no_allocation)
+        // No allocation + no matching free vehicle → "Not in stock". No allocation + a matching free
+        // vehicle exists → "In stock" (allottable). Store both so the list can show either indicator.
+        stockFlagMap.set(String(r.id), noAlloc && !r.has_matching_stock)
+        stockAvailableMap.set(String(r.id), noAlloc && Boolean(r.has_matching_stock))
       }
     })(),
   ])
@@ -616,6 +639,9 @@ export async function getKiaBookingsList(input: BookingListInput) {
     ...b,
     proformaApprovalStatus: b.proformaId ? (approvalByProforma.get(b.proformaId) ?? null) : null,
     stockNotAvailable: Boolean(stockFlagMap.get(b.id)) || Boolean((b.metadata as Record<string, unknown> | null)?.vehicleNotInStock),
+    // A matching free vehicle is available to allot (no allocation yet + in-stock match). Mutually
+    // exclusive with stockNotAvailable; false once allocated or for terminal bookings.
+    stockAvailable: Boolean(stockAvailableMap.get(b.id)),
   }))
 
   return {

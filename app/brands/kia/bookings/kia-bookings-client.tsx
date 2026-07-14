@@ -140,6 +140,8 @@ type BookingRow = {
   proformaApprovalStatus?: string | null
   /** True when no stock is available for this booking (allotted VIN gone from DMS, or no free match). */
   stockNotAvailable?: boolean
+  /** True when a matching free vehicle IS available to allot (not yet allocated). Opposite of above. */
+  stockAvailable?: boolean
   financeOrderNumber?: string | null
   allocatedVin?: string | null
   deliveredAt?: string | null
@@ -578,6 +580,18 @@ function StockUnavailableFlag({ className }: { className?: string }) {
   )
 }
 
+function StockAvailableFlag({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn('inline-flex w-fit items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black text-emerald-700', className)}
+      title="A matching vehicle is in stock and can be allotted"
+    >
+      <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-emerald-600" />
+      IN STOCK
+    </span>
+  )
+}
+
 function BookingMobileCard({
   row,
   onOpen,
@@ -601,6 +615,7 @@ function BookingMobileCard({
         <div className="flex flex-col items-end gap-1.5">
           <StatusBadge status={row.status} />
           {row.stockNotAvailable && <StockUnavailableFlag />}
+          {row.stockAvailable && <StockAvailableFlag />}
           <BookingWaitingIndicator status={row.status} approvalStatus={row.proformaApprovalStatus} updatedAt={row.updatedAt} now={now} align="right" />
         </div>
       </div>
@@ -1985,6 +2000,7 @@ export function KiaBookingsClient({
                         <div className="flex flex-col gap-1.5">
                           <StatusBadge status={row.status} />
                           {row.stockNotAvailable && <StockUnavailableFlag />}
+          {row.stockAvailable && <StockAvailableFlag />}
                           <BookingWaitingIndicator status={row.status} approvalStatus={row.proformaApprovalStatus} updatedAt={row.updatedAt} now={nowTick} />
                         </div>
                       </TableCell>
