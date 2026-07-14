@@ -20,7 +20,7 @@ export default async function FinancePage() {
 
   return (
     <MainLayout title="Finance" subtitle="Vehicle financing — approvals, processing & bank management">
-      <FinanceWorkspace canApprove={canApprove} />
+      <FinanceWorkspace canApprove={canApprove} currentUserRole={appUser.role} />
     </MainLayout>
   )
 }

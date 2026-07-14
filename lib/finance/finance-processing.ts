@@ -138,22 +138,62 @@ export async function createKiaFinanceProcessing(
   return processingId
 }
 
-// ── Queue: proformas awaiting FINAL finance approval (Stage 2 = MANAGER_APPROVED) ────────────────
 export async function getKiaFinanceApprovalQueue() {
   const rows = await db.select({
     id: kiaProformas.id,
     proformaDate: kiaProformas.proformaDate,
     customerName: kiaProformas.customerName,
+    mobileNumber: kiaProformas.mobileNumber,
+    customerEmail: kiaProformas.customerEmail,
+    customerAddress: kiaProformas.customerAddress,
+    customerType: kiaProformas.customerType,
     modelName: kiaProformas.modelName,
     trimDescription: kiaProformas.trimDescription,
+    fuelType: kiaProformas.fuelType,
     vehicleColor: kiaProformas.vehicleColor,
+    vehicleStatus: kiaProformas.vehicleStatus,
     bankName: kiaProformas.bankName,
+    bankBranch: kiaProformas.bankBranch,
+    loanAmount: kiaProformas.loanAmount,
+    exShowroom: kiaProformas.exShowroom,
+    tcsValue: kiaProformas.tcsValue,
+    registrationCharges: kiaProformas.registrationCharges,
+    insuranceValue: kiaProformas.insuranceValue,
+    fastagValue: kiaProformas.fastagValue,
+    accessoriesKit: kiaProformas.accessoriesKit,
+    extWarranty: kiaProformas.extWarranty,
+    cashDiscount: kiaProformas.cashDiscount,
+    exchangeValue: kiaProformas.exchangeValue,
+    bookingAmount: kiaProformas.bookingAmount,
+    govtEmployeeDiscount: kiaProformas.govtEmployeeDiscount,
+    additionalDiscount: kiaProformas.additionalDiscount,
+    totalCustomerCost: kiaProformas.totalCustomerCost,
     grandTotalCost: kiaProformas.grandTotalCost,
     consultant: kiaProformas.consultant,
     location: kiaProformas.location,
     approvalStatus: kiaProformas.approvalStatus,
+    financeStatus: kiaProformas.financeStatus,
+    insuranceCompany: kiaProformas.insuranceCompany,
+    importMetadata: kiaProformas.importMetadata,
+    // Booking fallbacks
+    bookingId: kiaBookings.id,
+    bookingNumber: kiaBookings.bookingNumber,
+    bookingStatus: kiaBookings.status,
+    bookingCustomerName: kiaBookings.customerName,
+    bookingCustomerPhone: kiaBookings.customerPhone,
+    bookingCustomerEmail: kiaBookings.customerEmail,
+    bookingCustomerAddress: kiaBookings.customerAddress,
+    bookingModel: kiaBookings.model,
+    bookingVariant: kiaBookings.variant,
+    bookingColor: kiaBookings.color,
+    bookingFuelType: kiaBookings.fuelType,
+    bookingConsultant: kiaBookings.consultantName,
+    bookingBankName: kiaBookings.bankName,
+    bookingLoanAmount: kiaBookings.loanAmount,
+    bookingMetadata: kiaBookings.metadata,
   })
     .from(kiaProformas)
+    .leftJoin(kiaBookings, eq(kiaBookings.proformaId, kiaProformas.id))
     .where(and(eq(kiaProformas.approvalStatus, 'MANAGER_APPROVED'), isNull(kiaProformas.deletedAt)))
     .orderBy(desc(kiaProformas.proformaDate))
     .limit(200)

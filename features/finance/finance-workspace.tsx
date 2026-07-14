@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Clock, AlertTriangle, CheckCircle2, ChevronRight, Inbox, ClipboardCheck, ShieldCheck, XCircle } from 'lucide-react'
+import { Loader2, Clock, AlertTriangle, CheckCircle2, ChevronRight, Inbox, ClipboardCheck, ShieldCheck, XCircle, X, ClipboardList, WalletCards, FileText } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -30,7 +32,7 @@ async function proformaApproval(id: string, body: Record<string, unknown>) {
   return data
 }
 
-export function FinanceWorkspace({ canApprove }: { canApprove: boolean }) {
+export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: boolean; currentUserRole?: string }) {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'queue' | 'processing'>('queue')
   const [selected, setSelected] = useState<string | null>(null)
@@ -38,6 +40,7 @@ export function FinanceWorkspace({ canApprove }: { canApprove: boolean }) {
   const [declineRow, setDeclineRow] = useState<ApprovalQueueRow | null>(null)
   const [declineReason, setDeclineReason] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
+  const [previewRow, setPreviewRow] = useState<ApprovalQueueRow | null>(null)
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -109,7 +112,7 @@ export function FinanceWorkspace({ canApprove }: { canApprove: boolean }) {
                 </thead>
                 <tbody>
                   {approvalQueue.map((r: ApprovalQueueRow) => (
-                    <tr key={r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                    <tr key={r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 cursor-pointer" onClick={() => setPreviewRow(r)}>
                       <td className="px-4 py-3 font-semibold text-slate-500">{formatDate(r.proformaDate)}</td>
                       <td className="px-4 py-3 font-bold text-slate-800">{str(r.customerName) || '—'}</td>
                       <td className="px-4 py-3 text-slate-700">{str(r.modelName)} <span className="text-slate-400">· {str(r.trimDescription)}</span></td>
@@ -117,7 +120,7 @@ export function FinanceWorkspace({ canApprove }: { canApprove: boolean }) {
                       <td className="px-4 py-3 text-right font-bold text-slate-800">{formatCurrency(r.grandTotalCost)}</td>
                       <td className="px-4 py-3 text-slate-600">{str(r.consultant) || '—'}</td>
                       {canApprove && (
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end gap-1.5">
                             <Button size="sm" className="h-8" disabled={busy}
                               onClick={() => approval.mutate({ id: r.id, body: { decision: 'approve' } })}>
@@ -205,6 +208,247 @@ export function FinanceWorkspace({ canApprove }: { canApprove: boolean }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Details drawer */}
+      <AnimatePresence>
+        {previewRow && (
+          <BookingDetailsDrawer
+            row={previewRow}
+            currentUserRole={currentUserRole}
+            onClose={() => setPreviewRow(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
+
+function FieldValue({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-xl bg-slate-50/60 p-2.5 border border-slate-100/80">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="mt-0.5 text-xs font-semibold text-slate-700 break-words">{value ?? '—'}</p>
+    </div>
+  )
+}
+
+function BookingDetailsDrawer({
+  row,
+  currentUserRole,
+  onClose,
+}: {
+  row: ApprovalQueueRow | null
+  currentUserRole?: string
+  onClose: () => void
+}) {
+  if (!row || typeof document === 'undefined') return null
+
+  const canViewPii = currentUserRole?.toLowerCase() === 'md' || currentUserRole?.toLowerCase() === 'developer'
+  const maskPii = (val: string | null | undefined) => {
+    const v = String(val ?? '').trim()
+    if (!v) return '—'
+    return canViewPii ? v : '••••••'
+  }
+
+  const money = (value: unknown) => formatCurrency(value)
+
+  const priceFields: { label: string; value: string | number | null }[] = [
+    { label: 'Ex-Showroom', value: row.exShowroom },
+    { label: 'TCS', value: row.tcsValue },
+    { label: 'Registration', value: row.registrationCharges },
+    { label: 'Insurance', value: row.insuranceValue },
+    { label: 'FASTag', value: row.fastagValue },
+    { label: 'Accessories Kit', value: row.accessoriesKit },
+    { label: 'Ext. Warranty', value: row.extWarranty },
+    { label: 'Cash Discount', value: row.cashDiscount },
+    { label: 'Exchange Value', value: row.exchangeValue },
+    { label: 'Booking Amount', value: row.bookingAmount },
+    { label: 'Govt. Emp. Discount', value: row.govtEmployeeDiscount },
+    { label: 'Additional Discount', value: row.additionalDiscount },
+  ]
+
+  // Fallbacks to Booking data
+  const customerName = row.customerName || row.bookingCustomerName || '—'
+  const mobileNumber = row.mobileNumber || row.bookingCustomerPhone
+  const customerEmail = row.customerEmail || row.bookingCustomerEmail
+  const customerAddress = row.customerAddress || row.bookingCustomerAddress || '—'
+  
+  const modelName = row.modelName || row.bookingModel || '—'
+  const trimDescription = row.trimDescription || row.bookingVariant || '—'
+  const fuelType = row.fuelType || row.bookingFuelType || '—'
+  const vehicleColor = row.vehicleColor || row.bookingColor || '—'
+  
+  const bankName = row.bankName || row.bookingBankName || '—'
+  const loanAmount = row.loanAmount ?? row.bookingLoanAmount
+
+  // Document Extractors
+  const bMeta = (row.bookingMetadata || {}) as Record<string, unknown>
+  const pMeta = (row.importMetadata || {}) as Record<string, unknown>
+  const docMeta = (pMeta.customerDocuments || {}) as Record<string, unknown>
+
+  const getDocVal = (key: string): string => {
+    return String(bMeta[key] || docMeta[key] || pMeta[key] || '').trim()
+  }
+
+  const panNumber = getDocVal('panNumber')
+  const panCardUrl = getDocVal('panCardUrl')
+  const panCardName = getDocVal('panCardName')
+
+  const aadhaarNumber = getDocVal('aadhaarNumber')
+  const aadhaarCardUrl = getDocVal('aadhaarCardUrl')
+  const aadhaarCardName = getDocVal('aadhaarCardName')
+
+  const employeeIdUrl = getDocVal('employeeIdUrl')
+  const employeeIdName = getDocVal('employeeIdName')
+
+  return createPortal(
+    <>
+      <motion.div
+        className="fixed inset-0 z-[99998] bg-slate-950/40 backdrop-blur-[2px]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      />
+      <motion.div
+        className="fixed inset-y-0 right-0 z-[99999] flex h-full w-[480px] max-w-[95vw] flex-col border-l border-slate-200 bg-slate-50 shadow-2xl"
+        initial={{ x: 480, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: 480, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 350, damping: 35 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="relative overflow-hidden border-b border-slate-200 p-5 text-white bg-slate-900">
+          <div aria-hidden className="pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+                Booking Details {row.bookingNumber ? `· #${row.bookingNumber}` : ''}
+              </p>
+              <p className="mt-1 truncate text-lg font-extrabold tracking-tight">{customerName}</p>
+              <p className="mt-0.5 text-xs font-semibold text-slate-300">{modelName} · {trimDescription}</p>
+            </div>
+            <button
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-white/10 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+              onClick={onClose}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 space-y-4 overflow-y-auto p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-track]:bg-transparent">
+          {/* Customer Details */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-indigo-600" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Customer Details</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldValue label="Customer" value={customerName} />
+              <FieldValue label="Mobile" value={maskPii(mobileNumber)} />
+              <FieldValue label="Email" value={maskPii(customerEmail)} />
+              <FieldValue label="Type" value={row.customerType || '—'} />
+              <FieldValue label="Proforma Date" value={formatDate(row.proformaDate)} />
+              <FieldValue label="Consultant" value={row.consultant || row.bookingConsultant || '—'} />
+              <FieldValue label="Aadhaar Number" value={maskPii(aadhaarNumber)} />
+              <FieldValue label="PAN Number" value={maskPii(panNumber)} />
+              <div className="col-span-2">
+                <FieldValue label="Address" value={customerAddress} />
+              </div>
+            </div>
+          </div>
+
+          {/* Customer Identity Documents Links */}
+          {(() => {
+            const docs = [
+              { label: 'PAN Card', url: panCardUrl, name: panCardName },
+              { label: 'Aadhaar Card', url: aadhaarCardUrl, name: aadhaarCardName },
+              { label: 'Employee ID', url: employeeIdUrl, name: employeeIdName },
+            ].filter((d) => d.url)
+            if (!docs.length || !canViewPii) return null
+            return (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-rose-600" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Customer Documents</h3>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {docs.map((d) => (
+                    <a
+                      key={d.label}
+                      href={d.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-800"
+                    >
+                      <FileText className="h-4 w-4 text-slate-400" /> {d.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Bank / Finance Details */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <WalletCards className="h-4 w-4 text-emerald-600" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Bank / Finance Details</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldValue label="Bank" value={bankName} />
+              <FieldValue label="Branch" value={row.bankBranch || '—'} />
+              <FieldValue label="Loan Amount" value={money(loanAmount)} />
+              <FieldValue label="Insurance Co." value={row.insuranceCompany || '—'} />
+              <FieldValue label="Vehicle Status" value={row.vehicleStatus || '—'} />
+              <FieldValue label="Finance Status" value={row.financeStatus || '—'} />
+            </div>
+          </div>
+
+          {/* Vehicle & Price Details */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <FileText className="h-4 w-4 text-violet-600" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Vehicle & Price Details</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldValue label="Model" value={modelName} />
+              <FieldValue label="Variant" value={trimDescription} />
+              <FieldValue label="Fuel" value={fuelType} />
+              <FieldValue label="Colour" value={vehicleColor} />
+            </div>
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="grid grid-cols-2 gap-3">
+                {priceFields.map((field) => (
+                  <FieldValue key={field.label} label={field.label} value={money(field.value)} />
+                ))}
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
+              <div className="rounded-xl bg-slate-50 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Customer Cost</p>
+                <p className="mt-1 text-sm font-extrabold text-slate-700">{money(row.totalCustomerCost)}</p>
+              </div>
+              <div className="rounded-xl bg-indigo-50 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Grand Total</p>
+                <p className="mt-1 text-sm font-extrabold text-indigo-700">{money(row.grandTotalCost)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-white p-4">
+          <Button variant="outline" className="h-10 rounded-xl font-bold" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </motion.div>
+    </>,
+    document.body
+  )
+}
+

@@ -4,14 +4,54 @@ export interface ApprovalQueueRow {
   id: string
   proformaDate: string | null
   customerName: string | null
+  mobileNumber: string | null
+  customerEmail: string | null
+  customerAddress: string | null
+  customerType: string | null
   modelName: string | null
   trimDescription: string | null
+  fuelType: string | null
   vehicleColor: string | null
+  vehicleStatus: string | null
   bankName: string | null
+  bankBranch: string | null
+  loanAmount: string | number | null
+  exShowroom: string | number | null
+  tcsValue: string | number | null
+  registrationCharges: string | number | null
+  insuranceValue: string | number | null
+  fastagValue: string | number | null
+  accessoriesKit: string | number | null
+  extWarranty: string | number | null
+  cashDiscount: string | number | null
+  exchangeValue: string | number | null
+  bookingAmount: string | number | null
+  govtEmployeeDiscount: string | number | null
+  additionalDiscount: string | number | null
+  totalCustomerCost: string | number | null
   grandTotalCost: string | number | null
   consultant: string | null
   location: string | null
   approvalStatus: string | null
+  financeStatus: string | null
+  insuranceCompany: string | null
+  // Booking fallbacks
+  bookingId?: string | null
+  bookingNumber?: string | null
+  bookingStatus?: string | null
+  bookingCustomerName?: string | null
+  bookingCustomerPhone?: string | null
+  bookingCustomerEmail?: string | null
+  bookingCustomerAddress?: string | null
+  bookingModel?: string | null
+  bookingVariant?: string | null
+  bookingColor?: string | null
+  bookingFuelType?: string | null
+  bookingConsultant?: string | null
+  bookingBankName?: string | null
+  bookingLoanAmount?: string | number | null
+  importMetadata?: Record<string, unknown> | null
+  bookingMetadata?: Record<string, unknown> | null
 }
 
 export interface ProcessingRow {
