@@ -41,16 +41,13 @@ export function getKiaProformaVisibilityFilter(appUser: AppUser, canApprove = fa
   return and(...base, eq(kiaProformas.loginEmail, appUser.email))!
 }
 
-// The Pending Approval queue is scoped to the stage the viewer actually acts on, so each approver
-// sees only what is waiting on THEM:
-//   • Sales Manager / General Manager → stage 1 only (PENDING / '' / declined-restart / legacy
-//     FINANCE_APPROVED). They do NOT see proformas already handed off to Finance.
-//   • Finance Head / Finance Team → stage 2 only (MANAGER_APPROVED). They do NOT see the Sales
-//     Manager / GM queue.
-//   • MD / admin / developer (and any other approver) → EVERY in-flight proforma.
-// The per-stage role gate that enforces WHO may approve lives in roleActsOnKiaStage; this only
-// controls WHAT each role sees in the queue.
-export function getKiaProformaPendingApprovalFilter(appUser?: AppUser): SQL<unknown> {
+// The Proforma module's Pending Approval queue is Sales-Manager / General-Manager (stage 1) ONLY.
+// Finance (stage 2, MANAGER_APPROVED) approval now lives EXCLUSIVELY in the dedicated /finance section
+// (which reads its own getKiaFinanceApprovalQueue). A proforma handed off to Finance therefore no
+// longer appears in this Proforma-section queue for ANY role — including MD / admin / developer, who
+// perform the final Finance approval from /finance instead. The per-stage role gate that enforces WHO
+// may approve still lives in roleActsOnKiaStage.
+export function getKiaProformaPendingApprovalFilter(): SQL<unknown> {
   // Stage 1 — awaiting Sales Manager / GM (PENDING, blank, declined restart, legacy FINANCE_APPROVED).
   const stage1 = or(
     eq(kiaProformas.approvalStatus, 'PENDING'),
@@ -58,17 +55,5 @@ export function getKiaProformaPendingApprovalFilter(appUser?: AppUser): SQL<unkn
     like(kiaProformas.approvalStatus, 'NOT APPROVED%'),
     eq(kiaProformas.approvalStatus, 'FINANCE_APPROVED'),
   )!
-  // Stage 2 — Manager-approved, awaiting Finance.
-  const stage2 = eq(kiaProformas.approvalStatus, 'MANAGER_APPROVED')
-
-  const role = String(appUser?.role || '').trim().toLowerCase()
-  let stageFilter: SQL<unknown>
-  if (role === 'finance_head' || role === 'finance_team') {
-    stageFilter = stage2
-  } else if (role === 'sales_manager' || role === 'general_manager') {
-    stageFilter = stage1
-  } else {
-    stageFilter = or(stage1, stage2)!
-  }
-  return and(isNull(kiaProformas.deletedAt), stageFilter)!
+  return and(isNull(kiaProformas.deletedAt), stage1)!
 }

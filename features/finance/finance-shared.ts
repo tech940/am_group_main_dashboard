@@ -95,7 +95,7 @@ export interface ProcessingDetailRow {
 export interface DetailResponse {
   processing: ProcessingDetailRow
   proforma: Record<string, unknown>
-  booking: { bookingNumber: string | null; status: string | null; dealerCode: string | null; financeRequired: boolean | null } | null
+  booking: { bookingNumber: string | null; status: string | null; deliveredAt: string | null; paymentReceived: boolean; dealerCode: string | null; financeRequired: boolean | null } | null
   remarks: Remark[]
   bankAttempts: BankAttempt[]
   activity: ActivityEntry[]

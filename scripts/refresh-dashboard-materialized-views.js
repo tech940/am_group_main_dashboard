@@ -9,7 +9,9 @@ const views = [
   'am_platinum_workshop_performance_jc_summary_v2',
   'am_platinum_ro_billing_daily_summary_v2',
   'am_platinum_vas_period_summary_v1',
-  'am_platinum_ro_billing_daily_summary_v1',
+  // am_platinum_ro_billing_daily_summary_v1 removed: superseded by _v2 (which reads the already-
+  // materialized jc_summary_v2). v1 rebuilt a redundant full-history scan of am_platinum_ro_billing_report
+  // 8x/day and is read by no app code. Drop the matview separately if desired.
   'am_platinum_open_ro_daily_summary_v1',
   'am_platinum_complaints_daily_summary_v1',
 ]

@@ -326,8 +326,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         bookingDate: bookingDate ? new Date(bookingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null,
         consultantName: text(updated.consultant),
         dealerName: dealerDisplayName,
-        trackingUrl: linkedBookingRow?.id ? buildTrackingUrl(linkedBookingRow.id) : null,
-        callbackUrl: linkedBookingRow?.id ? buildCallbackUrl(linkedBookingRow.id) : null,
+        trackingUrl: linkedBookingRow?.id ? buildTrackingUrl(linkedBookingRow.id, new URL(request.url).origin) : null,
+        callbackUrl: linkedBookingRow?.id ? buildCallbackUrl(linkedBookingRow.id, new URL(request.url).origin) : null,
       }
       const email = kind === 'approved' ? buildApprovedProformaEmail(data) : buildUpdatedProformaEmail(data)
       // Attach the proforma PDF so the customer receives it directly.

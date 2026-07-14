@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
     const filters = [getKiaProformaVisibilityFilter(appUser, isApprover)]
     if (mode === 'pending-approval') {
       if (!isApprover) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      filters.push(getKiaProformaPendingApprovalFilter(appUser))
+      filters.push(getKiaProformaPendingApprovalFilter())
     }
     if (financeStatus !== 'all') filters.push(eq(kiaProformas.financeStatus, financeStatus))
     if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) filters.push(gte(kiaProformas.proformaDate, new Date(`${startDate}T00:00:00+05:30`)))

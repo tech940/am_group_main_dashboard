@@ -61,7 +61,7 @@ function FavStar({ favourite, label }: { favourite: { active: boolean; onToggle:
       type="button"
       onClick={(event) => { event.preventDefault(); event.stopPropagation(); favourite.onToggle() }}
       className={cn(
-        'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border transition',
+        'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border transition',
         favourite.active
           ? 'border-amber-300/50 bg-amber-300/15 text-amber-200'
           : 'border-white/10 bg-white/8 text-indigo-50/55 hover:bg-white/14 hover:text-amber-200',
@@ -69,7 +69,7 @@ function FavStar({ favourite, label }: { favourite: { active: boolean; onToggle:
       aria-label={favourite.active ? `Remove ${label} from favourites` : `Add ${label} to favourites`}
       title={favourite.active ? 'Remove from favourites' : 'Add to favourites'}
     >
-      <Star className={cn('h-3.5 w-3.5', favourite.active && 'fill-current')} />
+      <Star className={cn('h-3 w-3', favourite.active && 'fill-current')} />
     </button>
   )
 }
@@ -90,9 +90,9 @@ function AccordionNav({ groups, collapsed, onNavigate }: { groups: NavGroup[]; c
     })
   }, [])
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {groups.map((group) => (
-        <div key={group.key} className="space-y-1.5">
+        <div key={group.key} className="space-y-1">
           {!collapsed && group.label && <GroupLabel label={group.label} />}
           {group.nodes.map((node) => (
             <AccordionRow key={node.key} node={node} depth={0} pathKey={node.key} open={open} onToggle={toggle} onNavigate={onNavigate} />
@@ -122,15 +122,15 @@ function AccordionRow({
   const expanded = open.has(pathKey)
   const Icon = node.icon
   const rowClass = cn(
-    'flex items-center gap-2.5 rounded-xl border-l-4 px-3 py-2.5 text-[13px] transition-colors',
+    'flex items-center gap-2 rounded-xl border-l-4 px-2.5 py-2 text-[12px] transition-colors',
     node.active ? 'bg-white/22 border-white font-semibold text-white' : 'bg-white/10 border-transparent text-indigo-50/85 hover:bg-white/16 hover:text-white active:bg-white/20',
     node.disabled && 'opacity-60',
   )
   const label = (
     <>
       {(node.logo || Icon) && (
-        <span className={cn('flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/12', node.logoContainerClassName)}>
-          {node.logo ? <img src={node.logo} alt={node.label} className={cn('h-full w-full object-contain', node.logoClassName)} /> : Icon ? <Icon className="h-4 w-4" /> : null}
+        <span className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/12', node.logoContainerClassName)}>
+          {node.logo ? <img src={node.logo} alt={node.label} className={cn('h-full w-full object-contain', node.logoClassName)} /> : Icon ? <Icon className="h-3.5 w-3.5" /> : null}
         </span>
       )}
       <span className="flex-1 truncate text-left">{node.label}</span>
@@ -149,10 +149,10 @@ function AccordionRow({
   // A node can be a direct LINK, an expandable GROUP, or BOTH (link + a separate chevron toggle) —
   // e.g. "Purchase Orders" navigates to its page and expands to show the nested "CA" child.
   const chevron = hasChildren ? (
-    <ChevronDown className={cn('h-4 w-4 flex-shrink-0 text-indigo-50/60 transition-transform', expanded && 'rotate-180')} />
+    <ChevronDown className={cn('h-3.5 w-3.5 flex-shrink-0 text-indigo-50/60 transition-transform', expanded && 'rotate-180')} />
   ) : null
   return (
-    <div style={{ paddingLeft: depth === 0 ? 0 : 10 }}>
+    <div style={{ paddingLeft: depth === 0 ? 0 : 8 }}>
       {node.href && !node.disabled ? (
         <div className="flex items-center gap-1">
           <Link
@@ -170,7 +170,7 @@ function AccordionRow({
               type="button"
               onClick={() => onToggle(pathKey)}
               aria-label={`Toggle ${node.label}`}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-indigo-50/70 transition-colors hover:bg-white/12 hover:text-white"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-indigo-50/70 transition-colors hover:bg-white/12 hover:text-white"
             >
               {chevron}
             </button>
@@ -189,7 +189,7 @@ function AccordionRow({
         </button>
       )}
       {expanded && hasChildren && (
-        <div className="mt-1 space-y-1 border-l border-white/10 pl-1.5">
+        <div className="mt-1 space-y-1 border-l border-white/10 pl-1">
           {node.children!.map((child) => (
             <AccordionRow key={child.key} node={child} depth={depth + 1} pathKey={`${pathKey}/${child.key}`} open={open} onToggle={onToggle} onNavigate={onNavigate} />
           ))}

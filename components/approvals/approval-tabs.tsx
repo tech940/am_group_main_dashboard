@@ -1,10 +1,10 @@
 'use client'
 
 import { motion } from 'motion/react'
-import { FileText, Calculator } from 'lucide-react'
+import { FileText, Calculator, Banknote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type ApprovalCategory = 'purchase_orders' | 'ca'
+export type ApprovalCategory = 'purchase_orders' | 'ca' | 'petty_cash'
 
 type TabDef = {
   key: ApprovalCategory
@@ -39,18 +39,23 @@ export function ApprovalCategoryTabs({
   active,
   onChange,
   purchaseOrderCount,
+  showPettyCash = false,
 }: {
   active: ApprovalCategory
   onChange: (category: ApprovalCategory) => void
   purchaseOrderCount: number
+  showPettyCash?: boolean
 }) {
   const tabs: TabDef[] = [
     { key: 'purchase_orders', label: 'Purchase Orders', shortLabel: 'Orders', icon: FileText, count: purchaseOrderCount },
     { key: 'ca', label: 'CA', shortLabel: 'CA', icon: Calculator, count: null },
   ]
+  if (showPettyCash) {
+    tabs.push({ key: 'petty_cash', label: 'Petty Cash', shortLabel: 'Petty', icon: Banknote, count: null })
+  }
 
   return (
-    <div className="inline-flex w-full max-w-md items-center gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1 shadow-sm">
+    <div className="inline-flex w-full max-w-2xl items-center gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1 shadow-sm">
       {tabs.map((tab) => {
         const isActive = tab.key === active
         const Icon = tab.icon

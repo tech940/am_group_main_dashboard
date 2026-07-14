@@ -70,6 +70,7 @@ const brandNavigation: SidebarBrand[] = [
         key: 'sales',
         submenus: [
           { name: 'Bookings', href: '/brands/kia/proforma' },
+          { name: 'Finance', href: '/finance' },
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Sales Performance', href: '/brands/kia/sales-performance', badge: 'TEST' },
@@ -80,11 +81,11 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
         ],
       },
-      {
-        name: 'H Promise',
-        key: 'h-promise',
-        submenus: [],
-      },
+      // {
+      //   name: 'H Promise',
+      //   key: 'h-promise',
+      //   submenus: [],
+      // },
     ],
   },
   {
@@ -161,41 +162,41 @@ const brandNavigation: SidebarBrand[] = [
       },
     ],
   },
-  {
-    name: 'AM MG',
-    key: 'mg',
-    href: '/brands/mg',
-    logo: '',
-    logoClassName: '',
-    logoContainerClassName: '',
-    color: 'text-blue-100',
-    icon: Activity,
-    comingSoon: false,
-    sections: [
-      {
-        name: 'Service',
-        key: 'service',
-        submenus: [
-          { name: 'Business Excellence', href: '/brands/mg/business-excellence/overview' },
-          { name: 'Service Appointment', href: '/brands/mg/service-appointment' },
-          { name: 'MG Proforma', href: '/brands/mg/proforma' },
-        ],
-      },
-      {
-        name: 'Sales',
-        key: 'sales',
-        submenus: [
-          { name: 'Demo Job Cards', href: '/brands/mg/demo-job-cards' },
-          { name: 'Demo Cars List', href: '/brands/mg/demo-cars-list' },
-        ],
-      },
-      {
-        name: 'H Promise',
-        key: 'h-promise',
-        submenus: [],
-      },
-    ],
-  },
+  // {
+  //   name: 'AM MG',
+  //   key: 'mg',
+  //   href: '/brands/mg',
+  //   logo: '',
+  //   logoClassName: '',
+  //   logoContainerClassName: '',
+  //   color: 'text-blue-100',
+  //   icon: Activity,
+  //   comingSoon: false,
+  //   sections: [
+  //     {
+  //       name: 'Service',
+  //       key: 'service',
+  //       submenus: [
+  //         { name: 'Business Excellence', href: '/brands/mg/business-excellence/overview' },
+  //         { name: 'Service Appointment', href: '/brands/mg/service-appointment' },
+  //         { name: 'MG Proforma', href: '/brands/mg/proforma' },
+  //       ],
+  //     },
+  //     {
+  //       name: 'Sales',
+  //       key: 'sales',
+  //       submenus: [
+  //         { name: 'Demo Job Cards', href: '/brands/mg/demo-job-cards' },
+  //         { name: 'Demo Cars List', href: '/brands/mg/demo-cars-list' },
+  //       ],
+  //     },
+  //     {
+  //       name: 'H Promise',
+  //       key: 'h-promise',
+  //       submenus: [],
+  //     },
+  //   ],
+  // },
 ]
 
 const availableBrands = brandNavigation.filter((brand) => brand.sections.some((section) => section.submenus.length > 0))
@@ -416,10 +417,10 @@ export function Sidebar() {
       external: true,
       active: pathname.startsWith('/petty-cash'),
     })
-    if (canAccessAmFinance && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
+    // if (canAccessAmFinance && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
     // Finance — customer vehicle-financing workflow. Deny-by-default (registry), gated purely on the
     // permission snapshot like Group Cockpit: MD/Developer always + explicitly-granted finance roles.
-    if (hasPermission('finance.view')) commonNodes.push({ key: '/finance', label: 'Finance', href: '/finance', icon: HandCoins, external: true, active: pathname.startsWith('/finance') })
+    // if (hasPermission('finance.view')) commonNodes.push({ key: '/finance', label: 'Finance', href: '/finance', icon: HandCoins, external: true, active: pathname.startsWith('/finance') })
     if (canAccessAdmin) {
       // Single link — the Admin page exposes all sections (Users, Access, Branch Admins, System,
       // Settings) as in-page tabs, so no sidebar dropdown is needed.

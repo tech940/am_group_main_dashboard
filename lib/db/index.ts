@@ -22,19 +22,11 @@ const LOCK_TIMEOUT_MS = positiveInteger(process.env.DATABASE_LOCK_TIMEOUT_MS, 3_
 const IDLE_IN_TRANSACTION_TIMEOUT_MS = positiveInteger(process.env.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS, 10_000)
 
 type PostgresClient = ReturnType<typeof postgres>
-type PostgresTransaction = postgres.TransactionSql
 
-function runInTimedTransaction<T>(
-  baseClient: PostgresClient,
-  action: (tx: PostgresTransaction) => T | Promise<T>,
-) {
-  return baseClient.begin(async (tx) => {
-    await tx.unsafe(`SET LOCAL statement_timeout TO ${STATEMENT_TIMEOUT_MS}`)
-    await tx.unsafe(`SET LOCAL lock_timeout TO ${LOCK_TIMEOUT_MS}`)
-    await tx.unsafe(`SET LOCAL idle_in_transaction_session_timeout TO ${IDLE_IN_TRANSACTION_TIMEOUT_MS}`)
-    return action(tx)
-  })
-}
+// NOTE: per-transaction SET LOCAL timeout guards are enforced at the physical-connection level via the
+// connection.options startup flags below (statement_timeout / lock_timeout /
+// idle_in_transaction_session_timeout), which apply to every connection including transactional ones —
+// so a dedicated runInTimedTransaction wrapper (previously dead code, never exported/called) is unneeded.
 
 // Singleton pattern to prevent connection pool exhaustion during Next.js HMR
 // Without this, every hot reload creates a NEW postgres client, leaking connections
@@ -116,6 +108,10 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 function shouldLogSqlTimings() {
+  // The execute wrapper below captures + parses a full stack trace (getSqlCaller) and console.logs on
+  // every raw query when this is on — meaningful per-query overhead. In production it is now OFF unless
+  // explicitly enabled (SQL_QUERY_LOGS=true); dev keeps logs on by default (opt-out with SQL_QUERY_LOGS=false).
+  if (process.env.NODE_ENV === 'production') return process.env.SQL_QUERY_LOGS === 'true'
   return process.env.SQL_QUERY_LOGS !== 'false'
 }
 

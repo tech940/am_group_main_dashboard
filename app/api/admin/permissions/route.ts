@@ -20,7 +20,6 @@ import {
   updateUserPermissionOverrides,
 } from '@/lib/permissions/service'
 import { ROLE_PERMISSION_TEMPLATE_LABELS, getTemplateMap } from '@/lib/permissions/registry'
-import { invalidateCachePattern } from '@/lib/redis/cache-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -180,8 +179,8 @@ export async function PATCH(request: Request) {
       changes,
       reason,
     })
-    // The Access Map caches its computed grid; drop it so edits show immediately.
-    await invalidateCachePattern('access-matrix:*')
+    // (Removed a dead invalidateCachePattern('access-matrix:*') here: the access-matrix route is
+    // explicitly uncached — the pattern matched no keys and only cost a full-keyspace Redis SCAN per edit.)
     await writeAdminAudit({
       actor,
       action: 'permissions.updated',

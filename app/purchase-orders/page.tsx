@@ -41,6 +41,7 @@ import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
 import { ApprovalCategoryTabs, type ApprovalCategory } from '@/components/approvals/approval-tabs'
 import { CaDashboard } from '@/features/ca/ca-dashboard'
 import { isCaViewRole } from '@/lib/permissions/legacy-module-roles'
+import { PettyCashApprovalPanel } from '@/components/petty-cash/approval-panel'
 
 interface PurchaseOrder {
   id: string
@@ -694,6 +695,7 @@ function PurchaseOrdersPageContent() {
       setUserRole(data.role || '')
       if (data.role === 'md') {
         setApprovalBranchFilter(data.brand || 'all')
+        setApprovalCategory('petty_cash')
       }
     } catch (error) {
       console.error('Error fetching user role:', error)
@@ -1994,11 +1996,22 @@ function PurchaseOrdersPageContent() {
               active={approvalCategory}
               onChange={setApprovalCategory}
               purchaseOrderCount={approvalFilterCounts.pending || 0}
+              showPettyCash={userRole === 'md' || userRole === 'eba' || userRole === 'developer'}
             />
           </div>
         )}
         {approvalCategory === 'ca' && canViewCa ? (
           <CaDashboard />
+        ) : approvalCategory === 'petty_cash' && (userRole === 'md' || userRole === 'eba' || userRole === 'developer') ? (
+          <div className="rounded-[28px] bg-white p-6 shadow-sm border border-slate-100">
+            <div className="mb-6">
+              <h1 className="text-3xl font-black text-slate-900">Petty Cash Approvals</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Review and approve petty cash requests across all branches.
+              </p>
+            </div>
+            <PettyCashApprovalPanel role={userRole} userBrand="all" />
+          </div>
         ) : (
         <>
         {userRole !== 'md' && userRole !== 'ea' && (

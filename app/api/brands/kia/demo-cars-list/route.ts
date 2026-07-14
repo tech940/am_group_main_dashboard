@@ -78,41 +78,9 @@ async function getTableColumns(tableName: string) {
   return await analyticsTableColumnSet(tableName)
 }
 
-async function ensureDemoVehicleDetailsSchema() {
-  await db.execute(sql`
-    ALTER TABLE public.demo_vehicle_details
-      ADD COLUMN IF NOT EXISTS registration_number text
-  `)
-  await db.execute(sql`
-    ALTER TABLE public.demo_vehicle_details
-      ADD COLUMN IF NOT EXISTS sold_amount numeric
-  `)
-  await db.execute(sql`
-    ALTER TABLE public.demo_vehicle_details
-      ADD COLUMN IF NOT EXISTS remarks text
-  `)
-
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS demo_vehicle_details_registration_number_idx
-      ON public.demo_vehicle_details (registration_number)
-  `)
-}
-
-// The schema above only changes on deploy, yet the 4 idempotent DDL round-trips ran on EVERY GET
-// (~700ms of the request). Throttle to once per process window + dedupe concurrent callers, exactly
-// like ensurePermissionRegistrySynced — so it syncs right after a deploy and is then ~free.
-let demoSchemaSyncedUntil = 0
-let demoSchemaSyncPromise: Promise<void> | null = null
-const DEMO_SCHEMA_SYNC_TTL_MS = 10 * 60 * 1000
-async function ensureDemoVehicleDetailsSchemaThrottled() {
-  if (Date.now() < demoSchemaSyncedUntil) return
-  if (demoSchemaSyncPromise) return demoSchemaSyncPromise
-  demoSchemaSyncPromise = (async () => {
-    await ensureDemoVehicleDetailsSchema()
-    demoSchemaSyncedUntil = Date.now() + DEMO_SCHEMA_SYNC_TTL_MS
-  })().finally(() => { demoSchemaSyncPromise = null })
-  return demoSchemaSyncPromise
-}
+// The demo_vehicle_details columns (registration_number, sold_amount, remarks) + registration index
+// used to be created here by runtime DDL on every request. They now live in a migration
+// (scripts/apply-migration-0015.ts) — schema changes must not run in the request path.
 
 function hasColumn(columns: Set<string>, columnName: string) {
   return columns.has(columnName)
@@ -474,9 +442,6 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const filters = getFilters(searchParams)
     const hasDetailsTable = await timer.time('details-table-check', () => tableExists('demo_vehicle_details'))
-    if (hasDetailsTable) {
-      await timer.time('details-schema-sync', ensureDemoVehicleDetailsSchemaThrottled)
-    }
     const columns = await timer.time('columns', () => getTableColumns('demo_car_list'))
 
     // CSV export — the full filtered list (no pagination), streamed as a download.
@@ -523,7 +488,6 @@ export async function POST(request: Request) {
       { status: 424 }
     )
   }
-  await ensureDemoVehicleDetailsSchema()
 
   const body = await request.json().catch(() => ({}))
   const vehicleKey = String(body?.vehicleKey || '').trim().toUpperCase()

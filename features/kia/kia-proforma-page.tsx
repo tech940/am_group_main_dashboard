@@ -1625,6 +1625,10 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
+      // Finance (stage 2) approval lives EXCLUSIVELY in the dedicated /finance section, so a proforma
+      // awaiting Finance is never shown or actionable in the Proforma module's Pending queue — a
+      // client-side guard alongside the server-side getKiaProformaPendingApprovalFilter.
+      if (mode === 'pending-approval' && pendingStageOf(row.approvalStatus) === 'finance') return false
       if (selectedColumn && selectedValues.size > 0 && !selectedValues.has(proformaColumnValue(row, selectedColumn) || '-')) return false
       const rowDate = dateKey(row.proformaDate)
       if (startDate && rowDate < startDate) return false
@@ -1633,7 +1637,7 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
       if (isFinance && financeStatus === 'Current month' && bankFilter && row.bankName !== bankFilter) return false
       return true
     })
-  }, [bankFilter, financeDate, financeStatus, isFinance, rows, selectedColumn, selectedValues, startDate, endDate])
+  }, [bankFilter, financeDate, financeStatus, isFinance, mode, rows, selectedColumn, selectedValues, startDate, endDate])
   const totalClientPages = Math.max(1, Math.ceil(filteredRows.length / PROFORMA_TABLE_PAGE_SIZE))
   const currentClientPage = Math.min(page, totalClientPages)
   const pagedRows = filteredRows.slice((currentClientPage - 1) * PROFORMA_TABLE_PAGE_SIZE, currentClientPage * PROFORMA_TABLE_PAGE_SIZE)

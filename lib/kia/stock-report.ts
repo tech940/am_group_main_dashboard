@@ -397,11 +397,14 @@ export async function getKiaStockReportSummary(input: {
   dateMode?: string | null
 }): Promise<KiaStockSummaryPayload> {
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
-  const fallback = await latestMonthFallback()
-  const context = resolveDateContext(input, fallback)
-  const dateMode = normalizeDateMode(input.dateMode)
   const cacheKey = `kia:stock-report:summary:v15:${dealerCode || 'all'}`
   return getCachedData(cacheKey, async () => {
+    // latestMonthFallback() is a non-index-usable MAX scan of kia_stock_management. It was previously
+    // awaited OUTSIDE this factory, so it ran on every request even on a warm cache hit. It (and the
+    // pure resolveDateContext/normalizeDateMode derived from it) now run only on a cache miss.
+    const fallback = await latestMonthFallback()
+    const context = resolveDateContext(input, fallback)
+    const dateMode = normalizeDateMode(input.dateMode)
     const currentRows = await readCurrentRows(dealerCode)
     const currentVehicles = currentRows.map(normalizeVehicle)
     const totalStock = currentVehicles.length

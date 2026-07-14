@@ -349,7 +349,7 @@ export function NotificationBell({ userId, userRole }: NotificationBellProps) {
     setPermissionDialogOpen(false)
 
     if (typeof window !== 'undefined') {
-      window.sessionStorage.setItem(PERMISSION_DISMISS_KEY, 'true')
+      window.localStorage.setItem(PERMISSION_DISMISS_KEY, String(Date.now()))
     }
   }
 
@@ -359,19 +359,18 @@ export function NotificationBell({ userId, userRole }: NotificationBellProps) {
       return
     }
 
-    const result = await Notification.requestPermission()
-    setPermission(result)
-
-    if (result === 'granted') {
+    try {
+      const result = await Notification.requestPermission()
+      setPermission(result)
       setPermissionDialogOpen(false)
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(PERMISSION_DISMISS_KEY)
-      }
-      await unlockAudioContext()
-      return
-    }
 
-    setPermissionDialogOpen(true)
+      if (result === 'granted' && typeof window !== 'undefined') {
+        window.localStorage.removeItem(PERMISSION_DISMISS_KEY)
+        await unlockAudioContext()
+      }
+    } catch (error) {
+      console.error('Error requesting notification permission:', error)
+    }
   }
 
   useEffect(() => {
@@ -485,11 +484,16 @@ export function NotificationBell({ userId, userRole }: NotificationBellProps) {
       return
     }
 
-    const dismissed = typeof window !== 'undefined'
-      ? window.sessionStorage.getItem(PERMISSION_DISMISS_KEY)
-      : null
+    const isDismissedRecently = () => {
+      if (typeof window === 'undefined') return false
+      const dismissedAtStr = window.localStorage.getItem(PERMISSION_DISMISS_KEY)
+      if (!dismissedAtStr) return false
+      const dismissedAt = Number(dismissedAtStr)
+      if (isNaN(dismissedAt)) return false
+      return Date.now() - dismissedAt < 12 * 60 * 60 * 1000 // 12 hours in milliseconds
+    }
 
-    if (permission === 'default' && !dismissed) {
+    if (permission === 'default' && !isDismissedRecently()) {
       const timer = window.setTimeout(() => {
         setPermissionDialogOpen(true)
       }, 0)

@@ -1754,6 +1754,8 @@ export const kiaCallLogs = pgTable('kia_call_logs', {
   kiaCallLogsAgentIdx: index('kia_call_logs_agent_idx').on(table.agentId, table.createdAt),
   kiaCallLogsBookingIdx: index('kia_call_logs_booking_idx').on(table.bookingId),
   kiaCallLogsProviderCallIdx: index('kia_call_logs_provider_call_idx').on(table.providerCallId),
+  // Serves the call-analytics started_at range filters + the call-center recent-calls ORDER BY started_at.
+  kiaCallLogsStartedAtIdx: index('kia_call_logs_started_at_idx').on(table.startedAt),
 }))
 
 // KIA Lead Follow-up pipeline — a staff-scheduled "next touch" on a booking so no lead goes cold.
@@ -1783,6 +1785,9 @@ export const kiaLeadFollowups = pgTable('kia_lead_followups', {
   kiaLeadFollowupsStatusDueIdx: index('kia_lead_followups_status_due_idx').on(table.status, table.dueAt),
   kiaLeadFollowupsAssignedIdx: index('kia_lead_followups_assigned_idx').on(table.assignedTo, table.status),
   kiaLeadFollowupsBookingIdx: index('kia_lead_followups_booking_idx').on(table.bookingId),
+  // Serve the call-analytics created_at / completed_at date aggregations (unindexed before).
+  kiaLeadFollowupsCreatedAtIdx: index('kia_lead_followups_created_at_idx').on(table.createdAt),
+  kiaLeadFollowupsCompletedAtIdx: index('kia_lead_followups_completed_at_idx').on(table.completedAt),
 }))
 
 // Vehicle Tracker (Service floor): logs a vehicle leaving and returning, with an

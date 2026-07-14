@@ -38,7 +38,8 @@ export async function GET(request: Request) {
       status: url.searchParams.get('status'),
       consultant: url.searchParams.get('consultant'),
       page: Number(url.searchParams.get('page') || 1),
-      pageSize: Number(url.searchParams.get('pageSize') || 10),
+      pageSize: Number(url.searchParams.get('pageSize') || 15),
+      sortOrder: url.searchParams.get('sort'),
       viewer: appUser ? { id: appUser.id, email: appUser.email, role: appUser.role } : null,
       // Branch boundary: MD/Developer/global see all; a pinned user only sees their dealer(s).
       allowedDealers: getUserDealerScope(appUser, 'kia'),

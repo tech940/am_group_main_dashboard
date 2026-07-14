@@ -9,6 +9,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
 import {
   AlertTriangle,
+  ArrowUpDown,
   ArrowRight,
   BadgeIndianRupee,
   CalendarCheck,
@@ -169,6 +170,7 @@ type BookingListPayload = {
     noPayment: number
     notInStock: number
     topModels: { model: string; count: number }[]
+    notInStockBreakdown?: { model: string; variant: string; count: number }[]
   }
   filters: {
     dealers: string[]
@@ -307,7 +309,7 @@ type CreateBookingForm = {
   exchangeValue: string
 }
 
-const DEFAULT_PAGE_SIZE = 10
+const DEFAULT_PAGE_SIZE = 15
 const ALL_VALUE = 'all'
 
 // Customer phone / email are restricted to MD & Super Admin across the CRM. A
@@ -1176,6 +1178,8 @@ export function KiaBookingsClient({
   const [status, setStatus] = useState(firstParam(initialSearchParams, 'status', ALL_VALUE))
   const [consultant, setConsultant] = useState(firstParam(initialSearchParams, 'consultant', ALL_VALUE))
   const [page, setPage] = useState(Number(firstParam(initialSearchParams, 'page', '1')) || 1)
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>(firstParam(initialSearchParams, 'sort', 'desc') === 'asc' ? 'asc' : 'desc')
+  const [notInStockModalOpen, setNotInStockModalOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [quoteOpen, setQuoteOpen] = useState(false)
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
@@ -1234,7 +1238,7 @@ export function KiaBookingsClient({
   }, [createOpen, currentUserName, createForm.consultantName])
 
   useEffect(() => {
-    const query = buildQueryString({ search, dealer_code: dealer, model, status, consultant, page })
+    const query = buildQueryString({ search, dealer_code: dealer, model, status, consultant, page, sort: sortOrder === 'asc' ? 'asc' : undefined })
     const next = new URLSearchParams(query)
     if (selectedBookingId && embedMode) next.set('bookingId', selectedBookingId)
     const nextSearch = next.toString() ? `?${next.toString()}` : ''
@@ -1242,7 +1246,7 @@ export function KiaBookingsClient({
     if (nextSearch !== currentSearch) {
       router.replace(`${pathname}${nextSearch}`, { scroll: false })
     }
-  }, [pathname, consultant, dealer, model, page, router, search, selectedBookingId, status, embedMode])
+  }, [pathname, consultant, dealer, model, page, router, search, selectedBookingId, status, embedMode, sortOrder])
 
   const listQueryString = useMemo(() => buildQueryString({
     search: debouncedSearch,
@@ -1252,7 +1256,8 @@ export function KiaBookingsClient({
     consultant,
     page,
     pageSize: DEFAULT_PAGE_SIZE,
-  }), [consultant, dealer, debouncedSearch, model, page, status])
+    sort: sortOrder,
+  }), [consultant, dealer, debouncedSearch, model, page, status, sortOrder])
 
   const listQuery = useQuery({
     queryKey: ['kia-bookings', listQueryString],
@@ -1819,6 +1824,9 @@ export function KiaBookingsClient({
               if (!cfg) return
               setPage(1)
               if (cfg.statusFilter === 'all') { setStatus(ALL_VALUE); return }
+              if (cfg.statusFilter === 'not_in_stock') {
+                setNotInStockModalOpen(true)
+              }
               setStatus((prev) => (prev === cfg.statusFilter ? ALL_VALUE : cfg.statusFilter))
             }}
           />
@@ -1859,6 +1867,15 @@ export function KiaBookingsClient({
             <FilterSelect value={status} placeholder="Status" values={filters.statuses} onChange={(value) => { setStatus(value); setPage(1) }} labeler={statusLabel} />
             <FilterSelect value={consultant} placeholder="Consultant" values={filters.consultants} onChange={(value) => { setConsultant(value); setPage(1) }} />
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="h-10 flex-1 gap-1.5 rounded-2xl text-xs font-bold sm:h-11 sm:text-sm"
+                title={sortOrder === 'desc' ? 'Showing newest first — click to show oldest first' : 'Showing oldest first — click to show newest first'}
+                onClick={() => { setSortOrder((prev) => prev === 'desc' ? 'asc' : 'desc'); setPage(1) }}
+              >
+                <ArrowUpDown className="h-4 w-4" />
+                {sortOrder === 'desc' ? 'Newest' : 'Oldest'}
+              </Button>
               <Button
                 variant="outline"
                 className="h-10 flex-1 gap-1.5 rounded-2xl text-xs font-bold sm:h-11 sm:text-sm"
@@ -2047,6 +2064,157 @@ export function KiaBookingsClient({
         banks={proformaOptionsQuery.data?.banks || []}
         insuranceCompanies={proformaOptionsQuery.data?.insuranceCompanies || []}
       />
+
+      {/* ── Not In Stock summary: model / variant demand breakdown ── */}
+      <Dialog open={notInStockModalOpen} onOpenChange={setNotInStockModalOpen}>
+        <DialogContent className="kia-premium flex max-h-[90dvh] w-[calc(100vw-0.75rem)] max-w-2xl flex-col overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+          <DialogHeader className="shrink-0 border-b border-slate-100 bg-[radial-gradient(circle_at_top_right,#fee2e2,transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-6">
+            <Badge variant="outline" className="mb-3 w-fit rounded-full border-red-100 bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-red-700">
+              No Stock Available
+            </Badge>
+            <DialogTitle className="text-2xl font-black tracking-tight text-slate-950">Demand vs. Stock Gap</DialogTitle>
+            <DialogDescription className="mt-2 text-xs font-semibold leading-5 text-slate-500 sm:text-sm">
+              Bookings with no matching free stock — grouped by model and variant. Use this to prioritise procurement or transfers.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+            {(() => {
+              const breakdown = data?.summary?.notInStockBreakdown || []
+              if (breakdown.length === 0) {
+                return (
+                  <div className="flex flex-col items-center gap-3 py-10 text-center">
+                    <CheckCircle2 className="h-10 w-10 text-emerald-400" />
+                    <p className="text-sm font-bold text-slate-600">All bookings have matching stock available.</p>
+                    <p className="text-xs font-medium text-slate-400">No unmet demand at this time.</p>
+                  </div>
+                )
+              }
+              return (
+                <Table className="kia-table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="h-9 whitespace-nowrap px-3 text-xs font-bold uppercase tracking-wide">#</TableHead>
+                      <TableHead className="h-9 whitespace-nowrap px-3 text-xs font-bold uppercase tracking-wide">Model</TableHead>
+                      <TableHead className="h-9 whitespace-nowrap px-3 text-xs font-bold uppercase tracking-wide">Variant</TableHead>
+                      <TableHead className="h-9 whitespace-nowrap px-3 text-right text-xs font-bold uppercase tracking-wide">Pending Bookings</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {breakdown.map((row, idx) => (
+                      <TableRow
+                        key={`${row.model}--${row.variant}--${idx}`}
+                        className="cursor-pointer hover:bg-slate-50"
+                        onClick={() => {
+                          setModel(row.model)
+                          setStatus('not_in_stock')
+                          setPage(1)
+                          setNotInStockModalOpen(false)
+                        }}
+                      >
+                        <TableCell className="px-3 py-2.5 text-xs font-semibold text-slate-400">{idx + 1}</TableCell>
+                        <TableCell className="px-3 py-2.5 text-sm font-bold text-slate-800">{row.model}</TableCell>
+                        <TableCell className="max-w-[260px] truncate px-3 py-2.5 text-xs font-medium text-slate-600">{row.variant || '—'}</TableCell>
+                        <TableCell className="px-3 py-2.5 text-right">
+                          <span className="inline-flex min-w-[2rem] items-center justify-center rounded-lg bg-red-50 px-2 py-0.5 text-sm font-black text-red-700">
+                            {row.count}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )
+            })()}
+          </div>
+
+          <DialogFooter className="shrink-0 flex-wrap gap-2 border-t border-slate-100 px-4 py-3 sm:px-6">
+            <p className="hidden flex-1 text-xs font-medium text-slate-400 sm:block">Click a row to filter. Export for sharing.</p>
+            {/* ── Excel export ── */}
+            <Button
+              variant="outline"
+              className="h-9 gap-1.5 rounded-xl text-xs font-bold text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300"
+              disabled={(data?.summary?.notInStockBreakdown || []).length === 0}
+              onClick={() => {
+                const breakdown = data?.summary?.notInStockBreakdown || []
+                import('xlsx').then((XLSX) => {
+                  const wsData = [
+                    ['#', 'Model', 'Variant', 'Pending Bookings'],
+                    ...breakdown.map((r, i) => [i + 1, r.model, r.variant || '', r.count]),
+                  ]
+                  const ws = XLSX.utils.aoa_to_sheet(wsData)
+                  // Column widths
+                  ws['!cols'] = [{ wch: 4 }, { wch: 20 }, { wch: 50 }, { wch: 18 }]
+                  // Bold header row
+                  const headerCells = ['A1', 'B1', 'C1', 'D1']
+                  headerCells.forEach((cell) => {
+                    if (ws[cell]) ws[cell].s = { font: { bold: true } }
+                  })
+                  const wb = XLSX.utils.book_new()
+                  XLSX.utils.book_append_sheet(wb, ws, 'Not In Stock')
+                  XLSX.writeFile(wb, `kia-not-in-stock-${new Date().toISOString().slice(0, 10)}.xlsx`)
+                })
+              }}
+            >
+              <Download className="h-3.5 w-3.5" /> Excel
+            </Button>
+            {/* ── PDF export via print ── */}
+            <Button
+              variant="outline"
+              className="h-9 gap-1.5 rounded-xl text-xs font-bold text-rose-700 hover:bg-rose-50 hover:border-rose-300"
+              disabled={(data?.summary?.notInStockBreakdown || []).length === 0}
+              onClick={() => {
+                const breakdown = data?.summary?.notInStockBreakdown || []
+                const date = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                const rows = breakdown.map((r, i) => `
+                  <tr>
+                    <td>${i + 1}</td>
+                    <td><strong>${r.model}</strong></td>
+                    <td>${r.variant || '—'}</td>
+                    <td style="text-align:right;color:#b91c1c;font-weight:800">${r.count}</td>
+                  </tr>`).join('')
+                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+                  <title>Kia – Not In Stock Report</title>
+                  <style>
+                    *{box-sizing:border-box;margin:0;padding:0}
+                    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#0f172a;padding:32px}
+                    h1{font-size:20px;font-weight:900;margin-bottom:4px}
+                    .sub{font-size:11px;color:#64748b;margin-bottom:20px}
+                    table{width:100%;border-collapse:collapse}
+                    th{background:#0f172a;color:#fff;text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+                    th:last-child{text-align:right}
+                    td{padding:7px 10px;border-bottom:1px solid #e2e8f0;vertical-align:top}
+                    tr:nth-child(even) td{background:#f8fafc}
+                    .num{text-align:right;color:#b91c1c;font-weight:800}
+                    .footer{margin-top:18px;font-size:10px;color:#94a3b8}
+                  </style>
+                </head><body>
+                  <h1>Demand vs. Stock Gap</h1>
+                  <p class="sub">AM Kia · Not In Stock Report · Generated ${date}</p>
+                  <table>
+                    <thead><tr><th>#</th><th>Model</th><th>Variant</th><th style="text-align:right">Pending</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                  </table>
+                  <p class="footer">Total variants: ${breakdown.length} &nbsp;·&nbsp; Total pending bookings: ${breakdown.reduce((s, r) => s + r.count, 0)}</p>
+                </body></html>`
+                const win = window.open('', '_blank', 'width=900,height=700')
+                if (win) {
+                  win.document.write(html)
+                  win.document.close()
+                  win.focus()
+                  setTimeout(() => { win.print(); win.close() }, 400)
+                }
+              }}
+            >
+              <FileText className="h-3.5 w-3.5" /> PDF
+            </Button>
+            <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={() => setNotInStockModalOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       {/* FINANCE stage — confirm payment received only (no invoice) */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Loader2, Clock, AlertTriangle, CheckCircle2, MessageSquarePlus,
-  Landmark, History, CalendarClock, User, Banknote, ShieldCheck, XCircle,
+  Landmark, History, CalendarClock, User, Banknote, ShieldCheck, XCircle, RotateCcw,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -113,6 +113,11 @@ export function FinanceDetail({ proformaId, canApprove, onBack }: { proformaId: 
   const p = proforma as Record<string, unknown>
   const status = statusMeta(processing.financeStatus)
   const isCompleted = processing.financeStatus === 'completed'
+  // Business rule: financing can be completed once the vehicle is delivered OR Accounts has confirmed
+  // payment received (paymentReceived is server-derived from booking status 'ready_delivery' / metadata).
+  const isDelivered = booking?.status === 'delivered' || Boolean(booking?.deliveredAt)
+  const paymentReceived = Boolean(booking?.paymentReceived)
+  const canComplete = isDelivered || paymentReceived
   const countdown = formatCountdown(processing.expectedCompletionDate, now)
   const busy = mutation.isPending
 
@@ -174,16 +179,29 @@ export function FinanceDetail({ proformaId, canApprove, onBack }: { proformaId: 
                   Base window {processing.baseHours}h · started {formatDateTime(processing.startedAt)}
                   {processing.delayCount > 0 ? ` · ${processing.delayCount} delay${processing.delayCount > 1 ? 's' : ''}` : ''}
                 </p>
+                <p className="mt-1 text-[11px] font-bold">
+                  <span className="text-slate-400">Vehicle: </span>
+                  <span className={canComplete ? 'text-emerald-600' : 'text-amber-600'}>
+                    {isDelivered ? 'Delivered' : paymentReceived ? 'Payment received' : `Awaiting delivery / payment${booking?.status ? ` · ${str(booking.status).replace(/_/g, ' ')}` : ''}`}
+                  </span>
+                </p>
               </div>
               {canApprove && !isCompleted && (
-                <div className="flex flex-col gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setDelayOpen(true)} disabled={busy}>
-                    <CalendarClock className="h-4 w-4" /> Delay
+                <div className="flex flex-col items-stretch gap-2">
+                  <Button size="sm" variant="ghost" className="border border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200 hover:text-amber-900 font-bold" onClick={() => setDelayOpen(true)} disabled={busy}>
+                    <CalendarClock className="h-4 w-4 text-amber-700" /> Delay
                   </Button>
-                  <Button size="sm" onClick={() => mutation.mutate({ action: 'complete' })} disabled={busy}>
+                  <Button size="sm" onClick={() => mutation.mutate({ action: 'complete' })} disabled={busy || !canComplete}
+                    title={canComplete ? undefined : 'Available after the vehicle is delivered or Accounts confirms payment received'}>
                     <CheckCircle2 className="h-4 w-4" /> Mark Financing Complete
                   </Button>
+                  {!canComplete && <span className="text-right text-[10px] font-semibold text-amber-600">Enabled once the vehicle is delivered or Accounts confirms payment</span>}
                 </div>
+              )}
+              {canApprove && isCompleted && (
+                <Button size="sm" variant="outline" onClick={() => mutation.mutate({ action: 'reopen' })} disabled={busy}>
+                  <RotateCcw className="h-4 w-4" /> Reopen Financing
+                </Button>
               )}
             </div>
             {processing.financeStatus === 'delayed' && processing.lastDelayReasonCategory && (
@@ -220,8 +238,8 @@ export function FinanceDetail({ proformaId, canApprove, onBack }: { proformaId: 
             <div className="mb-4 flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-wide text-slate-500"><Landmark className="h-4 w-4" /> Financing Bank</h3>
               {canApprove && !isCompleted && (
-                <Button size="sm" variant="outline" onClick={() => { setBankOpen(true); setBankName(''); setBankBranch('') }} disabled={busy}>
-                  <Banknote className="h-4 w-4" /> Add Bank
+                <Button size="sm" variant="ghost" className="border border-blue-300 bg-blue-100 text-blue-800 hover:bg-blue-200 hover:text-blue-900 font-bold" onClick={() => { setBankOpen(true); setBankName(''); setBankBranch('') }} disabled={busy}>
+                  <Banknote className="h-4 w-4 text-blue-700" /> Add Bank
                 </Button>
               )}
             </div>
@@ -272,7 +290,7 @@ export function FinanceDetail({ proformaId, canApprove, onBack }: { proformaId: 
           {/* Remarks */}
           <Card className="p-5">
             <h3 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wide text-slate-500"><MessageSquarePlus className="h-4 w-4" /> Finance Remarks</h3>
-            {canApprove && !isCompleted && (
+            {canApprove && (
               <div className="mb-4 space-y-2">
                 <Textarea value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="Add a remark (kept as permanent history)…" rows={2} />
                 <div className="flex justify-end">

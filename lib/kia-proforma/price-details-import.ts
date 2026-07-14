@@ -220,7 +220,13 @@ export async function importKiaPriceDetailsFromWorkbook(buffer: Buffer): Promise
       await tx.insert(kiaProformaLookupOptions).values(branchValues.slice(index, index + 500))
     }
   })
-  await invalidateCache('kia:proforma:options:data')
+  // Both caches are derived from the two tables just replaced (kia_price_details +
+  // kia_proforma_lookup_options category='bank_branch'): the KIA proforma options AND the AM Finance
+  // bank cascade. Invalidate both so neither serves a stale bank/branch list after an import.
+  await Promise.all([
+    invalidateCache('kia:proforma:options:data'),
+    invalidateCache('finance:bank-options'),
+  ])
 
   const completed = Date.now()
   return {

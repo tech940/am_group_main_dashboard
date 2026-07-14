@@ -581,6 +581,7 @@ export async function GET(request: NextRequest) {
       [summary],
       rows,
       breakdowns,
+      filterOptions,
     ] = await timer.time('data', () => Promise.all([
       db.select({
         totalCases: count(),
@@ -594,8 +595,10 @@ export async function GET(request: NextRequest) {
       }).from(financeSheet).where(whereExpression),
       db.select().from(financeSheet).where(whereExpression).orderBy(orderExpression).limit(pageSize).offset(offset),
       loadBreakdownGroups(whereExpression),
+      // Filter options are independent of the where-filtered summary/rows/breakdowns (they aggregate
+      // distinct values over the whole table), so fetch them concurrently rather than after the wave.
+      loadCachedFilterOptions(),
     ]))
-    const filterOptions = await timer.time('options', () => loadCachedFilterOptions())
 
     const totalRows = Number(summary?.totalCases || 0)
     const { serverTiming } = timer.finish()

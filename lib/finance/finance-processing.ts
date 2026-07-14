@@ -227,6 +227,15 @@ export async function getKiaFinanceProcessingList() {
   return rows
 }
 
+// "Accounts confirmed payment received" — the durable signal set by confirmKiaBookingPayment /
+// verifyKiaAccountsPayment (both advance the booking to 'ready_delivery' + write metadata.paymentConfirmation).
+// This is NOT the legacy metadata.paymentReceived display field from the bookings import.
+function bookingPaymentReceived(booking: { status?: string | null; metadata?: unknown } | null | undefined): boolean {
+  if (!booking) return false
+  const meta = (booking.metadata ?? {}) as Record<string, unknown>
+  return booking.status === 'ready_delivery' || Boolean(meta.paymentConfirmation)
+}
+
 // ── Detail: full processing view (proforma + booking + remarks + bank attempts + activity) ───────
 export async function getKiaFinanceProcessingDetail(proformaId: string, appUser: AppUser) {
   const [processing] = await db.select().from(kiaFinanceProcessing)
@@ -255,18 +264,22 @@ export async function getKiaFinanceProcessingDetail(proformaId: string, appUser:
       mobileNumber: maskKiaPii(proforma.mobileNumber, canPii),
       customerEmail: maskKiaPii(proforma.customerEmail, canPii),
     },
-    booking: booking ? { bookingNumber: booking.bookingNumber, status: booking.status, dealerCode: booking.dealerCode, financeRequired: booking.financeRequired } : null,
+    booking: booking ? { bookingNumber: booking.bookingNumber, status: booking.status, deliveredAt: booking.deliveredAt, paymentReceived: bookingPaymentReceived(booking), dealerCode: booking.dealerCode, financeRequired: booking.financeRequired } : null,
     remarks,
     bankAttempts,
     activity,
   }
 }
 
-async function requireProcessing(proformaId: string) {
+async function requireProcessing(proformaId: string, opts?: { allowCompleted?: boolean }) {
   const [processing] = await db.select().from(kiaFinanceProcessing)
     .where(eq(kiaFinanceProcessing.proformaId, proformaId)).limit(1)
   if (!processing) throw new Error('Finance processing record not found for this proforma.')
-  if (processing.financeStatus === 'completed') throw new Error('Financing is already marked complete.')
+  // Completed financing is locked for delay / bank / complete — but not for remarks (permanent history)
+  // or reopen, which pass allowCompleted. Reopen (below) restores the other actions.
+  if (!opts?.allowCompleted && processing.financeStatus === 'completed') {
+    throw new Error('Financing is already marked complete. Reopen it to make changes.')
+  }
   return processing
 }
 
@@ -276,11 +289,12 @@ function touch(processingId: string) {
 
 // ── Mutations ────────────────────────────────────────────────────────────────────────────────────
 
-// B: append-only Finance Remark (never overwrites; every remark stored with user/role/time).
+// B: append-only Finance Remark (never overwrites; every remark stored with user/role/time). Allowed
+// even on a completed record — remarks are permanent history and must never be locked out.
 export async function addKiaFinanceRemark(proformaId: string, remark: string, appUser: AppUser) {
   const trimmed = text(remark)
   if (!trimmed) throw new Error('Remark is required.')
-  const processing = await requireProcessing(proformaId)
+  const processing = await requireProcessing(proformaId, { allowCompleted: true })
   await db.insert(kiaFinanceRemarks).values({
     financeProcessingId: processing.id, remark: trimmed,
     createdBy: appUser.id, createdByName: actorName(appUser), createdByRole: appUser.role,
@@ -329,9 +343,19 @@ export async function applyKiaFinanceDelay(
   return { ok: true }
 }
 
-// C: Mark financing complete.
+// C: Mark financing complete. BUSINESS RULE: only AFTER the linked vehicle is delivered. Until then the
+// finance team keeps working (add delays, keep adding remarks, change bank) but cannot mark it done.
 export async function markKiaFinanceComplete(proformaId: string, appUser: AppUser) {
   const processing = await requireProcessing(proformaId)
+  if (processing.bookingId) {
+    const [booking] = await db.select({ status: kiaBookings.status, deliveredAt: kiaBookings.deliveredAt, metadata: kiaBookings.metadata })
+      .from(kiaBookings).where(eq(kiaBookings.id, processing.bookingId)).limit(1)
+    const delivered = Boolean(booking && (booking.status === 'delivered' || booking.deliveredAt))
+    // Completion is now allowed EITHER on delivery OR once Accounts has confirmed payment received.
+    if (!delivered && !bookingPaymentReceived(booking)) {
+      throw new Error('Financing can be marked complete only after the vehicle is delivered or Accounts has confirmed payment received.')
+    }
+  }
   const completedAt = new Date()
   await db.update(kiaFinanceProcessing).set({
     financeStatus: 'completed',
@@ -347,6 +371,31 @@ export async function markKiaFinanceComplete(proformaId: string, appUser: AppUse
     description: 'Bank financing completed successfully — vehicle ready for delivery.',
     before: { financeStatus: processing.financeStatus },
     after: { financeStatus: 'completed', completedAt: completedAt.toISOString() },
+    appUser,
+  })
+  return { ok: true }
+}
+
+// C-reopen: reopen a completed financing so delay / bank-change / complete become available again
+// (e.g. marked complete prematurely, or a bank changed after completion). Clears the completion stamp
+// and returns the record to 'in_progress'; logged in the immutable activity trail.
+export async function reopenKiaFinanceProcessing(proformaId: string, appUser: AppUser) {
+  const processing = await requireProcessing(proformaId, { allowCompleted: true })
+  if (processing.financeStatus !== 'completed') throw new Error('Only a completed financing can be reopened.')
+  await db.update(kiaFinanceProcessing).set({
+    financeStatus: 'in_progress',
+    completedAt: null,
+    completedBy: null,
+    completedByName: null,
+    completedByRole: null,
+    updatedAt: new Date(),
+  }).where(eq(kiaFinanceProcessing.id, processing.id))
+  await addFinanceActivity({
+    financeProcessingId: processing.id, proformaId, type: 'reopened',
+    title: 'Financing reopened',
+    description: 'Completed financing was reopened for further changes.',
+    before: { financeStatus: 'completed', completedAt: processing.completedAt },
+    after: { financeStatus: 'in_progress' },
     appUser,
   })
   return { ok: true }

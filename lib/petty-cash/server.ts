@@ -306,16 +306,14 @@ export function pettyCashStageForStatus(status: string): 'ea_approval' | 'md_app
 /** The request statuses that belong in a given role's pending-approval queue. */
 function pettyCashApprovalStatusesForRole(role: AppUser['role']): PettyCashRequestStatus[] {
   if (role === 'ea') return [...PETTY_CASH_APPROVAL_STATUSES.ea_approval]
-  if (role === 'md' || role === 'eba') return [...PETTY_CASH_APPROVAL_STATUSES.md_approval]
-  if (role === 'accounts') return [...PETTY_CASH_APPROVAL_STATUSES.accounts]
-  // Super admins get a supervisory view across every stage.
-  if (role === 'developer') {
+  if (role === 'md' || role === 'eba' || role === 'developer') {
     return [
       ...PETTY_CASH_APPROVAL_STATUSES.ea_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.md_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.accounts,
     ]
   }
+  if (role === 'accounts') return [...PETTY_CASH_APPROVAL_STATUSES.accounts]
   return []
 }
 
@@ -351,11 +349,30 @@ export async function getPettyCashApprovalQueue(appUser: AppUser, opts?: { searc
   const categories = await getPettyCashCategories()
   const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
 
-  const requests = rows.map((row) => ({
-    ...serializeRequest(row),
-    stage: pettyCashStageForStatus(String(row.status)),
-    categoryName: row.categoryId ? categoryMap.get(row.categoryId) || null : null,
-  }))
+  const requests = await Promise.all(
+    rows.map(async (row) => {
+      const [history, allocation] = await Promise.all([
+        db.select().from(pettyCashApprovalHistory).where(eq(pettyCashApprovalHistory.requestId, row.id)).orderBy(asc(pettyCashApprovalHistory.createdAt)),
+        db.select().from(pettyCashAllocations).where(eq(pettyCashAllocations.requestId, row.id)).limit(1).then((r) => r[0] || null),
+      ])
+      const performedByList = history.map((h) => h.performedBy).concat([row.createdBy])
+      const userMap = await getUserMap(performedByList)
+
+      return {
+        ...serializeRequest(row),
+        stage: pettyCashStageForStatus(String(row.status)),
+        categoryName: row.categoryId ? categoryMap.get(row.categoryId) || null : null,
+        location: row.requestForm?.location ?? null,
+        typeOfPayment: row.requestForm?.typeOfPayment ?? null,
+        allocation: allocation ? serializeAllocation(allocation as any) : null,
+        history: history.map((item) => ({
+          ...serializeHistory(item),
+          performedByName: userMap.get(item.performedBy)?.fullName || item.performedBy,
+          performedByEmail: userMap.get(item.performedBy)?.email || null,
+        })),
+      }
+    })
+  )
 
   return { count: rows.length, requests }
 }

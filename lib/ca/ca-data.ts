@@ -81,13 +81,33 @@ export async function getCaBranchSummary(filters: Pick<CaFilters, 'from' | 'to'>
   const map = new Map<string, CaBranchSummaryRow>()
   const ensure = (key: string) => { const existing = map.get(key); if (existing) return existing; const r = emptyRow(key); map.set(key, r); return r }
 
-  // 1. Approved POs — JS-reduce to faithfully mirror normalizeOrderAmount (SQL SUM can't parse the
-  //    free-text estimate fallback / NULL amount identically).
   const poFilters = [eq(purchaseOrders.mdApprovalStatus, 'approved'), isNull(purchaseOrders.deletedAt)]
   if (from) poFilters.push(gte(purchaseOrders.mdApprovedAt, istStart(from)))
   if (to) poFilters.push(lte(purchaseOrders.mdApprovedAt, istEnd(to)))
-  const poRows = await db.select({ brand: purchaseOrders.brand, amount: purchaseOrders.amount, estimate: purchaseOrders.estimateIfAny })
-    .from(purchaseOrders).where(and(...poFilters))
+
+  // The three reads are independent (they populate disjoint fields of the shared map after all rows
+  // return), so run them concurrently instead of as three serial round-trips.
+  const [poRows, fundingResult, spendResult] = await Promise.all([
+    db.select({ brand: purchaseOrders.brand, amount: purchaseOrders.amount, estimate: purchaseOrders.estimateIfAny })
+      .from(purchaseOrders).where(and(...poFilters)),
+    db.execute(sql`
+      SELECT branch_id AS branch, COUNT(*)::int AS cnt, COALESCE(SUM(requested_amount), 0)::float AS total
+      FROM petty_cash_requests
+      WHERE status = 'approved' AND deleted_at IS NULL
+        ${from ? sql`AND accounts_approved_at >= ${istStart(from).toISOString()}::timestamptz` : sql``}
+        ${to ? sql`AND accounts_approved_at <= ${istEnd(to).toISOString()}::timestamptz` : sql``}
+      GROUP BY branch_id`),
+    db.execute(sql`
+      SELECT branch_id AS branch, COUNT(*)::int AS cnt, COALESCE(SUM(amount), 0)::float AS total
+      FROM petty_cash_expenses
+      WHERE status = 'approved' AND deleted_at IS NULL
+        ${from ? sql`AND expense_date >= ${from}::date` : sql``}
+        ${to ? sql`AND expense_date <= ${to}::date` : sql``}
+      GROUP BY branch_id`),
+  ])
+
+  // 1. Approved POs — JS-reduce to faithfully mirror normalizeOrderAmount (SQL SUM can't parse the
+  //    free-text estimate fallback / NULL amount identically).
   for (const r of poRows) {
     const row = ensure(branchKey(r.brand))
     row.po.approvedCount += 1
@@ -95,26 +115,12 @@ export async function getCaBranchSummary(filters: Pick<CaFilters, 'from' | 'to'>
   }
 
   // 2. Approved petty-cash funding (fresh request amounts) + 3. approved expenses — pure SQL GROUP BY.
-  const fundingResult = await db.execute(sql`
-    SELECT branch_id AS branch, COUNT(*)::int AS cnt, COALESCE(SUM(requested_amount), 0)::float AS total
-    FROM petty_cash_requests
-    WHERE status = 'approved' AND deleted_at IS NULL
-      ${from ? sql`AND accounts_approved_at >= ${istStart(from).toISOString()}::timestamptz` : sql``}
-      ${to ? sql`AND accounts_approved_at <= ${istEnd(to).toISOString()}::timestamptz` : sql``}
-    GROUP BY branch_id`)
   for (const r of rows(fundingResult)) {
     const row = ensure(branchKey(String(r.branch || '')))
     row.pettyCashFunding.approvedCount = Number(r.cnt) || 0
     row.pettyCashFunding.approvedAmount = parseMoney(r.total)
   }
 
-  const spendResult = await db.execute(sql`
-    SELECT branch_id AS branch, COUNT(*)::int AS cnt, COALESCE(SUM(amount), 0)::float AS total
-    FROM petty_cash_expenses
-    WHERE status = 'approved' AND deleted_at IS NULL
-      ${from ? sql`AND expense_date >= ${from}::date` : sql``}
-      ${to ? sql`AND expense_date <= ${to}::date` : sql``}
-    GROUP BY branch_id`)
   for (const r of rows(spendResult)) {
     const row = ensure(branchKey(String(r.branch || '')))
     row.pettyCashSpend.approvedCount = Number(r.cnt) || 0

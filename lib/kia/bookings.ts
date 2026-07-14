@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, count, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { analyticsDb } from '@/lib/analytics/db'
 import {
@@ -63,6 +63,8 @@ export type BookingListInput = {
   consultant?: string | null
   page?: number | null
   pageSize?: number | null
+  /** 'asc' = oldest first (createdAt ASC); anything else = newest first (default). */
+  sortOrder?: string | null
   // The requesting user — used to scope Sales Executives to their own bookings.
   viewer?: { id?: string | null; email?: string | null; role?: string | null } | null
   // Dealer/branch codes the user is restricted to (null/empty = all branches). A hard boundary
@@ -120,7 +122,7 @@ function numericText(value: unknown) {
 
 function pageParams(input: BookingListInput) {
   const page = Math.max(1, Math.floor(Number(input.page || 1)))
-  const pageSize = Math.min(50, Math.max(10, Math.floor(Number(input.pageSize || 10))))
+  const pageSize = Math.min(100, Math.max(5, Math.floor(Number(input.pageSize || 15))))
   return { page, pageSize, offset: (page - 1) * pageSize }
 }
 
@@ -455,9 +457,13 @@ export async function getKiaBookingsList(input: BookingListInput) {
   // are all over the same unfiltered table, so fold them into ONE round trip via
   // scalar sub-selects. That drops the list from 7 queries to 3 (count + page +
   // aggregates) — one RTT wave instead of two under the dev pool.
+  const isAscSort = text(input.sortOrder).toLowerCase() === 'asc'
   const [totalRows, bookingRows, aggRows] = await Promise.all([
     db.select({ value: count() }).from(kiaBookings).where(where),
-    db.select().from(kiaBookings).where(where).orderBy(desc(kiaBookings.updatedAt), desc(kiaBookings.createdAt)).limit(pageSize).offset(offset),
+    db.select().from(kiaBookings).where(where).orderBy(
+      isAscSort ? asc(kiaBookings.createdAt) : desc(kiaBookings.updatedAt),
+      isAscSort ? asc(kiaBookings.createdAt) : desc(kiaBookings.createdAt),
+    ).limit(pageSize).offset(offset),
     db.execute(sql`
       SELECT
         COALESCE((SELECT jsonb_object_agg(status, cnt) FROM (
@@ -506,7 +512,36 @@ export async function getKiaBookingsList(input: BookingListInput) {
                   WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
                 )
             )
-            ${dealerScopeKb}) AS not_in_stock_count
+            ${dealerScopeKb}) AS not_in_stock_count,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'variant', variant, 'count', cnt) ORDER BY cnt DESC, model ASC, variant ASC) FROM (
+          SELECT model, variant, count(*)::int AS cnt
+          FROM kia_bookings
+          WHERE deleted_at IS NULL
+            AND status NOT IN ('draft', 'delivered', 'cancelled')
+            AND (allocated_vin IS NULL OR allocated_vin = '')
+            AND NOT EXISTS (
+              SELECT 1 FROM kia_vehicle_allocations va
+              WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM kia_stock_management sm
+              LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+              WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
+                AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+                AND sm.model ILIKE '%' || kia_bookings.model || '%'
+                AND (
+                  coalesce(sm.variant, '') = ''
+                  OR sm.variant ILIKE '%' || kia_bookings.variant || '%'
+                  OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM kia_vehicle_allocations aa
+                  WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
+                )
+            )
+            ${dealerScope}
+          GROUP BY model, variant
+        ) ns), '[]'::jsonb) AS not_in_stock_breakdown
     `),
   ])
 
@@ -520,6 +555,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
     active_allocations: number
     no_payment_count: number
     not_in_stock_count: number
+    not_in_stock_breakdown: { model: string; variant: string; count: number }[] | null
   }>(aggRows)[0]
   const statusCounts = agg?.status_counts || {}
   const todayCount = Number(agg?.today_count || 0)
@@ -529,21 +565,27 @@ export async function getKiaBookingsList(input: BookingListInput) {
   // approval" from "approved, awaiting allocation" — both sit at booking status 'proforma_generated'.
   const proformaIds = Array.from(new Set(bookingRows.map((b) => b.proformaId).filter(Boolean))) as string[]
   const approvalByProforma = new Map<string, string | null>()
-  if (proformaIds.length) {
-    const statuses = await db
-      .select({ id: kiaProformas.id, approvalStatus: kiaProformas.approvalStatus })
-      .from(kiaProformas)
-      .where(inArray(kiaProformas.id, proformaIds))
-    for (const s of statuses) approvalByProforma.set(s.id, s.approvalStatus)
-  }
   // Red-flag bookings whose stock is not available: either the allotted vehicle has left the DMS feed
   // (#15 `vehicleNotInStock` flag) OR the booking has no active allocation AND no free matching vehicle
   // in stock. Computed for the page's in-flight bookings in ONE query (page size is small).
   const stockFlagMap = new Map<string, boolean>()
   const flagCandidates = bookingRows.filter((b) => !['draft', 'delivered', 'cancelled'].includes(String(b.status || '')))
-  if (flagCandidates.length) {
-    const tuples = flagCandidates.map((b) => sql`(${b.id}::uuid, ${text(b.model)}::text, ${text(b.variant)}::text)`)
-    const flagRows = await analyticsDb.execute(sql`
+
+  // #2 (proforma approval status) and the stock-availability flag both depend ONLY on bookingRows and
+  // are independent of each other — run them concurrently instead of one after the other.
+  await Promise.all([
+    (async () => {
+      if (!proformaIds.length) return
+      const statuses = await db
+        .select({ id: kiaProformas.id, approvalStatus: kiaProformas.approvalStatus })
+        .from(kiaProformas)
+        .where(inArray(kiaProformas.id, proformaIds))
+      for (const s of statuses) approvalByProforma.set(s.id, s.approvalStatus)
+    })(),
+    (async () => {
+      if (!flagCandidates.length) return
+      const tuples = flagCandidates.map((b) => sql`(${b.id}::uuid, ${text(b.model)}::text, ${text(b.variant)}::text)`)
+      const flagRows = await analyticsDb.execute(sql`
       WITH wanted(id, model, variant) AS (VALUES ${sql.join(tuples, sql`, `)})
       SELECT w.id::text AS id,
         (
@@ -564,10 +606,11 @@ export async function getKiaBookingsList(input: BookingListInput) {
         ) AS stock_not_available
       FROM wanted w
     `)
-    for (const r of rows<{ id: string; stock_not_available: boolean }>(flagRows)) {
-      stockFlagMap.set(String(r.id), Boolean(r.stock_not_available))
-    }
-  }
+      for (const r of rows<{ id: string; stock_not_available: boolean }>(flagRows)) {
+        stockFlagMap.set(String(r.id), Boolean(r.stock_not_available))
+      }
+    })(),
+  ])
 
   const rowsWithApproval = bookingRows.map((b) => ({
     ...b,
@@ -602,6 +645,11 @@ export async function getKiaBookingsList(input: BookingListInput) {
       noPayment: Number(agg?.no_payment_count || 0),
       notInStock: Number(agg?.not_in_stock_count || 0),
       topModels: (agg?.model_counts || []).map((m) => ({ model: text(m.model), count: Number(m.count || 0) })).filter((m) => m.model),
+      notInStockBreakdown: (agg?.not_in_stock_breakdown || []).map((r) => ({
+        model: text(r.model),
+        variant: text(r.variant),
+        count: Number(r.count || 0),
+      })).filter((r) => r.model),
     },
     filters: {
       dealers: (agg?.dealers || []).map((value) => text(value)).filter(Boolean),

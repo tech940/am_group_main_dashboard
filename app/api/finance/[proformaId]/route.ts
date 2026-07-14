@@ -6,6 +6,7 @@ import {
   addKiaFinanceRemark,
   applyKiaFinanceDelay,
   markKiaFinanceComplete,
+  reopenKiaFinanceProcessing,
   addKiaFinanceBankAttempt,
   resolveKiaFinanceBankAttempt,
 } from '@/lib/finance/finance-processing'
@@ -53,6 +54,9 @@ export async function POST(request: Request, context: { params: Promise<{ profor
         break
       case 'complete':
         await markKiaFinanceComplete(proformaId, appUser)
+        break
+      case 'reopen':
+        await reopenKiaFinanceProcessing(proformaId, appUser)
         break
       case 'bank-add':
         await addKiaFinanceBankAttempt(proformaId, {
