@@ -11,9 +11,11 @@ import {
   Banknote,
   Landmark,
   Gauge,
+  HandCoins,
 } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useCallback, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { BRANCH_OPTIONS, hasAllBranchAccess } from '@/lib/branches'
 import { useSidebar } from '@/context/sidebar-context'
 import { useUserRole } from '@/lib/hooks/use-user-role'
@@ -219,15 +221,6 @@ export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { collapsed, setCollapsed } = useSidebar()
-  const [permissionMap, setPermissionMap] = useState<Record<string, boolean> | null>(null)
-  const [permissionsReady, setPermissionsReady] = useState(false)
-  const permissionMapRef = useRef<Record<string, boolean> | null>(null)
-  // Event-driven sync bookkeeping: coalesce rapid triggers (browsers fire focus + visibilitychange
-  // together; a nav often follows a focus) into a single fetch, and mark the first sync so it doesn't
-  // needlessly router.refresh() on initial page load.
-  const syncingRef = useRef(false)
-  const lastSyncAtRef = useRef(0)
-  const didInitialSyncRef = useRef(false)
   const { userRole, canAccessAdmin, userBrand, loading } = useUserRole()
   const {
     value: favouriteHrefsValue,
@@ -241,69 +234,51 @@ export function Sidebar() {
   const canAccessAmFinance = isAmFinanceViewRole(userRole)
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
-  // Fetch the effective permission map. When `refreshOnChange` and the map actually changed
-  // vs the last one we held, also re-run the server components (router.refresh()) so guarded
-  // pages update in place — this is what makes an admin's grant/revoke apply to this user's
-  // open tab without a manual reload.
-  const syncPermissions = useCallback(async (refreshOnChange: boolean) => {
-    // Coalesce rapid triggers into ONE call: skip if a sync is already in flight, or if we synced
-    // within the last 10s (collapses the focus+visibilitychange pair and a nav that lands right after
-    // a focus). The server-side guards are the real access boundary, so ≤10s link-visibility staleness
-    // is harmless.
-    if (syncingRef.current) return
-    if (Date.now() - lastSyncAtRef.current < 10_000) return
-    syncingRef.current = true
-    lastSyncAtRef.current = Date.now()
-    try {
+  // The effective permission map, fetched through React Query so it is CACHED across sidebar remounts.
+  // The Sidebar lives in MainLayout (a per-page component), so it unmounts + remounts on every
+  // navigation; a raw fetch therefore hit /api/auth/permissions on every single navigation, which made
+  // this the top Vercel invocation. React Query's cache is owned by the app-level QueryClient (it
+  // survives remounts), so a navigation within `staleTime` serves the cached map with NO network call.
+  // It only refetches when the map is stale on mount, or on tab focus (the global provider disables
+  // both, so we opt in here). This is safe because the map is UX-only — it just decides which links
+  // show; the REAL access boundary is the server-side guard re-run on every navigation against a cache
+  // invalidated on grant/revoke, so up-to-`staleTime` link-visibility staleness is harmless.
+  const permissionsQuery = useQuery({
+    queryKey: ['auth', 'permissions'],
+    enabled: !loading && Boolean(userRole),
+    queryFn: async () => {
       const response = await fetch('/api/auth/permissions', { cache: 'no-store' })
-      if (!response.ok) return
+      if (!response.ok) throw new Error('Failed to load permissions')
       const data = (await response.json()) as { permissions?: Record<string, boolean> | null } | null
-      const next = data?.permissions ?? null
-      const changed = JSON.stringify(next) !== JSON.stringify(permissionMapRef.current)
-      if (!changed) return
-      permissionMapRef.current = next
-      setPermissionMap(next)
-      if (refreshOnChange) router.refresh()
-    } catch {
-      /* keep the last-known map (do NOT fail open — hasPermission is fail-closed) */
-    } finally {
-      syncingRef.current = false
-      // First attempt resolved (success or error): the nav may render. On error with no prior map,
-      // hasPermission stays fail-closed so brand links are hidden rather than wrongly shown.
-      setPermissionsReady(true)
-    }
-  }, [router])
+      return data?.permissions ?? null
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: false,
+    retry: 1,
+  })
+  const permissionMap = permissionsQuery.data ?? null
+  // Ready once the first attempt resolves (success OR error). On error the map stays null and
+  // hasPermission is fail-closed, so brand links are hidden rather than wrongly shown.
+  const permissionsReady = permissionsQuery.isSuccess || permissionsQuery.isError
 
-  // Sync the effective permission map on INITIAL load and on every NAVIGATION (route change) — the
-  // natural "reload / navigate" trigger. There is NO fixed-interval poll, so an idle tab — and any
-  // BACKGROUND tab — makes zero /api/auth/permissions calls by construction. This is safe because the
-  // sidebar map is UX-only: it only decides which links show. The real access boundary is server-side
-  // and re-runs on every navigation (each guarded page re-executes requirePermission()/forbidden()
-  // against a snapshot cache that is invalidated on every grant/revoke), so a revoked user is blocked
-  // on their next page load regardless of this. The first run passes refreshOnChange=false (nothing is
-  // open to update yet); navigations pass true so an admin's grant/revoke re-runs the current page's
-  // Server Components in place.
+  // When a REFETCH returns a CHANGED map (an admin granted/revoked access), re-run the current page's
+  // Server Components so the open tab updates in place — with no needless refresh on the first load.
+  const prevPermissionsRef = useRef<string | null>(null)
   useEffect(() => {
-    if (loading || !userRole) return
-    const isFirst = !didInitialSyncRef.current
-    didInitialSyncRef.current = true
-    void syncPermissions(!isFirst)
-  }, [pathname, loading, userRole, syncPermissions])
-
-  // Catch up when the user returns to the tab (focus / becomes visible) — covers an admin grant that
-  // lands while the user sits idle on one page without navigating. Event-driven, NO timer, so
-  // hidden/background tabs never fetch. syncPermissions coalesces the focus+visibility pair into one.
-  useEffect(() => {
-    if (loading || !userRole) return
-    const onFocus = () => { void syncPermissions(true) }
-    const onVisible = () => { if (document.visibilityState === 'visible') void syncPermissions(true) }
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onVisible)
+    if (!permissionsQuery.isSuccess) return
+    const serialized = JSON.stringify(permissionsQuery.data ?? null)
+    if (prevPermissionsRef.current === null) {
+      prevPermissionsRef.current = serialized
+      return
     }
-  }, [loading, userRole, syncPermissions])
+    if (serialized !== prevPermissionsRef.current) {
+      prevPermissionsRef.current = serialized
+      router.refresh()
+    }
+  }, [permissionsQuery.data, permissionsQuery.isSuccess, router])
 
   const hasPermission = (permissionKey: string) => {
     // Only Super Admins (developer, md) bypass the map. Everyone else defers to their effective
@@ -442,6 +417,9 @@ export function Sidebar() {
       active: pathname.startsWith('/petty-cash'),
     })
     if (canAccessAmFinance && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
+    // Finance — customer vehicle-financing workflow. Deny-by-default (registry), gated purely on the
+    // permission snapshot like Group Cockpit: MD/Developer always + explicitly-granted finance roles.
+    if (hasPermission('finance.view')) commonNodes.push({ key: '/finance', label: 'Finance', href: '/finance', icon: HandCoins, external: true, active: pathname.startsWith('/finance') })
     if (canAccessAdmin) {
       // Single link — the Admin page exposes all sections (Users, Access, Branch Admins, System,
       // Settings) as in-page tabs, so no sidebar dropdown is needed.

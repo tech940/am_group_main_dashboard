@@ -15,6 +15,7 @@ const CURRENT: Record<string, string> = {
   '/petty-cash': 'petty_cash.view',
   '/am-finance': 'am_finance.view',
   '/ca': 'ca.view',
+  '/finance': 'finance.view',
   '/brands/kia/business-excellence': 'kia.business_excellence.view',
   '/brands/kia/business-excellence/executive-dashboard': 'kia.business_excellence.view',
   '/brands/kia/business-excellence/overview': 'kia.business_excellence.view',

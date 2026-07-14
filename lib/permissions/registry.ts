@@ -674,6 +674,15 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'finance',
+    name: 'Finance',
+    parentKey: null,
+    description: 'Customer vehicle-financing workflow: final proforma approval, financing status/timeline, bank management, remarks, and completion.',
+    sortOrder: 57,
+    // 'view' gates the section + sidebar; 'approve' gates the final finance approval + all finance mutations.
+    actions: ['view', 'approve'],
+  },
+  {
     key: 'reports',
     name: 'Reports',
     parentKey: null,
@@ -726,6 +735,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   petty_cash: { href: '/petty-cash' },
   am_finance: { href: '/am-finance' },
   ca: { href: '/ca' },
+  finance: { href: '/finance' },
   user_management: { href: '/admin' },
   'kia.business_excellence': { href: '/brands/kia/business-excellence', aliases: ['/brands/kia/business-excellence/executive-dashboard', '/brands/kia/business-excellence/overview'] },
   'kia.service_appointment': { href: '/brands/kia/service-appointment' },

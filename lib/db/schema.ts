@@ -1495,6 +1495,74 @@ export const kiaBookingActivity = pgTable('kia_booking_activity', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+// ── KIA customer-vehicle Finance Workflow (migration 0014) ──────────────────────────────────────
+// Booking/proforma-scoped loan lifecycle — distinct from the dealer-payout finance_orders system.
+export const kiaFinanceProcessing = pgTable('kia_finance_processing', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  proformaId: uuid('proforma_id').references(() => kiaProformas.id).notNull().unique(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id),
+  financeStatus: text('finance_status').default('pending').notNull(), // pending | in_progress | delayed | completed
+  startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+  expectedCompletionDate: timestamp('expected_completion_date', { withTimezone: true }).notNull(),
+  baseHours: integer('base_hours').default(72).notNull(), // 72 or 120 (CSD) — snapshot so the countdown is stable
+  delayCount: integer('delay_count').default(0).notNull(),
+  lastDelayReasonCategory: text('last_delay_reason_category'),
+  lastDelayReason: text('last_delay_reason'),
+  currentBankName: text('current_bank_name'),
+  currentBankBranch: text('current_bank_branch'),
+  currentBankStatus: text('current_bank_status'),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  completedBy: uuid('completed_by').references(() => users.id),
+  completedByName: text('completed_by_name'),
+  completedByRole: text('completed_by_role'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// Append-only remark history — never overwritten.
+export const kiaFinanceRemarks = pgTable('kia_finance_remarks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  financeProcessingId: uuid('finance_processing_id').references(() => kiaFinanceProcessing.id).notNull(),
+  remark: text('remark').notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdByRole: text('created_by_role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// Append-only bank-attempt history. A new bank on rejection is a NEW row (higher attempt_no), never an overwrite.
+export const kiaFinanceBankAttempts = pgTable('kia_finance_bank_attempts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  financeProcessingId: uuid('finance_processing_id').references(() => kiaFinanceProcessing.id).notNull(),
+  attemptNo: integer('attempt_no').notNull(),
+  bankName: text('bank_name').notNull(),
+  bankBranch: text('bank_branch').notNull(),
+  status: text('status').default('Pending').notNull(), // Pending | Approved | Rejected
+  rejectionReason: text('rejection_reason'),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdByName: text('created_by_name').notNull(),
+  createdByRole: text('created_by_role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// IMMUTABLE audit log — a DB trigger blocks UPDATE/DELETE (migration 0014). Insert-only.
+export const kiaFinanceActivity = pgTable('kia_finance_activity', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  financeProcessingId: uuid('finance_processing_id').references(() => kiaFinanceProcessing.id).notNull(),
+  proformaId: uuid('proforma_id').notNull(),
+  activityType: text('activity_type').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  beforeValue: jsonb('before_value').$type<Record<string, unknown>>(),
+  afterValue: jsonb('after_value').$type<Record<string, unknown>>(),
+  actorUserId: uuid('actor_user_id').references(() => users.id),
+  actorName: text('actor_name').notNull(),
+  actorRole: text('actor_role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 // Kia Vehicle Allocations Table
 export const kiaVehicleAllocations = pgTable('kia_vehicle_allocations', {
   id: uuid('id').primaryKey().defaultRandom(),

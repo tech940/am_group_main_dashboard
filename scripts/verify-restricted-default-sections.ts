@@ -108,5 +108,26 @@ for (const section of newLike) {
 }
 console.log(`        (checked ${newLike.length} ungranted restricted section(s): ${newLike.join(', ') || 'none'})`)
 
+console.log('\nScenario 9 — the new Finance section (finance_head + finance_team via DB grants ONLY; super admins by default):')
+const FIN = 'finance.view'
+const FIN_APPROVE = 'finance.approve'
+assert('finance is restricted-by-default', RESTRICTED_DEFAULT_SECTIONS.has('finance'))
+assert('Finance denied for a brand user (service_manager)', resolveEffectiveSnapshot(ALL_FALSE, {}, 'service_manager', 'kia').effective[FIN] === false)
+assert('Finance denied for ceo (global non-super)', resolveEffectiveSnapshot(ALL_FALSE, {}, 'ceo', 'all').effective[FIN] === false)
+// CRITICAL no-leak guarantee: finance_team / accounts / purchase_manager share a byte-identical
+// tier-2 finance bundle, so Finance must NOT come from any role template — it is granted only via DB
+// role_permissions rows to finance_head + finance_team (see scripts/seed-finance-role-grants.ts).
+// With no DB grant in the base snapshot, none of the three may see it under the live V2 resolver.
+assert('Finance NOT template-leaked to finance_team', resolveEffectiveSnapshotV2(ALL_FALSE, {}, 'finance_team', 'all').effective[FIN] !== true)
+assert('Finance NOT template-leaked to accounts', resolveEffectiveSnapshotV2(ALL_FALSE, {}, 'accounts', 'all').effective[FIN] !== true)
+assert('Finance NOT template-leaked to purchase_manager', resolveEffectiveSnapshotV2(ALL_FALSE, {}, 'purchase_manager', 'all').effective[FIN] !== true)
+assert('MD sees Finance', resolveEffectiveSnapshot(ALL_FALSE, {}, 'md', 'all').effective[FIN] === true)
+assert('Developer sees Finance', resolveEffectiveSnapshot(ALL_FALSE, {}, 'developer', 'all').effective[FIN] === true)
+// The DB grant enters the resolver as a base-snapshot true (that is exactly how role_permissions rows
+// are unioned in). finance_team is a normal (non-global) role, so a base-true survives → it keeps Finance.
+assert('finance_team KEEPS Finance when DB-granted (base carries finance.view)', resolveEffectiveSnapshotV2({ ...ALL_FALSE, [FIN]: true }, {}, 'finance_team', 'all').effective[FIN] === true)
+assert('finance_head KEEPS finance.approve when DB-granted', resolveEffectiveSnapshotV2({ ...ALL_FALSE, [FIN]: true, [FIN_APPROVE]: true }, {}, 'finance_head', 'all').effective[FIN_APPROVE] === true)
+assert('Finance grantable via explicit Allow override (Access Map)', resolveEffectiveSnapshot(ALL_FALSE, { [FIN]: true }, 'accounts', 'kia').effective[FIN] === true)
+
 console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===\n`)
 process.exit(failures === 0 ? 0 : 1)

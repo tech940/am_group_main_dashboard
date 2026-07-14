@@ -20,6 +20,7 @@ import { buildCallbackUrl, buildTrackingUrl } from '@/lib/kia/tracking'
 import { getKiaBranchLabel, normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import { buildApprovedProformaEmail, buildUpdatedProformaEmail } from '@/lib/email/templates'
 import { requirePermission } from '@/lib/permissions/service'
+import { createKiaFinanceProcessing } from '@/lib/finance/finance-processing'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,6 +116,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       const stage = pendingStageOf(row.approvalStatus)
       if (!roleActsOnKiaStage(appUser.role, stage)) {
         return NextResponse.json({ error: `This proforma is awaiting ${kiaStageActorLabel(stage)} approval.` }, { status: 403 })
+      }
+      // Stage 2 (finance) is the dedicated Finance section's responsibility — additionally require the
+      // finance.approve permission (granted to finance_head/finance_team + super admins), so the final
+      // approval is authorized through Finance, not the Proforma module.
+      if (stage === 'finance') {
+        const financePermission = await requirePermission(appUser, 'finance.approve')
+        if (!financePermission.allowed) return NextResponse.json({ error: financePermission.reason }, { status: 403 })
       }
 
       let declined = false
@@ -349,6 +357,17 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     if (isApproved) {
       await emailCustomerProforma('approved')
+      // On FINAL finance approval, open the Finance Processing record (idempotent). Best-effort — a
+      // failure here must never break the approval response; it can be created on a later read/retry.
+      try {
+        await createKiaFinanceProcessing(
+          { id: updated.id, bankName: updated.bankName, bankBranch: updated.bankBranch },
+          linkedBookingRow ? { id: linkedBookingRow.id, metadata: linkedBookingRow.metadata } : null,
+          appUser,
+        )
+      } catch (financeError) {
+        console.error('Failed to open finance processing record:', financeError)
+      }
     } else if (approvalStageActed === 'edit') {
       await emailCustomerProforma('updated')
     }

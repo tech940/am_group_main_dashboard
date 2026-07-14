@@ -533,9 +533,17 @@ function isKiaSalesPersonOnly(role: string) {
   return String(role || '').trim().toLowerCase() === 'sales_executive'
 }
 
+// Finance roles (finance_head / finance_team) now do the final proforma approval from the dedicated
+// Finance section (/finance), NOT from the Proforma "Pending Proforma" tab — so exclude them here.
+// Stage-1 approvers (sales_manager / general_manager) + MD/admin/developer keep the tab.
+function isKiaFinanceApprovalRole(role: string) {
+  const r = String(role || '').trim().toLowerCase()
+  return r === 'finance_head' || r === 'finance_team'
+}
+
 function canAccessKiaSection(section: KiaProformaSection, role: string, isApprover: boolean) {
   if (isKiaSalesPersonOnly(role)) return section === 'bookings' || section === 'generate'
-  if (section === 'pending-approval') return isApprover
+  if (section === 'pending-approval') return isApprover && !isKiaFinanceApprovalRole(role)
   return true
 }
 
