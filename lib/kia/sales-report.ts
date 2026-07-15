@@ -842,6 +842,60 @@ function aggregateAccessoryByVin(rows: Row[]) {
   return map
 }
 
+function findMatchingConsultant(accRow: Row, salesRows: Row[]): string {
+  // 1. Try matching by VIN (if present)
+  const accVin = String(accRow.vin || '').trim().toUpperCase()
+  if (accVin && accVin.length > 5) {
+    const sale = salesRows.find(s => {
+      const sVin = String(s.vin_number || s.vin_no || '').trim().toUpperCase()
+      return sVin && (sVin.includes(accVin) || accVin.includes(sVin))
+    })
+    if (sale) return String(sale.consultant_name || 'UNASSIGNED')
+  }
+
+  // 2. Try matching by Mobile Number
+  const accMobile = String(accRow.customer_mobile || '').trim().replace(/\D/g, '')
+  if (accMobile && accMobile.length >= 10) {
+    const sale = salesRows.find(s => {
+      const contact1 = String(s.contact_num1 || '').trim().replace(/\D/g, '')
+      const contact2 = String(s.contact_num2 || '').trim().replace(/\D/g, '')
+      const contact3 = String(s.contact_num3 || '').trim().replace(/\D/g, '')
+      return (
+        (contact1 && contact1.endsWith(accMobile)) ||
+        (contact2 && contact2.endsWith(accMobile)) ||
+        (contact3 && contact3.endsWith(accMobile))
+      )
+    })
+    if (sale) return String(sale.consultant_name || 'UNASSIGNED')
+  }
+
+  // 3. Match by Customer Name (normalized)
+  const accName = String(accRow.customer_name || '').trim().toLowerCase().replace(/\s+/g, '')
+  if (accName) {
+    const nameMatches = salesRows.filter(s => {
+      const sName = String(s.registration_name || '').trim().toLowerCase().replace(/\s+/g, '')
+      return sName === accName
+    })
+
+    if (nameMatches.length === 1) {
+      return String(nameMatches[0].consultant_name || 'UNASSIGNED')
+    } else if (nameMatches.length > 1) {
+      // Tie-breaker: match by model
+      const accModel = String(accRow.model || '').trim().toLowerCase()
+      const modelMatches = nameMatches.filter(s => {
+        const sModel = String(s.model || '').trim().toLowerCase()
+        return sModel.includes(accModel) || accModel.includes(sModel)
+      })
+      if (modelMatches.length > 0) {
+        return String(modelMatches[0].consultant_name || 'UNASSIGNED')
+      }
+      return String(nameMatches[0].consultant_name || 'UNASSIGNED')
+    }
+  }
+
+  return 'UNASSIGNED'
+}
+
 async function buildKiaSalesReportSummary(context: ResolvedDateContext, normalizedDealerCode: string | null) {
   const [
     enquiryBundle,
@@ -1143,6 +1197,49 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
         card.financeBreakdown = Array.from(financeMap.entries()).map(([name, count]) => ({ name, count }))
       }
 
+      // Consultant-wise Accessories Sales calculation
+      const consultantAccMap = new Map<string, {
+        consultant: string
+        totalSold: number
+        totalRevenue: number
+        customers: Set<string>
+      }>()
+
+      for (const row of accessoryRows) {
+        const consultantName = findMatchingConsultant(row, salesRows)
+        const consultantKey = upperText(consultantName) || 'UNASSIGNED'
+        
+        const current = consultantAccMap.get(consultantKey) || {
+          consultant: normalizeConsultant(consultantName),
+          totalSold: 0,
+          totalRevenue: 0,
+          customers: new Set<string>()
+        }
+
+        current.totalSold += numberValue(row.accessories_qty) || 1
+        current.totalRevenue += getAccessoriesRevenue(row)
+        
+        // Track unique customers based on name + mobile
+        const customerId = [
+          String(row.customer_name || '').trim().toLowerCase(),
+          String(row.customer_mobile || '').trim()
+        ].join('::')
+        
+        current.customers.add(customerId)
+        consultantAccMap.set(consultantKey, current)
+      }
+
+      const consultantAccessories = Array.from(consultantAccMap.values()).map(item => {
+        const customerCount = item.customers.size
+        return {
+          consultant: item.consultant,
+          totalSold: item.totalSold,
+          totalRevenue: item.totalRevenue,
+          customerCount,
+          avgRevenuePerCustomer: customerCount > 0 ? Number((item.totalRevenue / customerCount).toFixed(2)) : 0
+        }
+      }).sort((left, right) => right.totalRevenue - left.totalRevenue)
+
       const matchedRetailUnits = transactions.filter((item) => item.accessoriesValue > 0).length
       const sourceAssumptions = [
         'Lead temperature is derived from booking, retail, test drive, and follow-up signals.',
@@ -1295,6 +1392,7 @@ async function buildKiaSalesReportSummary(context: ResolvedDateContext, normaliz
           financeByModel: Array.from(financeByModelMap.entries()).map(([model, values]) => ({ model, ...values })).sort((left, right) => (right.Cash + right['In-house'] + right['Self-Finance']) - (left.Cash + left['In-house'] + left['Self-Finance'])),
           financeByConsultant: Array.from(financeByConsultantMap.entries()).map(([consultant, values]) => ({ consultant, ...values })).sort((left, right) => (right.Cash + right['In-house'] + right['Self-Finance']) - (left.Cash + left['In-house'] + left['Self-Finance'])),
           transactions,
+          consultantAccessories,
           accessories: {
             totalRevenue: accessoriesRevenue,
             totalItems: accessoryItemCount,
@@ -1348,7 +1446,7 @@ export async function getKiaSalesReportSummary(input: {
   const dealerCacheKey = normalizedDealerCode || ALL_DEALERS_CACHE_KEY
   // Bump the version segment whenever the summary SHAPE changes so stale-shaped cached entries are not
   // served (v2 added models.testDrivesByModel, v3 added models.testDrivesByModelVariant).
-  const summaryCacheKey = `kia:sales-report:summary:v3:${context.key}:${dealerCacheKey}`
+  const summaryCacheKey = `kia:sales-report:summary:v4:${context.key}:${dealerCacheKey}`
 
   try {
     const payload = await getCachedData(

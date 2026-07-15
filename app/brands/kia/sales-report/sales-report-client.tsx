@@ -1105,8 +1105,8 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
   const heatmapRows = summary?.sources.dealerMatrix || []
   const heatmapTotalPages = Math.max(1, Math.ceil(heatmapRows.length / SALES_REPORT_TABLE_PAGE_SIZE))
   const pagedHeatmapRows = heatmapRows.slice((heatmapPage - 1) * SALES_REPORT_TABLE_PAGE_SIZE, heatmapPage * SALES_REPORT_TABLE_PAGE_SIZE)
-  const lostTotalPages = Math.max(1, Math.ceil(filteredLostRows.length / SALES_REPORT_TABLE_PAGE_SIZE))
-  const pagedLostRows = filteredLostRows.slice((lostPage - 1) * SALES_REPORT_TABLE_PAGE_SIZE, lostPage * SALES_REPORT_TABLE_PAGE_SIZE)
+  const lostTotalPages = 1
+  const pagedLostRows = filteredLostRows
   const retailTotalPages = Math.max(1, Math.ceil(filteredRetailRows.length / SALES_REPORT_TABLE_PAGE_SIZE))
   const pagedRetailRows = filteredRetailRows.slice((retailPage - 1) * SALES_REPORT_TABLE_PAGE_SIZE, retailPage * SALES_REPORT_TABLE_PAGE_SIZE)
   const lowestBookingsList = (summary?.team.leaderboard || [])
@@ -2606,6 +2606,35 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                 )}
               </ChartCard>
             </div>
+
+            <ChartCard title="Consultant-wise Accessories Sales" subtitle="Accessories performance matched and attributed to sales consultants">
+              {(summary?.retail.consultantAccessories || []).length ? (
+                <div className="overflow-hidden rounded-[1.5rem] border border-slate-200">
+                  <Table className="[&_td]:text-[13px] [&_td]:font-medium [&_th]:text-[10px]">
+                    <TableHeader>
+                      <TableRow className="border-b-2 border-[#071a2b] bg-white hover:bg-white">
+                        {['Sales Consultant', 'Total Accessories Sold', 'Total Accessories Revenue', 'Number of Customers', 'Avg Revenue per Customer'].map((label) => (
+                          <TableHead key={label} className="text-[10px] font-black text-[#25303b]">{label}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(summary?.retail.consultantAccessories || []).map((row) => (
+                        <TableRow key={row.consultant} className="odd:bg-[#f6f9fd] even:bg-white">
+                          <TableCell className="font-black text-slate-950">{row.consultant}</TableCell>
+                          <TableCell>{formatNumber(row.totalSold)}</TableCell>
+                          <TableCell className="font-bold text-slate-800">{formatCurrency(row.totalRevenue)}</TableCell>
+                          <TableCell>{formatNumber(row.customerCount)}</TableCell>
+                          <TableCell className="text-slate-600">{formatCurrency(row.avgRevenuePerCustomer)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <EmptyState title="No accessories performance data" body="No matched accessories sales found for the selected filters." />
+              )}
+            </ChartCard>
           </TabsContent>
 
           <TabsContent value="reports" className="space-y-5">
@@ -2803,7 +2832,7 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
       </div>
 
       <Dialog open={lostDialogOpen} onOpenChange={setLostDialogOpen}>
-        <DialogContent className="max-w-6xl rounded-[2rem] border border-slate-200 p-0">
+        <DialogContent className="max-w-[96vw] w-[96vw] md:max-w-[96vw] rounded-[2rem] border border-slate-200 p-0">
           <DialogHeader className="rounded-t-[2rem] border-b border-[#122130] bg-[#071a2b] px-6 py-5 text-white">
             <DialogTitle className="text-[24px] font-black">Lost Cases</DialogTitle>
             <DialogDescription className="text-white/75">
@@ -2820,7 +2849,6 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
             </div>
 
             {pagedLostRows.length ? (
-              <>
               <div className="max-h-[70vh] overflow-auto rounded-[1.5rem] border border-slate-200">
                 <Table className="[&_td]:text-[11px] [&_td]:font-medium [&_th]:text-[10px]">
                   <TableHeader>
@@ -2848,13 +2876,6 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                   </TableBody>
                 </Table>
               </div>
-              <TablePagination
-                page={lostPage}
-                totalPages={lostTotalPages}
-                onPrevious={() => setLostPage((current) => Math.max(1, current - 1))}
-                onNext={() => setLostPage((current) => Math.min(lostTotalPages, current + 1))}
-              />
-              </>
             ) : (
               <EmptyState title="No lost rows found" body="Try another search term or a different month." />
             )}

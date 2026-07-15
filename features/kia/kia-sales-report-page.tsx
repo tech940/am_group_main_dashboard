@@ -1457,6 +1457,35 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                 )}
               </ChartCard>
             </div>
+
+            <ChartCard title="Consultant-wise Accessories Sales" subtitle="Accessories performance matched and attributed to sales consultants">
+              {(summary?.retail.consultantAccessories || []).length ? (
+                <div className="overflow-hidden rounded-[1.5rem] border border-slate-200">
+                  <Table className="[&_td]:text-[13px] [&_td]:font-medium [&_th]:text-[10px]">
+                    <TableHeader>
+                      <TableRow className="border-b border-white/10 bg-[var(--dashboard-action-bg)] hover:bg-[var(--dashboard-action-bg)]">
+                        {['Sales Consultant', 'Total Accessories Sold', 'Total Accessories Revenue', 'Number of Customers', 'Avg Revenue per Customer'].map((label) => (
+                          <TableHead key={label} className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--dashboard-action-fg)]">{label}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(summary?.retail.consultantAccessories || []).map((row) => (
+                        <TableRow key={row.consultant} className="odd:bg-white even:bg-[color-mix(in_srgb,var(--dashboard-primary-soft)_38%,white)]">
+                          <TableCell className="font-black text-slate-950">{row.consultant}</TableCell>
+                          <TableCell>{formatNumber(row.totalSold)}</TableCell>
+                          <TableCell className="font-bold text-slate-800">{formatCurrency(row.totalRevenue)}</TableCell>
+                          <TableCell>{formatNumber(row.customerCount)}</TableCell>
+                          <TableCell className="text-slate-600">{formatCurrency(row.avgRevenuePerCustomer)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <EmptyState title="No accessories performance data" body="No matched accessories sales found for the selected filters." />
+              )}
+            </ChartCard>
           </TabsContent>
 
           <TabsContent value="testdrives" className="space-y-5">
@@ -1738,7 +1767,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
       </div>
 
       <Dialog open={lostDialogOpen} onOpenChange={setLostDialogOpen}>
-        <DialogContent className="max-w-6xl rounded-[2rem] border border-slate-200 p-0">
+        <DialogContent className="max-w-[96vw] w-[96vw] md:max-w-[96vw] rounded-[2rem] border border-slate-200 p-0">
           <DialogHeader className="rounded-t-[2rem] border-b border-white/10 bg-[var(--dashboard-action-bg)] px-6 py-5 text-[var(--dashboard-action-fg)]">
             <DialogTitle className="text-2xl font-black">Lost Cases</DialogTitle>
             <DialogDescription className="text-white/75">

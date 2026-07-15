@@ -189,6 +189,13 @@ export type SalesReportSummaryPayload = {
     financeByModel: Array<{ model: string; Cash: number; 'In-house': number; 'Self-Finance': number }>
     financeByConsultant: Array<{ consultant: string; Cash: number; 'In-house': number; 'Self-Finance': number }>
     transactions: SalesRetailTransaction[]
+    consultantAccessories?: Array<{
+      consultant: string
+      totalSold: number
+      totalRevenue: number
+      customerCount: number
+      avgRevenuePerCustomer: number
+    }>
     accessories: {
       totalRevenue: number
       totalItems: number
