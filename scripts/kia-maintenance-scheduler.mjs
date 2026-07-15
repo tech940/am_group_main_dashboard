@@ -1,6 +1,12 @@
-// Lightweight scheduler for the KIA booking maintenance sweeps: runs the one-shot script every 5 min.
-// Allocation reservations (72h/CSD-120h) and unpaid dealer holds (48h) only lapse when this runs, so
-// this needs to stay up (or point a real cron / n8n at POST /api/brands/kia/maintenance instead).
+// Local/manual scheduler for the KIA booking maintenance sweeps.
+//
+// PRODUCTION DOES NOT USE THIS — the real schedule is a Supabase pg_cron job (`kia-maintenance`,
+// see scripts/apply-migration-0018.ts). This is only for running the sweeps against a local dev
+// server. Keep the interval in step with that job.
+//
+// Hourly, not every 5 minutes: the sweeps enforce 48h holds and 72h/120h reservations, so hourly is
+// at most ~1h late on a 3-day deadline, while every 5 min is 288 runs/day for the same outcome as
+// 24 — 12x the CPU and write transactions for nothing.
 //
 // Guards against overlap with a `running` flag (a slow DB must not stack concurrent sweeps).
 import { spawn } from 'node:child_process'
@@ -8,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const scriptPath = join(dirname(fileURLToPath(import.meta.url)), 'kia-maintenance.mjs')
-const INTERVAL_MS = 5 * 60 * 1000 // every 5 minutes
+const INTERVAL_MS = 60 * 60 * 1000 // hourly — matches the pg_cron `kia-maintenance` job
 let running = false
 
 function runOnce() {
@@ -28,6 +34,6 @@ function runOnce() {
   })
 }
 
-console.log('[kia-maintenance-scheduler] started — running every 5 minutes.')
+console.log('[kia-maintenance-scheduler] started — running hourly.')
 runOnce()
 setInterval(runOnce, INTERVAL_MS)

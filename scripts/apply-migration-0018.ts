@@ -35,7 +35,14 @@ const JOBS = [
   },
   {
     name: 'kia-maintenance',
-    schedule: '*/5 * * * *', // allocation reservations (72h) + dealer holds (48h) only lapse when this runs
+    // HOURLY, not every 5 minutes. This enforces 48h dealer holds and 72h/120h allocation
+    // reservations — hourly leaves a deadline at most ~1h late, i.e. 1.4% of a 72h window, which
+    // nobody can perceive. The other sweep (markKiaSoldAllocations) reacts to the KIA stock feed,
+    // which is uploaded roughly once a day, so it has no new input to see more often than that.
+    // Every 5 min was 288 runs/day for the same result as 24 — 12x the Vercel Fluid CPU and 12x the
+    // write transactions on the pooler, buying nothing. Dial to '*/15 * * * *' only if someone
+    // actually complains that a lapsed reservation takes too long to free the vehicle.
+    schedule: '0 * * * *',
     path: '/api/brands/kia/maintenance',
   },
 ]
