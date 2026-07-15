@@ -1,5 +1,5 @@
 // Lightweight scheduler for the KIA follow-up reminders: triggers the one-shot sweep every 15 min.
-// Each run is idempotent (reminder_sent_at + notification dedupe), so a follow-up only pings once
+// Each run is idempotent (reminder_sent_at), so a follow-up only pings once
 // when it first becomes due. For production, prefer a real cron / n8n hitting the run-reminders
 // endpoint. Env same as the one-shot script.
 import { spawn } from 'node:child_process'

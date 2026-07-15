@@ -4,7 +4,6 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { purchaseOrders, users, workflowHistory } from '@/lib/db/schema'
 import { getIndiaDatePart, parseIndiaLocalDateTime, serializeUtcTimestampFields } from '@/lib/date-time'
-import { createPurchaseOrderWorkflowNotifications } from '@/lib/notifications/workflow'
 import { isBranchValue } from '@/lib/branches'
 import {
   canMutatePurchaseOrderStage,
@@ -156,7 +155,7 @@ export async function POST(request: NextRequest) {
 
       const [newOrder] = await db.insert(purchaseOrders).values(newOrderValues).returning()
 
-      const [historyEntry] = await db
+      await db
         .insert(workflowHistory)
         .values({
           purchaseOrderId: newOrder.id,
@@ -173,23 +172,6 @@ export async function POST(request: NextRequest) {
             resultingStage: 'ea_approval',
           },
         })
-        .returning({
-          id: workflowHistory.id,
-          remarks: workflowHistory.remarks,
-        })
-
-      await createPurchaseOrderWorkflowNotifications({
-        event: 'initial_submission_submitted',
-        order: newOrder,
-        actor: {
-          id: appUser.id,
-          role: appUser.role,
-          brand: appUser.brand,
-          fullName: appUser.fullName,
-          email: appUser.email,
-        },
-        historyEntry,
-      })
 
       return NextResponse.json({
         success: true,
@@ -219,17 +201,6 @@ export async function POST(request: NextRequest) {
     let newStatus = order.status
     let newStage = order.currentStage
     const historyStage = stage
-    let notificationEvent:
-      | 'vendor_information_submitted'
-      | 'ea_approved'
-      | 'ea_denied'
-      | 'ea_held'
-      | 'md_approved'
-      | 'md_denied'
-      | 'md_held'
-      | 'grn_submitted'
-      | null = null
-
     switch (stage) {
       case 'initial_submission': {
         if (['completed', 'cancelled'].includes(order.status)) {
@@ -301,7 +272,6 @@ export async function POST(request: NextRequest) {
         }
         newStage = updateData.currentStage || order.currentStage
         newStatus = updateData.status || order.status
-        notificationEvent = shouldAdvanceLegacyVendorFlow ? 'vendor_information_submitted' : null
         break
       }
       case 'ea_approval': {
@@ -331,7 +301,6 @@ export async function POST(request: NextRequest) {
           }
           newStage = 'md_approval'
           newStatus = 'awaiting_md_approval'
-          notificationEvent = 'ea_approved'
         } else if (action === 'deny') {
           updateData = {
             ...updateData,
@@ -352,7 +321,6 @@ export async function POST(request: NextRequest) {
           }
           newStage = 'ea_approval'
           newStatus = 'ea_denied'
-          notificationEvent = 'ea_denied'
         } else if (action === 'hold') {
           updateData = {
             ...updateData,
@@ -373,7 +341,6 @@ export async function POST(request: NextRequest) {
           }
           newStage = 'ea_approval'
           newStatus = 'ea_on_hold'
-          notificationEvent = 'ea_held'
         } else {
           return NextResponse.json({ error: 'Invalid action for EA approval' }, { status: 400 })
         }
@@ -400,7 +367,6 @@ export async function POST(request: NextRequest) {
           }
           newStage = 'grn'
           newStatus = 'awaiting_grn'
-          notificationEvent = 'md_approved'
         } else if (action === 'deny') {
           updateData = {
             ...updateData,
@@ -417,7 +383,6 @@ export async function POST(request: NextRequest) {
           }
           newStage = 'ea_approval'
           newStatus = 'md_denied'
-          notificationEvent = 'md_denied'
         } else if (action === 'hold') {
           updateData = {
             ...updateData,
@@ -433,7 +398,6 @@ export async function POST(request: NextRequest) {
           }
           newStage = 'md_approval'
           newStatus = 'md_on_hold'
-          notificationEvent = 'md_held'
         } else {
           return NextResponse.json({ error: 'Invalid action for MD approval' }, { status: 400 })
         }
@@ -462,7 +426,6 @@ export async function POST(request: NextRequest) {
         }
         newStage = updateData.currentStage || order.currentStage
         newStatus = updateData.status || order.status
-        notificationEvent = order.status === 'awaiting_grn' ? 'grn_submitted' : null
         break
       }
       case 'accounts': {
@@ -524,7 +487,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const [historyEntry] = await db
+    await db
       .insert(workflowHistory)
       .values({
         purchaseOrderId: orderId,
@@ -543,25 +506,6 @@ export async function POST(request: NextRequest) {
               : null,
         metadata: formData,
       })
-      .returning({
-        id: workflowHistory.id,
-        remarks: workflowHistory.remarks,
-      })
-
-    if (notificationEvent) {
-      await createPurchaseOrderWorkflowNotifications({
-        event: notificationEvent,
-        order: updatedOrder,
-        actor: {
-          id: appUser.id,
-          role: appUser.role,
-          brand: appUser.brand,
-          fullName: appUser.fullName,
-          email: appUser.email,
-        },
-        historyEntry,
-      })
-    }
 
     return NextResponse.json({
       success: true,

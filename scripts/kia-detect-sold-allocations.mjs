@@ -1,10 +1,9 @@
 // Flags allotted KIA vehicles whose VIN has DISAPPEARED from the DMS stock feed (kia_stock_management)
-// as "sold", writes a booking-activity row, and notifies the sales person + dealer managers + oversight.
-// Idempotent (stock_missing_at guard + notification dedupe). Intended to run after each DMS load
-// (wire into the existing DMS ingest / n8n) or on the interval scheduler sibling.
+// as "sold" and writes a booking-activity row. Idempotent (stock_missing_at guard). Intended to run
+// after each DMS load (wire into the existing DMS ingest / n8n) or on the interval scheduler sibling.
 //
 // The app also self-heals lazily on booking-detail views (lib/kia/bookings.ts maybeSweepSoldAllocations),
-// but this script is the reliable, feed-driven trigger. Both share dedupeKey 'sold:<allocationId>'.
+// but this script is the reliable, feed-driven trigger.
 import 'dotenv/config'
 import postgres from 'postgres'
 
@@ -64,29 +63,6 @@ async function main() {
                'System', 'system',
                jsonb_build_object('vinNumber', vin_number, 'reason', 'absent from kia_stock_management')
         FROM sold
-      ),
-      recipients AS (
-        SELECT s.allocation_id, s.vin_number, s.booking_id, s.dealer_code, s.booking_number, s.customer_name, s.model, u.id AS user_id, u.role AS user_role
-        FROM sold s JOIN users u ON u.id = s.created_by AND u.is_active = true AND u.deleted_at IS NULL
-        UNION
-        SELECT s.allocation_id, s.vin_number, s.booking_id, s.dealer_code, s.booking_number, s.customer_name, s.model, u.id, u.role
-        FROM sold s JOIN users u ON u.role IN ('sales_manager', 'general_manager', 'md') AND u.is_active = true AND u.deleted_at IS NULL AND (u.brand IN ('kia', 'all') OR u.brand IS NULL)
-        UNION
-        SELECT s.allocation_id, s.vin_number, s.booking_id, s.dealer_code, s.booking_number, s.customer_name, s.model, u.id, u.role
-        FROM sold s JOIN users u ON u.role IN ('developer', 'admin') AND u.is_active = true AND u.deleted_at IS NULL
-      ),
-      notify AS (
-        INSERT INTO notifications (user_id, title, message, type, action_url, entity_type, entity_id, reference_number, target_role, dedupe_key, metadata, created_at)
-        SELECT user_id,
-               'Allotted vehicle sold / missing from stock',
-               'Allotted vehicle no longer in DMS stock (likely sold) · ' || customer_name || ' · ' || booking_number || COALESCE(' (' || model || ')', '') || ' · VIN ' || vin_number,
-               'warning',
-               '/brands/kia/bookings?bookingId=' || booking_id,
-               'kia_sold_vehicle', booking_id, booking_number, user_role, 'sold:' || allocation_id,
-               jsonb_build_object('module', 'kia_bookings', 'event', 'stock_missing', 'allocationId', allocation_id, 'bookingId', booking_id, 'vinNumber', vin_number, 'model', model, 'dealerCode', dealer_code),
-               now()
-        FROM recipients
-        ON CONFLICT (user_id, dedupe_key) DO NOTHING
       )
       SELECT allocation_id, vin_number, booking_number FROM sold
     `)

@@ -335,6 +335,7 @@ const STATUS_LABELS: Record<string, string> = {
   delivered: 'Delivered',
   cancelled: 'Cancelled',
   not_in_stock: 'Not in Stock',
+  in_stock: 'In Stock',
 }
 
 // Maps a booking status to a premium chip tone (theme-token driven).
@@ -350,6 +351,7 @@ const STATUS_TONE: Record<string, Tone> = {
   delivered: 'emerald',
   cancelled: 'rose',
   not_in_stock: 'rose',
+  in_stock: 'emerald',
 }
 
 function dealerCity(code?: string | null) {
@@ -385,6 +387,7 @@ const KPI_CONFIG: {
   { key: 'delivered', label: 'Delivered', icon: CheckCircle2, tone: 'emerald', hint: 'Completed', statusFilter: 'delivered' },
   { key: 'cancelled', label: 'Cancelled', icon: XCircle, tone: 'rose', hint: 'Closed / lost', statusFilter: 'cancelled' },
   { key: 'notInStock', label: 'Not in Stock', icon: XCircle, tone: 'rose', hint: 'Vehicle not in inventory', statusFilter: 'not_in_stock' },
+  { key: 'inStock', label: 'In Stock', icon: CheckCircle2, tone: 'emerald', hint: 'Matching vehicle available', statusFilter: 'in_stock' },
 ]
 
 const CREATE_TABS = ['Customer', 'Vehicle', 'Sales Team', 'Payment', 'Delivery', 'Review'] as const
@@ -3779,10 +3782,19 @@ function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDe
       bankName: booking.bankName || String(meta.bankFinance || ''),
       consultantName: booking.consultantName || '',
       notes: booking.notes || String(meta.notes || ''),
+      panCardUrl: String(meta.panCardUrl || ''),
+      panCardName: String(meta.panCardName || ''),
+      panNumber: String(meta.panNumber || ''),
+      aadhaarCardUrl: String(meta.aadhaarCardUrl || ''),
+      aadhaarCardName: String(meta.aadhaarCardName || ''),
+      aadhaarNumber: String(meta.aadhaarNumber || ''),
+      employeeIdUrl: String(meta.employeeIdUrl || ''),
+      employeeIdName: String(meta.employeeIdName || ''),
     }
   }
 
   const [form, setForm] = useState(buildForm)
+  const [idDocUploading, setIdDocUploading] = useState<'pan' | 'aadhaar' | 'employee_id' | null>(null)
 
   // Re-prime the form each time the dialog is opened (or a different booking loads).
   useEffect(() => {
@@ -3792,12 +3804,61 @@ function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDe
 
   const set = (key: keyof ReturnType<typeof buildForm>, value: string) => setForm((current) => ({ ...current, [key]: value }))
 
+  const handleIdDocUpload = async (docType: 'pan' | 'aadhaar' | 'employee_id', e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIdDocUploading(docType)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('docType', docType)
+      const res = await fetch('/api/brands/kia/bookings/extract-id-document', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data?.error || 'Upload failed')
+      
+      const urlKey = docType === 'pan' ? 'panCardUrl' : docType === 'aadhaar' ? 'aadhaarCardUrl' : 'employeeIdUrl'
+      const nameKey = docType === 'pan' ? 'panCardName' : docType === 'aadhaar' ? 'aadhaarCardName' : 'employeeIdName'
+      
+      setForm((current) => {
+        const next = { ...current, [urlKey]: data.url || file.name, [nameKey]: file.name }
+        if (docType === 'pan' && data.number) next.panNumber = data.number
+        if (docType === 'aadhaar' && data.number) next.aadhaarNumber = data.number
+        return next
+      })
+
+      toast({
+        title: 'Document uploaded',
+        description: data.pdfManual
+          ? 'PDF stored — please type the number manually.'
+          : data.number
+            ? `Read the ${docType === 'pan' ? 'PAN' : 'Aadhaar'} number automatically — please verify it.`
+            : 'Uploaded successfully.',
+        variant: 'success',
+      })
+    } catch (err) {
+      e.target.value = ''
+      toast({ title: 'Upload failed', description: err instanceof Error ? err.message : 'Please try again.', variant: 'error' })
+    } finally {
+      setIdDocUploading(null)
+    }
+  }
+
   const mutation = useMutation({
     mutationFn: async () => {
       const bankTrimmed = form.bankName.trim()
       const payload: Record<string, unknown> = {
         ...form,
         financeRequired: Boolean(bankTrimmed) && bankTrimmed.toUpperCase() !== 'CASH',
+        metadata: {
+          panNumber: form.panNumber,
+          panCardUrl: form.panCardUrl,
+          panCardName: form.panCardName,
+          aadhaarNumber: form.aadhaarNumber,
+          aadhaarCardUrl: form.aadhaarCardUrl,
+          aadhaarCardName: form.aadhaarCardName,
+          employeeIdUrl: form.employeeIdUrl,
+          employeeIdName: form.employeeIdName,
+        }
       }
       if (!canViewPii) {
         delete payload.customerPhone
@@ -3827,12 +3888,26 @@ function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDe
   const phoneInvalid = phoneDigits.length !== 10
   const emailInvalid = form.customerEmail.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail.trim())
 
+  const canEditPan = canViewPii || !booking.metadata?.panNumber
+  const canEditAadhaar = canViewPii || !booking.metadata?.aadhaarNumber
+
   const save = () => {
     if (!form.customerName.trim()) { toast({ title: 'Customer name required', variant: 'error' }); return }
     if (canViewPii) {
       if (phoneInvalid) { toast({ title: 'Invalid mobile', description: 'Mobile number must be exactly 10 digits.', variant: 'error' }); return }
       if (emailInvalid) { toast({ title: 'Invalid email', description: 'Enter a valid email address.', variant: 'error' }); return }
     }
+    
+    // Validate documents
+    if (!form.panCardUrl.trim()) { toast({ title: 'PAN Card required', description: 'Please upload the PAN card.', variant: 'error' }); return }
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.panNumber.trim().toUpperCase())) {
+      toast({ title: 'Invalid PAN', description: 'Enter a valid 10-digit PAN (e.g. ABCDE1234F).', variant: 'error' }); return
+    }
+    if (!form.aadhaarCardUrl.trim()) { toast({ title: 'Aadhaar Card required', description: 'Please upload the Aadhaar card.', variant: 'error' }); return }
+    if (form.aadhaarNumber.replace(/\D/g, '').length !== 12) {
+      toast({ title: 'Invalid Aadhaar', description: 'Enter a valid 12-digit Aadhaar number.', variant: 'error' }); return
+    }
+
     mutation.mutate()
   }
 
@@ -3860,6 +3935,65 @@ function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDe
           <div className="sm:col-span-2">
             <Field label="Address"><Input value={form.customerAddress} onChange={(event) => set('customerAddress', event.target.value)} className={INPUT_STYLE} /></Field>
           </div>
+
+          {/* Document Uploads */}
+          <div className="sm:col-span-2 border-t pt-4 mt-2">
+            <h4 className="text-xs font-black uppercase tracking-wide text-slate-500 mb-3">Identity Documents</h4>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="PAN Card" required>
+                {canEditPan ? (
+                  <IdDocUploadButton
+                    label="Upload PAN (image / PDF)"
+                    uploading={idDocUploading === 'pan'}
+                    fileName={form.panCardName}
+                    onSelect={(e) => handleIdDocUpload('pan', e)}
+                  />
+                ) : (
+                  <div className="h-10 rounded-2xl bg-slate-50 border border-slate-200 flex items-center px-3 text-xs font-bold text-slate-500">
+                    🔒 Document Uploaded & Protected
+                  </div>
+                )}
+              </Field>
+              <Field label="PAN Number" required>
+                <Input
+                  value={canEditPan ? form.panNumber : (form.panNumber ? '••••••••••' : '')}
+                  onChange={(event) => set('panNumber', event.target.value.toUpperCase().slice(0, 10))}
+                  className={INPUT_STYLE}
+                  placeholder="ABCDE1234F"
+                  maxLength={10}
+                  disabled={!canEditPan}
+                  readOnly={!canEditPan}
+                />
+              </Field>
+              <Field label="Aadhaar Card" required>
+                {canEditAadhaar ? (
+                  <IdDocUploadButton
+                    label="Upload Aadhaar (image / PDF)"
+                    uploading={idDocUploading === 'aadhaar'}
+                    fileName={form.aadhaarCardName}
+                    onSelect={(e) => handleIdDocUpload('aadhaar', e)}
+                  />
+                ) : (
+                  <div className="h-10 rounded-2xl bg-slate-50 border border-slate-200 flex items-center px-3 text-xs font-bold text-slate-500">
+                    🔒 Document Uploaded & Protected
+                  </div>
+                )}
+              </Field>
+              <Field label="Aadhaar Number" required>
+                <Input
+                  value={canEditAadhaar ? form.aadhaarNumber : (form.aadhaarNumber ? '••••••••••••' : '')}
+                  onChange={(event) => set('aadhaarNumber', event.target.value.replace(/\D/g, '').slice(0, 12))}
+                  className={INPUT_STYLE}
+                  placeholder="12-digit number"
+                  inputMode="numeric"
+                  maxLength={12}
+                  disabled={!canEditAadhaar}
+                  readOnly={!canEditAadhaar}
+                />
+              </Field>
+            </div>
+          </div>
+
           <Field label="Model"><Input value={form.model} onChange={(event) => set('model', event.target.value)} className={INPUT_STYLE} /></Field>
           <Field label="Variant"><Input value={form.variant} onChange={(event) => set('variant', event.target.value)} className={INPUT_STYLE} /></Field>
           <Field label="Colour"><Input value={form.color} onChange={(event) => set('color', event.target.value)} className={INPUT_STYLE} /></Field>

@@ -3,7 +3,6 @@ import { and, inArray, isNull } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { purchaseOrders, workflowHistory } from '@/lib/db/schema'
-import { createPurchaseOrderWorkflowNotifications } from '@/lib/notifications/workflow'
 import {
   canApproveEa,
   canApproveMd,
@@ -131,7 +130,7 @@ export async function POST(request: NextRequest) {
       ))
       .returning()
 
-    const historyEntries = await db
+    await db
       .insert(workflowHistory)
       .values(
         updatedOrders.map((order) => ({
@@ -149,44 +148,6 @@ export async function POST(request: NextRequest) {
           },
         }))
       )
-      .returning({
-        id: workflowHistory.id,
-        purchaseOrderId: workflowHistory.purchaseOrderId,
-        remarks: workflowHistory.remarks,
-      })
-
-    const historyMap = new Map(historyEntries.map((entry) => [entry.purchaseOrderId, entry]))
-
-    for (const order of updatedOrders) {
-      const historyEntry = historyMap.get(order.id)
-      if (!historyEntry) {
-        continue
-      }
-
-      await createPurchaseOrderWorkflowNotifications({
-        event:
-          bulkStage === 'ea_approval'
-            ? action === 'approve'
-              ? 'ea_approved'
-              : action === 'deny'
-                ? 'ea_denied'
-                : 'ea_held'
-            : action === 'approve'
-              ? 'md_approved'
-              : action === 'deny'
-                ? 'md_denied'
-                : 'md_held',
-        order,
-        actor: {
-          id: appUser.id,
-          role: appUser.role,
-          brand: appUser.brand,
-          fullName: appUser.fullName,
-          email: appUser.email,
-        },
-        historyEntry,
-      })
-    }
 
     const actionLabel = action === 'approve' ? 'approved' : action === 'deny' ? 'denied' : 'held'
 

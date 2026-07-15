@@ -36,9 +36,6 @@ function shouldUseSessionApiCache(input: RequestInfo | URL, init?: RequestInit) 
   if (url.origin !== window.location.origin) return false
   if (!url.pathname.startsWith('/api/')) return false
 
-  // Notifications intentionally stay live because Supabase realtime and unread
-  // state should not be frozen by dashboard report caching.
-  if (url.pathname.startsWith('/api/notifications')) return false
   if (url.pathname.includes('/business-excellence/freshness')) return false
 
   return true

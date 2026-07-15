@@ -16,7 +16,6 @@ import {
   users,
 } from '@/lib/db/schema'
 import { getIndiaDatePart, serializeUtcTimestampFields } from '@/lib/date-time'
-import { createPettyCashNotifications } from '@/lib/notifications/petty-cash'
 import {
   canApprovePettyCashStage,
   canCreatePettyCashExpense,
@@ -163,16 +162,6 @@ function makeReference(prefix: 'PCR' | 'PCA' | 'PCE') {
 
 function normalizeBranch(appUser: AppUser) {
   return isBranchValue(appUser.brand) ? appUser.brand : null
-}
-
-function getActor(appUser: AppUser) {
-  return {
-    id: appUser.id,
-    role: appUser.role,
-    brand: appUser.brand,
-    fullName: appUser.fullName,
-    email: appUser.email,
-  }
 }
 
 const CREATOR_REQUEST_QUEUE_STATUSES = new Set([
@@ -653,7 +642,7 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
     })
     .returning()
 
-  const [history] = await db.insert(pettyCashApprovalHistory).values({
+  await db.insert(pettyCashApprovalHistory).values({
     entityType: 'request',
     requestId: request.id,
     action: status === 'draft' ? 'draft' : 'submit',
@@ -664,18 +653,7 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
     newStatus: status,
     remarks: input.purpose,
     metadata: input.requestForm,
-  }).returning({ id: pettyCashApprovalHistory.id, remarks: pettyCashApprovalHistory.remarks })
-
-  if (status === 'ea_pending') {
-    await createPettyCashNotifications({
-      event: 'request_submitted',
-      entity: request,
-      entityType: 'request',
-      actor: getActor(appUser),
-      historyId: history.id,
-      remarks: history.remarks,
-    })
-  }
+  })
 
   return serializeRequest(request)
 }
@@ -715,7 +693,7 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
   }
 
   const now = new Date()
-  const { expense, history } = await db.transaction(async (tx) => {
+  const { expense } = await db.transaction(async (tx) => {
     const [updatedAllocation] = await tx
       .update(pettyCashAllocations)
       .set({
@@ -772,7 +750,7 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
       },
     })
 
-    const [history] = await tx.insert(pettyCashApprovalHistory).values({
+    await tx.insert(pettyCashApprovalHistory).values({
       entityType: 'expense',
       expenseId: expense.id,
       action: 'post_expense',
@@ -786,18 +764,9 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
         ...input.expenseForm,
         remainingAfter: getRemainingBalance(updatedAllocation),
       },
-    }).returning({ id: pettyCashApprovalHistory.id, remarks: pettyCashApprovalHistory.remarks })
+    })
 
-    return { expense, history }
-  })
-
-  await createPettyCashNotifications({
-    event: 'expense_posted',
-    entity: expense,
-    entityType: 'expense',
-    actor: getActor(appUser),
-    historyId: history.id,
-    remarks: history.remarks,
+    return { expense }
   })
 
   return serializeExpense(expense)
@@ -819,7 +788,6 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
   let updateData: Partial<typeof pettyCashRequests.$inferInsert> = { updatedAt: now }
   let newStatus = request.status
   let newStage = request.currentStage
-  let event: Parameters<typeof createPettyCashNotifications>[0]['event'] | null = null
 
   if (input.stage === 'ea_approval') {
     if (!['ea_pending', 'ea_on_hold'].includes(request.status)) throw new Error('Request is not awaiting EA approval')
@@ -827,16 +795,13 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
       updateData = { ...updateData, status: 'md_pending', currentStage: 'md_approval', eaApprovedBy: appUser.id, eaApprovedAt: now, eaRemarks: null }
       newStatus = 'md_pending'
       newStage = 'md_approval'
-      event = 'request_ea_approved'
     } else if (input.action === 'hold') {
       updateData = { ...updateData, status: 'ea_on_hold', currentStage: 'ea_approval', eaRemarks: input.remarks || null }
       newStatus = 'ea_on_hold'
       newStage = 'ea_approval'
-      event = 'request_held'
     } else {
       updateData = { ...updateData, status: 'ea_rejected', currentStage: 'ea_approval', rejectedAt: now, rejectedBy: appUser.id, eaRemarks: input.remarks || null }
       newStatus = 'ea_rejected'
-      event = 'request_rejected'
     }
   } else if (input.stage === 'md_approval') {
     if (!['md_pending', 'md_on_hold'].includes(request.status)) throw new Error('Request is not awaiting MD approval')
@@ -844,32 +809,27 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
       updateData = { ...updateData, status: 'accounts_pending', currentStage: 'accounts', mdApprovedBy: appUser.id, mdApprovedAt: now, mdRemarks: null }
       newStatus = 'accounts_pending'
       newStage = 'accounts'
-      event = 'request_md_approved'
     } else if (input.action === 'hold') {
       updateData = { ...updateData, status: 'md_on_hold', currentStage: 'md_approval', mdRemarks: input.remarks || null }
       newStatus = 'md_on_hold'
       newStage = 'md_approval'
-      event = 'request_held'
     } else {
       updateData = { ...updateData, status: 'md_rejected', currentStage: 'md_approval', rejectedAt: now, rejectedBy: appUser.id, mdRemarks: input.remarks || null }
       newStatus = 'md_rejected'
-      event = 'request_rejected'
     }
   } else if (input.stage === 'accounts') {
     if (!['accounts_pending', 'accounts_on_hold'].includes(request.status)) throw new Error('Request is not awaiting Accounts approval')
     if (input.action === 'reject') {
       updateData = { ...updateData, status: 'rejected', currentStage: 'accounts', rejectedAt: now, rejectedBy: appUser.id, accountsRemarks: input.remarks || null }
       newStatus = 'rejected'
-      event = 'request_rejected'
     } else if (input.action === 'hold') {
       updateData = { ...updateData, status: 'accounts_on_hold', currentStage: 'accounts', accountsRemarks: input.remarks || null }
       newStatus = 'accounts_on_hold'
       newStage = 'accounts'
-      event = 'request_held'
     } else {
       const approvedAmount = parseMoney(request.requestedAmount)
 
-      const { updatedRequest, history } = await db.transaction(async (tx) => {
+      const { updatedRequest } = await db.transaction(async (tx) => {
         const [activeAllocation] = await tx
           .select()
           .from(pettyCashAllocations)
@@ -970,7 +930,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
           },
         })
 
-        const [history] = await tx.insert(pettyCashApprovalHistory).values({
+        await tx.insert(pettyCashApprovalHistory).values({
           entityType: 'request',
           requestId: request.id,
           action: input.action,
@@ -985,18 +945,9 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
             finalAllocationAmount: toMoney(finalAllocationAmount),
             carryForwardAmount: toMoney(carryForwardAmount),
           },
-        }).returning({ id: pettyCashApprovalHistory.id, remarks: pettyCashApprovalHistory.remarks })
+        })
 
-        return { updatedRequest, history }
-      })
-
-      await createPettyCashNotifications({
-        event: 'request_approved',
-        entity: updatedRequest,
-        entityType: 'request',
-        actor: getActor(appUser),
-        historyId: history.id,
-        remarks: history.remarks,
+        return { updatedRequest }
       })
 
       return serializeRequest(updatedRequest)
@@ -1011,7 +962,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
 
   if (!updatedRequest) throw new Error('Request already moved to another stage')
 
-  const [history] = await db.insert(pettyCashApprovalHistory).values({
+  await db.insert(pettyCashApprovalHistory).values({
     entityType: 'request',
     requestId: request.id,
     action: input.action,
@@ -1022,18 +973,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
     previousStatus: request.status,
     newStatus,
     metadata: { nextStage: newStage },
-  }).returning({ id: pettyCashApprovalHistory.id, remarks: pettyCashApprovalHistory.remarks })
-
-  if (event) {
-    await createPettyCashNotifications({
-      event,
-      entity: updatedRequest,
-      entityType: 'request',
-      actor: getActor(appUser),
-      historyId: history.id,
-      remarks: history.remarks,
-    })
-  }
+  })
 
   return serializeRequest(updatedRequest)
 }
@@ -1055,7 +995,6 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
   let updateData: Partial<typeof pettyCashExpenses.$inferInsert> = { updatedAt: now }
   let newStatus = expense.status
   let newStage = expense.currentStage
-  let event: Parameters<typeof createPettyCashNotifications>[0]['event'] | null = null
 
   if (input.stage === 'ea_approval') {
     if (expense.status !== 'pending') throw new Error('Expense is not awaiting EA approval')
@@ -1063,11 +1002,9 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
       updateData = { ...updateData, status: 'ea_approved', currentStage: 'md_approval', eaApprovedBy: appUser.id, eaApprovedAt: now, eaRemarks: input.remarks || null }
       newStatus = 'ea_approved'
       newStage = 'md_approval'
-      event = 'expense_ea_approved'
     } else {
       updateData = { ...updateData, status: 'ea_rejected', rejectedAt: now, rejectedBy: appUser.id, eaRemarks: input.remarks || null }
       newStatus = 'ea_rejected'
-      event = 'expense_rejected'
     }
   } else if (input.stage === 'md_approval') {
     if (expense.status !== 'ea_approved') throw new Error('Expense is not awaiting MD approval')
@@ -1075,20 +1012,17 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
       updateData = { ...updateData, status: 'accounts_pending', currentStage: 'accounts', mdApprovedBy: appUser.id, mdApprovedAt: now, mdRemarks: input.remarks || null }
       newStatus = 'accounts_pending'
       newStage = 'accounts'
-      event = 'expense_md_approved'
     } else {
       updateData = { ...updateData, status: 'md_rejected', rejectedAt: now, rejectedBy: appUser.id, mdRemarks: input.remarks || null }
       newStatus = 'md_rejected'
-      event = 'expense_rejected'
     }
   } else if (input.stage === 'accounts') {
     if (expense.status !== 'accounts_pending') throw new Error('Expense is not awaiting Accounts approval')
     if (input.action === 'reject') {
       updateData = { ...updateData, status: 'rejected', rejectedAt: now, rejectedBy: appUser.id, accountsRemarks: input.remarks || null }
       newStatus = 'rejected'
-      event = 'expense_rejected'
     } else {
-      const { updatedExpense, history } = await db.transaction(async (tx) => {
+      const { updatedExpense } = await db.transaction(async (tx) => {
         const [updatedAllocation] = await tx
           .update(pettyCashAllocations)
           .set({
@@ -1131,7 +1065,7 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
           metadata: { expenseNumber: expense.expenseNumber, purpose: expense.purpose },
         })
 
-        const [history] = await tx.insert(pettyCashApprovalHistory).values({
+        await tx.insert(pettyCashApprovalHistory).values({
           entityType: 'expense',
           expenseId: expense.id,
           action: input.action,
@@ -1142,18 +1076,9 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
           previousStatus: expense.status,
           newStatus: 'approved',
           metadata: { remainingAfter: getRemainingBalance(updatedAllocation) },
-        }).returning({ id: pettyCashApprovalHistory.id, remarks: pettyCashApprovalHistory.remarks })
+        })
 
-        return { updatedExpense, history }
-      })
-
-      await createPettyCashNotifications({
-        event: 'expense_approved',
-        entity: updatedExpense,
-        entityType: 'expense',
-        actor: getActor(appUser),
-        historyId: history.id,
-        remarks: history.remarks,
+        return { updatedExpense }
       })
 
       return serializeExpense(updatedExpense)
@@ -1168,7 +1093,7 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
 
   if (!updatedExpense) throw new Error('Expense already moved to another stage')
 
-  const [history] = await db.insert(pettyCashApprovalHistory).values({
+  await db.insert(pettyCashApprovalHistory).values({
     entityType: 'expense',
     expenseId: expense.id,
     action: input.action,
@@ -1179,18 +1104,7 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
     previousStatus: expense.status,
     newStatus,
     metadata: { nextStage: newStage },
-  }).returning({ id: pettyCashApprovalHistory.id, remarks: pettyCashApprovalHistory.remarks })
-
-  if (event) {
-    await createPettyCashNotifications({
-      event,
-      entity: updatedExpense,
-      entityType: 'expense',
-      actor: getActor(appUser),
-      historyId: history.id,
-      remarks: history.remarks,
-    })
-  }
+  })
 
   return serializeExpense(updatedExpense)
 }

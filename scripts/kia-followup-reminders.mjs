@@ -1,5 +1,5 @@
-// Triggers the KIA follow-up reminder sweep (in-app notifications + per-assignee email digest) by
-// calling the app's secret-gated cron endpoint. Idempotent (reminder_sent_at + notification dedupe),
+// Triggers the KIA follow-up reminder sweep (per-assignee email digest) by
+// calling the app's secret-gated cron endpoint. Idempotent (reminder_sent_at),
 // so it is safe to run on any interval. Intended for a daily/hourly schedule (see the scheduler
 // sibling) or wired into n8n. Env: NEXT_PUBLIC_APP_URL (or FOLLOWUP_REMINDER_URL), FOLLOWUP_REMINDER_SECRET.
 import 'dotenv/config'
@@ -14,7 +14,7 @@ async function main() {
     console.error(`[followup-reminders] HTTP ${res.status}`, body)
     process.exit(1)
   }
-  console.log(`[followup-reminders] due=${body.due ?? 0} notified=${body.notified ?? 0} emailed=${body.emailed ?? 0}`)
+  console.log(`[followup-reminders] due=${body.due ?? 0} emailed=${body.emailed ?? 0}`)
 }
 
 main().catch((error) => { console.error('kia-followup-reminders failed:', error); process.exit(1) })

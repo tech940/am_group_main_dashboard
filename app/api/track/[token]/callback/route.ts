@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { kiaBookings, kiaCallbackRequests } from '@/lib/db/schema'
 import { verifyTrackingToken } from '@/lib/kia/tracking'
 import { getRecentPendingCallbackRequest } from '@/lib/kia/callback-requests'
-import { createKiaCallbackNotifications } from '@/lib/notifications/kia-callback'
+import { sendKiaCallbackRequestEmail } from '@/lib/kia/callback-email'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ ok: true, alreadyRequested: true })
     }
 
-    const [created] = await db
+    await db
       .insert(kiaCallbackRequests)
       .values({
         bookingId: booking.id,
@@ -68,17 +68,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         note,
         source: 'proforma_email',
       })
-      .returning({ id: kiaCallbackRequests.id })
 
-    // Fire-and-forget notifications — never let a notification failure fail the customer's request.
+    // Email the assigned Sales Executive + the dealer's Sales Manager / Sales GM / MD + tech@.
+    // Fire-and-forget — never let an email failure fail the customer's request.
     try {
-      await createKiaCallbackNotifications({
-        booking,
-        callbackRequestId: created.id,
-        preferredTime,
-      })
-    } catch (notifyError) {
-      console.error('Failed to create KIA callback notifications:', notifyError)
+      await sendKiaCallbackRequestEmail({ booking, preferredTime, note })
+    } catch (emailError) {
+      console.error('Failed to send KIA callback request email:', emailError)
     }
 
     return NextResponse.json({ ok: true })

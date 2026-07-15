@@ -873,8 +873,11 @@ function GenerateProforma({ options, onSaved, bookingPrefill }: { options: Optio
     if (!/^\d{10}$/.test(form.mobileNumber)) next.mobileNumber = 'Mobile number must be 10 digits'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) next.customerEmail = 'Valid email is required'
     const requiredKeys: (keyof FormState)[] = ['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'vehicleStatus']
-    // Bank is required only for finance bookings; a CASH payment leaves bank + branch optional.
-    if (!isCashPayment) requiredKeys.push('bankName')
+    // Bank and Branch are required only for finance bookings; a CASH payment leaves bank + branch optional.
+    if (!isCashPayment) {
+      requiredKeys.push('bankName')
+      requiredKeys.push('bankBranch')
+    }
     requiredKeys.forEach((key) => {
       if (!String(form[key] || '').trim()) next[key] = 'Required'
     })
@@ -2165,8 +2168,11 @@ function GMEditForm({
     if (!/^\d{10}$/.test(form.mobileNumber)) next.mobileNumber = 'Mobile number must be 10 digits'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) next.customerEmail = 'Valid email is required'
     const req: (keyof FormState)[] = ['customerAddress', 'modelName', 'trimDescription', 'fuelType', 'vehicleColor', 'vehicleStatus']
-    // Bank is required only for finance bookings; a CASH payment leaves bank + branch optional.
-    if (form.bankName.trim().toUpperCase() !== 'CASH') req.push('bankName')
+    // Bank and Branch are required only for finance bookings; a CASH payment leaves bank + branch optional.
+    if (form.bankName.trim().toUpperCase() !== 'CASH') {
+      req.push('bankName')
+      req.push('bankBranch')
+    }
     req.forEach((key) => {
       if (!String(form[key] || '').trim()) next[key] = 'Required'
     })

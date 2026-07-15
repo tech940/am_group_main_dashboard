@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { runFollowupReminders } from '@/lib/notifications/kia-followup'
+import { runFollowupReminders } from '@/lib/kia/followup-reminders'
 
 export const dynamic = 'force-dynamic'
 
-// Cron endpoint: sends in-app + email reminders for follow-ups now due. Secret-gated (?secret=) so
-// the scheduler (or n8n) can call it. Idempotent — safe to call as often as you like.
+// Cron endpoint: emails reminders for follow-ups now due. Secret-gated (?secret=) so the scheduler
+// (or n8n) can call it. Idempotent — safe to call as often as you like.
 export async function POST(request: Request) {
   const url = new URL(request.url)
   const secret = process.env.FOLLOWUP_REMINDER_SECRET

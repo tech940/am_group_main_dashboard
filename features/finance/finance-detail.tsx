@@ -20,6 +20,24 @@ import {
   type DetailResponse, type BankAttempt,
 } from './finance-shared'
 
+function getRemarkRoleStyles(role: string | null | undefined): string {
+  const r = String(role || '').toLowerCase().trim()
+  switch (r) {
+    case 'md':
+      return 'border-rose-200 bg-rose-50/70 text-rose-900'
+    case 'general_manager':
+      return 'border-amber-200 bg-amber-50/70 text-amber-900'
+    case 'sales_manager':
+      return 'border-indigo-200 bg-indigo-50/70 text-indigo-900'
+    case 'accounts':
+      return 'border-emerald-200 bg-emerald-50/70 text-emerald-900'
+    case 'sales_executive':
+      return 'border-sky-200 bg-sky-50/70 text-sky-900'
+    default:
+      return 'border-slate-200 bg-slate-50/60 text-slate-900'
+  }
+}
+
 async function fetchDetail(proformaId: string): Promise<DetailResponse> {
   const res = await fetch(`/api/finance/${proformaId}`, { cache: 'no-store' })
   const data = await res.json().catch(() => ({}))
@@ -306,9 +324,9 @@ export function FinanceDetail({ proformaId, canApprove, onBack }: { proformaId: 
             ) : (
               <div className="space-y-3">
                 {[...remarks].reverse().map((r) => (
-                  <div key={r.id} className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
-                    <p className="text-sm font-medium text-slate-800 whitespace-pre-wrap">{r.remark}</p>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-400">{r.createdByName} · {roleLabel(r.createdByRole)} · {formatDateTime(r.createdAt)}</p>
+                  <div key={r.id} className={cn("rounded-lg border px-3 py-2", getRemarkRoleStyles(r.createdByRole))}>
+                    <p className="text-sm font-medium whitespace-pre-wrap">{r.remark}</p>
+                    <p className="mt-1 text-[11px] font-semibold opacity-75">{r.createdByName} · {roleLabel(r.createdByRole)} · {formatDateTime(r.createdAt)}</p>
                   </div>
                 ))}
               </div>
@@ -328,7 +346,14 @@ export function FinanceDetail({ proformaId, canApprove, onBack }: { proformaId: 
                   <li key={a.id} className="relative">
                     <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-indigo-500" />
                     <p className="text-sm font-bold text-slate-800">{a.title}</p>
-                    {a.description && <p className="mt-0.5 text-xs font-medium text-slate-600 break-words">{a.description}</p>}
+                    {a.description && (
+                      <div className={cn(
+                        "mt-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold border w-fit max-w-full break-words",
+                        getRemarkRoleStyles(a.actorRole)
+                      )}>
+                        {a.description}
+                      </div>
+                    )}
                     <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-slate-400">
                       <User className="h-3 w-3" /> {a.actorName} · {roleLabel(a.actorRole)}
                     </p>

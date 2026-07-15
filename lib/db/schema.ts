@@ -269,31 +269,8 @@ export const attachments = pgTable('attachments', {
   deletedAt: timestamp('deleted_at'),
 })
 
-// Notifications table
-export const notifications = pgTable('notifications', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  title: text('title').notNull(),
-  message: text('message').notNull(),
-  type: text('type').notNull(), // 'info', 'success', 'warning', 'error'
-  actionUrl: text('action_url'),
-  purchaseOrderId: uuid('purchase_order_id'),
-  entityType: text('entity_type'),
-  entityId: uuid('entity_id'),
-  referenceNumber: text('reference_number'),
-  workflowStage: text('workflow_stage'),
-  targetRole: roleEnum('target_role'),
-  dedupeKey: text('dedupe_key').notNull(),
-  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
-  isRead: boolean('is_read').default(false).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  readAt: timestamp('read_at', { withTimezone: true }),
-}, (table) => ({
-  notificationsUserReadCreatedIdx: index('notifications_user_read_created_idx').on(table.userId, table.isRead, table.createdAt),
-  notificationsPurchaseOrderIdx: index('notifications_purchase_order_idx').on(table.purchaseOrderId),
-  notificationsEntityIdx: index('notifications_entity_idx').on(table.entityType, table.entityId),
-  notificationsUserDedupeIdx: uniqueIndex('notifications_user_dedupe_idx').on(table.userId, table.dedupeKey),
-}))
+// (The `notifications` table + its Drizzle model were removed with the in-app notification system.
+// The physical table is left in the database — drop it separately if you want it gone for good.)
 
 // Activity logs table
 export const activityLogs = pgTable('activity_logs', {
@@ -1167,7 +1144,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   tasksCreated: many(tasks),
   comments: many(comments),
   attachments: many(attachments),
-  notifications: many(notifications),
   activityLogs: many(activityLogs),
   userActivityEvents: many(userActivityEvents),
   pettyCashRequests: many(pettyCashRequests),
@@ -1244,13 +1220,6 @@ export const commentsRelations = relations(comments, ({ one }) => ({
 export const attachmentsRelations = relations(attachments, ({ one }) => ({
   uploadedByUser: one(users, {
     fields: [attachments.uploadedBy],
-    references: [users.id],
-  }),
-}))
-
-export const notificationsRelations = relations(notifications, ({ one }) => ({
-  user: one(users, {
-    fields: [notifications.userId],
     references: [users.id],
   }),
 }))

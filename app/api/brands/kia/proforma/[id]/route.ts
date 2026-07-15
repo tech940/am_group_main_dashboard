@@ -31,6 +31,7 @@ const PROFORMA_EMAIL_CC = [
   'aryan@jammuautomart.com',
   'edp@amkia.in',
   'sanjay@amgroupind.com',
+  'tech@amgroupind.com',
 ] as const
 
 const VERIFY_FIELDS = [

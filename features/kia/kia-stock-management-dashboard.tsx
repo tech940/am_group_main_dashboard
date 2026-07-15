@@ -14,7 +14,7 @@ import {
   Car, Plus, Search, RefreshCw, Loader2, ShieldCheck, FileText, 
   CheckCircle2, XCircle, Truck, WalletCards, BadgeIndianRupee, 
   Calendar, ChevronRight, AlertTriangle, AlertCircle, Share2, ClipboardList,
-  ChevronDown, X
+  ChevronDown, X, Users
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -277,12 +277,12 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     refetchOnMount: 'always',
   })
 
-  // Query approved bookings for allotment dropdown
+  // Query unallocated active bookings for allotment matching
   const { data: bookingsData, isLoading: isLoadingBookings } = useQuery<{ rows: BookingOption[] }>({
-    queryKey: ['kia-approved-bookings-for-allot'],
+    queryKey: ['kia-unallocated-active-bookings'],
     queryFn: async () => {
-      const response = await fetch('/api/brands/kia/bookings?status=proforma_generated&pageSize=100')
-      if (!response.ok) throw new Error('Failed to load approved bookings')
+      const response = await fetch('/api/brands/kia/bookings?unallocated=true&pageSize=1000')
+      if (!response.ok) throw new Error('Failed to load unallocated active bookings')
       return response.json()
     },
     staleTime: 15_000,
@@ -854,12 +854,12 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); setBadgeDrawerVin(row.vin_number) }}
-                              className="mt-1.5 flex items-center gap-1 text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md w-fit transition-all hover:bg-amber-100 hover:border-amber-300 hover:shadow-sm active:scale-95 cursor-pointer"
+                              className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full w-fit transition-all hover:bg-amber-200 hover:border-amber-300 hover:shadow-sm active:scale-95 cursor-pointer"
                               title="View matching bookings"
                             >
-                              <AlertTriangle className="h-2.5 w-2.5 text-amber-600 shrink-0" />
-                              <span>{count} BOOKING{count > 1 ? 'S' : ''} MATCH</span>
-                              <ChevronRight className="h-2.5 w-2.5 text-amber-500 shrink-0" />
+                              <Users className="h-3 w-3 text-amber-700 shrink-0" />
+                              <span>{count} Booking{count > 1 ? 's' : ''}</span>
+                              <ChevronRight className="h-2.5 w-2.5 text-amber-600 shrink-0" />
                             </button>
                           )
                         })()}

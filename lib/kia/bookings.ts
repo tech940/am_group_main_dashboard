@@ -15,7 +15,6 @@ import {
   kiaPriceDetails,
 } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
-import { createKiaSoldVehicleNotifications, type KiaSoldVehicle } from '@/lib/notifications/kia-callback'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
 import {
   canAllotKiaVehicle,
@@ -70,6 +69,7 @@ export type BookingListInput = {
   // Dealer/branch codes the user is restricted to (null/empty = all branches). A hard boundary
   // applied to the list, KPIs, and filter options — set from the user's dealer scope server-side.
   allowedDealers?: string[] | null
+  unallocated?: string | boolean | null
 }
 
 export type CreateBookingInput = {
@@ -215,10 +215,22 @@ export async function expireKiaTemporaryAllocations() {
   })
 }
 
+/** A vehicle whose allotted VIN has vanished from the DMS stock feed (i.e. likely sold elsewhere). */
+export type KiaSoldVehicle = {
+  id: string // allocation id
+  bookingId: string
+  vinNumber: string
+  bookingNumber: string
+  customerName: string
+  model: string
+  dealerCode: string | null
+  createdBy: string | null
+}
+
 // Detects allotted vehicles whose VIN has DISAPPEARED from the DMS stock feed (kia_stock_management)
 // and flags them 'sold'. Retention itself is already handled by the allocation row's vehicleSnapshot;
 // this adds the per-allocation "sold" status + a booking-activity timeline row. Idempotent (the
-// stock_missing_at guard). Returns the rows that transitioned to 'sold' so the caller can alert.
+// stock_missing_at guard). Returns the rows that transitioned to 'sold'.
 export async function markKiaSoldAllocations(): Promise<KiaSoldVehicle[]> {
   // 1. Refresh "last seen in stock" for active allocations whose VIN is currently present. A VIN
   //    must have been seen at least once before it can be marked missing (guards against allocations
@@ -338,8 +350,9 @@ async function maybeSweepSoldAllocations() {
   if (now - lastSoldSweepAt < SOLD_SWEEP_INTERVAL_MS) return
   lastSoldSweepAt = now
   try {
-    const sold = await markKiaSoldAllocations()
-    if (sold.length) await createKiaSoldVehicleNotifications(sold)
+    // Marks allocations whose VIN left the DMS feed. The booking row keeps the durable
+    // `metadata.vehicleNotInStock` flag, which drives the "sold / not in stock" badge in the CRM.
+    await markKiaSoldAllocations()
   } catch (error) {
     console.error('Sold-allocation sweep failed:', error)
   }
@@ -381,11 +394,56 @@ function listFilters(input: BookingListInput) {
   // Branch boundary: a dealer-scoped user can never see another branch's bookings.
   if (input.allowedDealers && input.allowedDealers.length) filters.push(inArray(kiaBookings.dealerCode, input.allowedDealers))
   if (text(input.model) && text(input.model).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.model, text(input.model)))
+  
+  if (input.unallocated === true || String(input.unallocated).toLowerCase() === 'true') {
+    filters.push(sql`
+      (
+        kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
+        AND NOT EXISTS (
+          SELECT 1 FROM kia_vehicle_allocations va
+          WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
+        )
+      )
+    `)
+  }
+
   if (text(input.status) && text(input.status).toLowerCase() === 'not_in_stock') {
     filters.push(sql`
       (
         kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
         AND (
+          (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
+          OR
+          (
+            NOT EXISTS (
+              SELECT 1 FROM kia_vehicle_allocations va
+              WHERE va.booking_id = kia_bookings.id AND va.released_at IS NULL
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM kia_stock_management sm
+              LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+              WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
+                AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+                AND (sm.model ILIKE '%' || kia_bookings.model || '%' OR kia_bookings.model ILIKE '%' || sm.model || '%')
+                AND (
+                  coalesce(sm.variant, '') = ''
+                  OR sm.variant ILIKE '%' || kia_bookings.variant || '%'
+                  OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM kia_vehicle_allocations aa
+                  WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
+                )
+            )
+          )
+        )
+      )
+    `)
+  } else if (text(input.status) && text(input.status).toLowerCase() === 'in_stock') {
+    filters.push(sql`
+      (
+        kia_bookings.status NOT IN ('draft', 'delivered', 'cancelled')
+        AND NOT (
           (kia_bookings.metadata->>'vehicleNotInStock')::boolean IS TRUE
           OR
           (
@@ -528,6 +586,38 @@ export async function getKiaBookingsList(input: BookingListInput) {
               )
             )
             ${dealerScopeKb}) AS not_in_stock_count,
+        (SELECT count(*)::int FROM kia_bookings kb
+          WHERE kb.deleted_at IS NULL
+            AND kb.status NOT IN ('draft', 'delivered', 'cancelled')
+            AND NOT (
+              -- Path 1: allocated VIN left the DMS (metadata flag set by stock-watcher job)
+              (kb.metadata->>'vehicleNotInStock')::boolean IS TRUE
+              OR
+              -- Path 2: no active allocation AND no matching free stock right now
+              (
+                NOT EXISTS (
+                  SELECT 1 FROM kia_vehicle_allocations va
+                  WHERE va.booking_id = kb.id AND va.released_at IS NULL
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM kia_stock_management sm
+                  LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
+                  WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
+                    AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
+                    AND (sm.model ILIKE '%' || kb.model || '%' OR kb.model ILIKE '%' || sm.model || '%')
+                    AND (
+                      coalesce(sm.variant, '') = ''
+                      OR sm.variant ILIKE '%' || kb.variant || '%'
+                      OR kb.variant ILIKE '%' || sm.variant || '%'
+                    )
+                    AND NOT EXISTS (
+                      SELECT 1 FROM kia_vehicle_allocations aa
+                      WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
+                    )
+                )
+              )
+            )
+            ${dealerScopeKb}) AS in_stock_count,
         COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'variant', variant, 'count', cnt) ORDER BY cnt DESC, model ASC, variant ASC) FROM (
           SELECT model, variant, count(*)::int AS cnt
           FROM kia_bookings
@@ -574,6 +664,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
     active_allocations: number
     no_payment_count: number
     not_in_stock_count: number
+    in_stock_count: number
     not_in_stock_breakdown: { model: string; variant: string; count: number }[] | null
   }>(aggRows)[0]
   const statusCounts = agg?.status_counts || {}
@@ -661,6 +752,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
       delivered: statusCounts.delivered || 0,
       cancelled: statusCounts.cancelled || 0,
       notInStock: Number(agg?.not_in_stock_count || 0),
+      inStock: Number(agg?.in_stock_count || 0),
     },
     // #10 Bookings & vehicles summary — full status distribution, allocation state, and top models.
     summary: {
@@ -681,7 +773,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
       dealers: (agg?.dealers || []).map((value) => text(value)).filter(Boolean),
       models: (agg?.models || []).map((value) => text(value)).filter(Boolean),
       consultants: (agg?.consultants || []).map((value) => text(value)).filter(Boolean),
-      statuses: [...KIA_BOOKING_STATUSES, 'not_in_stock'],
+      statuses: [...KIA_BOOKING_STATUSES, 'not_in_stock', 'in_stock'],
     },
   }
 }

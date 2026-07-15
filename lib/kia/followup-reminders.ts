@@ -1,8 +1,5 @@
 import 'server-only'
 
-import { and, inArray, isNull } from 'drizzle-orm'
-import { db } from '@/lib/db'
-import { notifications, users } from '@/lib/db/schema'
 import { env } from '@/config/env-config'
 import { getDueFollowupsForReminders, markReminderSent, type DueFollowup } from '@/lib/kia/lead-followups'
 import { sendEmail } from '@/lib/email/email-service'
@@ -13,44 +10,15 @@ const REASON_LABEL: Record<string, string> = {
   callback: 'Callback', payment_pending: 'Payment pending', document_pending: 'Documents', delivery: 'Delivery', general: 'General',
 }
 
-// Runs the follow-up reminder sweep: for every pending follow-up now due (and not yet reminded),
-// send the assignee an in-app notification, then one digest email per assignee. Idempotent via
-// reminder_sent_at + the notification (userId, dedupeKey) unique index. Content is PII-free
-// (customer name + model + booking number only — never the phone).
-export async function runFollowupReminders(): Promise<{ due: number; notified: number; emailed: number }> {
+// Runs the follow-up reminder sweep: for every pending follow-up now due (and not yet reminded), send
+// the assignee one digest email. Idempotent via reminder_sent_at. Content is PII-free (customer name +
+// model + booking number only — never the phone).
+// (The in-app notification half was removed with the notification system; email is the only channel.)
+export async function runFollowupReminders(): Promise<{ due: number; emailed: number }> {
   const due = await getDueFollowupsForReminders()
-  if (!due.length) return { due: 0, notified: 0, emailed: 0 }
+  if (!due.length) return { due: 0, emailed: 0 }
 
-  // 1. In-app notifications for follow-ups that have an assigned user.
-  const withUser = due.filter((f) => f.assignedTo)
-  let notified = 0
-  if (withUser.length) {
-    const roleRows = await db.select({ id: users.id, role: users.role })
-      .from(users)
-      .where(and(inArray(users.id, withUser.map((f) => f.assignedTo!)), isNull(users.deletedAt)))
-    const roleById = new Map(roleRows.map((r) => [r.id, r.role]))
-    const now = new Date()
-    const rows = withUser.map((f) => ({
-      userId: f.assignedTo!,
-      title: 'Follow-up due',
-      message: `${f.customerName} · ${REASON_LABEL[f.reason] || f.reason}${f.bookingNumber ? ` · ${f.bookingNumber}` : ''}`,
-      type: 'info' as const,
-      actionUrl: '/brands/kia/follow-ups',
-      entityType: 'kia_followup',
-      entityId: f.bookingId,
-      referenceNumber: f.bookingNumber,
-      targetRole: roleById.get(f.assignedTo!) ?? null,
-      dedupeKey: `followup-due:${f.id}`,
-      createdAt: now,
-      metadata: { module: 'kia_followups', event: 'followup_due', followupId: f.id, bookingId: f.bookingId, reason: f.reason },
-    }))
-    const inserted = await db.insert(notifications).values(rows)
-      .onConflictDoNothing({ target: [notifications.userId, notifications.dedupeKey] })
-      .returning({ id: notifications.id })
-    notified = inserted.length
-  }
-
-  // 2. One digest email per assignee (grouped by email).
+  // One digest email per assignee (grouped by email).
   const byEmail = new Map<string, DueFollowup[]>()
   for (const f of due) {
     const email = String(f.assignedEmail || '').trim()
@@ -67,9 +35,9 @@ export async function runFollowupReminders(): Promise<{ due: number; notified: n
     }
   }
 
-  // 3. Mark ALL processed due follow-ups as reminded (even unassigned) so they aren't reprocessed.
+  // Mark ALL processed due follow-ups as reminded (even unassigned) so they aren't reprocessed.
   await markReminderSent(due.map((f) => f.id))
-  return { due: due.length, notified, emailed }
+  return { due: due.length, emailed }
 }
 
 function digestHtml(items: DueFollowup[]): string {
