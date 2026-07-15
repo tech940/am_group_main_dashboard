@@ -1468,8 +1468,12 @@ export async function GET(request: Request) {
         }
       }
       if (view === 'table' && groupBy === 'work_type' && !hasFilters) {
-        const cancelledSummary = await timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode))
-        const aggregateRows = await timer.time('work-type-sql-summary', () => fetchWorkTypeAggregateRows(windows, dealerCode))
+        // Two independent heavy dedup queries — they were awaited serially, so the fast path paid both
+        // round trips back-to-back on the endpoint with the worst per-call CPU.
+        const [cancelledSummary, aggregateRows] = await Promise.all([
+          timer.time('cancelled-billing-summary', () => fetchCancelledBillingSummary(startDate, endDate, dealerCode)),
+          timer.time('work-type-sql-summary', () => fetchWorkTypeAggregateRows(windows, dealerCode)),
+        ])
         if (batchMetrics) {
           const byMetric = Object.fromEntries(RO_ANALYSIS_TYPES.map((type) => {
             const rows = aggregateRowsToStats(aggregateRows, type)

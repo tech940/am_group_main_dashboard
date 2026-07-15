@@ -56,7 +56,9 @@
     "verify:nav-map": "tsx scripts/verify-nav-map.ts",
     "verify:guard-parity": "tsx scripts/verify-guard-parity.ts",
     "verify:snapshot-parity": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-snapshot-parity.ts",
-    "verify:dealers": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-dealer-scope.ts"
+    "verify:dealers": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-dealer-scope.ts",
+    "kia:maintenance": "node scripts/kia-maintenance.mjs",
+    "kia:maintenance:scheduler": "node scripts/kia-maintenance-scheduler.mjs"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",

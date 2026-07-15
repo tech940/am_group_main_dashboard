@@ -340,52 +340,12 @@ export async function markKiaTransferMissing(): Promise<void> {
   `)
 }
 
-// Debounced self-heal: run the sold-vehicle sweep at most once per window so booking-detail /
-// stock reads keep a fresh "sold" badge without a full-table scan on every request. The scheduled
-// script (scripts/kia-detect-sold-allocations.mjs) is the primary, reliable trigger.
-let lastSoldSweepAt = 0
-const SOLD_SWEEP_INTERVAL_MS = 5 * 60 * 1000
-async function maybeSweepSoldAllocations() {
-  const now = Date.now()
-  if (now - lastSoldSweepAt < SOLD_SWEEP_INTERVAL_MS) return
-  lastSoldSweepAt = now
-  try {
-    // Marks allocations whose VIN left the DMS feed. The booking row keeps the durable
-    // `metadata.vehicleNotInStock` flag, which drives the "sold / not in stock" badge in the CRM.
-    await markKiaSoldAllocations()
-  } catch (error) {
-    console.error('Sold-allocation sweep failed:', error)
-  }
-  try {
-    await markKiaTransferMissing()
-  } catch (error) {
-    // Missing retention columns (migration 0013 pending) or transient error — never break the read.
-    console.error('Transfer-presence sweep failed:', error)
-  }
-}
-
-// Debounced housekeeping: expire lapsed temporary allocations (#13/#14) and unpaid 48h dealer holds
-// (#12) at most once per window, instead of running a DB transaction + delete on EVERY read. The
-// scheduled script is the reliable global trigger; this just keeps interactive reads reasonably fresh
-// without burning Vercel CPU on every booking-detail / match-vehicle view. (Serverless: the timestamp
-// is per warm instance, which is exactly what we want — one sweep amortised across a burst of requests.)
-let lastReservationExpiryAt = 0
-const RESERVATION_EXPIRY_INTERVAL_MS = 2 * 60 * 1000
-async function maybeExpireKiaReservations() {
-  const now = Date.now()
-  if (now - lastReservationExpiryAt < RESERVATION_EXPIRY_INTERVAL_MS) return
-  lastReservationExpiryAt = now
-  try {
-    await expireKiaTemporaryAllocations()
-  } catch (error) {
-    console.error('Allocation-expiry sweep failed:', error)
-  }
-  try {
-    await expireKiaStockHolds()
-  } catch (error) {
-    console.error('Hold-expiry sweep failed:', error)
-  }
-}
+// (The debounced read-path self-heal wrappers `maybeSweepSoldAllocations` + `maybeExpireKiaReservations`
+// were removed. They ran write transactions + full-table scans inside user reads to burn Vercel Fluid
+// CPU on the hottest endpoint, and their module-level debounce was per warm instance anyway. All four
+// sweeps — expireKiaTemporaryAllocations, expireKiaStockHolds, markKiaSoldAllocations,
+// markKiaTransferMissing — now run ONLY from the scheduled job: POST /api/brands/kia/maintenance
+// (`npm run kia:maintenance:scheduler`). Reads are read-only.)
 
 function listFilters(input: BookingListInput) {
   const filters = [isNull(kiaBookings.deletedAt)]
@@ -832,19 +792,46 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
 }
 
 export async function getKiaBookingDetail(id: string) {
-  // Debounced: don't run an expiry transaction on every single detail view (Vercel CPU).
-  await maybeExpireKiaReservations()
-  // Fire-and-forget, debounced: refresh "sold" flags for allotted vehicles gone from DMS stock.
-  void maybeSweepSoldAllocations()
+  // READ-ONLY. The allocation/hold expiry + sold-vehicle sweeps used to run here (awaited + fire-and-
+  // forget) — write transactions and full-table scans on the critical path of the app's hottest
+  // endpoint. They now run only from the scheduled maintenance job: POST /api/brands/kia/maintenance
+  // (npm run kia:maintenance:scheduler).
   const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
   if (!booking) return null
 
+  // Every select below is projected to EXACTLY the columns the route serializes (see detailPayload in
+  // app/api/brands/kia/bookings/[id]/route.ts). A bare `db.select()` here was pulling, per request:
+  //   • activity: before_value + after_value — jsonb holding WHOLE kia_bookings snapshots — for up to
+  //     100 rows (~200 blobs) that the route discards entirely;
+  //   • transfers: metadata + vehicle_snapshot jsonb for up to 50 rows, to render 4;
+  //   • proforma: 48 columns to use 3; financeOrder: 34 columns to use 4.
+  // The driver deserialises all of that into JS objects, and Vercel Fluid bills Active CPU (JS work) —
+  // so the discarded JSONB was the bill. Projections keep the response byte-identical.
   const [activeAllocationRows, activity, transfers, proformaRows, financeRows] = await Promise.all([
     db.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt))).limit(1),
-    db.select().from(kiaBookingActivity).where(eq(kiaBookingActivity.bookingId, id)).orderBy(desc(kiaBookingActivity.createdAt)).limit(100),
-    db.select().from(kiaVehicleTransfers).where(eq(kiaVehicleTransfers.bookingId, id)).orderBy(desc(kiaVehicleTransfers.createdAt)).limit(50),
-    booking.proformaId ? db.select().from(kiaProformas).where(eq(kiaProformas.id, booking.proformaId)).limit(1) : Promise.resolve([]),
-    booking.financeOrderId ? db.select().from(financeOrders).where(eq(financeOrders.id, booking.financeOrderId)).limit(1) : Promise.resolve([]),
+    db.select({
+      id: kiaBookingActivity.id,
+      activityType: kiaBookingActivity.activityType,
+      title: kiaBookingActivity.title,
+      actorName: kiaBookingActivity.actorName,
+      createdAt: kiaBookingActivity.createdAt,
+    }).from(kiaBookingActivity).where(eq(kiaBookingActivity.bookingId, id)).orderBy(desc(kiaBookingActivity.createdAt)).limit(100),
+    db.select({
+      id: kiaVehicleTransfers.id,
+      vinNumber: kiaVehicleTransfers.vinNumber,
+      fromDealerCode: kiaVehicleTransfers.fromDealerCode,
+      toDealerCode: kiaVehicleTransfers.toDealerCode,
+      transferStatus: kiaVehicleTransfers.transferStatus,
+      createdAt: kiaVehicleTransfers.createdAt,
+    }).from(kiaVehicleTransfers).where(eq(kiaVehicleTransfers.bookingId, id)).orderBy(desc(kiaVehicleTransfers.createdAt)).limit(50),
+    booking.proformaId
+      ? db.select({ id: kiaProformas.id, approvalStatus: kiaProformas.approvalStatus, createdAt: kiaProformas.createdAt })
+        .from(kiaProformas).where(eq(kiaProformas.id, booking.proformaId)).limit(1)
+      : Promise.resolve([]),
+    booking.financeOrderId
+      ? db.select({ id: financeOrders.id, orderNumber: financeOrders.orderNumber, status: financeOrders.status, createdAt: financeOrders.createdAt })
+        .from(financeOrders).where(eq(financeOrders.id, booking.financeOrderId)).limit(1)
+      : Promise.resolve([]),
   ])
 
   return {
@@ -1057,9 +1044,8 @@ async function readMatchingVehicle(vinNumber: string) {
 }
 
 export async function getKiaBookingMatchingVehicles(id: string) {
-  // Debounced: expire lapsed allocations + unpaid dealer holds so freed VINs become matchable, without
-  // running a transaction on every match-vehicle read.
-  await maybeExpireKiaReservations()
+  // READ-ONLY: the expiry sweep that freed lapsed VINs for matching now runs on the scheduled
+  // maintenance job (POST /api/brands/kia/maintenance), not on this read.
   const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
   if (!booking) throw new Error('Booking not found')
   if (!booking.proformaId) return []

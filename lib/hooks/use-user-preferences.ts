@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 export interface UserPreference {
   id: string
@@ -11,122 +12,75 @@ export interface UserPreference {
   updatedAt: string
 }
 
-function preferenceValuesEqual(left: unknown, right: unknown) {
-  if (Object.is(left, right)) return true
+// ONE shared query for ALL of the user's preferences.
+//
+// This used to be a raw useEffect fetch of ONE key per hook instance: every mount re-hit
+// /api/user-preferences (no React Query cache), and two components asking for the same key fired two
+// requests and then held two divergent copies of the same state. The route already supports a batched
+// read (GET with no ?key= returns every preference), so we fetch that once, cache it under a single
+// key, and let each caller select its own slice. The per-key public API is unchanged.
+const PREFERENCES_QUERY_KEY = ['user-preferences'] as const
 
-  try {
-    return JSON.stringify(left) === JSON.stringify(right)
-  } catch {
-    return false
+type PreferenceMap = Record<string, unknown>
+
+async function fetchAllPreferences(): Promise<PreferenceMap> {
+  const response = await fetch('/api/user-preferences')
+  if (!response.ok) throw new Error(`Failed to load preferences: ${response.status}`)
+  const data = (await response.json()) as { preferences?: UserPreference[] }
+  const map: PreferenceMap = {}
+  for (const preference of data.preferences ?? []) {
+    map[preference.preferenceKey] = preference.preferenceValue
   }
+  return map
 }
 
 export function useUserPreferences<T = Record<string, unknown>>(
   key: string,
   defaultValue: T
 ) {
-  const [value, setValue] = useState<T>(defaultValue)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const defaultValueRef = useRef(defaultValue)
+  const queryClient = useQueryClient()
 
-  // Load preference on mount
-  useEffect(() => {
-    let isActive = true
+  // Inherits the global defaults (30min staleTime, no refetch on mount/focus/reconnect).
+  const query = useQuery({
+    queryKey: PREFERENCES_QUERY_KEY,
+    queryFn: fetchAllPreferences,
+  })
 
-    const loadPreference = async () => {
-      try {
-        if (isActive) setLoading(true)
-        const response = await fetch(`/api/user-preferences?key=${encodeURIComponent(key)}`)
-        
-        if (!response.ok) {
-          console.warn(`Failed to load preference for key "${key}":`, response.statusText)
-          if (isActive) {
-            setError(`Failed to load preference: ${response.status}`)
-            setValue((current) => preferenceValuesEqual(current, defaultValueRef.current) ? current : defaultValueRef.current)
-          }
-          return
-        }
+  const stored = query.data ? query.data[key] : undefined
+  const value = (stored === undefined ? defaultValue : stored) as T
 
-        const data = await response.json()
+  // Writes straight into the shared cache, so every component on this key updates together.
+  const setValue = useCallback((next: T) => {
+    queryClient.setQueryData<PreferenceMap>(PREFERENCES_QUERY_KEY, (current) => ({
+      ...(current ?? {}),
+      [key]: next,
+    }))
+  }, [queryClient, key])
 
-        const nextValue = data.preference && data.preference.preferenceValue !== undefined
-          ? data.preference.preferenceValue as T
-          : defaultValueRef.current
-
-        if (isActive) {
-          setValue((current) => preferenceValuesEqual(current, nextValue) ? current : nextValue)
-          setError(null)
-        }
-      } catch (err) {
-        console.error('Error loading preference:', err)
-        if (isActive) {
-          setError(err instanceof Error ? err.message : 'Unknown error')
-          setValue((current) => preferenceValuesEqual(current, defaultValueRef.current) ? current : defaultValueRef.current)
-        }
-      } finally {
-        if (isActive) setLoading(false)
-      }
-    }
-
-    void loadPreference()
-
-    return () => {
-      isActive = false
-    }
-  }, [key])
-
-  // Save preference
   const savePreference = useCallback(async (newValue: T) => {
-    try {
-      const response = await fetch('/api/user-preferences', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          key,
-          value: newValue,
-        }),
-      })
+    setValue(newValue) // optimistic — the server is the durable copy, the cache is the live one
+    const response = await fetch('/api/user-preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value: newValue }),
+    })
+    if (!response.ok) throw new Error('Failed to save preference')
+  }, [key, setValue])
 
-      if (!response.ok) {
-        throw new Error('Failed to save preference')
-      }
-
-      setValue(newValue)
-      setError(null)
-    } catch (err) {
-      console.error('Error saving preference:', err)
-      setError(err instanceof Error ? err.message : 'Unknown error')
-      throw err
-    }
-  }, [key])
-
-  // Delete preference
   const deletePreference = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/user-preferences?key=${encodeURIComponent(key)}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete preference')
-      }
-
-      setValue((current) => preferenceValuesEqual(current, defaultValueRef.current) ? current : defaultValueRef.current)
-      setError(null)
-    } catch (err) {
-      console.error('Error deleting preference:', err)
-      setError(err instanceof Error ? err.message : 'Unknown error')
-      throw err
-    }
-  }, [key])
+    const response = await fetch(`/api/user-preferences?key=${encodeURIComponent(key)}`, { method: 'DELETE' })
+    if (!response.ok) throw new Error('Failed to delete preference')
+    queryClient.setQueryData<PreferenceMap>(PREFERENCES_QUERY_KEY, (current) => {
+      const next = { ...(current ?? {}) }
+      delete next[key]
+      return next
+    })
+  }, [queryClient, key])
 
   return {
     value,
-    loading,
-    error,
+    loading: query.isLoading,
+    error: query.error ? (query.error as Error).message : null,
     savePreference,
     deletePreference,
     setValue, // For optimistic updates
@@ -158,5 +112,3 @@ export function usePurchaseOrdersViewPreference() {
     DEFAULT_PURCHASE_ORDERS_VIEW_PREFERENCE
   )
 }
-
-// Made with Bob

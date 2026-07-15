@@ -5,7 +5,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 import { requirePermission } from '@/lib/permissions/service'
-import { expireKiaStockHolds, KIA_HOLD_WINDOW_HOURS } from '@/lib/kia/bookings'
+import { KIA_HOLD_WINDOW_HOURS } from '@/lib/kia/bookings'
 
 export const dynamic = 'force-dynamic'
 
@@ -270,7 +270,8 @@ export async function GET(request: Request) {
     // VIN to stock). hold_expires_at = marked_at + 48h; paid = stock_status_at_mark 'PAID'.
     let heldVehicles: unknown[] = []
     try {
-      await expireKiaStockHolds()
+      // (Hold expiry moved off this read path — it now runs on the scheduled maintenance job,
+      // POST /api/brands/kia/maintenance. This route just reads the current hold rows.)
       const heldDealerClause = dealerScope && dealerScope.length
         ? `AND ls.dealer_code IN (${dealerScope.map((d) => `'${d.replace(/'/g, "''")}'`).join(', ')})`
         : ''

@@ -4,7 +4,7 @@
 
 import { toast } from '@/hooks/use-toast'
 
-import { ChangeEvent, createContext, FormEvent, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
 import {
@@ -1292,8 +1292,12 @@ export function KiaBookingsClient({
     queryKey: ['kia-booking-detail', selectedBookingId],
     queryFn: () => fetchJson<BookingDetailPayload>(`/api/brands/kia/bookings/${selectedBookingId}`, 'kia-booking-detail'),
     enabled: Boolean(selectedBookingId),
-    retry: 2,
-    staleTime: 10_000,
+    // staleTime matches the hover prefetch (60s) — at 10s the prefetch went stale before the user could
+    // click, so opening a row refetched what we had just fetched. retry:2 meant up to 3x the cost of the
+    // app's most expensive endpoint on a blip; every mutation below invalidates this key explicitly, so
+    // freshness does not depend on a short staleTime.
+    retry: 1,
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
   })
 
@@ -1483,15 +1487,18 @@ export function KiaBookingsClient({
     notInStock: 0,
   }
 
-  useEffect(() => {
-    rows.slice(0, 8).forEach((row) => {
-      queryClient.prefetchQuery({
-        queryKey: ['kia-booking-detail', row.id],
-        queryFn: () => fetchJson<BookingDetailPayload>(`/api/brands/kia/bookings/${row.id}`, 'kia-booking-detail'),
-        staleTime: 10_000,
-      })
+  // Prefetch the detail on INTENT (hover/focus of a row) rather than eagerly for the first N rows.
+  // The eager version fired 8 full booking-detail requests on every list load / filter / invalidation —
+  // for records the user usually never opened — and each of those is an expensive endpoint. Hover
+  // keeps the instant-open feel while only paying for rows the user actually points at, and the
+  // 60s staleTime stops a mouse sweep across the table from refetching the same row repeatedly.
+  const prefetchBookingDetail = useCallback((id: string) => {
+    queryClient.prefetchQuery({
+      queryKey: ['kia-booking-detail', id],
+      queryFn: () => fetchJson<BookingDetailPayload>(`/api/brands/kia/bookings/${id}`, 'kia-booking-detail'),
+      staleTime: 60_000,
     })
-  }, [queryClient, rows])
+  }, [queryClient])
 
   function openBooking(id: string) {
     if (embedMode) {
@@ -1982,6 +1989,8 @@ export function KiaBookingsClient({
                       key={row.id}
                       className="group cursor-pointer border-b border-[var(--kia-hairline)] text-sm"
                       onClick={() => openBooking(row.id)}
+                      onMouseEnter={() => prefetchBookingDetail(row.id)}
+                      onFocus={() => prefetchBookingDetail(row.id)}
                       initial={animated ? { opacity: 0, y: 6 } : false}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3, delay: Math.min(index * 0.025, 0.32), ease: [0.16, 1, 0.3, 1] }}

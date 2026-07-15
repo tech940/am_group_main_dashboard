@@ -58,15 +58,36 @@ function pruneExpiredSessionApiCache() {
   }
 }
 
+// A mutation used to wipe the ENTIRE session cache, so saving a user preference (or any POST/PATCH)
+// forced every unrelated expensive GET — BE reports, proforma options, bookings — to refetch from
+// scratch. Scope the eviction to the mutated resource instead: drop only cache entries under the same
+// /api/<a>/<b>/<c> prefix. Cross-resource staleness is already handled by React Query's own
+// invalidateQueries calls, which each mutation does explicitly.
+function cacheScopePrefix(pathname: string) {
+  return pathname.split('/').filter(Boolean).slice(0, 4).join('/')
+}
+
 function clearSessionApiCacheForMutation(input: RequestInfo | URL) {
   const url = new URL(
     input instanceof Request ? input.url : String(input),
     window.location.origin
   )
-  if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
-    SESSION_API_CACHE.clear()
-    SESSION_API_PENDING.clear()
+  if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) return
+
+  const scope = cacheScopePrefix(url.pathname)
+  const matchesScope = (key: string) => {
+    // Keys look like "GET:https://host/api/a/b?x=1:credentials=same-origin".
+    const match = key.match(/^[A-Z]+:(\S+?):credentials=/)
+    if (!match) return false
+    try {
+      return cacheScopePrefix(new URL(match[1]).pathname) === scope
+    } catch {
+      return false
+    }
   }
+
+  for (const key of [...SESSION_API_CACHE.keys()]) if (matchesScope(key)) SESSION_API_CACHE.delete(key)
+  for (const key of [...SESSION_API_PENDING.keys()]) if (matchesScope(key)) SESSION_API_PENDING.delete(key)
 }
 
 async function refreshSessionOnce() {

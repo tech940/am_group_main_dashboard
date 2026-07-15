@@ -6,7 +6,7 @@ import { toast } from '@/hooks/use-toast'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import {
   Bar,
@@ -443,30 +443,32 @@ function FormSection({ title, subtitle, icon, children }: { title: string; subti
   )
 }
 
+// Backed by React Query (was a raw useEffect fetch with no cache, so EVERY section mount re-hit
+// /api/brands/kia/proforma/options — an endpoint that resolves the user profile + the whole price/bank
+// master list). Inherits the global 30-min staleTime, so switching sections now costs nothing; the
+// payload only changes on a price-details import, and `reload()` still forces a refresh explicitly.
 function useOptions(lite = false) {
-  const [data, setData] = useState<OptionsPayload | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const reload = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
+  const queryClient = useQueryClient()
+  const query = useQuery({
+    queryKey: ['kia-proforma-options', lite],
+    queryFn: async () => {
       const response = await fetch(`/api/brands/kia/proforma/options${lite ? '?lite=1' : ''}`)
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
         throw new Error(payload?.error || `Failed to load Kia Proforma options (${response.status})`)
       }
-      setData(await response.json())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load options')
-    } finally {
-      setLoading(false)
-    }
-  }, [lite])
-  useEffect(() => {
-    reload()
-  }, [reload])
-  return { data, loading, error, reload }
+      return (await response.json()) as OptionsPayload
+    },
+  })
+  const reload = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['kia-proforma-options'] })
+  }, [queryClient])
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading,
+    error: query.error ? (query.error as Error).message : '',
+    reload,
+  }
 }
 
 function useProformas(mode: string, enabled = true) {

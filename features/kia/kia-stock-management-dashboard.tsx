@@ -273,8 +273,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       if (!response.ok) throw new Error('Failed to load stock data')
       return response.json()
     },
-    staleTime: 10_000,
-    refetchOnMount: 'always',
+    // refetchOnMount:'always' IGNORES staleTime — it refetched on every single mount. Every mutation
+    // below invalidates this key explicitly, so `true` (refetch only when actually stale) is enough.
+    staleTime: 60_000,
+    refetchOnMount: true,
   })
 
   // Query unallocated active bookings for allotment matching
@@ -285,8 +287,11 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       if (!response.ok) throw new Error('Failed to load unallocated active bookings')
       return response.json()
     },
-    staleTime: 15_000,
-    refetchOnMount: 'always',
+    // pageSize=1000 makes this one of the most expensive calls in the app (the list endpoint runs a
+    // correlated stock-match per row), and 'always' re-ran it on every mount. The mutations now
+    // invalidate this key, so mount-time refetching only needs to happen when the data is stale.
+    staleTime: 60_000,
+    refetchOnMount: true,
   })
 
   const bookingsList = bookingsData?.rows || []
@@ -331,6 +336,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setSelectedBookingId('')
       setStockSuccess('allot')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -354,6 +363,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setTransferNotes('')
       setStockSuccess('transfer')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -374,6 +387,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setHoldDialogOpen(false)
       setHoldNotes('')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -391,6 +408,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     onSuccess: () => {
       toast({ title: 'Payment recorded', description: 'The hold is confirmed and will not auto-release.', variant: 'success' })
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -408,6 +429,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
     onSuccess: () => {
       toast({ title: 'Hold released', description: 'The vehicle is matchable again.', variant: 'success' })
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -427,6 +452,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setBbndDialogOpen(false)
       setBbndBookingId(''); setBbndVin(''); setBbndModel(''); setBbndVariant(''); setBbndColor('')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -453,6 +482,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setPaymentReference('')
       setPaymentFile(null)
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -475,6 +508,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setReleaseDialogOpen(false)
       setReleaseReason('')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -495,6 +532,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setDeliverDialogOpen(false)
       setStockSuccess('deliver')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -517,6 +558,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       toast({ title: 'Success', description: 'Allocation cancelled successfully!', variant: 'success' })
       setCancelDialogOpen(false)
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
+      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
+      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
+      // bookings on EVERY mount, ignoring staleTime).
+      queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })

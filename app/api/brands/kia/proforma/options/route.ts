@@ -82,11 +82,17 @@ export async function GET(request: Request) {
     if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const permission = await requirePermission(appUser, 'kia.proforma.view')
     if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
-    const profile = await ensureKiaUserProfile(appUser)
-    if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    // profile + options are independent — they were awaited one after the other, paying two serial
+    // pooler round trips (~225ms each) before the response could start. isApprover genuinely depends
+    // on profile.approver, so it stays a second wave (and was previously hidden inside the JSON literal).
     const lite = new URL(request.url).searchParams.get('lite') === '1'
-    const optionsData = await loadKiaOptionsData()
+    const [profile, optionsData] = await Promise.all([
+      ensureKiaUserProfile(appUser),
+      loadKiaOptionsData(),
+    ])
+    if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const isApprover = await canApproveKiaProformaForUser(appUser, profile.approver)
 
     return NextResponse.json({
       currentUser: {
@@ -94,7 +100,7 @@ export async function GET(request: Request) {
         email: appUser.email,
         fullName: appUser.fullName,
         role: appUser.role,
-        isApprover: await canApproveKiaProformaForUser(appUser, profile.approver),
+        isApprover,
       },
       profile,
       ...optionsData,

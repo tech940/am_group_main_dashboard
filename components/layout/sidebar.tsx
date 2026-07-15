@@ -253,10 +253,15 @@ export function Sidebar() {
       const data = (await response.json()) as { permissions?: Record<string, boolean> | null } | null
       return data?.permissions ?? null
     },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
+    // The server-side snapshot behind this endpoint is itself cached for ~75min and is explicitly
+    // cleared on grant/revoke (updateUserPermissionOverrides → clearUserPermissionCache), so a short
+    // staleTime bought nothing but invocations. refetchOnWindowFocus fired a request every time the
+    // user tabbed back; refetchOnMount is kept because the Sidebar lives in the per-page MainLayout and
+    // remounts on navigation, which is exactly when a revoked link should disappear.
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: 1,
   })
