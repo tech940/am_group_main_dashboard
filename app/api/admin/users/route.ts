@@ -106,6 +106,12 @@ function publicUser(user: typeof users.$inferSelect, actor: AppUser) {
     department: user.department,
     phoneNumber: user.phoneNumber,
     isActive: user.isActive,
+    lastSeenAt: user.lastSeenAt,
+    // Resolved here rather than in the table cell: relative time from Date.now() during render is
+    // impure and the React Compiler rejects it. "As of this request" is the right basis anyway.
+    idleHours: user.lastSeenAt
+      ? Math.floor((Date.now() - user.lastSeenAt.getTime()) / 3_600_000)
+      : null,
     createdBy: user.createdBy,
     updatedBy: user.updatedBy,
     createdAt: user.createdAt,
@@ -403,7 +409,13 @@ export async function PUT(request: Request) {
     if (typeof body.fullName === 'string' && body.fullName.trim()) updates.fullName = body.fullName.trim()
     if (typeof body.department === 'string' || body.department === null) updates.department = normalizeOptionalString(body.department)
     if (typeof body.phoneNumber === 'string' || body.phoneNumber === null) updates.phoneNumber = normalizeOptionalString(body.phoneNumber)
-    if (typeof body.isActive === 'boolean') updates.isActive = body.isActive
+    if (typeof body.isActive === 'boolean') {
+      updates.isActive = body.isActive
+      // Reactivating alone would be pointless: last_seen_at is still weeks stale, so the next
+      // auto-deactivation sweep (hourly) would immediately deactivate them again and the admin's
+      // action would silently undo itself. Give the account a fresh idle window to come back in.
+      if (body.isActive && !existing.isActive) updates.lastSeenAt = new Date()
+    }
 
     const authUpdates: Record<string, unknown> = {}
 

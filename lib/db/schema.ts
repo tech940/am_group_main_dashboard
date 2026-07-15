@@ -32,10 +32,17 @@ export const users = pgTable('users', {
   createdBy: uuid('created_by'),
   updatedBy: uuid('updated_by'),
   isActive: boolean('is_active').default(true).notNull(),
+  // Last time the user actually USED the app, not the last time they signed in. Supabase sessions
+  // auto-refresh, so an everyday user can go weeks without a fresh login event — last_login would
+  // deactivate the most active staff. Written at most once per LAST_SEEN_THROTTLE_MS per user by
+  // lib/auth/app-user.ts; read by the auto-deactivation sweep in lib/auth/user-deactivation.ts.
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
-})
+}, (table) => ({
+  usersLastSeenActiveIdx: index('users_last_seen_active_idx').on(table.lastSeenAt),
+}))
 
 export const adminAuditLogs = pgTable('admin_audit_logs', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -78,10 +78,22 @@ export default function DashboardPortal() {
             brand: data.brand || 'ALL',
             department: data.department || 'Operations',
           })
+          setLoading(false)
+          return
         }
+
+        // Deactivated mid-session: the Supabase cookie is still valid, so the proxy keeps letting
+        // them in here while every fetch 401s — they'd otherwise sit on this page with placeholder
+        // data looking signed in, and the proxy blocks /auth/login while the cookie exists. End the
+        // session properly instead. Stay in the loading state so the shell never flashes.
+        const body = await res.json().catch(() => null)
+        if (body?.code === 'account_inactive') {
+          window.location.href = '/api/auth/logout?reason=inactive'
+          return
+        }
+        setLoading(false)
       } catch (e) {
         console.error('Failed to load user session:', e)
-      } finally {
         setLoading(false)
       }
     }

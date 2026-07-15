@@ -30,6 +30,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { AUTO_DEACTIVATION_EXEMPT_ROLES, AUTO_DEACTIVATION_IDLE_DAYS } from '@/lib/auth/user-deactivation-config'
 import { BRANCH_OPTIONS } from '@/lib/branches'
 import { getBrandDealers } from '@/lib/dealers/registry'
 import { formatIstDateTime } from '@/lib/date-time'
@@ -57,12 +58,56 @@ type ManagedUser = {
   department: string | null
   phoneNumber: string | null
   isActive: boolean
+  lastSeenAt: string | null
+  idleHours: number | null
   updatedAt: string
   capabilities: {
     canManage: boolean
     canChangePermissions: boolean
     managedBySuperAdmin: boolean
   }
+}
+
+// Set rather than .includes() — AUTO_DEACTIVATION_EXEMPT_ROLES is a readonly literal tuple, so
+// .includes(someString) does not typecheck against it.
+const EXEMPT_FROM_AUTO_DEACTIVATION: ReadonlySet<string> = new Set(AUTO_DEACTIVATION_EXEMPT_ROLES)
+
+/**
+ * Shows why an account was (or is about to be) auto-deactivated. Amber marks anyone past the idle
+ * window in lib/auth/user-deactivation.ts. This is last ACTIVITY, not last login — the two diverge
+ * by weeks because Supabase sessions auto-refresh.
+ *
+ * Roles in AUTO_DEACTIVATION_EXEMPT_ROLES are excluded from the sweep at the SQL level, so amber on
+ * them would assert a deactivation that provably cannot happen — they read a slate "Exempt" chip
+ * instead. Exemption is taken from the same constant the sweep filters on, so the two can't drift.
+ */
+function LastSeenCell({ idleHours, role }: { idleHours: number | null; role: string }) {
+  if (idleHours === null) return <span className="text-xs text-slate-400">Never</span>
+  if (idleHours < 1) return <span className="text-xs text-slate-600">Just now</span>
+  if (idleHours < 24) return <span className="text-xs text-slate-600">{idleHours}h ago</span>
+
+  const days = Math.floor(idleHours / 24)
+  const pastWindow = days >= AUTO_DEACTIVATION_IDLE_DAYS
+
+  if (pastWindow && EXEMPT_FROM_AUTO_DEACTIVATION.has(role)) {
+    return (
+      <span className="flex items-center gap-1.5">
+        <span className="text-xs text-slate-600">{days}d ago</span>
+        <span
+          title={`${ROLE_LABELS[role] || role} is never automatically deactivated, however long it stays idle`}
+          className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset', BADGE_TONES.slate)}
+        >
+          Exempt
+        </span>
+      </span>
+    )
+  }
+
+  return (
+    <span className={cn('text-xs', pastWindow ? 'font-semibold text-amber-600' : 'text-slate-600')}>
+      {days}d ago
+    </span>
+  )
 }
 
 type UsersResponse = {
@@ -870,7 +915,7 @@ export function AdminConsole() {
                   <div className="overflow-x-auto rounded-xl border border-slate-200">
                     <table className="w-full text-sm">
                       <thead className="bg-gradient-to-r from-blue-50 to-slate-50 text-left text-xs font-bold uppercase tracking-wide text-blue-700/80">
-                        <tr className="border-b-2 border-blue-100"><th className="p-3">User</th><th className="p-3">Role</th><th className="p-3">Branch</th><th className="p-3">Department</th><th className="p-3">Status</th><th className="p-3 text-right">Actions</th></tr>
+                        <tr className="border-b-2 border-blue-100"><th className="p-3">User</th><th className="p-3">Role</th><th className="p-3">Branch</th><th className="p-3">Department</th><th className="p-3">Status</th><th className="p-3">Last Active</th><th className="p-3 text-right">Actions</th></tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {filteredUsers.map((user) => (
@@ -885,6 +930,7 @@ export function AdminConsole() {
                             <td className="p-3 font-medium text-slate-600">{branchLabel(user.brand)}</td>
                             <td className="p-3 text-slate-600">{user.department || '-'}</td>
                             <td className="p-3"><Badge className={user.isActive ? 'bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-200'}>{user.isActive ? '● Active' : '○ Inactive'}</Badge></td>
+                            <td className="p-3"><LastSeenCell idleHours={user.idleHours} role={user.role} /></td>
                             <td className="p-3 text-right">
                               {user.capabilities.canManage ? (
                                 <div className="flex justify-end gap-2">

@@ -3,6 +3,7 @@ import 'server-only'
 import { createHash } from 'node:crypto'
 import { and, eq, isNull } from 'drizzle-orm'
 import { cookies } from 'next/headers'
+import { after } from 'next/server'
 import { cache } from 'react'
 import { db } from '@/lib/db'
 import { findAuthUserBySupabaseId } from '@/lib/db/auth-client'
@@ -26,10 +27,12 @@ export type AppUser = {
 const APP_USER_CACHE_TTL_MS = 10 * 60_000
 const APP_USER_REDIS_TTL_SECONDS = 24 * 60 * 60
 const AUTH_USER_CACHE_TTL_MS = 30_000
+const LAST_SEEN_THROTTLE_MS = 15 * 60_000
 const appUserCache = new Map<string, { expiresAt: number; user: AppUser | null }>()
 const appUserLookupPromises = new Map<string, Promise<AppUser | null>>()
 const authUserCache = new Map<string, { expiresAt: number; supabaseId: string | null }>()
 const authUserLookupPromises = new Map<string, Promise<string | null>>()
+const lastSeenWrites = new Map<string, number>()
 
 export function clearAppUserCache(supabaseId?: string | null) {
   if (supabaseId) {
@@ -43,6 +46,27 @@ export function clearAppUserCache(supabaseId?: string | null) {
   appUserLookupPromises.clear()
   authUserCache.clear()
   authUserLookupPromises.clear()
+}
+
+/**
+ * clearAppUserCache that AWAITS the Redis delete. Returns false if the delete failed.
+ *
+ * The fire-and-forget version above can lose the DEL entirely if the runtime freezes once the
+ * response is sent. That matters for batch jobs: readPersistentAppUser() short-circuits the DB on
+ * the 24-hour persistent entry, so a user deactivated by the sweep would keep working for up to a
+ * day if the DEL never landed. Cron/batch paths must use this instead.
+ */
+export async function clearAppUserCacheAndWait(supabaseId: string) {
+  appUserCache.delete(supabaseId)
+  appUserLookupPromises.delete(supabaseId)
+  try {
+    await getRedisClient()?.del(appUserRedisKey(supabaseId))
+    return true
+  } catch {
+    // Redis is only a cache — a failed delete must not fail the caller. Worst case the entry
+    // lapses on its own TTL and the deactivation simply takes effect late.
+    return false
+  }
 }
 
 function isTransientDbConnectionError(error: unknown) {
@@ -297,6 +321,40 @@ async function getCachedAppUserBySupabaseId(supabaseId: string) {
   }
 }
 
+/**
+ * Records that the user is actually using the app, for the auto-deactivation sweep.
+ *
+ * Deliberately NOT a write per request: throttled to one UPDATE per user per LAST_SEEN_THROTTLE_MS
+ * (~4/hour/user), and deferred with after() so it never adds pooler latency to the response. The
+ * throttle map is per-instance, so a few warm instances may each write once per window — still
+ * trivial, and nothing like the per-page-view firehose this replaces.
+ *
+ * Best-effort by design: a lost write just means the next request past the window retries. The
+ * sweep's threshold is measured in days, so coarse data is fine.
+ */
+function touchLastSeen(user: AppUser) {
+  const now = Date.now()
+  const lastWrite = lastSeenWrites.get(user.id)
+  if (lastWrite && now - lastWrite < LAST_SEEN_THROTTLE_MS) return
+  lastSeenWrites.set(user.id, now)
+
+  const write = async () => {
+    try {
+      await db.update(users).set({ lastSeenAt: new Date() }).where(eq(users.id, user.id))
+    } catch {
+      // Let the next request retry rather than waiting out the whole throttle window.
+      lastSeenWrites.delete(user.id)
+    }
+  }
+
+  try {
+    after(write)
+  } catch {
+    // after() requires a request scope; fall back to fire-and-forget outside one.
+    void write()
+  }
+}
+
 const getAuthenticatedAppUserCached = cache(async () => {
   const supabaseId = await getSupabaseUserId()
   if (!supabaseId) return null
@@ -307,9 +365,23 @@ const getAuthenticatedAppUserCached = cache(async () => {
     return null
   }
 
+  touchLastSeen(appUser)
+
   return appUser satisfies AppUser
 })
 
 export async function getAuthenticatedAppUser() {
   return await getAuthenticatedAppUserCached()
+}
+
+/**
+ * True when the request carries a valid Supabase session, regardless of the app-level account.
+ *
+ * getAuthenticatedAppUser() returns null both for "signed out" and for "signed in but the app
+ * account is inactive or missing", which is indistinguishable to callers — that ambiguity is why a
+ * deactivated user with a live cookie used to sit on a half-broken dashboard with no explanation.
+ * Pair the two to tell those cases apart before forcing a sign-out.
+ */
+export async function hasSupabaseSession() {
+  return Boolean(await getSupabaseUserId())
 }

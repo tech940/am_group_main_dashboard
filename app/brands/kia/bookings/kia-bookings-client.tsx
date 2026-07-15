@@ -172,7 +172,7 @@ type BookingListPayload = {
     noPayment: number
     notInStock: number
     topModels: { model: string; count: number }[]
-    notInStockBreakdown?: { model: string; variant: string; count: number }[]
+    notInStockBreakdown?: { model: string; variant: string; color?: string; count: number }[]
   }
   filters: {
     dealers: string[]
@@ -2125,13 +2125,14 @@ export function KiaBookingsClient({
                       <TableHead className="h-9 whitespace-nowrap px-3 text-xs font-bold uppercase tracking-wide">#</TableHead>
                       <TableHead className="h-9 whitespace-nowrap px-3 text-xs font-bold uppercase tracking-wide">Model</TableHead>
                       <TableHead className="h-9 whitespace-nowrap px-3 text-xs font-bold uppercase tracking-wide">Variant</TableHead>
+                      <TableHead className="h-9 whitespace-nowrap px-3 text-xs font-bold uppercase tracking-wide">Colour</TableHead>
                       <TableHead className="h-9 whitespace-nowrap px-3 text-right text-xs font-bold uppercase tracking-wide">Pending Bookings</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {breakdown.map((row, idx) => (
                       <TableRow
-                        key={`${row.model}--${row.variant}--${idx}`}
+                        key={`${row.model}--${row.variant}--${row.color || ''}--${idx}`}
                         className="cursor-pointer hover:bg-slate-50"
                         onClick={() => {
                           setModel(row.model)
@@ -2143,6 +2144,7 @@ export function KiaBookingsClient({
                         <TableCell className="px-3 py-2.5 text-xs font-semibold text-slate-400">{idx + 1}</TableCell>
                         <TableCell className="px-3 py-2.5 text-sm font-bold text-slate-800">{row.model}</TableCell>
                         <TableCell className="max-w-[260px] truncate px-3 py-2.5 text-xs font-medium text-slate-600">{row.variant || '—'}</TableCell>
+                        <TableCell className="max-w-[150px] truncate px-3 py-2.5 text-xs font-semibold text-slate-600">{row.color || '—'}</TableCell>
                         <TableCell className="px-3 py-2.5 text-right">
                           <span className="inline-flex min-w-[2rem] items-center justify-center rounded-lg bg-red-50 px-2 py-0.5 text-sm font-black text-red-700">
                             {row.count}
@@ -2167,14 +2169,14 @@ export function KiaBookingsClient({
                 const breakdown = data?.summary?.notInStockBreakdown || []
                 import('xlsx').then((XLSX) => {
                   const wsData = [
-                    ['#', 'Model', 'Variant', 'Pending Bookings'],
-                    ...breakdown.map((r, i) => [i + 1, r.model, r.variant || '', r.count]),
+                    ['#', 'Model', 'Variant', 'Colour', 'Pending Bookings'],
+                    ...breakdown.map((r, i) => [i + 1, r.model, r.variant || '', r.color || '—', r.count]),
                   ]
                   const ws = XLSX.utils.aoa_to_sheet(wsData)
                   // Column widths
-                  ws['!cols'] = [{ wch: 4 }, { wch: 20 }, { wch: 50 }, { wch: 18 }]
+                  ws['!cols'] = [{ wch: 4 }, { wch: 20 }, { wch: 50 }, { wch: 20 }, { wch: 18 }]
                   // Bold header row
-                  const headerCells = ['A1', 'B1', 'C1', 'D1']
+                  const headerCells = ['A1', 'B1', 'C1', 'D1', 'E1']
                   headerCells.forEach((cell) => {
                     if (ws[cell]) ws[cell].s = { font: { bold: true } }
                   })
@@ -2199,6 +2201,7 @@ export function KiaBookingsClient({
                     <td>${i + 1}</td>
                     <td><strong>${r.model}</strong></td>
                     <td>${r.variant || '—'}</td>
+                    <td>${r.color || '—'}</td>
                     <td style="text-align:right;color:#b91c1c;font-weight:800">${r.count}</td>
                   </tr>`).join('')
                 const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
@@ -2220,10 +2223,10 @@ export function KiaBookingsClient({
                   <h1>Demand vs. Stock Gap</h1>
                   <p class="sub">AM Kia · Not In Stock Report · Generated ${date}</p>
                   <table>
-                    <thead><tr><th>#</th><th>Model</th><th>Variant</th><th style="text-align:right">Pending</th></tr></thead>
+                    <thead><tr><th>#</th><th>Model</th><th>Variant</th><th>Colour</th><th style="text-align:right">Pending</th></tr></thead>
                     <tbody>${rows}</tbody>
                   </table>
-                  <p class="footer">Total variants: ${breakdown.length} &nbsp;·&nbsp; Total pending bookings: ${breakdown.reduce((s, r) => s + r.count, 0)}</p>
+                  <p class="footer">Total variants/colours: ${breakdown.length} &nbsp;·&nbsp; Total pending bookings: ${breakdown.reduce((s, r) => s + r.count, 0)}</p>
                 </body></html>`
                 const win = window.open('', '_blank', 'width=900,height=700')
                 if (win) {

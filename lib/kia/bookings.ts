@@ -578,8 +578,8 @@ export async function getKiaBookingsList(input: BookingListInput) {
               )
             )
             ${dealerScopeKb}) AS in_stock_count,
-        COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'variant', variant, 'count', cnt) ORDER BY cnt DESC, model ASC, variant ASC) FROM (
-          SELECT model, variant, count(*)::int AS cnt
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'variant', variant, 'color', coalesce(color, '—'), 'count', cnt) ORDER BY cnt DESC, model ASC, variant ASC, color ASC) FROM (
+          SELECT model, variant, color, count(*)::int AS cnt
           FROM kia_bookings
           WHERE deleted_at IS NULL
             AND status NOT IN ('draft', 'delivered', 'cancelled')
@@ -609,7 +609,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
               )
             )
             ${dealerScope}
-          GROUP BY model, variant
+          GROUP BY model, variant, color
         ) ns), '[]'::jsonb) AS not_in_stock_breakdown
     `),
   ])
@@ -625,7 +625,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
     no_payment_count: number
     not_in_stock_count: number
     in_stock_count: number
-    not_in_stock_breakdown: { model: string; variant: string; count: number }[] | null
+    not_in_stock_breakdown: { model: string; variant: string; color: string; count: number }[] | null
   }>(aggRows)[0]
   const statusCounts = agg?.status_counts || {}
   const todayCount = Number(agg?.today_count || 0)
@@ -726,6 +726,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
       notInStockBreakdown: (agg?.not_in_stock_breakdown || []).map((r) => ({
         model: text(r.model),
         variant: text(r.variant),
+        color: text(r.color),
         count: Number(r.count || 0),
       })).filter((r) => r.model),
     },

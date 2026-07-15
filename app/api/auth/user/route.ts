@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { getAuthenticatedAppUser, hasSupabaseSession } from '@/lib/auth/app-user'
 
 function isTransientDatabaseError(error: unknown) {
   const cause = error instanceof Error && 'cause' in error
@@ -21,7 +21,17 @@ export async function GET() {
     const appUser = await getAuthenticatedAppUser()
 
     if (!appUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      // A valid Supabase session with no active app user means the account was deactivated or
+      // removed while they were signed in — distinct from simply being signed out, and the caller
+      // needs to know so it can end the session rather than leave them on a dead page.
+      const signedIn = await hasSupabaseSession()
+      return NextResponse.json(
+        {
+          error: signedIn ? 'Your account is inactive' : 'Unauthorized',
+          code: signedIn ? 'account_inactive' : 'unauthenticated',
+        },
+        { status: 401 }
+      )
     }
 
     return NextResponse.json({

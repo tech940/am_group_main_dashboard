@@ -58,7 +58,10 @@
     "verify:snapshot-parity": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-snapshot-parity.ts",
     "verify:dealers": "tsx --tsconfig ./tsconfig.verify.json scripts/verify-dealer-scope.ts",
     "kia:maintenance": "node scripts/kia-maintenance.mjs",
-    "kia:maintenance:scheduler": "node scripts/kia-maintenance-scheduler.mjs"
+    "kia:maintenance:scheduler": "node scripts/kia-maintenance-scheduler.mjs",
+    "users:deactivate-idle": "node scripts/user-deactivation.mjs",
+    "users:deactivate-idle:dry-run": "node scripts/user-deactivation.mjs --dry-run",
+    "users:deactivate-idle:scheduler": "node scripts/user-deactivation-scheduler.mjs"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.9.4",
