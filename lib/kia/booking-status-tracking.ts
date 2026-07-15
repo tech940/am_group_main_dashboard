@@ -72,6 +72,10 @@ export function getKiaBookingStageInfo(
     }
     case 'on_hold':
       return { stageLabel: 'On Hold · Reallocation', pendingWith: 'Stock Manager', state: 'pending' }
+    case 'transferring':
+      // Allotted, but the vehicle is still In transit in the DMS feed. Nobody is blocking: the
+      // payment window only opens once it reaches Free Stock, so this waits on the vehicle itself.
+      return { stageLabel: 'Vehicle In Transit', pendingWith: 'Awaiting Stock Arrival', state: 'pending' }
     case 'vehicle_allocated':
       return { stageLabel: 'Payment & Invoice', pendingWith: 'Accounts', state: 'pending' }
     case 'transfer_requested':

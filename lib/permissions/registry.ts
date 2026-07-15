@@ -866,6 +866,8 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   finance_team: 'Finance Team',
   call_agent: 'Call Agent',
   ca: 'CA',
+  crm: 'CRM',
+  idt: 'IDT',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -1085,6 +1087,19 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   // CA (Chartered Accountant): read-only, cross-branch, ONLY the CA section (approved POs + petty cash).
   ca: [
     ...keysForGroups(['ca'], ['view']),
+  ],
+  // CRM (Customer Relationship Manager): the booking pipeline, so they can mark vehicles Delivered.
+  // NOTE this template only decides what they can SEE. Delivery itself is gated by ROLE in
+  // lib/kia/workflow-access.ts, because a kia.* permission cannot restrict an action — the brand
+  // default (service.ts applyBrandDefault) grants kia.bookings.edit to every KIA user whose role is
+  // not template-only, so a permission check here would exclude nobody.
+  crm: [
+    ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+  ],
+  // IDT (Internal Development Trainee): the booking pipeline, so they can allot vehicles to bookings.
+  // Allotment is gated by ROLE in lib/kia/workflow-access.ts — same reasoning as CRM above.
+  idt: [
+    ...keysForGroups(['kia.bookings'], ['view', 'edit']),
   ],
 }
 

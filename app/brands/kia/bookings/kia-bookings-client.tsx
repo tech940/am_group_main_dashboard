@@ -94,6 +94,7 @@ import {
 } from '@/components/kia/premium'
 import {
   canAllotKiaVehicle,
+  canAllotKiaVehicleToBooking,
   canApproveKiaProforma,
   canConfirmKiaPayment,
   canCreateKiaBooking,
@@ -328,7 +329,10 @@ const STATUS_LABELS: Record<string, string> = {
   booking_created: 'Booking Created',
   proforma_generated: 'Proforma Generated',
   on_hold: 'On Hold',
+  // Allotted, but the vehicle is still In transit — the payment window has not started yet.
+  transferring: 'Transferring',
   vehicle_allocated: 'Vehicle Allocated',
+  transfer_requested: 'Transfer Requested',
   finance_pending: 'Finance Pending',
   payment_confirmed: 'Payment Confirmed',
   ready_delivery: 'Ready Delivery',
@@ -344,7 +348,9 @@ const STATUS_TONE: Record<string, Tone> = {
   booking_created: 'blue',
   proforma_generated: 'indigo',
   on_hold: 'amber',
+  transferring: 'amber',
   vehicle_allocated: 'sky',
+  transfer_requested: 'indigo',
   finance_pending: 'amber',
   payment_confirmed: 'teal',
   ready_delivery: 'violet',
@@ -3325,7 +3331,13 @@ function BookingDrawer({
   const canActAsAccounts = effectivePersona === 'actual' ? roleCanActAsAccounts(currentUserRole) : effectivePersona === 'accounts'
   // New role-model gates (backend enforces the same):
   const canActAsAccountsVerify = effectivePersona === 'actual' ? canVerifyKiaAccounts(currentUserRole) : effectivePersona === 'accounts'
-  const canDeliver = effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : (effectivePersona === 'sales_person' || effectivePersona === 'sales_manager')
+  // The test personas (sales_person / sales_manager / accounts) predate the CRM and IDT roles and
+  // cannot stand in for them, so they resolve to false for these two actions. Moot in practice —
+  // testPersona has no setter, so effectivePersona is always 'actual'.
+  const canDeliver = effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : false
+  // Allotting to a booking is IDT-exclusive; stock transfers keep the wider rule, so they are
+  // deliberately separate gates now.
+  const canAllotVehicle = effectivePersona === 'actual' ? canAllotKiaVehicleToBooking(currentUserRole) : false
   const canActOnStock = effectivePersona === 'actual' ? canAllotKiaVehicle(currentUserRole) : effectivePersona !== 'sales_person'
   // Sales persons (and managers/admin) can edit booking details until the booking is closed.
   const canEditBooking = !isTerminal && (canActAsSalesPerson || canActAsSalesManager)
@@ -3364,6 +3376,15 @@ function BookingDrawer({
         body: 'Approval is complete. The sales person should now match a VIN from stock, allot it, or initiate a transfer if the unit belongs to another outlet.',
         actionLabel: null,
         onAction: null,
+      }
+    }
+    if (booking.status === 'transferring') {
+      return {
+        label: 'Stage 4 · In Transit',
+        title: 'Vehicle in transit',
+        body: 'The VIN is reserved for this booking, but the vehicle is still in transit. The payment window has NOT started — it opens automatically once the vehicle reaches Free Stock. Accounts can still record a payment early.',
+        actionLabel: canActAsAccountsVerify ? 'Confirm Payment & Invoice' : null,
+        onAction: canActAsAccountsVerify ? () => onAction('accounts') : null,
       }
     }
     if (booking.status === 'vehicle_allocated' || booking.status === 'transfer_requested' || booking.status === 'payment_confirmed') {
@@ -3592,7 +3613,7 @@ function BookingDrawer({
                   }
                 }}
               />
-              <ActionCard title="Accounts · Payment & Invoice" icon={ShieldCheck} value={accountsDone ? 'Invoice recorded' : allocation ? allocation.vinNumber : 'No active VIN'} status={accountsDone ? 'Payment released · Verified' : 'Pending Accounts'} action={accountsDone ? 'Completed' : 'Confirm Payment & Invoice'} disabled={actionLoading || !canActAsAccountsVerify || !allocation || accountsDone || !(booking.status === 'vehicle_allocated' || booking.status === 'transfer_requested' || booking.status === 'payment_confirmed')} loading={actionLoading} onClick={() => onAction('accounts')} />
+              <ActionCard title="Accounts · Payment & Invoice" icon={ShieldCheck} value={accountsDone ? 'Invoice recorded' : allocation ? allocation.vinNumber : 'No active VIN'} status={accountsDone ? 'Payment released · Verified' : 'Pending Accounts'} action={accountsDone ? 'Completed' : 'Confirm Payment & Invoice'} disabled={actionLoading || !canActAsAccountsVerify || !allocation || accountsDone || !(booking.status === 'vehicle_allocated' || booking.status === 'transferring' || booking.status === 'transfer_requested' || booking.status === 'payment_confirmed')} loading={actionLoading} onClick={() => onAction('accounts')} />
             </div>
           )
         })()}
@@ -3667,7 +3688,7 @@ function BookingDrawer({
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-col gap-2">
-                        <Button size="sm" className="rounded-xl text-xs font-bold" disabled={actionLoading || !canActOnStock} onClick={() => onAllot(vehicle.vinNumber)}>Allot</Button>
+                        <Button size="sm" className="rounded-xl text-xs font-bold" disabled={actionLoading || !canAllotVehicle} onClick={() => onAllot(vehicle.vinNumber)}>Allot</Button>
                         <Button size="sm" variant="outline" className="rounded-xl text-xs font-bold" disabled={actionLoading || !canActOnStock} onClick={() => onOpenTransfer(vehicle)}>Transfer</Button>
                       </div>
                     </div>

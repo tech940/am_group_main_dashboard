@@ -5,6 +5,7 @@ import {
   expireKiaStockHolds,
   markKiaSoldAllocations,
   markKiaTransferMissing,
+  startKiaArrivedAllocationCountdowns,
 } from '@/lib/kia/bookings'
 
 export const dynamic = 'force-dynamic'
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
   const startedAt = Date.now()
   const result = {
     ok: true,
+    countdownsStarted: 0,
     expiredAllocations: null as string | null,
     expiredHolds: 0,
     soldFlagged: 0,
@@ -49,6 +51,15 @@ export async function POST(request: Request) {
   }
 
   // Each sweep is independent — one failing must not stop the others.
+
+  // Arrival BEFORE expiry: this opens payment windows for vehicles that have just reached Free
+  // Stock. Order is not strictly required (a 'transferring' row has expires_at NULL and the expiry
+  // sweep skips it either way), but opening windows first keeps the sequence readable.
+  try {
+    result.countdownsStarted = await startKiaArrivedAllocationCountdowns()
+  } catch (error) {
+    result.errors.push(`startKiaArrivedAllocationCountdowns: ${error instanceof Error ? error.message : 'failed'}`)
+  }
   try {
     await expireKiaTemporaryAllocations()
     result.expiredAllocations = 'ok'

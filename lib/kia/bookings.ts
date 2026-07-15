@@ -21,6 +21,7 @@ import {
   canConfirmKiaPayment,
   canDeliverKiaBooking,
   canTransferKiaVehicle,
+  canAllotKiaVehicleToBooking,
   canVerifyKiaAccounts,
   canViewAllKiaBookings,
 } from '@/lib/kia/workflow-access'
@@ -29,6 +30,21 @@ type JsonRecord = Record<string, unknown>
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 const TEMPORARY_ALLOCATION_HOURS = 72
 const CSD_ALLOCATION_HOURS = 120 // CSD customers get a 5-day payment window
+
+/**
+ * DMS stock_status literals from kia_stock_management, lower-cased.
+ *
+ * The raw feed writes "In transit" (lower-case 't') and "Free Stock" — ALWAYS compare
+ * lower(trim(...)); a case-sensitive match on "In Transit" silently never fires. The feed also
+ * carries 'allocated', 'invoice' and 'from other dealer', none of which are allottable — the
+ * matching list only admits the two below.
+ */
+const DMS_IN_TRANSIT = 'in transit'
+const DMS_FREE_STOCK = 'free stock'
+
+function dmsStockStatus(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
+}
 
 // The temporary-allocation payment window depends on the customer type captured
 // on the booking form: CSD → 5 days, everyone else → 72 hours.
@@ -43,6 +59,10 @@ export const KIA_BOOKING_STATUSES = [
   'booking_created',
   'proforma_generated',
   'on_hold',
+  // The allotted vehicle is still In transit in the DMS feed. The payment countdown has NOT started;
+  // it starts when the feed flips the VIN to Free Stock (startKiaArrivedAllocationCountdowns).
+  // Distinct from 'transfer_requested', which is an inter-DEALER stock movement.
+  'transferring',
   'vehicle_allocated',
   'transfer_requested',
   'finance_pending',
@@ -164,16 +184,29 @@ async function nextBookingNumber(tx: DbTx, dealerCode: string) {
 
 export async function expireKiaTemporaryAllocations() {
   await db.transaction(async (tx) => {
-    // #13 No-payment persistence: when the 72h/120h reservation window lapses with no payment, the
-    // allocation is NOT released. It is kept (released_at stays NULL) and flagged 'no_payment' so the
-    // vehicleSnapshot + stock-presence tracking retain the record — the vehicle stays visible as
-    // "No Payment Received" even if its VIN later drops out of the DMS feed, exactly like an allotment.
+    // When the 72h/120h reservation window lapses with no payment, the vehicle RETURNS TO AVAILABLE
+    // STOCK — released_at is stamped, so both availability rules (the matching-list CTE in
+    // getKiaBookingMatchingVehicles and the LEFT JOIN in readMatchingVehicle) stop counting the VIN
+    // as taken and another booking can have it.
+    //
+    // The row itself is kept and flagged 'no_payment' (#13 No-payment persistence), so the booking
+    // history and the retained vehicleSnapshot still show which vehicle lapsed and why — releasing
+    // frees the VIN without erasing the record.
+    //
+    // Setting released_at also fixes a live disagreement: previously it stayed NULL, which left the
+    // VIN visible in the matching list (the CTE's `expires_at > now()` no longer held) while
+    // readMatchingVehicle still rejected it as allocated — so the vehicle was offered and then
+    // refused with "Vehicle is not available for allocation".
+    //
+    // Only 'temporary' rows are swept: a 'transferring' allocation has expires_at NULL (its clock
+    // hasn't started) and is skipped by the `expires_at IS NOT NULL` predicate anyway.
     await tx.execute(sql`
       WITH expired AS (
         UPDATE kia_vehicle_allocations
         SET
           allocation_status = 'no_payment',
           stock_status = 'no_payment',
+          released_at = now(),
           release_reason = 'No payment received within the reservation window',
           updated_at = now()
         WHERE released_at IS NULL
@@ -205,14 +238,105 @@ export async function expireKiaTemporaryAllocations() {
       SELECT
         id,
         'no_payment',
-        'No payment received',
-        'VIN ' || vin_number || ' — no payment received within the reservation window; held as No Payment Received',
+        'No payment received — vehicle returned to stock',
+        'VIN ' || vin_number || ' — no payment received within the reservation window; the allocation was cancelled and the vehicle returned to available stock',
         'System',
         'system',
-        jsonb_build_object('vinNumber', vin_number, 'reason', 'payment window expired', 'status', 'no_payment')
+        jsonb_build_object('vinNumber', vin_number, 'reason', 'payment window expired', 'status', 'no_payment', 'released', true)
       FROM updated_bookings
     `)
   })
+}
+
+/**
+ * Starts the payment countdown for allocations whose in-transit vehicle has ARRIVED.
+ *
+ * Scheduled sweep (POST /api/brands/kia/maintenance). Allotting an In-transit vehicle parks the
+ * allocation as 'transferring' with expires_at NULL — no clock. This is the other half: when the DMS
+ * feed flips that VIN to Free Stock, the 72h (120h CSD) window opens and the booking moves on to
+ * 'vehicle_allocated'.
+ *
+ * This is what "continuously monitor the vehicle status" resolves to. It cannot be event-driven —
+ * kia_stock_management is an external DMS feed this app never writes, so arrival is only observable
+ * by re-reading it. Runs hourly with the other sweeps; the KIA stock feed refreshes roughly daily,
+ * so hourly is far finer-grained than the data it watches.
+ *
+ * The CSD window is derived in SQL from the same booking metadata as allocationHoursForBooking().
+ * Idempotent: once expires_at is set the row no longer matches.
+ */
+export async function startKiaArrivedAllocationCountdowns() {
+  // Freshness gate, same rationale as markKiaSoldAllocations: never act on an empty/partial feed.
+  const stockCountRes = await db.execute<{ stock_count: number }>(sql`SELECT count(*)::int AS stock_count FROM kia_stock_management`)
+  const stockCount = Number((stockCountRes as unknown as Array<{ stock_count: number }>)[0]?.stock_count || 0)
+  if (stockCount === 0) return 0
+
+  const started = await db.transaction(async (tx) => {
+    const res = await tx.execute(sql`
+      WITH arrived AS (
+        SELECT
+          va.id,
+          va.booking_id,
+          va.vin_number,
+          -- ::int is REQUIRED. Bound params arrive untyped and Postgres infers text, so
+          -- make_interval(hours => …) below fails with "function make_interval(hours => text)
+          -- does not exist".
+          CASE
+            WHEN lower(trim(coalesce(kb.metadata->>'customerType', ''))) = 'csd'
+            THEN ${CSD_ALLOCATION_HOURS}::int
+            ELSE ${TEMPORARY_ALLOCATION_HOURS}::int
+          END AS window_hours
+        FROM kia_vehicle_allocations va
+        JOIN kia_bookings kb ON kb.id = va.booking_id
+        WHERE va.allocation_status = 'transferring'
+          AND va.expires_at IS NULL
+          AND va.released_at IS NULL
+          AND va.payment_confirmed_at IS NULL
+          AND kb.deleted_at IS NULL
+          AND kb.status NOT IN ('delivered', 'cancelled')
+          AND EXISTS (
+            SELECT 1 FROM kia_stock_management sm
+            WHERE upper(trim(sm.vin_number)) = upper(trim(va.vin_number))
+              AND lower(trim(coalesce(sm.stock_status::text, ''))) = ${DMS_FREE_STOCK}
+          )
+      ),
+      opened AS (
+        UPDATE kia_vehicle_allocations va
+        SET
+          allocation_status = 'temporary',
+          expires_at = now() + make_interval(hours => a.window_hours),
+          stock_last_seen_at = now(),
+          updated_at = now()
+        FROM arrived a
+        WHERE va.id = a.id
+        RETURNING va.booking_id, va.vin_number, va.expires_at, a.window_hours
+      ),
+      moved_bookings AS (
+        UPDATE kia_bookings kb
+        SET status = 'vehicle_allocated', updated_at = now()
+        FROM opened o
+        WHERE kb.id = o.booking_id
+          AND kb.status = 'transferring'
+        RETURNING kb.id, o.vin_number, o.expires_at, o.window_hours
+      )
+      INSERT INTO kia_booking_activity (
+        booking_id, activity_type, title, description, actor_name, actor_role, after_value
+      )
+      SELECT
+        id,
+        'allocation',
+        'Vehicle arrived — payment window started',
+        'VIN ' || vin_number || ' reached Free Stock; ' || window_hours::text
+          || 'h payment window started, due ' || to_char(expires_at, 'DD Mon YYYY HH24:MI'),
+        'System',
+        'system',
+        jsonb_build_object('vinNumber', vin_number, 'expiresAt', expires_at, 'windowHours', window_hours)
+      FROM moved_bookings
+      RETURNING booking_id
+    `)
+    return (res as unknown as Array<unknown>).length
+  })
+
+  return started
 }
 
 /** A vehicle whose allotted VIN has vanished from the DMS stock feed (i.e. likely sold elsewhere). */
@@ -878,7 +1002,7 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     if (input.delivered) {
       // Delivery is the Sales Executive's final step (after Accounts verification).
       if (!canDeliverKiaBooking(appUser.role)) {
-        throw new Error('Only the Sales Executive can mark the vehicle delivered.')
+        throw new Error('Only the CRM can mark the vehicle delivered.')
       }
       if (before.status !== 'ready_delivery') {
         throw new Error('Delivery is available only after Accounts completes verification.')
@@ -1159,9 +1283,27 @@ function assertKiaVehicleMatchesProforma(vehicle: JsonRecord, wanted: { model: s
   }
 }
 
-export async function allotKiaBookingVehicle(id: string, vinNumber: string, appUser: AppUser) {
-  if (!canAllotKiaVehicle(appUser.role)) {
-    throw new Error('The Sales Executive cannot allot vehicles. Allotment is done by an approving/finance/accounts role.')
+/**
+ * Allots a VIN to a booking.
+ *
+ * The payment countdown depends on where the vehicle physically is, per the DMS feed:
+ *  - **Free Stock** → the 72h (120h CSD) window starts now; booking → 'vehicle_allocated'.
+ *  - **In transit** → NO countdown yet (expires_at stays NULL); booking → 'transferring'. The clock
+ *    starts when the feed flips the VIN to Free Stock — see startKiaArrivedAllocationCountdowns().
+ *    Previously the clock started immediately regardless, so a customer's payment window burned down
+ *    while the car was still on a truck.
+ *
+ * `options.skipRoleGate` is for allotKiaBbndVehicle only, which performs its own (different, wider)
+ * role check — booking allotment is IDT-exclusive, BBND allot deliberately is not.
+ */
+export async function allotKiaBookingVehicle(
+  id: string,
+  vinNumber: string,
+  appUser: AppUser,
+  options: { skipRoleGate?: boolean } = {},
+) {
+  if (!options.skipRoleGate && !canAllotKiaVehicleToBooking(appUser.role)) {
+    throw new Error('Only the IDT can allot vehicles to a booking.')
   }
   const normalizedVin = text(vinNumber).toUpperCase()
   if (!normalizedVin) throw new Error('VIN is required')
@@ -1190,6 +1332,12 @@ export async function allotKiaBookingVehicle(id: string, vinNumber: string, appU
     const [activeBooking] = await tx.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
     if (activeBooking) throw new Error('This booking already has an active VIN allocation')
 
+    // The vehicle is still on its way — hold the allocation but don't start the payment clock.
+    // expires_at NULL is already understood by both consumers: the expiry sweep skips it
+    // (`expires_at IS NOT NULL`), and the availability CTE still counts it as an active allocation,
+    // so the VIN stays reserved for this booking rather than leaking back into the matchable list.
+    const inTransit = dmsStockStatus(vehicle.stock_status) === DMS_IN_TRANSIT
+
     const [allocation] = await tx.insert(kiaVehicleAllocations).values({
       bookingId: id,
       vinNumber: normalizedVin,
@@ -1200,14 +1348,14 @@ export async function allotKiaBookingVehicle(id: string, vinNumber: string, appU
       engineNo: nullableText(vehicle.engine_no),
       stockSource: text(vehicle.source) || 'dms',
       vehicleSnapshot: (vehicle.snapshot || {}) as JsonRecord,
-      allocationStatus: 'temporary',
-      expiresAt: new Date(Date.now() + allocationHoursForBooking(booking) * 60 * 60 * 1000),
+      allocationStatus: inTransit ? 'transferring' : 'temporary',
+      expiresAt: inTransit ? null : new Date(Date.now() + allocationHoursForBooking(booking) * 60 * 60 * 1000),
       allocatedBy: appUser.id,
     }).returning()
 
     const [updated] = await tx.update(kiaBookings).set({
       allocatedVin: normalizedVin,
-      status: 'vehicle_allocated',
+      status: inTransit ? 'transferring' : 'vehicle_allocated',
       updatedBy: appUser.id,
       updatedAt: new Date(),
     }).where(eq(kiaBookings.id, id)).returning()
@@ -1215,8 +1363,10 @@ export async function allotKiaBookingVehicle(id: string, vinNumber: string, appU
     await addActivity(tx, {
       bookingId: id,
       type: 'allocation',
-      title: 'VIN allocated',
-      description: normalizedVin,
+      title: inTransit ? 'VIN allocated — vehicle in transit' : 'VIN allocated',
+      description: inTransit
+        ? `${normalizedVin} — in transit; the payment window starts when it reaches Free Stock`
+        : normalizedVin,
       after: allocation as unknown as JsonRecord,
       appUser,
     })
@@ -1476,7 +1626,11 @@ export async function allotKiaBbndVehicle(
     set: base,
   })
 
-  return allotKiaBookingVehicle(bookingId, vin, appUser)
+  // skipRoleGate: this function already ran its own canAllotKiaVehicle check above. BBND allot keeps
+  // the wider "anyone except the Sales Executive" rule by design — only allotting from DMS stock is
+  // IDT-exclusive. Without this flag the IDT gate inside allotKiaBookingVehicle would silently
+  // narrow BBND allot too.
+  return allotKiaBookingVehicle(bookingId, vin, appUser, { skipRoleGate: true })
 }
 
 export async function confirmKiaBookingPayment(
@@ -1603,7 +1757,17 @@ export async function verifyKiaAccountsPayment(
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
-    if (booking.status !== 'vehicle_allocated' && booking.status !== 'transfer_requested' && booking.status !== 'payment_confirmed') {
+    // 'transferring' is allowed so Accounts can record an EARLY payment — one made while the vehicle
+    // is still in transit and its countdown hasn't started. Payment sets payment_confirmed_at +
+    // allocation_status='final', which takes the row out of both the arrival sweep and the expiry
+    // sweep, so the clock simply never opens. Blocking it would force Accounts to sit on a real
+    // payment until the truck arrives.
+    if (
+      booking.status !== 'vehicle_allocated'
+      && booking.status !== 'transferring'
+      && booking.status !== 'transfer_requested'
+      && booking.status !== 'payment_confirmed'
+    ) {
       throw new Error('Payment & invoice verification is available after the vehicle is allotted.')
     }
 

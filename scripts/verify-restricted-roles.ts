@@ -42,6 +42,18 @@ const CASES: Case[] = [
     'kia.sales_report.view': true, 'access_control.view': true } },
   { role: 'manager', brand: 'hyundai', label: 'Manager (Hyundai) → brand default projects', expect: {
     'hyundai.business_excellence.view': true, 'kia.business_excellence.view': false } },
+  // CRM / IDT are single-purpose: Bookings only, nothing else. They are deny-by-default
+  // (family 'special' + TEMPLATE_ONLY_ROLES) — without the template-only membership the KIA brand
+  // default would blanket-grant them every non-restricted kia.* key, so these cases are what proves
+  // the deny-by-default actually holds.
+  { role: 'crm', brand: 'kia', label: 'CRM → Bookings only (delivery is role-gated, not permission-gated)', expect: {
+    'kia.bookings.view': true, 'kia.bookings.edit': true,
+    'kia.business_excellence.view': false, 'kia.sales_report.view': false,
+    'kia.stock_management.view': false, 'kia.proforma.view': false } },
+  { role: 'idt', brand: 'kia', label: 'IDT → Bookings only (allotment is role-gated, not permission-gated)', expect: {
+    'kia.bookings.view': true, 'kia.bookings.edit': true,
+    'kia.business_excellence.view': false, 'kia.sales_report.view': false,
+    'kia.stock_management.view': false, 'kia.proforma.view': false } },
 ]
 
 console.log('\n=== Phase 3 resolution: restricted-role matrix (no DB) ===\n')

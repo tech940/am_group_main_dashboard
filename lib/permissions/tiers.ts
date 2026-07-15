@@ -74,6 +74,11 @@ export const ROLE_PROFILE: Record<PermissionRole, RoleProfile> = {
   branch_admin: { tier: TIER.EMPLOYEE, family: 'special' },
   call_agent: { tier: TIER.EMPLOYEE, family: 'special' },
   ca: { tier: TIER.EMPLOYEE, family: 'special' },
+  // 'special' with NO track is load-bearing for these two: it makes them deny-by-default and stops
+  // them inheriting a tier bundle (a shared track would leak permissions between same-tier roles —
+  // see the finance track). They exist to OWN one action each, not to accumulate access.
+  crm: { tier: TIER.EMPLOYEE, family: 'special' }, // Customer Relationship Manager — marks vehicles delivered
+  idt: { tier: TIER.EMPLOYEE, family: 'special' }, // Internal Development Trainee — allots vehicles to bookings
 }
 
 export function getRoleProfile(role: string | null | undefined): RoleProfile | null {

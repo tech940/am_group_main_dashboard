@@ -186,6 +186,8 @@ const ROLE_LABELS: Record<string, string> = {
   eba: 'EBA',
   call_agent: 'Call Agent',
   ca: 'CA',
+  crm: 'CRM',
+  idt: 'IDT',
 }
 
 const TAB_DEFINITIONS: Array<{

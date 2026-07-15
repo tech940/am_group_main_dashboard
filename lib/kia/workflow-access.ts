@@ -3,12 +3,18 @@
 // same rules are enforced in the UI and re-enforced on the backend.
 //
 // Workflow:
-//   sales_executive  -> Create Booking, Generate Proforma, Deliver
+//   sales_executive  -> Create Booking, Generate Proforma
 //   sales_manager / general_manager / md -> Approve / Decline Proforma
-//   (anyone except sales_executive) -> Allot Vehicle / Request Transfer
+//   idt -> Allot Vehicle to a booking (exclusive)
+//   (anyone except sales_executive) -> stock holds / BBND allot / Request Transfer
 //   accounts -> Confirm Payment Release + Invoice # + Invoice PDF (single step)
-//   sales_executive / sales_manager / general_manager / md -> Mark Delivered
+//   crm -> Mark Delivered (exclusive)
 // admin / developer bypass everything.
+//
+// These predicates are the ONLY thing restricting these actions. Do NOT try to gate them with a
+// `kia.*` permission: applyBrandDefault() in lib/permissions/service.ts grants every non-restricted
+// kia.* key to every KIA user whose role isn't template-only, so `kia.bookings.edit` excludes nobody.
+// The requirePermission() calls on the routes are brand/section checks, not action restrictions.
 
 function norm(role?: string | null) {
   return String(role || '').trim().toLowerCase()
@@ -48,13 +54,32 @@ export function canConfirmKiaPayment(role?: string | null) {
   return canVerifyKiaAccounts(role)
 }
 
-/** Sales Executive, Sales Manager / General Manager / MD (+ admin): mark the vehicle delivered. */
+/**
+ * CRM — Customer Relationship Manager (+ admin/developer): mark the vehicle delivered.
+ * Exclusive to the CRM: every other role is read-only on delivery status. admin/developer keep the
+ * override so a super admin can never be locked out of their own workflow.
+ */
 export function canDeliverKiaBooking(role?: string | null) {
   const r = norm(role)
-  return isKiaWorkflowAdmin(r) || r === 'sales_executive' || canApproveKiaProforma(r)
+  return isKiaWorkflowAdmin(r) || r === 'crm'
 }
 
-/** Vehicle allotment — any workflow participant EXCEPT the Sales Executive. */
+/**
+ * IDT — Internal Development Trainee (+ admin/developer): allot a vehicle to a booking. Exclusive.
+ *
+ * Deliberately SEPARATE from canAllotKiaVehicle below, which still governs stock holds, BBND allot
+ * and transfer requests — those keep their existing "anyone except the Sales Executive" rule. Only
+ * the booking allotment itself is IDT-exclusive.
+ */
+export function canAllotKiaVehicleToBooking(role?: string | null) {
+  const r = norm(role)
+  return isKiaWorkflowAdmin(r) || r === 'idt'
+}
+
+/**
+ * Stock holds / BBND allot / transfer requests — any workflow participant EXCEPT the Sales Executive.
+ * NOT the gate for allotting a vehicle to a booking; that is canAllotKiaVehicleToBooking.
+ */
 export function canAllotKiaVehicle(role?: string | null) {
   const r = norm(role)
   if (r === 'sales_executive') return false

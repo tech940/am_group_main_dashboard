@@ -34,7 +34,9 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-const PERMISSION_CACHE_VERSION = 'v11'
+// Bumped to v12 for the crm/idt roles — cached snapshots are keyed on this, so without a bump an
+// existing session would carry stale permissions for up to the cache TTL.
+const PERMISSION_CACHE_VERSION = 'v12'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -128,7 +130,7 @@ function constrainSnapshotToBranch(
 // Roles whose access is defined purely by their role template — they do NOT receive the
 // blanket "see your whole brand" default. This moves two former sidebar hardcodes into the
 // resolution layer: branch_admin (Petty Cash only) and sales_executive (Bookings only).
-const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca'])
+const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca', 'crm', 'idt'])
 
 // Sensitive analytics (Sales Report, Stock Report) are visible by default ONLY to top management:
 // super admins (MD/Developer) and EBA. Every other role — including CEO/EA and all brand roles — is
