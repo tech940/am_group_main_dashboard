@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { authorizeCronRequest } from '@/lib/maintenance/cron-auth'
 import {
   expireKiaTemporaryAllocations,
   expireKiaStockHolds,
@@ -25,9 +26,16 @@ export const maxDuration = 60
  */
 export async function POST(request: Request) {
   const url = new URL(request.url)
-  const secret = process.env.KIA_MAINTENANCE_SECRET
-  if (secret && url.searchParams.get('secret') !== secret) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  // Was `if (secret && ...)`, which skipped the check whenever the env var was unset — so with no
+  // KIA_MAINTENANCE_SECRET in production this endpoint ran write sweeps for any anonymous caller.
+  // authorizeCronRequest fails closed instead.
+  const auth = authorizeCronRequest(request, url, {
+    secret: process.env.KIA_MAINTENANCE_SECRET,
+    secretEnvName: 'KIA_MAINTENANCE_SECRET',
+  })
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
 
   const startedAt = Date.now()

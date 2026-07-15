@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AUTO_DEACTIVATION_IDLE_DAYS, runAutoDeactivationSweep } from '@/lib/auth/user-deactivation'
+import { authorizeCronRequest } from '@/lib/maintenance/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -20,37 +21,13 @@ export const maxDuration = 60
  *         ?force=1 overrides the mass-lockout circuit breaker (see lib/auth/user-deactivation.ts).
  */
 
-type AuthResult = { ok: true } | { ok: false; status: number; error: string }
-
-function authorize(request: Request, url: URL): AuthResult {
-  const cronSecret = process.env.CRON_SECRET
-  const manualSecret = process.env.USER_DEACTIVATION_SECRET
-
-  // FAILS CLOSED. /api/brands/kia/maintenance is wide open when its secret is unset, which is
-  // survivable for stock holds; an unauthenticated call to this one could lock every non-exempt
-  // user out of the dashboard, so no secret means no run.
-  if (!cronSecret && !manualSecret) {
-    return {
-      ok: false,
-      status: 503,
-      error: 'Neither CRON_SECRET nor USER_DEACTIVATION_SECRET is configured; refusing to run.',
-    }
-  }
-
-  if (cronSecret && request.headers.get('authorization') === `Bearer ${cronSecret}`) {
-    return { ok: true }
-  }
-  if (manualSecret && url.searchParams.get('secret') === manualSecret) {
-    return { ok: true }
-  }
-
-  return { ok: false, status: 403, error: 'Forbidden' }
-}
-
 async function handle(request: Request) {
   const url = new URL(request.url)
 
-  const auth = authorize(request, url)
+  const auth = authorizeCronRequest(request, url, {
+    secret: process.env.USER_DEACTIVATION_SECRET,
+    secretEnvName: 'USER_DEACTIVATION_SECRET',
+  })
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
