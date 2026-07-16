@@ -54,6 +54,13 @@ const CASES: Case[] = [
     'kia.bookings.view': true, 'kia.bookings.edit': true,
     'kia.business_excellence.view': false, 'kia.sales_report.view': false,
     'kia.stock_management.view': false, 'kia.proforma.view': false } },
+  // CRE owns Booking Follow-ups. Deliberately NOT call_analytics — that leaderboard ranks CREs,
+  // same reason sales_executive is kept off it.
+  { role: 'cre', brand: 'kia', label: 'CRE → Booking Follow-ups + read-only bookings, nothing else', expect: {
+    'kia.lead_followups.view': true, 'kia.lead_followups.create': true, 'kia.lead_followups.edit': true,
+    'kia.bookings.view': true, 'kia.bookings.edit': false,
+    'kia.call_analytics.view': false, 'kia.business_excellence.view': false,
+    'kia.sales_report.view': false, 'kia.stock_management.view': false } },
 ]
 
 console.log('\n=== Phase 3 resolution: restricted-role matrix (no DB) ===\n')

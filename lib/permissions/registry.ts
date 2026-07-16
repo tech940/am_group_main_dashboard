@@ -866,8 +866,11 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   finance_team: 'Finance Team',
   call_agent: 'Call Agent',
   ca: 'CA',
-  crm: 'CRM',
-  idt: 'IDT',
+  // CRM and CRE are one letter apart but grant very different things (delivery vs follow-ups).
+  // Spell the job out so nobody mis-assigns them from a dropdown.
+  crm: 'CRM (Relationship Manager)',
+  idt: 'IDT (Internal Dev Trainee)',
+  cre: 'CRE (Relationship Executive)',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -1100,6 +1103,13 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   // Allotment is gated by ROLE in lib/kia/workflow-access.ts — same reasoning as CRM above.
   idt: [
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+  ],
+  // CRE (Customer Relationship Executive): calls customers and owns Booking Follow-ups. Gets the
+  // follow-up pipeline and read-only sight of the bookings behind it — deliberately NOT
+  // kia.call_analytics (the leaderboard ranks CREs; same reason sales_executive doesn't get it).
+  cre: [
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.bookings'], ['view']),
   ],
 }
 

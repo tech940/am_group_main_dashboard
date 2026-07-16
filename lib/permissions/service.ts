@@ -34,9 +34,9 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-// Bumped to v12 for the crm/idt roles — cached snapshots are keyed on this, so without a bump an
-// existing session would carry stale permissions for up to the cache TTL.
-const PERMISSION_CACHE_VERSION = 'v12'
+// Bumped for each new role (v12 crm/idt, v13 cre) — cached snapshots are keyed on this, so without
+// a bump an existing session would carry stale permissions for up to the cache TTL.
+const PERMISSION_CACHE_VERSION = 'v13'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -130,7 +130,7 @@ function constrainSnapshotToBranch(
 // Roles whose access is defined purely by their role template — they do NOT receive the
 // blanket "see your whole brand" default. This moves two former sidebar hardcodes into the
 // resolution layer: branch_admin (Petty Cash only) and sales_executive (Bookings only).
-const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca', 'crm', 'idt'])
+const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca', 'crm', 'idt', 'cre'])
 
 // Sensitive analytics (Sales Report, Stock Report) are visible by default ONLY to top management:
 // super admins (MD/Developer) and EBA. Every other role — including CEO/EA and all brand roles — is
@@ -393,9 +393,16 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
     throw error
   }
 
+  // ORDER BY is load-bearing, not cosmetic. Without it Postgres returns heap order, which SHIFTS
+  // whenever syncPermissionRegistry() upserts these rows — so the resulting snapshot object gets a
+  // different key order for identical permissions. The Sidebar compares successive maps to decide
+  // whether access changed; an order flip read as "changed" and fired router.refresh(), which
+  // re-rendered, refetched, re-synced, and flipped again — an endless RSC loop on every page.
+  // Deterministic order also keeps the payload byte-stable for caching and structural sharing.
   const permissionRows = await db.select({ id: permissions.id, key: permissions.name })
     .from(permissions)
     .where(eq(permissions.isActive, true))
+    .orderBy(permissions.name)
 
   const roleRows = await db.select({
     permissionId: rolePermissions.permissionId,

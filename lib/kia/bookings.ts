@@ -8,14 +8,17 @@ import {
   financeOrders,
   kiaBookingActivity,
   kiaBookings,
+  kiaLeadFollowups,
   kiaProformas,
   kiaStockLocalStatuses,
   kiaVehicleAllocations,
   kiaVehicleTransfers,
   kiaPriceDetails,
+  users,
 } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import { cancelKiaBookingFollowups } from '@/lib/kia/lead-followups'
 import {
   canAllotKiaVehicle,
   canConfirmKiaPayment,
@@ -44,6 +47,37 @@ const DMS_FREE_STOCK = 'free stock'
 
 function dmsStockStatus(value: unknown) {
   return String(value ?? '').trim().toLowerCase()
+}
+
+/**
+ * Normalises a person's name for matching. Strips case, spacing AND punctuation, because staff names
+ * are typed by hand and vary in all three: the same person has appeared as "gulshankumar" and
+ * "GULSHAN KUMAR", "akashbhat" and "Akash Bhat". Lower-casing alone is NOT enough — those pairs
+ * differ by a space, not a capital.
+ */
+export function personNameKey(value: unknown) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/**
+ * Resolves a typed consultant name to exactly one active user, or null.
+ *
+ * Returns null when the name matches NOTHING or matches MORE THAN ONE user — never a guess. This
+ * decides who can see a booking, so an ambiguous match must not silently hand a customer to the
+ * wrong salesperson.
+ */
+async function resolveUserByPersonName(tx: DbTx, name: string) {
+  const key = personNameKey(name)
+  if (!key) return null
+  const matches = await tx.select({ id: users.id, email: users.email, fullName: users.fullName })
+    .from(users)
+    .where(and(
+      sql`regexp_replace(lower(${users.fullName}), '[^a-z0-9]', '', 'g') = ${key}`,
+      eq(users.isActive, true),
+      isNull(users.deletedAt),
+    ))
+    .limit(2)
+  return matches.length === 1 ? matches[0] : null
 }
 
 // The temporary-allocation payment window depends on the customer type captured
@@ -912,6 +946,27 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
       appUser,
     })
 
+    // Every booking enters the Booking Follow-ups pipeline the moment it exists — due immediately,
+    // so it lands in the CRE's Pending queue rather than waiting for someone to remember.
+    //
+    // Inserted directly on the tx rather than via createFollowup(), which uses the global `db`: a
+    // call to it here would run OUTSIDE this transaction and could leave an orphan follow-up if the
+    // booking insert later rolled back. It also (correctly) demands human remarks, which a system
+    // enrolment has none of.
+    await tx.insert(kiaLeadFollowups).values({
+      bookingId: booking.id,
+      dueAt: new Date(),
+      status: 'pending',
+      reason: 'general',
+      priority: 'normal',
+      // Unassigned: the CRE team picks it up from the shared queue.
+      assignedTo: null,
+      dealerCode: booking.dealerCode,
+      source: 'manual',
+      notes: `Auto-enrolled when the booking was created by ${appUser.fullName}.`,
+      createdBy: appUser.id,
+    })
+
     return booking
   })
 }
@@ -988,7 +1043,21 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     if (input.variant !== undefined) updates.variant = text(input.variant)
     if (input.color !== undefined) updates.color = nullableText(input.color)
     if (input.fuelType !== undefined) updates.fuelType = nullableText(input.fuelType)
-    if (input.consultantName !== undefined) updates.consultantName = text(input.consultantName)
+    // Reassigning the consultant must actually MOVE the booking to them.
+    //
+    // A sales_executive only sees bookings where `created_by = them OR consultant_email = them`
+    // (see the viewer filter in listFilters). consultant_name plays no part. So changing only the
+    // name — which is all this did — renamed the label while the booking stayed invisible to the
+    // person it was just handed to, and visible to whoever happened to create it. Re-stamping the
+    // email is what makes "assign to X" mean it.
+    if (input.consultantName !== undefined) {
+      const nextName = text(input.consultantName)
+      updates.consultantName = nextName
+      const resolved = await resolveUserByPersonName(tx, nextName)
+      // Only when it resolves to exactly one user. An unmatched or ambiguous name leaves the
+      // existing email alone rather than silently stripping the current owner's access.
+      if (resolved) updates.consultantEmail = resolved.email
+    }
     if (input.source !== undefined) updates.source = nullableText(input.source)
     if (input.financeRequired !== undefined) updates.financeRequired = Boolean(input.financeRequired)
     if (input.bankName !== undefined) updates.bankName = nullableText(input.bankName)
@@ -1020,6 +1089,15 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
       after: booking as unknown as JsonRecord,
       appUser,
     })
+
+    // The customer journey ends here: close the follow-up loop so nobody calls a customer whose car
+    // has already been handed over, and no reminder email goes out. In the same transaction as the
+    // delivery, so it can't half-apply. The pipeline query also filters delivered bookings out —
+    // this is what stops the reminder emails, which read the table directly.
+    if (input.delivered) {
+      await cancelKiaBookingFollowups(tx, id, 'vehicle delivered')
+    }
+
     return booking
   })
 }

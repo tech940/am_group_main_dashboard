@@ -186,8 +186,11 @@ const ROLE_LABELS: Record<string, string> = {
   eba: 'EBA',
   call_agent: 'Call Agent',
   ca: 'CA',
-  crm: 'CRM',
-  idt: 'IDT',
+  // CRM vs CRE: one letter apart, very different powers (delivery vs follow-ups). Spelled out so
+  // they can't be confused in the role dropdown.
+  crm: 'CRM (Relationship Manager)',
+  idt: 'IDT (Internal Dev Trainee)',
+  cre: 'CRE (Relationship Executive)',
 }
 
 const TAB_DEFINITIONS: Array<{

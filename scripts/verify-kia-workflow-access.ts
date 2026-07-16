@@ -14,6 +14,7 @@ import {
   canDeliverKiaBooking,
   canVerifyKiaAccounts,
 } from '../lib/kia/workflow-access'
+import { canRevealKiaFollowupPhone, canViewKiaCustomerPii } from '../lib/kia/pii'
 
 type Check = { label: string; got: boolean; want: boolean }
 
@@ -50,6 +51,23 @@ const CHECKS: Check[] = [
   { label: 'sales_manager CANNOT confirm payment', got: canVerifyKiaAccounts('sales_manager'), want: false },
   { label: 'idt CANNOT confirm payment', got: canVerifyKiaAccounts('idt'), want: false },
   { label: 'crm CANNOT confirm payment', got: canVerifyKiaAccounts('crm'), want: false },
+
+  // Customer PII — who may REVEAL a mobile number from Booking Follow-ups. This is the narrow
+  // exception to "telecallers never see the number"; everyone else keeps the masked lock.
+  { label: 'CRE CAN reveal a customer number', got: canRevealKiaFollowupPhone('cre'), want: true },
+  { label: 'MD CAN reveal (already has PII everywhere)', got: canRevealKiaFollowupPhone('md'), want: true },
+  { label: 'developer CAN reveal', got: canRevealKiaFollowupPhone('developer'), want: true },
+  { label: 'finance_head CAN reveal', got: canRevealKiaFollowupPhone('finance_head'), want: true },
+  { label: 'sales_executive CANNOT reveal', got: canRevealKiaFollowupPhone('sales_executive'), want: false },
+  { label: 'sales_manager CANNOT reveal', got: canRevealKiaFollowupPhone('sales_manager'), want: false },
+  { label: 'manager CANNOT reveal', got: canRevealKiaFollowupPhone('manager'), want: false },
+  { label: 'call_agent CANNOT reveal (masked Call Center is its own flow)', got: canRevealKiaFollowupPhone('call_agent'), want: false },
+  { label: 'crm CANNOT reveal (delivery role, not a caller)', got: canRevealKiaFollowupPhone('crm'), want: false },
+  { label: 'empty role CANNOT reveal', got: canRevealKiaFollowupPhone(''), want: false },
+  { label: 'reveal gate is case-insensitive', got: canRevealKiaFollowupPhone(' CRE '), want: true },
+  // The wider PII rule must NOT have drifted: CRE gets the follow-up reveal only, not blanket PII
+  // across the Proforma/Bookings/Stock surfaces.
+  { label: 'CRE did NOT gain blanket KIA PII access', got: canViewKiaCustomerPii('cre'), want: false },
 
   // Case/whitespace robustness — role strings arrive from the DB and the client.
   { label: 'CRM gate is case-insensitive', got: canDeliverKiaBooking('  CRM '), want: true },

@@ -690,6 +690,13 @@ function ModuleHeader({
               <Link
                 key={item.section}
                 href={item.href}
+                // prefetch={false}: these tabs sit above the fold, so the default auto-prefetch
+                // fires an RSC request for EVERY tab on EVERY page load — 3-4 server invocations
+                // before the user clicks anything. The target is dynamic (it reads cookies via the
+                // auth guard) so nothing is cacheable and the prefetch buys no speed, only Vercel
+                // Fluid invocations. Same call the sidebar already made — see
+                // components/layout/sidebar-cascading-nav.tsx.
+                prefetch={false}
                 className="relative shrink-0 rounded-xl px-4 py-2 text-xs font-bold transition-colors"
                 style={{ color: activeTab ? 'var(--dashboard-action-fg)' : 'var(--kia-text-soft)' }}
               >

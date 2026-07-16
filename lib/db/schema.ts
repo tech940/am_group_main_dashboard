@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt'])
+export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -1751,6 +1751,10 @@ export const kiaLeadFollowups = pgTable('kia_lead_followups', {
   source: text('source').default('manual').notNull(), // 'manual' | 'call' | 'callback_request'
   sourceCallId: uuid('source_call_id').references(() => kiaCallLogs.id),
   outcome: text('outcome'),
+  // WHY THE CUSTOMER DECLINED — required when outcome='not_interested'. A preset code so the
+  // analytics dashboard can rank reasons. NOT the same thing as `reason` above, which is why the
+  // follow-up was SCHEDULED. Same word, opposite concept; the free-text detail lives in `notes`.
+  notInterestedReason: text('not_interested_reason'),
   completedBy: uuid('completed_by').references(() => users.id),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),

@@ -79,6 +79,7 @@ export const ROLE_PROFILE: Record<PermissionRole, RoleProfile> = {
   // see the finance track). They exist to OWN one action each, not to accumulate access.
   crm: { tier: TIER.EMPLOYEE, family: 'special' }, // Customer Relationship Manager — marks vehicles delivered
   idt: { tier: TIER.EMPLOYEE, family: 'special' }, // Internal Development Trainee — allots vehicles to bookings
+  cre: { tier: TIER.EMPLOYEE, family: 'special' }, // Customer Relationship Executive — calls customers, owns booking follow-ups
 }
 
 export function getRoleProfile(role: string | null | undefined): RoleProfile | null {

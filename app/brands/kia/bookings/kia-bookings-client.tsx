@@ -605,10 +605,12 @@ function BookingMobileCard({
   row,
   onOpen,
   now,
+  onEdit,
 }: {
   row: BookingRow
   onOpen: (id: string) => void
   now: number
+  onEdit?: (id: string) => void
 }) {
   const router = useRouter()
   const canViewPii = useCanViewPii()
@@ -634,11 +636,11 @@ function BookingMobileCard({
         <FieldValue label="VIN" value={row.allocatedVin || '—'} mono />
         <FieldValue label="Finance" value={row.financeOrderNumber || '—'} />
       </div>
-      <div className="mt-3" onClick={(event) => event.stopPropagation()}>
+      <div className="mt-3 flex gap-2" onClick={(event) => event.stopPropagation()}>
         {row.proformaNumber ? (
           <Link
             href={`/brands/kia/proforma/all-proforma-details?search=${row.proformaNumber}`}
-            className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border px-3 text-[11px] font-bold uppercase tracking-[0.06em]"
+            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 text-[11px] font-bold uppercase tracking-[0.06em]"
             style={toneSoftStyle('accent')}
           >
             Proforma ready <ArrowRight className="h-3 w-3" />
@@ -646,10 +648,21 @@ function BookingMobileCard({
         ) : (
           <Button
             size="sm"
-            className="h-9 w-full rounded-xl px-3 text-[11px] font-bold"
+            className="h-9 flex-1 rounded-xl px-3 text-[11px] font-bold"
             onClick={() => router.push(`/brands/kia/proforma/generate?bookingId=${row.id}`)}
           >
             Generate Proforma
+          </Button>
+        )}
+        {onEdit && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 w-9 rounded-xl p-0 shrink-0 border-slate-200 text-slate-700 hover:bg-slate-50"
+            onClick={() => onEdit(row.id)}
+            title="Edit booking"
+          >
+            <Pencil className="h-3.5 w-3.5" />
           </Button>
         )}
       </div>
@@ -1235,6 +1248,20 @@ export function KiaBookingsClient({
   const [createSuccess, setCreateSuccess] = useState(false)
   const [deliverySuccess, setDeliverySuccess] = useState(false)
   const [allotSuccess, setAllotSuccess] = useState(false)
+  const [editingBookingId, setEditingBookingId] = useState<string | null>(null)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [editForm, setEditForm] = useState<CreateBookingForm>(() => initialCreateForm())
+  const [editTab, setEditTab] = useState<(typeof CREATE_TABS)[number]>('Customer')
+  const [editSuccess, setEditSuccess] = useState(false)
+  const [editingBookingNumber, setEditingBookingNumber] = useState('')
+  const editingDetailQuery = useQuery({
+    queryKey: ['kia-booking-detail', editingBookingId],
+    queryFn: () => fetchJson<BookingDetailPayload>(`/api/brands/kia/bookings/${editingBookingId}`, 'kia-booking-detail'),
+    enabled: Boolean(editingBookingId),
+    retry: 1,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  })
 
   // "Replace Prices" (KIA price-master Excel upload) now lives in Admin → System.
   const canUseTestPersona = currentUserRole === 'developer'
@@ -1245,6 +1272,68 @@ export function KiaBookingsClient({
   const animated = usePremiumMotion()
   // Live minute tick for the "time waiting" indicators on each list row.
   const nowTick = useMinuteTick()
+
+  useEffect(() => {
+    if (editingDetailQuery.error && editingBookingId) {
+      toast({
+        title: 'Error loading booking',
+        description: editingDetailQuery.error instanceof Error ? editingDetailQuery.error.message : 'Please try again.',
+        variant: 'error',
+      })
+      setEditingBookingId(null)
+    }
+  }, [editingDetailQuery.error, editingBookingId])
+
+  useEffect(() => {
+    if (editingBookingId && editingDetailQuery.data?.booking) {
+      const b = editingDetailQuery.data.booking
+      const meta = (b.metadata || {}) as Record<string, unknown>
+      setEditForm({
+        customerName: b.customerName || '',
+        customerType: String(meta.customerType || 'Regular'),
+        countryCode: String(meta.countryCode || '91'),
+        customerPhone: b.customerPhone || '',
+        customerEmailId: b.customerEmail || String(meta.customerEmailId || ''),
+        model: b.model || '',
+        year: String(meta.year || '2026'),
+        fuelType: b.fuelType || String(meta.fuelType || 'PETROL'),
+        variant: b.variant || '',
+        bankFinance: b.bankName || String(meta.bankFinance || ''),
+        bookingAmount: String(meta.bookingAmount || ''),
+        bookingDate: String(meta.bookingDate || (b.createdAt ? new Date(b.createdAt).toISOString().split('T')[0] : '')),
+        pmtSource: String(meta.pmtSource || ''),
+        paymentAmount: String(meta.paymentAmount || ''),
+        managerName: String(meta.managerName || 'SANJEEV KOUL'),
+        tlName: String(meta.tlName || ''),
+        consultantName: b.consultantName || '',
+        color: b.color || b.colorPreference || String(meta.color || ''),
+        leadSource: String(meta.leadSource || ''),
+        status: b.status || 'NOT IN STOCK',
+        expectedDeliveryDate: b.expectedDeliveryDate || String(meta.expectedDeliveryDate || ''),
+        commitment: String(meta.commitment || ''),
+        otherDealerDetails: String(meta.otherDealerDetails || ''),
+        promiseDate: String(meta.promiseDate || ''),
+        costSheet: String(meta.costSheet || ''),
+        waitingPeriod: String(meta.waitingPeriod || ''),
+        dealerCode: b.dealerCode || 'JK402',
+        notes: b.notes || String(meta.notes || ''),
+        panCardUrl: String(meta.panCardUrl || ''),
+        panCardName: String(meta.panCardName || ''),
+        panNumber: String(meta.panNumber || ''),
+        aadhaarCardUrl: String(meta.aadhaarCardUrl || ''),
+        aadhaarCardName: String(meta.aadhaarCardName || ''),
+        aadhaarNumber: String(meta.aadhaarNumber || ''),
+        employeeIdUrl: String(meta.employeeIdUrl || ''),
+        employeeIdName: String(meta.employeeIdName || ''),
+        exchange: String(meta.exchange || 'No'),
+        exchangeVehicleName: String(meta.exchangeVehicleName || ''),
+        exchangeValue: String(meta.exchangeValue || ''),
+      })
+      setEditingBookingNumber(b.bookingNumber || '')
+      setEditTab('Customer')
+      setIsEditOpen(true)
+    }
+  }, [editingBookingId, editingDetailQuery.data])
 
   const selectedBookingId = searchParams.get('bookingId') || ''
 
@@ -1261,8 +1350,22 @@ export function KiaBookingsClient({
     }
   }, [createOpen, currentUserName, createForm.consultantName])
 
+  // Mirror the filters into the URL for shareability / the back button.
+  //
+  // Uses `debouncedSearch`, NOT `search`. With the raw value this fired on EVERY KEYSTROKE — typing
+  // "SHARMA" cost six server renders. The list query below was already debounced (see the comment
+  // above), so the cheap API call was throttled while the expensive one was not: exactly backwards.
+  //
+  // DO NOT "optimise" this to window.history.replaceState. That looks like it avoids the RSC
+  // round-trip, and the Next docs' "Shallow routing on the client" section reads like it does — but
+  // in Next 16 it does not. next/dist/client/components/app-router.js patches replaceState and only
+  // bails out for its OWN calls (`if (data?.__NA || data?._N)`); a userland call with data=null
+  // falls through to applyUrlFromHistoryPushReplace → ACTION_RESTORE → spawnDynamicRequests, which
+  // refetches any route that isn't fully cached. This route reads cookies in its auth guard, so it
+  // never is. Tried it, measured it, reverted it — the round-trip is the same, and it can hard-
+  // navigate if startPPRNavigation returns null.
   useEffect(() => {
-    const query = buildQueryString({ search, dealer_code: dealer, model, status, consultant, page, sort: sortOrder === 'asc' ? 'asc' : undefined })
+    const query = buildQueryString({ search: debouncedSearch, dealer_code: dealer, model, status, consultant, page, sort: sortOrder === 'asc' ? 'asc' : undefined })
     const next = new URLSearchParams(query)
     if (selectedBookingId && embedMode) next.set('bookingId', selectedBookingId)
     const nextSearch = next.toString() ? `?${next.toString()}` : ''
@@ -1270,7 +1373,7 @@ export function KiaBookingsClient({
     if (nextSearch !== currentSearch) {
       router.replace(`${pathname}${nextSearch}`, { scroll: false })
     }
-  }, [pathname, consultant, dealer, model, page, router, search, selectedBookingId, status, embedMode, sortOrder])
+  }, [pathname, consultant, dealer, model, page, router, debouncedSearch, selectedBookingId, status, embedMode, sortOrder])
 
   const listQueryString = useMemo(() => buildQueryString({
     search: debouncedSearch,
@@ -1333,6 +1436,34 @@ export function KiaBookingsClient({
       // Play the success celebration; the dialog closes when it finishes.
       setCreateSuccess(true)
       queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
+    },
+  })
+
+  const editMutation = useMutation({
+    mutationFn: (payload: CreateBookingForm) => fetchJson<{ ok: boolean }>(`/api/brands/kia/bookings/${editingBookingId}`, 'kia-booking-update', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        customerName: payload.customerName,
+        customerPhone: payload.customerPhone,
+        customerEmail: payload.customerEmailId,
+        dealerCode: payload.dealerCode,
+        model: payload.model,
+        variant: payload.variant,
+        color: payload.color,
+        fuelType: payload.fuelType,
+        consultantName: payload.consultantName,
+        source: payload.leadSource,
+        bankName: payload.bankFinance,
+        financeRequired: payload.bankFinance && payload.bankFinance !== 'CASH',
+        loanAmount: payload.bookingAmount || '0',
+        notes: payload.notes,
+        metadata: payload,
+      }),
+    }),
+    onSuccess: () => {
+      setEditSuccess(true)
+      queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['kia-booking-detail', editingBookingId] })
     },
   })
 
@@ -1624,6 +1755,97 @@ export function KiaBookingsClient({
     }
     // Consultant is always the logged-in user — never chosen in the form — so ownership is accurate.
     createMutation.mutate({ ...createForm, consultantName: currentUserName || createForm.consultantName })
+  }
+
+  function submitEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (editTab !== 'Review') return
+    setFormError('')
+    const requiredFields: Array<[keyof CreateBookingForm, string]> = [
+      ['customerName', 'Customer Name'],
+      ['countryCode', 'Country Code'],
+      ['customerPhone', 'Mobile number'],
+      ['customerEmailId', 'Customer Email Id'],
+      ['panCardUrl', 'PAN Card upload'],
+      ['panNumber', 'PAN Number'],
+      ['aadhaarCardUrl', 'Aadhaar Card upload'],
+      ['aadhaarNumber', 'Aadhaar Number'],
+      ['model', 'Model'],
+      ['year', 'YEAR'],
+      ['variant', 'Variant'],
+      ['color', 'Colour'],
+      ['status', 'Stock Status'],
+      ['managerName', 'Manager Name'],
+      ['tlName', 'Team Leader'],
+      ['leadSource', 'Lead Source'],
+      ['bookingAmount', 'Booking Amount'],
+      ['bookingDate', 'Booking Date'],
+      ['pmtSource', 'Payment Source'],
+      ['paymentAmount', 'Payment Amount'],
+      ['costSheet', 'Cost Sheet'],
+      ['bankFinance', 'Bank / Finance'],
+      ['expectedDeliveryDate', 'Estimated Delivery Date'],
+      ['promiseDate', 'Promise Date'],
+    ]
+    const missing = requiredFields.find(([key]) => !editForm[key]?.trim())
+    if (missing) {
+      setFormError(`${missing[1]} is required.`)
+      const tabByField: Record<keyof CreateBookingForm, (typeof CREATE_TABS)[number]> = {
+        customerName: 'Customer',
+        customerType: 'Customer',
+        countryCode: 'Customer',
+        customerPhone: 'Customer',
+        customerEmailId: 'Customer',
+        model: 'Vehicle',
+        variant: 'Vehicle',
+        year: 'Vehicle',
+        fuelType: 'Vehicle',
+        color: 'Vehicle',
+        status: 'Vehicle',
+        waitingPeriod: 'Vehicle',
+        managerName: 'Sales Team',
+        tlName: 'Sales Team',
+        consultantName: 'Sales Team',
+        leadSource: 'Sales Team',
+        bookingAmount: 'Payment',
+        bookingDate: 'Payment',
+        pmtSource: 'Payment',
+        paymentAmount: 'Payment',
+        costSheet: 'Payment',
+        bankFinance: 'Payment',
+        expectedDeliveryDate: 'Delivery',
+        promiseDate: 'Delivery',
+        commitment: 'Delivery',
+        otherDealerDetails: 'Delivery',
+        dealerCode: 'Customer',
+        notes: 'Delivery',
+        panCardUrl: 'Customer',
+        panCardName: 'Customer',
+        panNumber: 'Customer',
+        aadhaarCardUrl: 'Customer',
+        aadhaarCardName: 'Customer',
+        aadhaarNumber: 'Customer',
+        employeeIdUrl: 'Customer',
+        employeeIdName: 'Customer',
+        exchange: 'Customer',
+        exchangeVehicleName: 'Customer',
+        exchangeValue: 'Customer',
+      }
+      setEditTab(tabByField[missing[0]] || 'Customer')
+      return
+    }
+    // Format checks
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(editForm.panNumber.trim().toUpperCase())) {
+      setFormError('Enter a valid PAN (e.g. ABCDE1234F).'); setEditTab('Customer'); return
+    }
+    if (editForm.aadhaarNumber.replace(/\D/g, '').length !== 12) {
+      setFormError('Enter a valid 12-digit Aadhaar number.'); setEditTab('Customer'); return
+    }
+    if (editForm.exchange === 'Yes') {
+      if (!editForm.exchangeVehicleName.trim()) { setFormError('Enter the exchange vehicle name.'); setEditTab('Customer'); return }
+      if (!(Number(editForm.exchangeValue) > 0)) { setFormError('Enter a valid exchange value.'); setEditTab('Customer'); return }
+    }
+    editMutation.mutate(editForm)
   }
 
   function runAction(action: 'proforma' | 'finance' | 'payment' | 'accounts' | 'release' | 'deliver' | 'cancel' | 'transfer' | 'hold' | 'resume') {
@@ -1973,9 +2195,19 @@ export function KiaBookingsClient({
               {listQuery.isFetching && <InlineLoader variant="search" size={28} />}
             </div>
             <div className="grid gap-3 p-3 sm:hidden">
-              {rows.map((row) => (
-                <BookingMobileCard key={row.id} row={row} onOpen={openBooking} now={nowTick} />
-              ))}
+              {rows.map((row) => {
+                const isClosed = row.status === 'delivered' || row.status === 'cancelled'
+                const canEdit = !isClosed && (roleCanActAsSalesPerson(normalizedCurrentRole) || roleCanActAsSalesManager(normalizedCurrentRole))
+                return (
+                  <BookingMobileCard
+                    key={row.id}
+                    row={row}
+                    onOpen={openBooking}
+                    now={nowTick}
+                    onEdit={canEdit ? (id) => setEditingBookingId(id) : undefined}
+                  />
+                )
+              })}
             </div>
             <Table className="hidden sm:table kia-table">
               <TableHeader>
@@ -2029,6 +2261,20 @@ export function KiaBookingsClient({
                           <button type="button" title="View booking" onClick={() => openBooking(row.id)} className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--kia-text)]">
                             <Eye className="h-4 w-4" />
                           </button>
+                          {!isClosed && (roleCanActAsSalesPerson(normalizedCurrentRole) || roleCanActAsSalesManager(normalizedCurrentRole)) && (
+                            <button
+                              type="button"
+                              title="Edit booking"
+                              onClick={() => setEditingBookingId(row.id)}
+                              className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--kia-text)]"
+                            >
+                              {editingBookingId === row.id && editingDetailQuery.isFetching ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-[var(--dashboard-action-bg)]" />
+                              ) : (
+                                <Pencil className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
                           {row.proformaNumber ? (
                             <Link href={`/brands/kia/proforma/all-proforma-details?search=${row.proformaNumber}`} title="Open proforma" className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--dashboard-action-bg)]">
                               <FileText className="h-4 w-4" />
@@ -2453,10 +2699,42 @@ export function KiaBookingsClient({
               onOpenTransfer={openTransferDialog}
               onPaymentNotReceived={markPaymentNotReceived}
               onStatusChange={(status) => { setLoaderVariant('generic'); statusMutation.mutate(status) }}
+              onEdit={() => setEditingBookingId(detailQuery.data.booking.id)}
             />
           ) : null}
         </DialogContent>
       </Dialog>
+      {editingBookingId && editingDetailQuery.data?.booking && (
+        <CreateBookingDialog
+          isEdit
+          bookingNumber={editingBookingNumber}
+          open={isEditOpen}
+          form={editForm}
+          currentUserName={currentUserName}
+          activeTab={editTab}
+          modelOptions={bookingModelOptions}
+          variantOptions={bookingVariantOptions}
+          bankOptions={bookingBankOptions}
+          masterLoading={proformaOptionsQuery.isLoading}
+          error={formError || (editMutation.error instanceof Error ? editMutation.error.message : '')}
+          isSubmitting={editMutation.isPending}
+          showSuccess={editSuccess}
+          onSuccessDone={() => {
+            setEditSuccess(false)
+            setIsEditOpen(false)
+            setEditingBookingId(null)
+            setEditingBookingNumber('')
+            setActionMessage('Booking updated successfully.')
+          }}
+          onOpenChange={(open) => {
+            setIsEditOpen(open)
+            if (!open) setEditingBookingId(null)
+          }}
+          onTabChange={setEditTab}
+          onChange={(key, value) => setEditForm((current) => ({ ...current, [key]: value }))}
+          onSubmit={submitEdit}
+        />
+      )}
     </KiaPiiContext.Provider>
   )
 
@@ -2576,6 +2854,8 @@ function CreateBookingDialog({
   onTabChange,
   onChange,
   onSubmit,
+  isEdit = false,
+  bookingNumber = '',
 }: {
   open: boolean
   form: CreateBookingForm
@@ -2593,6 +2873,8 @@ function CreateBookingDialog({
   onTabChange: (tab: (typeof CREATE_TABS)[number]) => void
   onChange: <K extends keyof CreateBookingForm>(key: K, value: CreateBookingForm[K]) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  isEdit?: boolean
+  bookingNumber?: string
 }) {
   const activeIndex = CREATE_TABS.indexOf(activeTab)
   const isLastStep = activeIndex === CREATE_TABS.length - 1
@@ -2608,24 +2890,24 @@ function CreateBookingDialog({
 
   // Detect a saved draft whenever the dialog opens.
   useEffect(() => {
-    if (!open) return
+    if (!open || isEdit) return
     try {
       setHasDraft(Boolean(window.localStorage.getItem(BOOKING_DRAFT_KEY)))
     } catch {
       setHasDraft(false)
     }
-  }, [open])
+  }, [open, isEdit])
 
   // Clear the saved draft once a booking is successfully created.
   useEffect(() => {
-    if (!showSuccess) return
+    if (!showSuccess || isEdit) return
     try {
       window.localStorage.removeItem(BOOKING_DRAFT_KEY)
     } catch {
       // ignore
     }
     setHasDraft(false)
-  }, [showSuccess])
+  }, [showSuccess, isEdit])
 
   const handleSaveDraft = () => {
     try {
@@ -2765,8 +3047,8 @@ function CreateBookingDialog({
         {/* On the Review step the panel itself is the booking animation, so don't
             cover it with the full-screen overlay — only use the overlay when
             submitting from any other step. */}
-        <LoaderOverlay show={isSubmitting && activeTab !== 'Review'} variant="reserve" label="Creating booking…" sublabel="Reserving the customer's vehicle" />
-        <SuccessOverlay show={showSuccess} label="Booking created!" sublabel="Reserved for the customer" onDone={onSuccessDone} />
+        <LoaderOverlay show={isSubmitting && activeTab !== 'Review'} variant="reserve" label={isEdit ? "Updating booking…" : "Creating booking…"} sublabel={isEdit ? "Saving booking changes" : "Reserving the customer's vehicle"} />
+        <SuccessOverlay show={showSuccess} label={isEdit ? "Booking updated!" : "Booking created!"} sublabel={isEdit ? "Changes saved successfully" : "Reserved for the customer"} onDone={onSuccessDone} />
         <form
           onSubmit={onSubmit}
           onKeyDown={(e) => {
@@ -2784,8 +3066,8 @@ function CreateBookingDialog({
               <span className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white">
                 <Car className="h-3 w-3" /> Stepwise Booking
               </span>
-              <DialogTitle className="text-xl font-extrabold tracking-tight sm:text-2xl">Create AM Kia Booking</DialogTitle>
-              <DialogDescription className="mt-1 max-w-2xl text-xs font-medium leading-5 text-white/80">Create the booking first, then generate the proforma for manager approval.</DialogDescription>
+              <DialogTitle className="text-xl font-extrabold tracking-tight sm:text-2xl">{isEdit ? `Edit Booking — ${bookingNumber}` : "Create AM Kia Booking"}</DialogTitle>
+              <DialogDescription className="mt-1 max-w-2xl text-xs font-medium leading-5 text-white/80">{isEdit ? "Review and update the booking details across all stages." : "Create the booking first, then generate the proforma for manager approval."}</DialogDescription>
             </div>
           </DialogHeader>
 
@@ -3181,15 +3463,17 @@ function CreateBookingDialog({
               <span className="hidden text-[10px] font-black uppercase tracking-widest text-slate-400 sm:block">
                 Step {activeIndex + 1} of {CREATE_TABS.length}
               </span>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 min-w-[90px] rounded-2xl bg-white text-xs font-black text-slate-700 hover:bg-slate-100 sm:text-sm"
-                onClick={handleSaveDraft}
-                disabled={isSubmitting}
-              >
-                Save Draft
-              </Button>
+              {!isEdit && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 min-w-[90px] rounded-2xl bg-white text-xs font-black text-slate-700 hover:bg-slate-100 sm:text-sm"
+                  onClick={handleSaveDraft}
+                  disabled={isSubmitting}
+                >
+                  Save Draft
+                </Button>
+              )}
               {!isLastStep ? (
                 <Button
                   key="wizard-next"
@@ -3216,7 +3500,7 @@ function CreateBookingDialog({
                   disabled={isSubmitting}
                 >
                   {isSubmitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-                  {isSubmitting ? 'Creating...' : 'Create Booking'}
+                  {isSubmitting ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Booking')}
                 </Button>
               )}
             </div>
@@ -3261,6 +3545,7 @@ function BookingDrawer({
   onOpenTransfer,
   onPaymentNotReceived,
   onStatusChange,
+  onEdit,
 }: {
   detail: BookingDetailPayload
   currentUserRole: string
@@ -3276,9 +3561,9 @@ function BookingDrawer({
   onOpenTransfer: (vehicle?: MatchingVehicle | null) => void
   onPaymentNotReceived: () => void
   onStatusChange: (status: string) => void
+  onEdit?: () => void
 }) {
   const router = useRouter()
-  const [editOpen, setEditOpen] = useState(false)
   const [sharingLink, setSharingLink] = useState(false)
   const { booking, allocation, proforma, financeOrder, activities, transfers } = detail
   // Live minute tick for the detail panel's "time waiting" indicator.
@@ -3769,7 +4054,7 @@ function BookingDrawer({
                   Payment not received
                 </Button>
                 {canEditBooking && (
-                  <Button variant="outline" className="h-10 rounded-2xl border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100" disabled={actionLoading} onClick={() => setEditOpen(true)}>
+                  <Button variant="outline" className="h-10 rounded-2xl border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100" disabled={actionLoading} onClick={() => onEdit?.()}>
                     <Pencil className="h-4 w-4" /> Edit Booking
                   </Button>
                 )}
@@ -3792,266 +4077,11 @@ function BookingDrawer({
           </section>
         </div>
       </div>
-      <EditBookingDialog booking={booking} open={editOpen} onOpenChange={setEditOpen} />
     </>
   )
 }
 
-function EditBookingDialog({ booking, open, onOpenChange }: { booking: BookingDetailPayload['booking']; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const queryClient = useQueryClient()
-  const canViewPii = useCanViewPii()
 
-  const buildForm = () => {
-    const meta = (booking.metadata || {}) as Record<string, unknown>
-    return {
-      customerName: booking.customerName || '',
-      customerPhone: booking.customerPhone || '',
-      customerEmail: booking.customerEmail || String(meta.customerEmailId || ''),
-      customerAddress: booking.customerAddress || booking.address || String(meta.customerAddress || ''),
-      model: booking.model || '',
-      variant: booking.variant || '',
-      color: booking.color || booking.colorPreference || String(meta.color || ''),
-      fuelType: booking.fuelType || String(meta.fuelType || 'PETROL'),
-      bankName: booking.bankName || String(meta.bankFinance || ''),
-      consultantName: booking.consultantName || '',
-      notes: booking.notes || String(meta.notes || ''),
-      panCardUrl: String(meta.panCardUrl || ''),
-      panCardName: String(meta.panCardName || ''),
-      panNumber: String(meta.panNumber || ''),
-      aadhaarCardUrl: String(meta.aadhaarCardUrl || ''),
-      aadhaarCardName: String(meta.aadhaarCardName || ''),
-      aadhaarNumber: String(meta.aadhaarNumber || ''),
-      employeeIdUrl: String(meta.employeeIdUrl || ''),
-      employeeIdName: String(meta.employeeIdName || ''),
-    }
-  }
-
-  const [form, setForm] = useState(buildForm)
-  const [idDocUploading, setIdDocUploading] = useState<'pan' | 'aadhaar' | 'employee_id' | null>(null)
-
-  // Re-prime the form each time the dialog is opened (or a different booking loads).
-  useEffect(() => {
-    if (open) setForm(buildForm())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, booking.id])
-
-  const set = (key: keyof ReturnType<typeof buildForm>, value: string) => setForm((current) => ({ ...current, [key]: value }))
-
-  const handleIdDocUpload = async (docType: 'pan' | 'aadhaar' | 'employee_id', e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setIdDocUploading(docType)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('docType', docType)
-      const res = await fetch('/api/brands/kia/bookings/extract-id-document', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok || !data.ok) throw new Error(data?.error || 'Upload failed')
-      
-      const urlKey = docType === 'pan' ? 'panCardUrl' : docType === 'aadhaar' ? 'aadhaarCardUrl' : 'employeeIdUrl'
-      const nameKey = docType === 'pan' ? 'panCardName' : docType === 'aadhaar' ? 'aadhaarCardName' : 'employeeIdName'
-      
-      setForm((current) => {
-        const next = { ...current, [urlKey]: data.url || file.name, [nameKey]: file.name }
-        if (docType === 'pan' && data.number) next.panNumber = data.number
-        if (docType === 'aadhaar' && data.number) next.aadhaarNumber = data.number
-        return next
-      })
-
-      toast({
-        title: 'Document uploaded',
-        description: data.pdfManual
-          ? 'PDF stored — please type the number manually.'
-          : data.number
-            ? `Read the ${docType === 'pan' ? 'PAN' : 'Aadhaar'} number automatically — please verify it.`
-            : 'Uploaded successfully.',
-        variant: 'success',
-      })
-    } catch (err) {
-      e.target.value = ''
-      toast({ title: 'Upload failed', description: err instanceof Error ? err.message : 'Please try again.', variant: 'error' })
-    } finally {
-      setIdDocUploading(null)
-    }
-  }
-
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const bankTrimmed = form.bankName.trim()
-      const payload: Record<string, unknown> = {
-        ...form,
-        financeRequired: Boolean(bankTrimmed) && bankTrimmed.toUpperCase() !== 'CASH',
-        metadata: {
-          panNumber: form.panNumber,
-          panCardUrl: form.panCardUrl,
-          panCardName: form.panCardName,
-          aadhaarNumber: form.aadhaarNumber,
-          aadhaarCardUrl: form.aadhaarCardUrl,
-          aadhaarCardName: form.aadhaarCardName,
-          employeeIdUrl: form.employeeIdUrl,
-          employeeIdName: form.employeeIdName,
-        }
-      }
-      if (!canViewPii) {
-        delete payload.customerPhone
-        delete payload.customerEmail
-      }
-      const response = await fetch(`/api/brands/kia/bookings/${booking.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { error?: string } | null
-        throw new Error(payload?.error || 'Failed to update booking')
-      }
-      return response.json()
-    },
-    onSuccess: () => {
-      toast({ title: 'Booking updated', description: 'Your changes have been saved.', variant: 'success' })
-      queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
-      queryClient.invalidateQueries({ queryKey: ['kia-booking-detail', booking.id] })
-      onOpenChange(false)
-    },
-    onError: (error) => toast({ title: 'Update failed', description: error instanceof Error ? error.message : 'Failed to update booking', variant: 'error' }),
-  })
-
-  const phoneDigits = form.customerPhone.replace(/\D/g, '')
-  const phoneInvalid = phoneDigits.length !== 10
-  const emailInvalid = form.customerEmail.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail.trim())
-
-  const canEditPan = canViewPii || !booking.metadata?.panNumber
-  const canEditAadhaar = canViewPii || !booking.metadata?.aadhaarNumber
-
-  const save = () => {
-    if (!form.customerName.trim()) { toast({ title: 'Customer name required', variant: 'error' }); return }
-    if (canViewPii) {
-      if (phoneInvalid) { toast({ title: 'Invalid mobile', description: 'Mobile number must be exactly 10 digits.', variant: 'error' }); return }
-      if (emailInvalid) { toast({ title: 'Invalid email', description: 'Enter a valid email address.', variant: 'error' }); return }
-    }
-    
-    // Validate documents
-    if (!form.panCardUrl.trim()) { toast({ title: 'PAN Card required', description: 'Please upload the PAN card.', variant: 'error' }); return }
-    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(form.panNumber.trim().toUpperCase())) {
-      toast({ title: 'Invalid PAN', description: 'Enter a valid 10-digit PAN (e.g. ABCDE1234F).', variant: 'error' }); return
-    }
-    if (!form.aadhaarCardUrl.trim()) { toast({ title: 'Aadhaar Card required', description: 'Please upload the Aadhaar card.', variant: 'error' }); return }
-    if (form.aadhaarNumber.replace(/\D/g, '').length !== 12) {
-      toast({ title: 'Invalid Aadhaar', description: 'Enter a valid 12-digit Aadhaar number.', variant: 'error' }); return
-    }
-
-    mutation.mutate()
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="kia-premium max-h-[88vh] max-w-2xl overflow-y-auto rounded-3xl p-0">
-        <div className="relative overflow-hidden p-6 text-white" style={{ background: 'linear-gradient(135deg, var(--dashboard-action-hover), var(--dashboard-action-bg))' }}>
-          <DialogHeader className="relative">
-            <DialogTitle className="text-2xl font-extrabold tracking-tight text-white">Edit Booking</DialogTitle>
-            <DialogDescription className="text-white/80">#{booking.bookingNumber} · update customer, vehicle, and finance details</DialogDescription>
-          </DialogHeader>
-        </div>
-        <div className="grid gap-4 p-6 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <Field label="Customer Name" required><Input value={form.customerName} onChange={(event) => set('customerName', event.target.value)} className={INPUT_STYLE} /></Field>
-          </div>
-          <Field label="Mobile Number" required>
-            <Input value={canViewPii ? form.customerPhone : '••••••'} onChange={(event) => set('customerPhone', event.target.value.replace(/\D/g, '').slice(0, 10))} className={INPUT_STYLE} inputMode="numeric" maxLength={10} disabled={!canViewPii} readOnly={!canViewPii} />
-            {canViewPii && form.customerPhone.length > 0 && phoneInvalid && <p className="mt-1 text-[11px] font-bold text-rose-600">Mobile number must be exactly 10 digits.</p>}
-          </Field>
-          <Field label="Customer Email">
-            <Input value={canViewPii ? form.customerEmail : '••••••'} onChange={(event) => set('customerEmail', event.target.value)} className={INPUT_STYLE} type="email" disabled={!canViewPii} readOnly={!canViewPii} />
-            {emailInvalid && <p className="mt-1 text-[11px] font-bold text-rose-600">Enter a valid email address.</p>}
-          </Field>
-          <div className="sm:col-span-2">
-            <Field label="Address"><Input value={form.customerAddress} onChange={(event) => set('customerAddress', event.target.value)} className={INPUT_STYLE} /></Field>
-          </div>
-
-          {/* Document Uploads */}
-          <div className="sm:col-span-2 border-t pt-4 mt-2">
-            <h4 className="text-xs font-black uppercase tracking-wide text-slate-500 mb-3">Identity Documents</h4>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="PAN Card" required>
-                {canEditPan ? (
-                  <IdDocUploadButton
-                    label="Upload PAN (image / PDF)"
-                    uploading={idDocUploading === 'pan'}
-                    fileName={form.panCardName}
-                    onSelect={(e) => handleIdDocUpload('pan', e)}
-                  />
-                ) : (
-                  <div className="h-10 rounded-2xl bg-slate-50 border border-slate-200 flex items-center px-3 text-xs font-bold text-slate-500">
-                    🔒 Document Uploaded & Protected
-                  </div>
-                )}
-              </Field>
-              <Field label="PAN Number" required>
-                <Input
-                  value={canEditPan ? form.panNumber : (form.panNumber ? '••••••••••' : '')}
-                  onChange={(event) => set('panNumber', event.target.value.toUpperCase().slice(0, 10))}
-                  className={INPUT_STYLE}
-                  placeholder="ABCDE1234F"
-                  maxLength={10}
-                  disabled={!canEditPan}
-                  readOnly={!canEditPan}
-                />
-              </Field>
-              <Field label="Aadhaar Card" required>
-                {canEditAadhaar ? (
-                  <IdDocUploadButton
-                    label="Upload Aadhaar (image / PDF)"
-                    uploading={idDocUploading === 'aadhaar'}
-                    fileName={form.aadhaarCardName}
-                    onSelect={(e) => handleIdDocUpload('aadhaar', e)}
-                  />
-                ) : (
-                  <div className="h-10 rounded-2xl bg-slate-50 border border-slate-200 flex items-center px-3 text-xs font-bold text-slate-500">
-                    🔒 Document Uploaded & Protected
-                  </div>
-                )}
-              </Field>
-              <Field label="Aadhaar Number" required>
-                <Input
-                  value={canEditAadhaar ? form.aadhaarNumber : (form.aadhaarNumber ? '••••••••••••' : '')}
-                  onChange={(event) => set('aadhaarNumber', event.target.value.replace(/\D/g, '').slice(0, 12))}
-                  className={INPUT_STYLE}
-                  placeholder="12-digit number"
-                  inputMode="numeric"
-                  maxLength={12}
-                  disabled={!canEditAadhaar}
-                  readOnly={!canEditAadhaar}
-                />
-              </Field>
-            </div>
-          </div>
-
-          <Field label="Model"><Input value={form.model} onChange={(event) => set('model', event.target.value)} className={INPUT_STYLE} /></Field>
-          <Field label="Variant"><Input value={form.variant} onChange={(event) => set('variant', event.target.value)} className={INPUT_STYLE} /></Field>
-          <Field label="Colour"><Input value={form.color} onChange={(event) => set('color', event.target.value)} className={INPUT_STYLE} /></Field>
-          <Field label="Fuel Type">
-            <select value={form.fuelType} onChange={(event) => set('fuelType', event.target.value)} className={cn(INPUT_STYLE, 'cursor-pointer appearance-none')}>
-              {['PETROL', 'DIESEL', 'ELECTRIC', 'HYBRID', 'CNG'].map((fuel) => <option key={fuel} value={fuel}>{fuel}</option>)}
-            </select>
-          </Field>
-          <Field label="Bank / Finance"><Input value={form.bankName} onChange={(event) => set('bankName', event.target.value)} className={INPUT_STYLE} placeholder="CASH or bank name" /></Field>
-          <Field label="Sales Consultant"><Input value={form.consultantName} onChange={(event) => set('consultantName', event.target.value)} className={INPUT_STYLE} /></Field>
-          <div className="sm:col-span-2">
-            <Field label="Notes"><Textarea value={form.notes} onChange={(event) => set('notes', event.target.value)} className="min-h-[70px] rounded-2xl border-slate-200 bg-slate-50/50" /></Field>
-          </div>
-        </div>
-        <DialogFooter className="gap-2 border-t border-slate-100 p-4">
-          <Button variant="outline" className="h-10 rounded-xl border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
-          <Button className="h-10 rounded-xl bg-slate-950 px-5 text-xs font-black text-white hover:bg-slate-800" onClick={save} disabled={mutation.isPending}>
-            {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Save Changes
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 function InfoCard({ title, icon: Icon, items }: { title: string; icon: typeof ShieldCheck; items: Array<[string, string]> }) {
   return (

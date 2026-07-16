@@ -75,7 +75,7 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
           { name: 'Sales Performance', href: '/brands/kia/sales-performance', badge: 'TEST' },
           { name: 'Call Center', href: '/brands/kia/call-center', badge: 'TEST' },
-          { name: 'Follow-ups', href: '/brands/kia/follow-ups', badge: 'TEST' },
+          { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups', badge: 'TEST' },
           { name: 'Call & Follow-up Analytics', href: '/brands/kia/call-analytics', badge: 'TEST' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
@@ -272,10 +272,21 @@ export function Sidebar() {
 
   // When a REFETCH returns a CHANGED map (an admin granted/revoked access), re-run the current page's
   // Server Components so the open tab updates in place — with no needless refresh on the first load.
+  //
+  // The comparison MUST be order-independent. This used to be JSON.stringify(data), which compares
+  // key ORDER as well as content — and the map's order is not stable: the permission rows are
+  // selected with no ORDER BY (lib/permissions/service.ts), and the registry sync UPSERTs those
+  // rows, which shifts their heap order in Postgres. So two semantically identical maps could
+  // serialise differently, fire router.refresh(), re-render, refetch, and refresh again — an
+  // endless RSC loop on EVERY page, since the Sidebar is in MainLayout. Sorting the entries makes
+  // the check mean what it says: "did any permission actually change?".
   const prevPermissionsRef = useRef<string | null>(null)
   useEffect(() => {
     if (!permissionsQuery.isSuccess) return
-    const serialized = JSON.stringify(permissionsQuery.data ?? null)
+    const data = permissionsQuery.data
+    const serialized = data
+      ? JSON.stringify(Object.entries(data).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : 'null'
     if (prevPermissionsRef.current === null) {
       prevPermissionsRef.current = serialized
       return

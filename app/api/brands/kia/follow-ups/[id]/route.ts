@@ -19,10 +19,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = await request.json().catch(() => ({})) as {
       action?: 'update' | 'complete' | 'cancel'
       dueAt?: string; reason?: string; priority?: string; notes?: string; assignedTo?: string | null
-      outcome?: string; nextDueAt?: string
+      outcome?: string; nextDueAt?: string; notInterestedReason?: string
     }
     if (body.action === 'complete') {
-      const result = await completeFollowup(appUser, id, { outcome: body.outcome, notes: body.notes, nextDueAt: body.nextDueAt })
+      const result = await completeFollowup(appUser, id, {
+        outcome: body.outcome,
+        notes: body.notes,
+        notInterestedReason: body.notInterestedReason,
+        nextDueAt: body.nextDueAt,
+      })
       return NextResponse.json(result)
     }
     if (body.action === 'cancel') {
