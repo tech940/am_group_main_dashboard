@@ -877,7 +877,7 @@ const CONSULTANTS = [
   'SAGAR'
 ] as const
 
-const MANAGERS = ['SANJEEV KOUL'] as const
+const MANAGERS = ['SANJEEV KOUL', 'MUZAFFAR IQBALL', 'Irshad Ahmed', 'Rahul Bhasin'] as const
 
 const TLS = [
   'MICHAEL DEEP SINGH',
@@ -1666,14 +1666,22 @@ export function KiaBookingsClient({
   const priceTrims = useMemo(() => priceOptions?.trims || proformaOptionsQuery.data?.trims || [], [priceOptions?.trims, proformaOptionsQuery.data?.trims])
   const rows = data?.rows || []
   const filters = data?.filters || { dealers: ['JK402', 'JK501'], models: [], statuses: Object.keys(STATUS_LABELS), consultants: [] }
-  const bookingModelOptions = priceModels.length > 0 ? priceModels : filters.models
+  const bookingModelOptionsBase = priceModels.length > 0 ? priceModels : filters.models
+  // When editing, also ensure the booking's stored model is always present in the list
+  const bookingModelOptions = useMemo(() => {
+    const base = bookingModelOptionsBase
+    const editModel = (editForm.model || '').trim()
+    if (editModel && !base.includes(editModel)) return [...base, editModel]
+    return base
+  }, [bookingModelOptionsBase, editForm.model])
   const bookingVariantOptions = useMemo(() => {
-    const modelValue = createForm.model.trim()
+    // Use whichever form is currently active (create or edit) to filter variants
+    const modelValue = (createForm.model || editForm.model || '').trim()
     return Array.from(new Set(priceTrims
       .filter((trim) => !modelValue || trim.model === modelValue)
       .map((trim) => trim.trim_description)
       .filter(Boolean)))
-  }, [createForm.model, priceTrims])
+  }, [createForm.model, editForm.model, priceTrims])
   const priceBanks = useMemo(() => priceOptions?.banks || proformaOptionsQuery.data?.banks || [], [priceOptions?.banks, proformaOptionsQuery.data?.banks])
   const bookingBankOptions = useMemo(() => {
     const names = priceBanks.map((b) => b.bank_name || '').filter(Boolean)
@@ -3400,11 +3408,16 @@ function CreateBookingDialog({
             {/* PAYMENT TAB */}
             {activeTab === 'Payment' && (
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Booking Amount" required><Input type="number" value={form.bookingAmount} onChange={(event) => onChange('bookingAmount', event.target.value)} className={INPUT_STYLE} placeholder="₹" /></Field>
-                <Field label="Booking Date" required><Input type="date" value={form.bookingDate} onChange={(event) => onChange('bookingDate', event.target.value)} className={INPUT_STYLE} /></Field>
+                {isEdit && (
+                  <div className="md:col-span-2 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                    <span className="text-amber-600 text-sm font-bold">🔒 Payment details cannot be changed after booking is created.</span>
+                  </div>
+                )}
+                <Field label="Booking Amount" required><Input type="number" value={form.bookingAmount} onChange={(event) => onChange('bookingAmount', event.target.value)} className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')} placeholder="₹" readOnly={isEdit} /></Field>
+                <Field label="Booking Date" required><Input type="date" value={form.bookingDate} onChange={(event) => onChange('bookingDate', event.target.value)} className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')} readOnly={isEdit} /></Field>
                 <Field label="Payment Source" required>
-                  <Select value={form.pmtSource} onValueChange={(val) => onChange('pmtSource', val)}>
-                    <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Payment Source" /></SelectTrigger>
+                  <Select value={form.pmtSource} onValueChange={(val) => !isEdit && onChange('pmtSource', val)} disabled={isEdit}>
+                    <SelectTrigger className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')}><SelectValue placeholder="Select Payment Source" /></SelectTrigger>
                     <SelectContent>
                       {['CASH', 'CHEQUE', 'UPI', 'NEFT', 'RTGS', 'BANK TRANSFER', 'DD', 'CARD', 'OTHER'].map((s) => (
                         <SelectItem key={s} value={s}>{s}</SelectItem>
@@ -3412,18 +3425,24 @@ function CreateBookingDialog({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Payment Amount" required><Input type="number" value={form.paymentAmount} onChange={(event) => onChange('paymentAmount', event.target.value)} className={INPUT_STYLE} placeholder="₹" /></Field>
+                <Field label="Payment Amount" required><Input type="number" value={form.paymentAmount} onChange={(event) => onChange('paymentAmount', event.target.value)} className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')} placeholder="₹" readOnly={isEdit} /></Field>
                 <Field label="Cost Sheet" required>
                   <div className="space-y-2">
-                    <label className={`flex items-center justify-center gap-3 cursor-pointer h-11 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:border-slate-400 hover:bg-white transition-all ${costSheetVerifying ? 'opacity-60 pointer-events-none' : ''}`}>
-                      <input type="file" accept="image/*,application/pdf" onChange={handleCostSheetUpload} className="sr-only" />
-                      {costSheetVerifying ? '⏳ Verifying...' : costSheetFile ? `✅ ${costSheetFile.name}` : '📷 Upload Cost Sheet (Image or PDF)'}
-                    </label>
+                    {isEdit ? (
+                      <div className={cn('flex items-center h-11 px-4 rounded-2xl border border-slate-200 bg-slate-100/80 text-xs font-semibold text-slate-500 opacity-70 cursor-not-allowed')}>
+                        {form.costSheet ? `✅ ${form.costSheet.split('/').pop()}` : '—'}
+                      </div>
+                    ) : (
+                      <label className={`flex items-center justify-center gap-3 cursor-pointer h-11 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:border-slate-400 hover:bg-white transition-all ${costSheetVerifying ? 'opacity-60 pointer-events-none' : ''}`}>
+                        <input type="file" accept="image/*,application/pdf" onChange={handleCostSheetUpload} className="sr-only" />
+                        {costSheetVerifying ? '⏳ Verifying...' : costSheetFile ? `✅ ${costSheetFile.name}` : '📷 Upload Cost Sheet (Image or PDF)'}
+                      </label>
+                    )}
                   </div>
                 </Field>
                 <Field label="Bank / Finance" required>
-                  <Select value={form.bankFinance} onValueChange={(val) => onChange('bankFinance', val)}>
-                    <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Bank / Finance" /></SelectTrigger>
+                  <Select value={form.bankFinance} onValueChange={(val) => !isEdit && onChange('bankFinance', val)} disabled={isEdit}>
+                    <SelectTrigger className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')}><SelectValue placeholder="Select Bank / Finance" /></SelectTrigger>
                     <SelectContent>
                       {(bankOptions.length > 0 ? bankOptions : BANKS).map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
                     </SelectContent>

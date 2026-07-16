@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, FormEvent, ChangeEvent } from 'react'
+import { useState, useEffect, FormEvent, ChangeEvent, useMemo, useRef } from 'react'
 import { 
   FileText, 
   Upload, 
@@ -15,7 +15,8 @@ import {
   PlusCircle, 
   Info,
   IndianRupee,
-  FileCheck
+  FileCheck,
+  Plus
 } from 'lucide-react'
 
 // ── Vendor type for dropdown ──
@@ -154,6 +155,12 @@ export default function KiaApprovalsSubmitPage() {
   // ── Vendor registry fetch ──
   const [vendors, setVendors] = useState<VendorOption[]>([])
   const [vendorsLoading, setVendorsLoading] = useState(true)
+
+  const [vendorSearch, setVendorSearch] = useState('')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [savingVendor, setSavingVendor] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     fetch('/api/brands/kia/vendors')
       .then(r => r.json())
@@ -161,6 +168,62 @@ export default function KiaApprovalsSubmitPage() {
       .catch(() => setVendors([]))
       .finally(() => setVendorsLoading(false))
   }, [])
+
+  // Sync vendorSearch if form.vendorName is cleared or set externally
+  useEffect(() => {
+    if (form.vendorName) {
+      setVendorSearch(form.vendorName)
+    } else {
+      setVendorSearch('')
+    }
+  }, [form.vendorName])
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filteredVendors = useMemo(() => {
+    if (!vendorSearch.trim()) return vendors
+    const query = vendorSearch.toLowerCase()
+    return vendors.filter(v =>
+      v.name.toLowerCase().includes(query) ||
+      (v.gstNumber && v.gstNumber.toLowerCase().includes(query))
+    )
+  }, [vendors, vendorSearch])
+
+  const handleQuickCreateVendor = async (nameToCreate: string) => {
+    const name = nameToCreate.trim()
+    if (!name) return
+    setSavingVendor(true)
+    try {
+      const response = await fetch('/api/brands/kia/vendors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      })
+      const data = await response.json()
+      if (response.ok && data.vendor) {
+        setVendors(prev => [data.vendor, ...prev])
+        setForm(prev => ({ ...prev, vendorName: data.vendor.name }))
+        setVendorSearch(data.vendor.name)
+        setDropdownOpen(false)
+      } else {
+        alert(data.error || 'Failed to create vendor')
+      }
+    } catch (err) {
+      console.error(err)
+      alert('Failed to connect to the server')
+    } finally {
+      setSavingVendor(false)
+    }
+  }
 
   const handleTextChange = (key: keyof FormState, value: string) => {
     setForm(prev => {
@@ -535,28 +598,72 @@ export default function KiaApprovalsSubmitPage() {
                 </select>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 relative" ref={dropdownRef}>
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
                   Vendor Name / विक्रेता का नाम
                   {vendorsLoading && <span className="text-[9px] text-indigo-400 font-bold">(loading...)</span>}
                 </label>
-                <select
-                  value={form.vendorName}
-                  onChange={e => handleTextChange('vendorName', e.target.value)}
-                  className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer appearance-none"
-                >
-                  <option value="">Select Vendor (if applicable)</option>
-                  {vendors.map(v => (
-                    <option key={v.id} value={v.name}>
-                      {v.name} — {v.gstNumber}
-                    </option>
-                  ))}
-                </select>
-                {vendors.length === 0 && !vendorsLoading && (
-                  <p className="text-[10px] text-slate-400 font-medium">
-                    No vendors in registry yet.{' '}
-                    <a href="/brands/kia/vendors" target="_blank" className="text-indigo-500 underline font-bold">Add vendors ↗</a>
-                  </p>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Type to search vendor..."
+                    value={vendorSearch}
+                    onFocus={() => setDropdownOpen(true)}
+                    onChange={e => {
+                      setVendorSearch(e.target.value)
+                      setDropdownOpen(true)
+                      if (form.vendorName !== e.target.value) {
+                        handleTextChange('vendorName', '')
+                      }
+                    }}
+                    className="w-full h-11 px-4 pr-10 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800"
+                  />
+                  {form.vendorName && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleTextChange('vendorName', '')
+                        setVendorSearch('')
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {dropdownOpen && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto">
+                    {filteredVendors.map(v => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => {
+                          handleTextChange('vendorName', v.name)
+                          setVendorSearch(v.name)
+                          setDropdownOpen(false)
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 border-b border-slate-100 last:border-b-0 flex justify-between items-center"
+                      >
+                        <span>{v.name}</span>
+                        {v.gstNumber && <span className="text-[10px] text-slate-400 font-mono">{v.gstNumber}</span>}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      disabled={savingVendor}
+                      onClick={() => handleQuickCreateVendor(vendorSearch)}
+                      className="w-full px-4 py-3 text-left text-sm font-bold text-indigo-600 hover:bg-indigo-50/50 border-t border-slate-100 flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {savingVendor ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+                      <span>Add & Select Vendor "{vendorSearch || 'New Vendor'}"</span>
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -780,6 +887,7 @@ export default function KiaApprovalsSubmitPage() {
           </div>
         </form>
       </div>
+
     </div>
   )
 }

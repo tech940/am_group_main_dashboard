@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { vendors } from '@/lib/db/schema'
 import { eq, desc, isNull } from 'drizzle-orm'
 
+export const dynamic = 'force-dynamic'
+
 // GET — list all active vendors
 export async function GET() {
   try {
@@ -32,29 +34,53 @@ export async function POST(request: NextRequest) {
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Vendor name is required' }, { status: 400 })
     }
+
+    let cleanGst = ''
     if (!gstNumber || !gstNumber.trim()) {
-      return NextResponse.json({ error: 'GST Number is required' }, { status: 400 })
-    }
+      // Generate a unique dummy GST that passes regex and unique constraint
+      let isUnique = false
+      let attempts = 0
+      while (!isUnique && attempts < 10) {
+        attempts++
+        const letters = Array.from({ length: 5 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('')
+        const digits = Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join('')
+        const generated = `99${letters}${digits}A1Z1`
+        
+        const existing = await db
+          .select({ id: vendors.id })
+          .from(vendors)
+          .where(eq(vendors.gstNumber, generated))
+          .limit(1)
+        
+        if (existing.length === 0) {
+          cleanGst = generated
+          isUnique = true
+        }
+      }
+      if (!cleanGst) {
+        return NextResponse.json({ error: 'Failed to generate unique GST number' }, { status: 500 })
+      }
+    } else {
+      // Validate GST format: 15 alphanumeric characters
+      const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
+      cleanGst = gstNumber.trim().toUpperCase()
+      if (!gstRegex.test(cleanGst)) {
+        return NextResponse.json(
+          { error: 'Invalid GST Number format. Expected: 15-character GSTIN (e.g. 01ABCDE1234A1Z5)' },
+          { status: 400 }
+        )
+      }
 
-    // Validate GST format: 15 alphanumeric characters
-    const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
-    const cleanGst = gstNumber.trim().toUpperCase()
-    if (!gstRegex.test(cleanGst)) {
-      return NextResponse.json(
-        { error: 'Invalid GST Number format. Expected: 15-character GSTIN (e.g. 01ABCDE1234A1Z5)' },
-        { status: 400 }
-      )
-    }
+      // Check duplicate GST
+      const existing = await db
+        .select({ id: vendors.id })
+        .from(vendors)
+        .where(eq(vendors.gstNumber, cleanGst))
+        .limit(1)
 
-    // Check duplicate GST
-    const existing = await db
-      .select({ id: vendors.id })
-      .from(vendors)
-      .where(eq(vendors.gstNumber, cleanGst))
-      .limit(1)
-
-    if (existing.length > 0) {
-      return NextResponse.json({ error: 'A vendor with this GST Number already exists' }, { status: 409 })
+      if (existing.length > 0) {
+        return NextResponse.json({ error: 'A vendor with this GST Number already exists' }, { status: 409 })
+      }
     }
 
     const [inserted] = await db

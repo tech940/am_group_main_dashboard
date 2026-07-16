@@ -17,9 +17,9 @@ const HAIRLINE = '#e6e8f0'
 const INK = '#111827'
 const INK_SOFT = '#4b5563'
 const INK_FAINT = '#9aa2b1'
-const ACCENT = '#6d28d9'
-const ACCENT_2 = '#4f46e5'
-const ACCENT_TINT = '#f5f3ff'
+const ACCENT = '#055B65'
+const ACCENT_2 = '#2f8f83'
+const ACCENT_TINT = '#edf7f4'
 
 export type EmailLayoutOptions = {
   heading: string
@@ -44,7 +44,7 @@ export function emailLayout({ heading, bodyHtml, preheader, eyebrow }: EmailLayo
       <div style="background:${CARD};border:1px solid ${HAIRLINE};border-radius:22px;overflow:hidden;box-shadow:0 10px 30px rgba(17,24,39,0.08);">
 
         <!-- Accent strip -->
-        <div style="height:5px;background:linear-gradient(90deg,${ACCENT},${ACCENT_2},#7c3aed);"></div>
+        <div style="height:5px;background:linear-gradient(90deg,${ACCENT},${ACCENT_2});"></div>
 
         <!-- Brand header -->
         <div style="padding:28px 28px 10px;text-align:center;">
@@ -95,7 +95,7 @@ export function primaryButton(href: string, label: string): string {
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px auto 8px;border-collapse:separate;">
       <tr>
-        <td style="border-radius:12px;background:linear-gradient(90deg,${ACCENT},${ACCENT_2});box-shadow:0 6px 16px rgba(79,70,229,0.32);">
+        <td style="border-radius:12px;background:linear-gradient(90deg,${ACCENT},${ACCENT_2});box-shadow:0 6px 16px rgba(5,91,101,0.24);">
           <a href="${escapeHtml(href)}" style="display:inline-block;padding:13px 34px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:12px;">${escapeHtml(label)}</a>
         </td>
       </tr>

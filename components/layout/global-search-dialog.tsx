@@ -41,8 +41,11 @@ import {
   HelpCircle,
   CornerDownLeft,
   Loader2,
+  Star,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
+
 
 // Dynamic icon mapping helper
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -88,6 +91,25 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
   
   const searchInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const {
+    value: favouriteHrefsValue,
+    savePreference: saveFavouriteHrefs,
+  } = useUserPreferences<string[]>('sidebar_favourites', [])
+  const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
+
+  const isEligibleFavouriteHref = (href: string) => {
+    return href.startsWith('/brands/')
+  }
+
+  const toggleFavourite = async (e: React.MouseEvent, href: string) => {
+    e.stopPropagation()
+    if (!isEligibleFavouriteHref(href)) return
+    const next = favouriteHrefs.includes(href)
+      ? favouriteHrefs.filter((item) => item !== href)
+      : [...favouriteHrefs.filter((item) => item !== href), href]
+    await saveFavouriteHrefs(next)
+  }
 
   const { userRole, userBrand, loading: roleLoading } = useUserRole()
 
@@ -292,13 +314,14 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
                 const isSelected = idx === selectedIndex
                 const deptStyle = getDeptStyles(section.department)
                 
+                const isFav = favouriteHrefs.includes(section.href)
                 return (
                   <div
                     key={section.id}
                     data-active={isSelected}
                     onClick={() => handleNavigate(section)}
                     className={cn(
-                      'group relative flex cursor-pointer items-start gap-2.5 rounded-2xl border p-3 transition-all duration-200 shadow-sm hover:shadow-md min-h-[92px]',
+                      'group relative flex cursor-pointer items-center gap-2.5 rounded-2xl border p-3 transition-all duration-200 shadow-sm hover:shadow-md',
                       isSelected
                         ? 'border-indigo-600 bg-white ring-2 ring-indigo-600/10 dark:border-indigo-500 dark:bg-slate-900 dark:ring-indigo-500/10'
                         : 'border-slate-200/80 bg-white hover:border-slate-300 dark:border-white/5 dark:bg-slate-900/60 dark:hover:border-white/10'
@@ -339,17 +362,30 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 text-[10px] font-medium text-slate-500 dark:text-slate-400 line-clamp-2 leading-snug">
-                        {section.description}
-                      </p>
                     </div>
 
-                    {/* Action Hint */}
-                    {isSelected && (
-                      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-slate-100 text-[8px] dark:bg-slate-800">
-                        <CornerDownLeft className="h-2.5 w-2.5 text-slate-400" />
-                      </div>
-                    )}
+                    {/* Action Hint / Star */}
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      {isEligibleFavouriteHref(section.href) && (
+                        <button
+                          onClick={(e) => toggleFavourite(e, section.href)}
+                          className={cn(
+                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-all hover:bg-slate-100 dark:hover:bg-slate-800',
+                            isFav ? 'text-amber-500' : 'text-slate-350 hover:text-amber-500'
+                          )}
+                          title={isFav ? 'Remove from favourites' : 'Add to favourites'}
+                        >
+                          <Star className={cn('h-3.5 w-3.5', isFav && 'fill-current')} />
+                        </button>
+                      )}
+
+                      {/* Action Hint */}
+                      {isSelected && (
+                        <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-slate-100 text-[8px] dark:bg-slate-800">
+                          <CornerDownLeft className="h-2.5 w-2.5 text-slate-400" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )
               })}

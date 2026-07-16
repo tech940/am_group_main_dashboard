@@ -19,6 +19,7 @@ import {
 } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import { canViewKiaCustomerPii, redactKiaBookingPii, stripKiaBookingPiiKeys } from '@/lib/kia/pii'
 import { cancelKiaBookingFollowups } from '@/lib/kia/lead-followups'
 import {
   canAllotKiaVehicle,
@@ -845,14 +846,17 @@ export async function getKiaBookingsList(input: BookingListInput) {
     })(),
   ])
 
-  const rowsWithApproval = bookingRows.map((b) => ({
+  // Redact BEFORE the rows leave this function. These list rows are display-only (the edit form is
+  // seeded from getKiaBookingDetail, not from here), so masking them cannot corrupt a write-back.
+  const canViewPii = canViewKiaCustomerPii(input.viewer?.role)
+  const rowsWithApproval = bookingRows.map((b) => redactKiaBookingPii({
     ...b,
     proformaApprovalStatus: b.proformaId ? (approvalByProforma.get(b.proformaId) ?? null) : null,
     stockNotAvailable: Boolean(stockFlagMap.get(b.id)) || Boolean((b.metadata as Record<string, unknown> | null)?.vehicleNotInStock),
     // A matching free vehicle is available to allot (no allocation yet + in-stock match). Mutually
     // exclusive with stockNotAvailable; false once allocated or for terminal bookings.
     stockAvailable: Boolean(stockAvailableMap.get(b.id)),
-  }))
+  }, canViewPii))
 
   return {
     rows: rowsWithApproval,
@@ -1036,8 +1040,17 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     }
 
     if (input.customerName !== undefined) updates.customerName = text(input.customerName)
-    if (input.customerPhone !== undefined) updates.customerPhone = text(input.customerPhone)
-    if (input.customerEmail !== undefined) updates.customerEmail = nullableText(input.customerEmail)
+
+    // PII writes are refused for viewers who cannot SEE PII, for two reasons that point the same way.
+    // Correctness: those viewers are served a redacted booking (redactKiaBookingPii), the edit form is
+    // seeded from it, and an unmodified save would post "••••••" straight over the real number.
+    // Security: someone who may not read a customer's phone has no business silently rewriting it.
+    // Editing PII stays available to MD / Developer / Finance Head, who are served the real values.
+    const mayWritePii = canViewKiaCustomerPii(appUser.role)
+    if (mayWritePii) {
+      if (input.customerPhone !== undefined) updates.customerPhone = text(input.customerPhone)
+      if (input.customerEmail !== undefined) updates.customerEmail = nullableText(input.customerEmail)
+    }
     if (input.customerAddress !== undefined) updates.customerAddress = nullableText(input.customerAddress)
     if (input.dealerCode !== undefined) updates.dealerCode = normalizeKiaDealerCode(input.dealerCode) || text(input.dealerCode).toUpperCase()
     if (input.model !== undefined) updates.model = text(input.model).toUpperCase()
@@ -1066,7 +1079,14 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     if (input.notes !== undefined) updates.notes = nullableText(input.notes)
     // Merge (not replace) metadata so edits to extra fields (PAN/Aadhaar, exchange, document URLs)
     // persist without clobbering existing keys like costSheet / accountsVerification.
-    if (input.metadata !== undefined) updates.metadata = { ...(before.metadata || {}), ...(input.metadata || {}) } as JsonRecord
+    // The PII keys are stripped from the INCOMING side for a viewer who cannot see PII (same rule as
+    // customerPhone/customerEmail above): they were served a redacted metadata, so letting their save
+    // through this shallow merge would write "••••••" over the real PAN/Aadhaar and null the document
+    // URLs. Stripping means the merge falls through to `before.metadata` and the originals survive.
+    if (input.metadata !== undefined) {
+      const incoming = mayWritePii ? (input.metadata || {}) : stripKiaBookingPiiKeys(input.metadata || {})
+      updates.metadata = { ...(before.metadata || {}), ...incoming } as JsonRecord
+    }
     if (input.deliveryTargetDate !== undefined) updates.deliveryTargetDate = input.deliveryTargetDate ? input.deliveryTargetDate : null
     if (input.status !== undefined) updates.status = normalizeStatus(input.status)
     if (input.delivered) {
@@ -1351,7 +1371,15 @@ export async function getKiaBookingMatchingVehicles(id: string) {
         -- Exclude retailed vehicles AND vehicles on hold (#12) — a held VIN is not matchable.
         AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
         AND NOT EXISTS (SELECT 1 FROM active_allocations aa WHERE aa.vin_number = sm.vin_number)
-        AND sm.model ILIKE ${modelPattern}
+        -- Model match is BIDIRECTIONAL — either side may contain the other — exactly like the variant
+        -- match below and like the not-in-stock predicate the list uses.
+        --
+        -- It used to be one-sided (sm.model ILIKE '%' || booking.model || '%'), which silently returned
+        -- ZERO allottable vehicles for any booking whose model carries a fuel suffix: a booking for
+        -- "SONET PETROL" cannot be contained in a DMS model of "SONET", so nothing matched. Measured
+        -- on live data: 3 of the 4 approved bookings (NEW SELTOS DIESEL, SONET PETROL, NEW SELTOS
+        -- PETROL) found 0 vehicles where 28-32 were actually free. IDT simply could not allot them.
+        AND (sm.model ILIKE ${modelPattern} OR ${text(booking.model)} ILIKE '%' || sm.model || '%')
         -- #1 Only the proforma's variant is matchable (either side contained in the other; an empty
         -- vehicle variant is left in, matching the server's allot guard which can't gate a blank).
         AND (
@@ -1378,7 +1406,9 @@ export async function getKiaBookingMatchingVehicles(id: string) {
       WHERE ls.local_status = 'bbnd'
         AND NOT EXISTS (SELECT 1 FROM active_allocations aa WHERE aa.vin_number = ls.vin_number)
         AND NOT EXISTS (SELECT 1 FROM dms d WHERE d.vin_number = ls.vin_number)
-        AND ls.model ILIKE ${modelPattern}
+        -- Bidirectional for the same reason as the DMS branch above: a one-sided match hides every
+        -- BBND vehicle from a fuel-suffixed booking model.
+        AND (ls.model ILIKE ${modelPattern} OR ${text(booking.model)} ILIKE '%' || ls.model || '%')
         AND (
           coalesce(ls.variant, '') = ''
           OR ls.variant ILIKE ${variantPattern}

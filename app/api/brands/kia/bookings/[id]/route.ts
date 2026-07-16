@@ -4,6 +4,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { requirePermission } from '@/lib/permissions/service'
 import { getKiaBookingDetail, updateKiaBooking } from '@/lib/kia/bookings'
+import { canViewKiaCustomerPii, redactKiaBookingPii } from '@/lib/kia/pii'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -18,9 +19,13 @@ function activityPayload(row: Record<string, unknown>) {
   }
 }
 
-function detailPayload(detail: Awaited<ReturnType<typeof getKiaBookingDetail>>) {
+// `canViewPii` is threaded in from the authorized caller rather than read inside: this payload is the
+// single point where the booking leaves the server, and the customer's phone/email/PAN/Aadhaar (plus
+// the Storage URLs of their uploaded ID scans) used to ship raw to every role holding
+// kia.bookings.view — the client only declined to render them. See lib/kia/pii.ts.
+function detailPayload(detail: Awaited<ReturnType<typeof getKiaBookingDetail>>, canViewPii: boolean) {
   if (!detail) return null
-  const booking = detail.booking
+  const booking = redactKiaBookingPii(detail.booking as unknown as Record<string, unknown>, canViewPii) as unknown as typeof detail.booking
   return {
     booking: {
       ...booking,
@@ -76,7 +81,7 @@ export async function GET(_request: Request, context: RouteContext<'/api/brands/
       return withServerTiming(NextResponse.json({ error: 'Booking not found' }, { status: 404 }), timing.serverTiming)
     }
     const timing = timer.finish()
-    return withServerTiming(NextResponse.json(detailPayload(detail)), timing.serverTiming)
+    return withServerTiming(NextResponse.json(detailPayload(detail, canViewKiaCustomerPii(auth.appUser?.role))), timing.serverTiming)
   } catch (error) {
     console.error('Failed to load KIA booking detail:', error)
     const timing = timer.finish()
