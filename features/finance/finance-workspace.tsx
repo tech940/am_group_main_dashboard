@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { FinanceDetail } from './finance-detail'
+import { FinancePayoutsDashboard } from './finance-payouts-dashboard'
 import {
   formatCountdown, formatCurrency, formatDate, statusMeta, bankStatusMeta, str,
   type QueueResponse, type ApprovalQueueRow, type ProcessingRow,
@@ -34,7 +35,9 @@ async function proformaApproval(id: string, body: Record<string, unknown>) {
 
 export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: boolean; currentUserRole?: string }) {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'queue' | 'processing'>('queue')
+  // 'payouts' is the post-delivery ledger — a SUBSECTION of Finance, not a new sidebar item and not
+  // a booking stage. It shares this section's `finance.view` gate; editing needs `finance.edit`.
+  const [tab, setTab] = useState<'queue' | 'processing' | 'payouts'>('queue')
   const [selected, setSelected] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [declineRow, setDeclineRow] = useState<ApprovalQueueRow | null>(null)
@@ -88,11 +91,18 @@ export function FinanceWorkspace({ canApprove, currentUserRole }: { canApprove: 
           <Inbox className="h-4 w-4" /> In Processing
           <span className="rounded-full bg-white/70 px-1.5 text-xs font-black">{processing.length}</span>
         </button>
+        <button onClick={() => setTab('payouts')}
+          className={cn('inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold transition-colors',
+            tab === 'payouts' ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50')}>
+          <WalletCards className="h-4 w-4" /> Payouts
+        </button>
       </div>
 
       {actionError && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700">{actionError}</div>}
 
-      {tab === 'queue' ? (
+      {tab === 'payouts' ? (
+        <FinancePayoutsDashboard />
+      ) : tab === 'queue' ? (
         <Card className="overflow-hidden p-0">
           {approvalQueue.length === 0 ? (
             <div className="p-10 text-center text-sm font-semibold text-slate-400">No proformas awaiting finance approval.</div>

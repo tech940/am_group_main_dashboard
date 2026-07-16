@@ -19,7 +19,7 @@ export function MainLayout({ children, hideHeader = false, title, subtitle }: Ma
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {!hideHeader && <Header title={title} subtitle={subtitle} />}
-          <main className={cn("glass-dashboard-content flex-1 overflow-y-auto", !hideHeader ? "px-8 pb-8 pt-4" : "px-10 pb-10 pt-4")}>
+          <main className={cn("glass-dashboard-content flex-1 overflow-y-auto", !hideHeader ? "px-4 sm:px-8 pb-4 sm:pb-8 pt-4" : "px-4 sm:px-10 pb-4 sm:pb-10 pt-4")}>
             {children}
           </main>
         </div>

@@ -679,8 +679,10 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     parentKey: null,
     description: 'Customer vehicle-financing workflow: final proforma approval, financing status/timeline, bank management, remarks, and completion.',
     sortOrder: 57,
-    // 'view' gates the section + sidebar; 'approve' gates the final finance approval + all finance mutations.
-    actions: ['view', 'approve'],
+    // 'view' gates the section + sidebar; 'approve' gates the final finance approval + all proforma
+    // finance mutations; 'edit' gates the post-delivery payout ledger — its own key so payout
+    // editing can be granted WITHOUT granting proforma approval authority.
+    actions: ['view', 'approve', 'edit'],
   },
   {
     key: 'reports',
@@ -748,6 +750,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   'kia.lead_followups': { href: '/brands/kia/follow-ups' },
   'kia.call_analytics': { href: '/brands/kia/call-analytics' },
   'kia.bookings': { href: '/brands/kia/bookings' },
+  'kia.approvals': { href: '/brands/kia/payment-approvals' },
   'kia.proforma': { href: '/brands/kia/proforma' },
   'hyundai.business_excellence': { href: '/brands/hyundai/business-excellence', aliases: ['/brands/hyundai/business-excellence/executive-dashboard', '/brands/hyundai/business-excellence/overview'] },
   'hyundai.service_appointment': { href: '/brands/hyundai/service-appointment' },

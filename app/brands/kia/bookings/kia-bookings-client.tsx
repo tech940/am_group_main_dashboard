@@ -475,6 +475,72 @@ function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return 'NA'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const datePart = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
+  const timePart = new Intl.DateTimeFormat('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).format(date)
+  return `${datePart}, ${timePart}`
+}
+
+function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<File> {
+  if (!file.type.startsWith('image/')) {
+    return Promise.resolve(file)
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onload = () => {
+        let width = img.width
+        let height = img.height
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width)
+          width = maxWidth
+        }
+
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(file)
+          return
+        }
+
+        ctx.drawImage(img, 0, 0, width, height)
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file)
+              return
+            }
+            const lastDotIndex = file.name.lastIndexOf('.')
+            const baseName = lastDotIndex !== -1 ? file.name.substring(0, lastDotIndex) : file.name
+            const newName = `${baseName}.jpg`
+            const compressedFile = new File([blob], newName, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            })
+            resolve(compressedFile)
+          },
+          'image/jpeg',
+          quality
+        )
+      }
+      img.onerror = () => resolve(file)
+      img.src = event.target?.result as string
+    }
+    reader.onerror = () => resolve(file)
+    reader.readAsDataURL(file)
+  })
+}
+
 function formatTimeRemaining(value?: string | null) {
   if (!value) return 'No deadline'
   const diff = new Date(value).getTime() - Date.now()
@@ -2964,8 +3030,9 @@ function CreateBookingDialog({
     if (!file) return
     setCostSheetVerifying(true)
     try {
+      const compressedFile = await compressImage(file)
       const fd = new FormData()
-      fd.append('file', file)
+      fd.append('file', compressedFile)
       const res = await fetch('/api/brands/kia/bookings/verify-cost-sheet', {
         method: 'POST',
         body: fd
@@ -2975,11 +3042,11 @@ function CreateBookingDialog({
       }
       const data = await res.json()
       if (data.valid) {
-        setCostSheetFile(file)
-        onChange('costSheet', data.url || file.name)
+        setCostSheetFile(compressedFile)
+        onChange('costSheet', data.url || compressedFile.name)
         toast({
           title: 'Document Verified',
-          description: `"${file.name}" accepted as a valid vehicle cost sheet.`,
+          description: `"${compressedFile.name}" accepted as a valid vehicle cost sheet.`,
           variant: 'success'
         })
       } else {
@@ -3010,16 +3077,17 @@ function CreateBookingDialog({
     if (!file) return
     setIdDocUploading(docType)
     try {
+      const compressedFile = await compressImage(file)
       const fd = new FormData()
-      fd.append('file', file)
+      fd.append('file', compressedFile)
       fd.append('docType', docType)
       const res = await fetch('/api/brands/kia/bookings/extract-id-document', { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok || !data.ok) throw new Error(data?.error || 'Upload failed')
       const urlKey: keyof CreateBookingForm = docType === 'pan' ? 'panCardUrl' : docType === 'aadhaar' ? 'aadhaarCardUrl' : 'employeeIdUrl'
       const nameKey: keyof CreateBookingForm = docType === 'pan' ? 'panCardName' : docType === 'aadhaar' ? 'aadhaarCardName' : 'employeeIdName'
-      onChange(urlKey, data.url || file.name)
-      onChange(nameKey, file.name)
+      onChange(urlKey, data.url || compressedFile.name)
+      onChange(nameKey, compressedFile.name)
       if (docType === 'pan' && data.number) onChange('panNumber', data.number)
       if (docType === 'aadhaar' && data.number) onChange('aadhaarNumber', data.number)
       toast({
@@ -3029,7 +3097,7 @@ function CreateBookingDialog({
           : data.number
             ? `Read the ${docType === 'pan' ? 'PAN' : 'Aadhaar'} number automatically — please verify it.`
             : docType === 'employee_id'
-              ? `"${file.name}" attached.`
+              ? `"${compressedFile.name}" attached.`
               : 'Uploaded — could not read the number, please type it manually.',
         variant: 'success',
       })
@@ -4017,7 +4085,7 @@ function BookingDrawer({
                       <p className={cn('text-sm font-bold', done || current ? 'text-[var(--kia-text)]' : 'text-[var(--kia-text-soft)]')}>{stage.title}</p>
                       <p className="mt-0.5 text-xs font-medium text-[var(--kia-text-soft)]">
                         {done || current
-                          ? (activity ? `${formatDate(activity.createdAt)}${activity.actorName ? ` by ${activity.actorName}` : ''}` : (stage.key === 'booking' ? formatDate(booking.createdAt) : 'Completed'))
+                          ? (activity ? `${formatDateTime(activity.createdAt)}${activity.actorName ? ` by ${activity.actorName}` : ''}` : (stage.key === 'booking' ? formatDateTime(booking.createdAt) : 'Completed'))
                           : 'Pending'}
                       </p>
                     </div>

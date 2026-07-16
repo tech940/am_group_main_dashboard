@@ -19,6 +19,9 @@ export type KpiDatum = {
   icon: LucideIcon
   tone?: Tone
   hint?: string
+  /** Renders the counter (e.g. a currency total as "₹12.6L"). KpiCard already supported this; the
+   *  row just had no way to pass it, so money KPIs came out as raw digits. Optional — omit for counts. */
+  format?: (value: number) => string
 }
 
 export function KpiCard({
@@ -122,6 +125,7 @@ export function KpiRow({
             icon={item.icon}
             tone={item.tone}
             hint={item.hint}
+            format={item.format}
             active={item.active ?? activeKey === item.key}
             onClick={onSelect ? () => onSelect(item.key) : undefined}
           />

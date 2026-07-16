@@ -529,7 +529,14 @@ async function queryPlatinumRoBillingAudit(
       ) AS top_invoices
   `)
 
-  const row = resultRows(result)[0] || {}
+  // Exactly one row is structurally guaranteed here (scalar subqueries, no FROM) — see the same guard
+  // in lib/hyundai/ro-billing-audit.ts. Zero rows means the read failed, not that there was no
+  // business, and `|| {}` would launder that into a cacheable ₹0.
+  const rows = resultRows(result)
+  if (rows.length === 0) {
+    throw new Error('platinum ro-billing audit: read returned no rows (expected exactly one) — refusing to report this as zero revenue')
+  }
+  const row = rows[0]
   const summaries = jsonValue<Record<string, ResultRow>>(row.summaries, {})
   const dailySplitRaw = jsonValue<ResultRow[]>(row.daily_split, [])
   const dealerSplitRaw = jsonValue<ResultRow[]>(row.dealer_split, [])

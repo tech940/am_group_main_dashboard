@@ -1539,6 +1539,98 @@ export const kiaFinanceActivity = pgTable('kia_finance_activity', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+/**
+ * Finance Payouts — the post-delivery finance ledger (bank/dealer/DSE payouts, loan + bank-visit
+ * activity). Deliberately INDEPENDENT of the booking workflow: a row here is created when a vehicle
+ * is delivered, but nothing in this table ever changes a booking's status. It is not a booking stage.
+ *
+ * SNAPSHOT, not a live join. The booking-sourced columns below are copied at delivery rather than
+ * joined on read, for two reasons: (1) imported/legacy rows have no booking to join to, and (2) a
+ * finance ledger wants the state AS AT DELIVERY — later edits to the booking must not silently
+ * rewrite finance history.
+ *
+ * `booking_id` is nullable (imports have none) and carries a PARTIAL UNIQUE index where not null, so
+ * a delivered booking maps to exactly one payout row and auto-population is idempotent.
+ */
+export const kiaFinancePayouts = pgTable('kia_finance_payouts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // Defaulted 'kia' — the only brand with a bookings module today. Present so a second brand is a
+  // data change rather than a migration; no cross-brand plumbing is built yet.
+  brand: text('brand').default('kia').notNull(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id),
+  source: text('source').default('delivery').notNull(), // 'delivery' | 'import' | 'manual'
+
+  // --- Snapshot: sourced from the delivered booking (or the legacy import). Read-only in the UI. ---
+  deliveryDate: timestamp('delivery_date', { withTimezone: true }),
+  customerName: text('customer_name'),
+  customerPhone: text('customer_phone'), // PII — masked to everyone except md/developer, see lib/finance/payouts-access.ts
+  model: text('model'),
+  salesExecutive: text('sales_executive'),
+  dealerCode: text('dealer_code'),
+  tlName: text('tl_name'),
+  hyp: text('hyp'), // hypothecation bank
+  bankBranch: text('bank_branch'),
+  loanAmount: decimal('loan_amount', { precision: 14, scale: 2 }),
+  panNumber: text('pan_number'),
+  vehicleRegistrationNo: text('vehicle_registration_no'),
+
+  // --- Finance-specific: editable, audited in kia_finance_payout_activity ---
+  payoutStatus: text('payout_status'), // 'in_house' | 'out_house' | 'cash' | 'staff'
+  reasonIfOuthouse: text('reason_if_outhouse'),
+  dealerPayoutPercent: decimal('dealer_payout_percent', { precision: 8, scale: 4 }),
+  dealerPayoutAmount: decimal('dealer_payout_amount', { precision: 14, scale: 2 }),
+  payoutReceiptStatus: text('payout_receipt_status'), // 'pending' | 'no_payout' | 'received'
+  dsePayoutAmount: decimal('dse_payout_amount', { precision: 14, scale: 2 }),
+  dsePayoutStatus: text('dse_payout_status'),
+  dealerPayoutStatus: text('dealer_payout_status'),
+  paymentReceivedDate: timestamp('payment_received_date', { withTimezone: true }),
+  amountReceived: decimal('amount_received', { precision: 14, scale: 2 }),
+  invoiceNumber: text('invoice_number'),
+  bankVisitScheduled: boolean('bank_visit_scheduled').default(false).notNull(),
+  dateOfBankVisit: timestamp('date_of_bank_visit', { withTimezone: true }),
+  visitedBy: text('visited_by'),
+  bankerRemarks: text('banker_remarks'),
+  hypAsPerRc: text('hyp_as_per_rc'),
+  loginUser: text('login_user'),
+  bankInterestRate: decimal('bank_interest_rate', { precision: 5, scale: 2 }),
+  bankLogin: boolean('bank_login'),
+  bankInProforma: text('bank_in_proforma'),
+
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  createdBy: uuid('created_by').references(() => users.id),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  // The dashboard's default sort + the delivered-date filters.
+  kiaFinancePayoutsDeliveryIdx: index('kia_finance_payouts_delivery_idx').on(table.deliveryDate),
+  kiaFinancePayoutsDealerIdx: index('kia_finance_payouts_dealer_idx').on(table.dealerCode),
+  kiaFinancePayoutsStatusIdx: index('kia_finance_payouts_status_idx').on(table.payoutReceiptStatus),
+  // NOTE the partial UNIQUE index on booking_id (WHERE booking_id IS NOT NULL) is created in
+  // migration 0021 — Drizzle cannot express a partial unique index here.
+}))
+
+/**
+ * IMMUTABLE per-field edit history for kia_finance_payouts. A DB trigger blocks UPDATE/DELETE
+ * (migration 0021), so this is a true audit trail — insert-only, for app and admin alike.
+ *
+ * Deliberately NOT kia_finance_activity: that table is keyed on finance_processing_id + proforma_id,
+ * and payout rows are frequently standalone (legacy imports with no proforma at all).
+ */
+export const kiaFinancePayoutActivity = pgTable('kia_finance_payout_activity', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  payoutId: uuid('payout_id').references(() => kiaFinancePayouts.id).notNull(),
+  field: text('field').notNull(),
+  beforeValue: jsonb('before_value').$type<Record<string, unknown>>(),
+  afterValue: jsonb('after_value').$type<Record<string, unknown>>(),
+  actorUserId: uuid('actor_user_id').references(() => users.id),
+  actorName: text('actor_name').notNull(),
+  actorRole: text('actor_role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  kiaFinancePayoutActivityPayoutIdx: index('kia_finance_payout_activity_payout_idx').on(table.payoutId, table.createdAt),
+}))
+
 // Kia Vehicle Allocations Table
 export const kiaVehicleAllocations = pgTable('kia_vehicle_allocations', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -1798,6 +1890,57 @@ export const kiaVehicleTrackerRelations = relations(kiaVehicleTracker, ({ one })
     fields: [kiaVehicleTracker.createdBy],
     references: [users.id],
   }),
+}))
+
+export const kiaApprovalRequests = pgTable('kia_approval_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: text('email').notNull(),
+  name: text('name').notNull(),
+  employeeId: text('employee_id'),
+  location: text('location'),
+  dealerCode: text('dealer_code'),
+  dealerName: text('dealer_name'),
+  department: text('department'),
+  specifyOtherDepartment: text('specify_other_department'),
+  approvalType: text('approval_type'),
+  vendorName: text('vendor_name'),
+  specifyOtherApprovalType: text('specify_other_approval_type'),
+  previousAdvance: text('previous_advance'),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  typeOfPayment: text('type_of_payment'),
+  remarks: text('remarks'),
+  vpApproval: text('vp_approval'),
+  accountApproval: text('account_approval'),
+  hrApproval: text('hr_approval'),
+  eaApproval: text('ea_approval'),
+  managementApproval: text('management_approval'),
+  managementRemarks: text('management_remarks'),
+  uploadBillUrl1: text('upload_bill_url_1'),
+  uploadBillUrl2: text('upload_bill_url_2'),
+  uploadDocUrl: text('upload_doc_url'),
+  emailSendStatus: text('email_send_status'),
+  history: jsonb('history').$type<any[]>().default([]).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ── Vendors ──────────────────────────────────────────────────────────────────
+// Central vendor / company registry — shared across all brands and modules.
+// name + gstNumber are mandatory; email / phone / address are optional.
+// Soft-delete via deletedAt so historical records on approval requests are preserved.
+export const vendors = pgTable('vendors', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  gstNumber: text('gst_number').notNull(),
+  email: text('email'),
+  phone: text('phone'),
+  address: text('address'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  vendorsGstIdx: uniqueIndex('vendors_gst_idx').on(table.gstNumber),
+  vendorsNameIdx: index('vendors_name_idx').on(table.name),
 }))
 
 

@@ -104,7 +104,7 @@ export async function sendKiaCallbackRequestEmail(params: {
     preferredTime,
     note,
     dealerCode: booking.dealerCode,
-    bookingUrl: base ? `${base}/brands/kia/bookings?bookingId=${booking.id}` : null,
+    bookingUrl: base ? `${base}/brands/kia/proforma?bookingId=${booking.id}` : null,
   })
 
   const result = await sendTrackedEmail({

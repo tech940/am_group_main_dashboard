@@ -28,12 +28,13 @@ async function main() {
       INSERT INTO permissions (name, group_key, label, description, resource, action, sort_order, is_active)
       VALUES
         ('finance.view', 'finance', 'Finance: View', 'View access for Finance.', 'finance', 'view', 570, true),
-        ('finance.approve', 'finance', 'Finance: Approve', 'Approve access for Finance.', 'finance', 'approve', 571, true)
+        ('finance.approve', 'finance', 'Finance: Approve', 'Approve access for Finance.', 'finance', 'approve', 571, true),
+        ('finance.edit', 'finance', 'Finance: Edit', 'Edit the post-delivery payout ledger.', 'finance', 'edit', 572, true)
       ON CONFLICT (name) DO NOTHING`
 
-    // 2. Grant BOTH permissions to finance_head + finance_team via role_permissions DB rows.
+    // 2. Grant ALL THREE permissions to finance_head + finance_team via role_permissions DB rows.
     const perms = await sql<{ id: string; name: string }[]>`
-      SELECT id, name FROM permissions WHERE name IN ('finance.view', 'finance.approve')`
+      SELECT id, name FROM permissions WHERE name IN ('finance.view', 'finance.approve', 'finance.edit')`
     const roles = ['finance_head', 'finance_team']
     let granted = 0
     for (const role of roles) {
@@ -46,9 +47,9 @@ async function main() {
         granted += res.length
       }
     }
-    console.log(`Finance grants ensured for finance_head + finance_team (finance.view + finance.approve). New role_permission rows: ${granted}.`)
+    console.log(`Finance grants ensured for finance_head + finance_team (finance.view + finance.approve + finance.edit). New role_permission rows: ${granted}.`)
     console.log('NOTE: cached permission snapshots for logged-in finance users refresh within ~75min or on next login; or bump PERMISSION_CACHE_VERSION to force-refresh.')
-    process.exit(perms.length === 2 ? 0 : 1)
+    process.exit(perms.length === 3 ? 0 : 1)
   } finally {
     await sql.end({ timeout: 5 })
   }

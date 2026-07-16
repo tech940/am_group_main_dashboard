@@ -129,5 +129,15 @@ assert('finance_team KEEPS Finance when DB-granted (base carries finance.view)',
 assert('finance_head KEEPS finance.approve when DB-granted', resolveEffectiveSnapshotV2({ ...ALL_FALSE, [FIN]: true, [FIN_APPROVE]: true }, {}, 'finance_head', 'all').effective[FIN_APPROVE] === true)
 assert('Finance grantable via explicit Allow override (Access Map)', resolveEffectiveSnapshot(ALL_FALSE, { [FIN]: true }, 'accounts', 'kia').effective[FIN] === true)
 
+// finance.payouts (the post-delivery payout ledger) carries the SAME leak risk as finance.view: it is
+// granted only via DB role_permissions to finance_head + finance_team, never from a template, or the
+// shared tier-2 finance bundle would hand payout-editing to accounts + purchase_manager as well.
+const FIN_PAYOUTS = 'finance.edit'
+assert('finance.edit (payout ledger) NOT template-leaked to finance_team', resolveEffectiveSnapshotV2(ALL_FALSE, {}, 'finance_team', 'all').effective[FIN_PAYOUTS] !== true)
+assert('finance.edit (payout ledger) NOT template-leaked to accounts', resolveEffectiveSnapshotV2(ALL_FALSE, {}, 'accounts', 'all').effective[FIN_PAYOUTS] !== true)
+assert('finance.edit (payout ledger) NOT template-leaked to purchase_manager', resolveEffectiveSnapshotV2(ALL_FALSE, {}, 'purchase_manager', 'all').effective[FIN_PAYOUTS] !== true)
+assert('finance_team KEEPS finance.edit when DB-granted', resolveEffectiveSnapshotV2({ ...ALL_FALSE, [FIN_PAYOUTS]: true }, {}, 'finance_team', 'all').effective[FIN_PAYOUTS] === true)
+assert('MD sees finance.edit', resolveEffectiveSnapshot(ALL_FALSE, {}, 'md', 'all').effective[FIN_PAYOUTS] === true)
+
 console.log(`\n=== ${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`} ===\n`)
 process.exit(failures === 0 ? 0 : 1)

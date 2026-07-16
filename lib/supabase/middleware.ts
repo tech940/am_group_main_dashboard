@@ -44,9 +44,16 @@ export async function updateSession(request: NextRequest) {
     // perform the definitive server-side check once.
   }
 
+  // Public paths that must never require authentication (allowlist takes priority)
+  const publicPaths = [
+    '/brands/kia/payment-approvals/submit',
+    '/brands/kia/approvals/submit',
+  ]
+  const isPublicPath = publicPaths.some(path => request.nextUrl.pathname.startsWith(path))
+
   // Protected routes
   const protectedPaths = ['/dashboard', '/workshop', '/recon', '/inventory', '/reports', '/team', '/admin', '/brands', '/purchase-orders', '/am-finance']
-  const isProtectedPath = protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))
+  const isProtectedPath = !isPublicPath && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))
   const hasAuthCookie = request.cookies.getAll().some(({ name, value }) => (
     name.startsWith('sb-')
     && name.includes('auth-token')

@@ -8,6 +8,7 @@ import {
   financeOrders,
   kiaBookingActivity,
   kiaBookings,
+  kiaFinancePayouts,
   kiaLeadFollowups,
   kiaProformas,
   kiaStockLocalStatuses,
@@ -1096,9 +1097,75 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     // this is what stops the reminder emails, which read the table directly.
     if (input.delivered) {
       await cancelKiaBookingFollowups(tx, id, 'vehicle delivered')
+      // …and the FINANCE journey begins: the payout ledger tracks bank/dealer payouts AFTER
+      // delivery. This only CREATES a finance record from the booking — it never reads back into
+      // booking state, so the payout ledger can never affect a booking's status.
+      await createFinancePayoutForDeliveredBooking(tx, booking, appUser)
     }
 
     return booking
+  })
+}
+
+/**
+ * Opens a Finance Payouts ledger row for a freshly delivered booking, snapshotting what finance
+ * needs so nobody re-keys data that already exists.
+ *
+ * SNAPSHOT, not a live join: a finance ledger records the state AS AT DELIVERY, and later edits to
+ * the booking must not silently rewrite finance history. (The imported legacy rows have no booking
+ * at all, which is the other reason the payout table owns these columns.)
+ *
+ * Idempotent via the partial unique index on booking_id — re-delivering, or any retry, updates the
+ * snapshot rather than creating a second row. Runs on the delivery `tx` so it rolls back with it.
+ */
+async function createFinancePayoutForDeliveredBooking(tx: DbTx, booking: typeof kiaBookings.$inferSelect, appUser: AppUser) {
+  const meta = (booking.metadata || {}) as JsonRecord
+  const snapshot = {
+    bookingId: booking.id,
+    source: 'delivery' as const,
+    deliveryDate: booking.deliveredAt ?? new Date(),
+    customerName: booking.customerName,
+    customerPhone: booking.customerPhone,
+    model: [booking.model, booking.variant].filter(Boolean).join(' ') || booking.model,
+    salesExecutive: booking.consultantName,
+    dealerCode: booking.dealerCode,
+    tlName: nullableText(meta.tlName),
+    // The booking's finance bank IS the hypothecation for the RC — finance re-confirms it later
+    // against the actual RC in `hyp_as_per_rc`.
+    hyp: booking.bankName,
+    loanAmount: booking.loanAmount,
+    panNumber: nullableText(meta.panNumber ?? meta.pan),
+    // A cash booking has no payout to chase; anything financed starts life pending.
+    payoutReceiptStatus: booking.financeRequired ? 'pending' : 'no_payout',
+    payoutStatus: booking.financeRequired ? null : 'cash',
+    createdBy: appUser.id,
+    updatedBy: appUser.id,
+  }
+
+  await tx.insert(kiaFinancePayouts).values(snapshot).onConflictDoUpdate({
+    target: kiaFinancePayouts.bookingId,
+    // targetWhere is REQUIRED, not decorative: the unique index on booking_id is PARTIAL
+    // (WHERE booking_id IS NOT NULL, so legacy imports with no booking don't collide), and Postgres
+    // will only match a partial index if ON CONFLICT repeats its predicate. Without this the
+    // statement raises "no unique or exclusion constraint matching the ON CONFLICT specification"
+    // — which would make marking ANY booking delivered throw.
+    targetWhere: sql`${kiaFinancePayouts.bookingId} IS NOT NULL`,
+    // Refresh the snapshot only. Deliberately does NOT touch the finance-entered columns — a
+    // re-delivery must never wipe a payout amount someone already recorded.
+    set: {
+      deliveryDate: snapshot.deliveryDate,
+      customerName: snapshot.customerName,
+      customerPhone: snapshot.customerPhone,
+      model: snapshot.model,
+      salesExecutive: snapshot.salesExecutive,
+      dealerCode: snapshot.dealerCode,
+      tlName: snapshot.tlName,
+      hyp: snapshot.hyp,
+      loanAmount: snapshot.loanAmount,
+      panNumber: snapshot.panNumber,
+      updatedBy: appUser.id,
+      updatedAt: new Date(),
+    },
   })
 }
 

@@ -212,12 +212,70 @@ export function PettyCashWorkspace() {
     }
   }, [loadDashboard])
 
+function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<File> {
+  if (!file.type.startsWith('image/')) {
+    return Promise.resolve(file)
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onload = () => {
+        let width = img.width
+        let height = img.height
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width)
+          width = maxWidth
+        }
+
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(file)
+          return
+        }
+
+        ctx.drawImage(img, 0, 0, width, height)
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file)
+              return
+            }
+            const lastDotIndex = file.name.lastIndexOf('.')
+            const baseName = lastDotIndex !== -1 ? file.name.substring(0, lastDotIndex) : file.name
+            const newName = `${baseName}.jpg`
+            const compressedFile = new File([blob], newName, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            })
+            resolve(compressedFile)
+          },
+          'image/jpeg',
+          quality
+        )
+      }
+      img.onerror = () => resolve(file)
+      img.src = event.target?.result as string
+    }
+    reader.onerror = () => resolve(file)
+    reader.readAsDataURL(file)
+  })
+}
+
   const uploadExpenseFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return
     try {
       for (const file of Array.from(files)) {
+        const compressedFile = await compressImage(file)
         const body = new FormData()
-        body.append('file', file)
+        body.append('file', compressedFile)
         body.append('entity', 'expense')
         const res = await fetch('/api/petty-cash/upload', { method: 'POST', body })
         const result = await res.json().catch(() => null)

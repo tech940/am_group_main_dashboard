@@ -70,6 +70,8 @@ const brandNavigation: SidebarBrand[] = [
         key: 'sales',
         submenus: [
           { name: 'Bookings', href: '/brands/kia/proforma' },
+          { name: 'Payment Approvals', href: '/brands/kia/payment-approvals' },
+          { name: 'Vendor Registry', href: '/brands/kia/vendors' },
           { name: 'Finance', href: '/finance' },
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },

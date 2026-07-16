@@ -1,12 +1,13 @@
 'use client'
 
-import { ChevronDown, Menu, LogOut, User, Mail, Loader2, Moon, Sun } from 'lucide-react'
+import { ChevronDown, Menu, LogOut, User, Mail, Loader2, Moon, Sun, Search } from 'lucide-react'
 import { useSidebar } from '@/context/sidebar-context'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useState, useEffect, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS } from '@/components/providers/query-provider'
+import { GlobalSearchDialog } from './global-search-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,6 +69,19 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   const supabase = createClient()
   const queryClient = useQueryClient()
   const [signingOut, setSigningOut] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   const isDarkMode = useSyncExternalStore(
     subscribeToThemeChanges,
     getThemeSnapshot,
@@ -133,8 +147,8 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   }
 
   return (
-    <header className="sticky top-0 z-30 mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-[color-mix(in_srgb,var(--dashboard-primary-border)_80%,transparent)] bg-[linear-gradient(135deg,#ffffff_0%,var(--dashboard-primary-soft)_48%,#eff6ff_100%)] px-6 transition-colors dark:border-white/10 dark:bg-[linear-gradient(135deg,#020617_0%,var(--dashboard-primary-dark)_52%,#0f172a_100%)]">
-      <div className="flex items-center gap-6">
+    <header className="sticky top-0 z-30 mx-4 sm:mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-[color-mix(in_srgb,var(--dashboard-primary-border)_80%,transparent)] bg-[linear-gradient(135deg,#ffffff_0%,var(--dashboard-primary-soft)_48%,#eff6ff_100%)] px-3 sm:px-6 transition-colors dark:border-white/10 dark:bg-[linear-gradient(135deg,#020617_0%,var(--dashboard-primary-dark)_52%,#0f172a_100%)]">
+      <div className="flex items-center gap-3 sm:gap-6">
         {/* Hamburger */}
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -142,7 +156,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
         >
           <Menu className="h-6 w-6" />
         </button>
-
+ 
         {/* Section Title */}
         <div className="hidden lg:block">
           <h1 className="text-xl font-semibold leading-none text-slate-900 dark:text-white">{title}</h1>
@@ -150,9 +164,34 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
         </div>
       </div>
 
-      <div className="flex items-center gap-8">
+      {/* Search Bar Trigger - Centered & Desktop Only */}
+      <div className="relative mx-4 hidden md:block max-w-[360px] lg:max-w-[480px] flex-1">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-slate-500 dark:text-slate-400" />
+        <button
+          onClick={() => setSearchOpen(true)}
+          className="flex h-11 w-full items-center justify-between rounded-[14px] border border-slate-300 bg-white pl-10 pr-3.5 text-[13px] font-semibold text-slate-700 shadow-md transition-all hover:border-slate-400 hover:text-slate-900 hover:shadow-lg dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-slate-100"
+        >
+          <span>Search sections...</span>
+          <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-black tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            Ctrl+K
+          </span>
+        </button>
+      </div>
+ 
+      <div className="flex items-center gap-3 sm:gap-8">
         {/* Right Actions */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
+          {/* Mobile search button */}
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            aria-label="Search sections"
+            title="Search sections"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--dashboard-primary-border)] bg-white text-slate-700 shadow-sm transition-all hover:bg-[var(--dashboard-primary-soft)] hover:text-[var(--dashboard-primary)] md:hidden dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/16"
+          >
+            <Search className="h-5 w-5" />
+          </button>
+
           <button
             type="button"
             onClick={toggleDarkMode}
@@ -164,7 +203,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <div className="flex cursor-pointer items-center gap-3 border-l border-slate-200/70 pl-6 transition-opacity hover:opacity-85 dark:border-white/10">
+              <div className="flex cursor-pointer items-center gap-1.5 sm:gap-3 border-l border-slate-200/70 pl-3 sm:pl-6 transition-opacity hover:opacity-85 dark:border-white/10">
                 <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border-2 border-white/80 bg-[linear-gradient(135deg,var(--dashboard-primary),var(--dashboard-primary-light))] text-sm font-bold text-white shadow-sm ring-1 ring-[color-mix(in_srgb,var(--dashboard-primary)_20%,transparent)]">
                   {loading ? '...' : user?.fullName.charAt(0).toUpperCase()}
                 </div>
@@ -215,6 +254,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
           </DropdownMenu>
         </div>
       </div>
+      <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
     </header>
   )
 }

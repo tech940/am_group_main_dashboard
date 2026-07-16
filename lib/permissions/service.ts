@@ -34,9 +34,10 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-// Bumped for each new role (v12 crm/idt, v13 cre) — cached snapshots are keyed on this, so without
-// a bump an existing session would carry stale permissions for up to the cache TTL.
-const PERMISSION_CACHE_VERSION = 'v13'
+// Bumped for each new role or permission key (v12 crm/idt, v13 cre, v14 finance.edit) — cached
+// snapshots are keyed on this, so without a bump an existing session would carry stale permissions
+// for up to the cache TTL.
+const PERMISSION_CACHE_VERSION = 'v14'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

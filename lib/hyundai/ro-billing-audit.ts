@@ -501,7 +501,19 @@ async function queryHyundaiRoBillingAudit(
       ) ORDER BY revenue DESC), '[]'::jsonb) FROM top_invoices) AS top_invoices
   `)
 
-  const row = resultRows(result)[0] || {}
+  // The statement above is `SELECT (scalar subquery), (scalar subquery), ...` with no FROM, so it
+  // ALWAYS yields exactly one row — even when the period has no bills at all (the CTEs COALESCE to
+  // '{}'/'[]'). Zero rows therefore does not mean "no business", it means the read did not come back,
+  // and `|| {}` used to silently turn that into revenue 0 / rawRows 0 / minBillDate null. That zero is
+  // indistinguishable from a real figure and getCachedData would cache it for 30 minutes and serve it
+  // stale for 2 hours more — which is exactly how the Group Cockpit came to report Hyundai at ₹0.00
+  // against a healthy table. Fail loudly instead: a throw propagates, nothing is cached, and callers
+  // can show "no data" rather than a fabricated zero.
+  const rows = resultRows(result)
+  if (rows.length === 0) {
+    throw new Error('hyundai ro-billing audit: read returned no rows (expected exactly one) — refusing to report this as zero revenue')
+  }
+  const row = rows[0]
   const summaries = jsonValue<Record<string, ResultRow>>(row.summaries, {})
   const dailySplitRaw = jsonValue<ResultRow[]>(row.daily_split, [])
   const dealerSplitRaw = jsonValue<ResultRow[]>(row.dealer_split, [])
