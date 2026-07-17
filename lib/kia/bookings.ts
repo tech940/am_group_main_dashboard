@@ -20,6 +20,7 @@ import {
 } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
+import { normalizeBankName } from '@/lib/kia/bank-utils'
 import { canViewKiaCustomerPii, redactKiaBookingPii, stripKiaBookingPiiKeys } from '@/lib/kia/pii'
 import { cancelKiaBookingFollowups } from '@/lib/kia/lead-followups'
 import {
@@ -964,7 +965,7 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
       consultantEmail: appUser.email,
       source: nullableText(input.source),
       financeRequired: Boolean(input.financeRequired),
-      bankName: nullableText(input.bankName),
+      bankName: input.bankName ? normalizeBankName(input.bankName) : null,
       loanAmount: numericText(input.loanAmount),
       notes: nullableText(input.notes),
       metadata: (input.metadata || {}) as JsonRecord,
@@ -1028,6 +1029,7 @@ export async function getKiaBookingDetail(id: string) {
       id: kiaBookingActivity.id,
       activityType: kiaBookingActivity.activityType,
       title: kiaBookingActivity.title,
+      description: kiaBookingActivity.description,
       actorName: kiaBookingActivity.actorName,
       createdAt: kiaBookingActivity.createdAt,
     }).from(kiaBookingActivity).where(eq(kiaBookingActivity.bookingId, id)).orderBy(desc(kiaBookingActivity.createdAt)).limit(100),
@@ -1115,7 +1117,7 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     }
     if (input.source !== undefined) updates.source = nullableText(input.source)
     if (input.financeRequired !== undefined) updates.financeRequired = Boolean(input.financeRequired)
-    if (input.bankName !== undefined) updates.bankName = nullableText(input.bankName)
+    if (input.bankName !== undefined) updates.bankName = input.bankName ? normalizeBankName(input.bankName) : null
     if (input.loanAmount !== undefined) updates.loanAmount = numericText(input.loanAmount)
     if (input.notes !== undefined) updates.notes = nullableText(input.notes)
     // Merge (not replace) metadata so edits to extra fields (PAN/Aadhaar, exchange, document URLs)

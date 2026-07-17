@@ -8,7 +8,7 @@
 //   idt -> Allot Vehicle to a booking (exclusive)
 //   (anyone except sales_executive) -> stock holds / BBND allot / Request Transfer
 //   accounts -> Confirm Payment Release + Invoice # + Invoice PDF (single step)
-//   crm -> Mark Delivered (exclusive)
+//   cxm -> Mark Delivered (ccm is the backup when the CXM is absent; crm is RETIRED)
 // admin / developer bypass everything.
 //
 // These predicates are the ONLY thing restricting these actions. Do NOT try to gate them with a
@@ -55,13 +55,23 @@ export function canConfirmKiaPayment(role?: string | null) {
 }
 
 /**
- * CRM — Customer Relationship Manager (+ admin/developer): mark the vehicle delivered.
- * Exclusive to the CRM: every other role is read-only on delivery status. admin/developer keep the
- * override so a super admin can never be locked out of their own workflow.
+ * CXM — Customer Experience Management (+ CCM as backup, + admin/developer): mark the vehicle
+ * delivered. Every other role is read-only on delivery status; admin/developer keep the override so
+ * a super admin can never be locked out of their own workflow.
+ *
+ * CCM (Customer Care Manager) is a deliberate SECOND owner, not a widening: delivery is the last
+ * step of the sale and cannot wait for one person to be at their desk.
+ *
+ * Took over from `crm`, which is retired. The enum value 'crm' survives forever (Postgres cannot drop
+ * one), so this must actively return FALSE for it rather than merely stop mentioning it.
+ *
+ * Do NOT be tempted to add cxm/ccm to isKiaWorkflowAdmin instead — that one-liner would also hand
+ * them proforma approve/decline, booking creation, vehicle allotment and Accounts payment
+ * confirmation. Six capabilities for the price of one.
  */
 export function canDeliverKiaBooking(role?: string | null) {
   const r = norm(role)
-  return isKiaWorkflowAdmin(r) || r === 'crm'
+  return isKiaWorkflowAdmin(r) || r === 'cxm' || r === 'ccm'
 }
 
 /**
@@ -92,9 +102,18 @@ export function canTransferKiaVehicle(role?: string | null) {
 }
 
 /**
- * Who may see EVERY booking. Sales Executives (and any non-privileged role) see
- * only their own bookings; approvers, Accounts, Finance Head, MD, IDT and admins see
- * all of them (they need the full pipeline to approve / act on it).
+ * Who may see EVERY booking. Sales Executives (and any non-privileged role) see only their own
+ * bookings; approvers, Accounts, Finance Head, MD, IDT, CXM/CCM and admins see all of them (they need
+ * the full pipeline to act on it).
+ *
+ * ⚠️ AN ACTION-OWNING ROLE MUST BE LISTED HERE OR IT IS INERT. The sole caller (lib/kia/bookings.ts
+ * :614) sends every role NOT in this list down an own-bookings filter — createdBy / consultantEmail /
+ * consultantName. A role like CXM creates no bookings and is never the consultant, so all three miss
+ * and it sees ZERO rows. This is not hypothetical: `crm` held the EXCLUSIVE right to mark bookings
+ * delivered while absent from this list, and saw 0 of 55 bookings — the exclusive owner of an action
+ * it could not reach. Measured before this change.
+ *
+ * crm is deliberately NOT re-added: it is retired and should see nothing.
  */
 export function canViewAllKiaBookings(role?: string | null) {
   const r = norm(role)
@@ -103,6 +122,8 @@ export function canViewAllKiaBookings(role?: string | null) {
     canApproveKiaProforma(r) ||
     r === 'accounts' ||
     r === 'finance_head' ||
-    r === 'idt'
+    r === 'idt' ||
+    r === 'cxm' ||
+    r === 'ccm'
   )
 }

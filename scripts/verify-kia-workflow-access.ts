@@ -13,14 +13,18 @@ import {
   canAllotKiaVehicleToBooking,
   canDeliverKiaBooking,
   canVerifyKiaAccounts,
+  canViewAllKiaBookings,
 } from '../lib/kia/workflow-access'
 import { canRevealKiaFollowupPhone, canViewKiaCustomerPii } from '../lib/kia/pii'
+import { roleEnum } from '../lib/db/schema'
 
 type Check = { label: string; got: boolean; want: boolean }
 
 const CHECKS: Check[] = [
-  // Delivery — CRM exclusive (+ super admins).
-  { label: 'CRM CAN deliver', got: canDeliverKiaBooking('crm'), want: true },
+  // Delivery — CXM owns it, CCM backs it up (+ super admins). Took over from the retired CRM.
+  { label: 'CXM CAN deliver', got: canDeliverKiaBooking('cxm'), want: true },
+  { label: 'CCM CAN deliver (backup when CXM is absent)', got: canDeliverKiaBooking('ccm'), want: true },
+  { label: 'CRM CANNOT deliver (retired — handed over to CXM)', got: canDeliverKiaBooking('crm'), want: false },
   { label: 'developer CAN deliver (super-admin override)', got: canDeliverKiaBooking('developer'), want: true },
   { label: 'admin CAN deliver (super-admin override)', got: canDeliverKiaBooking('admin'), want: true },
   { label: 'sales_executive CANNOT deliver (was allowed before)', got: canDeliverKiaBooking('sales_executive'), want: false },
@@ -29,6 +33,21 @@ const CHECKS: Check[] = [
   { label: 'md CANNOT deliver (was allowed before)', got: canDeliverKiaBooking('md'), want: false },
   { label: 'idt CANNOT deliver', got: canDeliverKiaBooking('idt'), want: false },
   { label: 'accounts CANNOT deliver', got: canDeliverKiaBooking('accounts'), want: false },
+
+  // The new roles must not have quietly acquired anything BUT delivery.
+  { label: 'CXM CANNOT allot to a booking', got: canAllotKiaVehicleToBooking('cxm'), want: false },
+  { label: 'CCM CANNOT allot to a booking', got: canAllotKiaVehicleToBooking('ccm'), want: false },
+  { label: 'CXM CANNOT verify Accounts payment', got: canVerifyKiaAccounts('cxm'), want: false },
+  { label: 'CCM CANNOT verify Accounts payment', got: canVerifyKiaAccounts('ccm'), want: false },
+  { label: 'CXM CANNOT see customer PII', got: canViewKiaCustomerPii('cxm'), want: false },
+  { label: 'CCM CANNOT see customer PII', got: canViewKiaCustomerPii('ccm'), want: false },
+
+  // Visibility — an action-owning role that cannot SEE the bookings is inert. This is the exact trap
+  // `crm` fell into: it held delivery exclusively while seeing 0 of 55 bookings.
+  { label: 'CXM CAN see all bookings (else delivery is unreachable)', got: canViewAllKiaBookings('cxm'), want: true },
+  { label: 'CCM CAN see all bookings (else delivery is unreachable)', got: canViewAllKiaBookings('ccm'), want: true },
+  { label: 'CRM CANNOT see all bookings (retired)', got: canViewAllKiaBookings('crm'), want: false },
+  { label: 'sales_executive CANNOT see all bookings (own only)', got: canViewAllKiaBookings('sales_executive'), want: false },
 
   // Allotment to a booking — IDT exclusive (+ super admins).
   { label: 'IDT CAN allot to a booking', got: canAllotKiaVehicleToBooking('idt'), want: true },
@@ -70,11 +89,28 @@ const CHECKS: Check[] = [
   { label: 'CRE did NOT gain blanket KIA PII access', got: canViewKiaCustomerPii('cre'), want: false },
 
   // Case/whitespace robustness — role strings arrive from the DB and the client.
-  { label: 'CRM gate is case-insensitive', got: canDeliverKiaBooking('  CRM '), want: true },
+  { label: 'CXM gate is case-insensitive', got: canDeliverKiaBooking('  CXM '), want: true },
+  { label: 'CCM gate is case-insensitive', got: canDeliverKiaBooking(' Ccm '), want: true },
   { label: 'IDT gate is case-insensitive', got: canAllotKiaVehicleToBooking('IDT'), want: true },
   { label: 'empty role is denied', got: canAllotKiaVehicleToBooking(''), want: false },
   { label: 'null role is denied', got: canDeliverKiaBooking(null), want: false },
 ]
+
+// Enum-driven coherence invariant — the guard the hand-written rows above could not give us.
+//
+// Every role in the enum is checked, so a role added LATER is covered without anyone remembering to
+// add a case here. The rule: if a role may ACT on a booking, it must be able to SEE bookings. `crm`
+// violated this for its entire existence — exclusive delivery rights, zero visible bookings — and no
+// test noticed, because every check was a hand-written row about a role someone thought about.
+for (const role of roleEnum.enumValues) {
+  const acts = canDeliverKiaBooking(role) || canAllotKiaVehicleToBooking(role)
+  if (!acts) continue
+  CHECKS.push({
+    label: `[invariant] '${role}' can act on a booking, so it must see bookings`,
+    got: canViewAllKiaBookings(role),
+    want: true,
+  })
+}
 
 console.log('\n=== KIA workflow access gates ===\n')
 let failures = 0

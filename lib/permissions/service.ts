@@ -34,10 +34,10 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-// Bumped for each new role or permission key (v12 crm/idt, v13 cre, v14 finance.edit) — cached
-// snapshots are keyed on this, so without a bump an existing session would carry stale permissions
-// for up to the cache TTL.
-const PERMISSION_CACHE_VERSION = 'v14'
+// Bumped for each new role or permission key (v12 crm/idt, v13 cre, v14 finance.edit, v15 cxm/ccm)
+// — cached snapshots are keyed on this, so without a bump an existing session would carry stale
+// permissions for up to the cache TTL.
+const PERMISSION_CACHE_VERSION = 'v15'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is
@@ -131,7 +131,17 @@ function constrainSnapshotToBranch(
 // Roles whose access is defined purely by their role template — they do NOT receive the
 // blanket "see your whole brand" default. This moves two former sidebar hardcodes into the
 // resolution layer: branch_admin (Petty Cash only) and sales_executive (Bookings only).
-const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca', 'crm', 'idt', 'cre'])
+//
+// ⚠️ OMITTING A SINGLE-PURPOSE ROLE HERE IS SILENT AND EXPENSIVE. The Set is typed, so a typo is
+// caught — but membership is NOT exhaustive, so a role simply left out compiles cleanly and then
+// receives applyBrandDefault's blanket grant of every non-restricted kia.* key. Measured for the two
+// roles added below: WITHOUT this line cxm resolved to 27 effective keys and ccm to 30 (including
+// kia.proforma.approve and kia.stock_management.audit) instead of the 2 their templates intend.
+// Any new role that exists to own ONE action belongs in this Set, in the same commit that adds it.
+//
+// 'crm' STAYS even though it is retired: removing it would widen any lingering crm user from 2 keys
+// to ~28 on their way out the door.
+const TEMPLATE_ONLY_ROLES = new Set<PermissionRole>(['branch_admin', 'sales_executive', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'cxm', 'ccm'])
 
 // Sensitive analytics (Sales Report, Stock Report) are visible by default ONLY to top management:
 // super admins (MD/Developer) and EBA. Every other role — including CEO/EA and all brand roles — is

@@ -81,6 +81,8 @@ export const ROLE_PROFILE: Record<PermissionRole, RoleProfile> = {
   idt: { tier: TIER.EMPLOYEE, family: 'special' }, // Internal Development Trainee — allots vehicles to bookings
   cre: { tier: TIER.EMPLOYEE, family: 'special' }, // Customer Relationship Executive — calls customers, owns booking follow-ups
   edp: { tier: TIER.EMPLOYEE, family: 'special' }, // Electronic Data Processing — manages price list
+  ccm: { tier: TIER.EMPLOYEE, family: 'special' },
+  cxm: { tier: TIER.EMPLOYEE, family: 'special' },
 }
 
 export function getRoleProfile(role: string | null | undefined): RoleProfile | null {

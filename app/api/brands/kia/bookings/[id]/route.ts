@@ -15,6 +15,7 @@ function activityPayload(row: Record<string, unknown>) {
     id: row.id,
     type: row.activityType,
     message: row.title,
+    description: row.description,
     actorName: row.actorName,
     createdAt: row.createdAt,
   }

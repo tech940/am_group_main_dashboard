@@ -1867,8 +1867,10 @@ export function KiaBookingsClient({
       ['customerEmailId', 'Customer Email Id'],
       ['panCardUrl', 'PAN Card upload'],
       ['panNumber', 'PAN Number'],
-      ['aadhaarCardUrl', 'Aadhaar Card upload'],
-      ['aadhaarNumber', 'Aadhaar Number'],
+      ...(createForm.customerType !== 'Firm' ? [
+        ['aadhaarCardUrl', 'Aadhaar Card upload'] as [keyof CreateBookingForm, string],
+        ['aadhaarNumber', 'Aadhaar Number'] as [keyof CreateBookingForm, string],
+      ] : []),
       ['model', 'Model'],
       ['year', 'YEAR'],
       ['variant', 'Variant'],
@@ -1937,7 +1939,7 @@ export function KiaBookingsClient({
     if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(createForm.panNumber.trim().toUpperCase())) {
       setFormError('Enter a valid PAN (e.g. ABCDE1234F).'); setCreateTab('Customer'); return
     }
-    if (createForm.aadhaarNumber.replace(/\D/g, '').length !== 12) {
+    if (createForm.customerType !== 'Firm' && createForm.aadhaarNumber.replace(/\D/g, '').length !== 12) {
       setFormError('Enter a valid 12-digit Aadhaar number.'); setCreateTab('Customer'); return
     }
     // Exchange (trade-in): when opted in, the old-vehicle name + value are required.
@@ -1960,8 +1962,10 @@ export function KiaBookingsClient({
       ['customerEmailId', 'Customer Email Id'],
       ['panCardUrl', 'PAN Card upload'],
       ['panNumber', 'PAN Number'],
-      ['aadhaarCardUrl', 'Aadhaar Card upload'],
-      ['aadhaarNumber', 'Aadhaar Number'],
+      ...(editForm.customerType !== 'Firm' ? [
+        ['aadhaarCardUrl', 'Aadhaar Card upload'] as [keyof CreateBookingForm, string],
+        ['aadhaarNumber', 'Aadhaar Number'] as [keyof CreateBookingForm, string],
+      ] : []),
       ['model', 'Model'],
       ['year', 'YEAR'],
       ['variant', 'Variant'],
@@ -2030,7 +2034,7 @@ export function KiaBookingsClient({
     if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(editForm.panNumber.trim().toUpperCase())) {
       setFormError('Enter a valid PAN (e.g. ABCDE1234F).'); setEditTab('Customer'); return
     }
-    if (editForm.aadhaarNumber.replace(/\D/g, '').length !== 12) {
+    if (editForm.customerType !== 'Firm' && editForm.aadhaarNumber.replace(/\D/g, '').length !== 12) {
       setFormError('Enter a valid 12-digit Aadhaar number.'); setEditTab('Customer'); return
     }
     if (editForm.exchange === 'Yes') {
@@ -3178,8 +3182,10 @@ function getBookingStepError(tab: (typeof CREATE_TABS)[number], form: CreateBook
     // PAN + Aadhaar are mandatory (upload + a valid number). Employee ID is optional.
     if (!String(form.panCardUrl || '').trim()) return 'Please upload the PAN card.'
     if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(String(form.panNumber || '').trim().toUpperCase())) return 'Enter a valid PAN number (e.g. ABCDE1234F).'
-    if (!String(form.aadhaarCardUrl || '').trim()) return 'Please upload the Aadhaar card.'
-    if (String(form.aadhaarNumber || '').replace(/\D/g, '').length !== 12) return 'Enter a valid 12-digit Aadhaar number.'
+    if (form.customerType !== 'Firm') {
+      if (!String(form.aadhaarCardUrl || '').trim()) return 'Please upload the Aadhaar card.'
+      if (String(form.aadhaarNumber || '').replace(/\D/g, '').length !== 12) return 'Enter a valid 12-digit Aadhaar number.'
+    }
     if (form.exchange === 'Yes') {
       if (!String(form.exchangeVehicleName || '').trim()) return 'Enter the exchange vehicle name.'
       if (!(Number(form.exchangeValue) > 0)) return 'Enter a valid exchange value.'
@@ -3563,6 +3569,7 @@ function CreateBookingDialog({
                       >
                         <option value="Regular">Regular</option>
                         <option value="CSD">CSD</option>
+                        <option value="Firm">Firm</option>
                       </select>
                       {form.customerType === 'CSD' && (
                         <p className="mt-1.5 text-[11px] font-bold text-[var(--dashboard-action-bg)]">CSD bookings get a 5-day payment window after allotment (instead of 72 hours).</p>
@@ -3614,10 +3621,10 @@ function CreateBookingDialog({
                       <Field label="PAN Number" required>
                         <Input value={form.panNumber} onChange={(e) => onChange('panNumber', e.target.value.toUpperCase().slice(0, 10))} className={INPUT_STYLE} placeholder="ABCDE1234F" maxLength={10} />
                       </Field>
-                      <Field label="Aadhaar Card" required>
+                      <Field label="Aadhaar Card" required={form.customerType !== 'Firm'}>
                         <IdDocUploadButton label="Upload Aadhaar (image / PDF)" uploading={idDocUploading === 'aadhaar'} fileName={form.aadhaarCardName} onSelect={(e) => handleIdDocUpload('aadhaar', e)} />
                       </Field>
-                      <Field label="Aadhaar Number" required>
+                      <Field label="Aadhaar Number" required={form.customerType !== 'Firm'}>
                         <Input value={form.aadhaarNumber} onChange={(e) => onChange('aadhaarNumber', e.target.value.replace(/\D/g, '').slice(0, 12))} className={INPUT_STYLE} placeholder="12-digit number" inputMode="numeric" maxLength={12} />
                       </Field>
                       <Field label="Employee ID Card (optional)">

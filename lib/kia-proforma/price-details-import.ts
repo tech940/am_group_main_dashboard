@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { kiaPriceDetails } from '@/lib/db/schema'
 import { invalidateCache } from '@/lib/redis/cache-utils'
+import { normalizeBankName } from '@/lib/kia/bank-utils'
 
 type RawRow = Record<string, unknown> & {
   __rowNumber: number
@@ -37,9 +38,10 @@ function buildBranchInserts(rows: RawRow[]): PriceInsert[] {
   const seen = new Set<string>()
   const out: PriceInsert[] = []
   for (const row of rows) {
-    const bank = toText(valueFor(row, 'hyp'))
+    const rawBank = toText(valueFor(row, 'hyp'))
     const branch = toText(valueFor(row, 'bankBranch'))
     if (!branch) continue
+    const bank = normalizeBankName(rawBank)
     const key = `${bank.toLowerCase()}||${branch.toLowerCase()}`
     if (seen.has(key)) continue
     seen.add(key)
@@ -172,13 +174,13 @@ function buildPriceInsert(row: RawRow): { value?: PriceInsert; failure?: KiaPric
   if (exShowroomPrice <= 0) return { failure: { rowNumber: row.__rowNumber, reason: 'Ex-showroom price is missing or invalid.' } }
 
   const hyp = toText(valueFor(row, 'hyp'))
-  const bankName = toText(valueFor(row, 'bankName')) || hyp
+  const bankName = normalizeBankName(toText(valueFor(row, 'bankName')) || hyp)
 
   return {
     value: {
       model,
       trimDescription,
-      hyp: hyp || null,
+      hyp: bankName || null,
       bankName: bankName || null,
       bankBranch: toText(valueFor(row, 'bankBranch')) || null,
       exShowroomPrice: String(exShowroomPrice),

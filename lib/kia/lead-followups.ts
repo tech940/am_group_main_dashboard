@@ -89,7 +89,7 @@ function istDayBoundaries(base = new Date()) {
  * - `pending` — every other open follow-up, overdue first. The `overdue` flag on each row drives the
  *   red indicator.
  */
-export type FollowupBucket = 'not_connected' | 'pending' | 'next_day'
+export type FollowupBucket = 'not_connected' | 'pending' | 'next_day' | 'cancelled'
 
 export type FollowupRow = {
   id: string
@@ -209,10 +209,10 @@ export async function listFollowups(appUser: AppUser, input: { mine?: boolean; s
 
   const where = [
     isNull(kiaBookings.deletedAt),
-    // Follow-ups stop at delivery. Belt-and-braces: pending rows are also cancelled when the
-    // booking is marked delivered (cancelKiaBookingFollowups), but a booking delivered by any
-    // other path must never resurface in the queue.
+    // Follow-ups stop at delivery.
     ne(kiaBookings.status, 'delivered'),
+    // Exclude cancelled bookings from the active work queue buckets.
+    ne(kiaBookings.status, 'cancelled'),
   ]
   if (input.mine) where.push(eq(kiaLeadFollowups.assignedTo, appUser.id))
   if (input.reason && REASONS.has(input.reason)) where.push(eq(kiaLeadFollowups.reason, input.reason))
@@ -225,12 +225,25 @@ export async function listFollowups(appUser: AppUser, input: { mine?: boolean; s
     )!)
   }
 
-  // One query per bucket rather than fetching everything and bucketing in JS: each bucket then gets
-  // its own limit, and "not connected" is a per-booking fact that row-level bucketing can't express.
-  const [pending, nextDay, notConnected] = await Promise.all([
-    // EVERY open follow-up except tomorrow's (which gets its own bucket) — overdue first. This is
-    // the whole book of work, not just what's due today: a booking mid-journey on the 7-day cadence
-    // must still be visible and actionable, not hidden until the day before its next touch.
+  // Cancelled where clause: bookings that are cancelled.
+  const cancelledWhere = [
+    isNull(kiaBookings.deletedAt),
+    ne(kiaBookings.status, 'delivered'),
+    eq(kiaBookings.status, 'cancelled'),
+  ]
+  if (input.mine) cancelledWhere.push(eq(kiaLeadFollowups.assignedTo, appUser.id))
+  if (input.reason && REASONS.has(input.reason)) cancelledWhere.push(eq(kiaLeadFollowups.reason, input.reason))
+  if (input.dealer) cancelledWhere.push(eq(kiaLeadFollowups.dealerCode, input.dealer))
+  if (search) {
+    cancelledWhere.push(or(
+      ilike(kiaBookings.customerName, `%${search}%`),
+      ilike(kiaBookings.model, `%${search}%`),
+      ilike(kiaBookings.bookingNumber, `%${search}%`),
+    )!)
+  }
+
+  const [pending, nextDay, notConnected, cancelled] = await Promise.all([
+    // EVERY open follow-up except tomorrow's (which gets its own bucket) — overdue first.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
@@ -256,10 +269,7 @@ export async function listFollowups(appUser: AppUser, input: { mine?: boolean; s
       ))
       .orderBy(kiaLeadFollowups.dueAt)
       .limit(300),
-    // Not Connected: the booking's LATEST completed follow-up didn't reach anyone, and nothing is
-    // scheduled to retry. DISTINCT ON picks the latest per booking; the outer filter then keeps only
-    // those whose latest attempt was 'no_answer' — a booking that failed once and was reached on the
-    // next attempt must not appear here.
+    // Not Connected: the booking's LATEST completed follow-up didn't reach anyone, and nothing is scheduled to retry.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
@@ -280,6 +290,15 @@ export async function listFollowups(appUser: AppUser, input: { mine?: boolean; s
       ))
       .orderBy(desc(kiaLeadFollowups.completedAt))
       .limit(300),
+    // Cancelled: follow-ups for bookings that are cancelled
+    db.select(displaySelection)
+      .from(kiaLeadFollowups)
+      .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
+      .where(and(
+        ...cancelledWhere,
+      ))
+      .orderBy(desc(kiaLeadFollowups.dueAt))
+      .limit(300),
   ])
 
   // Decided ONCE, here, from the viewer's role — then every row goes through toRow with it.
@@ -288,12 +307,14 @@ export async function listFollowups(appUser: AppUser, input: { mine?: boolean; s
     ...notConnected.map((r) => toRow(r as Record<string, unknown>, now, 'not_connected', canSeePhone)),
     ...pending.map((r) => toRow(r as Record<string, unknown>, now, 'pending', canSeePhone)),
     ...nextDay.map((r) => toRow(r as Record<string, unknown>, now, 'next_day', canSeePhone)),
+    ...cancelled.map((r) => toRow(r as Record<string, unknown>, now, 'cancelled', canSeePhone)),
   ]
   const counts = {
     not_connected: notConnected.length,
     pending: pending.length,
     next_day: nextDay.length,
-    overdue: rows.filter((r) => r.overdue).length,
+    cancelled: cancelled.length,
+    overdue: rows.filter((r) => r.overdue && r.bucket !== 'cancelled').length,
   }
 
   return { rows, counts, now: now.toISOString() }

@@ -12,6 +12,20 @@ import {
 import { isBranchValue } from '@/lib/branches'
 import { PERMISSIONS, PERMISSION_GROUPS } from '@/lib/permissions/registry'
 
+/**
+ * Roles that still exist but must never be assigned again.
+ *
+ * Postgres cannot drop an enum value, and existing rows/audit history still reference these — so a
+ * retired role stays in `roleEnum` and keeps its label (Admin → Users must still render it for any
+ * straggler). This Set is the only thing that keeps it out of the picker.
+ *
+ * crm: superseded by cxm, which took over its sole capability (marking a booking Delivered).
+ * Migrate any remaining holders with scripts/migrate-crm-user-to-cxm.ts BEFORE relying on this —
+ * the Admin console always sends `role` in its PUT body, so a user left on a retired role cannot be
+ * edited at all once it is unassignable.
+ */
+export const RETIRED_ROLES = new Set<AppUser['role']>(['crm'])
+
 export const PROTECTED_ROLES = new Set<AppUser['role']>([
   'developer',
   'admin',
@@ -65,7 +79,10 @@ export function getAdminCapabilities(actor: AppUser): AdminActorCapabilities | n
       canManageBranchAdmins: true,
       canManageSettings: true,
       canPermanentlyDelete: true,
-      assignableRoles: users.role.enumValues.filter((role) => role !== 'admin'),
+      // Enum-derived on purpose: a new role shows up in the picker the moment it is added to
+      // roleEnum, with no second list to forget. The flip side is that RETIRED_ROLES is the ONLY
+      // brake — a role removed from nowhere else stays assignable forever.
+      assignableRoles: users.role.enumValues.filter((role) => role !== 'admin' && !RETIRED_ROLES.has(role)),
       delegablePermissionPrefixes: ['*'],
     }
   }

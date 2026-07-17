@@ -10,6 +10,8 @@ import { requirePermission } from '@/lib/permissions/service'
 import { getCachedData } from '@/lib/redis/cache-utils'
 import { CACHE_TTL } from '@/lib/redis/client'
 
+import { normalizeBankName } from '@/lib/kia/bank-utils'
+
 export const dynamic = 'force-dynamic'
 
 function normalizedValue(value: unknown) {
@@ -41,7 +43,7 @@ async function loadKiaOptionsData() {
 
     const banks = allPriceDetails
       .map((row) => ({
-        bank_name: normalizedValue(row.bankName) || normalizedValue(row.hyp),
+        bank_name: normalizeBankName(row.bankName || row.hyp),
         bank_branch: normalizedValue(row.bankBranch),
       }))
       .filter((row) => row.bank_name && row.bank_branch)

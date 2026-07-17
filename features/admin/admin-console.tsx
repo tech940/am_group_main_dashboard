@@ -186,12 +186,16 @@ const ROLE_LABELS: Record<string, string> = {
   eba: 'EBA',
   call_agent: 'Call Agent',
   ca: 'CA',
-  // CRM vs CRE: one letter apart, very different powers (delivery vs follow-ups). Spelled out so
-  // they can't be confused in the role dropdown.
-  crm: 'CRM (Relationship Manager)',
+  // CRM / CRE / CXM / CCM: four roles within one letter of each other, with very different powers
+  // (delivery vs follow-ups). Spelled out so they can't be confused in the role dropdown.
+  // Keep in step with ROLE_PERMISSION_TEMPLATE_LABELS in lib/permissions/registry.ts — the Users tab
+  // reads this map and the Roles tab reads that one, and they must not disagree.
+  crm: 'CRM (Relationship Manager) — retired, use CXM',
   idt: 'IDT (Internal Dev Trainee)',
   cre: 'CRE (Relationship Executive)',
   edp: 'EDP (Electronic Data Processing)',
+  cxm: 'CXM (Customer Experience) — marks Delivered',
+  ccm: 'CCM (Customer Care Manager) — Delivered backup',
 }
 
 const TAB_DEFINITIONS: Array<{

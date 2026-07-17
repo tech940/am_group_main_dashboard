@@ -869,12 +869,14 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   finance_team: 'Finance Team',
   call_agent: 'Call Agent',
   ca: 'CA',
-  // CRM and CRE are one letter apart but grant very different things (delivery vs follow-ups).
-  // Spell the job out so nobody mis-assigns them from a dropdown.
-  crm: 'CRM (Relationship Manager)',
+  // CRM / CRE / CXM / CCM are all one letter apart and grant very different things (delivery vs
+  // follow-ups). Spell the job out so nobody mis-assigns them from a dropdown.
+  crm: 'CRM (Relationship Manager) — retired, use CXM',
   idt: 'IDT (Internal Dev Trainee)',
   cre: 'CRE (Relationship Executive)',
   edp: 'EDP (Electronic Data Processing)',
+  cxm: 'CXM (Customer Experience) — marks Delivered',
+  ccm: 'CCM (Customer Care Manager) — Delivered backup',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -1116,6 +1118,21 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     ...keysForGroups(['kia.bookings'], ['view']),
   ],
   edp: [
+    ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+  ],
+  // CXM (Customer Experience Management): the booking pipeline, so they can mark vehicles Delivered.
+  // Successor to CRM — same template, for the same reason: this only decides what they can SEE.
+  // Delivery itself is gated by ROLE in lib/kia/workflow-access.ts.
+  //
+  // `edit` is NOT optional here. app/api/brands/kia/bookings/[id]/deliver/route.ts:14 runs
+  // requirePermission(appUser, 'kia.bookings.edit') BEFORE the role gate is ever consulted, so a
+  // view-only template 403s on every delivery no matter how correct canDeliverKiaBooking is.
+  cxm: [
+    ...keysForGroups(['kia.bookings'], ['view', 'edit']),
+  ],
+  // CCM (Customer Care Manager): the delivery backup for when the CXM is absent — identical needs,
+  // therefore an identical template. NOT the follow-up caller; that is the CRE.
+  ccm: [
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
   ],
 }
