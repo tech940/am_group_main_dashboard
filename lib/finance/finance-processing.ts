@@ -6,7 +6,6 @@ import {
   kiaProformas,
   kiaBookings,
   kiaPriceDetails,
-  kiaProformaLookupOptions,
   kiaFinanceProcessing,
   kiaFinanceRemarks,
   kiaFinanceBankAttempts,
@@ -42,17 +41,11 @@ export type FinanceBankRow = { bank_name: string; bank_branch: string }
 
 export async function loadFinanceBankOptions(): Promise<{ banks: FinanceBankRow[] }> {
   return getCachedData('finance:bank-options', async () => {
-    const [priceRows, branchRows] = await Promise.all([
-      db.select({ bankName: kiaPriceDetails.bankName, hyp: kiaPriceDetails.hyp, bankBranch: kiaPriceDetails.bankBranch })
-        .from(kiaPriceDetails).where(sql`LEFT(model, 2) <> '__'`),
-      db.select({ value: kiaProformaLookupOptions.value, label: kiaProformaLookupOptions.label })
-        .from(kiaProformaLookupOptions).where(eq(kiaProformaLookupOptions.category, 'bank_branch')),
-    ])
-    const banks: FinanceBankRow[] = [
-      ...priceRows.map((r) => ({ bank_name: text(r.bankName) || text(r.hyp), bank_branch: text(r.bankBranch) })),
-      ...branchRows.map((r) => ({ bank_name: text(r.label), bank_branch: text(r.value) })),
-    ]
-      .filter((r) => r.bank_name)
+    const priceRows = await db.select({ bankName: kiaPriceDetails.bankName, hyp: kiaPriceDetails.hyp, bankBranch: kiaPriceDetails.bankBranch })
+      .from(kiaPriceDetails)
+    const banks: FinanceBankRow[] = priceRows
+      .map((r) => ({ bank_name: text(r.bankName) || text(r.hyp), bank_branch: text(r.bankBranch) }))
+      .filter((r) => r.bank_name && r.bank_branch)
       .filter((r, i, s) => s.findIndex((c) => c.bank_name === r.bank_name && c.bank_branch === r.bank_branch) === i)
       .sort((a, b) => a.bank_name.localeCompare(b.bank_name) || a.bank_branch.localeCompare(b.bank_branch))
     return { banks }

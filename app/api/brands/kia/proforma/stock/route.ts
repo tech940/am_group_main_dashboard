@@ -117,10 +117,11 @@ export async function GET(request: Request) {
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW() THEN 1 END)::int AS payment_overdue,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'ready_delivery' THEN 1 END)::int AS paid_to_deliver,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'delivered' THEN 1 END)::int AS delivered,
-        (SELECT COUNT(*)::int FROM kia_vehicle_transfers WHERE LOWER(transfer_status) IN ('transferred', 'requested')) AS transfers
+        COUNT(CASE WHEN vt.id IS NOT NULL THEN 1 END)::int AS transfers
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
+      LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
       WHERE ${scopeWhereClause}
     `))
 
@@ -141,7 +142,7 @@ export async function GET(request: Request) {
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
-      LEFT JOIN kia_vehicle_transfers vt ON vt.vin_number = sm.vin_number AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
+      LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
       WHERE ${whereClause}
     `))
     const totalRows = Number(totalCountResult[0]?.count || 0)
@@ -175,11 +176,14 @@ export async function GET(request: Request) {
         kb.metadata,
         vt.id as transfer_id,
         vt.transfer_status,
-        vt.to_dealer_code
+        vt.to_dealer_code,
+        vt.requested_at as transfer_requested_at,
+        u.full_name as transfer_requester_name
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
-      LEFT JOIN kia_vehicle_transfers vt ON vt.vin_number = sm.vin_number AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
+      LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
+      LEFT JOIN users u ON u.id = vt.requested_by
       WHERE ${whereClause}
       ORDER BY sm.stock_age::int DESC NULLS LAST, sm.id DESC
       ${limitOffsetClause}
@@ -252,9 +256,12 @@ export async function GET(request: Request) {
         SELECT
           vt.id AS transfer_id, vt.vin_number, vt.to_dealer_code AS dealer_code, vt.from_dealer_code,
           vt.stock_missing_at, vt.requested_at, vt.vehicle_snapshot,
+          vt.requested_at as transfer_requested_at,
+          u.full_name as transfer_requester_name,
           kb.id AS booking_id, kb.booking_number, kb.customer_name, kb.status AS booking_status
         FROM kia_vehicle_transfers vt
         LEFT JOIN kia_bookings kb ON kb.id = vt.booking_id AND kb.deleted_at IS NULL
+        LEFT JOIN users u ON u.id = vt.requested_by
         WHERE vt.stock_missing_at IS NOT NULL
           AND LOWER(coalesce(vt.transfer_status, '')) IN ('transferred', 'requested')
           ${transferDealerClause}

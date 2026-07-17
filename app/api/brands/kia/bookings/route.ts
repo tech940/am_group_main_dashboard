@@ -44,6 +44,7 @@ export async function GET(request: Request) {
       page: Number(url.searchParams.get('page') || 1),
       pageSize: Number(url.searchParams.get('pageSize') || 15),
       sortOrder: url.searchParams.get('sort'),
+      unallocated: url.searchParams.get('unallocated'),
       viewer: appUser ? {
         id: appUser.id,
         email: appUser.email,

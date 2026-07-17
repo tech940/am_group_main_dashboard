@@ -874,6 +874,7 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   crm: 'CRM (Relationship Manager)',
   idt: 'IDT (Internal Dev Trainee)',
   cre: 'CRE (Relationship Executive)',
+  edp: 'EDP (Electronic Data Processing)',
 }
 
 const hyundaiPlatinumExecutiveGroups = [
@@ -1113,6 +1114,9 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   cre: [
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.bookings'], ['view']),
+  ],
+  edp: [
+    ...keysForGroups(['kia.bookings'], ['view', 'edit']),
   ],
 }
 

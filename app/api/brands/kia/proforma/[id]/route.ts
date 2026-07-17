@@ -32,6 +32,7 @@ const PROFORMA_EMAIL_CC = [
   'edp@amkia.in',
   'sanjay@amgroupind.com',
   'tech@amgroupind.com',
+  'data@amgroupoind.com',
 ] as const
 
 const VERIFY_FIELDS = [

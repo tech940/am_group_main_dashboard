@@ -15,8 +15,7 @@ export async function POST(request: Request) {
 
     const appUser = await getAuthenticatedAppUser()
     if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const permission = await requirePermission(appUser, 'kia.proforma.edit')
-    if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+    if (!['edp', 'developer'].includes(appUser.role)) return NextResponse.json({ error: 'Only EDP and Developer users can upload/replace price details.' }, { status: 403 })
     const profile = await ensureKiaUserProfile(appUser)
     if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

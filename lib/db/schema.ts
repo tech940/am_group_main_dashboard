@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre'])
+export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -894,20 +894,6 @@ export const kiaPriceDetails = pgTable('kia_price_details', {
   kiaPriceDetailsInsuranceIdx: index('kia_price_details_insurance_idx').on(table.insuranceCompany),
 }))
 
-export const kiaProformaLookupOptions = pgTable('kia_proforma_lookup_options', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  category: text('category').notNull(),
-  value: text('value').notNull(),
-  label: text('label'),
-  sourceSheet: text('source_sheet'),
-  sourceRow: integer('source_row'),
-  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}, (table) => ({
-  kiaProformaLookupOptionsCategoryIdx: index('kia_proforma_lookup_options_category_idx').on(table.category),
-  kiaProformaLookupOptionsValueIdx: index('kia_proforma_lookup_options_value_idx').on(table.value),
-}))
 
 export const kiaProformas = pgTable('kia_proformas', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -1920,6 +1906,7 @@ export const kiaApprovalRequests = pgTable('kia_approval_requests', {
   uploadDocUrl: text('upload_doc_url'),
   emailSendStatus: text('email_send_status'),
   history: jsonb('history').$type<any[]>().default([]).notNull(),
+  brand: text('brand').default('kia').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
@@ -1942,5 +1929,24 @@ export const vendors = pgTable('vendors', {
   vendorsGstIdx: uniqueIndex('vendors_gst_idx').on(table.gstNumber),
   vendorsNameIdx: index('vendors_name_idx').on(table.name),
 }))
+
+// ── Approvals Common Metadata ────────────────────────────────────────────────
+export const approvalsCommonData = pgTable('approvals_common_data', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  category: text('category').notNull(), // 'vendor' or 'approval_type'
+  value: text('value').notNull(),
+  brand: text('brand').default('all').notNull(), // 'kia', 'hyundai', 'tata', 'mg', 'platinum', 'all'
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ── Approvals Branches Config ────────────────────────────────────────────────
+export const approvalsBranchesConfig = pgTable('approvals_branches_config', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  brand: text('brand').notNull(), // 'kia', 'hyundai', 'tata', 'mg', 'platinum'
+  location: text('location').notNull(),
+  dealerCode: text('dealer_code').notNull(),
+  dealerName: text('dealer_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
 
 

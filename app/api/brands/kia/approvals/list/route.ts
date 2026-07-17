@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests } from '@/lib/db/schema'
-import { desc } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +16,10 @@ export async function GET(request: NextRequest) {
     const rows = await db
       .select()
       .from(kiaApprovalRequests)
+      .where(eq(kiaApprovalRequests.brand, 'kia'))
       .orderBy(desc(kiaApprovalRequests.createdAt))
+
+    console.log('Payment Approvals list fetched rows:', rows.length)
 
     return NextResponse.json({ rows })
   } catch (error) {

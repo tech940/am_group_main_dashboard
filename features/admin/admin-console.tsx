@@ -191,6 +191,7 @@ const ROLE_LABELS: Record<string, string> = {
   crm: 'CRM (Relationship Manager)',
   idt: 'IDT (Internal Dev Trainee)',
   cre: 'CRE (Relationship Executive)',
+  edp: 'EDP (Electronic Data Processing)',
 }
 
 const TAB_DEFINITIONS: Array<{
@@ -304,6 +305,7 @@ const ROLE_TONE: Record<string, AccentTone> = {
   service_general_manager: 'cyan', service_manager: 'cyan',
   ea: 'amber', eba: 'amber', purchase_manager: 'amber', manager: 'amber',
   viewer: 'slate', technician: 'slate',
+  edp: 'orange',
 }
 
 function initialsOf(name: string) {
@@ -493,8 +495,6 @@ export function AdminConsole() {
     rows: Array<{ id: string; customerEmail: string; subject: string; emailType: string | null; status: string; error: string | null; sentAt: string | null; createdAt: string }>
   } | null>(null)
   const [resetting, setResetting] = useState(false)
-  const [priceUploading, setPriceUploading] = useState(false)
-  const [priceUploadResult, setPriceUploadResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [settingsData, setSettingsData] = useState<Record<string, unknown> | null>(null)
   const [holidays, setHolidays] = useState<string[]>([])
   const [newHoliday, setNewHoliday] = useState('')
@@ -728,29 +728,6 @@ export function AdminConsole() {
     }
   }
 
-  async function uploadPriceMaster(file?: File | null) {
-    if (!file) return
-    setPriceUploading(true)
-    setPriceUploadResult(null)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const response = await fetch('/api/brands/kia/proforma/price-details/upload', { method: 'POST', body: formData })
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(payload?.error || 'Failed to import price details.')
-      const summary = payload.summary
-      setPriceUploadResult({
-        ok: true,
-        message: summary
-          ? `Imported ${summary.importedRows} rows${summary.failedRows ? `, ${summary.failedRows} failed` : ''} from "${summary.sheetName}".`
-          : 'Prices replaced successfully.',
-      })
-    } catch (uploadError) {
-      setPriceUploadResult({ ok: false, message: uploadError instanceof Error ? uploadError.message : 'Failed to import price details.' })
-    } finally {
-      setPriceUploading(false)
-    }
-  }
 
   async function resetTestData() {
     const c = systemCounts
@@ -1101,31 +1078,6 @@ export function AdminConsole() {
               </div>
             )}
 
-            {activeTab === 'system' && (
-              <Card>
-                <CardHeader>
-                  <SectionHeading icon={Upload} tone="orange" title="KIA Price Master · Replace Prices" subtitle="Upload the KIA price workbook to replace the current price master (only the PRICE DETAILS sheet is imported). Used by Bookings and Proforma pricing." />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <label className={cn('inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800', priceUploading && 'pointer-events-none opacity-60')}>
-                    {priceUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                    {priceUploading ? 'Replacing prices…' : 'Replace Prices (Excel)'}
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
-                      className="hidden"
-                      disabled={priceUploading}
-                      onChange={(event) => { void uploadPriceMaster(event.target.files?.[0]); event.target.value = '' }}
-                    />
-                  </label>
-                  {priceUploadResult && (
-                    <p className={cn('rounded-xl border px-3 py-2 text-sm font-medium', priceUploadResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700')}>
-                      {priceUploadResult.message}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
 
             {activeTab === 'system' && (
               <Card>

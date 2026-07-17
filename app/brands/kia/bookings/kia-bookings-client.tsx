@@ -37,6 +37,7 @@ import {
 } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import * as XLSX from 'xlsx'
 
 import { MainLayout } from '@/components/layout/main-layout'
 import { Badge } from '@/components/ui/badge'
@@ -386,7 +387,7 @@ const KPI_CONFIG: {
   hint: string
   statusFilter: string
 }[] = [
-  { key: 'today', label: 'Booked Today', icon: ClipboardList, tone: 'blue', hint: 'New bookings today', statusFilter: 'all' },
+  { key: 'today', label: 'Booked Today', icon: ClipboardList, tone: 'blue', hint: 'New bookings today', statusFilter: 'today' },
   { key: 'pendingProforma', label: 'Pending Proforma', icon: FileText, tone: 'indigo', hint: 'Awaiting proforma', statusFilter: 'booking_created' },
   { key: 'waitingAllocation', label: 'Awaiting VIN', icon: Car, tone: 'sky', hint: 'Approved · unallocated', statusFilter: 'proforma_generated' },
   { key: 'financePending', label: 'Payment Pending', icon: BadgeIndianRupee, tone: 'amber', hint: 'Accounts to confirm', statusFilter: 'vehicle_allocated' },
@@ -1321,6 +1322,12 @@ export function KiaBookingsClient({
   } | null>(null)
   const [transferToDealerCode, setTransferToDealerCode] = useState('')
   const [transferReferenceName, setTransferReferenceName] = useState('')
+  const [transferType, setTransferType] = useState<'against_payment' | 'against_vehicle' | null>(null)
+  const [transferAmountReceived, setTransferAmountReceived] = useState('')
+  const [transferVehicleModel, setTransferVehicleModel] = useState('')
+  const [transferVehicleVariant, setTransferVehicleVariant] = useState('')
+  const [transferVehicleColor, setTransferVehicleColor] = useState('')
+  const [transferVehiclePrice, setTransferVehiclePrice] = useState('')
   const [paymentReference, setPaymentReference] = useState('')
   const [paymentInvoiceFile, setPaymentInvoiceFile] = useState<File | null>(null)
   const [accountsDialogOpen, setAccountsDialogOpen] = useState(false)
@@ -1344,6 +1351,87 @@ export function KiaBookingsClient({
   const [editTab, setEditTab] = useState<(typeof CREATE_TABS)[number]>('Customer')
   const [editSuccess, setEditSuccess] = useState(false)
   const [editingBookingNumber, setEditingBookingNumber] = useState('')
+  const [priceUploading, setPriceUploading] = useState(false)
+  const [priceUploadResult, setPriceUploadResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [isReplacePricesOpen, setIsReplacePricesOpen] = useState(false)
+
+  async function uploadPriceMaster(file?: File | null) {
+    if (!file) return
+    setPriceUploading(true)
+    setPriceUploadResult(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch('/api/brands/kia/proforma/price-details/upload', { method: 'POST', body: formData })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error || 'Failed to import price details.')
+      const summary = payload.summary
+      setPriceUploadResult({
+        ok: true,
+        message: summary
+          ? `Imported ${summary.importedRows} rows${summary.failedRows ? `, ${summary.failedRows} failed` : ''} from "${summary.sheetName}".`
+          : 'Prices replaced successfully.',
+      })
+    } catch (uploadError) {
+      setPriceUploadResult({ ok: false, message: uploadError instanceof Error ? uploadError.message : 'Failed to import price details.' })
+    } finally {
+      setPriceUploading(false)
+    }
+  }
+
+  const handleDownloadPriceTemplate = () => {
+    const headers = [
+      'Model',
+      'Trim Description',
+      'Ex-Showroom Price',
+      'TCS',
+      'Registration Charges',
+      'Statutory Charges',
+      'Insurance',
+      'FASTag',
+      'Accessories Kit',
+      'Extended Warranty 4th Year',
+      'HYP',
+      'Bank Branch'
+    ]
+
+    const sampleRows = [
+      [
+        'Seltos',
+        'HTX 1.5 Petrol MT',
+        '1519000',
+        '15190',
+        '136710',
+        '600',
+        '58500',
+        '600',
+        '25000',
+        '19500',
+        'HDFC Bank',
+        'Kanjurmarg'
+      ],
+      [
+        'Sonet',
+        'HTK Plus 1.2 Petrol MT',
+        '1049000',
+        '10490',
+        '94410',
+        '600',
+        '42500',
+        '600',
+        '20000',
+        '14500',
+        'State Bank of India',
+        'Thane West'
+      ]
+    ]
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'PRICE DETAILS')
+    XLSX.writeFile(wb, 'AM_Kia_Price_Master_Template.xlsx')
+  }
+
   const editingDetailQuery = useQuery({
     queryKey: ['kia-booking-detail', editingBookingId],
     queryFn: () => fetchJson<BookingDetailPayload>(`/api/brands/kia/bookings/${editingBookingId}`, 'kia-booking-detail'),
@@ -1568,6 +1656,12 @@ export function KiaBookingsClient({
       setTransferTarget(null)
       setTransferToDealerCode('')
       setTransferReferenceName('')
+      setTransferType(null)
+      setTransferAmountReceived('')
+      setTransferVehicleModel('')
+      setTransferVehicleVariant('')
+      setTransferVehicleColor('')
+      setTransferVehiclePrice('')
       if (loaderVariant === 'delivery') setDeliverySuccess(true)
       if (loaderVariant === 'vin-match') setAllotSuccess(true)
       queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
@@ -1987,6 +2081,12 @@ export function KiaBookingsClient({
       })
       setTransferToDealerCode(detailQuery.data.booking.dealerCode || '')
       setTransferReferenceName('')
+      setTransferType(null)
+      setTransferAmountReceived('')
+      setTransferVehicleModel('')
+      setTransferVehicleVariant('')
+      setTransferVehicleColor('')
+      setTransferVehiclePrice('')
       return
     }
     setLoaderVariant(action === 'deliver' ? 'delivery' : 'generic')
@@ -2005,10 +2105,16 @@ export function KiaBookingsClient({
     })
     setTransferToDealerCode(detailQuery.data.booking.dealerCode || '')
     setTransferReferenceName('')
+    setTransferType(null)
+    setTransferAmountReceived('')
+    setTransferVehicleModel('')
+    setTransferVehicleVariant('')
+    setTransferVehicleColor('')
+    setTransferVehiclePrice('')
   }
 
   function confirmTransfer() {
-    if (!selectedBookingId || !transferTarget || !transferToDealerCode) return
+    if (!selectedBookingId || !transferTarget || !transferToDealerCode || !transferType) return
     setLoaderVariant('transfer')
     actionMutation.mutate({
       endpoint: `/api/brands/kia/bookings/${selectedBookingId}/transfer`,
@@ -2016,6 +2122,14 @@ export function KiaBookingsClient({
         toDealerCode: transferToDealerCode,
         notes: transferReferenceName,
         vinNumber: transferTarget.vinNumber,
+        transferType,
+        ...(transferType === 'against_payment' ? { amountReceived: transferAmountReceived } : {}),
+        ...(transferType === 'against_vehicle' ? {
+          exchangeModel: transferVehicleModel,
+          exchangeVariant: transferVehicleVariant,
+          exchangeColor: transferVehicleColor,
+          priceDifference: transferVehiclePrice,
+        } : {}),
       },
     })
   }
@@ -2118,6 +2232,17 @@ export function KiaBookingsClient({
       <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => listQuery.refetch()} disabled={listQuery.isFetching}>
         <RefreshCw className={cn('h-4 w-4', listQuery.isFetching && 'animate-spin')} /> Refresh
       </Button>
+      {['edp', 'developer'].includes(currentUserRole) && (
+        <Button
+          onClick={() => {
+            setPriceUploadResult(null)
+            setIsReplacePricesOpen(true)
+          }}
+          className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11 bg-orange-600 hover:bg-orange-700 text-white flex items-center gap-1.5"
+        >
+          <Upload className="h-4 w-4" /> Replace Prices
+        </Button>
+      )}
     </>
   )
 
@@ -2645,6 +2770,53 @@ export function KiaBookingsClient({
         </DialogContent>
       </Dialog>
 
+      {/* EDP Price Master Excel Replace Dialog */}
+      <Dialog open={isReplacePricesOpen} onOpenChange={setIsReplacePricesOpen}>
+        <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-lg overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+          <DialogHeader className="border-b border-slate-100 bg-[radial-gradient(circle_at_top_right,#ffedd5,transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-6">
+            <DialogTitle className="text-2xl font-black tracking-tight text-slate-950">KIA Price Master · Replace Prices</DialogTitle>
+            <DialogDescription className="mt-2 text-xs font-semibold leading-5 text-slate-500 sm:text-sm">
+              Upload the KIA price workbook to replace the current price master (only the PRICE DETAILS sheet is imported).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 space-y-4">
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={handleDownloadPriceTemplate}
+                variant="outline"
+                className="h-10 rounded-xl text-xs font-bold border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 w-full"
+              >
+                <Download className="h-4 w-4" /> Download Template (Excel)
+              </Button>
+              <div className="text-[10px] text-slate-400 font-semibold text-center uppercase tracking-wider">or</div>
+              <label className={cn('inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 w-full', priceUploading && 'pointer-events-none opacity-60')}>
+                {priceUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {priceUploading ? 'Replacing prices…' : 'Replace Prices (Excel)'}
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
+                  className="hidden"
+                  disabled={priceUploading}
+                  onChange={(event) => { void uploadPriceMaster(event.target.files?.[0]); event.target.value = '' }}
+                />
+              </label>
+            </div>
+            {priceUploadResult && (
+              <p className={cn('rounded-xl border px-3 py-2 text-sm font-medium', priceUploadResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700')}>
+                {priceUploadResult.message}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="grid gap-2 border-t border-slate-100 bg-slate-50 p-3 sm:flex sm:p-4">
+            <Button variant="outline" className="h-10 rounded-2xl font-bold w-full sm:w-auto" onClick={() => setIsReplacePricesOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ACCOUNTS stage — enter invoice #, upload invoice PDF, verify documents */}
       <Dialog open={accountsDialogOpen} onOpenChange={setAccountsDialogOpen}>
         <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-xl overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
@@ -2743,7 +2915,7 @@ export function KiaBookingsClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(transferTarget)} onOpenChange={(open) => !open && setTransferTarget(null)}>
+      <Dialog open={Boolean(transferTarget)} onOpenChange={(open) => { if (!open) { setTransferTarget(null); setTransferType(null) } }}>
         <DialogContent className="kia-premium max-h-[94dvh] w-[calc(100vw-0.75rem)] max-w-4xl overflow-hidden rounded-[1.5rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)]">
           <LoaderOverlay show={actionMutation.isPending} variant="transfer" label="Requesting transfer…" sublabel="Moving the VIN between outlets" />
           <DialogHeader className="border-b border-slate-100 bg-[linear-gradient(135deg,#ffffff,#f8fafc)] p-5 sm:p-8">
@@ -2753,35 +2925,132 @@ export function KiaBookingsClient({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-5 p-5 sm:p-8">
+            {/* Vehicle Info */}
             <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 px-5 py-4 text-lg font-semibold leading-8 text-slate-800">
               <span className="font-black text-slate-950">{transferTarget?.model}</span> {transferTarget?.variant} · {transferTarget?.color || 'Color NA'} · {transferTarget?.vinNumber}
             </div>
-            <div className="grid gap-5 md:grid-cols-2">
+
+            {/* Step 1: Transfer Type Selection */}
+            {!transferType ? (
               <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Transfer to</Label>
-                <Select value={transferToDealerCode} onValueChange={setTransferToDealerCode}>
-                  <SelectTrigger className={cn(INPUT_STYLE, 'mt-2')}>
-                    <SelectValue placeholder="Select destination outlet" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from(new Set([detailQuery.data?.booking.dealerCode || '', 'JK402', 'JK501'].filter(Boolean))).map((dealerCode) => (
-                      <SelectItem key={dealerCode} value={dealerCode}>{dealerCode}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <p className="mb-4 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Choose Transfer Type</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setTransferType('against_payment')}
+                    className="group flex flex-col items-start gap-3 rounded-2xl border-2 border-slate-200 bg-white p-5 text-left transition-all hover:border-emerald-400 hover:bg-emerald-50/50 hover:shadow-md"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 group-hover:bg-emerald-200">
+                      <BadgeIndianRupee className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <div className="text-base font-black text-slate-950">Against Payment</div>
+                      <div className="mt-1 text-xs font-semibold leading-5 text-slate-500">Customer pays a cash amount. Enter the amount received for this vehicle transfer.</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTransferType('against_vehicle')}
+                    className="group flex flex-col items-start gap-3 rounded-2xl border-2 border-slate-200 bg-white p-5 text-left transition-all hover:border-sky-400 hover:bg-sky-50/50 hover:shadow-md"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-sky-100 text-sky-600 group-hover:bg-sky-200">
+                      <Car className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <div className="text-base font-black text-slate-950">Against Vehicle</div>
+                      <div className="mt-1 text-xs font-semibold leading-5 text-slate-500">Customer exchanges their vehicle. Enter the exchange vehicle details and price difference.</div>
+                    </div>
+                  </button>
+                </div>
               </div>
-              <div>
-                <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Reference / dealer name</Label>
-                <Input value={transferReferenceName} onChange={(event) => setTransferReferenceName(event.target.value)} placeholder="e.g. Kangra Kia" className={cn(INPUT_STYLE, 'mt-2')} />
-              </div>
-            </div>
+            ) : (
+              <>
+                {/* Transfer Type Badge + Back */}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setTransferType(null)}
+                    className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-black text-slate-600 hover:bg-slate-50"
+                  >
+                    ← Back
+                  </button>
+                  <span className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em]',
+                    transferType === 'against_payment'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-sky-100 text-sky-700'
+                  )}>
+                    {transferType === 'against_payment' ? '💰 Against Payment' : '🚗 Against Vehicle'}
+                  </span>
+                </div>
+
+                {/* Against Payment fields */}
+                {transferType === 'against_payment' && (
+                  <div>
+                    <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Amount Received (₹)</Label>
+                    <Input
+                      type="number"
+                      value={transferAmountReceived}
+                      onChange={(e) => setTransferAmountReceived(e.target.value)}
+                      placeholder="e.g. 50000"
+                      className={cn(INPUT_STYLE, 'mt-2')}
+                    />
+                  </div>
+                )}
+
+                {/* Against Vehicle fields */}
+                {transferType === 'against_vehicle' && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Exchange Vehicle Model</Label>
+                      <Input value={transferVehicleModel} onChange={(e) => setTransferVehicleModel(e.target.value)} placeholder="e.g. SONET" className={cn(INPUT_STYLE, 'mt-2')} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Exchange Vehicle Variant</Label>
+                      <Input value={transferVehicleVariant} onChange={(e) => setTransferVehicleVariant(e.target.value)} placeholder="e.g. HTK Plus Diesel" className={cn(INPUT_STYLE, 'mt-2')} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Exchange Vehicle Color</Label>
+                      <Input value={transferVehicleColor} onChange={(e) => setTransferVehicleColor(e.target.value)} placeholder="e.g. Gravity Grey" className={cn(INPUT_STYLE, 'mt-2')} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Price Difference (₹)</Label>
+                      <Input type="number" value={transferVehiclePrice} onChange={(e) => setTransferVehiclePrice(e.target.value)} placeholder="e.g. 25000" className={cn(INPUT_STYLE, 'mt-2')} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Common fields */}
+                <div className="grid gap-5 md:grid-cols-2">
+                  <div>
+                    <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Transfer to</Label>
+                    <Select value={transferToDealerCode} onValueChange={setTransferToDealerCode}>
+                      <SelectTrigger className={cn(INPUT_STYLE, 'mt-2')}>
+                        <SelectValue placeholder="Select destination outlet" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from(new Set([detailQuery.data?.booking.dealerCode || '', 'JK402', 'JK501'].filter(Boolean))).map((dealerCode) => (
+                          <SelectItem key={dealerCode} value={dealerCode}>{dealerCode}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Reference / dealer name</Label>
+                    <Input value={transferReferenceName} onChange={(event) => setTransferReferenceName(event.target.value)} placeholder="e.g. Kangra Kia" className={cn(INPUT_STYLE, 'mt-2')} />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter className="grid gap-2 border-t border-slate-100 bg-slate-50 p-4 sm:flex sm:justify-end sm:p-6">
             <Button type="button" variant="outline" className="h-12 rounded-2xl border-slate-200 bg-white px-6 text-base font-black" onClick={() => setTransferTarget(null)} disabled={actionMutation.isPending}>Cancel</Button>
-            <Button type="button" className="h-12 rounded-2xl bg-slate-950 px-6 text-base font-black text-white shadow-lg shadow-slate-950/15 hover:bg-slate-800" onClick={confirmTransfer} disabled={actionMutation.isPending || !transferToDealerCode}>
-              {actionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Transfer
-            </Button>
+            {transferType && (
+              <Button type="button" className="h-12 rounded-2xl bg-slate-950 px-6 text-base font-black text-white shadow-lg shadow-slate-950/15 hover:bg-slate-800" onClick={confirmTransfer} disabled={actionMutation.isPending || !transferToDealerCode}>
+                {actionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Transfer
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3791,11 +4060,12 @@ function BookingDrawer({
   // The test personas (sales_person / sales_manager / accounts) predate the CRM and IDT roles and
   // cannot stand in for them, so they resolve to false for these two actions. Moot in practice —
   // testPersona has no setter, so effectivePersona is always 'actual'.
-  const canDeliver = effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : false
+  const isIdtRole = normalizeRole(currentUserRole) === 'idt'
+  const canDeliver = (effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : false) && !isIdtRole
   // Allotting to a booking is IDT-exclusive; stock transfers keep the wider rule, so they are
   // deliberately separate gates now.
-  const canAllotVehicle = effectivePersona === 'actual' ? canAllotKiaVehicleToBooking(currentUserRole) : false
-  const canActOnStock = effectivePersona === 'actual' ? canAllotKiaVehicle(currentUserRole) : effectivePersona !== 'sales_person'
+  const canAllotVehicle = (effectivePersona === 'actual' ? canAllotKiaVehicleToBooking(currentUserRole) : false) && !isIdtRole
+  const canActOnStock = (effectivePersona === 'actual' ? canAllotKiaVehicle(currentUserRole) : effectivePersona !== 'sales_person') && !isIdtRole
   // Sales persons (and managers/admin) can edit booking details until the booking is closed.
   const canEditBooking = !isTerminal && (canActAsSalesPerson || canActAsSalesManager)
   const personaNote = canUseTestPersona && effectivePersona !== 'actual'
@@ -4106,7 +4376,7 @@ function BookingDrawer({
             <IconTile icon={Car} tone="info" />
             <h3 className="text-base font-extrabold tracking-tight text-[var(--kia-text)] sm:text-lg">Vehicle Allocation</h3>
             <p className="text-xs font-medium leading-5 text-[var(--kia-text-soft)]">
-              {proformaApproved ? 'Matchable VINs exclude local Retail and active allocations.' : 'Allocation unlocks after Sales Manager / Manager approval.'}
+              Matchable VINs exclude local Retail and active allocations.
             </p>
           </div>
           {allocation ? (
@@ -4116,10 +4386,6 @@ function BookingDrawer({
               <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.1em]" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface)', color: 'var(--kia-text-soft)' }}>
                 <CalendarCheck className="h-3.5 w-3.5" /> Payment window: {formatTimeRemaining(allocation.expiresAt)}
               </span>
-            </div>
-          ) : !proformaApproved ? (
-            <div className="mt-4 rounded-2xl border border-dashed p-4 text-xs font-semibold leading-5" style={toneSoftStyle('warning')}>
-              Generate the proforma and get senior approval before checking stock or allotting a vehicle.
             </div>
           ) : matchingLoading ? (
             <div className="mt-4 flex items-center justify-center py-8">
@@ -4241,7 +4507,7 @@ function BookingDrawer({
                     </Button>
                   )
                 )}
-                <Button variant="outline" className="h-10 rounded-2xl border-rose-200 text-xs font-bold text-rose-700 hover:bg-rose-50" disabled={actionLoading || isTerminal} onClick={() => onAction('cancel')}>
+                <Button variant="outline" className="h-10 rounded-2xl border-rose-200 text-xs font-bold text-rose-700 hover:bg-rose-50" disabled={actionLoading || isTerminal || isIdtRole} onClick={() => onAction('cancel')}>
                   Cancel Booking
                 </Button>
               </div>

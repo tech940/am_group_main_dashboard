@@ -73,6 +73,8 @@ type StockRow = {
   transfer_id: string | null
   transfer_status: string | null
   to_dealer_code: string | null
+  transfer_requested_at: string | null
+  transfer_requester_name: string | null
 }
 
 type SoldMissingRow = {
@@ -107,6 +109,8 @@ type TransferMissingRow = {
   booking_number: string | null
   customer_name: string | null
   booking_status: string | null
+  transfer_requested_at: string | null
+  transfer_requester_name: string | null
 }
 
 type HeldRow = {
@@ -223,6 +227,12 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const [transferDealer, setTransferDealer] = useState('')
   const [transferDealerOther, setTransferDealerOther] = useState('')
   const [transferNotes, setTransferNotes] = useState('')
+  const [transferType, setTransferType] = useState<'against_payment' | 'against_vehicle' | null>(null)
+  const [transferAmountReceived, setTransferAmountReceived] = useState('')
+  const [transferVehicleModel, setTransferVehicleModel] = useState('')
+  const [transferVehicleVariant, setTransferVehicleVariant] = useState('')
+  const [transferVehicleColor, setTransferVehicleColor] = useState('')
+  const [transferVehiclePrice, setTransferVehiclePrice] = useState('')
 
   // #12 Dealer-hold dialog state.
   const [holdDialogOpen, setHoldDialogOpen] = useState(false)
@@ -336,20 +346,29 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setSelectedBookingId('')
       setStockSuccess('allot')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
-      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
-      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
-      // bookings on EVERY mount, ignoring staleTime).
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
+      router.refresh()
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
 
   const transferMutation = useMutation({
-    mutationFn: async ({ bookingId, vin, toDealerCode, notes }: { bookingId: string; vin: string; toDealerCode: string; notes: string }) => {
+    mutationFn: async ({ bookingId, vin, toDealerCode, notes, transferType, amountReceived, exchangeModel, exchangeVariant, exchangeColor, priceDifference }: {
+      bookingId: string
+      vin: string
+      toDealerCode: string
+      notes: string
+      transferType?: string
+      amountReceived?: string
+      exchangeModel?: string
+      exchangeVariant?: string
+      exchangeColor?: string
+      priceDifference?: string
+    }) => {
       const res = await fetch(`/api/brands/kia/bookings/${bookingId}/transfer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vinNumber: vin, toDealerCode, notes }),
+        body: JSON.stringify({ vinNumber: vin, toDealerCode, notes, transferType, amountReceived, exchangeModel, exchangeVariant, exchangeColor, priceDifference }),
       })
       if (!res.ok) {
         const payload = await res.json().catch(() => null)
@@ -363,10 +382,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setTransferNotes('')
       setStockSuccess('transfer')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
-      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
-      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
-      // bookings on EVERY mount, ignoring staleTime).
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
+      router.refresh()
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -387,10 +404,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setHoldDialogOpen(false)
       setHoldNotes('')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
-      // Allotment/release/hold all change which bookings are still unallocated. Invalidating here is
-      // what lets the unallocated-bookings query drop refetchOnMount:'always' (which refetched 1000
-      // bookings on EVERY mount, ignoring staleTime).
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
+      router.refresh()
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -564,6 +579,47 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
+  })
+
+  // Proforma options (models + variants) — fetched lazily when the Against Vehicle transfer type is active.
+  type KiaProformaOptionsPayload = { models: string[]; trims: { model: string; trim_description: string }[] }
+  const proformaOptionsQuery = useQuery<KiaProformaOptionsPayload>({
+    queryKey: ['kia-proforma-options-stock-transfer'],
+    queryFn: async () => {
+      const res = await fetch('/api/brands/kia/proforma/options')
+      if (!res.ok) throw new Error('Failed to load options')
+      return res.json()
+    },
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    enabled: transferType === 'against_vehicle',
+  })
+
+  const selectedJourneyBookingId = useMemo(() => {
+    if (!journeyVin) return null
+    const r = data?.rows?.find(r => r.vin_number === journeyVin)
+    if (r?.booking_id) return r.booking_id
+    const tm = data?.transferMissing?.find(r => r.vin_number === journeyVin)
+    if (tm?.booking_id) return tm.booking_id
+    const sm = data?.soldMissing?.find(r => r.vin_number === journeyVin)
+    if (sm?.booking_id) return sm.booking_id
+    const np = data?.noPayment?.find(r => r.vin_number === journeyVin)
+    if (np?.booking_id) return np.booking_id
+    const hv = data?.heldVehicles?.find(r => r.vin_number === journeyVin)
+    const snap = (hv?.vehicle_snapshot || {}) as Record<string, any>
+    if (snap?.booking_id) return String(snap.booking_id)
+    return null
+  }, [journeyVin, data])
+
+  const sidebarBookingQuery = useQuery({
+    queryKey: ['kia-sidebar-booking-detail', selectedJourneyBookingId],
+    queryFn: async () => {
+      const res = await fetch(`/api/brands/kia/bookings/${selectedJourneyBookingId}`)
+      if (!res.ok) throw new Error('Failed to load booking details')
+      return res.json()
+    },
+    enabled: !!selectedJourneyBookingId,
+    staleTime: 30 * 1000,
   })
 
   // Format Helpers
@@ -746,7 +802,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             { key: 'PAYMENT_OVERDUE', label: 'Payment Overdue', value: data.metrics.payment_overdue, icon: AlertTriangle, tone: 'rose' as Tone, hint: 'Past 72h' },
             { key: 'PAID_TO_DELIVER', label: 'Paid · To Deliver', value: data.metrics.paid_to_deliver, icon: BadgeIndianRupee, tone: 'violet' as Tone, hint: 'Ready to hand over' },
             { key: 'DELIVERED', label: 'Delivered', value: data.metrics.delivered, icon: Truck, tone: 'teal' as Tone, hint: 'Completed' },
-            { key: 'TRANSFERRED', label: 'Transfers', value: data.metrics.transfers, icon: RefreshCw, tone: 'sky' as Tone, hint: 'Inter-outlet' },
+            { key: 'TRANSFERRED', label: 'Transfers', value: (data.metrics.transfers || 0) + (data.metrics.transfer_missing || 0), icon: RefreshCw, tone: 'sky' as Tone, hint: 'Inter-outlet' },
           ] as (KpiDatum & { active?: boolean })[]).map((item) => ({ ...item, active: status === item.key }))}
           onSelect={(key) => { setStatus(key); setPage(1) }}
         />
@@ -859,7 +915,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
               <Table className="kia-table w-full min-w-[900px]">
                 <TableHeader>
                   <TableRow>
-                    {['STATUS', 'CAR', 'COLOUR', 'AGE', 'DEALER', 'CUSTOMER', 'TEAM', 'FINANCIER', 'CLOCK', 'ACTIONS'].map((h) => (
+                    {['STATUS', 'DMS STATUS', 'CAR', 'COLOUR', 'AGE', 'DEALER', 'CUSTOMER', 'TEAM', 'FINANCIER', 'CLOCK', 'ACTIONS'].map((h) => (
                       <TableHead key={h} className="h-9 whitespace-nowrap px-2 py-2">{h}</TableHead>
                     ))}
                   </TableRow>
@@ -874,6 +930,19 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                     >
                       {/* STATUS */}
                       <TableCell className="px-2 py-2 align-middle whitespace-nowrap">{renderStatus(row)}</TableCell>
+
+                      {/* DMS STATUS */}
+                      <TableCell className="px-2 py-2 align-middle whitespace-nowrap">
+                        {(() => {
+                          const s = (row.stock_status || '').toUpperCase()
+                          if (s === 'FREE STOCK') return <Chip tone="emerald">Free Stock</Chip>
+                          if (s.includes('TRANSIT') || s.includes('IN TRANSIT')) return <Chip tone="sky">In Transit</Chip>
+                          if (s === 'RETAIL') return <Chip tone="amber">Retail</Chip>
+                          if (s === 'BLOCKED') return <Chip tone="rose">Blocked</Chip>
+                          if (s === 'DEMO') return <Chip tone="violet">Demo</Chip>
+                          return row.stock_status ? <Chip tone="neutral">{row.stock_status}</Chip> : <span className="text-slate-400 text-[10px] font-semibold">-</span>
+                        })()}
+                      </TableCell>
 
                       {/* CAR */}
                       <TableCell className="px-2 py-2 align-middle">
@@ -957,6 +1026,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                         <div className="flex items-center gap-1.5">
                           {row.booking_status === 'delivered' ? (
                             <Badge className="rounded-full border border-green-200 bg-green-50 px-3 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-green-700">DELIVERED</Badge>
+                          ) : row.transfer_id ? (
+                            <Badge className="rounded-full border border-sky-200 bg-sky-50 px-3 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-sky-700">TRANSFERRED</Badge>
                           ) : !row.allocation_id ? (
                             <>
                               <Button 
@@ -1125,24 +1196,32 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                     <SelectValue placeholder="Choose an approved booking..." />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border border-slate-200 bg-white shadow-xl max-h-[250px] z-[120]">
-                    {bookingsList.map((b) => (
-                      <SelectItem 
-                        key={b.id} 
-                        value={b.id} 
-                        className="text-xs focus:bg-slate-50 cursor-pointer p-3 rounded-lg border-b last:border-b-0 border-slate-100"
-                      >
-                        <div className="flex flex-col gap-0.5">
-                          <div className="font-black text-slate-950 text-[11px] uppercase tracking-wider">{b.bookingNumber}</div>
-                          <div className="font-bold text-slate-800 text-[11px]">{b.customerName}</div>
-                          <div className="text-[10px] text-slate-500 font-semibold">{b.model} • {b.variant}</div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                    {bookingsList.length === 0 && (
-                      <div className="text-xs font-semibold text-slate-400 text-center py-4">
-                        No bookings waiting for allocation.
-                      </div>
-                    )}
+                    {(() => {
+                      const row = data?.rows?.find(r => r.vin_number === allotVin)
+                      const matchingBookings = row ? getMatchingBookings(row) : []
+                      return (
+                        <>
+                          {matchingBookings.map((b) => (
+                            <SelectItem 
+                              key={b.id} 
+                              value={b.id} 
+                              className="text-xs focus:bg-slate-50 cursor-pointer p-3 rounded-lg border-b last:border-b-0 border-slate-100"
+                            >
+                              <div className="flex flex-col gap-0.5">
+                                <div className="font-black text-slate-950 text-[11px] uppercase tracking-wider">{b.bookingNumber}</div>
+                                <div className="font-bold text-slate-800 text-[11px]">{b.customerName}</div>
+                                <div className="text-[10px] text-slate-500 font-semibold">{b.model} • {b.variant}</div>
+                              </div>
+                            </SelectItem>
+                          ))}
+                          {matchingBookings.length === 0 && (
+                            <div className="text-xs font-semibold text-slate-400 text-center py-4">
+                              No matching bookings waiting for allocation.
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </SelectContent>
                 </Select>
               )}
@@ -1304,8 +1383,8 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       </Dialog>
 
       {/* TRANSFER DIALOG */}
-      <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
-        <DialogContent className="kia-premium max-w-md rounded-2xl border-0 bg-white p-5">
+      <Dialog open={transferDialogOpen} onOpenChange={(open) => { setTransferDialogOpen(open); if (!open) { setTransferType(null); setTransferAmountReceived(''); setTransferVehicleModel(''); setTransferVehicleVariant(''); setTransferVehicleColor(''); setTransferVehiclePrice('') } }}>
+        <DialogContent className="kia-premium max-w-lg rounded-2xl border-0 bg-white p-5">
           <LoaderOverlay show={transferMutation.isPending} variant="transfer" label="Requesting transfer…" sublabel="Moving the VIN between outlets" />
           <DialogHeader>
             <DialogTitle className="text-base font-extrabold tracking-tight text-[var(--kia-text)]">Request Vehicle Transfer</DialogTitle>
@@ -1313,59 +1392,192 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
               Initiate a transfer request for VIN <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">{transferVin}</code>.
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-4 my-2">
-            <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Target Dealer Code</label>
-              <Select value={transferDealer} onValueChange={setTransferDealer}>
-                <SelectTrigger className="h-10 rounded-xl border-slate-200 text-xs font-semibold bg-white shadow-sm">
-                  <SelectValue placeholder="Choose target outlet..." />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl border border-slate-200 bg-white z-[60] shadow-md">
-                  <SelectItem value="JK402" className="text-xs">JK402 — Jammu</SelectItem>
-                  <SelectItem value="JK501" className="text-xs">JK501 — Udhampur</SelectItem>
-                  <SelectItem value="Others" className="text-xs">Others</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {transferDealer === 'Others' && (
-              <div className="space-y-3 animate-in fade-in duration-200">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Specify Outlet Code</label>
-                <Input 
-                  value={transferDealerOther} 
-                  onChange={(e) => setTransferDealerOther(e.target.value)} 
-                  placeholder="Enter custom dealer code..." 
-                  className="h-10 rounded-xl border border-slate-200 text-xs font-semibold" 
-                />
+            {/* Step 1: Transfer Type */}
+            {!transferType ? (
+              <div>
+                <p className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Choose Transfer Type</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setTransferType('against_payment')}
+                    className="group flex flex-col items-start gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-left transition-all hover:border-emerald-400 hover:bg-emerald-50/50 hover:shadow-md"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 group-hover:bg-emerald-200">
+                      <BadgeIndianRupee className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-slate-950">Against Payment</div>
+                      <div className="mt-0.5 text-[11px] font-semibold leading-4 text-slate-500">Customer pays a cash amount for this vehicle.</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTransferType('against_vehicle')}
+                    className="group flex flex-col items-start gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-left transition-all hover:border-sky-400 hover:bg-sky-50/50 hover:shadow-md"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-100 text-sky-600 group-hover:bg-sky-200">
+                      <Car className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-slate-950">Against Vehicle</div>
+                      <div className="mt-0.5 text-[11px] font-semibold leading-4 text-slate-500">Customer exchanges a vehicle. Enter details and price difference.</div>
+                    </div>
+                  </button>
+                </div>
               </div>
-            )}
+            ) : (
+              <>
+                {/* Back + type badge */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTransferType(null)}
+                    className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-black text-slate-600 hover:bg-slate-50"
+                  >
+                    ← Back
+                  </button>
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${
+                    transferType === 'against_payment' ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'
+                  }`}>
+                    {transferType === 'against_payment' ? '💰 Against Payment' : '🚗 Against Vehicle'}
+                  </span>
+                </div>
 
-            <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Transfer Notes</label>
-              <Input 
-                value={transferNotes} 
-                onChange={(e) => setTransferNotes(e.target.value)} 
-                placeholder="Reason for transfer, timeline details..." 
-                className="h-10 rounded-xl border border-slate-200 text-xs font-semibold" 
-              />
-            </div>
+                {/* Against Payment */}
+                {transferType === 'against_payment' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Amount Received (₹)</label>
+                    <Input
+                      type="number"
+                      value={transferAmountReceived}
+                      onChange={(e) => setTransferAmountReceived(e.target.value)}
+                      placeholder="e.g. 50000"
+                      className="h-10 rounded-xl border-slate-200 text-xs font-semibold"
+                    />
+                  </div>
+                )}
+
+                {/* Against Vehicle */}
+                {transferType === 'against_vehicle' && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Exchange Model</label>
+                      <Select
+                        value={transferVehicleModel}
+                        onValueChange={(val) => { setTransferVehicleModel(val); setTransferVehicleVariant('') }}
+                      >
+                        <SelectTrigger className="h-10 rounded-xl border-slate-200 text-xs font-semibold bg-white shadow-sm">
+                          <SelectValue placeholder={proformaOptionsQuery.isLoading ? 'Loading...' : 'Select model'} />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border border-slate-200 bg-white z-[80] shadow-md">
+                          {(proformaOptionsQuery.data?.models ?? []).map((m) => (
+                            <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Exchange Variant</label>
+                      <Select
+                        value={transferVehicleVariant}
+                        onValueChange={setTransferVehicleVariant}
+                        disabled={!transferVehicleModel}
+                      >
+                        <SelectTrigger className="h-10 rounded-xl border-slate-200 text-xs font-semibold bg-white shadow-sm">
+                          <SelectValue placeholder={!transferVehicleModel ? 'Select model first' : 'Select variant'} />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border border-slate-200 bg-white z-[80] shadow-md">
+                          {Array.from(
+                            new Map(
+                              (proformaOptionsQuery.data?.trims ?? [])
+                                .filter((t) => t.model === transferVehicleModel)
+                                .map((t) => [t.trim_description, t])
+                            ).values()
+                          ).map((t) => (
+                            <SelectItem key={t.trim_description} value={t.trim_description} className="text-xs">{t.trim_description}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Exchange Color</label>
+                      <Input value={transferVehicleColor} onChange={(e) => setTransferVehicleColor(e.target.value)} placeholder="e.g. Gravity Grey" className="h-10 rounded-xl border-slate-200 text-xs font-semibold" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Price Difference (₹)</label>
+                      <Input type="number" value={transferVehiclePrice} onChange={(e) => setTransferVehiclePrice(e.target.value)} placeholder="e.g. 25000" className="h-10 rounded-xl border-slate-200 text-xs font-semibold" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Common fields */}
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Target Dealer Code</label>
+                  <Select value={transferDealer} onValueChange={setTransferDealer}>
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 text-xs font-semibold bg-white shadow-sm">
+                      <SelectValue placeholder="Choose target outlet..." />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border border-slate-200 bg-white z-[60] shadow-md">
+                      <SelectItem value="JK402" className="text-xs">JK402 — Jammu</SelectItem>
+                      <SelectItem value="JK501" className="text-xs">JK501 — Udhampur</SelectItem>
+                      <SelectItem value="Others" className="text-xs">Others</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {transferDealer === 'Others' && (
+                  <div className="space-y-1.5 animate-in fade-in duration-200">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Specify Outlet Code</label>
+                    <Input
+                      value={transferDealerOther}
+                      onChange={(e) => setTransferDealerOther(e.target.value)}
+                      placeholder="Enter custom dealer code..."
+                      className="h-10 rounded-xl border border-slate-200 text-xs font-semibold"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Transfer Notes</label>
+                  <Input
+                    value={transferNotes}
+                    onChange={(e) => setTransferNotes(e.target.value)}
+                    placeholder="Reason for transfer, timeline details..."
+                    className="h-10 rounded-xl border border-slate-200 text-xs font-semibold"
+                  />
+                </div>
+              </>
+            )}
           </div>
+
           <DialogFooter className="gap-2 sm:gap-0 mt-2">
             <Button variant="outline" className="h-9 rounded-xl text-xs font-black" onClick={() => setTransferDialogOpen(false)}>
               Cancel
             </Button>
-            <Button 
-              className="h-9 rounded-xl px-4 text-xs font-bold"
-              disabled={transferMutation.isPending || !transferDealer || (transferDealer === 'Others' && !transferDealerOther)}
-              onClick={() => transferMutation.mutate({ 
-                bookingId: 'none', 
-                vin: transferVin, 
-                toDealerCode: transferDealer === 'Others' ? transferDealerOther : transferDealer, 
-                notes: transferNotes 
-              })}
-            >
-              {transferMutation.isPending ? 'Requesting...' : 'Confirm Request'}
-            </Button>
+            {transferType && (
+              <Button
+                className="h-9 rounded-xl px-4 text-xs font-bold"
+                disabled={transferMutation.isPending || !transferDealer || (transferDealer === 'Others' && !transferDealerOther)}
+                onClick={() => transferMutation.mutate({
+                  bookingId: 'none',
+                  vin: transferVin,
+                  toDealerCode: transferDealer === 'Others' ? transferDealerOther : transferDealer,
+                  notes: transferNotes,
+                  transferType,
+                  ...(transferType === 'against_payment' ? { amountReceived: transferAmountReceived } : {}),
+                  ...(transferType === 'against_vehicle' ? {
+                    exchangeModel: transferVehicleModel,
+                    exchangeVariant: transferVehicleVariant,
+                    exchangeColor: transferVehicleColor,
+                    priceDifference: transferVehiclePrice,
+                  } : {}),
+                })}
+              >
+                {transferMutation.isPending ? 'Requesting...' : 'Confirm Request'}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1512,7 +1724,62 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       {/* 5. Vehicle Journey Sidebar Drawer */}
       {mounted && journeyVin && (
         (() => {
-          const row = data?.rows?.find(r => r.vin_number === journeyVin)
+          const findRow = () => {
+            const r = data?.rows?.find(r => r.vin_number === journeyVin)
+            if (r) return r
+            
+            const tm = data?.transferMissing?.find(r => r.vin_number === journeyVin)
+            if (tm) {
+              const snap = (tm.vehicle_snapshot || {}) as Record<string, any>
+              return {
+                ...tm,
+                model: snap.model || 'CARENS',
+                variant: snap.variant || '',
+                color: snap.exterior_color_name || '',
+                stock_age: snap.stock_age || '',
+                stock_status: snap.stock_status || '',
+                dealer_code: tm.dealer_code || '',
+              } as any
+            }
+            const sm = data?.soldMissing?.find(r => r.vin_number === journeyVin)
+            if (sm) {
+              const snap = (sm.vehicle_snapshot || {}) as Record<string, any>
+              return {
+                ...sm,
+                model: snap.model || '',
+                variant: snap.variant || '',
+                color: snap.exterior_color_name || '',
+                stock_age: snap.stock_age || '',
+                stock_status: snap.stock_status || '',
+              } as any
+            }
+            const np = data?.noPayment?.find(r => r.vin_number === journeyVin)
+            if (np) {
+              const snap = (np.vehicle_snapshot || {}) as Record<string, any>
+              return {
+                ...np,
+                model: snap.model || '',
+                variant: snap.variant || '',
+                color: snap.exterior_color_name || '',
+                stock_age: snap.stock_age || '',
+                stock_status: snap.stock_status || '',
+              } as any
+            }
+            const hv = data?.heldVehicles?.find(r => r.vin_number === journeyVin)
+            if (hv) {
+              const snap = (hv.vehicle_snapshot || {}) as Record<string, any>
+              return {
+                ...hv,
+                model: snap.model || '',
+                variant: snap.variant || '',
+                color: snap.exterior_color_name || '',
+                stock_age: snap.stock_age || '',
+                stock_status: snap.stock_status || '',
+              } as any
+            }
+            return null
+          }
+          const row = findRow()
           if (!row) return null
 
           const isBooking = !!row.booking_id
@@ -1521,12 +1788,47 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
           const isPaid = row.booking_status === 'ready_delivery' || row.booking_status === 'delivered'
           const isDelivered = row.booking_status === 'delivered'
 
+          const findActivity = (typeKeywords: string[]) => {
+            if (!sidebarBookingQuery.data?.activities) return null
+            return sidebarBookingQuery.data.activities.find((a: any) => 
+              typeKeywords.some(kw => 
+                (a.type || '').toLowerCase().includes(kw) || 
+                (a.message || '').toLowerCase().includes(kw)
+              )
+            )
+          }
+
+          const bookingCreatedAct = findActivity(['create'])
+          const bookingCreatedText = bookingCreatedAct 
+            ? `Created by ${bookingCreatedAct.actorName} on ${new Date(bookingCreatedAct.createdAt).toLocaleString('en-IN')}.`
+            : isBooking ? `Booking #${row.booking_number} created for ${row.customer_name}.` : 'Awaiting booking registration.'
+
+          const proformaApprovedAct = findActivity(['proforma', 'approve'])
+          const proformaApprovedText = proformaApprovedAct 
+            ? `Approved by ${proformaApprovedAct.actorName} on ${new Date(proformaApprovedAct.createdAt).toLocaleString('en-IN')}.`
+            : isProforma ? 'Proforma generated and verified by Manager.' : 'Awaiting proforma validation.'
+
+          const allotAct = findActivity(['allot'])
+          const allotText = allotAct 
+            ? `Allotted by ${allotAct.actorName} on ${new Date(allotAct.createdAt).toLocaleString('en-IN')}.`
+            : isAllotted ? `VIN allocated to booking. Status: ${row.allocation_status || 'final'}` : 'Awaiting vehicle allotment.'
+
+          const paymentAct = findActivity(['payment', 'invoice'])
+          const paymentText = paymentAct 
+            ? `Confirmed by ${paymentAct.actorName} on ${new Date(paymentAct.createdAt).toLocaleString('en-IN')}.`
+            : isPaid ? `Payment confirmed. Reference: ${row.bank_name || 'Accounts Confirmation'}` : 'Pending payment verification.'
+
+          const deliverAct = findActivity(['deliver'])
+          const deliverText = deliverAct 
+            ? `Delivered by ${deliverAct.actorName} on ${new Date(deliverAct.createdAt).toLocaleString('en-IN')}.`
+            : isDelivered ? 'Vehicle delivered to customer successfully.' : 'Awaiting delivery dispatch.'
+
           const steps = [
-            { key: 'booking', icon: ClipboardList, title: 'Booking Created', done: isBooking, body: isBooking ? `Booking #${row.booking_number} created for ${row.customer_name}.` : 'Awaiting booking registration.' },
-            { key: 'proforma', icon: FileText, title: 'Proforma Approved', done: isProforma, body: isProforma ? 'Proforma generated and verified by Manager.' : 'Awaiting proforma validation.' },
-            { key: 'allot', icon: Car, title: 'Vehicle Allotted', done: isAllotted, body: isAllotted ? `VIN allocated to booking. Status: ${row.allocation_status || 'final'}` : 'Awaiting vehicle allotment.' },
-            { key: 'payment', icon: BadgeIndianRupee, title: 'Payment Confirmed', done: isPaid, body: isPaid ? `Payment confirmed. Reference: ${row.bank_name || 'Accounts Confirmation'}` : 'Pending payment verification.' },
-            { key: 'delivery', icon: Truck, title: 'Delivered', done: isDelivered, body: isDelivered ? 'Vehicle delivered to customer successfully.' : 'Awaiting delivery dispatch.' },
+            { key: 'booking', icon: ClipboardList, title: 'Booking Created', done: isBooking, body: bookingCreatedText },
+            { key: 'proforma', icon: FileText, title: 'Proforma Approved', done: isProforma, body: proformaApprovedText },
+            { key: 'allot', icon: Car, title: 'Vehicle Allotted', done: isAllotted, body: allotText },
+            { key: 'payment', icon: BadgeIndianRupee, title: 'Payment Confirmed', done: isPaid, body: paymentText },
+            { key: 'delivery', icon: Truck, title: 'Delivered', done: isDelivered, body: deliverText },
           ]
           const firstPending = steps.findIndex((s) => !s.done)
           return createPortal(
@@ -1635,7 +1937,11 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                             <h4 className="text-[13px] font-extrabold text-[var(--kia-text)]">Dealer Transfer</h4>
                             <Chip tone="info">{row.transfer_status}</Chip>
                           </div>
-                          <p className="mt-0.5 text-[11px] font-medium leading-5 text-[var(--kia-text-soft)]">Outlet transfer request to {row.to_dealer_code}.</p>
+                          <p className="mt-0.5 text-[11px] font-medium leading-5 text-[var(--kia-text-soft)]">
+                            Outlet transfer requested to {row.to_dealer_code}
+                            {row.transfer_requester_name ? ` by ${row.transfer_requester_name}` : ''}
+                            {row.transfer_requested_at ? ` on ${new Date(row.transfer_requested_at).toLocaleString('en-IN')}` : ''}.
+                          </p>
                         </div>
                       </motion.div>
                     )}
@@ -1939,7 +2245,11 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                     const snap = (v.vehicle_snapshot || {}) as Record<string, unknown>
                     const car = [snap.model, snap.variant, snap.color].map((x) => (x == null ? '' : String(x))).filter(Boolean).join(' · ')
                     return (
-                      <tr key={v.transfer_id} className="border-t border-sky-100 text-slate-700">
+                      <tr 
+                        key={v.transfer_id} 
+                        className="border-t border-sky-100 text-slate-700 cursor-pointer hover:bg-sky-100/50"
+                        onClick={() => setJourneyVin(v.vin_number)}
+                      >
                         <td className="px-4 py-2.5 font-mono font-bold">{v.vin_number || '—'}</td>
                         <td className="px-4 py-2.5 font-semibold">{car || '—'}</td>
                         <td className="px-4 py-2.5">{(v.from_dealer_code || '—')} → {(v.dealer_code || '—')}</td>

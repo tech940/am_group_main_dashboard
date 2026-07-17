@@ -534,6 +534,10 @@ function listFilters(input: BookingListInput) {
     `)
   }
 
+  if (text(input.status) && text(input.status).toLowerCase() === 'today') {
+    filters.push(sql`kia_bookings.created_at >= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'`)
+  }
+
   if (text(input.status) && text(input.status).toLowerCase() === 'not_in_stock') {
     filters.push(sql`
       (
@@ -1375,9 +1379,6 @@ export async function getKiaBookingMatchingVehicles(id: string) {
   // maintenance job (POST /api/brands/kia/maintenance), not on this read.
   const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
   if (!booking) throw new Error('Booking not found')
-  if (!booking.proformaId) return []
-  const [proforma] = await db.select({ approvalStatus: kiaProformas.approvalStatus }).from(kiaProformas).where(eq(kiaProformas.id, booking.proformaId)).limit(1)
-  if (text(proforma?.approvalStatus).toUpperCase() !== 'APPROVED') return []
 
   const modelPattern = `%${booking.model}%`
   const variantPattern = `%${booking.variant}%`
@@ -1481,17 +1482,17 @@ export async function getKiaBookingMatchingVehicles(id: string) {
 function alnumKey(value: unknown) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
-function assertKiaVehicleMatchesProforma(vehicle: JsonRecord, wanted: { model: string; variant: string }) {
+function assertKiaVehicleMatchesBooking(vehicle: JsonRecord, wanted: { model: string; variant: string }) {
   const vehModel = alnumKey(vehicle.model)
   const vehVariant = alnumKey(vehicle.variant)
   const wantModel = alnumKey(wanted.model)
   const wantVariant = alnumKey(wanted.variant)
 
   if (wantModel && vehModel && wantModel !== vehModel) {
-    throw new Error(`This vehicle is a ${text(vehicle.model) || 'different model'} but the proforma is for a ${wanted.model}. Only the selected model can be allotted.`)
+    throw new Error(`This vehicle is a ${text(vehicle.model) || 'different model'} but the booking is for a ${wanted.model}. Only the selected model can be allotted.`)
   }
   if (wantVariant && vehVariant && !(vehVariant.includes(wantVariant) || wantVariant.includes(vehVariant))) {
-    throw new Error(`This vehicle's variant (${text(vehicle.variant) || '—'}) does not match the proforma variant (${wanted.variant}). Only the selected variant can be allotted.`)
+    throw new Error(`This vehicle's variant (${text(vehicle.variant) || '—'}) does not match the booking variant (${wanted.variant}). Only the selected variant can be allotted.`)
   }
 }
 
@@ -1526,17 +1527,10 @@ export async function allotKiaBookingVehicle(
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
-    if (!booking.proformaId) throw new Error('Generate and approve the proforma before vehicle allocation.')
-    const [proforma] = await tx
-      .select({ approvalStatus: kiaProformas.approvalStatus, modelName: kiaProformas.modelName, trimDescription: kiaProformas.trimDescription })
-      .from(kiaProformas).where(eq(kiaProformas.id, booking.proformaId)).limit(1)
-    if (text(proforma?.approvalStatus).toUpperCase() !== 'APPROVED') {
-      throw new Error('Vehicle allocation opens only after Sales Manager / Manager approval.')
-    }
 
     // #1 Strict model + variant lock: only a vehicle whose model AND variant match the one selected on
-    // the proforma may be allotted — no other model/variant can be pulled from stock.
-    assertKiaVehicleMatchesProforma(vehicle, { model: text(proforma?.modelName), variant: text(proforma?.trimDescription) })
+    // the booking may be allotted.
+    assertKiaVehicleMatchesBooking(vehicle, { model: text(booking.model), variant: text(booking.variant) })
 
     const [activeVin] = await tx.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.vinNumber, normalizedVin), isNull(kiaVehicleAllocations.releasedAt))).limit(1)
     if (activeVin) throw new Error('This VIN is already allocated to another active booking')
@@ -2115,20 +2109,12 @@ export async function requestKiaVehicleTransfer(
         metadata: { source: 'direct_stock_transfer' },
       }).returning()
 
-      // Update vehicle's dealer code in kia_stock_management table
-      await tx.execute(sql.raw(`
-        UPDATE kia_stock_management 
-        SET order_dealer = '${toDealerCode.replace(/'/g, "''")}' 
-        WHERE UPPER(vin_number) = '${normalizedVin.replace(/'/g, "''")}'
-      `))
-
-      // NOTE: we intentionally do NOT write a kia_stock_local_statuses row here.
-      // That table has a CHECK constraint permitting only local_status IN
-      // ('bbnd','retail'); 'transferred' violated it and crashed the transfer.
-      // Since no stock query ever reads local_status = 'transferred', this row
-      // was write-only — the transfer is fully recorded in kia_vehicle_transfers
-      // above. (To surface transferred vehicles in stock later, widen the CHECK
-      // constraint to include 'transferred' and add read logic for it.)
+      // NOTE: We intentionally do NOT update order_dealer here. The vehicle is still physically
+      // at the source dealer — only a transfer *request* has been recorded. Changing order_dealer
+      // would immediately hide the vehicle from the origin dealer's scoped view. The vehicle
+      // remains visible in stock (shown as "Transferred → toDealerCode" via the vt join) until
+      // the DMS feed reflects the physical move.
+      // The full transfer record in kia_vehicle_transfers is the source of truth.
 
       return { id: transfer.id, toDealerCode, vinNumber: normalizedVin }
     }

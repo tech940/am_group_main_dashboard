@@ -3,7 +3,7 @@ import 'server-only'
 import * as XLSX from 'xlsx'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { kiaPriceDetails, kiaProformaLookupOptions } from '@/lib/db/schema'
+import { kiaPriceDetails } from '@/lib/db/schema'
 import { invalidateCache } from '@/lib/redis/cache-utils'
 
 type RawRow = Record<string, unknown> & {
@@ -30,15 +30,12 @@ export type KiaPriceImportSummary = {
   durationMs: number
 }
 
-type LookupInsert = typeof kiaProformaLookupOptions.$inferInsert
-
 // The PRICE DETAILS sheet co-locates a full bank-branch master list (HYP + BANK BRACH columns) that
 // runs well past the priced rows. Capture every distinct (bank, branch) so the proforma HYP dropdown
-// offers them all — stored in kia_proforma_lookup_options (category 'bank_branch') so a price
-// re-import never wipes it. See app/api/brands/kia/proforma/options/route.ts.
-function buildBranchInserts(rows: RawRow[]): LookupInsert[] {
+// offers them all — stored in kiaPriceDetails under the dummy model '__BANK_BRANCH__'.
+function buildBranchInserts(rows: RawRow[]): PriceInsert[] {
   const seen = new Set<string>()
-  const out: LookupInsert[] = []
+  const out: PriceInsert[] = []
   for (const row of rows) {
     const bank = toText(valueFor(row, 'hyp'))
     const branch = toText(valueFor(row, 'bankBranch'))
@@ -47,12 +44,25 @@ function buildBranchInserts(rows: RawRow[]): LookupInsert[] {
     if (seen.has(key)) continue
     seen.add(key)
     out.push({
-      category: 'bank_branch',
-      value: branch,
-      label: bank || null,
-      sourceSheet: row.__sheetName,
-      sourceRow: row.__rowNumber,
-      metadata: { bank_name: bank || null },
+      model: '__BANK_BRANCH__',
+      trimDescription: '__BANK_BRANCH__',
+      bankName: bank || null,
+      hyp: bank || null,
+      bankBranch: branch,
+      exShowroomPrice: '0',
+      tcs: '0',
+      registrationCharges: '0',
+      statutoryCharges: '0',
+      insurance: '0',
+      fastag: '0',
+      accessoriesKit: '0',
+      extendedWarranty4thYear: '0',
+      insuranceCompany: null,
+      metadata: {
+        sourceSheet: row.__sheetName,
+        sourceRow: row.__rowNumber,
+        bank_name: bank || null,
+      },
     })
   }
   return out
@@ -214,10 +224,8 @@ export async function importKiaPriceDetailsFromWorkbook(buffer: Buffer): Promise
     for (let index = 0; index < values.length; index += 500) {
       await tx.insert(kiaPriceDetails).values(values.slice(index, index + 500))
     }
-    // Full bank-branch master list (scoped to 'bank_branch' only — other lookup categories untouched).
-    await tx.delete(kiaProformaLookupOptions).where(eq(kiaProformaLookupOptions.category, 'bank_branch'))
     for (let index = 0; index < branchValues.length; index += 500) {
-      await tx.insert(kiaProformaLookupOptions).values(branchValues.slice(index, index + 500))
+      await tx.insert(kiaPriceDetails).values(branchValues.slice(index, index + 500))
     }
   })
   // Both caches are derived from the two tables just replaced (kia_price_details +

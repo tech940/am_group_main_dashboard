@@ -1,0 +1,335 @@
+import 'dotenv/config'
+import { db } from '../lib/db'
+import { approvalsCommonData, approvalsBranchesConfig } from '../lib/db/schema'
+
+const RAW_VENDORS = [
+  'Ad World Advertising Media',
+  'ADS Infrastructure',
+  'Aggarwal Agencies',
+  'Aggarwal Traders',
+  'AIS Glass Solutions Ltd',
+  'Akshay Trading Company',
+  'Alam Carpenter (Shane Alam)',
+  'Allied Trading Company',
+  'AM Bajaj',
+  'AM Global',
+  'Amay Enterprises',
+  'AMG Autocraft Pvt Ltd',
+  'AMG Homes Pvt Ltd',
+  'Amit Sharma Decorator',
+  'Ample Trails',
+  'Anand Electricals',
+  'Ankur Mahajan',
+  'Anshu Traders',
+  'APA Trading (Elgi)',
+  'APK Advertiser',
+  'Aru Ad Creations',
+  'Ashoka Iron Traders',
+  'Asia Trading Corporation',
+  'ASB Kia (Automobile)',
+  'Auto Fare',
+  'Automotive Tech Solutions',
+  'AV Automobiles',
+  'Avantika Sarmal',
+  'Bahu Plaza Parking',
+  'Bajaj Allianz GIC',
+  'Balaji Enterprises',
+  'BD Security Ltd',
+  'Bharat Light Electric Co',
+  'Bharat Retails',
+  'Bharat Tent & Decorators',
+  'Bharti Airtel',
+  'Blinkit',
+  'BRS HomeAid',
+  'BRS Infotech Pvt Ltd',
+  'BRS Softech Pvt Ltd',
+  'BSNL Ltd',
+  'CA Nikhil Luthra & Associates',
+  'Car-O-Liner (Hi Tech)',
+  'Chander Bhaga Advertising Agency',
+  'Ciel Digital Media',
+  'City Top / Pooja / Shiv Electronics',
+  'City Top Electrical Works',
+  'CL Gas',
+  'Creative Shadows Promotion Pvt Ltd',
+  'Crystal Smart Solutions',
+  'Daily Excelsior',
+  'Dee Dee Reprographix',
+  'Deepak Flowers',
+  'Devika Caterer',
+  'Dhingra Motors',
+  'Dhol Wala',
+  'Divya Kapoor (Influencer)',
+  'Dogra Decorators & Caterers',
+  'Dream Home Decorate',
+  'Durga Hardware Store',
+  'Durga Traders',
+  'Early Times',
+  'Elite Kia Rewari',
+  'Entertainment Network India (Radio Mirchi)',
+  'Equipmasters',
+  'Ever Green Electronics',
+  'Fire Escorts',
+  'Franknight Services Pvt Ltd',
+  'French Door',
+  'Frontier Kia',
+  'Gandhi Sale and Service',
+  'GDX Security Solutions',
+  'Global Grub',
+  'Global Village',
+  'Globe ERP',
+  'Gold Enterprises',
+  'Gourav Sharma',
+  'Gupta Gupta & Associates',
+  'Gupta Tyres',
+  'Guru Electricals',
+  'Hardiya Kia',
+  'Harsh Enterprises',
+  'Havas Media India Pvt Ltd',
+  'HC Motor LLP Palwal',
+  'Heaven Traders',
+  'Hi Tech Builders',
+  'Hill Traders',
+  'Hills Aircon',
+  'Hotel Kongposh',
+  'HSRP Number Plate Vendor',
+  'Hyperlocal',
+  'Ice Tea',
+  'Iconic / Mehlika Kia',
+  'Iconic Kia Meerut',
+  'Indane Gas',
+  'Innocean Worldwide',
+  'Interakt',
+  'Jai Datta Traders',
+  'Jai Maa Constructions',
+  'Jammu Automart Pvt Ltd',
+  'Jandial Shuttering & Cement Store',
+  'Janta Transport Services',
+  'Jasleen Kour',
+  'Jatinder Pal Singh',
+  'Jay Kay Auto Traders (Tyre)',
+  'Jio Haptik Technologies Ltd',
+  'JK Transformer',
+  'JMC Jammu',
+  'Joshi Ventures Pvt Ltd (Kia Chandigarh)',
+  'JR Enterprises',
+  'Kailash Kumar Kamti',
+  'Kamdhenu Society',
+  'Kapahi Hawkeye Security',
+  'Kapoor Photography',
+  'Kashmir Auto Aids',
+  'Kathal Motor Ambala',
+  'Kavita Filling Station',
+  'Kay Gee Industries',
+  'KBG Traders',
+  'KD Plast',
+  'Khajuria Agencies',
+  'Khajuria Steel Works',
+  'Khalsa Electric Co',
+  'Khalsa Trading Co',
+  'Khodiyar Plastic Industries',
+  'Kokila Industries',
+  'Krishna Builders',
+  'Krishna Traders',
+  'KRV Holdings',
+  'Kuldeep Raj',
+  'Kundan Automobiles',
+  'Kwality Glass & Plywood Co',
+  'Lally Motors',
+  'Madhur Paints',
+  'Mahajan Enterprises',
+  'Mahaveer Pest Control',
+  'Mahboob Aluminium Works',
+  'Monika Sales Corporation',
+  'Morden Electronic',
+  'Mudasar Electricals',
+  'Nachiketa Technology',
+  'Net Soft Lab',
+  'New Fairdeals Steel & Aluminium Works',
+  'New Shiva Traders',
+  'NRL LLP Noida',
+  'Orbit India Corp',
+  'Pal Kia (Pal Jay Automobile)',
+  'Pal Svam Power Solutions Pvt Ltd',
+  'Parveen Kapahi',
+  'Pawan Electricals',
+  'Pine Filling Station',
+  'Primal Enterprises',
+  'Protein House Jammu',
+  'Puria Enterprises',
+  'Ramasethu Infrastructure Pvt Ltd',
+  'Ransh Kia (Ransh Cars Pvt Ltd)',
+  'Ravinder Crane',
+  'RC Enterprises',
+  'Refill Technologies',
+  'RK Associates',
+  'RK Electronics',
+  'Rohini Enterprises',
+  'RollPe',
+  'Rudra Enterprises',
+  'S Anand & Associates',
+  'Saini Auto Centre',
+  'Sant Kia Kangra',
+  'Savi Enterprises',
+  'Sharify Services Pvt Ltd',
+  'Sharma Sales',
+  'Shirish Enterprises',
+  'Shiv Photostat (Stamp Duty)',
+  'Shiv Ram Veni Glass House',
+  'Shiva Hardware Store',
+  'Shivani Enterprises',
+  'Shivyans Enterprises',
+  'Shree Shiv Shakti Cars LLP',
+  'Shri Ganesh Traders',
+  'Shriram Graphics',
+  'Shubham Enterprises',
+  'Signature Green',
+  'Silver Line Speedways',
+  'Sky Tyres',
+  'Smart Bazar',
+  'Sparsh Kia',
+  'SpareCare Inventory Solutions LLP',
+  'Speedingo Motors Delhi',
+  'Spotlight',
+  'SRK & Co',
+  'SSDN Enterprises',
+  'SSVB & Company',
+  'Stamp Duty Vendor',
+  'Sterling Arch',
+  'Surgun Enterprises',
+  'Surjit Traders',
+  'Surya Kia',
+  'Swarn Sales Corp',
+  'Swastik Steel Traders',
+  'Tantary Brothers',
+  'Tata Steel Industries',
+  'Team Computers & GIT',
+  'Techserv Innovation Pvt Ltd',
+  'The Auto Salon',
+  'The Perfect Solution',
+  'The Steel Craft',
+  'Trackon Parcel & Express',
+  'Udhay Agencies',
+  'Unique Systems Tech',
+  'Urban Innovations',
+  'Usha Sales Corporation',
+  'V Mart',
+  'Vaid Enterprises',
+  'Vermani Universe',
+  'Vestar Company',
+  'Vicky Advertisers',
+  'Vimal Kumar & Co (Fashion Point)',
+  'Vishwakarma Turning Engineering Works',
+  'Wadhera Agencies',
+  'Wall-Mart India Pvt Ltd',
+  'Yashoda Kia Amritsar',
+  'Yashpal Electrician.'
+]
+
+const APPROVAL_TYPES = [
+  'Others',
+  'Vendor Payment',
+  'Travelling Charges',
+  'Fund Transfer',
+  'Petty Cash',
+  'Part Purchasing From Other Dealer',
+  'Incentive Disbursement',
+  'Purchase',
+  'Stock Transfer',
+  'Training Expenses',
+  'Fuel Filling',
+  'Part Purchase',
+  'Event',
+  'Accessories Purchase',
+  'Salary Disbursement',
+  'Maintenance',
+  'Fast Tag',
+  'Local Vendor',
+  'PF',
+  'ESIC',
+  'Rents',
+  'Card Payment',
+  'Pantry Items',
+  'Labour Payment',
+  'Uniform',
+  'Releasing Hold Salary / Incentive',
+  'Promotion',
+  'Cash',
+  'Staff Welfare',
+  'RTO',
+  'House Keeping',
+  'Advance Against Salary',
+  'Scope Gainer'
+]
+
+const BRANCH_CONFIGS = [
+  // KIA
+  { brand: 'kia', location: 'JAMMU', dealerCode: 'JK402', dealerName: 'KIA JAMMU' },
+  { brand: 'kia', location: 'UDHAMPUR', dealerCode: 'JK501', dealerName: 'KIA UDHAMPUR' },
+  { brand: 'kia', location: 'BANIHAL', dealerCode: 'JK502', dealerName: 'KIA BANIHAL' },
+  // HYUNDAI
+  { brand: 'hyundai', location: 'JAMMU', dealerCode: 'JAMMU', dealerName: 'Hyundai Jammu' },
+  { brand: 'hyundai', location: 'AKHNOOR', dealerCode: 'AKHNOOR', dealerName: 'Hyundai Akhnoor' },
+  { brand: 'hyundai', location: 'KATHUA', dealerCode: 'KATHUA', dealerName: 'Hyundai Kathua' },
+  { brand: 'hyundai', location: 'RS_PURA', dealerCode: 'RS_PURA', dealerName: 'Hyundai RS Pura' },
+  { brand: 'hyundai', location: 'VIJAYPUR', dealerCode: 'VIJAYPUR', dealerName: 'Hyundai Vijaypur' },
+  { brand: 'hyundai', location: 'BILLAWAR', dealerCode: 'BILLAWAR', dealerName: 'Hyundai Billawar' },
+  // PLATINUM
+  { brand: 'platinum', location: 'JAMMU', dealerCode: 'N5211', dealerName: 'Platinum Jammu' },
+  { brand: 'platinum', location: 'RAJOURI', dealerCode: 'N6250', dealerName: 'Platinum Rajouri' },
+  { brand: 'platinum', location: 'POONCH', dealerCode: 'N6828', dealerName: 'Platinum Poonch' },
+  // TATA
+  { brand: 'tata', location: 'JAMMU', dealerCode: 'TATA-JAMMU', dealerName: 'AM Tata Jammu' },
+  // MG
+  { brand: 'mg', location: 'JAMMU', dealerCode: 'MG-JAMMU', dealerName: 'AM MG Jammu' }
+]
+
+async function seed() {
+  console.log('STARTING SEEDING...')
+  
+  // 1. Seed Vendors
+  const dedupedVendors = Array.from(new Set(RAW_VENDORS.map(v => v.trim()))).filter(Boolean)
+  console.log(`Seeding ${dedupedVendors.length} vendors...`)
+  for (const vendor of dedupedVendors) {
+    try {
+      await db.insert(approvalsCommonData).values({
+        category: 'vendor',
+        value: vendor,
+        brand: 'all'
+      })
+    } catch (e) {
+      console.warn(`Could not insert vendor "${vendor}":`, e instanceof Error ? e.message : e)
+    }
+  }
+
+  // 2. Seed Approval Types
+  console.log(`Seeding ${APPROVAL_TYPES.length} approval types...`)
+  for (const type of APPROVAL_TYPES) {
+    try {
+      await db.insert(approvalsCommonData).values({
+        category: 'approval_type',
+        value: type,
+        brand: 'all'
+      })
+    } catch (e) {
+      console.warn(`Could not insert approval type "${type}":`, e instanceof Error ? e.message : e)
+    }
+  }
+
+  // 3. Seed Branch Configurations
+  console.log(`Seeding ${BRANCH_CONFIGS.length} branch configs...`)
+  for (const config of BRANCH_CONFIGS) {
+    try {
+      await db.insert(approvalsBranchesConfig).values(config)
+    } catch (e) {
+      console.warn(`Could not insert branch config for "${config.brand} / ${config.location}":`, e instanceof Error ? e.message : e)
+    }
+  }
+
+  console.log('SEEDING COMPLETED SUCCESSFULLY!')
+}
+
+seed().catch(err => {
+  console.error('SEEDING FAILED:', err)
+  process.exit(1)
+})

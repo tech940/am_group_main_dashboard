@@ -73,7 +73,7 @@ export function canDeliverKiaBooking(role?: string | null) {
  */
 export function canAllotKiaVehicleToBooking(role?: string | null) {
   const r = norm(role)
-  return isKiaWorkflowAdmin(r) || r === 'idt'
+  return isKiaWorkflowAdmin(r) || r === 'idt' || r === 'general_manager'
 }
 
 /**
@@ -83,7 +83,7 @@ export function canAllotKiaVehicleToBooking(role?: string | null) {
 export function canAllotKiaVehicle(role?: string | null) {
   const r = norm(role)
   if (r === 'sales_executive') return false
-  return isKiaWorkflowAdmin(r) || canApproveKiaProforma(r) || canVerifyKiaAccounts(r)
+  return true
 }
 
 /** Transfer requests follow the same rule as allotment. */
@@ -93,7 +93,7 @@ export function canTransferKiaVehicle(role?: string | null) {
 
 /**
  * Who may see EVERY booking. Sales Executives (and any non-privileged role) see
- * only their own bookings; approvers, Accounts, Finance Head, MD and admins see
+ * only their own bookings; approvers, Accounts, Finance Head, MD, IDT and admins see
  * all of them (they need the full pipeline to approve / act on it).
  */
 export function canViewAllKiaBookings(role?: string | null) {
@@ -102,6 +102,7 @@ export function canViewAllKiaBookings(role?: string | null) {
     isKiaWorkflowAdmin(r) ||
     canApproveKiaProforma(r) ||
     r === 'accounts' ||
-    r === 'finance_head'
+    r === 'finance_head' ||
+    r === 'idt'
   )
 }

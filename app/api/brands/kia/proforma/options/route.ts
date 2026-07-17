@@ -3,7 +3,7 @@ import { asc, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requireBrandApiAccess } from '@/lib/auth/brand-access'
-import { kiaPriceDetails, kiaProformaLookupOptions } from '@/lib/db/schema'
+import { kiaPriceDetails } from '@/lib/db/schema'
 import { canApproveKiaProformaForUser } from '@/lib/kia-proforma/access'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 import { requirePermission } from '@/lib/permissions/service'
@@ -22,20 +22,14 @@ function distinctSorted(values: Iterable<string>) {
 
 async function loadKiaOptionsData() {
   return getCachedData('kia:proforma:options:data', async () => {
-    // Prices/models/trims come from the priced rows. The FULL bank-branch master list lives in
-    // kia_proforma_lookup_options (category 'bank_branch') so every branch is selectable in the HYP
+    // Prices/models/trims come from the priced rows. The FULL bank-branch master list also lives in
+    // kiaPriceDetails (under model '__BANK_BRANCH__') so every branch is selectable in the HYP
     // dropdown — not only the ~156 branches that happen to sit on a priced row.
-    const [priceRows, branchRows] = await Promise.all([
-      db
-        .select()
-        .from(kiaPriceDetails)
-        .where(sql`LEFT(model, 2) <> '__'`)
-        .orderBy(asc(kiaPriceDetails.model), asc(kiaPriceDetails.trimDescription)),
-      db
-        .select({ value: kiaProformaLookupOptions.value, label: kiaProformaLookupOptions.label })
-        .from(kiaProformaLookupOptions)
-        .where(eq(kiaProformaLookupOptions.category, 'bank_branch')),
-    ])
+    const allPriceDetails = await db
+      .select()
+      .from(kiaPriceDetails)
+
+    const priceRows = allPriceDetails.filter((row) => !row.model.startsWith('__'))
 
     const models = distinctSorted(priceRows.map((row) => normalizedValue(row.model)))
     const trims = priceRows
@@ -45,17 +39,12 @@ async function loadKiaOptionsData() {
         trim_description: normalizedValue(row.trimDescription),
       }))
 
-    const banks = [
-      ...priceRows.map((row) => ({
+    const banks = allPriceDetails
+      .map((row) => ({
         bank_name: normalizedValue(row.bankName) || normalizedValue(row.hyp),
         bank_branch: normalizedValue(row.bankBranch),
-      })),
-      ...branchRows.map((row) => ({
-        bank_name: normalizedValue(row.label),
-        bank_branch: normalizedValue(row.value),
-      })),
-    ]
-      .filter((row) => row.bank_name)
+      }))
+      .filter((row) => row.bank_name && row.bank_branch)
       .filter((row, index, source) => source.findIndex((candidate) => (
         candidate.bank_name === row.bank_name && candidate.bank_branch === row.bank_branch
       )) === index)
