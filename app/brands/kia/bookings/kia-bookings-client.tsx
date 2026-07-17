@@ -34,6 +34,7 @@ import {
   MoreVertical,
   Download,
   Share2,
+  MessageSquare,
 } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -150,6 +151,7 @@ type BookingRow = {
   deliveredAt?: string | null
   createdAt?: string | null
   updatedAt?: string | null
+  idtRemark?: string | null
 }
 
 type BookingListPayload = {
@@ -1355,6 +1357,38 @@ export function KiaBookingsClient({
   const [priceUploadResult, setPriceUploadResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [isReplacePricesOpen, setIsReplacePricesOpen] = useState(false)
 
+  const [idtRemarkBookingId, setIdtRemarkBookingId] = useState<string | null>(null)
+  const [idtRemarkText, setIdtRemarkText] = useState('')
+  const [idtRemarkOpen, setIdtRemarkOpen] = useState(false)
+  const [idtRemarkMode, setIdtRemarkMode] = useState<'edit' | 'view'>('view')
+  const [idtRemarkSubmitting, setIdtRemarkSubmitting] = useState(false)
+
+  async function handleSaveIdtRemark() {
+    if (!idtRemarkBookingId) return
+    setIdtRemarkSubmitting(true)
+    try {
+      const response = await fetch(`/api/brands/kia/bookings/${idtRemarkBookingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idtRemark: idtRemarkText.trim() }),
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to save stock remark.')
+      }
+      setActionMessage('Stock remark updated successfully.')
+      listQuery.refetch()
+      if (selectedBookingId) {
+        detailQuery.refetch()
+      }
+      setIdtRemarkOpen(false)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save remark.')
+    } finally {
+      setIdtRemarkSubmitting(false)
+    }
+  }
+
   async function uploadPriceMaster(file?: File | null) {
     if (!file) return
     setPriceUploading(true)
@@ -2489,6 +2523,37 @@ export function KiaBookingsClient({
                           <button type="button" title="View booking" onClick={() => openBooking(row.id)} className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--kia-text)]">
                             <Eye className="h-4 w-4" />
                           </button>
+                          <button
+                            type="button"
+                            title={
+                              !row.stockNotAvailable
+                                ? 'Vehicle is in stock'
+                                : normalizedCurrentRole === 'idt'
+                                  ? row.idtRemark ? 'Edit stock remark' : 'Add stock remark'
+                                  : row.idtRemark ? 'View IDT stock remark' : 'No IDT stock remark'
+                            }
+                            disabled={!row.stockNotAvailable || (normalizedCurrentRole !== 'idt' && !row.idtRemark)}
+                            onClick={() => {
+                              setIdtRemarkBookingId(row.id)
+                              setIdtRemarkText(row.idtRemark || '')
+                              setIdtRemarkMode(normalizedCurrentRole === 'idt' ? 'edit' : 'view')
+                              setIdtRemarkOpen(true)
+                            }}
+                            className={cn(
+                              "grid h-8 w-8 place-items-center rounded-lg transition-colors",
+                              !row.stockNotAvailable
+                                ? "text-slate-200 dark:text-slate-800 cursor-not-allowed"
+                                : normalizedCurrentRole === 'idt'
+                                  ? row.idtRemark
+                                    ? "text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700"
+                                    : "text-amber-500 hover:bg-amber-50 hover:text-amber-600"
+                                  : row.idtRemark
+                                    ? "text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700"
+                                    : "text-slate-350 dark:text-slate-700 cursor-not-allowed"
+                            )}
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </button>
                           {!isClosed && (roleCanActAsSalesPerson(normalizedCurrentRole) || roleCanActAsSalesManager(normalizedCurrentRole)) && (
                             <button
                               type="button"
@@ -3127,6 +3192,60 @@ export function KiaBookingsClient({
           onSubmit={submitEdit}
         />
       )}
+
+      {/* IDT Stock Remark Dialog */}
+      <Dialog open={idtRemarkOpen} onOpenChange={setIdtRemarkOpen}>
+        <DialogContent className="max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-100">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-slate-900">
+              {idtRemarkMode === 'edit' ? 'Update Stock Remark' : 'Stock Remark'}
+            </DialogTitle>
+            <DialogDescription className="text-xs font-semibold text-slate-500 mt-1">
+              {idtRemarkMode === 'edit'
+                ? 'Only the IDT can add or update this remark for bookings where the vehicle is not in stock.'
+                : 'This remark was added by the IDT because the vehicle is not in stock.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="my-4">
+            {idtRemarkMode === 'edit' ? (
+              <Textarea
+                placeholder="Enter stock remark..."
+                value={idtRemarkText}
+                onChange={(e) => setIdtRemarkText(e.target.value)}
+                className="min-h-[100px] w-full rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500 font-medium text-sm p-3"
+                maxLength={500}
+              />
+            ) : (
+              <div className="rounded-xl bg-slate-50 p-4 border border-slate-150 font-bold text-slate-700 text-sm whitespace-pre-wrap min-h-[80px]">
+                {idtRemarkText || 'No remark has been added yet.'}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex justify-end gap-2 border-t border-slate-50 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIdtRemarkOpen(false)}
+              className="h-10 rounded-xl px-4 text-xs font-bold"
+            >
+              Close
+            </Button>
+            {idtRemarkMode === 'edit' && (
+              <Button
+                type="button"
+                onClick={handleSaveIdtRemark}
+                disabled={idtRemarkSubmitting}
+                className="h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 text-xs font-black"
+              >
+                {idtRemarkSubmitting ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                Save Remark
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </KiaPiiContext.Provider>
   )
 

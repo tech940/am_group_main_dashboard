@@ -1,0 +1,39 @@
+import { config } from 'dotenv'
+config({ path: '.env' })
+
+import postgres from 'postgres'
+
+const sql = postgres(process.env.DATABASE_URL!, { prepare: false, max: 1 })
+
+async function main() {
+  // CONTROL: is this a long-lived DB, or freshly seeded today? If bookings span months but
+  // allocations/transfers span one day, the mutation counts are real, not an artifact.
+  const bookings = await sql`
+    SELECT count(*) AS total, min(created_at) AS earliest, max(created_at) AS latest
+    FROM kia_bookings
+  `
+  console.log('kia_bookings span:', bookings[0])
+
+  // Was the single allocation row created by the allot mutation (:350) or by BBND (:8, separate path)?
+  const allocDetail = await sql`
+    SELECT stock_source, allocation_status, allocated_at, released_at
+    FROM kia_vehicle_allocations
+  `
+  console.log('allocation rows detail:', allocDetail)
+
+  // Activity log is the closest thing to a real audit of how often these actions happen.
+  const activity = await sql`
+    SELECT activity_type, count(*) AS n, min(created_at) AS earliest, max(created_at) AS latest
+    FROM kia_booking_activity
+    GROUP BY activity_type
+    ORDER BY n DESC
+  `
+  console.log('kia_booking_activity by type:', activity)
+
+  await sql.end()
+}
+
+main().catch((e) => {
+  console.error(e)
+  process.exit(1)
+})

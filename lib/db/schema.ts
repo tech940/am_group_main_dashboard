@@ -1434,6 +1434,7 @@ export const kiaBookings = pgTable('kia_bookings', {
   financeOrderId: uuid('finance_order_id').references(() => financeOrders.id),
   allocatedVin: text('allocated_vin'),
   notes: text('notes'),
+  idtRemark: text('idt_remark'),
   metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
   createdBy: uuid('created_by').references(() => users.id).notNull(),
   updatedBy: uuid('updated_by').references(() => users.id),

@@ -159,6 +159,7 @@ export type UpdateBookingInput = Partial<CreateBookingInput> & {
   status?: string | null
   deliveryTargetDate?: string | null
   delivered?: boolean
+  idtRemark?: string | null
 }
 
 function rows<T extends JsonRecord = JsonRecord>(result: unknown): T[] {
@@ -947,6 +948,24 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
     if (!value) throw new Error(`${key} is required`)
   }
 
+  // Prevent same-day duplicate bookings (same customer phone, model, and variant)
+  const duplicates = await db.select({ id: kiaBookings.id })
+    .from(kiaBookings)
+    .where(
+      and(
+        eq(kiaBookings.customerPhone, required.customerPhone),
+        eq(kiaBookings.model, required.model),
+        eq(kiaBookings.variant, required.variant),
+        isNull(kiaBookings.deletedAt),
+        sql`timezone('Asia/Kolkata', ${kiaBookings.createdAt})::date = (now() at time zone 'Asia/Kolkata')::date`
+      )
+    )
+    .limit(1)
+
+  if (duplicates.length > 0) {
+    throw new Error('A duplicate booking for this customer and vehicle variant has already been created today.')
+  }
+
   return db.transaction(async (tx) => {
     const bookingNumber = await nextBookingNumber(tx, required.dealerCode)
     const [booking] = await tx.insert(kiaBookings).values({
@@ -1120,6 +1139,7 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     if (input.bankName !== undefined) updates.bankName = input.bankName ? normalizeBankName(input.bankName) : null
     if (input.loanAmount !== undefined) updates.loanAmount = numericText(input.loanAmount)
     if (input.notes !== undefined) updates.notes = nullableText(input.notes)
+    if (input.idtRemark !== undefined) updates.idtRemark = nullableText(input.idtRemark)
     // Merge (not replace) metadata so edits to extra fields (PAN/Aadhaar, exchange, document URLs)
     // persist without clobbering existing keys like costSheet / accountsVerification.
     // The PII keys are stripped from the INCOMING side for a viewer who cannot see PII (same rule as

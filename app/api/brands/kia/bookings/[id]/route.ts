@@ -109,6 +109,10 @@ export async function PATCH(request: Request, context: RouteContext<'/api/brands
     if (auth.response) return auth.response
     const { id } = await context.params
     const body = await request.json()
+    if (body.idtRemark !== undefined && auth.appUser?.role?.toLowerCase() !== 'idt') {
+      const timing = timer.finish()
+      return withServerTiming(NextResponse.json({ error: 'Only the IDT can add or modify stock remarks.' }, { status: 403 }), timing.serverTiming)
+    }
     const booking = await timer.time('update', () => updateKiaBooking(id, body, auth.appUser!))
     const timing = timer.finish()
     return withServerTiming(NextResponse.json({ ok: true, booking }), timing.serverTiming)
