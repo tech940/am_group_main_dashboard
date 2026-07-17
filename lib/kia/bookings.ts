@@ -16,6 +16,7 @@ import {
   kiaVehicleTransfers,
   kiaPriceDetails,
   users,
+  kiaUserProfiles,
 } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { normalizeKiaDealerCode } from '@/lib/kia/dealer-branch'
@@ -121,7 +122,13 @@ export type BookingListInput = {
   /** 'asc' = oldest first (createdAt ASC); anything else = newest first (default). */
   sortOrder?: string | null
   // The requesting user — used to scope Sales Executives to their own bookings.
-  viewer?: { id?: string | null; email?: string | null; role?: string | null } | null
+  viewer?: {
+    id?: string | null
+    email?: string | null
+    role?: string | null
+    fullName?: string | null
+    consultantName?: string | null
+  } | null
   // Dealer/branch codes the user is restricted to (null/empty = all branches). A hard boundary
   // applied to the list, KPIs, and filter options — set from the user's dealer scope server-side.
   allowedDealers?: string[] | null
@@ -597,12 +604,31 @@ function listFilters(input: BookingListInput) {
   if (text(input.consultant) && text(input.consultant).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.consultantName, text(input.consultant)))
 
   // Sales Executives (and any non-privileged role) only ever see their own
-  // bookings — matched by creator id OR the consultant email stamped at creation.
+  // bookings — matched by creator id, consultant email, OR consultant name.
   const viewer = input.viewer
   if (viewer && !canViewAllKiaBookings(viewer.role)) {
     const ownFilters = []
     if (viewer.id) ownFilters.push(eq(kiaBookings.createdBy, viewer.id))
     if (viewer.email) ownFilters.push(ilike(kiaBookings.consultantEmail, viewer.email))
+    
+    // Match by consultant name (using normalized name comparison for robust matching)
+    if (viewer.fullName) {
+      const normalizedFullName = personNameKey(viewer.fullName)
+      if (normalizedFullName) {
+        ownFilters.push(
+          sql`regexp_replace(lower(coalesce(${kiaBookings.consultantName}, '')), '[^a-z0-9]', '', 'g') = ${normalizedFullName}`
+        )
+      }
+    }
+    if (viewer.consultantName) {
+      const normalizedConsultantName = personNameKey(viewer.consultantName)
+      if (normalizedConsultantName) {
+        ownFilters.push(
+          sql`regexp_replace(lower(coalesce(${kiaBookings.consultantName}, '')), '[^a-z0-9]', '', 'g') = ${normalizedConsultantName}`
+        )
+      }
+    }
+
     // If we can't identify the viewer at all, fail closed to no rows.
     filters.push(ownFilters.length ? or(...ownFilters)! : sql`false`)
   }
@@ -1046,7 +1072,18 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     // seeded from it, and an unmodified save would post "••••••" straight over the real number.
     // Security: someone who may not read a customer's phone has no business silently rewriting it.
     // Editing PII stays available to MD / Developer / Finance Head, who are served the real values.
-    const mayWritePii = canViewKiaCustomerPii(appUser.role)
+    const [profile] = await tx
+      .select()
+      .from(kiaUserProfiles)
+      .where(eq(kiaUserProfiles.email, appUser.email))
+      .limit(1)
+    const consultantName = profile?.consultantName || appUser.fullName
+
+    const isOwner = before.createdBy === appUser.id ||
+                    (before.consultantEmail && before.consultantEmail.toLowerCase() === appUser.email.toLowerCase()) ||
+                    (before.consultantName && personNameKey(before.consultantName) === personNameKey(consultantName))
+
+    const mayWritePii = canViewKiaCustomerPii(appUser.role) || isOwner
     if (mayWritePii) {
       if (input.customerPhone !== undefined) updates.customerPhone = text(input.customerPhone)
       if (input.customerEmail !== undefined) updates.customerEmail = nullableText(input.customerEmail)

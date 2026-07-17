@@ -269,7 +269,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Type to search dashboard sections..."
-            className="w-full bg-transparent pl-3 pr-20 text-sm font-semibold text-slate-800 placeholder-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder-slate-500"
+            className="w-full bg-transparent pl-3 pr-20 text-base font-semibold text-slate-800 placeholder-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder-slate-500"
           />
           <div className="absolute right-6 flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-2 py-1 text-[10px] font-black text-slate-400 shadow-sm dark:border-white/10 dark:bg-slate-900">
             <span>ESC</span>
@@ -332,10 +332,10 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
                       <div className="absolute inset-0 -z-10 rounded-2xl bg-indigo-50/10 opacity-70 blur-xl dark:bg-indigo-900/5" />
                     )}
 
-                    {/* Gradient Icon Wrapper */}
+                    {/* Subtle Tinted Icon Wrapper */}
                     <div className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm transition-transform group-hover:scale-105',
-                      deptStyle.gradient
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border shadow-sm transition-transform group-hover:scale-105',
+                      deptStyle.bgSoft
                     )}>
                       <SectionIcon name={section.iconName} className="h-4 w-4" />
                     </div>
@@ -343,13 +343,13 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
                     {/* Text Details */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center flex-wrap gap-1">
-                        <span className="text-xs font-black text-slate-900 dark:text-white leading-tight">
+                        <span className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
                           {section.name}
                         </span>
                         
                         {/* Brand badge */}
                         <span className={cn(
-                          'rounded px-1 py-0.25 text-[7px] font-black uppercase tracking-wider border',
+                          'rounded px-1 py-0.25 text-[9px] font-black uppercase tracking-wider border',
                           getBrandBadge(section.brand)
                         )}>
                           {section.brand}
@@ -357,7 +357,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
 
                         {/* Custom label/badge if any */}
                         {section.badge && (
-                          <span className="rounded px-1 py-0.25 text-[7px] font-black uppercase tracking-wider border border-amber-200 bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:border-amber-900/40">
+                          <span className="rounded px-1 py-0.25 text-[9px] font-black uppercase tracking-wider border border-amber-200 bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:border-amber-900/40">
                             {section.badge}
                           </span>
                         )}

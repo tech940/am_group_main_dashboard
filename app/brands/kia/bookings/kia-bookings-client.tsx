@@ -136,6 +136,7 @@ type BookingRow = {
   consultantName: string
   consultantEmail?: string | null
   status: BookingStatus | string
+  proformaId?: string | null
   proformaNumber?: string | null
   /** The linked proforma's approval status — lets the waiting indicator refine 'proforma_generated'. */
   proformaApprovalStatus?: string | null
@@ -672,11 +673,13 @@ function BookingMobileCard({
   onOpen,
   now,
   onEdit,
+  isSalesPerson,
 }: {
   row: BookingRow
   onOpen: (id: string) => void
   now: number
   onEdit?: (id: string) => void
+  isSalesPerson?: boolean
 }) {
   const router = useRouter()
   const canViewPii = useCanViewPii()
@@ -704,13 +707,34 @@ function BookingMobileCard({
       </div>
       <div className="mt-3 flex gap-2" onClick={(event) => event.stopPropagation()}>
         {row.proformaNumber ? (
-          <Link
-            href={`/brands/kia/proforma/all-proforma-details?search=${row.proformaNumber}`}
-            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 text-[11px] font-bold uppercase tracking-[0.06em]"
-            style={toneSoftStyle('accent')}
-          >
-            Proforma ready <ArrowRight className="h-3 w-3" />
-          </Link>
+          <div className="flex gap-2 flex-1">
+            {!isSalesPerson ? (
+              <Link
+                href={`/brands/kia/proforma/all-proforma-details?search=${row.proformaNumber}`}
+                className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 text-[11px] font-bold uppercase tracking-[0.06em]"
+                style={toneSoftStyle('accent')}
+              >
+                Proforma ready <ArrowRight className="h-3 w-3" />
+              </Link>
+            ) : (
+              <span
+                className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 opacity-80"
+              >
+                Proforma Ready
+              </span>
+            )}
+            <a
+              href={`/api/brands/kia/proforma/${row.proformaId}/preview`}
+              target="_blank"
+              rel="noopener noreferrer"
+              download={`Kia-Proforma-${row.proformaNumber}.pdf`}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--dashboard-action-bg)] shrink-0"
+              style={toneSoftStyle('accent')}
+              title="Download Proforma PDF"
+            >
+              <Download className="h-4 w-4" />
+            </a>
+          </div>
         ) : (
           <Button
             size="sm"
@@ -2279,6 +2303,7 @@ export function KiaBookingsClient({
                     onOpen={openBooking}
                     now={nowTick}
                     onEdit={canEdit ? (id) => setEditingBookingId(id) : undefined}
+                    isSalesPerson={roleCanActAsSalesPerson(normalizedCurrentRole)}
                   />
                 )
               })}
@@ -2350,9 +2375,29 @@ export function KiaBookingsClient({
                             </button>
                           )}
                           {row.proformaNumber ? (
-                            <Link href={`/brands/kia/proforma/all-proforma-details?search=${row.proformaNumber}`} title="Open proforma" className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--dashboard-action-bg)]">
-                              <FileText className="h-4 w-4" />
-                            </Link>
+                            <div className="flex items-center gap-1">
+                              {/* Direct Download Button (Always Visible) */}
+                              <a
+                                href={`/api/brands/kia/proforma/${row.proformaId}/preview`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                download={`Kia-Proforma-${row.proformaNumber}.pdf`}
+                                title="Download Proforma PDF"
+                                className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--dashboard-action-bg)]"
+                              >
+                                <Download className="h-4 w-4" />
+                              </a>
+                              {/* Page Link (Hidden for Salespersons to prevent 403s) */}
+                              {!(roleCanActAsSalesPerson(normalizedCurrentRole)) && (
+                                <Link
+                                  href={`/brands/kia/proforma/all-proforma-details?search=${row.proformaNumber}`}
+                                  title="Open proforma"
+                                  className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--dashboard-action-bg)]"
+                                >
+                                  <FileText className="h-4 w-4" />
+                                </Link>
+                              )}
+                            </div>
                           ) : canCreateBookings && !isClosed ? (
                             <button type="button" title="Generate proforma" onClick={() => router.push(`/brands/kia/proforma/generate?bookingId=${row.id}`)} className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--dashboard-action-bg)]">
                               <FileText className="h-4 w-4" />
@@ -2421,7 +2466,7 @@ export function KiaBookingsClient({
 
       {/* ── Not In Stock summary: model / variant demand breakdown ── */}
       <Dialog open={notInStockModalOpen} onOpenChange={setNotInStockModalOpen}>
-        <DialogContent className="kia-premium flex max-h-[90dvh] w-[calc(100vw-0.75rem)] max-w-2xl flex-col overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
+        <DialogContent className="kia-premium flex max-h-[90dvh] w-[calc(100vw-0.75rem)] max-w-4xl flex-col overflow-hidden rounded-[1.25rem] border-0 bg-white p-0 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:rounded-[2rem]">
           <DialogHeader className="shrink-0 border-b border-slate-100 bg-[radial-gradient(circle_at_top_right,#fee2e2,transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] p-4 sm:p-6">
             <Badge variant="outline" className="mb-3 w-fit rounded-full border-red-100 bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-red-700">
               No Stock Available
@@ -3199,6 +3244,32 @@ function CreateBookingDialog({
           <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6" style={{ background: 'linear-gradient(180deg, #ffffff, color-mix(in srgb, var(--dashboard-action-bg) 6%, #f6f8ff))' }}>
             {(error || stepError) && <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error || stepError}</div>}
 
+            {/* Quick Customer Info Bar */}
+            {activeTab !== 'Customer' && (form.customerName || form.customerPhone || form.customerEmailId) && (
+              <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-2.5 text-xs font-semibold text-slate-600 shadow-sm backdrop-blur-sm dark:border-white/5 dark:bg-slate-900/40">
+                {form.customerName && (
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Customer:</span>
+                    <span className="font-extrabold text-slate-900 dark:text-white">{form.customerName}</span>
+                  </span>
+                )}
+                {form.customerPhone && (
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-slate-350 dark:text-slate-700">|</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Mobile:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">{form.countryCode || '+91'} {form.customerPhone}</span>
+                  </span>
+                )}
+                {form.customerEmailId && (
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-slate-350 dark:text-slate-700">|</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Email:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">{form.customerEmailId}</span>
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* CUSTOMER TAB */}
             {activeTab === 'Customer' && (
               <div className="grid gap-5">
@@ -3408,16 +3479,28 @@ function CreateBookingDialog({
             {/* PAYMENT TAB */}
             {activeTab === 'Payment' && (
               <div className="grid gap-4 md:grid-cols-2">
-                {isEdit && (
-                  <div className="md:col-span-2 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-                    <span className="text-amber-600 text-sm font-bold">🔒 Payment details cannot be changed after booking is created.</span>
-                  </div>
-                )}
-                <Field label="Booking Amount" required><Input type="number" value={form.bookingAmount} onChange={(event) => onChange('bookingAmount', event.target.value)} className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')} placeholder="₹" readOnly={isEdit} /></Field>
-                <Field label="Booking Date" required><Input type="date" value={form.bookingDate} onChange={(event) => onChange('bookingDate', event.target.value)} className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')} readOnly={isEdit} /></Field>
+                <Field label="Booking Amount" required>
+                  <Input
+                    type="number"
+                    value={form.bookingAmount}
+                    onChange={(event) => onChange('bookingAmount', event.target.value)}
+                    className={INPUT_STYLE}
+                    placeholder="₹"
+                  />
+                </Field>
+                <Field label="Booking Date" required>
+                  <Input
+                    type="date"
+                    value={form.bookingDate}
+                    onChange={(event) => onChange('bookingDate', event.target.value)}
+                    className={INPUT_STYLE}
+                  />
+                </Field>
                 <Field label="Payment Source" required>
-                  <Select value={form.pmtSource} onValueChange={(val) => !isEdit && onChange('pmtSource', val)} disabled={isEdit}>
-                    <SelectTrigger className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')}><SelectValue placeholder="Select Payment Source" /></SelectTrigger>
+                  <Select value={form.pmtSource} onValueChange={(val) => onChange('pmtSource', val)}>
+                    <SelectTrigger className={INPUT_STYLE}>
+                      <SelectValue placeholder="Select Payment Source" />
+                    </SelectTrigger>
                     <SelectContent>
                       {['CASH', 'CHEQUE', 'UPI', 'NEFT', 'RTGS', 'BANK TRANSFER', 'DD', 'CARD', 'OTHER'].map((s) => (
                         <SelectItem key={s} value={s}>{s}</SelectItem>
@@ -3425,24 +3508,26 @@ function CreateBookingDialog({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Payment Amount" required><Input type="number" value={form.paymentAmount} onChange={(event) => onChange('paymentAmount', event.target.value)} className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')} placeholder="₹" readOnly={isEdit} /></Field>
+                <Field label="Payment Amount" required>
+                  <Input
+                    type="number"
+                    value={form.paymentAmount}
+                    onChange={(event) => onChange('paymentAmount', event.target.value)}
+                    className={INPUT_STYLE}
+                    placeholder="₹"
+                  />
+                </Field>
                 <Field label="Cost Sheet" required>
                   <div className="space-y-2">
-                    {isEdit ? (
-                      <div className={cn('flex items-center h-11 px-4 rounded-2xl border border-slate-200 bg-slate-100/80 text-xs font-semibold text-slate-500 opacity-70 cursor-not-allowed')}>
-                        {form.costSheet ? `✅ ${form.costSheet.split('/').pop()}` : '—'}
-                      </div>
-                    ) : (
-                      <label className={`flex items-center justify-center gap-3 cursor-pointer h-11 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:border-slate-400 hover:bg-white transition-all ${costSheetVerifying ? 'opacity-60 pointer-events-none' : ''}`}>
-                        <input type="file" accept="image/*,application/pdf" onChange={handleCostSheetUpload} className="sr-only" />
-                        {costSheetVerifying ? '⏳ Verifying...' : costSheetFile ? `✅ ${costSheetFile.name}` : '📷 Upload Cost Sheet (Image or PDF)'}
-                      </label>
-                    )}
+                    <label className={`flex items-center justify-center gap-3 cursor-pointer h-11 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:border-slate-400 hover:bg-white transition-all ${costSheetVerifying ? 'opacity-60 pointer-events-none' : ''}`}>
+                      <input type="file" accept="image/*,application/pdf" onChange={handleCostSheetUpload} className="sr-only" />
+                      {costSheetVerifying ? '⏳ Verifying...' : costSheetFile ? `✅ ${costSheetFile.name}` : form.costSheet ? `✅ ${form.costSheet.split('/').pop()}` : '📷 Upload Cost Sheet (Image or PDF)'}
+                    </label>
                   </div>
                 </Field>
                 <Field label="Bank / Finance" required>
-                  <Select value={form.bankFinance} onValueChange={(val) => !isEdit && onChange('bankFinance', val)} disabled={isEdit}>
-                    <SelectTrigger className={cn(INPUT_STYLE, isEdit && 'bg-slate-100/80 cursor-not-allowed opacity-70')}><SelectValue placeholder="Select Bank / Finance" /></SelectTrigger>
+                  <Select value={form.bankFinance} onValueChange={(val) => onChange('bankFinance', val)}>
+                    <SelectTrigger className={INPUT_STYLE}><SelectValue placeholder="Select Bank / Finance" /></SelectTrigger>
                     <SelectContent>
                       {(bankOptions.length > 0 ? bankOptions : BANKS).map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
                     </SelectContent>

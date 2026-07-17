@@ -5,6 +5,7 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { requirePermission } from '@/lib/permissions/service'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 import { createKiaBooking, getKiaBookingsList } from '@/lib/kia/bookings'
+import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -30,6 +31,9 @@ export async function GET(request: Request) {
       return withServerTiming(NextResponse.json({ error: permission.reason }, { status: 403 }), timing.serverTiming)
     }
 
+    const profile = await timer.time('profile', () => ensureKiaUserProfile(appUser))
+    const consultantName = profile?.consultantName || appUser?.fullName
+
     const url = new URL(request.url)
     const data = await timer.time('list', () => getKiaBookingsList({
       search: url.searchParams.get('search'),
@@ -40,7 +44,13 @@ export async function GET(request: Request) {
       page: Number(url.searchParams.get('page') || 1),
       pageSize: Number(url.searchParams.get('pageSize') || 15),
       sortOrder: url.searchParams.get('sort'),
-      viewer: appUser ? { id: appUser.id, email: appUser.email, role: appUser.role } : null,
+      viewer: appUser ? {
+        id: appUser.id,
+        email: appUser.email,
+        role: appUser.role,
+        fullName: appUser.fullName,
+        consultantName: consultantName,
+      } : null,
       // Branch boundary: MD/Developer/global see all; a pinned user only sees their dealer(s).
       allowedDealers: getUserDealerScope(appUser, 'kia'),
     }))

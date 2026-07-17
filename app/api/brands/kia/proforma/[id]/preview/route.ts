@@ -17,15 +17,24 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const permission = await requirePermission(appUser, 'kia.proforma.view')
-  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
   const profile = await ensureKiaUserProfile(appUser)
   if (!profile) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await context.params
   const [row] = await db.select().from(kiaProformas).where(and(eq(kiaProformas.id, id), isNull(kiaProformas.deletedAt))).limit(1)
   if (!row) return NextResponse.json({ error: 'Proforma not found' }, { status: 404 })
+
+  const isOwner = row.loginEmail && row.loginEmail.toLowerCase() === appUser.email.toLowerCase()
   const isApprover = await canApproveKiaProformaForUser(appUser, profile.approver)
-  if (row.loginEmail !== appUser.email && !isApprover) {
+
+  const proformaPermission = await requirePermission(appUser, 'kia.proforma.view')
+  const bookingsPermission = await requirePermission(appUser, 'kia.bookings.view')
+
+  const allowedToView = proformaPermission.allowed || (bookingsPermission.allowed && isOwner)
+  if (!allowedToView) {
+    return NextResponse.json({ error: 'Forbidden: Insufficient permissions to view this proforma' }, { status: 403 })
+  }
+
+  if (row.loginEmail !== appUser.email && !isApprover && !proformaPermission.allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
