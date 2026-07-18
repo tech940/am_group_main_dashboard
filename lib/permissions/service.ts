@@ -1,7 +1,9 @@
 import 'server-only'
 
+import { createHash } from 'crypto'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { getRedisClient } from '@/lib/redis/client'
 import { permissionAuditLogs, permissionGroups, permissions, rolePermissions, userPermissions, users } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
@@ -226,11 +228,38 @@ let registrySyncPromise: Promise<void> | null = null
 let registrySyncedUntil = 0
 const REGISTRY_SYNC_TTL_MS = 10 * 60 * 1000
 
+// A stable fingerprint of the registry CONSTANTS. The DB seed (syncPermissionRegistry) is derived
+// purely from these three, so it changes only when the code's permission definitions change — i.e. on
+// deploy. When this exact fingerprint is already marked in Redis, the DB is current and the multi-
+// statement write-sweep (~2.9s, measured) is pure waste. Only the FIRST instance after a deploy pays
+// it; every cold instance after that skips with one Redis GET. This was the dominant cold-start cost
+// on EVERY requirePermission-gated endpoint.
+const REGISTRY_FINGERPRINT = createHash('sha1')
+  .update(JSON.stringify([PERMISSION_GROUPS, PERMISSIONS, ROLE_PERMISSION_TEMPLATES]))
+  .digest('hex').slice(0, 16)
+const REGISTRY_SYNC_MARK_KEY = `perm:registry:synced:${REGISTRY_FINGERPRINT}`
+const REGISTRY_SYNC_MARK_TTL_SECONDS = 7 * 24 * 60 * 60 // rotates naturally on the next deploy (new fingerprint)
+
 export async function ensurePermissionRegistrySynced(): Promise<void> {
-  if (Date.now() < registrySyncedUntil) return
+  if (Date.now() < registrySyncedUntil) return              // per-process fast path (10 min)
   if (registrySyncPromise) return registrySyncPromise
   registrySyncPromise = (async () => {
-    await syncPermissionRegistry()
+    // Cross-instance skip: if this registry fingerprint is already marked in Redis, the DB seed is
+    // current — avoid the ~2.9s write-sweep entirely. Redis errors fall through to running the sync
+    // (fail-safe: correctness over speed). A missing/unreachable Redis just means we behave as before.
+    let alreadySynced = false
+    try {
+      const redis = getRedisClient()
+      if (redis) alreadySynced = Boolean(await redis.get(REGISTRY_SYNC_MARK_KEY))
+    } catch { /* fall through and sync */ }
+
+    if (!alreadySynced) {
+      await syncPermissionRegistry()
+      try {
+        const redis = getRedisClient()
+        if (redis) await redis.setex(REGISTRY_SYNC_MARK_KEY, REGISTRY_SYNC_MARK_TTL_SECONDS, '1')
+      } catch { /* best-effort marker; a failed set just means the next cold instance re-syncs */ }
+    }
     registrySyncedUntil = Date.now() + REGISTRY_SYNC_TTL_MS
   })().finally(() => { registrySyncPromise = null })
   return registrySyncPromise
@@ -410,24 +439,20 @@ async function buildUserPermissionSnapshot(userId: string): Promise<PermissionSn
   // whether access changed; an order flip read as "changed" and fired router.refresh(), which
   // re-rendered, refetched, re-synced, and flipped again — an endless RSC loop on every page.
   // Deterministic order also keeps the payload byte-stable for caching and structural sharing.
-  const permissionRows = await db.select({ id: permissions.id, key: permissions.name })
-    .from(permissions)
-    .where(eq(permissions.isActive, true))
-    .orderBy(permissions.name)
-
-  const roleRows = await db.select({
-    permissionId: rolePermissions.permissionId,
-    allowed: rolePermissions.allowed,
-  })
-    .from(rolePermissions)
-    .where(eq(rolePermissions.role, targetUser.role))
-
-  const overrideRows = await db.select({
-    permissionId: userPermissions.permissionId,
-    allowed: userPermissions.allowed,
-  })
-    .from(userPermissions)
-    .where(eq(userPermissions.userId, userId))
+  // These three reads are independent — run them in ONE round-trip instead of three sequential ones
+  // (~2 RTT / ~700 ms saved on every cache-miss snapshot build, the cold-start path).
+  const [permissionRows, roleRows, overrideRows] = await Promise.all([
+    db.select({ id: permissions.id, key: permissions.name })
+      .from(permissions)
+      .where(eq(permissions.isActive, true))
+      .orderBy(permissions.name),
+    db.select({ permissionId: rolePermissions.permissionId, allowed: rolePermissions.allowed })
+      .from(rolePermissions)
+      .where(eq(rolePermissions.role, targetUser.role)),
+    db.select({ permissionId: userPermissions.permissionId, allowed: userPermissions.allowed })
+      .from(userPermissions)
+      .where(eq(userPermissions.userId, userId)),
+  ])
 
   const keyById = new Map(permissionRows.map((permission) => [permission.id, permission.key]))
   const baseRoleDefaults = Object.fromEntries(permissionRows.map((permission) => [permission.key, false]))

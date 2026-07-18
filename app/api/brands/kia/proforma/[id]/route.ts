@@ -250,7 +250,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
       if (linkedBooking) {
         // Only the final GM approval advances the booking into the allotment queue.
-        if (isApproved) {
+        if (isApproved && (linkedBooking.status === 'booking_created' || linkedBooking.status === 'draft')) {
           await db
             .update(kiaBookings)
             .set({

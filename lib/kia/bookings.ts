@@ -152,6 +152,7 @@ export type CreateBookingInput = {
   bankName?: string | null
   loanAmount?: string | number | null
   notes?: string | null
+  deliveryTargetDate?: string | null
   metadata?: Record<string, unknown> | null
 }
 
@@ -987,6 +988,7 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
       bankName: input.bankName ? normalizeBankName(input.bankName) : null,
       loanAmount: numericText(input.loanAmount),
       notes: nullableText(input.notes),
+      deliveryTargetDate: nullableText(input.deliveryTargetDate),
       metadata: (input.metadata || {}) as JsonRecord,
       createdBy: appUser.id,
       updatedBy: appUser.id,

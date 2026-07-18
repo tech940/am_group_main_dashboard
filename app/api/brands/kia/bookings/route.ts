@@ -94,6 +94,8 @@ export async function POST(request: Request) {
       customerName: body.customerName,
       customerPhone: body.customerPhone,
       customerEmail: body.customerEmail || body.customerEmailId,
+      customerAddress: body.customerAddress,
+      deliveryTargetDate: body.expectedDeliveryDate || body.promiseDate,
       dealerCode: body.dealerCode || 'AM KIA',
       model: body.model,
       variant: body.variant,

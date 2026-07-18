@@ -25,7 +25,8 @@ import {
   TrendingUp,
   CheckCheck,
   Timer,
-  MessageCircle
+  MessageCircle,
+  Download
 } from 'lucide-react'
 import { canRevealKiaFollowupPhone } from '@/lib/kia/pii'
 import { MainLayout } from '@/components/layout/main-layout'
@@ -266,6 +267,9 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
+  // Excel export
+  const [exporting, setExporting] = useState(false)
+
   const canCall = canRevealKiaFollowupPhone(currentUserRole)
 
   const query = useQuery<ListResponse>({
@@ -284,6 +288,36 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   })
 
   const data = query.data
+
+  // Download every follow-up (honouring the current filters) as an .xlsx. The server never puts the
+  // customer mobile number in the file — see app/api/brands/kia/follow-ups/export/route.ts.
+  const handleExport = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const params = new URLSearchParams()
+      if (mine) params.set('mine', '1')
+      if (search) params.set('search', search)
+      if (reason !== 'all') params.set('reason', reason)
+      if (startDate) params.set('startDate', startDate)
+      if (endDate) params.set('endDate', endDate)
+      const res = await fetch(`/api/brands/kia/follow-ups/export?${params.toString()}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Export failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `booking-follow-ups-${new Date().toISOString().slice(0, 10)}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not export follow-ups')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const playAlertChime = () => {
     try {
@@ -524,22 +558,6 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
           {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-xl bg-slate-100 p-1">
-                {[{ k: false, l: 'All' }, { k: true, l: 'Assigned to me' }].map((t) => (
-                  <button
-                    key={t.l}
-                    onClick={() => setMine(t.k)}
-                    className={cn(
-                      'rounded-lg px-3 py-1.5 text-xs font-black uppercase tracking-wider transition-colors',
-                      mine === t.k
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-900'
-                    )}
-                  >
-                    {t.l}
-                  </button>
-                ))}
-              </div>
               
               <Select value={reason} onValueChange={setReason}>
                 <SelectTrigger className="h-9 w-40 rounded-xl text-xs font-black uppercase tracking-wider">
@@ -594,9 +612,18 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
               </Button>
             </div>
             
-            <Button onClick={() => setAdding(true)} className="h-9 gap-1.5 rounded-xl bg-indigo-600 px-4 text-xs font-black uppercase tracking-wider text-white hover:bg-indigo-700 shadow-sm">
-              <Plus className="h-4 w-4" /> Add follow-up
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleExport}
+                disabled={exporting}
+                variant="outline"
+                title="Download all follow-ups as Excel (mobile numbers excluded)"
+                className="h-9 gap-1.5 rounded-xl px-4 text-xs font-black uppercase tracking-wider border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {exporting ? 'Exporting…' : 'Export Excel'}
+              </Button>
+            </div>
           </div>
 
           {/* CRE Performance Stats Bar */}
@@ -1059,15 +1086,15 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                           </div>
                           <div>
                             <span className="text-[9px] font-black text-slate-400 uppercase">Aadhaar</span>
-                            <p className="text-slate-800 mt-0.5">{bookingDetailQuery.data.booking.customerAadhar || '—'}</p>
+                            <p className="text-slate-800 mt-0.5">{String(bookingDetailQuery.data.booking.metadata?.aadhaarNumber || '—')}</p>
                           </div>
                           <div>
                             <span className="text-[9px] font-black text-slate-400 uppercase">PAN</span>
-                            <p className="text-slate-800 mt-0.5">{bookingDetailQuery.data.booking.customerPan || '—'}</p>
+                            <p className="text-slate-800 mt-0.5">{String(bookingDetailQuery.data.booking.metadata?.panNumber || '—')}</p>
                           </div>
                           <div className="col-span-2">
                             <span className="text-[9px] font-black text-slate-400 uppercase">Address</span>
-                            <p className="text-slate-700 font-semibold mt-0.5 leading-relaxed">{bookingDetailQuery.data.booking.address || '—'}</p>
+                            <p className="text-slate-700 font-semibold mt-0.5 leading-relaxed">{bookingDetailQuery.data.booking.address || String(bookingDetailQuery.data.booking.metadata?.customerAddress || '—')}</p>
                           </div>
                         </div>
                       </div>
@@ -1115,13 +1142,13 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                           </div>
                           <div>
                             <span className="text-[9px] font-black text-slate-400 uppercase">Delivery Target</span>
-                            <p className="text-slate-800 mt-0.5">{bookingDetailQuery.data.booking.expectedDeliveryDate || '—'}</p>
+                            <p className="text-slate-800 mt-0.5">{bookingDetailQuery.data.booking.expectedDeliveryDate || String(bookingDetailQuery.data.booking.metadata?.expectedDeliveryDate || bookingDetailQuery.data.booking.metadata?.promiseDate || '—')}</p>
                           </div>
                           <div>
                             <span className="text-[9px] font-black text-slate-400 uppercase">Booking Amount</span>
                             <p className="text-slate-800 mt-0.5 font-mono">
-                              {bookingDetailQuery.data.booking.bookingAmount != null
-                                ? `₹${Number(bookingDetailQuery.data.booking.bookingAmount).toLocaleString('en-IN')}`
+                              {bookingDetailQuery.data.booking.metadata?.bookingAmount != null
+                                ? `₹${Number(bookingDetailQuery.data.booking.metadata.bookingAmount).toLocaleString('en-IN')}`
                                 : '—'}
                             </p>
                           </div>

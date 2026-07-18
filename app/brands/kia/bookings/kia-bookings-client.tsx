@@ -1631,6 +1631,28 @@ export function KiaBookingsClient({
     retry: 1,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
+    placeholderData: (previousData) => {
+      if (previousData) return previousData
+      const row = listQuery.data?.rows?.find((r) => r.id === selectedBookingId) as any
+      if (row) {
+        return {
+          booking: {
+            ...row,
+            address: row.customerAddress,
+            colorPreference: row.color,
+            expectedDeliveryDate: row.deliveryTargetDate,
+            proformaNumber: row.proformaId ? String(row.proformaId).slice(0, 8).toUpperCase() : null,
+            financeOrderNumber: row.financeOrderId ? String(row.financeOrderId).slice(0, 8).toUpperCase() : null,
+          },
+          activities: [],
+          transfers: [],
+          allocation: null,
+          proforma: null,
+          financeOrder: null,
+        }
+      }
+      return undefined
+    }
   })
 
   const matchingQuery = useQuery({

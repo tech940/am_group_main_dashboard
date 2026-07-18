@@ -355,6 +355,96 @@ export async function listFollowups(appUser: AppUser, input: {
   return { rows, counts, now: now.toISOString() }
 }
 
+/**
+ * Flat, spreadsheet-shaped dump of EVERY follow-up (all statuses, all buckets) joined to its booking,
+ * honouring the same optional filters as listFollowups (mine / reason / dealer / search / date range).
+ *
+ * PII — the customer phone number is DELIBERATELY not selected here. Unlike listFollowups (which
+ * selects the phone and redacts it per-role in toRow), an export leaves the building as a file, so
+ * there is no safe reader to gate on: the number must never be in the sheet for anyone. The selection
+ * below is the guarantee — keep customerPhone out of it. See the top-of-file PII note.
+ */
+export type FollowupExportRow = {
+  bookingNumber: string | null
+  customerName: string | null
+  model: string | null
+  variant: string | null
+  dealer: string | null
+  consultantName: string | null
+  assignedName: string | null
+  reason: string
+  priority: string
+  status: string
+  bookingStatus: string
+  dueAt: Date | null
+  outcome: string | null
+  notInterestedReason: string | null
+  notes: string | null
+  source: string
+  completedAt: Date | null
+  createdAt: Date
+}
+
+export async function exportFollowups(appUser: AppUser, input: {
+  mine?: boolean
+  search?: string | null
+  reason?: string | null
+  dealer?: string | null
+  startDate?: string | null
+  endDate?: string | null
+}): Promise<FollowupExportRow[]> {
+  const search = String(input.search || '').trim()
+
+  // Every non-deleted booking's follow-ups — no delivered/cancelled exclusion: an export is a
+  // complete record, not the live work queue.
+  const where = [isNull(kiaBookings.deletedAt)]
+  if (input.mine) where.push(eq(kiaLeadFollowups.assignedTo, appUser.id))
+  if (input.reason && REASONS.has(input.reason)) where.push(eq(kiaLeadFollowups.reason, input.reason))
+  if (input.dealer) where.push(eq(kiaLeadFollowups.dealerCode, input.dealer))
+  if (search) {
+    where.push(or(
+      ilike(kiaBookings.customerName, `%${search}%`),
+      ilike(kiaBookings.model, `%${search}%`),
+      ilike(kiaBookings.bookingNumber, `%${search}%`),
+    )!)
+  }
+  if (input.startDate) {
+    where.push(gte(kiaBookings.createdAt, new Date(input.startDate)))
+  }
+  if (input.endDate) {
+    where.push(lte(kiaBookings.createdAt, new Date(new Date(input.endDate).setHours(23, 59, 59, 999))))
+  }
+
+  // NOTE: customerPhone is intentionally ABSENT from this selection — do not add it.
+  const rows = await db.select({
+    bookingNumber: kiaBookings.bookingNumber,
+    customerName: kiaBookings.customerName,
+    model: kiaBookings.model,
+    variant: kiaBookings.variant,
+    dealer: kiaBookings.dealerCode,
+    consultantName: kiaBookings.consultantName,
+    assignedName: kiaLeadFollowups.assignedName,
+    reason: kiaLeadFollowups.reason,
+    priority: kiaLeadFollowups.priority,
+    status: kiaLeadFollowups.status,
+    bookingStatus: kiaBookings.status,
+    dueAt: kiaLeadFollowups.dueAt,
+    outcome: kiaLeadFollowups.outcome,
+    notInterestedReason: kiaLeadFollowups.notInterestedReason,
+    notes: kiaLeadFollowups.notes,
+    source: kiaLeadFollowups.source,
+    completedAt: kiaLeadFollowups.completedAt,
+    createdAt: kiaLeadFollowups.createdAt,
+  })
+    .from(kiaLeadFollowups)
+    .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
+    .where(and(...where))
+    .orderBy(desc(kiaLeadFollowups.createdAt))
+    .limit(10000)
+
+  return rows
+}
+
 export async function createFollowup(appUser: AppUser, input: {
   bookingId: string
   dueAt: string

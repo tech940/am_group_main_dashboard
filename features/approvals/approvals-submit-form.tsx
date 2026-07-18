@@ -887,7 +887,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5 col-span-1">
+              <div className="space-y-1.5 col-span-1 sm:col-span-2">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
                   GL Account / जीएल खाता <span className="text-rose-500">*</span>
                   {glLoading && <span className="text-[9px] text-indigo-400 font-bold">(loading...)</span>}
@@ -905,22 +905,6 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                     </option>
                   ))}
                 </select>
-              </div>
-
-              <div className="space-y-1.5 col-span-1">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  GST Details / जीएसटी विवरण (Optional)
-                </label>
-                <div className="relative">
-                  <Hash className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Enter GST number (optional)"
-                    value={form.gst}
-                    onChange={e => handleTextChange('gst', e.target.value)}
-                    className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 uppercase"
-                  />
-                </div>
               </div>
 
               {/* Display Auto-Populated Ledger Attributes */}
