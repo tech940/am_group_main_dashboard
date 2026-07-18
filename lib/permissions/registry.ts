@@ -269,6 +269,19 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view', 'create', 'edit', 'audit'],
   },
   {
+    // Gates BOTH sidebar pages that check kia.approvals.view: "Vendor Payments" (/brands/kia/
+    // payment-approvals) and "Vendor Registry" (/brands/kia/vendors). Without this group the key
+    // kia.approvals.view did not exist, so the section was ungrantable and MISSING from the Access
+    // Map (reachable only by super-admins). Restricted-by-default (not in DEFAULT_VISIBLE_SECTIONS)
+    // — grant it per-user in Admin → Access. Only 'view' is used anywhere in code.
+    key: 'kia.approvals',
+    name: 'Vendor Payments & Registry',
+    parentKey: 'kia.sales',
+    description: 'AM KIA vendor payment approvals and the vendor registry.',
+    sortOrder: 42,
+    actions: ['view'],
+  },
+  {
     key: 'kia.call_center',
     name: 'Call Center',
     parentKey: 'kia.sales',
@@ -762,7 +775,7 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   'kia.lead_followups': { href: '/brands/kia/follow-ups' },
   'kia.call_analytics': { href: '/brands/kia/call-analytics' },
   'kia.bookings': { href: '/brands/kia/bookings' },
-  'kia.approvals': { href: '/brands/kia/payment-approvals' },
+  'kia.approvals': { href: '/brands/kia/payment-approvals', aliases: ['/brands/kia/vendors'] },
   'kia.proforma': { href: '/brands/kia/proforma' },
   'hyundai.business_excellence': { href: '/brands/hyundai/business-excellence', aliases: ['/brands/hyundai/business-excellence/executive-dashboard', '/brands/hyundai/business-excellence/overview'] },
   'hyundai.service_appointment': { href: '/brands/hyundai/service-appointment' },

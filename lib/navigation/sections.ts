@@ -346,6 +346,46 @@ export const ALL_SECTIONS: SearchSection[] = [
   },
 ]
 
+export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
+  '/cockpit',
+  '/delegation-tasks',
+  '/purchase-orders',
+  '/petty-cash',
+  '/brands/kia/payment-approvals',
+  '/brands/kia/vendors',
+  '/admin',
+  
+  // Kia
+  '/brands/kia/business-excellence',
+  '/brands/kia/service-appointment',
+  '/brands/kia/vehicle-tracker',
+  '/brands/kia/proforma',
+  '/finance',
+  '/brands/kia/sales-report',
+  '/brands/kia/stock-report',
+  '/brands/kia/follow-ups',
+  '/brands/kia/demo-job-cards',
+  '/brands/kia/demo-cars-list',
+  
+  // Hyundai
+  '/brands/hyundai/business-excellence',
+  '/brands/hyundai/service-appointment',
+  '/brands/hyundai/proforma',
+  '/brands/hyundai/warranty-list',
+  '/brands/hyundai/warranty-claim-list',
+  '/brands/hyundai/demo-job-cards',
+  '/brands/hyundai/demo-cars-list',
+  
+  // Platinum
+  '/brands/platinum/business-excellence',
+  '/brands/platinum/service-appointment',
+  '/brands/platinum/proforma',
+  '/brands/platinum/warranty-list',
+  '/brands/platinum/warranty-claim-list',
+  '/brands/platinum/demo-job-cards',
+  '/brands/platinum/demo-cars-list',
+])
+
 /**
  * Evaluates whether a user is authorized to search/navigate to a section.
  * Implements strict parity with the sidebar navigation rules to prevent security leaks.
@@ -357,6 +397,11 @@ export function canUserAccessSection(
   permissionMap: Record<string, boolean> | null
 ): boolean {
   if (!userRole) return false
+
+  // Verify that the section is actually present in the sidebar
+  if (!ALLOWED_SIDEBAR_HREFS.has(section.href)) {
+    return false
+  }
 
   // 1. Super Admins (Developer & MD) always bypass permission gates
   if (isSuperAdminRole(userRole)) return true
@@ -387,6 +432,12 @@ export function canUserAccessSection(
     const roleOk = isPettyCashViewRole(userRole)
     const permOk = permissionMap ? permissionMap['petty_cash.view'] === true : false
     return roleOk && permOk
+  }
+
+  // Delegation Tasks
+  if (href === '/delegation-tasks') {
+    const canAccessDelegationTasks = ['ea', 'eba', 'md', 'ceo', 'ed', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
+    if (!canAccessDelegationTasks) return false
   }
 
   // AM Finance
