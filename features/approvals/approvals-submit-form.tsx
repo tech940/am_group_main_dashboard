@@ -574,10 +574,24 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
       <div className="max-w-3xl mx-auto space-y-8 animate-fadeIn">
         
         {/* Branding Header */}
-        <div className="text-center space-y-3">
-          <div className="inline-flex h-9 items-center justify-center rounded-full bg-slate-950 px-4 text-[10px] font-black uppercase tracking-[0.2em] text-white">
-            {brandDisplayName}
-          </div>
+        <div className="text-center space-y-3 flex flex-col items-center">
+          {brand === 'kia' ? (
+            <img 
+              src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_kia.svg" 
+              alt="AM Kia Logo" 
+              className="h-12 w-auto object-contain mb-2"
+            />
+          ) : brand === 'hyundai' ? (
+            <img 
+              src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_hyundai.svg" 
+              alt="AM Hyundai Logo" 
+              className="h-12 w-auto object-contain mb-2"
+            />
+          ) : (
+            <div className="inline-flex h-9 items-center justify-center rounded-full bg-slate-950 px-4 text-[10px] font-black uppercase tracking-[0.2em] text-white">
+              {brandDisplayName}
+            </div>
+          )}
           <h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
             {brandDisplayName} Approvals Form
           </h1>

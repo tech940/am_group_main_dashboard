@@ -539,8 +539,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         <body>
           <div class="header">
             <div class="logo-area">
-              <span class="logo-main">AM GROUP</span>
-              <span class="logo-sub">KIA MOTORS</span>
+              <img src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_kia.svg" style="height: 40px; width: auto;" alt="AM Kia Logo" />
             </div>
             <div class="title-area">
               <h1>Vendor Payment Voucher</h1>
@@ -790,8 +789,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         <body>
           <div class="header">
             <div class="logo-area">
-              <span class="logo-main">AM GROUP</span>
-              <span class="logo-sub">VENDOR STATEMENT</span>
+              <img src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_kia.svg" style="height: 40px; width: auto;" alt="AM Kia Logo" />
             </div>
             <h1>Vendor Ledger: ${vendorName}</h1>
           </div>

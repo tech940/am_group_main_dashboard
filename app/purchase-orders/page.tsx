@@ -695,7 +695,6 @@ function PurchaseOrdersPageContent() {
       setUserRole(data.role || '')
       if (data.role === 'md') {
         setApprovalBranchFilter(data.brand || 'all')
-        setApprovalCategory('petty_cash')
       }
     } catch (error) {
       console.error('Error fetching user role:', error)

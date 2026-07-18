@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { getBranchLabel } from '@/lib/branches'
 
 type ApprovalStage = 'ea_approval' | 'md_approval' | 'accounts'
 
@@ -454,8 +455,13 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                   className="grid w-full grid-cols-1 gap-2 border-b border-slate-100 px-5 py-4 text-left transition-colors last:border-b-0 hover:bg-slate-50/70 lg:grid-cols-[1.3fr_1fr_0.9fr_0.8fr_1.1fr_auto] lg:items-center lg:gap-3 cursor-pointer"
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="truncate font-mono text-xs font-bold text-slate-500">{request.requestNumber}</span>
+                      {request.branchId && (
+                        <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                          {getBranchLabel(request.branchId)}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-sm font-black text-slate-900">
                       <User2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
@@ -569,9 +575,10 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
                 <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
                   <div className="grid grid-cols-2 gap-3">
                     <DetailField icon={User2} label="Requested By" value={activeRequest?.requestedByName || '—'} />
+                    <DetailField icon={Building2} label="Branch" value={activeRequest?.branchId ? getBranchLabel(activeRequest.branchId) : '—'} />
                     <DetailField icon={Building2} label="Department" value={activeRequest?.department || '—'} />
                     <DetailField icon={ClipboardList} label="Category" value={activeRequest?.categoryName || '—'} />
-                    <DetailField icon={CalendarClock} label="Submitted" value={formatDate(activeRequest?.submittedAt || activeRequest?.createdAt)} />
+                    <DetailField icon={CalendarClock} label="Submitted" value={formatDate(activeRequest?.submittedAt || activeRequest?.createdAt)} className="col-span-2" />
                   </div>
                   <div className="rounded-2xl bg-slate-50 p-4">
                     <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Purpose</p>
@@ -756,9 +763,9 @@ export function PettyCashApprovalPanel({ role, userBrand, onCountChange }: { rol
   )
 }
 
-function DetailField({ icon: Icon, label, value }: { icon: typeof User2; label: string; value: string }) {
+function DetailField({ icon: Icon, label, value, className }: { icon: typeof User2; label: string; value: string; className?: string }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-3">
+    <div className={cn("rounded-2xl border border-slate-100 bg-white p-3", className)}>
       <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-400">
         <Icon className="h-3.5 w-3.5" /> {label}
       </p>
