@@ -9,7 +9,6 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
 import { 
   Car, Plus, Search, RefreshCw, Loader2, ShieldCheck, FileText, 
   CheckCircle2, XCircle, Truck, WalletCards, BadgeIndianRupee, 
@@ -193,7 +192,6 @@ type BookingOption = {
 
 export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRole?: string } = {}) {
   const queryClient = useQueryClient()
-  const router = useRouter()
 
   // Audit Log and customer PII (email / phone) are restricted to MD & Super Admin.
   const role = String(currentUserRole || '').trim().toLowerCase()
@@ -347,7 +345,6 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setStockSuccess('allot')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
-      router.refresh()
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -383,7 +380,6 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setStockSuccess('transfer')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
-      router.refresh()
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })
@@ -405,7 +401,6 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       setHoldNotes('')
       queryClient.invalidateQueries({ queryKey: ['kia-proforma-stock'] })
       queryClient.invalidateQueries({ queryKey: ['kia-unallocated-active-bookings'] })
-      router.refresh()
     },
     onError: (err) => toast({ title: 'Error', description: err.message, variant: 'error' }),
   })

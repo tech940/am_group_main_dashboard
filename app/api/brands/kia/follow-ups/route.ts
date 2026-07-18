@@ -20,6 +20,8 @@ export async function GET(request: Request) {
       search: url.searchParams.get('search'),
       reason: url.searchParams.get('reason'),
       dealer: url.searchParams.get('dealer'),
+      startDate: url.searchParams.get('startDate'),
+      endDate: url.searchParams.get('endDate'),
     })
     return NextResponse.json(data)
   } catch (error) {

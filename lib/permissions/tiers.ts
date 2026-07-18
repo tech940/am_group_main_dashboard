@@ -53,6 +53,7 @@ export const ROLE_PROFILE: Record<PermissionRole, RoleProfile> = {
   ceo: { tier: TIER.LEADERSHIP, family: 'tracked', track: 'branch' },
   ea: { tier: TIER.LEADERSHIP, family: 'tracked', track: 'branch' },
   eba: { tier: TIER.LEADERSHIP, family: 'tracked', track: 'branch' },
+  ed: { tier: TIER.LEADERSHIP, family: 'tracked', track: 'branch' },
   // Head / GM — split by function
   general_manager: { tier: TIER.HEAD, family: 'tracked', track: 'sales' }, // "General Sales Manager"
   sales_head: { tier: TIER.HEAD, family: 'tracked', track: 'sales' },

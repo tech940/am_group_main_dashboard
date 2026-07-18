@@ -15,8 +15,96 @@ import {
   Info,
   IndianRupee,
   FileCheck,
-  Plus
+  Plus,
+  AlertTriangle,
+  Calculator,
+  Tags,
+  Hash
 } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+
+// Category/Approval Type to GL Code mapping
+const APPROVAL_TYPE_TO_GL_CODE: Record<string, string> = {
+  'Accessories Purchase': 'GL-017',
+  'Advance Against Salary': 'GL-080',
+  'Card Payment': 'GL-065',
+  'Corporate Card Payment': 'GL-065',
+  'Event': 'GL-033',
+  'Promotion': 'GL-033',
+  'Event / Promotion / Advertising': 'GL-033',
+  'Fuel Filling': 'GL-047',
+  'Fund Transfer': 'GL-079',
+  'Fund Transfer (OEM / EW / Wallet)': 'GL-079',
+  'House Keeping': 'GL-043',
+  'Housekeeping': 'GL-043',
+  'Incentive Disbursement': 'GL-025',
+  'Maintenance': 'GL-039',
+  'Maintenance & Repair': 'GL-039',
+  'Others': 'GL-061',
+  'Scope Gainer': 'GL-061',
+  'Local Vendor': 'GL-061',
+  'Pantry Items': 'GL-029',
+  'Pantry / Refreshment': 'GL-029',
+  'Petty Cash': 'GL-083',
+  'Cash': 'GL-083',
+  'Rent': 'GL-037',
+  'Rents': 'GL-037',
+  'Salary Disbursement': 'GL-024',
+  'Releasing Hold Salary / Incentive': 'GL-024',
+  'Spare Parts Purchase': 'GL-015',
+  'Part Purchase': 'GL-015',
+  'Purchase': 'GL-015',
+  'Part Purchasing From Other Dealer': 'GL-016',
+  'Staff Uniform': 'GL-027',
+  'Uniform': 'GL-027',
+  'Staff Welfare': 'GL-026',
+  'Training Expenses': 'GL-028',
+  'Travelling Charges': 'GL-052',
+  'Travelling & Conveyance': 'GL-052',
+  'Utility & Subscription': 'GL-055',
+  'Vehicle Stock Transfer': 'GL-013',
+  'Stock Transfer': 'GL-013',
+  'Vendor Payment': 'GL-068',
+  'Vendor Payment (Bill / Invoice)': 'GL-068',
+  'Workshop / Job Work (Sublet)': 'GL-021',
+  'Labour Payment': 'GL-021',
+  'Freight & Courier': 'GL-050',
+  'Fast Tag': 'GL-051',
+  'PF': 'GL-030',
+  'ESIC': 'GL-031',
+  'RTO': 'GL-060',
+  'Statutory Payment (PF / ESIC / GST / RTO)': 'GL-060',
+  'Professional Fee': 'GL-057'
+}
+
+// GL Code to Vendor suggestions mapping
+const GL_CODE_TO_VENDORS: Record<string, string[]> = {
+  'GL-032': ['Creative Shadows', 'APK Advertiser', 'Chander Bhaga', 'Daily Excelsior', 'Hyperlocal', 'Havas', 'Radio Mirchi'],
+  'GL-045': ['BD Security', 'Franknight', 'Kapahi Hawkeye', 'GDX Security'],
+  'GL-055': ['Airtel', 'BSNL', 'Jio', 'Interakt'],
+  'GL-036': ['Interakt'],
+  'GL-044': ['Mahaveer Pest Control']
+}
+
+// Vendor search keyword to GL Code auto-select mapping
+const VENDOR_TO_GL_CODE: Record<string, string> = {
+  'mahaveer pest control': 'GL-044',
+  'airtel': 'GL-055',
+  'bsnl': 'GL-055',
+  'jio': 'GL-055',
+  'interakt': 'GL-036',
+  'creative shadows': 'GL-032',
+  'apk advertiser': 'GL-032',
+  'chander bhaga': 'GL-032',
+  'daily excelsior': 'GL-032',
+  'hyperlocal': 'GL-032',
+  'havas': 'GL-032',
+  'radio mirchi': 'GL-032',
+  'bd security': 'GL-045',
+  'franknight': 'GL-045',
+  'kapahi hawkeye': 'GL-045',
+  'gdx security': 'GL-045'
+}
 
 // Options from constants that remain static across all forms
 const DEPARTMENT_OPTIONS = [
@@ -65,6 +153,8 @@ interface FormState {
   uploadBillUrl1: string
   uploadBillUrl2: string
   uploadDocUrl: string
+  glAccountId: string
+  gst: string
 }
 
 interface UploadState {
@@ -103,7 +193,9 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     remarks: '',
     uploadBillUrl1: '',
     uploadBillUrl2: '',
-    uploadDocUrl: ''
+    uploadDocUrl: '',
+    glAccountId: '',
+    gst: ''
   })
 
   const [uploads, setUploads] = useState<UploadState>({
@@ -121,6 +213,9 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
   const [vendors, setVendors] = useState<VendorOption[]>([])
   const [vendorsLoading, setVendorsLoading] = useState(true)
 
+  const [glAccounts, setGlAccounts] = useState<any[]>([])
+  const [glLoading, setGlLoading] = useState(true)
+
   const [vendorSearch, setVendorSearch] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [savingVendor, setSavingVendor] = useState(false)
@@ -129,6 +224,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
   const [submitting, setSubmitting] = useState(false)
   const [submittedId, setSubmittedId] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
+  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false)
 
   // 1. Fetch Brand Approvals Config
   useEffect(() => {
@@ -139,7 +235,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
         if (data.success) {
           setBrandDisplayName(data.brandDisplayName || brand.toUpperCase())
           setLocations(data.locations || [])
-          setApprovalTypes(data.approvalTypes || [])
+          setApprovalTypes((data.approvalTypes || []).filter((t: string) => t.toLowerCase() !== 'petty cash'))
         }
       })
       .catch(err => console.error('Error loading config:', err))
@@ -155,6 +251,30 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
       .catch(err => console.error('Error fetching vendors:', err))
       .finally(() => setVendorsLoading(false))
   }, [brand])
+
+  // 3. Fetch GL Accounts List
+  useEffect(() => {
+    setGlLoading(true)
+    fetch(`/api/brands/${brand}/gl-accounts`)
+      .then(res => res.json())
+      .then(data => setGlAccounts(data.rows || []))
+      .catch(err => console.error('Error fetching GL accounts:', err))
+      .finally(() => setGlLoading(false))
+  }, [brand])
+
+  // Auto-select GL from Vendor search input change
+  useEffect(() => {
+    const cleanName = vendorSearch.trim().toLowerCase()
+    if (!cleanName) return
+    const matchedKey = Object.keys(VENDOR_TO_GL_CODE).find(k => cleanName.includes(k))
+    if (matchedKey) {
+      const glCode = VENDOR_TO_GL_CODE[matchedKey]
+      const matchedGl = glAccounts.find(g => g.glCode === glCode)
+      if (matchedGl && form.glAccountId !== matchedGl.id) {
+        setForm(prev => ({ ...prev, glAccountId: matchedGl.id }))
+      }
+    }
+  }, [vendorSearch, glAccounts])
 
   // Sync vendorSearch if form.vendorName is cleared or set externally
   useEffect(() => {
@@ -244,6 +364,24 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
           next.location = ''
           next.dealerCode = ''
         }
+      } else if (key === 'approvalType') {
+        const glCode = APPROVAL_TYPE_TO_GL_CODE[value]
+        if (glCode) {
+          const matchedGl = glAccounts.find(g => g.glCode === glCode)
+          if (matchedGl) {
+            next.glAccountId = matchedGl.id
+          }
+        }
+      } else if (key === 'vendorName') {
+        const cleanName = value.trim().toLowerCase()
+        const matchedKey = Object.keys(VENDOR_TO_GL_CODE).find(k => cleanName.includes(k))
+        if (matchedKey) {
+          const glCode = VENDOR_TO_GL_CODE[matchedKey]
+          const matchedGl = glAccounts.find(g => g.glCode === glCode)
+          if (matchedGl) {
+            next.glAccountId = matchedGl.id
+          }
+        }
       }
 
       return next
@@ -291,24 +429,9 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     }
   }
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    setErrorMsg('')
-
-    // Basic Validation
-    if (!form.email.trim()) return setErrorMsg('Email Address is required.')
-    if (!form.name.trim()) return setErrorMsg('Name is required.')
-    if (!form.location) return setErrorMsg('Location is required.')
-    if (!form.dealerCode) return setErrorMsg('Dealer Code is required.')
-    if (!form.dealerName) return setErrorMsg('Dealer Name is required.')
-    if (!form.department) return setErrorMsg('Department is required.')
-    if (!form.approvalType) return setErrorMsg('Approval Type is required.')
-    if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
-      return setErrorMsg('Please enter a valid amount greater than 0.')
-    }
-    if (!form.typeOfPayment) return setErrorMsg('Payment Type is required.')
-
+  const executeSubmit = async () => {
     setSubmitting(true)
+    setErrorMsg('')
 
     // User vendor value check (fallback to typed input if not selected)
     const finalVendorName = form.vendorName || vendorSearch.trim()
@@ -336,6 +459,32 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setErrorMsg('')
+
+    // Basic Validation
+    if (!form.email.trim()) return setErrorMsg('Email Address is required.')
+    if (!form.name.trim()) return setErrorMsg('Name is required.')
+    if (!form.location) return setErrorMsg('Location is required.')
+    if (!form.dealerCode) return setErrorMsg('Dealer Code is required.')
+    if (!form.dealerName) return setErrorMsg('Dealer Name is required.')
+    if (!form.department) return setErrorMsg('Department is required.')
+    if (!form.approvalType) return setErrorMsg('Approval Type is required.')
+    if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
+      return setErrorMsg('Please enter a valid amount greater than 0.')
+    }
+    if (!form.typeOfPayment) return setErrorMsg('Payment Type is required.')
+    if (!form.glAccountId) return setErrorMsg('GL Account is required.')
+
+    if (brand === 'kia' && !form.uploadBillUrl1 && !form.uploadBillUrl2) {
+      setShowConfirmSubmit(true)
+      return
+    }
+
+    await executeSubmit()
   }
 
   if (loadingConfig) {
@@ -398,7 +547,9 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                 remarks: '',
                 uploadBillUrl1: '',
                 uploadBillUrl2: '',
-                uploadDocUrl: ''
+                uploadDocUrl: '',
+                glAccountId: '',
+                gst: ''
               })
               setUploads({
                 bill1: { name: '', loading: false, error: '' },
@@ -712,6 +863,108 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
             </div>
           </div>
 
+          {/* Section 3.5: Accounting Information */}
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-950 text-white">
+                <Calculator className="w-3.5 h-3.5" />
+              </div>
+              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Accounting Information / लेखांकन जानकारी</h2>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5 col-span-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
+                  GL Account / जीएल खाता <span className="text-rose-500">*</span>
+                  {glLoading && <span className="text-[9px] text-indigo-400 font-bold">(loading...)</span>}
+                </label>
+                <select
+                  required
+                  value={form.glAccountId}
+                  onChange={e => handleTextChange('glAccountId', e.target.value)}
+                  className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer appearance-none"
+                >
+                  <option value="">Choose GL Account / जीएल खाता चुनें</option>
+                  {glAccounts.map(g => (
+                    <option key={g.id} value={g.id}>
+                      {g.glName} ({g.glCode})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5 col-span-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
+                  GST Details / जीएसटी विवरण (Optional)
+                </label>
+                <div className="relative">
+                  <Hash className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Enter GST number (optional)"
+                    value={form.gst}
+                    onChange={e => handleTextChange('gst', e.target.value)}
+                    className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 uppercase"
+                  />
+                </div>
+              </div>
+
+              {/* Display Auto-Populated Ledger Attributes */}
+              {(() => {
+                const selectedGl = glAccounts.find(g => g.id === form.glAccountId)
+                if (!selectedGl) return null
+                return (
+                  <div className="col-span-1 sm:col-span-2 bg-indigo-50/30 border border-indigo-100 rounded-2xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold animate-fadeIn duration-200">
+                    <div className="space-y-0.5">
+                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">GL Code</span>
+                      <span className="text-indigo-950 font-black block">{selectedGl.glCode}</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Account Type</span>
+                      <span className="text-indigo-950 font-black block">{selectedGl.accountType}</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Expense Type</span>
+                      <span className="text-indigo-950 font-black block">{selectedGl.accountNature}</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Ledger Group</span>
+                      <span className="text-indigo-950 font-black block">{selectedGl.tallyGroup}</span>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Render Vendor Suggestions based on GL Account */}
+              {(() => {
+                const selectedGl = glAccounts.find(g => g.id === form.glAccountId)
+                if (!selectedGl) return null
+                const suggestions = GL_CODE_TO_VENDORS[selectedGl.glCode]
+                if (!suggestions || suggestions.length === 0) return null
+                return (
+                  <div className="col-span-1 sm:col-span-2 flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px] flex items-center gap-1">
+                      <Tags className="w-3 h-3" /> Suggest / सुझाव:
+                    </span>
+                    {suggestions.map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          handleTextChange('vendorName', v)
+                          setVendorSearch(v)
+                        }}
+                        className="bg-indigo-50 border border-indigo-100 text-indigo-700 font-black px-2.5 py-1 rounded-full hover:bg-indigo-100/70 transition-all text-[10px]"
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+
           {/* Section 4: Remarks & Documents */}
           <div className="space-y-5">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
@@ -864,6 +1117,49 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
           </div>
         </form>
       </div>
+
+      <Dialog open={showConfirmSubmit} onOpenChange={setShowConfirmSubmit}>
+        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-md bg-white p-6 shadow-2xl border border-slate-100">
+          <DialogHeader className="flex flex-col items-center text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6 text-amber-600" />
+            </div>
+            <DialogTitle className="text-lg font-black tracking-tight text-slate-900">
+              Submit Without Invoice? / बिना इनवॉइस जमा करें?
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="text-center py-2 space-y-4">
+            <p className="text-sm font-semibold text-slate-700 leading-relaxed">
+              Are you sure you want to submit the form without uploading any bill or invoice?
+            </p>
+            <p className="text-sm font-black text-slate-900 leading-relaxed bg-amber-50/50 p-3.5 border border-amber-100 rounded-2xl">
+              क्या आप वाकई बिना बिल या इनवॉइस अपलोड किए फॉर्म सबमिट करना चाहते हैं?
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2 justify-end mt-4">
+            <button
+              type="button"
+              onClick={() => setShowConfirmSubmit(false)}
+              className="h-11 rounded-2xl text-xs font-bold border border-slate-200 hover:bg-slate-50 transition-colors text-slate-700 px-6 order-last sm:order-none"
+            >
+              Cancel / रद्द करें
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                setShowConfirmSubmit(false)
+                await executeSubmit()
+              }}
+              className="h-11 rounded-2xl text-xs font-black text-white hover:opacity-90 transition-all shadow-md shadow-emerald-500/10 px-6"
+              style={{ backgroundColor: '#059669' }}
+            >
+              Yes, Submit / हाँ, भेजें
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

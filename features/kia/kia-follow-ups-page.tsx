@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarClock,
   Loader2,
@@ -21,7 +21,11 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
-  SlidersHorizontal
+  SlidersHorizontal,
+  TrendingUp,
+  CheckCheck,
+  Timer,
+  MessageCircle
 } from 'lucide-react'
 import { canRevealKiaFollowupPhone } from '@/lib/kia/pii'
 import { MainLayout } from '@/components/layout/main-layout'
@@ -36,15 +40,15 @@ import { cn } from '@/lib/utils'
 type Followup = {
   id: string; bookingId: string; customerName: string; model: string | null; variant: string | null
   bookingNumber: string | null; bookingStatus: string; dealer: string | null
-  assignedTo: string | null; assignedName: string | null; dueAt: string; status: string
+  assignedTo: string | null; assignedName: string | null; consultantName: string | null; dueAt: string; status: string
   reason: string; priority: string; notes: string | null; source: string; outcome: string | null
   completedAt: string | null; createdAt: string
   notInterestedReason: string | null
-  bucket: 'not_connected' | 'pending' | 'next_day' | 'cancelled'
+  bucket: 'not_connected' | 'pending' | 'next_day' | 'scheduled' | 'cancelled'
   overdue: boolean
   customerPhone: string | null
 }
-type Counts = { not_connected: number; pending: number; next_day: number; cancelled: number; overdue: number }
+type Counts = { not_connected: number; pending: number; next_day: number; scheduled: number; cancelled: number; overdue: number }
 type ListResponse = { rows: Followup[]; counts: Counts; now: string }
 type BookingHit = { id: string; customerName: string; model: string; variant: string; bookingNumber: string | null; dealer: string | null; status: string; consultantName: string | null }
 
@@ -76,6 +80,15 @@ const OUTCOMES = [
   { value: 'not_interested', label: 'Not interested' },
   { value: 'converted', label: 'Converted 🎉' },
   { value: 'done', label: 'Done / resolved' },
+  { value: '__custom__', label: '✏️ Custom outcome…' },
+]
+const RESCHEDULE_REASONS = [
+  { value: 'followup_call', label: 'Follow-up call' },
+  { value: 'customer_request', label: 'Customer request' },
+  { value: 'no_answer', label: 'No answer — retry' },
+  { value: 'payment_delay', label: 'Payment delay' },
+  { value: 'document_pending', label: 'Documents pending' },
+  { value: '__custom__', label: '✏️ Custom reason…' },
 ]
 const NOT_INTERESTED_REASONS = [
   { value: 'price', label: 'Price' },
@@ -91,6 +104,7 @@ const BUCKETS = [
   { key: 'pending', label: 'Pending', tone: 'text-amber-600', hint: 'Open follow-ups' },
   { key: 'not_connected', label: 'Not Connected', tone: 'text-rose-600', hint: 'Last call failed' },
   { key: 'next_day', label: 'Next Day', tone: 'text-indigo-600', hint: 'Due tomorrow' },
+  { key: 'scheduled', label: 'Scheduled', tone: 'text-teal-600', hint: 'Future follow-ups' },
   { key: 'cancelled', label: 'Cancelled', tone: 'text-slate-500', hint: 'Cancelled bookings' },
 ] as const
 
@@ -125,6 +139,26 @@ function formatDue(iso: string, bucket: Followup['bucket']) {
   if (days === 0) return `Today · ${time}`
   if (days === 1) return `Tomorrow · ${time}`
   return `${date} · ${time}`
+}
+
+function agingLabel(dueAt: string, isDone: boolean): { text: string; cls: string } | null {
+  if (isDone) return null
+  const diffMs = Date.now() - new Date(dueAt).getTime()
+  const days = Math.floor(diffMs / 86_400_000)
+  if (days < 0) return null // future
+  if (days === 0) return { text: 'Due today', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+  if (days === 1) return { text: '1 day overdue', cls: 'bg-rose-50 text-rose-700 border-rose-200' }
+  return { text: `${days}d overdue`, cls: 'bg-rose-100 text-rose-800 border-rose-300' }
+}
+
+function urgencyBorderClass(f: Followup, isDone: boolean): string {
+  if (isDone) return ''
+  const diffMs = new Date(f.dueAt).getTime() - Date.now()
+  const daysDiff = diffMs / 86_400_000
+  if (diffMs < 0) return 'border-l-4 border-l-rose-500'      // overdue — red
+  if (daysDiff < 1) return 'border-l-4 border-l-amber-400'   // due today — amber
+  if (daysDiff < 2) return 'border-l-4 border-l-emerald-400' // due tomorrow — green
+  return ''
 }
 
 function getPaymentStatus(f: Followup) {
@@ -201,17 +235,32 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   const [mine, setMine] = useState(false)
   const [search, setSearch] = useState('')
   const [reason, setReason] = useState('all')
+  const [startDate, setStartDate] = useState<string>('')
+  const [endDate, setEndDate] = useState<string>('')
   const [activeTab, setActiveTab] = useState<Followup['bucket']>('pending')
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null)
-  const [sidebarTab, setSidebarTab] = useState<'activity' | 'remarks'>('activity')
+  const [sidebarTab, setSidebarTab] = useState<'details' | 'activity' | 'remarks'>('details')
   const [remarkText, setRemarkText] = useState('')
   const [addingRemark, setAddingRemark] = useState(false)
+
+  // Details Modal trigger state
+  const [detailBookingOpen, setDetailBookingOpen] = useState(false)
+
+  // Alarm System States
+  const [alertedIds, setAlertedIds] = useState<Set<string>>(new Set())
+  const [activeAlarmFollowup, setActiveAlarmFollowup] = useState<Followup | null>(null)
 
   // Dialog States
   const [adding, setAdding] = useState(false)
   const [calling, setCalling] = useState<Followup | null>(null)
   const [completing, setCompleting] = useState<Followup | null>(null)
   const [rescheduling, setRescheduling] = useState<Followup | null>(null)
+
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkRescheduling, setBulkRescheduling] = useState(false)
+  const [bulkDueAt, setBulkDueAt] = useState(defaultLocal(1))
+  const [bulkActioning, setBulkActioning] = useState(false)
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -220,12 +269,14 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   const canCall = canRevealKiaFollowupPhone(currentUserRole)
 
   const query = useQuery<ListResponse>({
-    queryKey: ['kia-followups', mine, search, reason],
+    queryKey: ['kia-followups', mine, search, reason, startDate, endDate],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (mine) params.set('mine', '1')
       if (search) params.set('search', search)
       if (reason !== 'all') params.set('reason', reason)
+      if (startDate) params.set('startDate', startDate)
+      if (endDate) params.set('endDate', endDate)
       const res = await fetch(`/api/brands/kia/follow-ups?${params.toString()}`, { cache: 'no-store' })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load')
       return res.json()
@@ -234,8 +285,73 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
 
   const data = query.data
 
+  const playAlertChime = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const playChime = (timeOffset: number, frequency: number) => {
+        const osc = audioCtx.createOscillator()
+        const gain = audioCtx.createGain()
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(frequency, audioCtx.currentTime + timeOffset)
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime + timeOffset)
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + timeOffset + 0.45)
+        osc.connect(gain)
+        gain.connect(audioCtx.destination)
+        osc.start(audioCtx.currentTime + timeOffset)
+        osc.stop(audioCtx.currentTime + timeOffset + 0.45)
+      }
+      playChime(0, 523.25)   // C5
+      playChime(0.12, 659.25) // E5
+      playChime(0.24, 783.99) // G5
+    } catch (e) {
+      console.warn('Could not play audio chime', e)
+    }
+  }
+
+  // Same-day alarm scheduler checking every 10 seconds
+  useEffect(() => {
+    const checkAlarms = () => {
+      if (!data?.rows) return
+      const now = Date.now()
+      const todayString = new Date().toDateString() // Today local date
+      
+      for (const f of data.rows) {
+        if (f.status !== 'pending') continue
+        
+        const dueTime = new Date(f.dueAt).getTime()
+        const dueLocalDate = new Date(f.dueAt).toDateString()
+        
+        // Same-day check: is the follow-up scheduled for today?
+        const isSameDay = dueLocalDate === todayString
+        
+        // Has the due time been reached or passed?
+        const isTimeReached = dueTime <= now
+        
+        // Has it not been alerted in the current session?
+        const isNotAlerted = !alertedIds.has(f.id)
+        
+        if (isSameDay && isTimeReached && isNotAlerted) {
+          // Trigger alarm!
+          setAlertedIds((prev) => {
+            const next = new Set(prev)
+            next.add(f.id)
+            return next
+          })
+          setActiveAlarmFollowup(f)
+          playAlertChime()
+          break // show one popup alert at a time
+        }
+      }
+    }
+    
+    // Initial check and 10 second polling interval
+    checkAlarms()
+    const timer = setInterval(checkAlarms, 10000)
+    return () => clearInterval(timer)
+  }, [data?.rows, alertedIds])
+
   const grouped = useMemo(() => {
-    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], pending: [], next_day: [], cancelled: [] }
+    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], pending: [], next_day: [], scheduled: [], cancelled: [] }
     for (const r of data?.rows || []) g[r.bucket].push(r)
     return g
   }, [data])
@@ -252,11 +368,28 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
 
   const totalPages = Math.ceil(filteredRows.length / pageSize)
 
+  // Prefetch booking details for all visible rows so sidebar opens instantly
+  const queryClient = useQueryClient()
+  useEffect(() => {
+    if (!paginatedRows.length) return
+    for (const row of paginatedRows) {
+      void queryClient.prefetchQuery({
+        queryKey: ['kia-booking-detail', row.bookingId],
+        queryFn: async () => {
+          const res = await fetch(`/api/brands/kia/bookings/${row.bookingId}`, { cache: 'no-store' })
+          if (!res.ok) return null
+          return res.json()
+        },
+        staleTime: 2 * 60 * 1000, // treat as fresh for 2 minutes
+      })
+    }
+  }, [paginatedRows, queryClient])
+
   // Reset page when tab/filters change
   useEffect(() => {
     setCurrentPage(1)
     setSelectedBookingId(null)
-  }, [activeTab, search, reason, mine])
+  }, [activeTab, search, reason, mine, startDate, endDate])
 
   // Fetch selected booking details
   const bookingDetailQuery = useQuery<BookingDetailPayload>({
@@ -273,6 +406,10 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   const remarksOnly = useMemo(() => {
     const list = bookingDetailQuery.data?.activities || []
     return list.filter((act) => act.type === 'remark_added' || act.type === 'followup_completed')
+  }, [bookingDetailQuery.data?.activities])
+
+  const activitiesList = useMemo(() => {
+    return bookingDetailQuery.data?.activities || []
   }, [bookingDetailQuery.data?.activities])
 
   async function patch(id: string, body: Record<string, unknown>, successMsg: string) {
@@ -313,11 +450,76 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
     }
   }
 
+  // CRE Performance stats — computed from already-fetched rows
+  const allRows = data?.rows || []
+  const todayStr = new Date().toDateString()
+  const completedToday = allRows.filter(
+    (r) => r.status === 'done' && r.completedAt && new Date(r.completedAt).toDateString() === todayStr
+  ).length
+  const totalPending = data?.counts.pending ?? 0
+  const totalOverdue = data?.counts.overdue ?? 0
+
+  // Bulk helpers
+  function toggleSelectAll(rows: Followup[]) {
+    if (rows.length > 0 && rows.every((r) => selectedIds.has(r.id))) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(rows.map((r) => r.id)))
+    }
+  }
+  function toggleSelectOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function handleBulkComplete() {
+    if (selectedIds.size === 0) return
+    setBulkActioning(true)
+    const ids = Array.from(selectedIds)
+    let ok = 0
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/brands/kia/follow-ups/${id}`, {
+          method: 'PATCH', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'complete', outcome: 'done', notes: 'Bulk completed by CRE team.' }),
+        })
+        if (res.ok) ok++
+      } catch { /* continue */ }
+    }
+    setBulkActioning(false)
+    setSelectedIds(new Set())
+    toast({ title: `${ok}/${ids.length} follow-ups completed`, variant: 'success' })
+    void query.refetch()
+  }
+
+  async function handleBulkReschedule() {
+    if (selectedIds.size === 0 || !bulkDueAt) return
+    setBulkActioning(true)
+    const ids = Array.from(selectedIds)
+    let ok = 0
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/brands/kia/follow-ups/${id}`, {
+          method: 'PATCH', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'update', dueAt: new Date(bulkDueAt).toISOString(), notes: 'Bulk rescheduled by CRE team.' }),
+        })
+        if (res.ok) ok++
+      } catch { /* continue */ }
+    }
+    setBulkActioning(false)
+    setBulkRescheduling(false)
+    setSelectedIds(new Set())
+    toast({ title: `${ok}/${ids.length} follow-ups rescheduled`, variant: 'success' })
+    void query.refetch()
+  }
+
   return (
     <MainLayout title="Booking Follow-ups" subtitle="Redesigned followup desk — scheduled next-touch on every booking so no lead goes cold">
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-4 items-start">
-        {/* Left Side: Table & Filters */}
-        <div className="xl:col-span-3 space-y-4">
+      <div className="space-y-4 w-full">
           
           {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
@@ -355,9 +557,37 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Name, model or booking #…"
-                  className="ml-2 w-52 border-0 bg-transparent text-xs font-semibold outline-none text-slate-700"
+                  className="ml-2 w-44 border-0 bg-transparent text-xs font-semibold outline-none text-slate-700"
                 />
               </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0">From</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-9 px-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-slate-700 w-28 cursor-pointer"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0">To</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-9 px-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-slate-700 w-28 cursor-pointer"
+                />
+              </div>
+              {(startDate || endDate) && (
+                <Button 
+                  onClick={() => { setStartDate(''); setEndDate('') }}
+                  variant="ghost" 
+                  className="h-9 px-2.5 rounded-xl text-xs font-black uppercase text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                >
+                  Clear
+                </Button>
+              )}
 
               <Button variant="outline" className="h-9 gap-1.5 rounded-xl text-xs font-black uppercase tracking-wider border-slate-200">
                 <SlidersHorizontal className="h-3.5 w-3.5" /> Filters
@@ -367,6 +597,37 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
             <Button onClick={() => setAdding(true)} className="h-9 gap-1.5 rounded-xl bg-indigo-600 px-4 text-xs font-black uppercase tracking-wider text-white hover:bg-indigo-700 shadow-sm">
               <Plus className="h-4 w-4" /> Add follow-up
             </Button>
+          </div>
+
+          {/* CRE Performance Stats Bar */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="flex items-center gap-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100">
+                <CheckCheck className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Completed Today</p>
+                <p className="text-2xl font-black text-emerald-600 leading-tight">{completedToday}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 border border-amber-100">
+                <Timer className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pending</p>
+                <p className="text-2xl font-black text-amber-600 leading-tight">{totalPending}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 border border-rose-100">
+                <TrendingUp className="h-5 w-5 text-rose-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Overdue</p>
+                <p className="text-2xl font-black text-rose-600 leading-tight">{totalOverdue}</p>
+              </div>
+            </div>
           </div>
 
           {/* Tabs bar */}
@@ -385,7 +646,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                       : 'border-transparent text-slate-400 hover:text-slate-600'
                   )}
                 >
-                  {b.key === 'cancelled' ? 'Cancelled' : b.key === 'not_connected' ? 'Not Connected' : b.key === 'next_day' ? 'Next Day' : 'Pending'}
+                  {b.label}
                   <span className={cn(
                     'rounded-full px-1.5 py-0.5 text-[9px] font-black',
                     isActive ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
@@ -408,7 +669,14 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/30 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                      <th className="p-3 pl-4 w-10"><input type="checkbox" className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" /></th>
+                      <th className="p-3 pl-4 w-10">
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          checked={paginatedRows.length > 0 && paginatedRows.every((r) => selectedIds.has(r.id))}
+                          onChange={() => toggleSelectAll(paginatedRows)}
+                        />
+                      </th>
                       <th className="p-3">Booking / Customer</th>
                       <th className="p-3">Vehicle / Variant</th>
                       <th className="p-3">Dealer</th>
@@ -424,23 +692,45 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                       const isSelected = selectedBookingId === f.bookingId
                       const payment = getPaymentStatus(f)
                       const isDone = f.status !== 'pending'
+                      const aging = agingLabel(f.dueAt, isDone)
+                      const actCount = (f as any).activityCount as number | undefined
                       return (
                         <tr
                           key={f.id}
-                          onClick={() => setSelectedBookingId(f.bookingId)}
+                          onClick={() => {
+                            setSelectedBookingId(f.bookingId)
+                          }}
                           className={cn(
                             'cursor-pointer transition-colors hover:bg-slate-50/50',
                             isSelected ? 'bg-indigo-50/40 hover:bg-indigo-50/50' : '',
-                            isDone && 'opacity-70'
+                            isDone && 'opacity-70',
+                            urgencyBorderClass(f, isDone)
                           )}
                         >
                           <td className="p-3 pl-4" onClick={(e) => e.stopPropagation()}>
-                            <input type="checkbox" className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                            <input
+                              type="checkbox"
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              checked={selectedIds.has(f.id)}
+                              onChange={() => toggleSelectOne(f.id)}
+                            />
                           </td>
                           <td className="p-3">
                             <div className="flex flex-col min-w-[140px]">
                               <span className="font-bold text-indigo-600 text-[11px] uppercase">{f.bookingNumber || '—'}</span>
                               <span className="font-black text-slate-700 mt-0.5 text-sm">{f.customerName}</span>
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                {aging && (
+                                  <span className={cn('inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-black border uppercase tracking-wide', aging.cls)}>
+                                    {aging.text}
+                                  </span>
+                                )}
+                                {typeof actCount === 'number' && actCount > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[9px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                                    <MessageCircle className="h-2.5 w-2.5" />{actCount}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="p-3">
@@ -476,10 +766,10 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                           <td className="p-3">
                             <div className="flex items-center gap-2 min-w-[120px]">
                               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-black text-indigo-700 uppercase ring-1 ring-indigo-100">
-                                {f.assignedName ? f.assignedName.split(' ').map(n => n[0]).join('').slice(0, 2) : '??'}
+                                {f.assignedName ? f.assignedName.split(' ').map(n => n[0]).join('').slice(0, 2) : (f.consultantName ? f.consultantName.split(' ').map(n => n[0]).join('').slice(0, 2) : '??')}
                               </div>
                               <div className="flex flex-col min-w-0">
-                                <span className="font-bold text-slate-700 truncate">{f.assignedName || 'Unassigned'}</span>
+                                <span className="font-bold text-slate-700 truncate">{f.assignedName || f.consultantName || 'Unassigned'}</span>
                                 <span className="text-slate-400 text-[9px] mt-0.5 uppercase tracking-wider font-bold">Consultant</span>
                               </div>
                             </div>
@@ -615,147 +905,367 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
           </div>
         </div>
 
-        {/* Right Side: Selected Follow-up Sidebar Details */}
-        <div className="xl:col-span-1 bg-white rounded-2xl border border-slate-100 shadow-sm p-4 min-h-[500px] flex flex-col">
-          {!selectedBookingId ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-400">
-              <CalendarClock className="h-10 w-10 text-slate-200 mb-3 animate-pulse" />
-              <p className="text-xs font-black uppercase tracking-wider text-slate-400">No Customer Selected</p>
-              <p className="text-[11px] font-semibold text-slate-400 mt-1 leading-relaxed">
-                Click any follow-up row in the table to load history timeline and comments logs.
-              </p>
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col h-full space-y-4">
-              
-              {/* Customer Profile Summary */}
-              {bookingDetailQuery.data?.booking && (
-                <div className="border-b border-slate-100 pb-3">
+        {/* Floating Bulk Action Bar */}
+        {selectedIds.size > 0 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-2xl ring-1 ring-black/5">
+            <span className="text-sm font-black text-slate-700">{selectedIds.size} selected</span>
+            <div className="h-5 w-px bg-slate-200" />
+            {!bulkRescheduling ? (
+              <>
+                <Button
+                  onClick={() => void handleBulkComplete()}
+                  disabled={bulkActioning}
+                  className="h-9 gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-black text-white hover:bg-emerald-700 shadow-sm"
+                >
+                  {bulkActioning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
+                  Complete all
+                </Button>
+                <Button
+                  onClick={() => setBulkRescheduling(true)}
+                  variant="outline"
+                  className="h-9 gap-1.5 rounded-xl px-4 text-xs font-black border-slate-200 hover:bg-slate-50"
+                >
+                  <CalendarClock className="h-4 w-4" /> Reschedule all
+                </Button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="datetime-local"
+                  value={bulkDueAt}
+                  onChange={(e) => setBulkDueAt(e.target.value)}
+                  className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-semibold outline-none focus:border-indigo-400"
+                />
+                <Button
+                  onClick={() => void handleBulkReschedule()}
+                  disabled={bulkActioning}
+                  className="h-9 gap-1.5 rounded-xl bg-indigo-600 px-4 text-xs font-black text-white hover:bg-indigo-700 shadow-sm"
+                >
+                  {bulkActioning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarClock className="h-4 w-4" />}
+                  Confirm
+                </Button>
+                <Button onClick={() => setBulkRescheduling(false)} variant="ghost" className="h-9 rounded-xl px-3 text-xs font-black text-slate-500">
+                  Cancel
+                </Button>
+              </>
+            )}
+            <button onClick={() => setSelectedIds(new Set())} className="ml-1 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Slide-over Customer Details Sidebar Drawer — plain overlay, no Radix Dialog */}
+        {selectedBookingId && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
+              onClick={() => setSelectedBookingId(null)}
+            />
+            {/* Slide-over panel */}
+            <div className="fixed inset-y-0 right-0 z-50 flex h-dvh max-h-dvh w-full max-w-lg flex-col gap-0 border-l border-slate-100 bg-white shadow-2xl sm:rounded-l-3xl overflow-hidden">
+            {/* (aria hidden title for screen readers) */}
+            <span className="sr-only">Customer Profile Details &amp; Remarks Feed</span>
+            
+            {bookingDetailQuery.isLoading ? (
+              <div className="flex flex-1 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+            ) : bookingDetailQuery.isError ? (
+              <div className="flex flex-1 items-center justify-center p-6 text-sm font-bold text-rose-600">Failed to load details.</div>
+            ) : bookingDetailQuery.data?.booking ? (
+              <div className="flex flex-1 flex-col h-full overflow-hidden">
+                
+                {/* Header Area */}
+                <div className="p-5 border-b border-slate-100 bg-slate-50/50">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Selected Customer</span>
-                    <button onClick={() => setSelectedBookingId(null)} className="text-slate-400 hover:text-slate-600 rounded-lg p-1 hover:bg-slate-50"><X className="h-4 w-4" /></button>
+                    <button onClick={() => setSelectedBookingId(null)} className="text-slate-400 hover:text-slate-600 rounded-lg p-1 hover:bg-slate-100 transition-colors"><X className="h-4 w-4" /></button>
                   </div>
-                  <h4 className="font-black text-slate-800 text-base mt-1 leading-tight">{bookingDetailQuery.data.booking.customerName}</h4>
+                  <h4 className="font-black text-slate-800 text-lg mt-1 leading-tight">{bookingDetailQuery.data.booking.customerName}</h4>
                   <p className="text-xs font-bold text-slate-500 mt-1 uppercase tracking-wide">
                     {bookingDetailQuery.data.booking.model} {bookingDetailQuery.data.booking.variant}
                   </p>
-                  <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-slate-400">
-                    <span>{bookingDetailQuery.data.booking.bookingNumber}</span>
+                  <div className="mt-3 flex items-center justify-between text-[11px] font-bold text-slate-400">
+                    <span className="font-mono text-indigo-600">{bookingDetailQuery.data.booking.bookingNumber}</span>
                     <span>{dealerLabel(bookingDetailQuery.data.booking.dealerCode)}</span>
                   </div>
+                  {bookingDetailQuery.data.booking.customerPhone && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <a
+                        href={`https://wa.me/91${String(bookingDetailQuery.data.booking.customerPhone).replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                      </a>
+                      <a
+                        href={`tel:${bookingDetailQuery.data.booking.customerPhone}`}
+                        className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
+                      >
+                        <Phone className="h-3.5 w-3.5" /> {bookingDetailQuery.data.booking.customerPhone}
+                      </a>
+                    </div>
+                  )}
                 </div>
-              )}
 
-              {/* Sidebar Tabs */}
-              <div className="flex border-b border-slate-100 pb-px">
-                <button
-                  onClick={() => setSidebarTab('activity')}
-                  className={cn(
-                    'flex-1 text-center py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-colors',
-                    sidebarTab === 'activity' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'
-                  )}
-                >
-                  Activity
-                </button>
-                <button
-                  onClick={() => setSidebarTab('remarks')}
-                  className={cn(
-                    'flex-1 text-center py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-colors',
-                    sidebarTab === 'remarks' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'
-                  )}
-                >
-                  Remarks <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">{remarksOnly.length}</span>
-                </button>
-              </div>
+                {/* Tab Controls */}
+                <div className="flex border-b border-slate-100 bg-white px-2">
+                  <button
+                    onClick={() => setSidebarTab('details')}
+                    className={cn(
+                      'flex-1 text-center py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors',
+                      sidebarTab === 'details' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'
+                    )}
+                  >
+                    Details
+                  </button>
+                  <button
+                    onClick={() => setSidebarTab('activity')}
+                    className={cn(
+                      'flex-1 text-center py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors',
+                      sidebarTab === 'activity' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'
+                    )}
+                  >
+                    Activity
+                  </button>
+                  <button
+                    onClick={() => setSidebarTab('remarks')}
+                    className={cn(
+                      'flex-1 text-center py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors',
+                      sidebarTab === 'remarks' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'
+                    )}
+                  >
+                    Remarks <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500 font-black">{remarksOnly.length}</span>
+                  </button>
+                </div>
 
-              {/* Drawer Content */}
-              <div className="flex-1 overflow-y-auto max-h-[380px] kia-scroll pr-1 py-2">
-                {bookingDetailQuery.isLoading ? (
-                  <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-300" /></div>
-                ) : bookingDetailQuery.isError ? (
-                  <p className="text-xs font-bold text-rose-500 p-3">Failed to load timeline.</p>
-                ) : sidebarTab === 'activity' ? (
-                  /* Activity Timeline */
-                  <div className="relative border-l border-slate-100 pl-4 ml-3 space-y-4 pt-1">
-                    {(bookingDetailQuery.data?.activities || []).map((act) => {
-                      const meta = getActivityMeta(act.type, act.description)
-                      const Icon = meta.icon
-                      return (
-                        <div key={act.id} className="relative">
-                          {/* Timeline icon */}
-                          <span className={cn(
-                            'absolute -left-[25px] top-0 flex h-4 w-4 items-center justify-center rounded-full border text-[8px] shadow-sm ring-4 ring-white',
-                            meta.iconBg
-                          )}>
-                            <Icon className="h-2 w-2" />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">{meta.title}</div>
-                            {act.description && (
-                              <p className="mt-1 text-xs font-semibold text-slate-700 bg-slate-50/60 p-2 rounded-xl border border-slate-100/40 leading-relaxed whitespace-pre-wrap">
-                                {act.description}
-                              </p>
-                            )}
-                            <div className="mt-1 flex items-center gap-1.5 text-[9px] font-bold text-slate-400">
-                              <span>{act.actorName || 'System'}</span>
-                              <span>•</span>
-                              <span>{new Date(act.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
+                {/* Tab Body Content (Scrollable) */}
+                <div className="flex-1 overflow-y-auto p-5 kia-scroll">
+                  
+                  {/* 1. Full Specs/Details Tab */}
+                  {sidebarTab === 'details' && (
+                    <div className="space-y-5 text-xs font-bold text-slate-700">
+                      <div>
+                        <h5 className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-2 border-b border-indigo-50 pb-1">Customer Specs</h5>
+                        <div className="grid grid-cols-2 gap-3 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Phone</span>
+                            <p className="text-slate-800 font-black mt-0.5">{bookingDetailQuery.data.booking.customerPhone || '—'}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Email</span>
+                            <p className="text-slate-800 font-black mt-0.5 truncate">{bookingDetailQuery.data.booking.customerEmail || '—'}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Aadhaar</span>
+                            <p className="text-slate-800 mt-0.5">{bookingDetailQuery.data.booking.customerAadhar || '—'}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">PAN</span>
+                            <p className="text-slate-800 mt-0.5">{bookingDetailQuery.data.booking.customerPan || '—'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Address</span>
+                            <p className="text-slate-700 font-semibold mt-0.5 leading-relaxed">{bookingDetailQuery.data.booking.address || '—'}</p>
                           </div>
                         </div>
-                      )
-                    })}
-                    {(!bookingDetailQuery.data?.activities || bookingDetailQuery.data.activities.length === 0) && (
-                      <p className="text-xs font-bold text-slate-400 text-center py-6">No activity logged.</p>
-                    )}
-                  </div>
-                ) : (
-                  /* Remarks Only list */
-                  <div className="space-y-3">
-                    {remarksOnly.map((act) => (
-                      <div key={act.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-100/60 space-y-1.5 text-xs font-semibold text-slate-700">
-                        <p className="whitespace-pre-wrap leading-relaxed">{act.description}</p>
-                        <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 border-t border-slate-100 pt-1.5 mt-1">
-                          <span>{act.actorName || 'System'}</span>
-                          <span>{new Date(act.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+
+                      <div>
+                        <h5 className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-2 border-b border-indigo-50 pb-1">Vehicle Details</h5>
+                        <div className="grid grid-cols-2 gap-3 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Model</span>
+                            <p className="text-slate-800 font-black mt-0.5 uppercase">{bookingDetailQuery.data.booking.model}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Variant</span>
+                            <p className="text-slate-800 mt-0.5 uppercase">{bookingDetailQuery.data.booking.variant}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Color</span>
+                            <p className="text-slate-800 mt-0.5 uppercase">{bookingDetailQuery.data.booking.color || '—'}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Fuel Type</span>
+                            <p className="text-slate-800 mt-0.5 uppercase">{bookingDetailQuery.data.booking.fuelType || '—'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Allotted VIN</span>
+                            <p className="text-slate-800 mt-0.5 font-mono">{bookingDetailQuery.data.booking.allocatedVin || '—'}</p>
+                          </div>
                         </div>
                       </div>
-                    ))}
-                    {remarksOnly.length === 0 && (
-                      <p className="text-xs font-bold text-slate-400 text-center py-6">No remarks recorded.</p>
-                    )}
-                  </div>
-                )}
-              </div>
 
-              {/* Add Remark Textarea */}
-              <div className="border-t border-slate-100 pt-3 mt-auto">
-                <textarea
-                  value={remarkText}
-                  onChange={(e) => setRemarkText(e.target.value)}
-                  rows={2}
-                  placeholder="Add a remark..."
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none focus:border-slate-300 resize-none"
-                />
-                <Button
-                  onClick={() => void handleAddRemark()}
-                  disabled={addingRemark || !remarkText.trim()}
-                  className="mt-2 w-full h-8 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold gap-1 shadow-sm"
-                >
-                  {addingRemark ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
-                  Add Remark
-                </Button>
-              </div>
+                      <div>
+                        <h5 className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-2 border-b border-indigo-50 pb-1">Booking &amp; Finance</h5>
+                        <div className="grid grid-cols-2 gap-3 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Booking Date</span>
+                            <p className="text-slate-800 font-black mt-0.5">
+                              {bookingDetailQuery.data.booking.createdAt
+                                ? new Date(bookingDetailQuery.data.booking.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                : '—'}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Status</span>
+                            <p className="text-slate-800 font-black mt-0.5 uppercase">{bookingDetailQuery.data.booking.status}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Delivery Target</span>
+                            <p className="text-slate-800 mt-0.5">{bookingDetailQuery.data.booking.expectedDeliveryDate || '—'}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Booking Amount</span>
+                            <p className="text-slate-800 mt-0.5 font-mono">
+                              {bookingDetailQuery.data.booking.bookingAmount != null
+                                ? `₹${Number(bookingDetailQuery.data.booking.bookingAmount).toLocaleString('en-IN')}`
+                                : '—'}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Proforma ID</span>
+                            <p className="text-slate-800 mt-0.5 font-mono">{bookingDetailQuery.data.booking.proformaNumber || '—'}</p>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Finance Order ID</span>
+                            <p className="text-slate-800 mt-0.5 font-mono">{bookingDetailQuery.data.booking.financeOrderNumber || '—'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
+                  {/* 2. Activity Timeline Tab */}
+                  {sidebarTab === 'activity' && (
+                    <div className="relative border-l border-slate-100 pl-4 ml-3 space-y-4 pt-1">
+                      {activitiesList.map((act) => {
+                        const meta = getActivityMeta(act.type, act.description)
+                        const Icon = meta.icon
+                        return (
+                          <div key={act.id} className="relative">
+                            <span className={cn(
+                              'absolute -left-[25px] top-0 flex h-4 w-4 items-center justify-center rounded-full border text-[8px] shadow-sm ring-4 ring-white',
+                              meta.iconBg
+                            )}>
+                              <Icon className="h-2 w-2" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">{meta.title}</div>
+                              {act.description && (
+                                <p className="mt-1 text-xs font-semibold text-slate-800 bg-slate-100 p-2.5 rounded-xl border border-slate-200 leading-relaxed whitespace-pre-wrap">
+                                  {act.description}
+                                </p>
+                              )}
+                              <div className="mt-1 flex items-center gap-1.5 text-[9px] font-bold text-slate-400">
+                                <span>{act.actorName || 'System'}</span>
+                                <span>•</span>
+                                <span>{new Date(act.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* 3. Secondary/Remarks Feed Tab */}
+                  {sidebarTab === 'remarks' && (
+                    <div className="space-y-4">
+                      
+                      {/* Remarks List Feed */}
+                      <div className="space-y-3">
+                        {remarksOnly.map((act) => {
+                          const isCall = act.type === 'followup_completed'
+                          return (
+                            <div
+                              key={act.id}
+                              className={cn(
+                                'p-3 rounded-xl border shadow-sm text-slate-800',
+                                isCall
+                                  ? 'bg-emerald-50/90 border-emerald-100/80'
+                                  : 'bg-indigo-50/80 border-indigo-100/80'
+                              )}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className={cn(
+                                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider',
+                                  isCall ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'
+                                )}>
+                                  {isCall ? 'Call log' : 'Remark'}
+                                </span>
+                                <span className="text-[9px] font-bold text-slate-400">
+                                  {new Date(act.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <p className="mt-1.5 text-xs font-semibold text-slate-800 leading-relaxed whitespace-pre-wrap">
+                                {act.description}
+                              </p>
+                              <div className="mt-1.5 text-[9px] font-bold text-slate-400 text-right">
+                                — {act.actorName || 'System'}
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {remarksOnly.length === 0 && (
+                          <div className="py-8 text-center text-slate-400 font-bold">
+                            No remarks recorded.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Add Remark Form */}
+                      <div className="pt-3 border-t border-slate-100 space-y-2">
+                        <textarea
+                          value={remarkText}
+                          onChange={(e) => setRemarkText(e.target.value)}
+                          rows={3}
+                          placeholder="Add a remark..."
+                          className="w-full rounded-xl border border-slate-200 p-3 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder-slate-400 bg-white"
+                        />
+                        <Button
+                          onClick={() => void handleAddRemark()}
+                          disabled={addingRemark || !remarkText.trim()}
+                          className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold gap-1.5 shadow-sm"
+                        >
+                          {addingRemark ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+                          Add Remark
+                        </Button>
+                      </div>
+
+                    </div>
+                  )}
+
+                </div>
+
+              </div>
+            ) : null}
             </div>
-          )}
-        </div>
-      </div>
+          </>
+        )}
 
       {calling && <CallDialog f={calling} onClose={() => setCalling(null)} />}
       {adding && <AddFollowupDialog onClose={() => setAdding(false)} onSaved={() => { setAdding(false); void query.refetch() }} />}
       {completing && <CompleteDialog f={completing} onClose={() => setCompleting(null)} onSaved={() => { setCompleting(null); void query.refetch(); if (selectedBookingId) void bookingDetailQuery.refetch() }} />}
       {rescheduling && <RescheduleDialog f={rescheduling} onClose={() => setRescheduling(null)} onSaved={() => { setRescheduling(null); void query.refetch(); if (selectedBookingId) void bookingDetailQuery.refetch() }} />}
+
+      <BookingDetailsDialog 
+        open={detailBookingOpen} 
+        onClose={() => setDetailBookingOpen(false)} 
+        bookingDetail={bookingDetailQuery.data} 
+        isLoading={bookingDetailQuery.isLoading} 
+      />
+
+      <AlarmAlertPopup 
+        followup={activeAlarmFollowup} 
+        onClose={() => setActiveAlarmFollowup(null)} 
+        onCall={(f) => {
+          setActiveAlarmFollowup(null)
+          setCalling(f)
+        }}
+      />
     </MainLayout>
   )
 }
@@ -813,15 +1323,18 @@ function CallDialog({ f, onClose }: { f: Followup; onClose: () => void }) {
 
 function CompleteDialog({ f, onClose, onSaved }: { f: Followup; onClose: () => void; onSaved: () => void }) {
   const [outcome, setOutcome] = useState('')
+  const [customOutcome, setCustomOutcome] = useState('')
   const [notes, setNotes] = useState('')
   const [notInterestedReason, setNotInterestedReason] = useState('')
   const [scheduleNext, setScheduleNext] = useState(false)
   const [nextAt, setNextAt] = useState(defaultLocal(FOLLOWUP_REPEAT_DAYS))
   const [saving, setSaving] = useState(false)
 
+  const isCustomOutcome = outcome === '__custom__'
   const isNotInterested = outcome === 'not_interested'
+  const effectiveOutcome = isCustomOutcome ? customOutcome.trim() : outcome
   const remarksOk = countWords(notes) > MIN_REMARK_WORDS
-  const canSave = Boolean(outcome) && remarksOk && (!isNotInterested || Boolean(notInterestedReason))
+  const canSave = Boolean(effectiveOutcome) && remarksOk && (!isNotInterested || Boolean(notInterestedReason)) && (!isCustomOutcome || customOutcome.trim().length > 2)
   const autoRepeats = CONTACTED_OUTCOME_VALUES.has(outcome)
 
   async function save() {
@@ -831,7 +1344,7 @@ function CompleteDialog({ f, onClose, onSaved }: { f: Followup; onClose: () => v
         method: 'PATCH', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           action: 'complete',
-          outcome: outcome || undefined,
+          outcome: effectiveOutcome || undefined,
           notes,
           notInterestedReason: isNotInterested ? notInterestedReason : undefined,
           nextDueAt: scheduleNext && nextAt ? new Date(nextAt).toISOString() : undefined,
@@ -858,6 +1371,15 @@ function CompleteDialog({ f, onClose, onSaved }: { f: Followup; onClose: () => v
               <SelectTrigger className="mt-1 h-10 rounded-xl"><SelectValue placeholder="Select outcome" /></SelectTrigger>
               <SelectContent>{OUTCOMES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
             </Select>
+            {isCustomOutcome && (
+              <input
+                autoFocus
+                value={customOutcome}
+                onChange={(e) => setCustomOutcome(e.target.value)}
+                placeholder="Type your custom outcome…"
+                className="mt-2 w-full rounded-xl border border-indigo-300 bg-indigo-50/50 px-3 py-2 text-sm font-semibold outline-none focus:border-indigo-500 placeholder-slate-400"
+              />
+            )}
           </div>
           {isNotInterested && (
             <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-3">
@@ -910,9 +1432,12 @@ function CompleteDialog({ f, onClose, onSaved }: { f: Followup; onClose: () => v
 function RescheduleDialog({ f, onClose, onSaved }: { f: Followup; onClose: () => void; onSaved: () => void }) {
   const [dueAt, setDueAt] = useState(defaultLocal(1))
   const [priority, setPriority] = useState(f.priority)
+  const [rescheduleReason, setRescheduleReason] = useState('')
+  const [customReason, setCustomReason] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
+  const isCustomReason = rescheduleReason === '__custom__'
   const remarksOk = countWords(notes) > MIN_REMARK_WORDS
 
   async function save() {
@@ -935,6 +1460,22 @@ function RescheduleDialog({ f, onClose, onSaved }: { f: Followup; onClose: () =>
           <DialogTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5 text-indigo-600" /> Reschedule · {f.customerName}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
+          <div>
+            <label className="text-[11px] font-black uppercase tracking-wider text-slate-500">Reason for rescheduling</label>
+            <Select value={rescheduleReason} onValueChange={setRescheduleReason}>
+              <SelectTrigger className="mt-1 h-10 rounded-xl"><SelectValue placeholder="Select reason" /></SelectTrigger>
+              <SelectContent>{RESCHEDULE_REASONS.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
+            </Select>
+            {isCustomReason && (
+              <input
+                autoFocus
+                value={customReason}
+                onChange={(e) => setCustomReason(e.target.value)}
+                placeholder="Type your custom reason…"
+                className="mt-2 w-full rounded-xl border border-indigo-300 bg-indigo-50/50 px-3 py-2 text-sm font-semibold outline-none focus:border-indigo-500 placeholder-slate-400"
+              />
+            )}
+          </div>
           <div>
             <label className="text-[11px] font-black uppercase tracking-wider text-slate-500">New date &amp; time</label>
             <input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-slate-400" />
@@ -1098,6 +1639,261 @@ function AddFollowupDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
           <Button variant="outline" className="h-10 rounded-xl font-bold" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button className="h-10 gap-2 rounded-xl bg-indigo-600 px-6 font-bold text-white hover:bg-indigo-700 disabled:opacity-50" onClick={() => void save()} disabled={saving || !selected || !remarksOk}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Schedule
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BookingDetailsDialog({
+  open,
+  onClose,
+  bookingDetail,
+  isLoading,
+}: {
+  open: boolean
+  onClose: () => void
+  bookingDetail: any
+  isLoading: boolean
+}) {
+  if (!open) return null
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto rounded-2xl p-6">
+        <DialogHeader className="border-b border-slate-100 pb-4">
+          <DialogTitle className="text-xl font-black text-slate-800">
+            Booking Specification File Details
+          </DialogTitle>
+          <DialogDescription className="text-xs font-semibold text-slate-400 mt-1">
+            Complete records of this customer booking from first entry to current stage
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex h-64 items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+          </div>
+        ) : !bookingDetail?.booking ? (
+          <div className="p-8 text-center text-slate-400 font-bold">
+            No booking data found.
+          </div>
+        ) : (
+          <div className="space-y-6 pt-4 text-xs font-bold text-slate-700">
+            {/* 1. Customer & General Specs */}
+            <div>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-3 border-b border-indigo-50 pb-1">1. Customer Info</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Name</span>
+                  <span className="text-slate-800 text-sm font-black mt-0.5 block">{bookingDetail.booking.customerName}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Phone</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold">{bookingDetail.booking.customerPhone || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Email</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold">{bookingDetail.booking.customerEmail || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Aadhaar Card</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold">{bookingDetail.booking.customerAadhar || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">PAN Number</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold">{bookingDetail.booking.customerPan || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Customer Type</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold uppercase">{bookingDetail.booking.customerType || '—'}</span>
+                </div>
+                <div className="md:col-span-3">
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Address</span>
+                  <span className="text-slate-700 mt-0.5 block font-semibold leading-relaxed">{bookingDetail.booking.address || '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Vehicle & Target Specs */}
+            <div>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-3 border-b border-indigo-50 pb-1">2. Vehicle Specifications</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Model</span>
+                  <span className="text-slate-800 text-sm font-black mt-0.5 block uppercase">{bookingDetail.booking.model}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Variant</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold uppercase">{bookingDetail.booking.variant}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Color Preference</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold uppercase">{bookingDetail.booking.color || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Fuel Type</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold uppercase">{bookingDetail.booking.fuelType || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Chassis / VIN Number</span>
+                  <span className="text-slate-800 mt-0.5 block font-mono font-bold">{bookingDetail.booking.allocatedVin || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Consultant Name</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold">{bookingDetail.booking.consultantName || '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Booking Details */}
+            <div>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-3 border-b border-indigo-50 pb-1">3. Booking Status & Dates</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Booking Number</span>
+                  <span className="text-indigo-600 font-extrabold mt-0.5 block">{bookingDetail.booking.bookingNumber || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Status</span>
+                  <span className="text-slate-800 mt-0.5 block font-black uppercase">{bookingDetail.booking.status}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Target Delivery Date</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold">{bookingDetail.booking.expectedDeliveryDate || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Dealer Branch</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold">{DEALER_LABELS[bookingDetail.booking.dealerCode] || bookingDetail.booking.dealerCode}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Finance Required</span>
+                  <span className="text-slate-800 mt-0.5 block font-bold">{bookingDetail.booking.financeRequired ? 'Yes' : 'No'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Proforma & Payouts */}
+            <div>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-3 border-b border-indigo-50 pb-1">4. Proforma & Payouts</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Proforma ID</span>
+                  <span className="text-slate-800 mt-0.5 block font-mono">{bookingDetail.booking.proformaNumber || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase text-slate-400 block">Finance Order ID</span>
+                  <span className="text-slate-800 mt-0.5 block font-mono">{bookingDetail.booking.financeOrderNumber || '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 5. Document Scans */}
+            <div>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-3 border-b border-indigo-50 pb-1">5. Customer Document Scans</h3>
+              <div className="flex gap-4">
+                {bookingDetail.booking.metadata?.aadharCardUrl ? (
+                  <a
+                    href={String(bookingDetail.booking.metadata.aadharCardUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors text-indigo-600"
+                  >
+                    Download Aadhaar Scan
+                  </a>
+                ) : (
+                  <span className="text-slate-400 font-semibold p-2 border border-dashed rounded-xl">No Aadhaar Uploaded</span>
+                )}
+                {bookingDetail.booking.metadata?.panCardUrl ? (
+                  <a
+                    href={String(bookingDetail.booking.metadata.panCardUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors text-indigo-600"
+                  >
+                    Download PAN Scan
+                  </a>
+                ) : (
+                  <span className="text-slate-400 font-semibold p-2 border border-dashed rounded-xl">No PAN Uploaded</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6 border-t border-slate-100 pt-4 flex justify-end">
+          <Button onClick={onClose} className="h-10 px-6 bg-slate-900 text-white hover:bg-slate-800 rounded-xl font-bold">
+            Close specifications file
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AlarmAlertPopup({
+  followup,
+  onClose,
+  onCall,
+}: {
+  followup: Followup | null
+  onClose: () => void
+  onCall: (f: Followup) => void
+}) {
+  if (!followup) return null
+
+  return (
+    <Dialog open={Boolean(followup)} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md rounded-2xl p-6 border-2 border-indigo-500 shadow-2xl bg-white">
+        <DialogHeader className="text-center flex flex-col items-center">
+          <div className="h-16 w-16 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 border-2 border-indigo-200">
+            <Clock className="h-8 w-8" />
+          </div>
+          <DialogTitle className="text-lg font-black text-indigo-900 mt-4">
+            ⏰ Follow-up Alarm Callback Alert!
+          </DialogTitle>
+          <DialogDescription className="text-xs font-semibold text-slate-400 mt-1">
+            This customer callback scheduled for today is due now.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="my-5 bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-2.5 text-xs text-slate-600 font-bold">
+          <div className="flex justify-between border-b border-slate-100 pb-1.5">
+            <span className="text-slate-400">Customer Name</span>
+            <span className="text-slate-800 text-sm font-black uppercase">{followup.customerName}</span>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 pb-1.5">
+            <span className="text-slate-400">Booking / Model</span>
+            <span className="text-slate-800 font-extrabold">{followup.bookingNumber || '—'} · {followup.model}</span>
+          </div>
+          <div className="flex justify-between border-b border-slate-100 pb-1.5">
+            <span className="text-slate-400">Scheduled Time</span>
+            <span className="text-indigo-600 font-black">{new Date(followup.dueAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+          {followup.notes && (
+            <div className="pt-1.5">
+              <span className="text-slate-400 block mb-1">Previous Notes</span>
+              <p className="text-slate-700 bg-white border border-slate-100 p-2.5 rounded-lg font-medium leading-relaxed italic">
+                "{followup.notes}"
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 justify-end">
+          <Button 
+            variant="outline" 
+            className="h-11 rounded-xl text-xs font-black uppercase tracking-wider border-slate-200" 
+            onClick={onClose}
+          >
+            Acknowledge
+          </Button>
+          <Button 
+            className="h-11 gap-1.5 rounded-xl bg-indigo-600 text-xs font-black uppercase tracking-wider text-white hover:bg-indigo-700 shadow-md shadow-indigo-100" 
+            onClick={() => onCall(followup)}
+          >
+            <Phone className="h-4 w-4" /> Start Call
           </Button>
         </div>
       </DialogContent>

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
-import { kiaApprovalRequests } from '@/lib/db/schema'
+import { glAccounts, kiaApprovalRequests } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 export const dynamic = 'force-dynamic'
@@ -19,7 +19,7 @@ export async function POST(
 
     const { id } = await context.params
     const body = await request.json().catch(() => ({}))
-    const { action, stage, remarks } = body // action: 'APPROVE' | 'REJECT' | 'HOLD', stage: 'sales_manager' | 'accounts' | 'ea' | 'md'
+    const { action, stage, remarks, invoiceNumber, invoiceDocUrl, glAccountId } = body // action: 'APPROVE' | 'REJECT' | 'HOLD', stage: 'sales_manager' | 'accounts' | 'ea' | 'md'
 
     if (!action || !['APPROVE', 'REJECT', 'HOLD'].includes(action)) {
       return NextResponse.json({ error: 'Invalid action. Must be APPROVE, REJECT, or HOLD.' }, { status: 400 })
@@ -35,7 +35,7 @@ export async function POST(
     let isAuthorized = false
 
     if (stage === 'sales_manager') {
-      isAuthorized = isTester || ['sales_manager', 'manager'].includes(appUser.role)
+      isAuthorized = isTester || appUser.role === 'ed'
     } else if (stage === 'accounts') {
       isAuthorized = isTester || ['accounts', 'finance_head'].includes(appUser.role)
     } else if (stage === 'ea') {
@@ -60,22 +60,22 @@ export async function POST(
     }
 
     // Check if MD is bypassing or if steps are in order
-    // Order: Sales Manager -> Accounts -> EA -> MD
-    if (stage === 'accounts' && !isSuperUser && !isTester) {
+    // Order: Sales Manager -> EA -> MD -> Accounts
+    if (stage === 'ea' && !isSuperUser && !isTester) {
       if (requestRow.vpApproval !== 'APPROVED') {
-        return NextResponse.json({ error: 'Sales Manager approval is pending.' }, { status: 400 })
-      }
-    } else if (stage === 'ea' && !isSuperUser && !isTester) {
-      if (requestRow.vpApproval !== 'APPROVED' || requestRow.accountApproval !== 'APPROVED') {
-        return NextResponse.json({ error: 'Previous approval stages (Sales Manager & Accounts) must be completed.' }, { status: 400 })
+        return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
       }
     } else if (stage === 'md' && !isSuperUser && !isTester) {
+      if (requestRow.vpApproval !== 'APPROVED' || requestRow.eaApproval !== 'APPROVED') {
+        return NextResponse.json({ error: 'Previous approval stages (ED & EA) must be completed.' }, { status: 400 })
+      }
+    } else if (stage === 'accounts' && !isSuperUser && !isTester) {
       if (
         requestRow.vpApproval !== 'APPROVED' ||
-        requestRow.accountApproval !== 'APPROVED' ||
-        requestRow.eaApproval !== 'APPROVED'
+        requestRow.eaApproval !== 'APPROVED' ||
+        requestRow.managementApproval !== 'APPROVED'
       ) {
-        return NextResponse.json({ error: 'All previous approval stages must be completed first.' }, { status: 400 })
+        return NextResponse.json({ error: 'All previous approval stages (ED, EA & MD) must be completed first.' }, { status: 400 })
       }
     }
 
@@ -85,14 +85,27 @@ export async function POST(
 
     if (stage === 'sales_manager') {
       updates.vpApproval = statusVal
-    } else if (stage === 'accounts') {
-      updates.accountApproval = statusVal
     } else if (stage === 'ea') {
       updates.eaApproval = statusVal
     } else if (stage === 'md') {
       updates.managementApproval = statusVal
       updates.managementRemarks = remarks || ''
+      if (action === 'REJECT') {
+        updates.emailSendStatus = 'Rejected'
+      } else if (action === 'HOLD') {
+        updates.emailSendStatus = 'Held'
+      }
+    } else if (stage === 'accounts') {
+      updates.accountApproval = statusVal
       if (action === 'APPROVE') {
+        if (!invoiceNumber || !invoiceNumber.trim()) {
+          return NextResponse.json({ error: 'Invoice number is required for accounts approval.' }, { status: 400 })
+        }
+        if (!invoiceDocUrl || !invoiceDocUrl.trim()) {
+          return NextResponse.json({ error: 'Invoice file upload is required for accounts approval.' }, { status: 400 })
+        }
+        updates.invoiceNumber = invoiceNumber.trim()
+        updates.invoiceDocUrl = invoiceDocUrl.trim()
         updates.emailSendStatus = 'Completed'
       } else if (action === 'REJECT') {
         updates.emailSendStatus = 'Rejected'
@@ -104,10 +117,31 @@ export async function POST(
     // Build history entry
     const historyList = Array.isArray(requestRow.history) ? [...requestRow.history] : []
     const roleLabel = 
-      stage === 'sales_manager' ? 'Sales Manager' : 
+      stage === 'sales_manager' ? 'ED' : 
       stage === 'accounts' ? 'Accounts' : 
       stage === 'ea' ? 'EA' : 
       'MD'
+
+    // Update GL account if changed and log history
+    if (glAccountId && glAccountId !== requestRow.glAccountId) {
+      updates.glAccountId = glAccountId
+      const [newGl] = await db
+        .select()
+        .from(glAccounts)
+        .where(eq(glAccounts.id, glAccountId))
+        .limit(1)
+      if (newGl) {
+        historyList.push({
+          id: Math.random().toString(36).substring(7),
+          role: roleLabel,
+          roleKey: stage,
+          user: appUser.fullName,
+          action: 'GL_UPDATE',
+          remarks: `GL Account changed to ${newGl.glName} (${newGl.glCode})`,
+          timestamp: new Date().toISOString()
+        })
+      }
+    }
 
     const historyEntry = {
       id: Math.random().toString(36).substring(7),

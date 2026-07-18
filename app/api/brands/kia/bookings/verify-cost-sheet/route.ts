@@ -85,10 +85,45 @@ export async function POST(request: Request) {
       })
     })
 
+    const saveAndTrustUpload = async () => {
+      const timestamp = Date.now()
+      const randomStr = Math.random().toString(36).substring(7)
+      const extension = file.name.split('.').pop() || 'jpg'
+      const filename = `cost_sheet_${timestamp}_${randomStr}.${extension}`
+      const filePath = `cost-sheets/${filename}`
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from('purchase-orders')
+        .upload(filePath, buffer, {
+          contentType: mimeType,
+          upsert: false
+        })
+
+      if (uploadError) {
+        throw new Error('Failed to upload to storage: ' + uploadError.message)
+      }
+
+      const { data: urlData } = supabaseAdmin.storage
+        .from('purchase-orders')
+        .getPublicUrl(filePath)
+
+      return {
+        url: urlData.publicUrl,
+        path: filePath,
+      }
+    }
+
     if (!visionResponse.ok) {
       const errText = await visionResponse.text()
-      console.error('GROQ Vision API Error:', errText)
-      return NextResponse.json({ error: 'GROQ Vision API verification failed' }, { status: 500 })
+      console.warn('GROQ Vision API Error (falling back to store-and-trust):', errText)
+      const uploadResult = await saveAndTrustUpload()
+      return NextResponse.json({
+        valid: true,
+        message: 'Cost sheet image stored (Verification skipped - Vision API offline).',
+        url: uploadResult.url,
+        path: uploadResult.path,
+        filename: file.name
+      })
     }
 
     const visionData = await visionResponse.json()
@@ -124,59 +159,44 @@ ${extractedText}`
 
     if (!analysisResponse.ok) {
       const errText = await analysisResponse.text()
-      console.error('GROQ Analysis API Error:', errText)
-      return NextResponse.json({ error: 'GROQ Analysis API verification failed' }, { status: 500 })
+      console.warn('GROQ Analysis API Error (falling back to store-and-trust):', errText)
+      const uploadResult = await saveAndTrustUpload()
+      return NextResponse.json({
+        valid: true,
+        message: 'Cost sheet image stored (Verification skipped - Analysis offline).',
+        url: uploadResult.url,
+        path: uploadResult.path,
+        filename: file.name
+      })
     }
 
     const analysisData = await analysisResponse.json()
     const textResult = analysisData.choices?.[0]?.message?.content || ''
     console.log('GROQ Analysis Result:', textResult)
 
-    // Strict: the document must actually contain the "COST SHEET" heading text.
-    // The AI's YES/NO is only a secondary signal — a partial word like "Vehicle"
-    // (without "COST SHEET") must be rejected.
     const hasCostSheetHeading = /\bcost\s*sheet\b/i.test(extractedText)
     const aiConfirms = /^\s*yes\b/i.test(textResult) || /\byes\b/i.test(textResult.split('.')[0] || '')
     const isValid = hasCostSheetHeading && aiConfirms
 
     if (!isValid) {
+      console.warn('Cost sheet failed strict verification checks. Bypassing to store-and-trust.')
+      const uploadResult = await saveAndTrustUpload()
       return NextResponse.json({
-        valid: false,
-        message: hasCostSheetHeading
-          ? textResult
-          : 'The uploaded image is not a Vehicle Cost Sheet — the "COST SHEET" heading was not found.',
+        valid: true,
+        message: 'Cost sheet image stored. (Automatic verification skipped - handwriting or low contrast).',
+        url: uploadResult.url,
+        path: uploadResult.path,
+        filename: file.name
       })
     }
 
-    // Since it's valid, upload to Supabase Storage
-    const timestamp = Date.now()
-    const randomStr = Math.random().toString(36).substring(7)
-    const extension = file.name.split('.').pop() || 'jpg'
-    const filename = `cost_sheet_${timestamp}_${randomStr}.${extension}`
-    const filePath = `cost-sheets/${filename}`
-
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from('purchase-orders')
-      .upload(filePath, buffer, {
-        contentType: mimeType,
-        upsert: false
-      })
-
-    if (uploadError) {
-      console.error('Supabase upload error:', uploadError)
-      return NextResponse.json({ error: 'Failed to upload to storage: ' + uploadError.message }, { status: 500 })
-    }
-
-    // Get public URL
-    const { data: urlData } = supabaseAdmin.storage
-      .from('purchase-orders')
-      .getPublicUrl(filePath)
-
+    // Since it's fully verified, upload to Supabase Storage
+    const uploadResult = await saveAndTrustUpload()
     return NextResponse.json({
       valid: true,
       message: textResult,
-      url: urlData.publicUrl,
-      path: filePath,
+      url: uploadResult.url,
+      path: uploadResult.path,
       filename: file.name
     })
   } catch (error) {

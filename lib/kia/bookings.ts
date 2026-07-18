@@ -1008,14 +1008,45 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
     // call to it here would run OUTSIDE this transaction and could leave an orphan follow-up if the
     // booking insert later rolled back. It also (correctly) demands human remarks, which a system
     // enrolment has none of.
+    // Resolve assignee for the auto-enrolled follow-up
+    let assignedToId: string | null = null
+    let assignedName: string | null = null
+    let assignedEmail: string | null = null
+
+    const consultantEmail = String(booking.consultantEmail || '').trim().toLowerCase()
+    if (consultantEmail) {
+      const [byEmail] = await tx.select({ id: users.id, name: users.fullName, email: users.email })
+        .from(users)
+        .where(and(sql`lower(${users.email}) = ${consultantEmail}`, eq(users.isActive, true), isNull(users.deletedAt)))
+        .limit(1)
+      if (byEmail) {
+        assignedToId = byEmail.id
+        assignedName = booking.consultantName || byEmail.name
+        assignedEmail = byEmail.email
+      }
+    }
+
+    if (!assignedToId) {
+      const [creator] = await tx.select({ id: users.id, name: users.fullName, email: users.email })
+        .from(users)
+        .where(and(eq(users.id, booking.createdBy), isNull(users.deletedAt)))
+        .limit(1)
+      if (creator) {
+        assignedToId = creator.id
+        assignedName = booking.consultantName || creator.name
+        assignedEmail = booking.consultantEmail || creator.email
+      }
+    }
+
     await tx.insert(kiaLeadFollowups).values({
       bookingId: booking.id,
       dueAt: new Date(),
       status: 'pending',
       reason: 'general',
       priority: 'normal',
-      // Unassigned: the CRE team picks it up from the shared queue.
-      assignedTo: null,
+      assignedTo: assignedToId,
+      assignedName,
+      assignedEmail,
       dealerCode: booking.dealerCode,
       source: 'manual',
       notes: `Auto-enrolled when the booking was created by ${appUser.fullName}.`,

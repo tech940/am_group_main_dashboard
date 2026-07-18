@@ -9,11 +9,11 @@
 // so the client sidebar can import it directly instead of duplicating the role lists.
 
 // AM Finance: the union of the page's allowlist + global-access roles collapses to exactly these six.
-export const AM_FINANCE_VIEW_ROLES = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba'] as const
+export const AM_FINANCE_VIEW_ROLES = ['admin', 'developer', 'ceo', 'md', 'ea', 'eba', 'ed'] as const
 
 // Petty Cash: the roles the page allows (see lib/petty-cash/access.ts canAccessPettyCash).
 export const PETTY_CASH_VIEW_ROLES = [
-  'admin', 'developer', 'branch_admin', 'ea', 'md', 'eba', 'accounts', 'manager', 'general_manager', 'sales_manager',
+  'admin', 'developer', 'branch_admin', 'ea', 'md', 'eba', 'accounts', 'manager', 'general_manager', 'sales_manager', 'ed',
 ] as const
 
 export function isAmFinanceViewRole(role: string | null | undefined): boolean {

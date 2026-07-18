@@ -152,6 +152,9 @@ type BookingRow = {
   createdAt?: string | null
   updatedAt?: string | null
   idtRemark?: string | null
+  managerName?: string | null
+  tlName?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 type BookingListPayload = {
@@ -911,7 +914,8 @@ const TLS = [
   'NAVAL PREET SINGH',
   'UDHAMPUR',
   'OTHER DEALER',
-  'SHIV DEV SINGH'
+  'SHIV DEV SINGH',
+  'AKASH BHAT'
 ] as const
 
 const LEAD_SOURCES = [
@@ -1577,7 +1581,14 @@ export function KiaBookingsClient({
   // never is. Tried it, measured it, reverted it — the round-trip is the same, and it can hard-
   // navigate if startPPRNavigation returns null.
   useEffect(() => {
-    const query = buildQueryString({ search: debouncedSearch, dealer_code: dealer, model, status, consultant, page, sort: sortOrder === 'asc' ? 'asc' : undefined })
+    // `page > 1 ? page : undefined` is load-bearing, not cosmetic. `page` initialises to 1 on a bare
+    // load (:1310), but the raw `page` here made buildQueryString emit `page=1` — which never matches
+    // the initial URL (it has no `page`), so this effect fired a router.replace on EVERY mount, and in
+    // Next 16 a router.replace is a full RSC round-trip (see the long note above). That doubled the
+    // render count of the single most-loaded route in the module. Omitting page 1 (the conventional
+    // default) makes nextSearch === currentSearch on a clean load, so no replace fires. The list query
+    // still sends `page` via its own buildQueryString call below, so pagination is unaffected.
+    const query = buildQueryString({ search: debouncedSearch, dealer_code: dealer, model, status, consultant, page: page > 1 ? page : undefined, sort: sortOrder === 'asc' ? 'asc' : undefined })
     const next = new URLSearchParams(query)
     if (selectedBookingId && embedMode) next.set('bookingId', selectedBookingId)
     const nextSearch = next.toString() ? `?${next.toString()}` : ''
@@ -1862,6 +1873,25 @@ export function KiaBookingsClient({
       staleTime: 60_000,
     })
   }, [queryClient])
+
+  // Hover-INTENT, not hover. onMouseEnter fires for every row the pointer merely CROSSES — moving to
+  // row 8 traverses rows 1-7 — and each was firing a full 6-query detail request. That is what put
+  // bookings/[id] at 740 calls against a 53-row table (each booking fetched ~14x). The 60s staleTime
+  // can't help: distinct row ids are distinct cache keys, so a sweep is N misses, not one.
+  //
+  // A ~180ms timer separates traversal (pointer dwells ~20-60ms, cancelled) from intent (pointer
+  // stops on a row, fires). A fast clicker who beats the timer is covered by the onPointerDown path
+  // below — pointerdown precedes click by ~80-150ms, so the drawer still opens on a warm/in-flight
+  // cache rather than a skeleton. One shared timer for the whole table, not one per row.
+  const hoverIntentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleHoverPrefetch = useCallback((id: string) => {
+    if (hoverIntentTimer.current) clearTimeout(hoverIntentTimer.current)
+    hoverIntentTimer.current = setTimeout(() => prefetchBookingDetail(id), 180)
+  }, [prefetchBookingDetail])
+  const cancelHoverPrefetch = useCallback(() => {
+    if (hoverIntentTimer.current) { clearTimeout(hoverIntentTimer.current); hoverIntentTimer.current = null }
+  }, [])
+  useEffect(() => () => { if (hoverIntentTimer.current) clearTimeout(hoverIntentTimer.current) }, [])
 
   function openBooking(id: string) {
     if (embedMode) {
@@ -2474,7 +2504,7 @@ export function KiaBookingsClient({
             <Table className="hidden sm:table kia-table">
               <TableHeader>
                 <TableRow>
-                  {['Booking ID', 'Customer', 'Vehicle', 'Dealer', 'Status', 'Booking Date', 'Payment', 'Actions'].map((head) => (
+                  {['Booking ID', 'Customer', 'Vehicle', 'Dealer', 'Manager', 'Team Leader', 'Status', 'Booking Date', 'Payment', 'Actions'].map((head) => (
                     <TableHead key={head} className="h-10 whitespace-nowrap px-3">{head}</TableHead>
                   ))}
                 </TableRow>
@@ -2489,8 +2519,14 @@ export function KiaBookingsClient({
                       key={row.id}
                       className="group cursor-pointer border-b border-[var(--kia-hairline)] text-sm"
                       onClick={() => openBooking(row.id)}
-                      onMouseEnter={() => prefetchBookingDetail(row.id)}
-                      onFocus={() => prefetchBookingDetail(row.id)}
+                      onMouseEnter={() => scheduleHoverPrefetch(row.id)}
+                      onMouseLeave={cancelHoverPrefetch}
+                      // Immediate on real intent: pointerdown (before click) and keyboard focus only.
+                      // `:focus-visible` is the browser's own "focus came from the keyboard" signal, so
+                      // Radix restoring focus to a Pencil button after a mouse-opened dialog closes —
+                      // which bubbles a focusin to this row — no longer fires a phantom prefetch.
+                      onPointerDown={() => prefetchBookingDetail(row.id)}
+                      onFocus={(e) => { if (e.target.matches(':focus-visible')) scheduleHoverPrefetch(row.id) }}
                       initial={animated ? { opacity: 0, y: 6 } : false}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3, delay: Math.min(index * 0.025, 0.32), ease: [0.16, 1, 0.3, 1] }}
@@ -2507,6 +2543,12 @@ export function KiaBookingsClient({
                       <TableCell className="px-3 py-3">
                         <div className="text-xs font-bold text-[var(--kia-text)]">{row.dealerCode || '—'}</div>
                         {city && <div className="text-[11px] font-medium text-[var(--kia-text-soft)]">{city}</div>}
+                      </TableCell>
+                      <TableCell className="px-3 py-3">
+                        <div className="text-xs font-bold text-[var(--kia-text)]">{row.managerName || (row.metadata && String(row.metadata.managerName || '')) || '—'}</div>
+                      </TableCell>
+                      <TableCell className="px-3 py-3">
+                        <div className="text-xs font-bold text-[var(--kia-text)]">{row.tlName || (row.metadata && String(row.metadata.tlName || '')) || '—'}</div>
                       </TableCell>
                       <TableCell className="px-3 py-3">
                         <div className="flex flex-col gap-1.5">
@@ -2653,9 +2695,9 @@ export function KiaBookingsClient({
         modelOptions={bookingModelOptions}
         trims={priceTrims}
         prefill={detailQuery.data?.booking}
-        prices={proformaOptionsQuery.data?.prices || []}
-        banks={proformaOptionsQuery.data?.banks || []}
-        insuranceCompanies={proformaOptionsQuery.data?.insuranceCompanies || []}
+        prices={priceOptions?.prices || proformaOptionsQuery.data?.prices || []}
+        banks={priceBanks}
+        insuranceCompanies={priceOptions?.insuranceCompanies || proformaOptionsQuery.data?.insuranceCompanies || []}
       />
 
       {/* ── Not In Stock summary: model / variant demand breakdown ── */}

@@ -109,7 +109,7 @@ export async function sendKiaCallbackRequestEmail(params: {
 
   const result = await sendTrackedEmail({
     to: recipients,
-    cc: 'data@amgroupoind.com',
+    cc: 'data@amgroupind.com',
     subject: email.subject,
     html: email.html,
     text: email.text,

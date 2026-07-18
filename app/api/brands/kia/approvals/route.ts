@@ -24,6 +24,8 @@ export async function POST(request: NextRequest) {
       uploadBillUrl1,
       uploadBillUrl2,
       uploadDocUrl,
+      glAccountId,
+      gst,
     } = body
 
     if (!email || !email.trim()) {
@@ -34,6 +36,9 @@ export async function POST(request: NextRequest) {
     }
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       return NextResponse.json({ error: 'A valid amount greater than 0 is required' }, { status: 400 })
+    }
+    if (!glAccountId) {
+      return NextResponse.json({ error: 'GL Account is required' }, { status: 400 })
     }
 
     const [inserted] = await db
@@ -64,6 +69,8 @@ export async function POST(request: NextRequest) {
         managementApproval: '',
         managementRemarks: '',
         emailSendStatus: 'Mail Sent',
+        glAccountId: glAccountId,
+        gst: gst?.trim() || null,
       })
       .returning()
 

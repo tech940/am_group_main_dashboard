@@ -388,7 +388,7 @@ export function MDTableView({
         )}
       </div>
 
-      <div className="relative overflow-x-auto rounded-[1.5rem] border border-white/70 bg-white/80 shadow-2xl shadow-[#023468]/10 backdrop-blur-xl">
+      <div className="hidden sm:block relative overflow-x-auto rounded-[1.5rem] border border-white/70 bg-white/80 shadow-2xl shadow-[#023468]/10 backdrop-blur-xl">
         <table className="w-full border-separate border-spacing-0 text-xs">
           <thead className="sticky top-0 z-20">
             <tr>
@@ -541,6 +541,134 @@ export function MDTableView({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile View: Stacked Cards (visible below sm) */}
+      <div className="space-y-4 sm:hidden">
+        {orders.length === 0 ? (
+          <div className="bg-white border border-slate-100 rounded-[1.5rem] p-12 text-center space-y-3 shadow-[0_10px_30px_rgba(15,23,42,0.01)] bg-white/80">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">No Orders Found</h3>
+          </div>
+        ) : (
+          orders.map((order, idx) => {
+            const isSelected = selectedOrders.has(order.id)
+            const isActionable = canActOnOrder(order)
+            const isLoading = actionLoading === order.id
+            const transactionLabel = getPurchaseOrderTransactionLabel(order)
+            const orderNum = order.orderNumber || order.order_number || '—'
+            const requesterName = order.requestedBy || order.requested_by || '—'
+            const dept = order.department || '—'
+            const subDept = order.subDepartment || order.sub_department || ''
+            const vendor = order.vendorName || order.vendor_name || '—'
+            const amount = order.amount || '0'
+            const statusColor = getStatusColor(order.status || '')
+            const statusLabel = formatStatusLabel(order.status || '')
+            const dateStr = order.createdAt || order.created_at || ''
+
+            return (
+              <div
+                key={order.id}
+                onClick={() => onOrderClick(order)}
+                className={cn(
+                  "bg-white/90 rounded-3xl border shadow-[0_10px_30px_rgba(15,23,42,0.02)] p-5 space-y-4 cursor-pointer transition-all",
+                  isSelected ? "border-[var(--dashboard-action-bg)]" : "border-slate-100 hover:border-slate-300"
+                )}
+              >
+                {/* Header: Number, Requester, and Checkbox/Action */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center justify-center h-8 w-8 rounded-full border text-xs font-black bg-slate-50 text-slate-600">
+                      {(idx + 1).toString().padStart(2, '0')}
+                    </span>
+                    <div>
+                      <span className="text-slate-950 font-black block text-sm">
+                        Order #{orderNum}
+                      </span>
+                      <span className="text-slate-400 text-xs font-semibold">
+                        {requesterName}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <PurchaseOrderImagePreviewButton order={order} />
+                    {isActionable && (
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelection(order.id)}
+                        aria-label={`Select ${transactionLabel}`}
+                        className="approval-table-checkbox h-5 w-5 rounded-md border-2 border-[var(--dashboard-action-bg)] bg-white shadow-sm ring-2 ring-white/80 data-[state=checked]:border-[var(--dashboard-action-hover)] data-[state=checked]:bg-[var(--dashboard-action-bg)] data-[state=checked]:text-[var(--dashboard-action-fg)]"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Tags: Department, Status */}
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="border border-slate-200 bg-slate-50 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider text-slate-600">
+                    {dept} {subDept && `· ${subDept}`}
+                  </span>
+                  <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider text-white", statusColor)}>
+                    {statusLabel}
+                  </span>
+                </div>
+
+                {/* Grid Details: Vendor, Amount */}
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/60 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Vendor</span>
+                    <span className="font-bold text-slate-900 mt-0.5 block truncate">{vendor}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Amount</span>
+                    <span className="font-black text-slate-950 mt-0.5 block text-sm">
+                      {formatCurrency(amount)}
+                    </span>
+                  </div>
+                  {dateStr && (
+                    <div className="col-span-2 border-t border-slate-200/60 pt-2 mt-1">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Submitted On</span>
+                      <span className="font-bold text-slate-900 mt-0.5 block">
+                        {formatDate(dateStr)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile Quick Action Buttons (only if actionable) */}
+                {isActionable && (
+                  <div className="flex gap-2 pt-2 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      size="sm"
+                      onClick={() => void handleAction('approve', order.id)}
+                      disabled={isLoading || bulkActionLoading !== null || loading}
+                      className="app-primary-action flex-1 h-9 rounded-xl text-xs font-black shadow-sm"
+                    >
+                      {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Approve'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => openRemarksDialog('deny', order.id)}
+                      disabled={isLoading || bulkActionLoading !== null || loading}
+                      className="flex-1 h-9 rounded-xl text-xs font-black shadow-sm"
+                    >
+                      Deny
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openRemarksDialog('hold', order.id)}
+                      disabled={isLoading || bulkActionLoading !== null || loading}
+                      className="flex-1 h-9 rounded-xl border border-amber-400 bg-amber-50 text-xs font-black text-amber-600 shadow-sm hover:bg-amber-100"
+                    >
+                      Hold
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
       </div>
 
       <RemarksDialog

@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, integer, decimal, jsonb, pgEnu
 import { relations, sql } from 'drizzle-orm'
 
 // Enums
-export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm'])
+export const roleEnum = pgEnum('role', ['admin', 'developer', 'branch_admin', 'ceo', 'purchase_manager', 'finance_head', 'ea', 'md', 'eba', 'accounts', 'manager', 'technician', 'viewer', 'service_manager', 'general_manager', 'sales_head', 'sales_executive', 'sales_manager', 'finance_team', 'service_general_manager', 'call_agent', 'ca', 'crm', 'idt', 'cre', 'edp', 'cxm', 'ccm', 'ed'])
 export const statusEnum = pgEnum('status', ['pending', 'in_progress', 'completed', 'cancelled', 'on_hold'])
 export const priorityEnum = pgEnum('priority', ['low', 'medium', 'high', 'urgent'])
 export const vehicleStatusEnum = pgEnum('vehicle_status', ['available', 'in_use', 'maintenance', 'retired'])
@@ -1879,6 +1879,22 @@ export const kiaVehicleTrackerRelations = relations(kiaVehicleTracker, ({ one })
   }),
 }))
 
+export const glAccounts = pgTable('gl_accounts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  glCode: text('gl_code').notNull().unique(),
+  glName: text('gl_name').notNull(),
+  tallyGroup: text('tally_group').notNull(),
+  accountNature: text('account_nature').notNull(),
+  accountType: text('account_type').notNull(),
+  appliesTo: text('applies_to').default('both').notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  monthlyBudget: decimal('monthly_budget', { precision: 14, scale: 2 }).default('0.00'),
+  quarterlyBudget: decimal('quarterly_budget', { precision: 14, scale: 2 }).default('0.00'),
+  annualBudget: decimal('annual_budget', { precision: 14, scale: 2 }).default('0.00'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 export const kiaApprovalRequests = pgTable('kia_approval_requests', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull(),
@@ -1906,11 +1922,22 @@ export const kiaApprovalRequests = pgTable('kia_approval_requests', {
   uploadBillUrl2: text('upload_bill_url_2'),
   uploadDocUrl: text('upload_doc_url'),
   emailSendStatus: text('email_send_status'),
+  invoiceNumber: text('invoice_number'),
+  invoiceDocUrl: text('invoice_doc_url'),
   history: jsonb('history').$type<any[]>().default([]).notNull(),
   brand: text('brand').default('kia').notNull(),
+  glAccountId: uuid('gl_account_id').references(() => glAccounts.id),
+  gst: text('gst'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
+
+export const kiaApprovalRequestsRelations = relations(kiaApprovalRequests, ({ one }) => ({
+  glAccount: one(glAccounts, {
+    fields: [kiaApprovalRequests.glAccountId],
+    references: [glAccounts.id],
+  }),
+}))
 
 // ── Vendors ──────────────────────────────────────────────────────────────────
 // Central vendor / company registry — shared across all brands and modules.
@@ -1949,5 +1976,60 @@ export const approvalsBranchesConfig = pgTable('approvals_branches_config', {
   dealerName: text('dealer_name').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
+
+// ── Delegation Tasks (cross-brand top-down task delegation) — migration 0024 ──
+// A leader/manager delegates a task DOWN to a specific user and tracks it to completion. Generic
+// (not tied to a booking or a brand). assigned_to is a real FK + a denormalized name/email snapshot
+// (same reason kiaLeadFollowups does it). status/priority are validated in the lib layer, not a
+// pgEnum. See lib/delegation/tasks.ts + lib/delegation/access.ts.
+export const delegationTasks = pgTable('delegation_tasks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  title: text('title').notNull(),
+  description: text('description'),
+  // Assignee (the delegatee)
+  assignedTo: uuid('assigned_to').references(() => users.id).notNull(),
+  assignedName: text('assigned_name'),
+  assignedEmail: text('assigned_email'),
+  // Scheduling / classification
+  dueAt: timestamp('due_at', { withTimezone: true }),
+  status: text('status').default('assigned').notNull(), // 'assigned' | 'in_progress' | 'done' | 'cancelled'
+  priority: text('priority').default('normal').notNull(), // 'low' | 'normal' | 'high'
+  // Optional cross-brand tagging (non-enforcing)
+  brand: text('brand'),
+  dealerCode: text('dealer_code'),
+  // Close-out
+  completionRemark: text('completion_remark'),
+  completedBy: uuid('completed_by').references(() => users.id),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  // Future email reminder (unused in v1)
+  reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
+  // Audit
+  createdBy: uuid('created_by').references(() => users.id).notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  delegationTasksAssignedIdx: index('delegation_tasks_assigned_idx').on(table.assignedTo, table.status),
+  delegationTasksCreatorIdx: index('delegation_tasks_creator_idx').on(table.createdBy, table.status),
+  delegationTasksStatusDueIdx: index('delegation_tasks_status_due_idx').on(table.status, table.dueAt),
+  delegationTasksCreatedAtIdx: index('delegation_tasks_created_at_idx').on(table.createdAt),
+  // Brand-scoped list filter + the group-MD per-branch rollup (migration 0025).
+  delegationTasksBrandStatusIdx: index('delegation_tasks_brand_status_idx').on(table.brand, table.status),
+}))
+
+// Append-only, human-readable timeline for a task. Made IMMUTABLE by a DB trigger (migration 0024,
+// same pattern as kiaFinancePayoutActivity) — INSERT only; UPDATE/DELETE raise.
+export const delegationTaskActivity = pgTable('delegation_task_activity', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  taskId: uuid('task_id').references(() => delegationTasks.id).notNull(),
+  type: text('type').notNull(), // 'assigned' | 'started' | 'completed' | 'reopened' | 'reassigned' | 'cancelled' | 'edited' | 'commented'
+  message: text('message'),
+  actorUserId: uuid('actor_user_id').references(() => users.id),
+  actorName: text('actor_name').notNull(),
+  actorRole: text('actor_role').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  delegationTaskActivityTaskIdx: index('delegation_task_activity_task_idx').on(table.taskId, table.createdAt),
+}))
 
 

@@ -55,14 +55,14 @@ export async function POST(request: Request) {
       if (isSuperUser || isTester) {
         activeStageKey = 'md'
       } else {
-        if (!vpApp || vpApp === 'HELD') {
+        if (!vpApp || vpApp === 'HELD' || vpApp === 'NOT APPROVED') {
           activeStageKey = 'sales_manager'
-        } else if (vpApp === 'APPROVED' && (!accApp || accApp === 'HELD')) {
-          activeStageKey = 'accounts'
-        } else if (vpApp === 'APPROVED' && accApp === 'APPROVED' && (!eaApp || eaApp === 'HELD')) {
+        } else if (vpApp === 'APPROVED' && (!eaApp || eaApp === 'HELD' || eaApp === 'NOT APPROVED')) {
           activeStageKey = 'ea'
-        } else if (vpApp === 'APPROVED' && accApp === 'APPROVED' && eaApp === 'APPROVED' && (!mdApp || mdApp === 'HELD')) {
+        } else if (vpApp === 'APPROVED' && eaApp === 'APPROVED' && (!mdApp || mdApp === 'HELD' || mdApp === 'NOT APPROVED')) {
           activeStageKey = 'md'
+        } else if (vpApp === 'APPROVED' && eaApp === 'APPROVED' && mdApp === 'APPROVED' && (!accApp || accApp === 'HELD' || accApp === 'NOT APPROVED')) {
+          activeStageKey = 'accounts'
         }
       }
 
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
       // Check if user is authorized to act on this active stage
       let isAuthorized = false
       if (activeStageKey === 'sales_manager') {
-        isAuthorized = isTester || ['sales_manager', 'manager'].includes(appUser.role)
+        isAuthorized = isTester || appUser.role === 'ed'
       } else if (activeStageKey === 'accounts') {
         isAuthorized = isTester || ['accounts', 'finance_head'].includes(appUser.role)
       } else if (activeStageKey === 'ea') {
@@ -94,16 +94,23 @@ export async function POST(request: Request) {
 
       if (activeStageKey === 'sales_manager') {
         updates.vpApproval = statusVal
-      } else if (activeStageKey === 'accounts') {
-        updates.accountApproval = statusVal
       } else if (activeStageKey === 'ea') {
         updates.eaApproval = statusVal
       } else if (activeStageKey === 'md') {
         updates.managementApproval = statusVal
         updates.managementRemarks = remarks || ''
+        if (action === 'REJECT') {
+          updates.emailSendStatus = 'Rejected'
+        } else if (action === 'HOLD') {
+          updates.emailSendStatus = 'Held'
+        }
+      } else if (activeStageKey === 'accounts') {
         if (action === 'APPROVE') {
-          updates.emailSendStatus = 'Completed'
-        } else if (action === 'REJECT') {
+          failedRows.push({ id: row.id, error: 'Accounts stage requires an invoice number and document upload. Please approve individually.' })
+          continue
+        }
+        updates.accountApproval = statusVal
+        if (action === 'REJECT') {
           updates.emailSendStatus = 'Rejected'
         } else {
           updates.emailSendStatus = 'Held'
@@ -113,7 +120,7 @@ export async function POST(request: Request) {
       // Build history entry
       const historyList = Array.isArray(row.history) ? [...row.history] : []
       const roleLabel = 
-        activeStageKey === 'sales_manager' ? 'Sales Manager' : 
+        activeStageKey === 'sales_manager' ? 'ED' : 
         activeStageKey === 'accounts' ? 'Accounts' : 
         activeStageKey === 'ea' ? 'EA' : 
         'MD'

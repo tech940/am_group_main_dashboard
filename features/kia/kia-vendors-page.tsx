@@ -217,7 +217,7 @@ export function KiaVendorsClient() {
   return (
     <MainLayout
       title="Vendor Registry"
-      subtitle="Manage vendors used in KIA payment approval requests"
+      subtitle="Manage vendors used in KIA vendor payment requests"
     >
       <div className="space-y-6">
 
@@ -463,7 +463,7 @@ export function KiaVendorsClient() {
             <p className="text-sm text-slate-400 font-medium mb-6 max-w-xs">
               {search
                 ? `Try a different search term.`
-                : 'Add your first vendor to the registry so it appears in payment approval forms.'}
+                : 'Add your first vendor to the registry so it appears in vendor payment forms.'}
             </p>
             {!search && (
               <Button onClick={openAddForm} className="rounded-2xl bg-indigo-600 hover:bg-indigo-700 font-black">

@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, desc, eq, gt, ilike, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, gte, ilike, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { kiaBookingActivity, kiaBookings, kiaLeadFollowups, users } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
@@ -68,9 +68,10 @@ function istDayBoundaries(base = new Date()) {
   const y = ist.getUTCFullYear()
   const m = ist.getUTCMonth()
   const d = ist.getUTCDate()
+  const startOfTodayUtc = new Date(Date.UTC(y, m, d, 0, 0, 0, 0) - IST_OFFSET_MIN * 60_000)
   const endOfTodayUtc = new Date(Date.UTC(y, m, d, 23, 59, 59, 999) - IST_OFFSET_MIN * 60_000)
   const endOfTomorrowUtc = new Date(Date.UTC(y, m, d + 1, 23, 59, 59, 999) - IST_OFFSET_MIN * 60_000)
-  return { endOfTodayUtc, endOfTomorrowUtc }
+  return { startOfTodayUtc, endOfTodayUtc, endOfTomorrowUtc }
 }
 
 /**
@@ -89,7 +90,7 @@ function istDayBoundaries(base = new Date()) {
  * - `pending` — every other open follow-up, overdue first. The `overdue` flag on each row drives the
  *   red indicator.
  */
-export type FollowupBucket = 'not_connected' | 'pending' | 'next_day' | 'cancelled'
+export type FollowupBucket = 'not_connected' | 'pending' | 'next_day' | 'scheduled' | 'cancelled'
 
 export type FollowupRow = {
   id: string
@@ -102,6 +103,7 @@ export type FollowupRow = {
   dealer: string | null
   assignedTo: string | null
   assignedName: string | null
+  consultantName: string | null
   dueAt: string
   status: string
   reason: string
@@ -161,6 +163,7 @@ const displaySelection = {
   completedAt: kiaLeadFollowups.completedAt,
   createdAt: kiaLeadFollowups.createdAt,
   customerName: kiaBookings.customerName,
+  consultantName: kiaBookings.consultantName,
   // Selected for everyone, released to almost nobody — toRow() nulls it unless the viewer passes
   // canRevealKiaFollowupPhone. Keep the redaction there, not here: one choke point, not two.
   customerPhone: kiaBookings.customerPhone,
@@ -184,6 +187,7 @@ function toRow(r: Record<string, unknown>, now: Date, bucket: FollowupBucket, ca
     dealer: (r.dealer as string) ?? null,
     assignedTo: (r.assignedTo as string) ?? null,
     assignedName: (r.assignedName as string) ?? null,
+    consultantName: (r.consultantName as string) ?? null,
     dueAt,
     status: r.status as string,
     reason: r.reason as string,
@@ -202,9 +206,16 @@ function toRow(r: Record<string, unknown>, now: Date, bucket: FollowupBucket, ca
   }
 }
 
-export async function listFollowups(appUser: AppUser, input: { mine?: boolean; search?: string | null; reason?: string | null; dealer?: string | null }) {
+export async function listFollowups(appUser: AppUser, input: { 
+  mine?: boolean; 
+  search?: string | null; 
+  reason?: string | null; 
+  dealer?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}) {
   const now = new Date()
-  const { endOfTodayUtc, endOfTomorrowUtc } = istDayBoundaries(now)
+  const { startOfTodayUtc, endOfTodayUtc, endOfTomorrowUtc } = istDayBoundaries(now)
   const search = String(input.search || '').trim()
 
   const where = [
@@ -242,18 +253,29 @@ export async function listFollowups(appUser: AppUser, input: { mine?: boolean; s
     )!)
   }
 
-  const [pending, nextDay, notConnected, cancelled] = await Promise.all([
-    // EVERY open follow-up except tomorrow's (which gets its own bucket) — overdue first.
+  // All bookings shown — no same-day exclusion
+
+  // Date range filters based on booking creation date
+  if (input.startDate) {
+    const start = new Date(input.startDate)
+    where.push(gte(kiaBookings.createdAt, start))
+    cancelledWhere.push(gte(kiaBookings.createdAt, start))
+  }
+  if (input.endDate) {
+    const end = new Date(new Date(input.endDate).setHours(23, 59, 59, 999))
+    where.push(lte(kiaBookings.createdAt, end))
+    cancelledWhere.push(lte(kiaBookings.createdAt, end))
+  }
+
+  const [pending, nextDay, scheduled, notConnected, cancelled] = await Promise.all([
+    // Open follow-ups due today and overdue.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
       .where(and(
         ...where,
         eq(kiaLeadFollowups.status, 'pending'),
-        or(
-          lte(kiaLeadFollowups.dueAt, endOfTodayUtc),
-          gt(kiaLeadFollowups.dueAt, endOfTomorrowUtc),
-        )!,
+        lte(kiaLeadFollowups.dueAt, endOfTodayUtc),
       ))
       .orderBy(kiaLeadFollowups.dueAt)
       .limit(500),
@@ -266,6 +288,17 @@ export async function listFollowups(appUser: AppUser, input: { mine?: boolean; s
         eq(kiaLeadFollowups.status, 'pending'),
         gt(kiaLeadFollowups.dueAt, endOfTodayUtc),
         lte(kiaLeadFollowups.dueAt, endOfTomorrowUtc),
+      ))
+      .orderBy(kiaLeadFollowups.dueAt)
+      .limit(300),
+    // Scheduled in the future (due after tomorrow).
+    db.select(displaySelection)
+      .from(kiaLeadFollowups)
+      .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
+      .where(and(
+        ...where,
+        eq(kiaLeadFollowups.status, 'pending'),
+        gt(kiaLeadFollowups.dueAt, endOfTomorrowUtc),
       ))
       .orderBy(kiaLeadFollowups.dueAt)
       .limit(300),
@@ -307,12 +340,14 @@ export async function listFollowups(appUser: AppUser, input: { mine?: boolean; s
     ...notConnected.map((r) => toRow(r as Record<string, unknown>, now, 'not_connected', canSeePhone)),
     ...pending.map((r) => toRow(r as Record<string, unknown>, now, 'pending', canSeePhone)),
     ...nextDay.map((r) => toRow(r as Record<string, unknown>, now, 'next_day', canSeePhone)),
+    ...scheduled.map((r) => toRow(r as Record<string, unknown>, now, 'scheduled', canSeePhone)),
     ...cancelled.map((r) => toRow(r as Record<string, unknown>, now, 'cancelled', canSeePhone)),
   ]
   const counts = {
     not_connected: notConnected.length,
     pending: pending.length,
     next_day: nextDay.length,
+    scheduled: scheduled.length,
     cancelled: cancelled.length,
     overdue: rows.filter((r) => r.overdue && r.bucket !== 'cancelled').length,
   }

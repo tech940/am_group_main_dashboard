@@ -11,6 +11,7 @@ import { SIDEBAR_PERMISSION_BY_HREF } from '../lib/permissions/navigation'
 // must reproduce exactly).
 const CURRENT: Record<string, string> = {
   '/cockpit': 'cockpit.view',
+  '/delegation-tasks': 'delegation_tasks.view',
   '/purchase-orders': 'purchase_orders.view',
   '/petty-cash': 'petty_cash.view',
   '/am-finance': 'am_finance.view',

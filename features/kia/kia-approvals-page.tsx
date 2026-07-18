@@ -33,9 +33,28 @@ import {
   X,
   Eye,
   MoreVertical,
-  Plus
+  Plus,
+  AlertTriangle,
+  TrendingUp,
+  BarChart3,
+  Check,
+  Upload,
+  Download,
+  Mail,
+  Key,
+  Percent,
+  Phone,
+  Paperclip,
+  Pencil,
+  Send,
+  User,
+  Users,
+  ClipboardList,
+  Database,
+  Activity
 } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 const LOCATION_OPTIONS = ['JAMMU', 'UDHAMPUR', 'BANIHAL']
@@ -77,6 +96,18 @@ interface ApprovalRequest {
   uploadBillUrl2: string | null
   uploadDocUrl: string | null
   emailSendStatus: string | null
+  invoiceNumber: string | null
+  invoiceDocUrl: string | null
+  glAccountId: string | null
+  gst: string | null
+  glCode: string | null
+  glName: string | null
+  tallyGroup: string | null
+  accountNature: string | null
+  accountType: string | null
+  monthlyBudget: string | null
+  quarterlyBudget: string | null
+  annualBudget: string | null
   history: ApprovalHistoryEntry[]
   createdAt: string
   updatedAt: string
@@ -113,6 +144,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const [selectedVendorName, setSelectedVendorName] = useState<string | null>(null)
   const [vendorStartDate, setVendorStartDate] = useState<string>('')
   const [vendorEndDate, setVendorEndDate] = useState<string>('')
+  const [selectedVendorMonth, setSelectedVendorMonth] = useState<string>('all')
+  const [showAnalytics, setShowAnalytics] = useState<boolean>(false)
+  const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null)
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
@@ -123,7 +157,35 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const [actionRemarks, setActionRemarks] = useState('')
   const [actionStage, setActionStage] = useState<'sales_manager' | 'accounts' | 'ea' | 'md' | null>(null)
   const [actionDecision, setActionDecision] = useState<'APPROVE' | 'HOLD' | 'REJECT' | null>(null)
+  const [invoiceNumber, setInvoiceNumber] = useState('')
+  const [invoiceDocUrl, setInvoiceDocUrl] = useState('')
+  const [invoiceFileName, setInvoiceFileName] = useState('')
+  const [uploadingInvoice, setUploadingInvoice] = useState(false)
+  const [activeTab, setActiveTab] = useState<'timeline' | 'remarks'>('timeline')
+  const [showTimeline, setShowTimeline] = useState(false)
+  const [remarkText, setRemarkText] = useState('')
+  const [addRemarkPending, setAddRemarkPending] = useState(false)
   const [selectedDepartment, setSelectedDepartment] = useState('All')
+  const [selectedGlFilter, setSelectedGlFilter] = useState('All')
+  const [selectedGlId, setSelectedGlId] = useState('')
+  const [glAccounts, setGlAccounts] = useState<any[]>([])
+
+  useEffect(() => {
+    fetch('/api/brands/kia/gl-accounts')
+      .then(res => res.json())
+      .then(data => setGlAccounts(data.rows || []))
+      .catch(err => console.error('Error fetching GL accounts:', err))
+  }, [])
+
+  useEffect(() => {
+    if (detailRow) {
+      setSelectedGlId(detailRow.glAccountId || '')
+      setShowTimeline(false)
+    } else {
+      setSelectedGlId('')
+      setShowTimeline(false)
+    }
+  }, [detailRow])
 
   const dateRangeLabel = useMemo(() => {
     if (!startDate) return 'Filter by Date'
@@ -197,11 +259,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }, [data?.rows])
 
   const actionMutation = useMutation({
-    mutationFn: async ({ id, action, stage, remarks }: { id: string; action: 'APPROVE' | 'REJECT' | 'HOLD'; stage: string; remarks: string }) => {
+    mutationFn: async ({ id, action, stage, remarks, invoiceNumber, invoiceDocUrl, glAccountId }: { id: string; action: 'APPROVE' | 'REJECT' | 'HOLD'; stage: string; remarks: string; invoiceNumber?: string; invoiceDocUrl?: string; glAccountId?: string }) => {
       const res = await fetch(`/api/brands/kia/approvals/${id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, stage, remarks })
+        body: JSON.stringify({ action, stage, remarks, invoiceNumber, invoiceDocUrl, glAccountId })
       })
       const resData = await res.json()
       if (!res.ok || resData.error) throw new Error(resData.error || 'Failed to complete approval action')
@@ -212,6 +274,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       setActionRemarks('')
       setActionStage(null)
       setActionDecision(null)
+      setInvoiceNumber('')
+      setInvoiceDocUrl('')
+      setInvoiceFileName('')
       // Close detail view or update the open detailRow with the new matching data if query invalidates
       setDetailRow(null)
       queryClient.invalidateQueries({ queryKey: ['kia-approval-requests'] })
@@ -220,6 +285,39 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       toast({ title: 'Action failed', description: err instanceof Error ? err.message : 'Please check your role permissions.', variant: 'error' })
     }
   })
+
+  const handleInvoiceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingInvoice(true)
+    setInvoiceFileName(file.name)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('folder', 'approvals')
+
+      const res = await fetch(`/api/brands/kia/approvals/upload`, {
+        method: 'POST',
+        body: fd
+      })
+
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Upload failed')
+      }
+
+      setInvoiceDocUrl(data.url)
+      toast({ title: 'Invoice uploaded', variant: 'success' })
+    } catch (err) {
+      console.error(err)
+      toast({ title: 'Upload failed', description: err instanceof Error ? err.message : 'Please try again', variant: 'error' })
+      setInvoiceFileName('')
+      setInvoiceDocUrl('')
+    } finally {
+      setUploadingInvoice(false)
+    }
+  }
 
   const bulkActionMutation = useMutation({
     mutationFn: async ({ ids, action, remarks }: { ids: string[]; action: 'APPROVE' | 'REJECT' | 'HOLD'; remarks: string }) => {
@@ -260,59 +358,263 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     const historyHTML = Array.isArray(row.history) && row.history.length > 0
       ? row.history.map((hist: any) => `
         <tr style="border-bottom: 1px solid #f1f5f9;">
-          <td style="padding: 10px 0; font-size: 11px; font-weight: bold; color: #1e293b;">${hist.user} (${hist.role})</td>
-          <td style="padding: 10px 0; font-size: 11px; font-weight: bold; text-transform: uppercase;"><span style="padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 900; background: ${hist.action === 'APPROVED' ? '#ecfdf5; color: #065f46; border: 1px solid #a7f3d0' : hist.action === 'HELD' ? '#fffbeb; color: #92400e; border: 1px solid #fde68a' : '#fef2f2; color: #991b1b; border: 1px solid #fecaca'}">${hist.action}</span></td>
-          <td style="padding: 10px 0; font-size: 11px; color: #64748b; font-style: italic;">"${hist.remarks || 'No comment'}"</td>
-          <td style="padding: 10px 0; font-size: 11px; color: #64748b; text-align: right;">${new Date(hist.timestamp).toLocaleString('en-IN')}</td>
+          <td style="padding: 12px 0; font-size: 11px; font-weight: bold; color: #0f172a;">${hist.user}</td>
+          <td style="padding: 12px 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #475569;">${hist.role}</td>
+          <td style="padding: 12px 0; font-size: 11px; font-weight: bold; text-transform: uppercase;"><span style="display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 9px; font-weight: 900; background: ${hist.action === 'APPROVED' ? '#ecfdf5; color: #065f46; border: 1px solid #a7f3d0' : hist.action === 'HELD' ? '#fffbeb; color: #92400e; border: 1px solid #fde68a' : '#fef2f2; color: #991b1b; border: 1px solid #fecaca'}">${hist.action}</span></td>
+          <td style="padding: 12px 0; font-size: 11px; color: #475569; font-style: italic; font-weight: 600;">"${hist.remarks || 'No comment'}"</td>
+          <td style="padding: 12px 0; font-size: 11px; color: #64748b; text-align: right; font-weight: bold;">${new Date(hist.timestamp).toLocaleString('en-IN')}</td>
         </tr>
       `).join('')
-      : '<tr><td colspan="4" style="padding: 15px 0; text-align: center; color: #94a3b8; font-size: 12px;">No approval history recorded.</td></tr>'
+      : '<tr><td colspan="5" style="padding: 20px 0; text-align: center; color: #94a3b8; font-size: 12px; font-weight: 600;">No approval history recorded.</td></tr>'
 
     const htmlContent = `
       <html>
         <head>
           <title>Voucher - ${row.id.substring(0, 8)}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #0f172a; margin: 0; background: #ffffff; }
-            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 30px; }
-            .logo { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; color: #0f172a; }
-            .title { text-align: right; }
-            .title h1 { margin: 0; font-size: 18px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; color: #4338ca; }
-            .title p { margin: 3px 0 0 0; font-size: 11px; color: #64748b; font-weight: bold; }
-            .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 35px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }
-            .meta-item { font-size: 12px; }
-            .meta-label { color: #64748b; text-transform: uppercase; font-size: 9px; font-weight: bold; letter-spacing: 0.5px; display: block; margin-bottom: 2px; }
-            .meta-val { font-weight: bold; color: #0f172a; }
-            .remarks-box { background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; padding: 15px 20px; margin-bottom: 35px; }
-            .remarks-box h3 { margin: 0 0 5px 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #b45309; }
-            .remarks-box p { margin: 0; font-size: 12px; font-weight: 600; color: #78350f; line-height: 1.5; }
-            .section-title { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; color: #64748b; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 15px; }
-            .history-table { width: 100%; border-collapse: collapse; margin-bottom: 45px; }
-            .history-table th { text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; color: #64748b; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
-            .sig-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 50px; page-break-inside: avoid; }
-            .sig-box { border-top: 1px solid #cbd5e1; text-align: center; padding-top: 10px; font-size: 11px; font-weight: bold; color: #64748b; }
-            .sig-box span { display: block; font-size: 9px; font-weight: normal; color: #94a3b8; margin-top: 3px; }
+            @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+            body { 
+              font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+              padding: 40px; 
+              color: #0f172a; 
+              margin: 0; 
+              background: #ffffff; 
+              -webkit-print-color-adjust: exact; 
+              print-color-adjust: exact; 
+            }
+            .header { 
+              display: flex; 
+              justify-content: space-between; 
+              align-items: center; 
+              border-bottom: 3px solid #4f46e5; 
+              padding-bottom: 20px; 
+              margin-bottom: 30px; 
+            }
+            .logo-area {
+              display: flex;
+              flex-direction: column;
+            }
+            .logo-main {
+              font-size: 24px;
+              font-weight: 900;
+              color: #1e1b4b;
+              letter-spacing: -0.5px;
+            }
+            .logo-sub {
+              font-size: 11px;
+              font-weight: 800;
+              color: #4f46e5;
+              text-transform: uppercase;
+              letter-spacing: 2px;
+            }
+            .title-area {
+              text-align: right;
+            }
+            .title-area h1 {
+              margin: 0;
+              font-size: 20px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+              color: #4f46e5;
+            }
+            .title-area p {
+              margin: 5px 0 0 0;
+              font-size: 10px;
+              font-family: monospace;
+              color: #64748b;
+              font-weight: bold;
+            }
+            .meta-card {
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 16px;
+              padding: 24px;
+              margin-bottom: 35px;
+            }
+            .meta-grid {
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 20px 24px;
+            }
+            .meta-item {
+              display: flex;
+              flex-direction: column;
+            }
+            .meta-label {
+              color: #64748b;
+              text-transform: uppercase;
+              font-size: 9px;
+              font-weight: 800;
+              letter-spacing: 1px;
+              margin-bottom: 4px;
+            }
+            .meta-val {
+              font-size: 13px;
+              font-weight: 700;
+              color: #0f172a;
+            }
+            .meta-val.amount {
+              font-size: 18px;
+              color: #4f46e5;
+              font-weight: 900;
+            }
+            .meta-val.status {
+              color: #4f46e5;
+              text-transform: uppercase;
+            }
+            .remarks-box {
+              background: #fffbeb;
+              border: 1px solid #fef3c7;
+              border-radius: 16px;
+              padding: 20px;
+              margin-bottom: 35px;
+            }
+            .remarks-box h3 {
+              margin: 0 0 8px 0;
+              font-size: 10px;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+              color: #b45309;
+            }
+            .remarks-box p {
+              margin: 0;
+              font-size: 12px;
+              font-weight: 600;
+              color: #78350f;
+              line-height: 1.6;
+            }
+            .section-header {
+              font-size: 12px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 2px;
+              color: #1e1b4b;
+              border-bottom: 2px solid #f1f5f9;
+              padding-bottom: 8px;
+              margin-bottom: 20px;
+            }
+            .history-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 45px;
+            }
+            .history-table th {
+              text-align: left;
+              font-size: 10px;
+              font-weight: 800;
+              text-transform: uppercase;
+              color: #64748b;
+              border-bottom: 2px solid #e2e8f0;
+              padding-bottom: 10px;
+            }
+            .sig-section {
+              margin-top: 60px;
+              page-break-inside: avoid;
+            }
+            .sig-grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 24px;
+            }
+            .sig-box {
+              border-top: 2px dashed #cbd5e1;
+              text-align: center;
+              padding-top: 12px;
+              font-size: 11px;
+              font-weight: bold;
+              color: #475569;
+            }
+            .sig-box span {
+              display: block;
+              font-size: 9px;
+              font-weight: bold;
+              color: #94a3b8;
+              margin-top: 4px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
           </style>
         </head>
         <body>
           <div class="header">
-            <div class="logo">AM GROUP <span style="font-weight: 300;">| KIA</span></div>
-            <div class="title">
-              <h1>Payment Approval Voucher</h1>
+            <div class="logo-area">
+              <span class="logo-main">AM GROUP</span>
+              <span class="logo-sub">KIA MOTORS</span>
+            </div>
+            <div class="title-area">
+              <h1>Vendor Payment Voucher</h1>
               <p>ID: ${row.id.toUpperCase()}</p>
             </div>
           </div>
 
-          <div class="meta-grid">
-            <div class="meta-item"><span class="meta-label">Requester Name</span><span class="meta-val">${row.name}</span></div>
-            <div class="meta-item"><span class="meta-label">Amount (₹)</span><span class="meta-val" style="color: #4338ca; font-size: 14px;">₹${Number(row.amount).toLocaleString('en-IN')}</span></div>
-            <div class="meta-item"><span class="meta-label">Email Address</span><span class="meta-val">${row.email}</span></div>
-            <div class="meta-item"><span class="meta-label">Dealer Name</span><span class="meta-val">${row.dealerName || '—'}</span></div>
-            ${row.dealerCode ? `<div class="meta-item"><span class="meta-label">Dealer Code</span><span class="meta-val">${row.dealerCode}</span></div>` : ''}
-            <div class="meta-item"><span class="meta-label">Vendor Name</span><span class="meta-val">${row.vendorName || '—'}</span></div>
-            <div class="meta-item"><span class="meta-label">Payment Type</span><span class="meta-val">${row.typeOfPayment || '—'}</span></div>
-            <div class="meta-item"><span class="meta-label">Workflow Status</span><span class="meta-val" style="color: #4338ca;">${pendingLabel}</span></div>
-            <div class="meta-item" style="grid-column: span 2;"><span class="meta-label">Submitted On</span><span class="meta-val">${new Date(row.createdAt).toLocaleString('en-IN')}</span></div>
+          <div class="meta-card">
+            <div class="meta-grid">
+              <div class="meta-item">
+                <span class="meta-label">Requester Name</span>
+                <span class="meta-val">${row.name}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Employee ID</span>
+                <span class="meta-val">${row.employeeId || '—'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Amount (₹)</span>
+                <span class="meta-val amount">₹${Number(row.amount).toLocaleString('en-IN')}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Email Address</span>
+                <span class="meta-val">${row.email}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Dealer Branch</span>
+                <span class="meta-val">${row.dealerName || '—'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Dealer Code</span>
+                <span class="meta-val">${row.dealerCode || '—'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Department</span>
+                <span class="meta-val">${row.department || '—'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Vendor Name</span>
+                <span class="meta-val">${row.vendorName || '—'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Payment Method</span>
+                <span class="meta-val">${row.typeOfPayment || '—'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Approval Type</span>
+                <span class="meta-val">${row.approvalType || '—'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Previous Advance</span>
+                <span class="meta-val">${row.previousAdvance ? `₹${Number(row.previousAdvance).toLocaleString('en-IN')}` : '₹0'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Workflow Status</span>
+                <span class="meta-val status">${pendingLabel}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">GL Account</span>
+                <span class="meta-val" style="color: #4f46e5; font-weight: 800;">${row.glName ? `${row.glName} (${row.glCode})` : '—'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">GST Details</span>
+                <span class="meta-val" style="text-transform: uppercase;">${row.gst || '—'}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Tally Group / Account Nature</span>
+                <span class="meta-val">${row.tallyGroup ? `${row.tallyGroup} (${row.accountNature || '—'})` : '—'}</span>
+              </div>
+              <div class="meta-item" style="grid-column: span 2;">
+                <span class="meta-label">Submitted Date & Time</span>
+                <span class="meta-val">${new Date(row.createdAt).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' })}</span>
+              </div>
+            </div>
           </div>
 
           ${row.remarks ? `
@@ -322,14 +624,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           </div>
           ` : ''}
 
-          <div class="section-title">Approval Flow Verification Logs</div>
+          <div class="section-header">Approval Flow Verification Logs</div>
           <table class="history-table">
             <thead>
               <tr>
-                <th style="width: 25%;">User & Role</th>
+                <th style="width: 20%;">User</th>
+                <th style="width: 15%;">Role</th>
                 <th style="width: 15%;">Decision</th>
-                <th style="width: 40%;">Remarks</th>
-                <th style="text-align: right; width: 20%;">Date/Time</th>
+                <th style="width: 35%;">Remarks</th>
+                <th style="text-align: right; width: 15%;">Date/Time</th>
               </tr>
             </thead>
             <tbody>
@@ -337,11 +640,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             </tbody>
           </table>
 
-          <div class="sig-grid">
-            <div class="sig-box">Sales Manager Approval<span>Sign & Date</span></div>
-            <div class="sig-box">Accounts Approval<span>Sign & Date</span></div>
-            <div class="sig-box">EA Approval<span>Sign & Date</span></div>
-            <div class="sig-box">MD Approval<span>Sign & Date</span></div>
+          <div class="sig-section">
+            <div class="sig-grid">
+              <div class="sig-box">Sales Manager Approval<span>Sign & Date</span></div>
+              <div class="sig-box">Accounts Approval<span>Sign & Date</span></div>
+              <div class="sig-box">EA Approval<span>Sign & Date</span></div>
+              <div class="sig-box">MD Approval<span>Sign & Date</span></div>
+            </div>
           </div>
 
           <script>
@@ -366,13 +671,22 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     }
 
     const totalSpend = rows.reduce((sum, r) => sum + Number(r.amount), 0)
+    const avgSpend = rows.length > 0 ? totalSpend / rows.length : 0
+
     const tableRowsHTML = rows.map((row) => `
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 10px 0; font-size: 11px; font-weight: bold;">${new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
-        <td style="padding: 10px 0; font-size: 11px;">${row.name} (${row.email})</td>
-        <td style="padding: 10px 0; font-size: 11px;">${row.typeOfPayment || '—'}</td>
-        <td style="padding: 10px 0; font-size: 11px; font-weight: bold; color: #4338ca;">₹${Number(row.amount).toLocaleString('en-IN')}</td>
-        <td style="padding: 10px 0; font-size: 11px; font-weight: bold; text-align: right;">${getPendingStageLabel(row)}</td>
+        <td style="padding: 12px 10px; font-size: 11px; font-weight: bold; color: #0f172a;">${new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+        <td style="padding: 12px 10px; font-size: 11px;">
+          <div style="font-weight: bold; color: #0f172a;">${row.name}</div>
+          <div style="font-size: 9px; color: #64748b; font-weight: bold;">${row.email}</div>
+        </td>
+        <td style="padding: 12px 10px; font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">${row.department || '—'}</td>
+        <td style="padding: 12px 10px; font-size: 11px; color: #475569; font-weight: 500; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${row.remarks || '—'}</td>
+        <td style="padding: 12px 10px; font-size: 11px; font-weight: bold; text-transform: uppercase; color: #475569;">${row.typeOfPayment || '—'}</td>
+        <td style="padding: 12px 10px; font-size: 11px;">
+          <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 8px; font-weight: 900; text-transform: uppercase; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0">${getPendingStageLabel(row)}</span>
+        </td>
+        <td style="padding: 12px 10px; font-size: 11px; font-weight: 900; color: #4f46e5; text-align: right;">₹${Number(row.amount).toLocaleString('en-IN')}</td>
       </tr>
     `).join('')
 
@@ -381,42 +695,140 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         <head>
           <title>Ledger - ${vendorName}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #0f172a; margin: 0; }
-            .header { border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 30px; }
-            .logo { font-size: 20px; font-weight: 950; color: #0f172a; }
-            .meta-info { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 12px; }
-            .ledger-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-            .ledger-table th { text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; color: #64748b; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
-            .total-row { border-top: 2px solid #0f172a; font-weight: 900; font-size: 13px; }
+            @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+            body { 
+              font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+              padding: 40px; 
+              color: #0f172a; 
+              margin: 0; 
+              background: #ffffff;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .header { 
+              border-bottom: 3px solid #4f46e5; 
+              padding-bottom: 20px; 
+              margin-bottom: 30px; 
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+            }
+            .logo-area {
+              display: flex;
+              flex-direction: column;
+            }
+            .logo-main {
+              font-size: 24px;
+              font-weight: 900;
+              color: #1e1b4b;
+              letter-spacing: -0.5px;
+            }
+            .logo-sub {
+              font-size: 11px;
+              font-weight: 800;
+              color: #4f46e5;
+              text-transform: uppercase;
+              letter-spacing: 2px;
+            }
+            .header h1 { 
+              margin: 0; 
+              font-size: 18px; 
+              font-weight: 900; 
+              text-transform: uppercase; 
+              color: #4f46e5; 
+            }
+            .kpi-cards {
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 15px;
+              margin-bottom: 35px;
+            }
+            .kpi-card {
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 12px;
+              padding: 15px 20px;
+            }
+            .kpi-label {
+              font-size: 9px;
+              font-weight: 800;
+              text-transform: uppercase;
+              color: #64748b;
+              letter-spacing: 1px;
+              display: block;
+              margin-bottom: 4px;
+            }
+            .kpi-value {
+              font-size: 16px;
+              font-weight: 900;
+              color: #1e1b4b;
+            }
+            .kpi-value.highlight {
+              color: #4f46e5;
+            }
+            .ledger-table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-bottom: 30px; 
+            }
+            .ledger-table th { 
+              text-align: left; 
+              font-size: 10px; 
+              font-weight: 800; 
+              text-transform: uppercase; 
+              color: #64748b; 
+              border-bottom: 2px solid #e2e8f0; 
+              padding: 10px;
+            }
+            .total-row { 
+              border-top: 3px solid #1e1b4b; 
+              font-weight: 900; 
+              font-size: 13px; 
+            }
           </style>
         </head>
         <body>
           <div class="header">
-            <div class="logo">AM GROUP <span style="font-weight: 300;">| VENDOR STATEMENT</span></div>
-            <h1 style="margin: 15px 0 0 0; font-size: 18px; font-weight: 900; text-transform: uppercase; color: #4338ca;">Vendor Ledger: ${vendorName}</h1>
+            <div class="logo-area">
+              <span class="logo-main">AM GROUP</span>
+              <span class="logo-sub">VENDOR STATEMENT</span>
+            </div>
+            <h1>Vendor Ledger: ${vendorName}</h1>
           </div>
 
-          <div class="meta-info">
-            <div>Statement Date: ${new Date().toLocaleDateString('en-IN')}</div>
-            <div>Total Transactions: ${rows.length}</div>
+          <div class="kpi-cards">
+            <div class="kpi-card">
+              <span class="kpi-label">Statement Date</span>
+              <span class="kpi-value">${new Date().toLocaleDateString('en-IN', { dateStyle: 'long' })}</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Total Transactions</span>
+              <span class="kpi-value">${rows.length} requests</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Average Spend Size</span>
+              <span class="kpi-value highlight">₹${Math.round(avgSpend).toLocaleString('en-IN')}</span>
+            </div>
           </div>
 
           <table class="ledger-table">
             <thead>
               <tr>
-                <th style="width: 15%;">Date</th>
-                <th style="width: 35%;">Requester</th>
-                <th style="width: 15%;">Payment Type</th>
-                <th style="width: 15%;">Amount (₹)</th>
-                <th style="text-align: right; width: 20%;">Workflow Status</th>
+                <th style="width: 12%; padding-left: 10px;">Date</th>
+                <th style="width: 25%;">Requester</th>
+                <th style="width: 15%;">Department</th>
+                <th style="width: 20%;">Description</th>
+                <th style="width: 12%;">Payment Type</th>
+                <th style="width: 13%;">Workflow Status</th>
+                <th style="text-align: right; width: 13%; padding-right: 10px;">Amount (₹)</th>
               </tr>
             </thead>
             <tbody>
               ${tableRowsHTML}
               <tr class="total-row">
-                <td colspan="3" style="padding: 12px 0;">TOTAL SPEND</td>
-                <td style="padding: 12px 0; color: #4338ca;">₹${totalSpend.toLocaleString('en-IN')}</td>
+                <td colspan="5" style="padding: 14px 10px; font-weight: 900;">TOTAL APPROVED/PENDING SPEND</td>
                 <td></td>
+                <td style="padding: 14px 10px; color: #4f46e5; font-size: 15px; font-weight: 900; text-align: right; padding-right: 10px;">₹${totalSpend.toLocaleString('en-IN')}</td>
               </tr>
             </tbody>
           </table>
@@ -437,19 +849,20 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
 
   const getPendingStageLabel = (req: ApprovalRequest) => {
-    if (req.managementApproval === 'APPROVED') return 'Fully Approved'
+    if (req.accountApproval === 'APPROVED') return 'Fully Approved'
+    if (req.accountApproval === 'NOT APPROVED') return 'Rejected by Accounts'
+    if (req.accountApproval === 'HELD') return 'Held by Accounts'
     if (req.managementApproval === 'NOT APPROVED') return 'Rejected by MD'
     if (req.managementApproval === 'HELD') return 'Held by MD'
     if (req.eaApproval === 'NOT APPROVED') return 'Rejected by EA'
     if (req.eaApproval === 'HELD') return 'Held by EA'
-    if (req.accountApproval === 'NOT APPROVED') return 'Rejected by Accounts'
-    if (req.accountApproval === 'HELD') return 'Held by Accounts'
-    if (req.vpApproval === 'NOT APPROVED') return 'Rejected by Sales Manager'
-    if (req.vpApproval === 'HELD') return 'Held by Sales Manager'
-    if (!req.vpApproval || req.vpApproval === '') return 'Pending Sales Manager'
-    if (!req.accountApproval || req.accountApproval === '') return 'Pending Accounts'
+    if (req.vpApproval === 'NOT APPROVED') return 'Rejected by ED'
+    if (req.vpApproval === 'HELD') return 'Held by ED'
+
+    if (!req.vpApproval || req.vpApproval === '') return 'Pending ED'
     if (!req.eaApproval || req.eaApproval === '') return 'Pending EA'
     if (!req.managementApproval || req.managementApproval === '') return 'Pending MD'
+    if (!req.accountApproval || req.accountApproval === '') return 'Pending Accounts'
     return 'Unknown'
   }
 
@@ -459,15 +872,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return 'md'
     }
     const pendingLabel = getPendingStageLabel(req)
-    if (pendingLabel === 'Pending Sales Manager') return 'sales_manager'
-    if (pendingLabel === 'Pending Accounts') return 'accounts'
+    if (pendingLabel === 'Pending ED') return 'sales_manager'
     if (pendingLabel === 'Pending EA') return 'ea'
     if (pendingLabel === 'Pending MD') return 'md'
+    if (pendingLabel === 'Pending Accounts') return 'accounts'
     return null
   }
 
   const isUserAuthorizedForStage = (stage: string) => {
-    if (stage === 'sales_manager') return ['sales_manager', 'manager'].includes(effectiveRole)
+    if (['developer', 'admin'].includes(currentUser.role)) return true
+
+    if (stage === 'sales_manager') return effectiveRole === 'ed'
     if (stage === 'accounts') return ['accounts', 'finance_head'].includes(effectiveRole)
     if (stage === 'ea') return ['ea'].includes(effectiveRole)
     if (stage === 'md') return ['md', 'ceo'].includes(effectiveRole)
@@ -481,21 +896,21 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return false
     }
 
-    // MD can approve any order any time no matter the stage
+    // MD can approve any order any time no matter the stage (if they haven't already approved the MD stage)
     if (['md', 'ceo'].includes(effectiveRole)) {
-      return true
+      return !row.managementApproval || row.managementApproval === ''
     }
 
-    if (pendingLabel === 'Pending Sales Manager' && ['sales_manager', 'manager'].includes(effectiveRole)) {
-      return true
-    }
-    if (pendingLabel === 'Pending Accounts' && ['accounts', 'finance_head'].includes(effectiveRole)) {
+    if (pendingLabel === 'Pending ED' && effectiveRole === 'ed') {
       return true
     }
     if (pendingLabel === 'Pending EA' && effectiveRole === 'ea') {
       return true
     }
     if (pendingLabel === 'Pending MD' && ['md', 'ceo'].includes(effectiveRole)) {
+      return true
+    }
+    if (pendingLabel === 'Pending Accounts' && ['accounts', 'finance_head'].includes(effectiveRole)) {
       return true
     }
 
@@ -537,6 +952,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         (row.vendorName && row.vendorName.toLowerCase().includes(search.toLowerCase())) ||
         (row.department && row.department.toLowerCase().includes(search.toLowerCase())) ||
         (row.approvalType && row.approvalType.toLowerCase().includes(search.toLowerCase())) ||
+        (row.glName && row.glName.toLowerCase().includes(search.toLowerCase())) ||
+        (row.glCode && row.glCode.toLowerCase().includes(search.toLowerCase())) ||
+        (row.tallyGroup && row.tallyGroup.toLowerCase().includes(search.toLowerCase())) ||
+        (row.accountNature && row.accountNature.toLowerCase().includes(search.toLowerCase())) ||
         row.amount.includes(search)
 
       if (!matchesSearch) return false
@@ -549,6 +968,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       const matchesDepartment = selectedDepartment === 'All' || 
         (row.department && row.department.trim().toUpperCase() === selectedDepartment.trim().toUpperCase())
       if (!matchesDepartment) return false
+
+      // 4.5. GL Account filter
+      const matchesGl = selectedGlFilter === 'All' || row.glAccountId === selectedGlFilter
+      if (!matchesGl) return false
 
       // 5. Date filter
       if (startDate) {
@@ -567,7 +990,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       // 6. Workflow stage filter
       const pendingLabel = getPendingStageLabel(row)
       const matchesStage = selectedStage === 'All' ||
-        (selectedStage === 'pending_sales_manager' && pendingLabel === 'Pending Sales Manager') ||
+        (selectedStage === 'pending_sales_manager' && pendingLabel === 'Pending ED') ||
         (selectedStage === 'pending_accounts' && pendingLabel === 'Pending Accounts') ||
         (selectedStage === 'pending_ea' && pendingLabel === 'Pending EA') ||
         (selectedStage === 'pending_md' && pendingLabel === 'Pending MD') ||
@@ -632,6 +1055,223 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   }, [selectedVendorName, vendorSummary, vendorStartDate, vendorEndDate])
 
+  const vendorTransactions = useMemo(() => {
+    if (!selectedVendorName || !data?.rows) return []
+    const vend = vendorSummary.find(v => v.name === selectedVendorName)
+    return vend ? vend.rows : []
+  }, [selectedVendorName, vendorSummary, data?.rows])
+
+  const uniqueMonths = useMemo(() => {
+    const monthsSet = new Set<string>()
+    vendorTransactions.forEach(row => {
+      const date = new Date(row.createdAt)
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      monthsSet.add(`${year}-${month}`)
+    })
+    return Array.from(monthsSet).sort((a, b) => b.localeCompare(a))
+  }, [vendorTransactions])
+
+  const monthFilteredRows = useMemo(() => {
+    return vendorFilteredRows.filter(row => {
+      if (selectedVendorMonth === 'all') return true
+      const date = new Date(row.createdAt)
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      return `${year}-${month}` === selectedVendorMonth
+    })
+  }, [vendorFilteredRows, selectedVendorMonth])
+
+  const groupedByMonth = useMemo(() => {
+    const groups: Record<string, { yearMonth: string; totalAmount: number; rows: ApprovalRequest[] }> = {}
+    monthFilteredRows.forEach(row => {
+      const date = new Date(row.createdAt)
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const key = `${year}-${month}`
+      if (!groups[key]) {
+        groups[key] = { yearMonth: key, totalAmount: 0, rows: [] }
+      }
+      groups[key].totalAmount += Number(row.amount || 0)
+      groups[key].rows.push(row)
+    })
+    return Object.values(groups).sort((a, b) => b.yearMonth.localeCompare(a.yearMonth))
+  }, [monthFilteredRows])
+
+  function formatYearMonth(yearMonth: string) {
+    const [year, month] = yearMonth.split('-')
+    const d = new Date(Number(year), Number(month) - 1, 1)
+    return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  }
+
+  const analyticsData = useMemo(() => {
+    if (!data?.rows) {
+      return { 
+        totalApproved: 0, 
+        totalPending: 0, 
+        avgTxSize: 0, 
+        topVendors: [], 
+        topGlAccounts: [], 
+        spendHighlights: {
+          adSpend: 0,
+          repairSpend: 0,
+          fuelSpend: 0,
+          salarySpend: 0,
+          securitySpend: 0,
+          vehiclePurchase: 0,
+          partsPurchase: 0,
+          travelSpend: 0,
+          softwareSpend: 0,
+          professionalSpend: 0
+        }
+      }
+    }
+    
+    let totalApproved = 0
+    let totalPending = 0
+    let approvedCount = 0
+    let pendingCount = 0
+    const vendorMap: Record<string, number> = {}
+    const glMap: Record<string, number> = {}
+    
+    let adSpend = 0
+    let repairSpend = 0
+    let fuelSpend = 0
+    let salarySpend = 0
+    let securitySpend = 0
+    let vehiclePurchase = 0
+    let partsPurchase = 0
+    let travelSpend = 0
+    let softwareSpend = 0
+    let professionalSpend = 0
+
+    data.rows.forEach(row => {
+      const amount = Number(row.amount || 0)
+      const stage = getPendingStageLabel(row)
+      
+      if (stage === 'Fully Approved') {
+        totalApproved += amount
+        approvedCount++
+      } else if (!stage.startsWith('Rejected')) {
+        totalPending += amount
+        pendingCount++
+      }
+      
+      const vName = (row.vendorName || 'Unknown Vendor').trim()
+      vendorMap[vName] = (vendorMap[vName] || 0) + amount
+
+      const glName = row.glName || 'Unclassified GL'
+      glMap[glName] = (glMap[glName] || 0) + amount
+
+      const glCode = row.glCode || ''
+      if (['GL-032', 'GL-033', 'GL-034'].includes(glCode)) adSpend += amount
+      else if (['GL-039', 'GL-040', 'GL-041', 'GL-042'].includes(glCode)) repairSpend += amount
+      else if (['GL-047', 'GL-048'].includes(glCode)) fuelSpend += amount
+      else if (['GL-024'].includes(glCode)) salarySpend += amount
+      else if (['GL-045'].includes(glCode)) securitySpend += amount
+      else if (['GL-011', 'GL-012', 'GL-013', 'GL-014'].includes(glCode)) vehiclePurchase += amount
+      else if (['GL-015', 'GL-016'].includes(glCode)) partsPurchase += amount
+      else if (['GL-052'].includes(glCode)) travelSpend += amount
+      else if (['GL-056'].includes(glCode)) softwareSpend += amount
+      else if (['GL-057', 'GL-059'].includes(glCode)) professionalSpend += amount
+    })
+    
+    const topVendors = Object.entries(vendorMap)
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5)
+
+    const topGlAccounts = Object.entries(glMap)
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10)
+      
+    const totalTransactions = approvedCount + pendingCount
+    const avgTxSize = totalTransactions > 0 ? (totalApproved + totalPending) / totalTransactions : 0
+    
+    return {
+      totalApproved,
+      totalPending,
+      avgTxSize,
+      topVendors,
+      topGlAccounts,
+      spendHighlights: {
+        adSpend,
+        repairSpend,
+        fuelSpend,
+        salarySpend,
+        securitySpend,
+        vehiclePurchase,
+        partsPurchase,
+        travelSpend,
+        softwareSpend,
+        professionalSpend
+      }
+    }
+  }, [data?.rows])
+
+  function getSlaBadge(createdAt: string) {
+    const hours = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60)
+    if (hours >= 120) {
+      return (
+        <span className="inline-flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider animate-pulse">
+          <Clock className="w-2.5 h-2.5" />
+          Aging {Math.floor(hours / 24)}d
+        </span>
+      )
+    }
+    if (hours >= 48) {
+      return (
+        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+          <Clock className="w-2.5 h-2.5" />
+          Aging {Math.floor(hours / 24)}d
+        </span>
+      )
+    }
+    return null
+  }
+
+  function getAnomalyAlerts(row: ApprovalRequest, allRows: ApprovalRequest[]) {
+    const alerts: string[] = []
+    const currentAmount = Number(row.amount || 0)
+    const currentVendor = (row.vendorName || '').trim().toLowerCase()
+    const currentRequester = (row.name || '').trim().toLowerCase()
+    const currentCreatedAt = new Date(row.createdAt).getTime()
+    
+    const duplicate = allRows.find(other => {
+      if (other.id === row.id) return false
+      const otherVendor = (other.vendorName || '').trim().toLowerCase()
+      const otherRequester = (other.name || '').trim().toLowerCase()
+      const otherAmount = Number(other.amount || 0)
+      const otherCreatedAt = new Date(other.createdAt).getTime()
+      
+      return (
+        otherVendor === currentVendor &&
+         otherAmount === currentAmount &&
+        otherRequester === currentRequester &&
+        Math.abs(currentCreatedAt - otherCreatedAt) <= 48 * 60 * 60 * 1000
+      )
+    })
+    if (duplicate) {
+      alerts.push(`Possible duplicate request detected (matches request by ${duplicate.name} for ₹${Number(duplicate.amount).toLocaleString('en-IN')} on ${new Date(duplicate.createdAt).toLocaleDateString('en-IN')})`)
+    }
+    
+    const vendorPayments = allRows.filter(other => {
+      if (other.id === row.id) return false
+      const otherVendor = (other.vendorName || '').trim().toLowerCase()
+      return otherVendor === currentVendor
+    })
+    if (vendorPayments.length >= 2) {
+      const avgSpend = vendorPayments.reduce((sum, r) => sum + Number(r.amount || 0), 0) / vendorPayments.length
+      if (avgSpend > 0 && currentAmount >= avgSpend * 1.5) {
+        const percentage = Math.round(((currentAmount - avgSpend) / avgSpend) * 100)
+        alerts.push(`High spend variance: Amount is ${percentage}% higher than this vendor's historical average of ₹${Math.round(avgSpend).toLocaleString('en-IN')}`)
+      }
+    }
+    
+    return alerts
+  }
+
   // Paginated Rows
   const totalRows = filteredRows.length
   const totalPages = Math.ceil(totalRows / rowsPerPage)
@@ -654,10 +1294,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     const pendingLabel = getPendingStageLabel(req)
     
     const stages = [
-      { key: 'sales_manager', label: 'Sales Manager', status: req.vpApproval },
-      { key: 'accounts', label: 'Accounts', status: req.accountApproval },
+      { key: 'sales_manager', label: 'ED', status: req.vpApproval },
       { key: 'ea', label: 'EA', status: req.eaApproval },
       { key: 'md', label: 'MD Approval', status: req.managementApproval },
+      { key: 'accounts', label: 'Accounts', status: req.accountApproval },
     ]
 
     return (
@@ -671,10 +1311,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             
             // Check if this is the active stage
             let isActive = false
-            if (pendingLabel === 'Pending Sales Manager' && stg.key === 'sales_manager') isActive = true
-            else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
+            if (pendingLabel === 'Pending ED' && stg.key === 'sales_manager') isActive = true
             else if (pendingLabel === 'Pending EA' && stg.key === 'ea') isActive = true
             else if (pendingLabel === 'Pending MD' && stg.key === 'md') isActive = true
+            else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
 
             let circleColor = 'bg-slate-100 text-slate-400 border-slate-200'
             let textColor = 'text-slate-400 font-semibold'
@@ -813,7 +1453,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
   return (
-    <MainLayout title="Payment Approvals" subtitle="Manage payment requests and multi-stage approval workflows">
+    <MainLayout title="Vendor Payments" subtitle="Manage payment requests and multi-stage approval workflows">
       <div className="space-y-6">
 
         {/* 1. TOP METRICS STRIP */}
@@ -867,65 +1507,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           </div>
         </div>
 
-        {/* Department Allocation Analytics Widget */}
-        {filteredRows.length > 0 && (
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Department-wise Spend Allocation</span>
-              <span className="text-xs font-bold text-slate-500">Filtered Spend Breakdown</span>
-            </div>
-            
-            {/* Color Segmented Allocation Progress Bar */}
-            <div className="h-3 w-full rounded-full bg-slate-100 flex overflow-hidden">
-              {departmentAllocation.slice(0, 5).map((item, idx) => {
-                const colors = [
-                  'bg-indigo-600',
-                  'bg-emerald-500',
-                  'bg-amber-500',
-                  'bg-rose-500',
-                  'bg-cyan-500'
-                ]
-                return (
-                  <div
-                    key={item.dept}
-                    style={{ width: `${item.pct}%` }}
-                    className={`h-full ${colors[idx % colors.length]}`}
-                    title={`${item.dept}: ${item.pct.toFixed(1)}%`}
-                  />
-                )
-              })}
-            </div>
 
-            {/* Allocation Details Chips */}
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
-              {departmentAllocation.slice(0, 5).map((item, idx) => {
-                const textColors = [
-                  'text-indigo-600',
-                  'text-emerald-600',
-                  'text-amber-600',
-                  'text-rose-600',
-                  'text-cyan-600'
-                ]
-                const dotColors = [
-                  'bg-indigo-600',
-                  'bg-emerald-500',
-                  'bg-amber-500',
-                  'bg-rose-500',
-                  'bg-cyan-500'
-                ]
-                return (
-                  <div key={item.dept} className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full ${dotColors[idx % dotColors.length]}`} />
-                    <span className="text-slate-500 font-semibold">{item.dept}</span>
-                    <span className={`font-black ${textColors[idx % textColors.length]}`}>
-                      ₹{item.amt.toLocaleString('en-IN')} ({item.pct.toFixed(1)}%)
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
         {/* 2. FILTER BAR */}
         <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-4 flex flex-col lg:flex-row items-center gap-3">
@@ -954,6 +1536,18 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             >
               <option value="All">All Departments</option>
               {uniqueDepartments.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <select
+              value={selectedGlFilter}
+              onChange={e => setSelectedGlFilter(e.target.value)}
+              className="h-10 px-4 w-full sm:w-[180px] rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer appearance-none"
+            >
+              <option value="All">All GL Accounts</option>
+              {glAccounts.map(g => (
+                <option key={g.id} value={g.id}>
+                  {g.glName} ({g.glCode})
+                </option>
+              ))}
             </select>
 
             {/* Custom Date Range Picker */}
@@ -1092,7 +1686,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               className="h-10 px-4 w-full sm:w-[180px] rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer appearance-none"
             >
               <option value="All">All Workflow States</option>
-              <option value="pending_sales_manager">Pending Sales Manager</option>
+              <option value="pending_sales_manager">Pending ED</option>
               <option value="pending_accounts">Pending Accounts</option>
               <option value="pending_ea">Pending EA</option>
               <option value="pending_md">Pending MD</option>
@@ -1111,11 +1705,151 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               </span>
             </button>
 
+            <Button
+              variant="outline"
+              onClick={() => {
+                const approvedIds = (data?.rows || [])
+                  .filter((r: any) => getPendingStageLabel(r) === 'Fully Approved')
+                  .map((r: any) => r.id)
+                if (approvedIds.length === 0) {
+                  toast({ title: 'No approved requests', description: 'There are no fully approved requests to export.', variant: 'error' })
+                  return
+                }
+                window.open(`/api/brands/kia/approvals/export-tally?ids=${approvedIds.join(',')}`, '_blank')
+              }}
+              className="h-10 px-4 rounded-2xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center gap-1.5 text-xs font-bold"
+            >
+              <Download className="w-4 h-4 text-slate-500" />
+              <span>Export Tally CSV</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => setShowAnalytics(!showAnalytics)}
+              className={cn(
+                "h-10 px-4 rounded-2xl border-slate-200 flex items-center justify-center gap-1.5 text-xs font-bold transition-all",
+                showAnalytics ? "bg-slate-900 border-slate-900 text-white hover:bg-slate-800" : "bg-white text-slate-700 hover:bg-slate-50"
+              )}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>{showAnalytics ? 'Hide Analytics' : 'Show Analytics'}</span>
+            </Button>
+
             <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isLoading || isFetching} className="h-10 w-10 rounded-2xl border-slate-200 flex-shrink-0">
               {isFetching ? <Loader2 className="w-4 h-4 animate-spin text-slate-500" /> : <RefreshCw className="w-4 h-4 text-slate-500" />}
             </Button>
           </div>
         </div>
+
+        {/* Analytics Dashboard */}
+        {showAnalytics && (
+          <div className="space-y-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 border border-slate-100 rounded-[2rem] p-6 shadow-sm animate-in fade-in duration-300">
+              {/* Left Column (KPI Cards) */}
+              <div className="md:col-span-1 space-y-4">
+                <div className="bg-white rounded-3xl p-5 border border-slate-100/80 shadow-[0_4px_20px_rgba(15,23,42,0.02)] flex flex-col justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Approved Spend</span>
+                  <span className="text-2xl font-black text-slate-900 mt-2">₹{analyticsData.totalApproved.toLocaleString('en-IN')}</span>
+                  <span className="text-[10px] font-semibold text-emerald-600 mt-2 flex items-center gap-1">
+                    <TrendingUp className="w-3.5 h-3.5" /> Approved transactions
+                  </span>
+                </div>
+                <div className="bg-white rounded-3xl p-5 border border-slate-100/80 shadow-[0_4px_20px_rgba(15,23,42,0.02)] flex flex-col justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Pending Approvals Value</span>
+                  <span className="text-2xl font-black text-amber-600 mt-2">₹{analyticsData.totalPending.toLocaleString('en-IN')}</span>
+                  <span className="text-[10px] font-semibold text-slate-400 mt-2">Awaiting decision</span>
+                </div>
+                <div className="bg-white rounded-3xl p-5 border border-slate-100/80 shadow-[0_4px_20px_rgba(15,23,42,0.02)] flex flex-col justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Avg Transaction Size</span>
+                  <span className="text-2xl font-black text-indigo-600 mt-2">₹{Math.round(analyticsData.avgTxSize).toLocaleString('en-IN')}</span>
+                  <span className="text-[10px] font-semibold text-slate-400 mt-2">Across all requests</span>
+                </div>
+              </div>
+
+              {/* Middle Column (Top 5 Vendors Chart) */}
+              <div className="md:col-span-1 bg-white rounded-[2rem] p-6 border border-slate-150 shadow-[0_10px_30px_rgba(15,23,42,0.02)] flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 mb-4">Top 5 Vendors Spend</h4>
+                  <div className="space-y-4">
+                    {analyticsData.topVendors.length === 0 ? (
+                      <p className="text-xs text-slate-400 font-semibold text-center py-10">No vendor spend data.</p>
+                    ) : (
+                      (() => {
+                        const maxSpend = Math.max(...analyticsData.topVendors.map(v => v.total), 1)
+                        return analyticsData.topVendors.map((vendor) => {
+                          const pct = Math.round((vendor.total / maxSpend) * 100)
+                          return (
+                            <div key={vendor.name} className="space-y-1">
+                              <div className="flex justify-between text-xs font-bold text-slate-700">
+                                <span className="truncate max-w-[120px]">{vendor.name}</span>
+                                <span className="font-mono text-slate-900">₹{vendor.total.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-indigo-600 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          )
+                        })
+                      })()
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column (Top 5 GL Accounts Chart) */}
+              <div className="md:col-span-1 bg-white rounded-[2rem] p-6 border border-slate-150 shadow-[0_10px_30px_rgba(15,23,42,0.02)] flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 mb-4">Top 5 GL Accounts Spend</h4>
+                  <div className="space-y-4">
+                    {analyticsData.topGlAccounts.length === 0 ? (
+                      <p className="text-xs text-slate-400 font-semibold text-center py-10">No GL spend data.</p>
+                    ) : (
+                      (() => {
+                        const gls = analyticsData.topGlAccounts.slice(0, 5)
+                        const maxSpend = Math.max(...gls.map(g => g.total), 1)
+                        return gls.map((gl) => {
+                          const pct = Math.round((gl.total / maxSpend) * 100)
+                          return (
+                            <div key={gl.name} className="space-y-1">
+                              <div className="flex justify-between text-xs font-bold text-slate-700">
+                                <span className="truncate max-w-[120px]">{gl.name}</span>
+                                <span className="font-mono text-slate-900">₹{gl.total.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-600 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          )
+                        })
+                      })()
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Key GL Categories Spend Highlights Row */}
+            <div className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm grid grid-cols-2 sm:grid-cols-5 gap-4">
+              {[
+                { name: 'Advertisement Spend', value: analyticsData.spendHighlights.adSpend, color: 'bg-rose-50 border-rose-100 text-rose-700' },
+                { name: 'Repairs & Maintenance', value: analyticsData.spendHighlights.repairSpend, color: 'bg-blue-50 border-blue-100 text-blue-700' },
+                { name: 'Fuel & Running', value: analyticsData.spendHighlights.fuelSpend, color: 'bg-amber-50 border-amber-100 text-amber-700' },
+                { name: 'Salaries & Wages', value: analyticsData.spendHighlights.salarySpend, color: 'bg-emerald-50 border-emerald-100 text-emerald-700' },
+                { name: 'Security Charges', value: analyticsData.spendHighlights.securitySpend, color: 'bg-indigo-50 border-indigo-100 text-indigo-700' },
+                { name: 'Vehicle Purchases', value: analyticsData.spendHighlights.vehiclePurchase, color: 'bg-purple-50 border-purple-100 text-purple-700' },
+                { name: 'Spare Parts Purchase', value: analyticsData.spendHighlights.partsPurchase, color: 'bg-pink-50 border-pink-100 text-pink-700' },
+                { name: 'Travel & Conveyance', value: analyticsData.spendHighlights.travelSpend, color: 'bg-sky-50 border-sky-100 text-sky-700' },
+                { name: 'Software Subscriptions', value: analyticsData.spendHighlights.softwareSpend, color: 'bg-teal-50 border-teal-100 text-teal-700' },
+                { name: 'Professional Charges', value: analyticsData.spendHighlights.professionalSpend, color: 'bg-violet-50 border-violet-100 text-violet-700' },
+              ].map(cat => (
+                <div key={cat.name} className={`border rounded-2xl p-4 flex flex-col justify-between ${cat.color}`}>
+                  <span className="text-[9px] font-black uppercase tracking-wider opacity-80">{cat.name}</span>
+                  <span className="text-sm font-black mt-1 font-mono">₹{cat.value.toLocaleString('en-IN')}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Tab switch bar for Pending My Approval vs All Requests */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-1">
@@ -1139,6 +1873,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             >
               <span>All Requests ({totalCount})</span>
               {filterScope === 'all' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full" />
+              )}
+            </button>
+            <button
+              onClick={() => setFilterScope('vendors')}
+              className={`pb-3 relative transition-all ${
+                filterScope === 'vendors' ? 'text-indigo-600 font-black' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <span>Vendors ({vendorSummary.length})</span>
+              {filterScope === 'vendors' && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full" />
               )}
             </button>
@@ -1178,6 +1923,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         onClick={() => {
                           setVendorStartDate('')
                           setVendorEndDate('')
+                          setSelectedVendorMonth('all')
                           setSelectedVendorName(v.name)
                         }}
                         className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors cursor-pointer"
@@ -1199,6 +1945,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             onClick={() => {
                               setVendorStartDate('')
                               setVendorEndDate('')
+                              setSelectedVendorMonth('all')
                               setSelectedVendorName(v.name)
                             }}
                             className="h-8 px-3.5 rounded-xl border border-slate-200 hover:border-slate-400 bg-white text-xs font-bold text-slate-700 transition-all shadow-sm"
@@ -1219,7 +1966,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               <FileSpreadsheet className="w-6 h-6" />
             </div>
             <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">No Requests Found</h3>
-            <p className="text-xs text-slate-400 font-semibold max-w-sm mx-auto">There are no payment approval requests matching your active filter criteria.</p>
+            <p className="text-xs text-slate-400 font-semibold max-w-sm mx-auto">There are no vendor payment requests matching your active filter criteria.</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -1375,13 +2122,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             </span>
                           </td>
                           <td className="py-4 px-5">
-                            <div className="flex flex-col">
+                            <div className="flex flex-col items-start gap-1">
                               <span className="text-slate-900 font-bold block">
                                 {new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                               </span>
                               <span className="text-slate-400 text-xs font-semibold">
                                 {new Date(row.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                               </span>
+                              {getSlaBadge(row.createdAt)}
                             </div>
                           </td>
                           <td className="py-4 px-5">
@@ -1538,19 +2286,24 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           PENDING
                         </span>
                       )}
+                      {getSlaBadge(row.createdAt)}
                     </div>
 
-                    {/* Grid Details: Vendor, Amount, Current Stage */}
-                    <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/60 text-xs">
+                    {/* Grid Details: Vendor, GL Account, Amount, Current Stage */}
+                    <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/60 text-xs">
                       <div>
                         <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Vendor</span>
-                        <span className="font-bold text-slate-900 mt-0.5 block truncate">{row.vendorName || '—'}</span>
+                        <span className="font-bold text-slate-900 mt-0.5 block truncate" title={row.vendorName || '—'}>{row.vendorName || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">GL Account</span>
+                        <span className="font-bold text-indigo-700 mt-0.5 block truncate" title={row.glName || '—'}>{row.glName || '—'}</span>
                       </div>
                       <div>
                         <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Amount</span>
                         <span className="font-black text-slate-900 mt-0.5 block text-sm">₹{Number(row.amount || 0).toLocaleString('en-IN')}</span>
                       </div>
-                      <div className="col-span-2 border-t border-slate-200/60 pt-2 mt-1">
+                      <div className="col-span-3 border-t border-slate-200/60 pt-2 mt-1">
                         <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Current Stage</span>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           {pendingLabel === 'Fully Approved' ? (
@@ -1651,299 +2404,708 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
       {/* 4. DETAIL & ACTION CENTER OVERLAY MODAL */}
       <Dialog open={Boolean(detailRow)} onOpenChange={(open) => { if (!open) setDetailRow(null) }}>
-        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-2xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100 max-h-[85vh] flex flex-col">
+        <DialogContent className="rounded-[2rem] sm:rounded-[2.5rem] w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] sm:max-w-6xl bg-[#f8fafc] p-0 overflow-y-auto sm:overflow-hidden shadow-2xl border border-slate-100 max-h-[98vh] sm:max-h-[95vh] flex flex-col">
           {detailRow && (() => {
             const pendingLabel = getPendingStageLabel(detailRow)
             const isApproved = pendingLabel === 'Fully Approved'
             const isRejected = pendingLabel.startsWith('Rejected')
-            const isMD = ['md', 'ceo'].includes(effectiveRole)
+            const isMD = ['md', 'ceo'].includes(currentUser.role)
 
-            return (
-              <>
-                <DialogHeader className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" className="rounded-full bg-slate-950 text-white font-black text-[9px] uppercase tracking-wider py-0.5 px-2.5">{detailRow.location}</Badge>
-                    <Badge variant="outline" className="rounded-full bg-slate-100 border-slate-200 text-slate-700 font-extrabold text-[9px] uppercase tracking-wider py-0.5 px-2">{detailRow.department}</Badge>
-                    <Badge variant="outline" className="rounded-full bg-indigo-50 border-indigo-100 text-indigo-700 font-black text-[9px] uppercase tracking-wider py-0.5 px-2">{detailRow.approvalType}</Badge>
+            const getTimelineEvents = (req: ApprovalRequest) => {
+              const events: Array<{
+                id: string
+                title: string
+                description: string | React.ReactNode
+                user: string
+                timestamp: Date
+                iconType: 'phone' | 'create' | 'clip' | 'remark' | 'approve' | 'reject' | 'hold' | 'gl'
+              }> = []
+
+              // 1. Initial Submission
+              events.push({
+                id: 'create',
+                title: 'Request Created',
+                description: 'Vendor payment request has been created.',
+                user: req.name,
+                timestamp: new Date(req.createdAt),
+                iconType: 'create'
+              })
+
+              // 2. Initial Remarks
+              if (req.remarks) {
+                events.push({
+                  id: 'initial_remark',
+                  title: 'Remark Added',
+                  description: req.remarks,
+                  user: req.name,
+                  timestamp: new Date(req.createdAt),
+                  iconType: 'remark'
+                })
+              }
+
+              // 3. Attachments
+              if (req.uploadBillUrl1) {
+                events.push({
+                  id: 'bill1',
+                  title: 'Attachment Added',
+                  description: (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDocUrl(req.uploadBillUrl1!)}
+                      className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline text-left"
+                    >
+                      Bill 1
+                    </button>
+                  ),
+                  user: req.name,
+                  timestamp: new Date(req.createdAt),
+                  iconType: 'clip'
+                })
+              }
+              if (req.uploadBillUrl2) {
+                events.push({
+                  id: 'bill2',
+                  title: 'Attachment Added',
+                  description: (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDocUrl(req.uploadBillUrl2!)}
+                      className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline text-left"
+                    >
+                      Bill 2
+                    </button>
+                  ),
+                  user: req.name,
+                  timestamp: new Date(req.createdAt),
+                  iconType: 'clip'
+                })
+              }
+              if (req.uploadDocUrl) {
+                events.push({
+                  id: 'doc',
+                  title: 'Attachment Added',
+                  description: (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDocUrl(req.uploadDocUrl!)}
+                      className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline text-left"
+                    >
+                      Support Doc
+                    </button>
+                  ),
+                  user: req.name,
+                  timestamp: new Date(req.createdAt),
+                  iconType: 'clip'
+                })
+              }
+
+              // 4. History Entries
+              ;(req.history || []).forEach((entry: any) => {
+                let iconType: 'remark' | 'approve' | 'reject' | 'hold' | 'gl' = 'remark'
+                let title = 'Remark Added'
+                
+                if (entry.action === 'APPROVED') {
+                  iconType = 'approve'
+                  title = `${entry.role} Approved`
+                } else if (entry.action === 'NOT APPROVED') {
+                  iconType = 'reject'
+                  title = `${entry.role} Rejected`
+                } else if (entry.action === 'HELD') {
+                  iconType = 'hold'
+                  title = `${entry.role} Held`
+                } else if (entry.action === 'GL_UPDATE') {
+                  iconType = 'gl'
+                  title = 'GL Account Updated'
+                } else if (entry.action === 'REMARK_ADD') {
+                  iconType = 'remark'
+                  title = 'Remark Added'
+                }
+
+                events.push({
+                  id: entry.id,
+                  title,
+                  description: entry.remarks || 'No notes left.',
+                  user: entry.user,
+                  timestamp: new Date(entry.timestamp),
+                  iconType
+                })
+              })
+
+              return events.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+            }
+
+            const timelineEvents = getTimelineEvents(detailRow)
+            const remarksCount = timelineEvents.filter(e => e.iconType === 'remark').length
+            const displayedEvents = activeTab === 'remarks' 
+              ? timelineEvents.filter(e => e.iconType === 'remark')
+              : timelineEvents
+
+            const pendingStageKey = (() => {
+              if (pendingLabel === 'Pending ED') return 'sales_manager'
+              if (pendingLabel === 'Pending EA') return 'ea'
+              if (pendingLabel === 'Pending MD') return 'md'
+              if (pendingLabel === 'Pending Accounts') return 'accounts'
+              return null
+            })()
+
+            const isUserEligibleForPendingStage = pendingStageKey ? isUserAuthorizedForStage(pendingStageKey) : false
+
+            const handleAddRemark = async () => {
+              if (!detailRow || !remarkText.trim()) return
+              setAddRemarkPending(true)
+              try {
+                const response = await fetch(`/api/brands/kia/approvals/${detailRow.id}/remark`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ remarks: remarkText })
+                })
+                const result = await response.json()
+                if (response.ok && result.success) {
+                  toast({
+                    title: 'Success',
+                    description: 'Remark added successfully.',
+                    variant: 'success'
+                  })
+                  setDetailRow(result.row)
+                  setRemarkText('')
+                  queryClient.invalidateQueries({ queryKey: ['kia', 'approvals'] })
+                } else {
+                  toast({
+                    title: 'Error',
+                    description: result.error || 'Failed to add remark.',
+                    variant: 'error'
+                  })
+                }
+              } catch (error) {
+                console.error(error)
+                toast({
+                  title: 'Error',
+                  description: 'Failed to connect to the server.',
+                  variant: 'error'
+                })
+              } finally {
+                setAddRemarkPending(false)
+              }
+            }
+
+            const renderOverviewItem = (label: string, value: string | React.ReactNode, icon: any) => {
+              const Icon = icon
+              return (
+                <div className="border border-slate-100 bg-[#f8fafc]/40 rounded-2xl p-4 flex gap-3 items-start">
+                  <div className="h-8 w-8 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                    <Icon className="w-4 h-4" />
                   </div>
-                  <DialogTitle className="text-xl font-black tracking-tight text-slate-950 flex justify-between items-center pr-6">
-                    <span>Payment Approval Request Details</span>
-                    <span className="text-indigo-600 text-lg font-black font-mono">₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}</span>
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-slate-400 font-semibold">
-                    Payment request identification and approval timeline tracking.
-                  </DialogDescription>
-                </DialogHeader>
-
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                  {/* Workflow Progress Stepper */}
-                  {renderWorkflowStepper(detailRow)}
-
-                  {/* Request Details Block */}
-                  <div className="bg-slate-50/50 border border-slate-100 rounded-3xl p-6 space-y-4">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Request Specifications</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3.5 text-xs font-semibold">
-                      <div className="flex justify-between border-b border-slate-100 pb-2">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Name</span>
-                        <span className="text-slate-900 font-black">{detailRow.name}</span>
-                      </div>
-                      <div className="flex justify-between border-b border-slate-100 pb-2">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Email</span>
-                        <span className="text-slate-900 font-black">{detailRow.email}</span>
-                      </div>
-                      <div className="flex justify-between border-b border-slate-100 pb-2">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Dealer Name</span>
-                        <span className="text-slate-900 font-black">{detailRow.dealerName || '—'}</span>
-                      </div>
-                      {detailRow.dealerCode && (
-                        <div className="flex justify-between border-b border-slate-100 pb-2">
-                          <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Dealer Code</span>
-                          <span className="text-slate-900 font-black">{detailRow.dealerCode}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between border-b border-slate-100 pb-2">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Vendor Name</span>
-                        <span className="text-slate-900 font-black">{detailRow.vendorName || '—'}</span>
-                      </div>
-                      {detailRow.previousAdvance && (
-                        <div className="flex justify-between border-b border-slate-100 pb-2">
-                          <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Prev. Advance</span>
-                          <span className="text-slate-900 font-black">{detailRow.previousAdvance}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between border-b border-slate-100 pb-2">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Payment Type</span>
-                        <span className="text-slate-900 font-black">{detailRow.typeOfPayment || '—'}</span>
-                      </div>
-                      <div className="flex justify-between border-b border-slate-100 pb-2">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Workflow Status</span>
-                        <span className="text-indigo-600 font-black">{pendingLabel}</span>
-                      </div>
-                      <div className="flex justify-between border-b border-slate-100 pb-2 col-span-1 sm:col-span-2">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Submitted On</span>
-                        <span className="text-slate-900 font-black">
-                          {new Date(detailRow.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} at{' '}
-                          {new Date(detailRow.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                        </span>
-                      </div>
-                    </div>
+                  <div className="space-y-0.5 overflow-hidden">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">{label}</span>
+                    <span className="text-xs font-black text-slate-900 block break-words" title={typeof value === 'string' ? value : undefined}>{value}</span>
                   </div>
+                </div>
+              )
+            }
 
-                  {/* Remarks note */}
-                  {detailRow.remarks && (
-                    <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-200">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-amber-700 block mb-1">Submitter's Note / टिप्पणी</span>
-                      <p className="text-sm font-semibold text-amber-900 leading-relaxed">{detailRow.remarks}</p>
-                    </div>
-                  )}
+            const renderChecklistCard = (
+              label: string,
+              status: string | null,
+              stageKey: string,
+              roleLabel: string
+            ) => {
+              const isApproved = status === 'APPROVED'
+              const isRejected = status === 'NOT APPROVED'
+              const isHeld = status === 'HELD'
 
-                  {/* Stage stepper indicators */}
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Approval Stage Checklist</span>
-                    <div className="grid grid-cols-4 gap-2">
-                      {renderStepChip('SM Approval', detailRow.vpApproval)}
-                      {renderStepChip('Accounts', detailRow.accountApproval)}
-                      {renderStepChip('EA Approval', detailRow.eaApproval)}
-                      {renderStepChip('MD Approval', detailRow.managementApproval)}
-                    </div>
+              let isActive = false
+              if (pendingLabel === 'Pending ED' && stageKey === 'sales_manager') isActive = true
+              else if (pendingLabel === 'Pending EA' && stageKey === 'ea') isActive = true
+              else if (pendingLabel === 'Pending MD' && stageKey === 'md') isActive = true
+              else if (pendingLabel === 'Pending Accounts' && stageKey === 'accounts') isActive = true
+
+              let borderStyle = 'border-slate-100 bg-white opacity-60'
+              let badgeText = 'Locked'
+              let badgeStyle = 'bg-slate-50 text-slate-400 border-slate-200'
+              let nameText = '—'
+
+              if (isApproved) {
+                borderStyle = 'border-emerald-100 bg-emerald-50/10'
+                badgeText = 'Approved'
+                badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              } else if (isRejected) {
+                borderStyle = 'border-rose-100 bg-rose-50/10'
+                badgeText = 'Rejected'
+                badgeStyle = 'bg-rose-50 text-rose-700 border-rose-200'
+              } else if (isHeld) {
+                borderStyle = 'border-amber-100 bg-amber-50/10'
+                badgeText = 'Held'
+                badgeStyle = 'bg-amber-50 text-amber-700 border-amber-200'
+              } else if (isActive) {
+                borderStyle = 'border-indigo-100 bg-indigo-50/10 ring-2 ring-indigo-50'
+                badgeText = 'Pending'
+                badgeStyle = 'bg-indigo-50 text-indigo-600 border-indigo-200 animate-pulse'
+              }
+
+              // Find user name from history
+              if (isApproved || isRejected || isHeld) {
+                const entry = (detailRow!.history || []).find((h: any) => h.roleKey === stageKey)
+                if (entry) nameText = entry.user
+              }
+
+              const initials = nameText !== '—'
+                ? nameText.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()
+                : '—'
+
+              return (
+                <div className={cn("border rounded-2xl p-4 space-y-3 flex flex-col justify-between min-h-[110px] transition-all bg-white", borderStyle)}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-800">{label}</span>
+                    <span className={cn("text-[8px] font-black uppercase px-2 py-0.5 rounded border", badgeStyle)}>{badgeText}</span>
                   </div>
-
-                  {/* Attachments */}
-                  {(detailRow.uploadBillUrl1 || detailRow.uploadBillUrl2 || detailRow.uploadDocUrl) && (
-                    <div className="space-y-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Attached Documents</span>
-                      <div className="flex flex-wrap gap-2">
-                        {detailRow.uploadBillUrl1 && (
-                          <a href={detailRow.uploadBillUrl1} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 h-9 px-4 rounded-xl bg-white border-2 border-slate-200 hover:border-slate-400 text-xs font-bold text-slate-700 transition-all shadow-sm">
-                            <FileText className="w-4 h-4 text-slate-500" /> Bill 1 <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                          </a>
-                        )}
-                        {detailRow.uploadBillUrl2 && (
-                          <a href={detailRow.uploadBillUrl2} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 h-9 px-4 rounded-xl bg-white border-2 border-slate-200 hover:border-slate-400 text-xs font-bold text-slate-700 transition-all shadow-sm">
-                            <FileText className="w-4 h-4 text-slate-500" /> Bill 2 <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                          </a>
-                        )}
-                        {detailRow.uploadDocUrl && (
-                          <a href={detailRow.uploadDocUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 h-9 px-4 rounded-xl bg-white border-2 border-slate-200 hover:border-slate-400 text-xs font-bold text-slate-700 transition-all shadow-sm">
-                            <FileText className="w-4 h-4 text-slate-500" /> Support Doc <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                          </a>
-                        )}
-                      </div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600 shrink-0">
+                      {initials}
                     </div>
-                  )}
-
-                  {/* Action Center Trigger */}
-                  {!isApproved && !isRejected && (() => {
-                    const authStages = [
-                      { key: 'sales_manager', label: 'Sales Manager Stage', currentStatus: detailRow.vpApproval },
-                      { key: 'accounts', label: 'Accounts Stage', currentStatus: detailRow.accountApproval },
-                      { key: 'ea', label: 'EA Stage', currentStatus: detailRow.eaApproval },
-                      { key: 'md', label: 'MD Approval Stage', currentStatus: detailRow.managementApproval }
-                    ].filter(stg => isUserAuthorizedForStage(stg.key))
-
-                    if (authStages.length === 0) return null
-
-                    return (
-                      <div className="rounded-2xl border-2 border-indigo-100 bg-indigo-50/40 p-5 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                          <span className="text-sm font-black text-indigo-900 tracking-tight">Act on this request</span>
-                          {isMD && (
-                            <span className="ml-auto text-[10px] font-bold text-violet-700 bg-violet-100 border border-violet-200 px-2.5 py-0.5 rounded-full">MD Override Active</span>
-                          )}
-                        </div>
-                        <div className="grid gap-2 grid-cols-1">
-                          {authStages.map(stg => {
-                            const isEligible = isUserAuthorizedForStage(stg.key)
-                            const isStepPending = !stg.currentStatus || stg.currentStatus === ''
-                            let canClick = isEligible && isStepPending
-                            if (isMD) canClick = isStepPending // MD can approve anytime if not already approved/rejected
-                            if (stg.key === 'accounts' && detailRow.vpApproval !== 'APPROVED' && !isMD) canClick = false
-                            if (stg.key === 'ea' && (detailRow.vpApproval !== 'APPROVED' || detailRow.accountApproval !== 'APPROVED') && !isMD) canClick = false
-                            if (stg.key === 'md' && (detailRow.vpApproval !== 'APPROVED' || detailRow.accountApproval !== 'APPROVED' || detailRow.eaApproval !== 'APPROVED') && !isMD) canClick = false
-
-                            if (isMD) {
-                              return (
-                                <div key={stg.key} className="space-y-3 p-1">
-                                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 block">{stg.label}</span>
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      disabled={!canClick || actionMutation.isPending}
-                                      onClick={() => {
-                                        actionMutation.mutate({
-                                          id: detailRow.id,
-                                          action: 'APPROVE',
-                                          stage: 'md',
-                                          remarks: ''
-                                        })
-                                      }}
-                                      className="flex-1 py-3 px-4 rounded-2xl font-black text-xs text-center transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-emerald-500/10 cursor-pointer border border-emerald-600 hover:opacity-90"
-                                      style={{ backgroundColor: '#10b981', color: '#ffffff' }}
-                                    >
-                                      {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' && actionMutation.variables?.id === detailRow.id ? (
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" />
-                                      ) : (
-                                        'Approve Order'
-                                      )}
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      disabled={!canClick || actionMutation.isPending}
-                                      onClick={() => {
-                                        setActionStage('md')
-                                        setActionDecision('HOLD')
-                                        setActionRemarks('')
-                                      }}
-                                      className="py-3 px-4 rounded-2xl font-black text-xs text-center transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-amber-500/10 cursor-pointer border border-amber-600 hover:opacity-90"
-                                      style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
-                                    >
-                                      Hold
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      disabled={!canClick || actionMutation.isPending}
-                                      onClick={() => {
-                                        setActionStage('md')
-                                        setActionDecision('REJECT')
-                                        setActionRemarks('')
-                                      }}
-                                      className="py-3 px-4 rounded-2xl font-black text-xs text-center transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-rose-500/10 cursor-pointer border border-rose-600 hover:opacity-90"
-                                      style={{ backgroundColor: '#ef4444', color: '#ffffff' }}
-                                    >
-                                      Deny
-                                    </button>
-                                  </div>
-                                </div>
-                              )
-                            }
-
-                            return (
-                              <button
-                                key={stg.key}
-                                type="button"
-                                disabled={!canClick}
-                                onClick={() => {
-                                  setActionStage(stg.key as any)
-                                  setActionDecision(null)
-                                  setActionRemarks('')
-                                }}
-                                className={`p-3.5 rounded-2xl border-2 text-left flex flex-col justify-between transition-all min-h-[75px] ${
-                                  canClick
-                                    ? 'border-indigo-300 bg-white hover:border-indigo-500 cursor-pointer hover:shadow-md'
-                                    : 'border-slate-200 bg-white/60 opacity-50 cursor-not-allowed'
-                                }`}
-                              >
-                                <span className="text-[11px] font-black uppercase tracking-wider text-slate-700">{stg.label}</span>
-                                <div className="mt-1">
-                                  {stg.currentStatus === 'APPROVED' ? (
-                                    <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[9px] font-black uppercase">Approved</Badge>
-                                  ) : stg.currentStatus === 'NOT APPROVED' ? (
-                                    <Badge className="bg-rose-100 text-rose-800 border border-rose-200 text-[9px] font-black uppercase">Rejected</Badge>
-                                  ) : stg.currentStatus === 'HELD' ? (
-                                    <Badge className="bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black uppercase">Held</Badge>
-                                  ) : canClick ? (
-                                    <Badge className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-black uppercase animate-pulse">Tap to action ›</Badge>
-                                  ) : (
-                                    <Badge className="bg-slate-100 text-slate-400 border border-slate-200 text-[9px] font-semibold uppercase">Locked</Badge>
-                                  )}
-                                </div>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Activity log / timeline history */}
-                  <div className="space-y-3">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Activity Log & History Remarks</span>
-                    <div className="space-y-2">
-                      <div className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-slate-950 text-white">Initiated</span>
-                          <span className="text-[9px] font-bold text-slate-400">{new Date(detailRow.createdAt).toLocaleString('en-IN')}</span>
-                        </div>
-                        <p className="text-xs font-semibold text-slate-700">{detailRow.remarks || 'No remarks provided during submission.'}</p>
-                      </div>
-
-                      {detailRow.history.map(entry => (
-                        <div key={entry.id} className={`p-3.5 rounded-2xl border space-y-1 ${getRoleRemarksStyles(entry.roleKey)}`}>
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${getRoleBadgeColor(entry.roleKey)}`}>{entry.role}</span>
-                              <span className="text-xs font-black text-slate-900">{entry.user}</span>
-                              <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
-                                entry.action === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' :
-                                entry.action === 'HELD' ? 'bg-amber-100 text-amber-800' :
-                                'bg-rose-100 text-rose-800'
-                              }`}>
-                                {entry.action === 'APPROVED' ? '✓ Approved' : entry.action === 'HELD' ? '‖ Held' : '✗ Rejected'}
-                              </span>
-                            </div>
-                            <span className="text-[9px] font-bold opacity-60">{new Date(entry.timestamp).toLocaleString('en-IN')}</span>
-                          </div>
-                          <p className="text-xs font-semibold leading-relaxed">{entry.remarks || 'No remarks left.'}</p>
-                        </div>
-                      ))}
+                    <div className="overflow-hidden">
+                      <span className="text-[10px] font-black text-slate-800 block truncate" title={nameText}>{nameText}</span>
+                      <span className="text-[9px] font-semibold text-slate-400 block">{roleLabel}</span>
                     </div>
                   </div>
                 </div>
+              )
+            }
 
-                <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-2">
-                  <Button
-                    onClick={() => handlePrintVoucher(detailRow, pendingLabel)}
-                    className="h-10 rounded-2xl text-xs font-black border-slate-200 hover:bg-slate-50"
-                    variant="outline"
-                  >
-                    Export Voucher
-                  </Button>
-                  <Button variant="outline" onClick={() => setDetailRow(null)} className="h-10 rounded-2xl text-xs font-black border-slate-200">
-                    Close Details
-                  </Button>
+            const renderNewWorkflowStepper = (req: ApprovalRequest) => {
+              const stages = [
+                { key: 'sales_manager', label: 'ED', status: req.vpApproval },
+                { key: 'ea', label: 'EA', status: req.eaApproval },
+                { key: 'md', label: 'MD', status: req.managementApproval },
+                { key: 'accounts', label: 'Accounts', status: req.accountApproval },
+              ]
+
+              return (
+                <div className="bg-white border border-slate-100 rounded-3xl p-4 sm:p-6 shadow-sm overflow-hidden">
+                  <div className="flex items-center justify-between w-full relative pb-1">
+                    {stages.map((stg, i) => {
+                      const isApproved = stg.status === 'APPROVED'
+                      const isRejected = stg.status === 'NOT APPROVED'
+                      const isHeld = stg.status === 'HELD'
+                      
+                      let isActive = false
+                      if (pendingLabel === 'Pending ED' && stg.key === 'sales_manager') isActive = true
+                      else if (pendingLabel === 'Pending EA' && stg.key === 'ea') isActive = true
+                      else if (pendingLabel === 'Pending MD' && stg.key === 'md') isActive = true
+                      else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
+
+                      let circleColor = 'bg-slate-100 text-slate-400 border-slate-200'
+                      let textColor = 'text-slate-400 font-semibold'
+                      let statusLabel = 'Locked'
+
+                      if (isApproved) {
+                        circleColor = 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/10'
+                        textColor = 'text-indigo-900 font-black'
+                        statusLabel = 'Approved'
+                      } else if (isRejected) {
+                        circleColor = 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/10'
+                        textColor = 'text-rose-700 font-black'
+                        statusLabel = 'Rejected'
+                      } else if (isHeld) {
+                        circleColor = 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/10'
+                        textColor = 'text-amber-700 font-black'
+                        statusLabel = 'Held'
+                      } else if (isActive) {
+                        circleColor = 'bg-indigo-600 text-white border-indigo-600 ring-4 ring-indigo-100 shadow-md shadow-indigo-600/10'
+                        textColor = 'text-indigo-600 font-black'
+                        statusLabel = 'Active'
+                      }
+
+                      let approverName = '—'
+                      if (isApproved || isRejected || isHeld) {
+                        const entry = (req.history || []).find((h: any) => h.roleKey === stg.key)
+                        if (entry) approverName = entry.user
+                      }
+
+                      return (
+                        <div key={stg.key} className="flex-1 flex flex-col items-center relative z-10">
+                          {i > 0 && (
+                            <div className={`absolute top-3 sm:top-4 right-[50%] w-[100%] h-0.5 -z-10 ${
+                              stages[i - 1].status === 'APPROVED' || (pendingLabel === 'Pending ' + stages[i].label) || (isActive && i === 1) ? 'bg-indigo-600' : 'bg-slate-200'
+                            }`} />
+                          )}
+                          
+                          <div className={cn("h-6 w-6 sm:h-8 sm:w-8 rounded-full border border-slate-200 flex items-center justify-center text-[10px] sm:text-xs font-black transition-all", circleColor)}>
+                            {isApproved ? '✓' : isRejected ? '✗' : isHeld ? '‖' : i + 1}
+                          </div>
+                          
+                          <span className={cn("text-[8px] sm:text-[10px] uppercase tracking-wider mt-2 text-center block", textColor)}>
+                            {stg.label}
+                          </span>
+                          
+                          <span className={cn(
+                            "text-[7px] sm:text-[8px] font-black uppercase px-1 sm:px-2 py-0.5 rounded mt-1 sm:mt-1.5 border",
+                            statusLabel === 'Active' ? 'bg-indigo-50 text-indigo-600 border-indigo-200 animate-pulse' :
+                            statusLabel === 'Approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            statusLabel === 'Rejected' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                            statusLabel === 'Held' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            'bg-slate-50 text-slate-400 border-slate-100'
+                          )}>
+                            {statusLabel}
+                          </span>
+
+                          <span className="text-[8px] sm:text-[9px] font-bold text-slate-400 text-center block mt-1 truncate max-w-[60px] sm:max-w-none">
+                            {approverName}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            }
+
+            return (
+              <>
+                {/* Dialog Header */}
+                <DialogHeader className="p-5 sm:p-8 pb-4 bg-white border-b border-slate-100 flex flex-col gap-2 relative">
+                  <div className="flex flex-wrap items-center gap-1.5 pr-8">
+                    <Badge className="bg-slate-900 text-white hover:bg-slate-900 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.location}</Badge>
+                    <Badge className="bg-indigo-50 hover:bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.department}</Badge>
+                    <Badge className="bg-violet-50 hover:bg-violet-50 border border-violet-100 text-violet-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-end gap-4 mt-1 pr-10">
+                    <div>
+                      <DialogTitle className="text-xl sm:text-2xl font-black tracking-tight text-slate-950">
+                        Vendor Payment Request Details
+                      </DialogTitle>
+                      <DialogDescription className="text-[11px] sm:text-xs text-slate-400 font-semibold mt-1">
+                        Payment request identification and approval timeline tracking.
+                      </DialogDescription>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">Request Amount</span>
+                      <span className="text-xl sm:text-2xl font-black text-indigo-600 font-sans tracking-tight">₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                {/* Dialog Body */}
+                <div className={cn(
+                  "flex-1 overflow-visible sm:overflow-y-auto lg:overflow-hidden grid grid-cols-1 p-5 sm:p-8 gap-6 sm:gap-8 transition-all duration-300",
+                  showTimeline ? "lg:grid-cols-3" : "lg:grid-cols-1"
+                )}>
+                  {/* Left Column - Details */}
+                  <div className={cn(
+                    "space-y-6 lg:overflow-y-auto pr-2 lg:max-h-[calc(95vh-15rem)] transition-all",
+                    showTimeline ? "lg:col-span-2" : "lg:col-span-1"
+                  )}>
+                    {/* Stepper Card */}
+                    {renderNewWorkflowStepper(detailRow)}
+
+                    {/* Risk Warning Box */}
+                    {(() => {
+                      const alerts = getAnomalyAlerts(detailRow, data?.rows || [])
+                      if (alerts.length === 0) return null
+                      return (
+                        <div className="bg-rose-50 border border-rose-200/80 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
+                          <div className="flex items-center gap-2 text-rose-800 text-xs font-black uppercase tracking-wider">
+                            <AlertTriangle className="w-4 h-4 text-rose-600 animate-bounce" />
+                            <span>System Risk Alert ({alerts.length})</span>
+                          </div>
+                          <ul className="list-disc list-inside text-xs font-semibold text-rose-700 space-y-1.5 pl-1.5">
+                            {alerts.map((alert, idx) => (
+                              <li key={idx} className="leading-relaxed">{alert}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Budget Warning Box */}
+                    {(() => {
+                      if (!detailRow.glAccountId) return null
+                      const now = new Date()
+                      const currentMonthRows = (data?.rows || []).filter((r: any) => {
+                        if (!r.glAccountId || r.glAccountId !== detailRow.glAccountId) return false
+                        const rowDate = new Date(r.createdAt)
+                        return rowDate.getMonth() === now.getMonth() && rowDate.getFullYear() === now.getFullYear()
+                      })
+                      const approvedSpend = currentMonthRows
+                        .filter((r: any) => getPendingStageLabel(r) === 'Fully Approved')
+                        .reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0)
+
+                      const monthlyBudget = 1000000
+                      const requestAmount = Number(detailRow.amount || 0)
+                      const isExceedingBudget = (approvedSpend + requestAmount) > monthlyBudget
+
+                      if (!isExceedingBudget) return null
+
+                      return (
+                        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
+                          <div className="flex items-center gap-2 text-amber-800 text-xs font-black uppercase tracking-wider">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 animate-bounce" />
+                            <span>Budget Alert / बजट चेतावनी</span>
+                          </div>
+                          <p className="text-xs font-semibold text-amber-700 leading-relaxed">
+                            ⚠ This payment exceeds the approved monthly budget of ₹{monthlyBudget.toLocaleString('en-IN')}. (Current Month Spend: ₹{approvedSpend.toLocaleString('en-IN')}, Current Request: ₹{requestAmount.toLocaleString('en-IN')}).
+                          </p>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Request Overview Card */}
+                    <div className="bg-white border border-slate-100 rounded-3xl p-6 space-y-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-slate-800">
+                        <ClipboardList className="w-4 h-4 text-indigo-600" />
+                        <span className="text-xs font-black uppercase tracking-wider">Request Overview</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                        {renderOverviewItem('Requester', detailRow.name, User)}
+                        {renderOverviewItem('Email', detailRow.email, Mail)}
+                        {renderOverviewItem('Dealer Name', detailRow.dealerName || '—', Building2)}
+                        {renderOverviewItem('Dealer Code', detailRow.dealerCode || '—', Key)}
+                        {renderOverviewItem('Vendor Name', detailRow.vendorName || '—', User)}
+                        {renderOverviewItem('Payment Type', detailRow.typeOfPayment || '—', CreditCard)}
+                        {renderOverviewItem('Workflow Status', <span className="text-indigo-600">{pendingLabel}</span>, Clock)}
+                        {renderOverviewItem('Submitted On', new Date(detailRow.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), Calendar)}
+                        {renderOverviewItem('GL Account', detailRow.glName ? `${detailRow.glName} (${detailRow.glCode})` : '—', Database)}
+                        {renderOverviewItem('GST Details', detailRow.gst || '—', Percent)}
+                        {renderOverviewItem('Reference / Invoice No.', detailRow.invoiceNumber || '—', FileText)}
+                        {renderOverviewItem('Remarks (Submitter)', detailRow.remarks || '—', MessageSquare)}
+                      </div>
+                    </div>
+
+                    {/* Actions Available For You Card */}
+                    {isUserEligibleForPendingStage && !isApproved && !isRejected && (
+                      <div className="bg-white border border-slate-100 rounded-3xl p-6 space-y-4 shadow-sm animate-in fade-in duration-200">
+                        <div className="flex items-center gap-2 text-slate-800">
+                          <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                          <span className="text-xs font-black uppercase tracking-wider">Actions Available For You</span>
+                        </div>
+
+                        <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-4 flex gap-3 items-center">
+                          <Info className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <p className="text-xs font-semibold text-indigo-900">
+                            You are currently in the <span className="font-bold">{pendingLabel.replace('Pending ', '')}</span> stage. Please review the request details and take appropriate action.
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                          <Button
+                            disabled={actionMutation.isPending}
+                            onClick={() => {
+                              if (pendingStageKey === 'accounts') {
+                                setActionStage('accounts')
+                                setActionDecision('APPROVE')
+                              } else {
+                                actionMutation.mutate({
+                                  id: detailRow.id,
+                                  action: 'APPROVE',
+                                  stage: pendingStageKey!,
+                                  remarks: remarkText || ''
+                                })
+                              }
+                            }}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-500/10"
+                          >
+                            {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Check className="w-4 h-4" />
+                                <span>Approve & Forward</span>
+                              </>
+                            )}
+                          </Button>
+
+                          <Button
+                            disabled={actionMutation.isPending}
+                            onClick={() => {
+                              setActionStage(pendingStageKey!)
+                              setActionDecision('REJECT')
+                            }}
+                            variant="outline"
+                            className="border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-black rounded-2xl h-12 px-6 flex items-center gap-2 cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                            <span>Reject Request</span>
+                          </Button>
+
+                          <Button
+                            disabled={actionMutation.isPending}
+                            onClick={() => {
+                              setActionStage(pendingStageKey!)
+                              setActionDecision('HOLD')
+                            }}
+                            variant="outline"
+                            className="border-amber-200 text-amber-600 hover:bg-amber-50 text-xs font-black rounded-2xl h-12 px-6 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Clock className="w-4 h-4" />
+                            <span>Reschedule</span>
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column - Activity Panel */}
+                  {showTimeline && (
+                    <div className="bg-white border border-slate-100 rounded-3xl flex flex-col overflow-hidden lg:max-h-[calc(95vh-12rem)] shadow-sm animate-in slide-in-from-right duration-300 w-full">
+                    {/* Panel Tabs */}
+                    <div className="flex border-b border-slate-100 shrink-0 bg-slate-50/20">
+                      <button
+                        onClick={() => setActiveTab('timeline')}
+                        className={cn(
+                          "flex-1 py-4 px-6 text-xs font-black flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer",
+                          activeTab === 'timeline' ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-400 hover:text-slate-600"
+                        )}
+                      >
+                        <Activity className="w-4 h-4" />
+                        <span>Activity Timeline</span>
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('remarks')}
+                        className={cn(
+                          "flex-1 py-4 px-6 text-xs font-black flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer",
+                          activeTab === 'remarks' ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-400 hover:text-slate-600"
+                        )}
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                        <span>Remarks</span>
+                        <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-1.5 py-0.5 rounded-full shrink-0">
+                          {remarksCount}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Timeline List */}
+                    <div className="flex-1 lg:overflow-y-auto p-6 space-y-6 lg:max-h-[calc(95vh-26rem)]">
+                      {displayedEvents.length === 0 ? (
+                        <p className="text-center text-xs text-slate-400 font-semibold py-8">No events to display.</p>
+                      ) : (
+                        displayedEvents.map((evt, idx) => {
+                          let IconComponent = MessageSquare
+                          let iconBgColor = 'bg-slate-50 text-slate-500 border-slate-100'
+                          
+                          if (evt.iconType === 'phone') {
+                            IconComponent = Phone
+                            iconBgColor = 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                          } else if (evt.iconType === 'create') {
+                            IconComponent = FileText
+                            iconBgColor = 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                          } else if (evt.iconType === 'clip') {
+                            IconComponent = Paperclip
+                            iconBgColor = 'bg-blue-50 text-blue-600 border-blue-100'
+                          } else if (evt.iconType === 'remark') {
+                            IconComponent = MessageSquare
+                            iconBgColor = 'bg-amber-50 text-amber-600 border-amber-100'
+                          } else if (evt.iconType === 'approve') {
+                            IconComponent = Check
+                            iconBgColor = 'bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-500/10'
+                          } else if (evt.iconType === 'reject') {
+                            IconComponent = X
+                            iconBgColor = 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/10'
+                          } else if (evt.iconType === 'hold') {
+                            IconComponent = Clock
+                            iconBgColor = 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/10'
+                          } else if (evt.iconType === 'gl') {
+                            IconComponent = RefreshCw
+                            iconBgColor = 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                          }
+
+                          return (
+                            <div key={evt.id} className="flex gap-4 relative">
+                              {idx < displayedEvents.length - 1 && (
+                                <div className="absolute top-8 left-4 w-0.5 h-[calc(100%+1.5rem)] bg-slate-100" />
+                              )}
+
+                              <div className={cn("h-8 w-8 rounded-full border flex items-center justify-center shrink-0 z-10", iconBgColor)}>
+                                <IconComponent className="w-3.5 h-3.5" />
+                              </div>
+
+                              <div className="space-y-1">
+                                <span className="text-xs font-black text-slate-800 block leading-tight">{evt.title}</span>
+                                <div className="text-xs font-semibold text-slate-500 leading-relaxed pr-2">{evt.description}</div>
+                                <span className="text-[9px] font-bold text-slate-400 block mt-1">
+                                  {evt.user} · {evt.timestamp.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}, {evt.timestamp.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+
+                    {/* Timeline Text Area Footer */}
+                    <div className="p-4 border-t border-slate-100 bg-[#f8fafc]/30 space-y-3 shrink-0">
+                      <div className="relative">
+                        <textarea
+                          placeholder="Add a remark..."
+                          value={remarkText}
+                          maxLength={500}
+                          onChange={e => setRemarkText(e.target.value)}
+                          className="w-full min-h-[80px] p-3 text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-950 pr-4"
+                        />
+                        <div className="flex justify-between items-center mt-2">
+                          <span className="text-[9px] font-bold text-slate-400">
+                            {remarkText.length} / 500
+                          </span>
+                          <Button
+                            size="sm"
+                            disabled={!remarkText.trim() || addRemarkPending}
+                            onClick={handleAddRemark}
+                            className="h-8 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-[10px] font-black flex items-center gap-1.5 px-3 cursor-pointer"
+                          >
+                            {addRemarkPending ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <>
+                                <Send className="w-3 h-3" />
+                                <span>Add Remark</span>
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  )}
+                </div>
+
+                {/* Dialog Footer */}
+                <div className="p-4 sm:p-6 border-t border-slate-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4 w-full shrink-0">
+                  <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-wider text-center sm:text-left">
+                    <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>Created by {detailRow.name} on {new Date(detailRow.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto justify-end">
+                    <Button
+                      onClick={() => setShowTimeline(!showTimeline)}
+                      className={cn(
+                        "h-10 rounded-2xl text-xs font-black flex items-center justify-center gap-1.5 px-5 cursor-pointer transition-all w-full sm:w-auto",
+                        showTimeline
+                          ? "bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200"
+                          : "bg-indigo-50 border border-indigo-100 text-indigo-700 hover:bg-indigo-100"
+                      )}
+                      variant="outline"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                      <span>{showTimeline ? 'Hide Remarks' : `Show Remarks (${remarksCount})`}</span>
+                    </Button>
+                    <Button
+                      onClick={() => handlePrintVoucher(detailRow, pendingLabel)}
+                      className="h-10 rounded-2xl text-xs font-black border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 px-5 cursor-pointer w-full sm:w-auto"
+                      variant="outline"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Export Voucher</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setDetailRow(null)}
+                      className="h-10 rounded-2xl text-xs font-black border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 px-5 cursor-pointer w-full sm:w-auto"
+                    >
+                      <X className="w-4 h-4" />
+                      <span>Close</span>
+                    </Button>
+                  </div>
                 </div>
               </>
             )
@@ -1991,12 +3153,26 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       className="h-10 px-4 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-white text-xs font-bold text-slate-700 w-full sm:w-auto cursor-pointer"
                     />
                   </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">Month</span>
+                    <select
+                      value={selectedVendorMonth}
+                      onChange={e => setSelectedVendorMonth(e.target.value)}
+                      className="h-10 px-4 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-white text-xs font-bold text-slate-700 w-full sm:w-auto cursor-pointer"
+                    >
+                      <option value="all">All Months</option>
+                      {uniqueMonths.map(m => (
+                        <option key={m} value={m}>{formatYearMonth(m)}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
-                    {(vendorStartDate || vendorEndDate) && (
+                    {(vendorStartDate || vendorEndDate || selectedVendorMonth !== 'all') && (
                       <Button
                         onClick={() => {
                           setVendorStartDate('')
                           setVendorEndDate('')
+                          setSelectedVendorMonth('all')
                         }}
                         variant="ghost"
                         className="h-10 px-4 rounded-2xl text-xs font-bold text-slate-500 hover:text-slate-900"
@@ -2014,60 +3190,66 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6">
-                  <div className="border border-slate-100 rounded-3xl overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50">
-                            <th className="py-3 px-4 w-12">#</th>
-                            <th className="py-3 px-4">Date</th>
-                            <th className="py-3 px-4">Requester</th>
-                            <th className="py-3 px-4">Payment Type</th>
-                            <th className="py-3 px-4 text-right">Amount (₹)</th>
-                            <th className="py-3 px-4 text-right">Workflow Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
-                          {vendorFilteredRows.length === 0 ? (
-                            <tr>
-                              <td colSpan={6} className="py-12 text-center text-slate-400 font-bold uppercase tracking-wider">
-                                No purchases matching filter criteria.
-                              </td>
-                            </tr>
-                          ) : (
-                            vendorFilteredRows.map((row, idx) => (
-                              <tr key={row.id} className="hover:bg-slate-50/20 transition-colors">
-                                <td className="py-3 px-4 font-mono text-slate-400">
-                                  {(idx + 1).toString().padStart(2, '0')}
-                                </td>
-                                <td className="py-3 px-4 font-bold text-slate-900">
-                                  {new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                </td>
-                                <td className="py-3 px-4">
-                                  <div className="flex flex-col">
-                                    <span className="font-bold text-slate-800">{row.name}</span>
-                                    <span className="text-[10px] text-slate-400 font-medium">{row.email}</span>
-                                  </div>
-                                </td>
-                                <td className="py-3 px-4">
-                                  <span className={`inline-block border px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase ${getPaymentTypeBadgeClass(row.typeOfPayment || '')}`}>
-                                    {row.typeOfPayment || '—'}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-4 text-right font-black text-slate-950">
-                                  {Number(row.amount).toLocaleString('en-IN')}
-                                </td>
-                                <td className="py-3 px-4 text-right font-black">
-                                  {getPendingStageLabel(row)}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/10">
+                  {groupedByMonth.length === 0 ? (
+                    <div className="border border-slate-100 rounded-3xl bg-white py-12 text-center text-slate-400 font-bold uppercase tracking-wider text-xs">
+                      No purchases matching filter criteria.
                     </div>
-                  </div>
+                  ) : (
+                    groupedByMonth.map((group) => (
+                      <div key={group.yearMonth} className="space-y-3">
+                        <div className="flex justify-between items-center bg-slate-50 border border-slate-100 rounded-2xl px-4 py-2.5 text-xs font-black text-slate-800 uppercase tracking-wider">
+                          <span>{formatYearMonth(group.yearMonth)}</span>
+                          <span className="text-indigo-600 font-mono">Monthly Spend: ₹{group.totalAmount.toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="border border-slate-100 rounded-3xl overflow-hidden bg-white shadow-sm">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50">
+                                  <th className="py-3 px-4 w-12">#</th>
+                                  <th className="py-3 px-4">Date</th>
+                                  <th className="py-3 px-4">Requester</th>
+                                  <th className="py-3 px-4">Payment Type</th>
+                                  <th className="py-3 px-4 text-right">Amount (₹)</th>
+                                  <th className="py-3 px-4 text-right">Workflow Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+                                {group.rows.map((row, idx) => (
+                                  <tr key={row.id} className="hover:bg-slate-50/20 transition-colors">
+                                    <td className="py-3 px-4 font-mono text-slate-400">
+                                      {(idx + 1).toString().padStart(2, '0')}
+                                    </td>
+                                    <td className="py-3 px-4 font-bold text-slate-900">
+                                      {new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <div className="flex flex-col">
+                                        <span className="font-bold text-slate-800">{row.name}</span>
+                                        <span className="text-[10px] text-slate-400 font-medium">{row.email}</span>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <span className={`inline-block border px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase ${getPaymentTypeBadgeClass(row.typeOfPayment || '')}`}>
+                                        {row.typeOfPayment || '—'}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-black text-slate-950">
+                                      {Number(row.amount).toLocaleString('en-IN')}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-black">
+                                      {getPendingStageLabel(row)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
@@ -2094,6 +3276,25 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {/* GL Account Selector Dropdown */}
+            <div className="space-y-1.5 border-b border-slate-100 pb-3">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                GL Account (Category) / जीएल खाता
+              </label>
+              <select
+                value={selectedGlId}
+                onChange={e => setSelectedGlId(e.target.value)}
+                className="w-full h-10 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-xs font-semibold text-slate-800 cursor-pointer"
+              >
+                <option value="">Select GL Account / जीएल खाता चुनें</option>
+                {glAccounts.map(g => (
+                  <option key={g.id} value={g.id}>
+                    {g.glName} ({g.glCode})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="space-y-1.5">
               <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                 Remarks / Notes {actionDecision ? '(Required)' : '(Optional)'}
@@ -2105,12 +3306,60 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 className="min-h-[100px] rounded-2xl border-slate-200 focus:ring-slate-950 font-semibold text-slate-800 text-sm"
               />
             </div>
+
+            {actionStage === 'accounts' && (actionDecision === 'APPROVE' || !actionDecision) && (
+              <div className="space-y-3 border-t border-slate-100 pt-3">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Invoice Number *
+                  </label>
+                  <Input
+                    type="text"
+                    value={invoiceNumber}
+                    onChange={e => setInvoiceNumber(e.target.value)}
+                    placeholder="Enter Invoice Number..."
+                    className="rounded-2xl border-slate-200 focus:ring-slate-950 font-semibold text-slate-800 text-sm"
+                  />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Invoice Document (PDF/Image) *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={handleInvoiceUpload}
+                      disabled={uploadingInvoice}
+                      className="hidden"
+                      id="invoice-file-upload"
+                    />
+                    <label
+                      htmlFor="invoice-file-upload"
+                      className="flex items-center gap-2 px-4 py-2 border border-slate-200 hover:border-slate-300 rounded-2xl cursor-pointer text-xs font-bold text-slate-700 bg-slate-55 hover:bg-slate-100 transition-colors"
+                    >
+                      <Upload className="w-4 h-4 text-slate-500" />
+                      {uploadingInvoice ? 'Uploading...' : invoiceDocUrl ? 'Change File' : 'Upload Invoice'}
+                    </label>
+                    {invoiceDocUrl && (
+                      <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" /> Uploaded!
+                      </span>
+                    )}
+                  </div>
+                  {invoiceFileName && (
+                    <p className="text-[10px] text-slate-400 font-semibold truncate max-w-xs">{invoiceFileName}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2 justify-end mt-2">
             <Button
               variant="outline"
-              onClick={() => { setActionStage(null); setActionDecision(null); setActionRemarks(''); }}
+              onClick={() => { setActionStage(null); setActionDecision(null); setActionRemarks(''); setInvoiceNumber(''); setInvoiceDocUrl(''); setInvoiceFileName(''); }}
               disabled={actionMutation.isPending}
               className="h-10 rounded-2xl text-xs font-bold border-slate-200 order-last sm:order-none"
             >
@@ -2129,7 +3378,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       id: detailRow.id,
                       action: 'REJECT',
                       stage: actionStage,
-                      remarks: actionRemarks
+                      remarks: actionRemarks,
+                      glAccountId: selectedGlId || undefined
                     })
                   }
                 }}
@@ -2154,7 +3404,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       id: detailRow.id,
                       action: 'HOLD',
                       stage: actionStage,
-                      remarks: actionRemarks
+                      remarks: actionRemarks,
+                      glAccountId: selectedGlId || undefined
                     })
                   }
                 }}
@@ -2171,11 +3422,24 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               <Button
                 onClick={() => {
                   if (detailRow && actionStage) {
+                    if (actionStage === 'accounts') {
+                      if (!invoiceNumber.trim()) {
+                        toast({ title: 'Invoice number required', description: 'Please enter the invoice number.', variant: 'error' })
+                        return
+                      }
+                      if (!invoiceDocUrl) {
+                        toast({ title: 'Invoice upload required', description: 'Please upload the invoice document (PDF or image).', variant: 'error' })
+                        return
+                      }
+                    }
                     actionMutation.mutate({
                       id: detailRow.id,
                       action: 'APPROVE',
                       stage: actionStage,
-                      remarks: actionRemarks
+                      remarks: actionRemarks,
+                      invoiceNumber: actionStage === 'accounts' ? invoiceNumber : undefined,
+                      invoiceDocUrl: actionStage === 'accounts' ? invoiceDocUrl : undefined,
+                      glAccountId: selectedGlId || undefined
                     })
                   }
                 }}
@@ -2188,6 +3452,87 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               </Button>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 6. INLINE DOCUMENT PREVIEW DIALOG */}
+      <Dialog open={Boolean(previewDocUrl)} onOpenChange={(open) => { if (!open) setPreviewDocUrl(null) }}>
+        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-4xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100 max-h-[90vh] flex flex-col">
+          {previewDocUrl && (() => {
+            const isPdf = previewDocUrl.toLowerCase().endsWith('.pdf') || previewDocUrl.includes('/pdf') || previewDocUrl.includes('response-content-type=application/pdf') || previewDocUrl.includes('.output');
+            const isImage = previewDocUrl.toLowerCase().match(/\.(jpeg|jpg|gif|png|webp|svg)/) || previewDocUrl.includes('image/');
+            
+            return (
+              <>
+                <DialogHeader className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <DialogTitle className="text-xl font-black tracking-tight text-slate-950">
+                        Document Preview
+                      </DialogTitle>
+                      <DialogDescription className="text-xs text-slate-400 font-semibold mt-1">
+                        Fast inline viewer for payment request attachments.
+                      </DialogDescription>
+                    </div>
+                    <a
+                      href={previewDocUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 h-10 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-xs font-black text-white transition-all shadow-md shadow-indigo-100"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Open Original</span>
+                    </a>
+                  </div>
+                </DialogHeader>
+
+                <div className="flex-1 overflow-auto p-6 bg-slate-100/50 flex items-center justify-center min-h-[50vh]">
+                  {isPdf ? (
+                    <iframe
+                      src={`${previewDocUrl}#toolbar=1`}
+                      className="w-full h-[65vh] rounded-2xl border border-slate-200 bg-white"
+                      title="PDF Document Preview"
+                    />
+                  ) : isImage || !isPdf ? (
+                    <div className="relative max-w-full max-h-[65vh] rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex items-center justify-center p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={previewDocUrl}
+                        alt="Document attachment preview"
+                        className="max-w-full max-h-[60vh] object-contain rounded-xl"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          const parent = target.parentElement;
+                          if (parent) {
+                            parent.innerHTML = `<iframe src="${previewDocUrl}" class="w-[75vw] h-[65vh] rounded-2xl border border-slate-200 bg-white" title="Document Preview fallback" />`;
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-center space-y-4 py-12">
+                      <FileText className="w-16 h-16 text-slate-300 mx-auto" />
+                      <p className="text-sm font-semibold text-slate-500">Preview not supported for this file type.</p>
+                      <a
+                        href={previewDocUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-bold text-white transition-all"
+                      >
+                        Download Document
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+                  <Button variant="outline" onClick={() => setPreviewDocUrl(null)} className="h-10 rounded-2xl text-xs font-black border-slate-200">
+                    Close Preview
+                  </Button>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
       {/* Floating Bulk Action Bar */}

@@ -184,6 +184,7 @@ const ROLE_LABELS: Record<string, string> = {
   sales_manager: 'Sales Manager',
   finance_team: 'Finance Team',
   eba: 'EBA',
+  ed: 'ED (Executive Director)',
   call_agent: 'Call Agent',
   ca: 'CA',
   // CRM / CRE / CXM / CCM: four roles within one letter of each other, with very different powers
@@ -303,7 +304,7 @@ const BADGE_TONES: Record<AccentTone, string> = {
 // Role → tone, grouped by function so the Users table reads as colour families:
 // leadership=violet, sales=blue, finance=emerald/teal, service=cyan, ops=amber, rest=slate.
 const ROLE_TONE: Record<string, AccentTone> = {
-  developer: 'violet', md: 'violet', admin: 'violet', branch_admin: 'violet', ceo: 'violet',
+  developer: 'violet', md: 'violet', admin: 'violet', branch_admin: 'violet', ceo: 'violet', ed: 'violet',
   sales_head: 'blue', general_manager: 'blue', sales_manager: 'blue', sales_executive: 'blue',
   finance_head: 'emerald', finance_team: 'emerald', accounts: 'teal',
   service_general_manager: 'cyan', service_manager: 'cyan',

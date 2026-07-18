@@ -27,6 +27,8 @@
     "db:detect-kia-sold:scheduler": "node scripts/kia-detect-sold-allocations-scheduler.mjs",
     "kia:followup-reminders": "node scripts/kia-followup-reminders.mjs",
     "kia:followup-reminders:scheduler": "node scripts/kia-followup-reminders-scheduler.mjs",
+    "delegation:reminders": "node scripts/delegation-task-reminders.mjs",
+    "delegation:reminders:scheduler": "node scripts/delegation-task-reminders-scheduler.mjs",
     "verify:platinum-be": "node scripts/verify-platinum-business-excellence.js",
     "verify:platinum-be-api": "node scripts/verify-platinum-be-api.js",
     "verify:platinum-vas": "tsx scripts/verify-platinum-vas-identifiers.ts",

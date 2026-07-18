@@ -1363,9 +1363,6 @@ function PurchaseOrdersPageContent() {
 
   const setApprovalFilterPreference = (filter: ApprovalFilter) => {
     setPurchaseOrderPage(1)
-    if (userRole === 'md' && filter === 'all') {
-      setApprovalBranchFilter('all')
-    }
     void saveViewMode({
       ...viewMode,
       approvalFilter: filter,

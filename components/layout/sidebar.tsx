@@ -12,6 +12,9 @@ import {
   Landmark,
   Gauge,
   HandCoins,
+  ClipboardList,
+  FileCheck,
+  Users,
 } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
 import { useEffect, useMemo, useCallback, useRef } from 'react'
@@ -70,15 +73,10 @@ const brandNavigation: SidebarBrand[] = [
         key: 'sales',
         submenus: [
           { name: 'Bookings', href: '/brands/kia/proforma' },
-          { name: 'Payment Approvals', href: '/brands/kia/payment-approvals' },
-          { name: 'Vendor Registry', href: '/brands/kia/vendors' },
           { name: 'Finance', href: '/finance' },
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
-          { name: 'Sales Performance', href: '/brands/kia/sales-performance', badge: 'TEST' },
-          { name: 'Call Center', href: '/brands/kia/call-center', badge: 'TEST' },
           { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups', badge: 'TEST' },
-          { name: 'Call & Follow-up Analytics', href: '/brands/kia/call-analytics', badge: 'TEST' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
         ],
@@ -235,6 +233,7 @@ export function Sidebar() {
   // (lib/permissions/legacy-module-roles.ts) so they can never drift.
   const canAccessPettyCash = isPettyCashViewRole(userRole)
   const canAccessAmFinance = isAmFinanceViewRole(userRole)
+  const canAccessDelegationTasks = ['ea', 'eba', 'md', 'ceo', 'ed', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
   // The effective permission map, fetched through React Query so it is CACHED across sidebar remounts.
@@ -418,6 +417,8 @@ export function Sidebar() {
     // ── Common / global modules (shared across every branch) ──
     const commonNodes: NavNode[] = []
     if (hasPermission('cockpit.view')) commonNodes.push({ key: '/cockpit', label: 'Group Cockpit', href: '/cockpit', icon: Gauge, external: true, active: pathname === '/cockpit' })
+    // Delegation Tasks — visible to MD / EA / developer only.
+    if (canAccessDelegationTasks && hasPermission('delegation_tasks.view')) commonNodes.push({ key: '/delegation-tasks', label: 'Delegation Tasks', href: '/delegation-tasks', icon: ClipboardList, external: true, active: pathname === '/delegation-tasks' })
     // Purchase Orders — CA lives as a TAB inside this page (app/purchase-orders/page.tsx) for CA/MD/
     // Developer only; it is deliberately NOT a sidebar option.
     if (hasPermission('purchase_orders.view')) commonNodes.push({ key: '/purchase-orders', label: 'Purchase Orders', href: '/purchase-orders', icon: ShoppingCart, external: true, active: pathname === '/purchase-orders' })
@@ -435,6 +436,24 @@ export function Sidebar() {
       external: true,
       active: pathname.startsWith('/petty-cash'),
     })
+    if (hasPermission('kia.approvals.view')) {
+      commonNodes.push({
+        key: '/brands/kia/payment-approvals',
+        label: 'Vendor Payments',
+        href: '/brands/kia/payment-approvals',
+        icon: FileCheck,
+        external: true,
+        active: pathname.startsWith('/brands/kia/payment-approvals'),
+      })
+      commonNodes.push({
+        key: '/brands/kia/vendors',
+        label: 'Vendor Registry',
+        href: '/brands/kia/vendors',
+        icon: Users,
+        external: true,
+        active: pathname.startsWith('/brands/kia/vendors'),
+      })
+    }
     // if (canAccessAmFinance && hasPermission('am_finance.view')) commonNodes.push({ key: '/am-finance', label: 'AM Finance', href: '/am-finance', icon: Landmark, external: true, active: pathname === '/am-finance' })
     // Finance — customer vehicle-financing workflow. Deny-by-default (registry), gated purely on the
     // permission snapshot like Group Cockpit: MD/Developer always + explicitly-granted finance roles.
@@ -504,7 +523,7 @@ export function Sidebar() {
 
     return groups
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, canAccessPettyCash, canAccessAmFinance, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
+  }, [favouriteItems, favouriteHrefs, visibleBrands, pathname, permissionMap, canAccessAdmin, canAccessPettyCash, canAccessAmFinance, canAccessDelegationTasks, userBrand, userRole, isSidebarItemVisible, isEligibleFavouriteHref, toggleFavourite])
 
   return (
     <>

@@ -30,6 +30,15 @@ export const ALL_SECTIONS: SearchSection[] = [
     iconName: 'Gauge',
   },
   {
+    id: 'delegation_tasks',
+    name: 'Delegation Tasks',
+    description: 'Assign action items to your team and track them to completion.',
+    href: '/delegation-tasks',
+    department: 'admin',
+    brand: 'common',
+    iconName: 'ClipboardList',
+  },
+  {
     id: 'purchase_orders',
     name: 'Purchase Orders',
     description: 'Create, review, and approve corporate purchase orders across the group.',
@@ -69,11 +78,11 @@ export const ALL_SECTIONS: SearchSection[] = [
   },
   {
     id: 'kia_approvals',
-    name: 'Payment Approvals',
-    description: 'Review pending payment requests, attachments, and multi-stage workflows.',
+    name: 'Vendor Payments',
+    description: 'Review pending vendor payment requests, attachments, and multi-stage workflows.',
     href: '/brands/kia/payment-approvals',
     department: 'finance',
-    brand: 'kia',
+    brand: 'common',
     iconName: 'FileCheck',
   },
   {
@@ -82,7 +91,7 @@ export const ALL_SECTIONS: SearchSection[] = [
     description: 'Manage registered vendors, business address records, contact info, and GSTINs.',
     href: '/brands/kia/vendors',
     department: 'finance',
-    brand: 'kia',
+    brand: 'common',
     iconName: 'Users',
   },
 

@@ -447,12 +447,17 @@ function FormSection({ title, subtitle, icon, children }: { title: string; subti
 // /api/brands/kia/proforma/options — an endpoint that resolves the user profile + the whole price/bank
 // master list). Inherits the global 30-min staleTime, so switching sections now costs nothing; the
 // payload only changes on a price-details import, and `reload()` still forces a refresh explicitly.
-function useOptions(lite = false) {
+// ONE options query for the whole page. The `lite` param used to fork this into two cache keys
+// (['kia-proforma-options', true|false]) — so moving between the 'generate' section (full) and any
+// other section (lite) fired a SECOND network fetch that could never hit the first's cache. That
+// traded a whole ~36ms invocation to avoid serializing ~2ms of the price array — net negative, and
+// the payload is already Redis-cached server-side. One key, fetched once per session.
+function useOptions() {
   const queryClient = useQueryClient()
   const query = useQuery({
-    queryKey: ['kia-proforma-options', lite],
+    queryKey: ['kia-proforma-options'],
     queryFn: async () => {
-      const response = await fetch(`/api/brands/kia/proforma/options${lite ? '?lite=1' : ''}`)
+      const response = await fetch('/api/brands/kia/proforma/options')
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
         throw new Error(payload?.error || `Failed to load Kia Proforma options (${response.status})`)
@@ -2783,7 +2788,7 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
   const searchParams = useSearchParams()
   const bookingId = searchParams.get('bookingId')
   const clientSearchParams = useMemo<Record<string, string>>(() => Object.fromEntries(searchParams.entries()), [searchParams])
-  const { data: options, loading: optionsLoading, error, reload } = useOptions(section !== 'generate')
+  const { data: options, loading: optionsLoading, error, reload } = useOptions()
   const { prefill: bookingPrefill, loading: prefillLoading } = useBookingPrefill(
     section === 'generate' ? bookingId : null
   )
@@ -2806,7 +2811,10 @@ export function KiaProformaPage({ section }: { section: KiaProformaSection }) {
     <MainLayout title="Kia Proforma" subtitle="AM Kia operational proforma system">
       <div className="kia-proforma-shell kia-premium space-y-5">
         <ModuleHeader section={section} profile={options.profile} isApprover={options.currentUser.isApprover} currentUserRole={options.currentUser.role} onPricesImported={reload} />
-        {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} currentUserRole={options.currentUser.role} currentUserName={options.currentUser.fullName} />}
+        {/* Hand the already-loaded options down so the bookings client does NOT fire its own second
+            /api/brands/kia/proforma/options request (its query is gated on `!priceOptions`). The
+            standalone /brands/kia/bookings page passes no prop and keeps fetching for itself. */}
+        {section === 'bookings' && <KiaBookingsClient initialSearchParams={clientSearchParams} embedMode={true} priceOptions={options} currentUserRole={options.currentUser.role} currentUserName={options.currentUser.fullName} />}
         {section === 'stock' && <KiaStockManagementDashboard currentUserRole={options.currentUser.role} />}
         {section === 'generate' && <GenerateProforma options={options} onSaved={reload} bookingPrefill={bookingPrefill} />}
         {section === 'all' && <DetailsView options={options} mode="all" />}

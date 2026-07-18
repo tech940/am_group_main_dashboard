@@ -34,6 +34,17 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    // Only 'view' — the section is broadly visible (in DEFAULT_VISIBLE_SECTIONS) so everyone sees
+    // their own task inbox. WHO may delegate is gated by ROLE in lib/delegation/access.ts, not by a
+    // permission (a permission cannot restrict an action here).
+    key: 'delegation_tasks',
+    name: 'Delegation Tasks',
+    parentKey: null,
+    description: 'Cross-brand top-down task delegation: leaders assign action items down to staff and track them to completion.',
+    sortOrder: 6,
+    actions: ['view'],
+  },
+  {
     key: 'kia',
     name: 'KIA',
     parentKey: null,
@@ -733,6 +744,7 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
 // the same section (e.g. a Business Excellence landing page vs. its /overview route).
 export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }> = {
   cockpit: { href: '/cockpit' },
+  delegation_tasks: { href: '/delegation-tasks' },
   purchase_orders: { href: '/purchase-orders' },
   petty_cash: { href: '/petty-cash' },
   am_finance: { href: '/am-finance' },
@@ -796,6 +808,9 @@ export const PERMISSIONS: PermissionDefinition[] = PERMISSION_GROUPS.flatMap((gr
 // default and defeat the deny-by-default guarantee. To expose a new section to everyone, add its
 // key here deliberately.
 export const DEFAULT_VISIBLE_SECTIONS = new Set<string>([
+  // Broadly visible on purpose: every user gets a personal task inbox. Who may DELEGATE is role-gated
+  // (lib/delegation/access.ts), and the list only shows tasks a user created or was assigned.
+  'delegation_tasks',
   'purchase_orders', 'finance_orders', 'petty_cash', 'am_finance', 'user_management',
   'kia.business_excellence', 'kia.service_appointment', 'kia.demo_job_cards', 'kia.demo_cars_list',
   'kia.sales_report', 'kia.stock_report', 'kia.bookings', 'kia.proforma',
@@ -866,6 +881,7 @@ export const ROLE_PERMISSION_TEMPLATE_LABELS: Record<PermissionRole, string> = {
   sales_head: 'Sales Head',
   sales_executive: 'Sales Executive',
   sales_manager: 'Sales Manager',
+  ed: 'ED',
   finance_team: 'Finance Team',
   call_agent: 'Call Agent',
   ca: 'CA',
@@ -1073,6 +1089,12 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   ],
   // KIA Proforma workflow: reviews & approves/declines proformas.
   sales_manager: [
+    ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management'], ['view', 'create', 'edit', 'approve', 'audit']),
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
+    ...keysForGroups(['kia.call_analytics'], ['view']),
+    ...keysForGroups(['am_finance'], ['view']),
+  ],
+  ed: [
     ...keysForGroups(['kia', 'kia.bookings', 'kia.proforma', 'kia.stock_management'], ['view', 'create', 'edit', 'approve', 'audit']),
     ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.call_analytics'], ['view']),
