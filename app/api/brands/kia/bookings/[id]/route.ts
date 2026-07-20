@@ -5,7 +5,7 @@ import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { requirePermission } from '@/lib/permissions/service'
 import { getKiaBookingDetail, updateKiaBooking, personNameKey } from '@/lib/kia/bookings'
 import { canViewKiaCustomerPii, redactKiaBookingPii } from '@/lib/kia/pii'
-import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
+import { getCachedKiaUserProfile } from '@/lib/kia-proforma/server'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -82,7 +82,9 @@ export async function GET(_request: Request, context: RouteContext<'/api/brands/
       const timing = timer.finish()
       return withServerTiming(NextResponse.json({ error: 'Booking not found' }, { status: 404 }), timing.serverTiming)
     }
-    const profile = await timer.time('profile', () => ensureKiaUserProfile(auth.appUser))
+    // Read-only + cached: the detail GET only needs consultantName for the isOwner PII check, and is
+    // hover-prefetched per row — creating/looking up the profile on every call was the `profile` phase.
+    const profile = await timer.time('profile', () => getCachedKiaUserProfile(auth.appUser?.email))
     const consultantName = profile?.consultantName || auth.appUser?.fullName
 
     const isOwner = auth.appUser && (

@@ -51,14 +51,11 @@
 -- A. Confirmed missing indexes (safe, additive)
 -- ============================================================================
 
--- A1. petty_cash_allocations(request_id)
---   Queried per-row (WHERE request_id = ?) in getPettyCashApprovalQueue (N+1),
---   getPettyCashRequestDetails, and the allocations feeds. The table only has
---   (branch_id,status,created_at) and (allocated_to,status) — neither serves
---   request_id, so each lookup is a seq scan. This is the biggest amplifier of the
---   petty-cash approval-queue N+1 (see report §3.2).
-CREATE INDEX CONCURRENTLY IF NOT EXISTS petty_cash_allocations_request_idx
-  ON public.petty_cash_allocations (request_id);
+-- A1. [WITHDRAWN 2026-07-20] petty_cash_allocations(request_id) is ALREADY indexed —
+--   schema.ts defines `uniqueIndex('petty_cash_allocations_request_idx').on(requestId)`
+--   (an earlier grep missed uniqueIndex() vs index()). Do NOT create it. The petty-cash
+--   approval-queue N+1 (report §3.2) is a ROUND-TRIP-count problem, not a missing index —
+--   fix it in code (batch the per-row lookups), no DDL needed.
 
 -- A2. kia_bookings default list sort (newest-updated first, non-deleted).
 --   getKiaBookingsList orders by updated_at DESC (default) / created_at with a
@@ -84,15 +81,11 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS kia_proformas_approval_date_idx
   ON public.kia_proformas (approval_status, proforma_date DESC)
   WHERE deleted_at IS NULL;
 
--- A5. finance_orders(order_number) — createKiaBookingFinanceDraft looks up by
---   order_number and relies on ON CONFLICT DO NOTHING. finance_orders indexes cover
---   status/created_by/invoice_number/created_at but NOT order_number, so the lookup
---   is a seq scan. NOTE (correctness, out of scope here): the ON CONFLICT has no
---   target — it only dedupes on the PK, so it can currently create duplicate
---   order_numbers. Consider a UNIQUE index instead of a plain one AFTER de-duping
---   existing rows. Plain index shipped here as the zero-risk perf fix:
-CREATE INDEX CONCURRENTLY IF NOT EXISTS finance_orders_order_number_idx
-  ON public.finance_orders (order_number);
+-- A5. [WITHDRAWN 2026-07-20] finance_orders(order_number) is ALREADY indexed — the
+--   column is declared `text('order_number').unique().notNull()` in schema.ts, which
+--   creates a unique index. So the createKiaBookingFinanceDraft lookup is an index scan,
+--   and ON CONFLICT DO NOTHING has a real unique to conflict on (no duplicate-order bug).
+--   Do NOT create it.
 
 
 -- ============================================================================
@@ -114,12 +107,11 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS finance_orders_order_number_idx
 -- ============================================================================
 --   SELECT indexname, indexdef FROM pg_indexes
 --    WHERE schemaname='public' AND indexname IN (
---      'petty_cash_allocations_request_idx','kia_bookings_active_updated_idx',
---      'kia_bookings_active_created_idx','kia_finance_processing_updated_idx',
---      'kia_proformas_approval_date_idx','finance_orders_order_number_idx'
+--      'kia_bookings_active_updated_idx','kia_bookings_active_created_idx',
+--      'kia_finance_processing_updated_idx','kia_proformas_approval_date_idx'
 --    ) ORDER BY indexname;
 --
 -- Then re-run an EXPLAIN (ANALYZE, BUFFERS) on the affected queries, e.g.:
 --   EXPLAIN (ANALYZE, BUFFERS)
---   SELECT * FROM petty_cash_allocations WHERE request_id = '<uuid>';
---   -- expect: Index Scan using petty_cash_allocations_request_idx (was Seq Scan)
+--   SELECT id FROM kia_bookings WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 15;
+--   -- expect: Index Scan using kia_bookings_active_updated_idx (was Seq Scan + Sort)

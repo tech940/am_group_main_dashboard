@@ -1087,19 +1087,41 @@ export async function getKiaBookingDetail(id: string) {
   // forget) — write transactions and full-table scans on the critical path of the app's hottest
   // endpoint. They now run only from the scheduled maintenance job: POST /api/brands/kia/maintenance
   // (npm run kia:maintenance:scheduler).
-  const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
-  if (!booking) return null
+  // Statement budget matters here more than raw work: this endpoint is hover-prefetched per booking row
+  // (kia-bookings-client), so a burst of concurrent detail loads all compete for the small pooler
+  // connection budget (DATABASE_POOL_MAX = 4 dev / 6 prod) and each starved query pays a full pooler
+  // RTT. The booking + its three 1:1 relations (active allocation, proforma header, finance-order
+  // header) are folded into ONE LEFT-JOIN round trip; only the multi-row lists (activity, transfers,
+  // follow-up notes) stay a parallel batch. 7 statements → 4 — which is what cuts the burst latency.
+  const [head] = await db
+    .select({
+      booking: kiaBookings,
+      allocation: kiaVehicleAllocations,
+      proformaId: kiaProformas.id,
+      proformaApprovalStatus: kiaProformas.approvalStatus,
+      proformaCreatedAt: kiaProformas.createdAt,
+      financeOrderId: financeOrders.id,
+      financeOrderNumber: financeOrders.orderNumber,
+      financeOrderStatus: financeOrders.status,
+      financeOrderCreatedAt: financeOrders.createdAt,
+    })
+    .from(kiaBookings)
+    // At most one active allocation per booking (partial unique index on booking_id WHERE released_at
+    // IS NULL); proforma/finance-order match by their own id — the join stays 1:1 so LIMIT 1 is exact.
+    .leftJoin(kiaVehicleAllocations, and(eq(kiaVehicleAllocations.bookingId, kiaBookings.id), isNull(kiaVehicleAllocations.releasedAt)))
+    .leftJoin(kiaProformas, eq(kiaProformas.id, kiaBookings.proformaId))
+    .leftJoin(financeOrders, eq(financeOrders.id, kiaBookings.financeOrderId))
+    .where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt)))
+    .limit(1)
 
-  // Every select below is projected to EXACTLY the columns the route serializes (see detailPayload in
-  // app/api/brands/kia/bookings/[id]/route.ts). A bare `db.select()` here was pulling, per request:
-  //   • activity: before_value + after_value — jsonb holding WHOLE kia_bookings snapshots — for up to
-  //     100 rows (~200 blobs) that the route discards entirely;
-  //   • transfers: metadata + vehicle_snapshot jsonb for up to 50 rows, to render 4;
-  //   • proforma: 48 columns to use 3; financeOrder: 34 columns to use 4.
-  // The driver deserialises all of that into JS objects, and Vercel Fluid bills Active CPU (JS work) —
-  // so the discarded JSONB was the bill. Projections keep the response byte-identical.
-  const [activeAllocationRows, activity, transfers, proformaRows, financeRows, followupNotes] = await Promise.all([
-    db.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt))).limit(1),
+  if (!head?.booking) return null
+  const booking = head.booking
+
+  // Projected to EXACTLY the columns the route serializes (see detailPayload in
+  // app/api/brands/kia/bookings/[id]/route.ts). A bare `db.select()` here was pulling activity
+  // before_value/after_value (whole-booking JSONB snapshots, up to 100 rows) and transfer
+  // metadata/vehicle_snapshot JSONB the route discards — deserialising that was the CPU bill.
+  const [activity, transfers, followupNotes] = await Promise.all([
     db.select({
       id: kiaBookingActivity.id,
       activityType: kiaBookingActivity.activityType,
@@ -1116,14 +1138,6 @@ export async function getKiaBookingDetail(id: string) {
       transferStatus: kiaVehicleTransfers.transferStatus,
       createdAt: kiaVehicleTransfers.createdAt,
     }).from(kiaVehicleTransfers).where(eq(kiaVehicleTransfers.bookingId, id)).orderBy(desc(kiaVehicleTransfers.createdAt)).limit(50),
-    booking.proformaId
-      ? db.select({ id: kiaProformas.id, approvalStatus: kiaProformas.approvalStatus, createdAt: kiaProformas.createdAt })
-        .from(kiaProformas).where(eq(kiaProformas.id, booking.proformaId)).limit(1)
-      : Promise.resolve([]),
-    booking.financeOrderId
-      ? db.select({ id: financeOrders.id, orderNumber: financeOrders.orderNumber, status: financeOrders.status, createdAt: financeOrders.createdAt })
-        .from(financeOrders).where(eq(financeOrders.id, booking.financeOrderId)).limit(1)
-      : Promise.resolve([]),
     db.select({
       id: kiaLeadFollowups.id,
       notes: kiaLeadFollowups.notes,
@@ -1150,9 +1164,11 @@ export async function getKiaBookingDetail(id: string) {
 
   return {
     booking,
-    activeAllocation: activeAllocationRows[0] || null,
-    proforma: proformaRows[0] || null,
-    financeOrder: financeRows[0] || null,
+    // LEFT JOIN yields a null (or all-null) allocation when the booking has no active allocation — a
+    // null id means "no allocation". Otherwise it is the same full allocation row as before.
+    activeAllocation: head.allocation && head.allocation.id ? head.allocation : null,
+    proforma: head.proformaId ? { id: head.proformaId, approvalStatus: head.proformaApprovalStatus, createdAt: head.proformaCreatedAt } : null,
+    financeOrder: head.financeOrderId ? { id: head.financeOrderId, orderNumber: head.financeOrderNumber, status: head.financeOrderStatus, createdAt: head.financeOrderCreatedAt } : null,
     transfers,
     activity: combinedActivity,
   }

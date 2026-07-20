@@ -1828,6 +1828,8 @@ export function KiaBookingsClient({
       queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
       queryClient.invalidateQueries({ queryKey: ['kia-booking-detail', selectedBookingId] })
       queryClient.invalidateQueries({ queryKey: ['kia-booking-matching-vehicles', selectedBookingId] })
+      void listQuery.refetch()
+      router.refresh()
     },
     onError: (error) => setActionMessage(error instanceof Error ? error.message : 'Action failed'),
   })
@@ -3556,7 +3558,19 @@ export function KiaBookingsClient({
           style={{ backgroundColor: 'var(--kia-canvas)', borderColor: 'var(--kia-hairline)' }}
         >
           <DialogTitle className="sr-only">Booking Details</DialogTitle>
-          <SuccessOverlay show={deliverySuccess} variant="delivery" label="Vehicle delivered!" sublabel="Handed over to the customer" onDone={() => setDeliverySuccess(false)} />
+          <SuccessOverlay
+            show={deliverySuccess}
+            variant="delivery"
+            label="Vehicle delivered!"
+            sublabel="Handed over to the customer"
+            onDone={() => {
+              setDeliverySuccess(false)
+              closeBooking()
+              queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
+              void listQuery.refetch()
+              router.refresh()
+            }}
+          />
           <SuccessOverlay show={allotSuccess} variant="generic" label="Vehicle allotted!" sublabel="VIN reserved for this booking" onDone={() => setAllotSuccess(false)} />
           {detailQuery.isLoading ? (
             <DrawerSkeleton />

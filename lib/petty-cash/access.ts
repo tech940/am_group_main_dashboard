@@ -22,7 +22,7 @@ export function canAccessPettyCash(role: PettyCashRole | null | undefined) {
 // not tied to a single branch and must see requests, expenses and allocations
 // everywhere. (MD/EBA already had this for requests; EA + expenses + allocations
 // were inconsistently branch-scoped — this makes it uniform.)
-const PETTY_CASH_ALL_BRANCH_ROLES = new Set<string>(['developer', 'ea', 'md', 'eba'])
+const PETTY_CASH_ALL_BRANCH_ROLES = new Set<string>(['developer', 'ea', 'md', 'eba', 'ed'])
 
 export function hasPettyCashAllBranchAccess(appUser: Pick<AppUser, 'role' | 'brand'>) {
   return PETTY_CASH_ALL_BRANCH_ROLES.has(appUser.role) || hasAllBranchAccess(appUser.brand)

@@ -88,10 +88,10 @@ type PettyCashAllocationRow = {
 
 // Only the Branch Admin (branch_admin) or Sales Manager (sales_manager) may submit petty cash requests / expenses.
 const isCreatorRole = (role: string) => role === 'branch_admin' || role === 'sales_manager'
-const isApproverRole = (role: string) => role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts'
+const isApproverRole = (role: string) => role === 'ea' || role === 'md' || role === 'eba' || role === 'accounts' || role === 'ed'
 const isExpenseFeedRole = (role: string) => isApproverRole(role) || role === 'developer' || role === 'manager' || role === 'general_manager'
 
-const PENDING_STATUSES = ['ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold']
+const PENDING_STATUSES = ['submitted', 'ed_pending', 'ed_on_hold', 'ea_pending', 'ea_on_hold', 'md_pending', 'md_on_hold', 'accounts_pending', 'accounts_on_hold']
 const OPEN_REQUEST_STATUSES = ['draft', 'submitted', ...PENDING_STATUSES]
 
 function canActOnRequest(role: string, request: PettyCashRequest) {

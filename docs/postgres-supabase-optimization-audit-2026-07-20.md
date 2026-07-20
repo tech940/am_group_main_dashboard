@@ -5,6 +5,8 @@
 
 ---
 
+> **Update (2026-07-20, post-audit):** live request logs surfaced a concrete hot-path problem not visible from static reading — the KIA **booking-detail endpoint** running 2–7 s under per-row hover-prefetch bursts. Root-caused (pooler connection starvation) and **fixed in code** — see **§14**. Separately, two index recommendations were **withdrawn** after confirming they already exist (§6 correction).
+
 ## 0. Executive summary — read this first
 
 **This codebase is already heavily optimized.** It has been through at least three prior performance passes (see `docs/database-performance-audit-2026-06-14.md`, `scripts/dashboard-performance-optimization.sql`, `scripts/supabase-performance-fast-follow-2026-06-26.sql`, `scripts/postgres-performance-audit-fixes*.sql`). The evidence:
@@ -27,7 +29,7 @@ So there is **no systemic problem to fix.** The findings below are a short list 
 | 4 | Routes making many DB calls → merge | Already folded (bookings list 7→3; BE overview 19 in one `Promise.all`). One residual: §3.4. |
 | 5 | Replace `SELECT *` | §5 — a handful of multi-row list reads pull full JSONB; low impact. |
 | 6 | `ORDER BY` needs index | §3.1, §3.3, §6 — 3 unindexed sorts (all low-scale today). |
-| 7 | `WHERE` needs index | §6 — one confirmed gap (`petty_cash_allocations.request_id`). |
+| 7 | `WHERE` needs index | §6 — **no** confirmed gaps; every hot WHERE column is indexed. |
 | 8 | `JOIN` → composite index | Joins are on PK/FK columns already indexed; no gaps. |
 | 9 | `LIMIT/OFFSET` → keyset | §7 — OFFSET used on paginated lists; fine at current scale, keyset noted for scale. |
 | 10 | Dedup cleanup (`ROW_NUMBER`+`DELETE`) → UNIQUE/UPSERT | **None in production.** App already uses UPSERT + partial unique indexes. §8. |
@@ -46,7 +48,7 @@ So there is **no systemic problem to fix.** The findings below are a short list 
 |---|---|---|---|---|
 | 1 | **Index-application drift** — DDL applied manually, live state unverifiable from repo | Potentially **catastrophic** (a missing BE report index = seq scan on the hottest tables) | Run §1 verification, reconcile | None (read-only) |
 | 2 | **KIA bookings list KPI mega-aggregate** recomputes bidirectional-ILIKE stock matching ~4× per request | High on that endpoint at scale (unindexable scan of `kia_stock_management`) | Precompute stock-availability in the maintenance cron (§3.1) | Medium (touches "not in stock" logic) |
-| 3 | **Petty-cash approval-queue N+1** — up to ~600 round-trips | High on that endpoint | Batch to 3 queries + add 1 index (§3.2) | Low |
+| 3 | **Petty-cash approval-queue N+1** — up to ~600 round-trips | High on that endpoint | Batch to 3 queries (§3.2); lookups already indexed | Low |
 | 4 | **BE overview base-CTE recomputation** ×3–4 per request | Medium (cached; analytics DB) | Grouping-sets / single-pass (§3.4) | Medium |
 | 5 | **Missing indexes** (6, additive) | Low–medium, mostly scale | `scripts/optimization-audit-followups-2026-07-20.sql` (§6) | Low |
 
@@ -130,7 +132,7 @@ Project-wide greps (excluding `scratch/` + diagnostic scripts):
   const userMap = await getUserMap(history.map(h => h.performedBy).concat([row.createdBy]))
   ```
   → 200 × (2 parallel + 1 user query) ≈ **400–600 statements**, throttled through a 6-connection pool.
-- **Why slow:** classic per-row fan-out. Compounded by a missing index (see below) making each `allocations WHERE request_id` a seq scan.
+- **Why slow:** classic per-row fan-out — ~600 round-trips through a 4–6 connection pool. The lookups themselves are indexed; the cost is the round-trip *count*, not scans.
 - **Optimized version:** three set-based queries, grouped in JS:
   ```ts
   const ids = rows.map(r => r.id)
@@ -146,7 +148,7 @@ Project-wide greps (excluding `scratch/` + diagnostic scripts):
   // group histories/allocs by requestId in Maps, then assemble
   ```
   → **3 statements** total, regardless of row count. `getUserMap` (`:212`) is already the correct batched primitive — it's just being called inside the loop instead of once.
-- **Index need:** `petty_cash_allocations(request_id)` — **confirmed missing** (table has `(branch_id,status,created_at)` and `(allocated_to,status)` only). `petty_cash_approval_history(request_id, created_at)` already exists.
+- **Index need:** none — `petty_cash_allocations(request_id)` **already exists** as a unique index (`petty_cash_allocations_request_idx`), and so does `petty_cash_approval_history(request_id, created_at)`. This is a pure round-trip-count fix, no DDL.
 - **Risk: Low** — pure read refactor, identical output; the index is additive.
 
 ### 3.3 KIA finance processing detail — sequential reads + `SELECT *` — `efficiency` · **Low** · **Risk: Low**
@@ -193,18 +195,18 @@ Genuine multi-row reads that pull full rows (incl. JSONB) where projection would
 
 ## 6. Index review — missing / duplicate / composite
 
-**Confirmed missing (additive, in `scripts/optimization-audit-followups-2026-07-20.sql`):**
+> **Correction (2026-07-20):** an earlier grep matched `index(` but not `uniqueIndex(`, so two indexes were wrongly reported "missing" and have been **withdrawn**: `petty_cash_allocations(request_id)` already exists as `uniqueIndex('petty_cash_allocations_request_idx')`, and `finance_orders.order_number` is `.unique()`. The table below is the corrected, additive-only set (all **scale-oriented, low priority**).
+
+**Genuinely absent (additive, in `scripts/optimization-audit-followups-2026-07-20.sql`):**
 
 | Index | Table(cols) | Serves | Priority |
 |---|---|---|---|
-| `petty_cash_allocations_request_idx` | `petty_cash_allocations(request_id)` | approval-queue N+1, request details | **High** |
 | `kia_bookings_active_updated_idx` | `kia_bookings(updated_at DESC) WHERE deleted_at IS NULL` | default list sort | Med (scale) |
 | `kia_bookings_active_created_idx` | `kia_bookings(created_at DESC) WHERE deleted_at IS NULL` | asc sort / today filter | Med (scale) |
 | `kia_finance_processing_updated_idx` | `kia_finance_processing(updated_at DESC)` | processing list sort | Low (scale) |
 | `kia_proformas_approval_date_idx` | `kia_proformas(approval_status, proforma_date DESC) WHERE deleted_at IS NULL` | finance approval queue | Low |
-| `finance_orders_order_number_idx` | `finance_orders(order_number)` | booking→finance draft lookup / ON CONFLICT | Low |
 
-**Well-covered (no action):** `users` (partial `role,is_active,brand`; `last_seen_at`; unique `supabase_id`), all `petty_cash_*` except the gap above, `kia_bookings` (dealer/status/created, consultant, allocated_vin, proforma, finance_order), `kia_vehicle_allocations` (incl. partial uniques), `kia_proformas`/`mg_proformas`, `finance_sheet` (incl. GIN trigram search), `kia_lead_followups`, `kia_call_logs`, `delegation_tasks`, `purchase_orders`, `workflow_history`, warranty tables, and the BE report tables **(subject to §1 verification)**.
+**Well-covered (no action):** `users` (partial `role,is_active,brand`; `last_seen_at`; unique `supabase_id`), **all `petty_cash_*`** (incl. `petty_cash_allocations.request_id`), `kia_bookings` (dealer/status/created, consultant, allocated_vin, proforma, finance_order), `kia_vehicle_allocations` (incl. partial uniques), `kia_proformas`/`mg_proformas`, `finance_sheet` (incl. GIN trigram search), `kia_lead_followups`, `kia_call_logs`, `delegation_tasks`, `purchase_orders`, `workflow_history`, warranty tables, and the BE report tables **(subject to §1 verification)**.
 
 **Duplicate / redundant to clean up (low priority):** several BE report indexes are defined **twice** under different names — e.g. `ro_billing_report(bill_date)` exists as both `idx_ro_billing_report_bill_date` (`dashboard-performance-optimization.sql`) and `ro_billing_report_bill_date_idx` (`business-excellence-relational-indexes.sql`); similar pairs for `bill_date_work_type`, `bill_date_service_type`, `ro_no`, `bill_no`, `vin`, `uploaded_at`. Duplicate indexes cost write throughput and storage for no read benefit. After §1, `DROP INDEX CONCURRENTLY` the redundant twin of each pair (keep one naming convention).
 
@@ -247,7 +249,7 @@ No cron issues its queries in a per-row loop. No change required.
 
 ## 11. Foreign keys / cascades
 
-All FKs are plain `REFERENCES` with **no `ON DELETE CASCADE`** (verified across `schema.ts` and the `apply-migration-*.ts` DDL). Deletes are soft (`deleted_at`), so there is no cascade-write amplification. FK columns used in joins/filters are indexed where hot (activity tables `(…_id, created_at)`, `petty_cash_*` except the `request_id` gap in §6). No change required.
+FKs are overwhelmingly plain `REFERENCES` (NO ACTION), and application deletes are soft (`deleted_at`), so there is no cascade-write amplification on the hot paths. The one `ON DELETE CASCADE` is `kia_user_profiles.auth_user_id → users(id)` — it only fires when a user row is hard-deleted (rare, admin-only) and removes that user's single profile row, so it is harmless. FK columns used in joins/filters are indexed where hot (activity tables `(…_id, created_at)`, all `petty_cash_*`). No change required.
 
 ---
 
@@ -259,7 +261,7 @@ Run these on the live DB (session-mode connection) to quantify before/after. Sub
 -- (a) Bookings list KPI aggregate — the §3.1 hotspot (expect the stock-match subqueries to dominate)
 EXPLAIN (ANALYZE, BUFFERS) /* paste the aggRows SELECT from lib/kia/bookings.ts:687-811 */ ;
 
--- (b) Petty-cash allocation lookup — before/after petty_cash_allocations_request_idx (§3.2/§6)
+-- (b) Petty-cash allocation lookup — confirm it ALREADY uses its unique index (should be Index Scan)
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT * FROM petty_cash_allocations WHERE request_id = '<uuid>';
 
@@ -293,6 +295,22 @@ ORDER BY proforma_date DESC LIMIT 200;
 | `lib/finance/finance-processing.ts:233-249` | Parallelize + project detail reads | §3.3 | Low |
 | `lib/kia/bookings.ts:1043-1064` | Hoist assignee lookup out of the create tx | §4 | Low |
 | *(later)* Consolidate index DDL into tracked migrations; drop duplicate BE indexes | §1, §6 | Low |
+
+---
+
+## 14. Implemented fix — KIA booking-detail latency under prefetch bursts (2026-07-20)
+
+**Symptom (live logs):** `/brands/kia/proforma/bookings` embeds the full bookings CRM (`KiaBookingsClient embedMode`), which hover-prefetches `/api/brands/kia/bookings/[id]` per row. Each detail call logged `detail=3.4–6.6 s` and `profile=300–850 ms`, several firing in a burst ("api again and again").
+
+**Root cause — connection starvation, not query cost.** `getKiaBookingDetail` fanned out **7 statements** (1 booking + a 6-way `Promise.all`: allocation, activity, transfers, proforma, finance-order, follow-up notes), and the route added a per-request `ensureKiaUserProfile` lookup. The pool is `DATABASE_POOL_MAX = 4` (dev) / `6` (prod). A burst of ~8 prefetches × 7 statements ≈ 56 queries contending for 4–6 connections at ~225 ms pooler RTT each → every call balloons to seconds. Amplified in dev (small pool, cold cache, Turbopack compile overhead visible as the `next.js: …ms` figures).
+
+**Changes (behaviour-preserving):**
+1. [lib/kia/bookings.ts](../lib/kia/bookings.ts) `getKiaBookingDetail`: folded the booking + its three 1:1 relations (active allocation, proforma header, finance-order header) into **one LEFT-JOIN** query; the three multi-row lists (activity, transfers, follow-up notes) stay a parallel batch. **7 statements → 4.** Payload is identical — the allocation is still the full row (or `null` via an `id` guard that covers both Drizzle left-join null shapes); proforma/finance are the same projected objects; activity/transfers/follow-up merge unchanged.
+2. [app/api/brands/kia/bookings/[id]/route.ts](../app/api/brands/kia/bookings/[id]/route.ts) + [lib/kia-proforma/server.ts](../lib/kia-proforma/server.ts): the `profile` phase now uses a new **read-only, 60 s-cached** `getCachedKiaUserProfile(email)` instead of `ensureKiaUserProfile` (which did a create-on-GET). A prefetch burst from one user hits the DB **once** for the profile instead of per call, and a GET no longer writes. Cache is invalidated on profile create and on `touchKiaUserProfile`.
+
+**Net:** per detail request drops from ~8 statements (auth + profile + 7) to ~4–5, and the profile phase to ~0 after the first call in a burst — roughly halving the connection demand that was the burst-latency multiplier. **Verified:** `tsc --noEmit` clean (0 errors); Turbopack compiles the routes (unauthed hit → 401, no 500); no dev-log errors. Authenticated before/after timing is visible directly in the dev terminal on the next reload of the proforma→bookings page.
+
+**Deliberately deferred (bigger, separate):** §3.1 (precompute the bookings-list not-in-stock ILIKE aggregate in the cron) and §3.2 (batch the petty-cash approval-queue N+1) remain recommendations, not yet applied.
 
 ---
 
