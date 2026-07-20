@@ -743,38 +743,14 @@ export async function getKiaBookingsList(input: BookingListInput) {
               )
             )
             ${dealerScopeKb}) AS not_in_stock_count,
+        -- in_stock is the EXACT complement of not_in_stock within the in-flight set (the not-in-stock
+        -- predicate is a total boolean per booking), so it is derived as eligible_count - not_in_stock_count
+        -- in JS. Computing it here re-ran the whole bidirectional-ILIKE stock scan a second time for no
+        -- new information — this cheap count replaces that scan.
         (SELECT count(*)::int FROM kia_bookings kb
           WHERE kb.deleted_at IS NULL
             AND kb.status NOT IN ('draft', 'delivered', 'cancelled')
-            AND NOT (
-              -- Path 1: allocated VIN left the DMS (metadata flag set by stock-watcher job)
-              (kb.metadata->>'vehicleNotInStock')::boolean IS TRUE
-              OR
-              -- Path 2: no active allocation AND no matching free stock right now
-              (
-                NOT EXISTS (
-                  SELECT 1 FROM kia_vehicle_allocations va
-                  WHERE va.booking_id = kb.id AND va.released_at IS NULL
-                )
-                AND NOT EXISTS (
-                  SELECT 1 FROM kia_stock_management sm
-                  LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
-                  WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-                    AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
-                    AND (sm.model ILIKE '%' || kb.model || '%' OR kb.model ILIKE '%' || sm.model || '%')
-                    AND (
-                      coalesce(sm.variant, '') = ''
-                      OR sm.variant ILIKE '%' || kb.variant || '%'
-                      OR kb.variant ILIKE '%' || sm.variant || '%'
-                    )
-                    AND NOT EXISTS (
-                      SELECT 1 FROM kia_vehicle_allocations aa
-                      WHERE aa.vin_number = sm.vin_number AND aa.released_at IS NULL
-                    )
-                )
-              )
-            )
-            ${dealerScopeKb}) AS in_stock_count,
+            ${dealerScopeKb}) AS eligible_count,
         COALESCE((SELECT jsonb_agg(jsonb_build_object('model', model, 'variant', variant, 'color', coalesce(color, '—'), 'count', cnt) ORDER BY cnt DESC, model ASC, variant ASC, color ASC) FROM (
           SELECT model, variant, color, count(*)::int AS cnt
           FROM kia_bookings
@@ -821,7 +797,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
     active_allocations: number
     no_payment_count: number
     not_in_stock_count: number
-    in_stock_count: number
+    eligible_count: number
     not_in_stock_breakdown: { model: string; variant: string; color: string; count: number }[] | null
   }>(aggRows)[0]
   const statusCounts = agg?.status_counts || {}
@@ -912,7 +888,8 @@ export async function getKiaBookingsList(input: BookingListInput) {
       delivered: statusCounts.delivered || 0,
       cancelled: statusCounts.cancelled || 0,
       notInStock: Number(agg?.not_in_stock_count || 0),
-      inStock: Number(agg?.in_stock_count || 0),
+      // Exact complement of not-in-stock within the in-flight set (see the SQL note above).
+      inStock: Math.max(0, Number(agg?.eligible_count || 0) - Number(agg?.not_in_stock_count || 0)),
     },
     // #10 Bookings & vehicles summary — full status distribution, allocation state, and top models.
     summary: {

@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 }
 
 const BRAND = 'AM Kia'
-const ACCENT = '#4f46e5'
+const ACCENT = '#055B65'
 
 function formatDate(value: string | null): string {
   if (!value) return '—'
@@ -113,7 +113,7 @@ export default async function TrackingPage({ params }: { params: Promise<{ token
       `}} />
       <div style={{ maxWidth: 600, margin: '0 auto' }}>
         <div className="card-container" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 24, overflow: 'hidden', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.03), 0 8px 10px -6px rgba(0,0,0,0.03)' }}>
-          <div className="header-gradient" style={{ background: 'linear-gradient(135deg, #09090b 0%, #1e293b 100%)', padding: '32px 32px 28px' }}>
+          <div className="header-gradient" style={{ background: 'linear-gradient(135deg, #055B65 0%, #2f8f83 100%)', padding: '32px 32px 28px' }}>
             <p style={{ margin: 0, fontSize: 12, fontWeight: 800, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>{BRAND}</p>
             <h1 style={{ margin: '8px 0 0', fontSize: 24, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
               Hi {view.customerFirstName}, here&rsquo;s your order status

@@ -310,7 +310,17 @@ ORDER BY proforma_date DESC LIMIT 200;
 
 **Net:** per detail request drops from ~8 statements (auth + profile + 7) to ~4–5, and the profile phase to ~0 after the first call in a burst — roughly halving the connection demand that was the burst-latency multiplier. **Verified:** `tsc --noEmit` clean (0 errors); Turbopack compiles the routes (unauthed hit → 401, no 500); no dev-log errors. Authenticated before/after timing is visible directly in the dev terminal on the next reload of the proforma→bookings page.
 
-**Deliberately deferred (bigger, separate):** §3.1 (precompute the bookings-list not-in-stock ILIKE aggregate in the cron) and §3.2 (batch the petty-cash approval-queue N+1) remain recommendations, not yet applied.
+**Follow-ups §3.1 and §3.2 are now also implemented — see §15.**
+
+---
+
+## 15. Implemented follow-ups — petty-cash N+1 + bookings-list ILIKE (2026-07-20)
+
+**§3.2 — petty-cash approval-queue N+1 → batched.** [lib/petty-cash/server.ts](../lib/petty-cash/server.ts) `getPettyCashApprovalQueue`: the per-row fan-out (up to 200 rows × [history + allocation + a `getUserMap` call] ≈ **~600 statements**) is replaced by **4 statements** — one `inArray` query each for all histories and all allocations across the page, plus one batched `getUserMap`, grouped in JS by `request_id`. Output is identical: per-request history stays in `created_at ASC` order (the global result is ASC, preserved by push order), and `petty_cash_allocations` has a UNIQUE index on `request_id` so there is exactly ≤1 allocation per request. Empty-page guard added. No DDL (the lookups were already indexed).
+
+**§3.1 — bookings-list ILIKE aggregate, one scan removed (safe subset).** [lib/kia/bookings.ts](../lib/kia/bookings.ts) `getKiaBookingsList`: `in_stock_count` re-ran the entire bidirectional-ILIKE stock-match scan a **second** time purely to compute the complement of `not_in_stock_count`. Since the not-in-stock predicate is a total boolean per booking, `in_stock` is the exact complement within the in-flight set — it is now derived as `eligible_count − not_in_stock_count` (a cheap indexed count replaces the second heavy scan). **Zero semantic change**, one of the ~three heavy scans eliminated. The fuller single-CTE consolidation (compute the predicate once for count **and** breakdown) and the cron-precompute remain available but need live-data parity verification before shipping — deliberately NOT done blind.
+
+**Verified (both):** `tsc --noEmit` clean (0 errors); fresh Turbopack build serves the routes (`/api/petty-cash/approvals` → 403, `/api/brands/kia/bookings` → 401 — auth gate, no 500). Authenticated correctness (petty-cash queue contents; the unchanged "In Stock" KPI) is confirmable by loading the pages — the numbers must match exactly, since both changes are output-preserving.
 
 ---
 

@@ -339,33 +339,60 @@ export async function getPettyCashApprovalQueue(appUser: AppUser, opts?: { searc
     .orderBy(desc(pettyCashRequests.createdAt))
     .limit(200)
 
-  const categories = await getPettyCashCategories()
+  const requestIds = rows.map((row) => row.id)
+  if (requestIds.length === 0) return { count: 0, requests: [] as Array<Record<string, unknown>> }
+
+  // Batched: one query each for categories, ALL approval-history rows, and ALL allocations across the
+  // whole page, then grouped in JS. Replaces the old per-row fan-out (2 queries + a getUserMap call per
+  // row → ~600 statements for a 200-row queue) with 4 statements total. petty_cash_allocations has a
+  // UNIQUE index on request_id, so there is at most one allocation per request.
+  const [categories, histories, allocations] = await Promise.all([
+    getPettyCashCategories(),
+    db.select().from(pettyCashApprovalHistory).where(inArray(pettyCashApprovalHistory.requestId, requestIds)).orderBy(asc(pettyCashApprovalHistory.createdAt)),
+    db.select().from(pettyCashAllocations).where(inArray(pettyCashAllocations.requestId, requestIds)),
+  ])
   const categoryMap = new Map(categories.map((category) => [category.id, category.name]))
 
-  const requests = await Promise.all(
-    rows.map(async (row) => {
-      const [history, allocation] = await Promise.all([
-        db.select().from(pettyCashApprovalHistory).where(eq(pettyCashApprovalHistory.requestId, row.id)).orderBy(asc(pettyCashApprovalHistory.createdAt)),
-        db.select().from(pettyCashAllocations).where(eq(pettyCashAllocations.requestId, row.id)).limit(1).then((r) => r[0] || null),
-      ])
-      const performedByList = history.map((h) => h.performedBy).concat([row.createdBy])
-      const userMap = await getUserMap(performedByList)
+  // Group by request. `histories` is globally sorted by created_at ASC, so pushing in iteration order
+  // preserves per-request ASC order — identical to the old per-row `orderBy(asc(createdAt))`.
+  const historyByRequest = new Map<string, typeof histories>()
+  for (const item of histories) {
+    if (!item.requestId) continue
+    const list = historyByRequest.get(item.requestId)
+    if (list) list.push(item)
+    else historyByRequest.set(item.requestId, [item])
+  }
+  const allocationByRequest = new Map<string, (typeof allocations)[number]>()
+  for (const allocation of allocations) {
+    if (allocation.requestId && !allocationByRequest.has(allocation.requestId)) {
+      allocationByRequest.set(allocation.requestId, allocation)
+    }
+  }
 
-      return {
-        ...serializeRequest(row),
-        stage: pettyCashStageForStatus(String(row.status)),
-        categoryName: row.categoryId ? categoryMap.get(row.categoryId) || null : null,
-        location: row.requestForm?.location ?? null,
-        typeOfPayment: row.requestForm?.typeOfPayment ?? null,
-        allocation: allocation ? serializeAllocation(allocation as any) : null,
-        history: history.map((item) => ({
-          ...serializeHistory(item),
-          performedByName: userMap.get(item.performedBy)?.fullName || item.performedBy,
-          performedByEmail: userMap.get(item.performedBy)?.email || null,
-        })),
-      }
-    })
-  )
+  // One users lookup for every actor across the whole page (getUserMap already dedupes + batches).
+  const userMap = await getUserMap([
+    ...histories.map((item) => item.performedBy),
+    ...rows.map((row) => row.createdBy),
+  ])
+
+  const requests = rows.map((row) => {
+    const history = historyByRequest.get(row.id) ?? []
+    const allocation = allocationByRequest.get(row.id) ?? null
+
+    return {
+      ...serializeRequest(row),
+      stage: pettyCashStageForStatus(String(row.status)),
+      categoryName: row.categoryId ? categoryMap.get(row.categoryId) || null : null,
+      location: row.requestForm?.location ?? null,
+      typeOfPayment: row.requestForm?.typeOfPayment ?? null,
+      allocation: allocation ? serializeAllocation(allocation as any) : null,
+      history: history.map((item) => ({
+        ...serializeHistory(item),
+        performedByName: userMap.get(item.performedBy)?.fullName || item.performedBy,
+        performedByEmail: userMap.get(item.performedBy)?.email || null,
+      })),
+    }
+  })
 
   return { count: rows.length, requests }
 }
