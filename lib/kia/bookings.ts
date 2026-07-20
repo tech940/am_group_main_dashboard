@@ -1098,7 +1098,7 @@ export async function getKiaBookingDetail(id: string) {
   //   • proforma: 48 columns to use 3; financeOrder: 34 columns to use 4.
   // The driver deserialises all of that into JS objects, and Vercel Fluid bills Active CPU (JS work) —
   // so the discarded JSONB was the bill. Projections keep the response byte-identical.
-  const [activeAllocationRows, activity, transfers, proformaRows, financeRows] = await Promise.all([
+  const [activeAllocationRows, activity, transfers, proformaRows, financeRows, followupNotes] = await Promise.all([
     db.select().from(kiaVehicleAllocations).where(and(eq(kiaVehicleAllocations.bookingId, id), isNull(kiaVehicleAllocations.releasedAt))).limit(1),
     db.select({
       id: kiaBookingActivity.id,
@@ -1124,7 +1124,29 @@ export async function getKiaBookingDetail(id: string) {
       ? db.select({ id: financeOrders.id, orderNumber: financeOrders.orderNumber, status: financeOrders.status, createdAt: financeOrders.createdAt })
         .from(financeOrders).where(eq(financeOrders.id, booking.financeOrderId)).limit(1)
       : Promise.resolve([]),
+    db.select({
+      id: kiaLeadFollowups.id,
+      notes: kiaLeadFollowups.notes,
+      assignedName: kiaLeadFollowups.assignedName,
+      createdAt: kiaLeadFollowups.createdAt,
+      updatedAt: kiaLeadFollowups.updatedAt,
+    }).from(kiaLeadFollowups).where(eq(kiaLeadFollowups.bookingId, id)),
   ])
+
+  const followupRemarks = (followupNotes || [])
+    .filter((f) => f.notes && f.notes.trim())
+    .map((f) => ({
+      id: `fu-${f.id}`,
+      activityType: 'followup_remark',
+      title: 'Follow-up Remark',
+      description: f.notes,
+      actorName: f.assignedName || 'CRE',
+      createdAt: f.updatedAt || f.createdAt,
+    }))
+
+  const combinedActivity = [...activity, ...followupRemarks].sort(
+    (a, b) => new Date(b.createdAt as Date).getTime() - new Date(a.createdAt as Date).getTime()
+  )
 
   return {
     booking,
@@ -1132,7 +1154,7 @@ export async function getKiaBookingDetail(id: string) {
     proforma: proformaRows[0] || null,
     financeOrder: financeRows[0] || null,
     transfers,
-    activity,
+    activity: combinedActivity,
   }
 }
 

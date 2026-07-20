@@ -55,8 +55,8 @@ function requireRemarks(value: unknown): string {
   const notes = String(value ?? '').trim()
   if (!notes) throw new Error('Remarks are required — record what was discussed with the customer.')
   const words = notes.split(/\s+/).filter(Boolean).length
-  if (words <= 15) {
-    throw new Error('Remarks must be more than 15 words — record what was discussed with the customer.')
+  if (words < 10) {
+    throw new Error('Remarks must be at least 10 words — record what was discussed with the customer.')
   }
   return notes.slice(0, 2000)
 }
@@ -90,7 +90,7 @@ function istDayBoundaries(base = new Date()) {
  * - `pending` — every other open follow-up, overdue first. The `overdue` flag on each row drives the
  *   red indicator.
  */
-export type FollowupBucket = 'not_connected' | 'pending' | 'next_day' | 'scheduled' | 'cancelled'
+export type FollowupBucket = 'not_connected' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled'
 
 export type FollowupRow = {
   id: string
@@ -199,7 +199,7 @@ function toRow(r: Record<string, unknown>, now: Date, bucket: FollowupBucket, ca
     completedAt: r.completedAt ? (r.completedAt as Date).toISOString() : null,
     createdAt: (r.createdAt as Date).toISOString(),
     bucket,
-    overdue: bucket === 'pending' && isOverdue(dueAt, now),
+    overdue: (bucket === 'pending' || bucket === 'rescheduled') && isOverdue(dueAt, now),
     // THE redaction. Everything below this line reaches the browser, so a role that can't reveal
     // numbers must get null — not a masked string, not the value with a flag: null.
     customerPhone: canSeePhone ? ((r.customerPhone as string) || null) : null,
@@ -267,37 +267,40 @@ export async function listFollowups(appUser: AppUser, input: {
     cancelledWhere.push(lte(kiaBookings.createdAt, end))
   }
 
-  const [pending, nextDay, scheduled, notConnected, cancelled] = await Promise.all([
-    // Open follow-ups due today and overdue.
+  const [pending, nextDay, scheduled, notConnected, cancelled, rescheduled] = await Promise.all([
+    // Open follow-ups due today and overdue, excluding explicitly rescheduled ones.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
       .where(and(
         ...where,
         eq(kiaLeadFollowups.status, 'pending'),
+        ne(kiaLeadFollowups.source, 'rescheduled'),
         lte(kiaLeadFollowups.dueAt, endOfTodayUtc),
       ))
       .orderBy(kiaLeadFollowups.dueAt)
       .limit(500),
-    // Due tomorrow (IST) — pulled out as the heads-up for tomorrow's call list.
+    // Due tomorrow (IST) — pulled out as the heads-up for tomorrow's call list, excluding rescheduled.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
       .where(and(
         ...where,
         eq(kiaLeadFollowups.status, 'pending'),
+        ne(kiaLeadFollowups.source, 'rescheduled'),
         gt(kiaLeadFollowups.dueAt, endOfTodayUtc),
         lte(kiaLeadFollowups.dueAt, endOfTomorrowUtc),
       ))
       .orderBy(kiaLeadFollowups.dueAt)
       .limit(300),
-    // Scheduled in the future (due after tomorrow).
+    // Scheduled in the future (due after tomorrow), excluding rescheduled.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
       .where(and(
         ...where,
         eq(kiaLeadFollowups.status, 'pending'),
+        ne(kiaLeadFollowups.source, 'rescheduled'),
         gt(kiaLeadFollowups.dueAt, endOfTomorrowUtc),
       ))
       .orderBy(kiaLeadFollowups.dueAt)
@@ -332,6 +335,17 @@ export async function listFollowups(appUser: AppUser, input: {
       ))
       .orderBy(desc(kiaLeadFollowups.dueAt))
       .limit(300),
+    // Dedicated bucket for rescheduled followups
+    db.select(displaySelection)
+      .from(kiaLeadFollowups)
+      .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
+      .where(and(
+        ...where,
+        eq(kiaLeadFollowups.status, 'pending'),
+        eq(kiaLeadFollowups.source, 'rescheduled'),
+      ))
+      .orderBy(kiaLeadFollowups.dueAt)
+      .limit(500),
   ])
 
   // Decided ONCE, here, from the viewer's role — then every row goes through toRow with it.
@@ -342,6 +356,7 @@ export async function listFollowups(appUser: AppUser, input: {
     ...nextDay.map((r) => toRow(r as Record<string, unknown>, now, 'next_day', canSeePhone)),
     ...scheduled.map((r) => toRow(r as Record<string, unknown>, now, 'scheduled', canSeePhone)),
     ...cancelled.map((r) => toRow(r as Record<string, unknown>, now, 'cancelled', canSeePhone)),
+    ...rescheduled.map((r) => toRow(r as Record<string, unknown>, now, 'rescheduled', canSeePhone)),
   ]
   const counts = {
     not_connected: notConnected.length,
@@ -349,6 +364,7 @@ export async function listFollowups(appUser: AppUser, input: {
     next_day: nextDay.length,
     scheduled: scheduled.length,
     cancelled: cancelled.length,
+    rescheduled: rescheduled.length,
     overdue: rows.filter((r) => r.overdue && r.bucket !== 'cancelled').length,
   }
 
@@ -451,7 +467,7 @@ export async function createFollowup(appUser: AppUser, input: {
   reason?: string
   priority?: string
   notes?: string | null
-  source?: 'manual' | 'call' | 'callback_request'
+  source?: 'manual' | 'call' | 'callback_request' | 'rescheduled'
   sourceCallId?: string | null
   assignedTo?: string | null
 }): Promise<FollowupRow> {
@@ -546,6 +562,7 @@ export async function updateFollowup(appUser: AppUser, id: string, patch: {
     if (Number.isNaN(due.getTime())) throw new Error('Enter a valid follow-up date and time.')
     updates.dueAt = due
     updates.reminderSentAt = null // rescheduling re-arms the reminder
+    updates.source = 'rescheduled' // mark as rescheduled
     activityBits.push(`rescheduled to ${due.toISOString()}`)
   }
   if (patch.reason && REASONS.has(patch.reason)) updates.reason = patch.reason
@@ -562,6 +579,10 @@ export async function updateFollowup(appUser: AppUser, id: string, patch: {
     } else {
       updates.assignedTo = null
     }
+  }
+
+  if (notes) {
+    activityBits.push(`Remark: ${notes}`)
   }
 
   await db.update(kiaLeadFollowups).set(updates).where(eq(kiaLeadFollowups.id, id))
@@ -648,7 +669,7 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
       dueAt: dueAt.toISOString(),
       reason: existing.reason,
       priority: existing.priority,
-      source: 'manual',
+      source: outcome === 'rescheduled' ? 'rescheduled' : 'manual',
       assignedTo: existing.assignedTo,
       notes: input.nextDueAt
         ? `Next touch scheduled by ${appUser.fullName} after: ${notes}`.slice(0, 2000)

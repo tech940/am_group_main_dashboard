@@ -45,11 +45,11 @@ type Followup = {
   reason: string; priority: string; notes: string | null; source: string; outcome: string | null
   completedAt: string | null; createdAt: string
   notInterestedReason: string | null
-  bucket: 'not_connected' | 'pending' | 'next_day' | 'scheduled' | 'cancelled'
+  bucket: 'not_connected' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled'
   overdue: boolean
   customerPhone: string | null
 }
-type Counts = { not_connected: number; pending: number; next_day: number; scheduled: number; cancelled: number; overdue: number }
+type Counts = { not_connected: number; pending: number; next_day: number; scheduled: number; cancelled: number; rescheduled: number; overdue: number }
 type ListResponse = { rows: Followup[]; counts: Counts; now: string }
 type BookingHit = { id: string; customerName: string; model: string; variant: string; bookingNumber: string | null; dealer: string | null; status: string; consultantName: string | null }
 
@@ -104,13 +104,14 @@ const REASON_LABEL: Record<string, string> = Object.fromEntries(REASONS.map((r) 
 const BUCKETS = [
   { key: 'pending', label: 'Pending', tone: 'text-amber-600', hint: 'Open follow-ups' },
   { key: 'not_connected', label: 'Not Connected', tone: 'text-rose-600', hint: 'Last call failed' },
+  { key: 'rescheduled', label: 'Rescheduled', tone: 'text-violet-600', hint: 'Rescheduled open touches' },
   { key: 'next_day', label: 'Next Day', tone: 'text-indigo-600', hint: 'Due tomorrow' },
   { key: 'scheduled', label: 'Scheduled', tone: 'text-teal-600', hint: 'Future follow-ups' },
   { key: 'cancelled', label: 'Cancelled', tone: 'text-slate-500', hint: 'Cancelled bookings' },
 ] as const
 
 const MIN_REMARK_LENGTH = 10
-const MIN_REMARK_WORDS = 15
+const MIN_REMARK_WORDS = 10
 function countWords(str: string): number {
   return str.trim().split(/\s+/).filter(Boolean).length
 }
@@ -363,8 +364,11 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
         
         // Has it not been alerted in the current session?
         const isNotAlerted = !alertedIds.has(f.id)
+
+        // ONLY trigger alarm if the follow-up was explicitly rescheduled for today!
+        const isRescheduledSameDay = f.source === 'rescheduled' && isSameDay
         
-        if (isSameDay && isTimeReached && isNotAlerted) {
+        if (isRescheduledSameDay && isTimeReached && isNotAlerted) {
           // Trigger alarm!
           setAlertedIds((prev) => {
             const next = new Set(prev)
@@ -385,7 +389,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   }, [data?.rows, alertedIds])
 
   const grouped = useMemo(() => {
-    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], pending: [], next_day: [], scheduled: [], cancelled: [] }
+    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], pending: [], next_day: [], scheduled: [], cancelled: [], rescheduled: [] }
     for (const r of data?.rows || []) g[r.bucket].push(r)
     return g
   }, [data])
@@ -439,7 +443,14 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
 
   const remarksOnly = useMemo(() => {
     const list = bookingDetailQuery.data?.activities || []
-    return list.filter((act) => act.type === 'remark_added' || act.type === 'followup_completed')
+    return list.filter((act) => 
+      act.type === 'remark_added' || 
+      act.type === 'followup_completed' || 
+      act.type === 'followup_updated' || 
+      act.type === 'followup_scheduled' ||
+      act.type === 'followup_remark' ||
+      (Boolean(act.description) && String(act.description).trim().length > 0)
+    )
   }, [bookingDetailQuery.data?.activities])
 
   const activitiesList = useMemo(() => {
@@ -1206,6 +1217,8 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                       <div className="space-y-3">
                         {remarksOnly.map((act) => {
                           const isCall = act.type === 'followup_completed'
+                          const isUpdate = act.type === 'followup_updated' || act.type === 'followup_scheduled'
+                          const badgeLabel = isCall ? 'Call log' : isUpdate ? 'Follow-up update' : 'Remark'
                           return (
                             <div
                               key={act.id}
@@ -1213,15 +1226,17 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                                 'p-3 rounded-xl border shadow-sm text-slate-800',
                                 isCall
                                   ? 'bg-emerald-50/90 border-emerald-100/80'
+                                  : isUpdate
+                                  ? 'bg-amber-50/90 border-amber-100/80'
                                   : 'bg-indigo-50/80 border-indigo-100/80'
                               )}
                             >
                               <div className="flex items-center justify-between">
                                 <span className={cn(
                                   'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider',
-                                  isCall ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'
+                                  isCall ? 'bg-emerald-100 text-emerald-800' : isUpdate ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'
                                 )}>
-                                  {isCall ? 'Call log' : 'Remark'}
+                                  {badgeLabel}
                                 </span>
                                 <span className="text-[9px] font-bold text-slate-400">
                                   {new Date(act.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -1360,7 +1375,7 @@ function CompleteDialog({ f, onClose, onSaved }: { f: Followup; onClose: () => v
   const isCustomOutcome = outcome === '__custom__'
   const isNotInterested = outcome === 'not_interested'
   const effectiveOutcome = isCustomOutcome ? customOutcome.trim() : outcome
-  const remarksOk = countWords(notes) > MIN_REMARK_WORDS
+  const remarksOk = countWords(notes) >= MIN_REMARK_WORDS
   const canSave = Boolean(effectiveOutcome) && remarksOk && (!isNotInterested || Boolean(notInterestedReason)) && (!isCustomOutcome || customOutcome.trim().length > 2)
   const autoRepeats = CONTACTED_OUTCOME_VALUES.has(outcome)
 
@@ -1431,7 +1446,7 @@ function CompleteDialog({ f, onClose, onSaved }: { f: Followup; onClose: () => v
               )}
             />
             <p className={cn('mt-1 text-[11px] font-semibold', notes.length > 0 && !remarksOk ? 'text-rose-500' : 'text-slate-400')}>
-              Required — more than {MIN_REMARK_WORDS} words (entered: {countWords(notes)} words). This is the customer&apos;s communication history.
+              Required — at least {MIN_REMARK_WORDS} words (entered: {countWords(notes)} words). This is the customer&apos;s communication history.
             </p>
           </div>
           {autoRepeats && !scheduleNext && (
@@ -1465,7 +1480,7 @@ function RescheduleDialog({ f, onClose, onSaved }: { f: Followup; onClose: () =>
   const [saving, setSaving] = useState(false)
 
   const isCustomReason = rescheduleReason === '__custom__'
-  const remarksOk = countWords(notes) > MIN_REMARK_WORDS
+  const remarksOk = countWords(notes) >= MIN_REMARK_WORDS
 
   async function save() {
     setSaving(true)
@@ -1527,7 +1542,7 @@ function RescheduleDialog({ f, onClose, onSaved }: { f: Followup; onClose: () =>
               )}
             />
             <p className={cn('mt-1 text-[11px] font-semibold', notes.length > 0 && !remarksOk ? 'text-rose-500' : 'text-slate-400')}>
-              Required — more than {MIN_REMARK_WORDS} words (entered: {countWords(notes)} words).
+              Required — at least {MIN_REMARK_WORDS} words (entered: {countWords(notes)} words).
             </p>
           </div>
         </div>
@@ -1553,7 +1568,7 @@ function AddFollowupDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
   const [hits, setHits] = useState<BookingHit[]>([])
   const [searching, setSearching] = useState(false)
 
-  const remarksOk = countWords(notes) > MIN_REMARK_WORDS
+  const remarksOk = countWords(notes) >= MIN_REMARK_WORDS
 
   useEffect(() => {
     if (selected) return
@@ -1656,7 +1671,7 @@ function AddFollowupDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
                   )}
                 />
                 <p className={cn('mt-1 text-[11px] font-semibold', notes.length > 0 && !remarksOk ? 'text-rose-500' : 'text-slate-400')}>
-                  Required — more than {MIN_REMARK_WORDS} words (entered: {countWords(notes)} words).
+                  Required — at least {MIN_REMARK_WORDS} words (entered: {countWords(notes)} words).
                 </p>
               </div>
             </>

@@ -186,7 +186,11 @@ DECLARE
     'open_ro_yearly',
     'psf_yearly',
     'ro_billing_report',
-    'rsa_report'
+    'rsa_report',
+    'test_drive_employees',
+    'trips',
+    'employees',
+    'platinum_test_drive_vehicle'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables
@@ -196,6 +200,7 @@ BEGIN
       CONTINUE;
     END IF;
 
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', tbl);
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', 'Authenticated users can do everything', tbl);
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', 'Allow all access', tbl);
 
