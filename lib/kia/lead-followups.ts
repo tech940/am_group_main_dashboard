@@ -315,13 +315,13 @@ export async function listFollowups(appUser: AppUser, input: {
         eq(kiaLeadFollowups.outcome, 'no_answer'),
         sql`NOT EXISTS (
           SELECT 1 FROM kia_lead_followups nxt
-          WHERE nxt.booking_id = ${kiaLeadFollowups.bookingId}
+          WHERE nxt.booking_id = kia_lead_followups.booking_id
             AND nxt.status = 'pending'
         )`,
         // Only if this IS the latest completed attempt for the booking.
-        sql`${kiaLeadFollowups.completedAt} = (
+        sql`kia_lead_followups.completed_at = (
           SELECT max(latest.completed_at) FROM kia_lead_followups latest
-          WHERE latest.booking_id = ${kiaLeadFollowups.bookingId} AND latest.status = 'done'
+          WHERE latest.booking_id = kia_lead_followups.booking_id AND latest.status = 'done'
         )`,
       ))
       .orderBy(desc(kiaLeadFollowups.completedAt))
