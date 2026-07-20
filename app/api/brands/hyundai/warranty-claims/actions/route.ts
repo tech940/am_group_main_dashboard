@@ -157,10 +157,10 @@ export async function POST(request: Request) {
   }
 
   const actionId = randomUUID()
-  const uploadedPaths: string[] = []
+  const uploaded: Array<{ path: string; contentType: string; size: number }> = []
   try {
     for (const [index, file] of files.entries()) {
-      uploadedPaths.push(await uploadWarrantyEvidence(actionId, file, index))
+      uploaded.push(await uploadWarrantyEvidence(actionId, file, index))
     }
     await db.transaction(async (tx) => {
       await tx.insert(hyundaiWarrantyClaimActions).values({
@@ -180,10 +180,10 @@ export async function POST(request: Request) {
       if (files.length > 0) {
         await tx.insert(hyundaiWarrantyClaimEvidence).values(files.map((file, index) => ({
           actionId,
-          storagePath: uploadedPaths[index],
+          storagePath: uploaded[index].path,
           originalName: file.name,
-          contentType: file.type,
-          sizeBytes: file.size,
+          contentType: uploaded[index].contentType,
+          sizeBytes: uploaded[index].size,
           uploadedBy: appUser.id,
         })))
       }
@@ -206,7 +206,7 @@ export async function POST(request: Request) {
       },
     }, { status: 201 })
   } catch (error) {
-    await deleteWarrantyEvidence(uploadedPaths)
+    await deleteWarrantyEvidence(uploaded.map((u) => u.path))
     console.error('Failed to save Hyundai warranty action:', error)
     return NextResponse.json({ error: 'Failed to save remarks' }, { status: 500 })
   }

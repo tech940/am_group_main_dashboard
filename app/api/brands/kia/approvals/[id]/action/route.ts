@@ -3,6 +3,8 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { glAccounts, kiaApprovalRequests } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { sendEmail } from '@/lib/email/email-service'
+import { emailLayout } from '@/lib/email/templates/layout'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -19,13 +21,22 @@ export async function POST(
 
     const { id } = await context.params
     const body = await request.json().catch(() => ({}))
-    const { action, stage, remarks, invoiceNumber, invoiceDocUrl, glAccountId } = body // action: 'APPROVE' | 'REJECT' | 'HOLD', stage: 'sales_manager' | 'accounts' | 'ea' | 'md'
+    const { 
+      action, 
+      stage, 
+      remarks, 
+      invoiceNumber, 
+      invoiceDocUrl, 
+      glAccountId,
+      utrNumber,
+      paymentProofUrl
+    } = body // action: 'APPROVE' | 'REJECT' | 'HOLD' | 'SEND_BACK', stage: 'sales_manager' | 'accounts' | 'ea' | 'md' | 'payment_done'
 
-    if (!action || !['APPROVE', 'REJECT', 'HOLD'].includes(action)) {
-      return NextResponse.json({ error: 'Invalid action. Must be APPROVE, REJECT, or HOLD.' }, { status: 400 })
+    if (!action || !['APPROVE', 'REJECT', 'HOLD', 'SEND_BACK'].includes(action)) {
+      return NextResponse.json({ error: 'Invalid action. Must be APPROVE, REJECT, HOLD, or SEND_BACK.' }, { status: 400 })
     }
 
-    if (!stage || !['sales_manager', 'accounts', 'ea', 'md'].includes(stage)) {
+    if (!stage || !['sales_manager', 'accounts', 'ea', 'md', 'payment_done'].includes(stage)) {
       return NextResponse.json({ error: 'Invalid stage.' }, { status: 400 })
     }
 
@@ -41,11 +52,13 @@ export async function POST(
     } else if (stage === 'ea') {
       isAuthorized = isTester || ['ea'].includes(appUser.role)
     } else if (stage === 'md') {
-      isAuthorized = isTester || isSuperUser // MD is ceos, mds
+      isAuthorized = isTester || isSuperUser
+    } else if (stage === 'payment_done') {
+      isAuthorized = isTester || isSuperUser || ['accounts', 'finance_head'].includes(appUser.role)
     }
 
     if (!isAuthorized) {
-      return NextResponse.json({ error: `Your role (${appUser.role}) is not authorized to approve at the ${stage} stage.` }, { status: 403 })
+      return NextResponse.json({ error: `Your role (${appUser.role}) is not authorized to act at the ${stage} stage.` }, { status: 403 })
     }
 
     // Retrieve existing request
@@ -59,58 +72,133 @@ export async function POST(
       return NextResponse.json({ error: 'Approval request not found.' }, { status: 404 })
     }
 
-    // Check if MD is bypassing or if steps are in order
-    // Order: Sales Manager -> EA -> MD -> Accounts
-    if (stage === 'ea' && !isSuperUser && !isTester) {
-      if (requestRow.vpApproval !== 'APPROVED') {
-        return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
-      }
-    } else if (stage === 'md' && !isSuperUser && !isTester) {
-      if (requestRow.vpApproval !== 'APPROVED' || requestRow.eaApproval !== 'APPROVED') {
-        return NextResponse.json({ error: 'Previous approval stages (ED & EA) must be completed.' }, { status: 400 })
-      }
-    } else if (stage === 'accounts' && !isSuperUser && !isTester) {
-      if (
-        requestRow.vpApproval !== 'APPROVED' ||
-        requestRow.eaApproval !== 'APPROVED' ||
-        requestRow.managementApproval !== 'APPROVED'
-      ) {
-        return NextResponse.json({ error: 'All previous approval stages (ED, EA & MD) must be completed first.' }, { status: 400 })
+    if (requestRow.emailSendStatus === 'SentBack' && action !== 'SEND_BACK') {
+      return NextResponse.json({ error: 'This request is currently sent back for clarification and cannot be approved, rejected, or put on hold until the submitter re-submits it.' }, { status: 400 })
+    }
+
+    // Check steps order
+    // Flow: ED (sales_manager) -> Accounts Invoice Upload (accounts) -> EA -> MD -> Payment (payment_done)
+    if (action !== 'SEND_BACK') {
+      if (stage === 'accounts' && !isSuperUser && !isTester) {
+        if (requestRow.vpApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
+        }
+      } else if (stage === 'ea' && !isSuperUser && !isTester) {
+        if (requestRow.vpApproval !== 'APPROVED' || requestRow.accountApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'ED approval and Accounts invoice upload must be completed.' }, { status: 400 })
+        }
+      } else if (stage === 'md' && !isSuperUser && !isTester) {
+        if (
+          requestRow.vpApproval !== 'APPROVED' ||
+          requestRow.accountApproval !== 'APPROVED' ||
+          requestRow.eaApproval !== 'APPROVED'
+        ) {
+          return NextResponse.json({ error: 'Previous approval stages (ED, Accounts & EA) must be completed.' }, { status: 400 })
+        }
+      } else if (stage === 'payment_done' && !isSuperUser && !isTester) {
+        if (
+          requestRow.vpApproval !== 'APPROVED' ||
+          requestRow.accountApproval !== 'APPROVED' ||
+          requestRow.eaApproval !== 'APPROVED' ||
+          requestRow.managementApproval !== 'APPROVED'
+        ) {
+          return NextResponse.json({ error: 'MD approval must be completed before recording payment.' }, { status: 400 })
+        }
       }
     }
 
     // Build the updates
     const updates: Partial<typeof kiaApprovalRequests.$inferInsert> = {}
-    const statusVal = action === 'APPROVE' ? 'APPROVED' : action === 'REJECT' ? 'NOT APPROVED' : 'HELD'
+    let statusVal = action === 'APPROVE' ? 'APPROVED' : action === 'REJECT' ? 'NOT APPROVED' : action === 'HOLD' ? 'HELD' : 'SENT BACK'
 
-    if (stage === 'sales_manager') {
-      updates.vpApproval = statusVal
-    } else if (stage === 'ea') {
-      updates.eaApproval = statusVal
-    } else if (stage === 'md') {
-      updates.managementApproval = statusVal
-      updates.managementRemarks = remarks || ''
-      if (action === 'REJECT') {
-        updates.emailSendStatus = 'Rejected'
-      } else if (action === 'HOLD') {
-        updates.emailSendStatus = 'Held'
+    if (action === 'SEND_BACK') {
+      updates.vpApproval = null
+      updates.accountApproval = null
+      updates.eaApproval = null
+      updates.managementApproval = null
+      updates.paymentStatus = 'PENDING'
+      updates.sendBackReason = remarks || ''
+      updates.emailSendStatus = 'SentBack'
+
+      // Send email to submitter in background
+      try {
+        const bodyHtml = `
+          <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${requestRow.name},</p>
+          <p style="margin:0 0 16px;font-size:15px;color:#334155">
+            Your vendor payment approval request for <strong>${requestRow.vendorName}</strong> of <strong>INR ${requestRow.amount}</strong> has been sent back for clarification / additional information.
+          </p>
+          <div style="margin:20px 0;padding:16px;border:1px solid #e6e8f0;border-radius:12px;background:#fbfbfd;">
+            <h4 style="margin:0 0 6px 0;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#d97706;">Comments from Approver:</h4>
+            <p style="margin:0;font-size:14px;color:#4b5563;white-space:pre-wrap;line-height:1.5;">${remarks || 'No remarks provided.'}</p>
+          </div>
+          <p style="margin:0 0 16px;font-size:15px;color:#334155">
+            Please log in, review the feedback, upload any missing invoice/bills, and re-submit the request.
+          </p>
+        `
+        void sendEmail({
+          to: requestRow.email,
+          subject: `Clarification Needed: Vendor Payment Request for ${requestRow.vendorName}`,
+          html: emailLayout({
+            heading: 'Payment Request Sent Back',
+            eyebrow: 'AM Group · Approvals',
+            preheader: 'Clarification Needed',
+            bodyHtml
+          })
+        }).catch((err) => {
+          console.error('[approvals-action] Failed to send send-back email:', err)
+        })
+      } catch (err) {
+        console.error('[approvals-action] Failed to dispatch send-back email:', err)
       }
-    } else if (stage === 'accounts') {
-      updates.accountApproval = statusVal
-      if (action === 'APPROVE') {
-        if (!invoiceNumber || !invoiceNumber.trim()) {
-          return NextResponse.json({ error: 'Invoice number is required for accounts approval.' }, { status: 400 })
+    } else {
+      if (stage === 'sales_manager') {
+        updates.vpApproval = statusVal
+      } else if (stage === 'ea') {
+        updates.eaApproval = statusVal
+      } else if (stage === 'md') {
+        updates.managementApproval = statusVal
+        updates.managementRemarks = remarks || ''
+        if (action === 'APPROVE' && requestRow.invoiceDocUrl) {
+          updates.paymentStatus = 'PAID'
+          updates.paymentCompletedAt = new Date()
+          updates.paymentCompletedBy = appUser.fullName
+          updates.emailSendStatus = 'Completed'
+        } else if (action === 'REJECT') {
+          updates.emailSendStatus = 'Rejected'
+        } else if (action === 'HOLD') {
+          updates.emailSendStatus = 'Held'
         }
-        if (!invoiceDocUrl || !invoiceDocUrl.trim()) {
-          return NextResponse.json({ error: 'Invoice file upload is required for accounts approval.' }, { status: 400 })
+      } else if (stage === 'accounts') {
+        updates.accountApproval = statusVal
+        if (action === 'APPROVE') {
+          if (!invoiceNumber || !invoiceNumber.trim()) {
+            return NextResponse.json({ error: 'Invoice number is required for accounts stage.' }, { status: 400 })
+          }
+          if (!invoiceDocUrl || !invoiceDocUrl.trim()) {
+            return NextResponse.json({ error: 'Invoice file upload is required for accounts stage.' }, { status: 400 })
+          }
+          updates.invoiceNumber = invoiceNumber.trim()
+          updates.invoiceDocUrl = invoiceDocUrl.trim()
+        } else if (action === 'REJECT') {
+          updates.emailSendStatus = 'Rejected'
+        } else {
+          updates.emailSendStatus = 'Held'
         }
-        updates.invoiceNumber = invoiceNumber.trim()
-        updates.invoiceDocUrl = invoiceDocUrl.trim()
+      } else if (stage === 'payment_done') {
+        if (!utrNumber || !utrNumber.trim()) {
+          return NextResponse.json({ error: 'UTR number is required to record payment.' }, { status: 400 })
+        }
+        if (!paymentProofUrl || !paymentProofUrl.trim()) {
+          return NextResponse.json({ error: 'Payment proof document upload is required.' }, { status: 400 })
+        }
+        updates.paymentStatus = 'PAID'
+        updates.utrNumber = utrNumber.trim()
+        updates.paymentProofUrl = paymentProofUrl.trim()
+        updates.paymentRemarks = remarks || ''
+        updates.paymentCompletedAt = new Date()
+        updates.paymentCompletedBy = appUser.fullName
         updates.emailSendStatus = 'Completed'
-      } else if (action === 'REJECT') {
-        updates.emailSendStatus = 'Rejected'
-      } else {
-        updates.emailSendStatus = 'Held'
+        statusVal = 'PAID'
       }
     }
 
@@ -118,8 +206,9 @@ export async function POST(
     const historyList = Array.isArray(requestRow.history) ? [...requestRow.history] : []
     const roleLabel = 
       stage === 'sales_manager' ? 'ED' : 
-      stage === 'accounts' ? 'Accounts' : 
+      stage === 'accounts' ? 'Accounts (Invoice)' : 
       stage === 'ea' ? 'EA' : 
+      stage === 'payment_done' ? 'Accounts (Payment)' :
       'MD'
 
     // Update GL account if changed and log history
@@ -146,7 +235,7 @@ export async function POST(
     const historyEntry = {
       id: Math.random().toString(36).substring(7),
       role: roleLabel,
-      roleKey: stage, // keep track of the original stage key
+      roleKey: stage,
       user: appUser.fullName,
       action: statusVal,
       remarks: remarks || '',

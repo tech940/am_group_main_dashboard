@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
+import { optimizeImage } from '@/lib/images/optimize'
 
 export async function POST(request: Request) {
   const accessError = await requireBrandSectionApiAccess('kia', 'kia.bookings.view')
@@ -86,16 +87,19 @@ export async function POST(request: Request) {
     })
 
     const saveAndTrustUpload = async () => {
+      // Store an optimised WebP copy (document preset preserves cost-sheet legibility). OCR above used
+      // the original `base64`, so this re-encode never affects verification.
+      const stored = await optimizeImage(Buffer.from(buffer), mimeType, { preset: 'document' })
       const timestamp = Date.now()
       const randomStr = Math.random().toString(36).substring(7)
-      const extension = file.name.split('.').pop() || 'jpg'
+      const extension = stored.optimized ? 'webp' : (file.name.split('.').pop() || 'jpg')
       const filename = `cost_sheet_${timestamp}_${randomStr}.${extension}`
       const filePath = `cost-sheets/${filename}`
 
       const { error: uploadError } = await supabaseAdmin.storage
         .from('purchase-orders')
-        .upload(filePath, buffer, {
-          contentType: mimeType,
+        .upload(filePath, stored.buffer, {
+          contentType: stored.contentType,
           upsert: false
         })
 

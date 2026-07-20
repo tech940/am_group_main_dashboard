@@ -35,6 +35,7 @@ import {
   Download,
   Share2,
   MessageSquare,
+  Percent,
 } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -317,6 +318,9 @@ type CreateBookingForm = {
   exchange: string
   exchangeVehicleName: string
   exchangeValue: string
+  requestDiscount?: boolean
+  discountRequestedAmount?: string
+  discountReason?: string
 }
 
 const DEFAULT_PAGE_SIZE = 15
@@ -1282,6 +1286,9 @@ function initialCreateForm(): CreateBookingForm {
     exchange: 'No',
     exchangeVehicleName: '',
     exchangeValue: '',
+    requestDiscount: false,
+    discountRequestedAmount: '',
+    discountReason: '',
   }
 }
 
@@ -1333,6 +1340,20 @@ export function KiaBookingsClient({
   const [transferVehicleModel, setTransferVehicleModel] = useState('')
   const [transferVehicleVariant, setTransferVehicleVariant] = useState('')
   const [transferVehicleColor, setTransferVehicleColor] = useState('')
+  const [crmViewMode, setCrmViewMode] = useState<'list' | 'shortage' | 'discounts'>('list')
+  const [activeShortageGroup, setActiveShortageGroup] = useState<{
+    model: string
+    variant: string
+    color: string
+    bookings: any[]
+  } | null>(null)
+  const [shortageActionOpen, setShortageActionOpen] = useState(false)
+  const [shortageStatus, setShortageStatus] = useState<'arranged' | 'cannot_arrange' | 'pending'>('pending')
+  const [shortageSourceDealer, setShortageSourceDealer] = useState('')
+  const [shortageExpectedDate, setShortageExpectedDate] = useState('')
+  const [shortageRemarks, setShortageRemarks] = useState('')
+  const [shortageSelectedBookingIds, setShortageSelectedBookingIds] = useState<string[]>([])
+  const [selectedShortageKeys, setSelectedShortageKeys] = useState<string[]>([])
   const [transferVehiclePrice, setTransferVehiclePrice] = useState('')
   const [paymentReference, setPaymentReference] = useState('')
   const [paymentInvoiceFile, setPaymentInvoiceFile] = useState<File | null>(null)
@@ -1485,6 +1506,7 @@ export function KiaBookingsClient({
   const canCreateBookings = roleCanActAsSalesPerson(normalizedCurrentRole)
   const canViewPii = canViewKiaCustomerPii(currentUserRole)
   const stockMode = mode === 'stock'
+  const shortageMode = crmViewMode === 'shortage'
   const animated = usePremiumMotion()
   // Live minute tick for the "time waiting" indicators on each list row.
   const nowTick = useMinuteTick()
@@ -1663,6 +1685,22 @@ export function KiaBookingsClient({
     refetchOnWindowFocus: false,
   })
 
+  const discountsQuery = useQuery({
+    queryKey: ['kia-booking-discounts', selectedBookingId],
+    queryFn: () => fetchJson<{ success: boolean; discounts: any[] }>(`/api/brands/kia/bookings/${selectedBookingId}/discounts`, 'kia-booking-discounts'),
+    enabled: Boolean(selectedBookingId),
+    retry: 1,
+    refetchOnWindowFocus: false,
+  })
+
+  const globalDiscountsQuery = useQuery({
+    queryKey: ['kia-global-discounts'],
+    queryFn: () => fetchJson<{ success: boolean; discounts: any[] }>('/api/brands/kia/bookings/discounts', 'kia-global-discounts'),
+    enabled: ['md', 'ceo', 'developer', 'admin', 'sales_manager', 'general_manager'].includes(currentUserRole),
+    retry: 1,
+    refetchOnWindowFocus: false,
+  })
+
   const proformaOptionsQuery = useQuery({
     queryKey: ['kia-proforma-options-for-bookings'],
     queryFn: () => fetchJson<ProformaOptionsPayload>('/api/brands/kia/proforma/options', 'kia-proforma-options'),
@@ -1670,6 +1708,62 @@ export function KiaBookingsClient({
     retry: 2,
     refetchOnWindowFocus: false,
     enabled: !priceOptions,
+  })
+
+  const shortageQuery = useQuery({
+    queryKey: ['kia-bookings-shortages', listQueryString],
+    queryFn: () => fetchJson<BookingListPayload>(`/api/brands/kia/bookings?status=not_in_stock&pageSize=1000`, 'kia-bookings-shortages'),
+    enabled: crmViewMode === 'shortage',
+    retry: 1,
+    refetchOnWindowFocus: false,
+  })
+
+  const shortageActionMutation = useMutation({
+    mutationFn: async ({ bookingIds, status, sourceDealer, expectedDate, remarks }: {
+      bookingIds: string[]
+      status: 'arranged' | 'cannot_arrange' | 'pending'
+      sourceDealer: string
+      expectedDate: string
+      remarks: string
+    }) => {
+      await Promise.all(bookingIds.map(async (id) => {
+        const response = await fetch(`/api/brands/kia/bookings/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            metadata: {
+              idtArrangement: {
+                status,
+                sourceDealer: status === 'arranged' ? sourceDealer : undefined,
+                expectedDate: status === 'arranged' ? expectedDate : undefined,
+                remarks: remarks || undefined,
+              }
+            }
+          })
+        })
+        if (!response.ok) {
+          const err = await response.json()
+          throw new Error(err.error || 'Failed to update shortage arrangement.')
+        }
+      }))
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Arrangement saved',
+        description: 'Shortage arrangement plan updated successfully.',
+      })
+      queryClient.invalidateQueries({ queryKey: ['kia-bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['kia-bookings-shortages'] })
+      setSelectedShortageKeys([])
+      setShortageActionOpen(false)
+    },
+    onError: (err) => {
+      toast({
+        title: 'Action failed',
+        description: err instanceof Error ? err.message : 'Failed to save arrangement.',
+        variant: 'error',
+      })
+    }
   })
 
   const createMutation = useMutation({
@@ -1872,6 +1966,35 @@ export function KiaBookingsClient({
     const names = priceBanks.map((b) => b.bank_name || '').filter(Boolean)
     return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b))
   }, [priceBanks])
+
+  const groupedShortages = useMemo(() => {
+    if (!shortageQuery.data?.rows) return []
+    const groups: Record<string, {
+      model: string
+      variant: string
+      color: string
+      bookings: any[]
+    }> = {}
+
+    shortageQuery.data.rows.forEach((row: any) => {
+      const modelName = (row.model || '').trim().toUpperCase()
+      const variantName = (row.variant || '').trim()
+      const colorName = (row.color || '').trim()
+      const key = `${modelName}|${variantName}|${colorName}`
+      
+      if (!groups[key]) {
+        groups[key] = {
+          model: row.model,
+          variant: row.variant,
+          color: row.color || '',
+          bookings: [],
+        }
+      }
+      groups[key].bookings.push(row)
+    })
+
+    return Object.values(groups).sort((a, b) => b.bookings.length - a.bookings.length)
+  }, [shortageQuery.data?.rows])
   const kpis = data?.kpis || {
     today: 0,
     pendingProforma: 0,
@@ -1974,7 +2097,7 @@ export function KiaBookingsClient({
       ['expectedDeliveryDate', 'Estimated Delivery Date'],
       ['promiseDate', 'Promise Date'],
     ]
-    const missing = requiredFields.find(([key]) => !createForm[key]?.trim())
+    const missing = requiredFields.find(([key]) => !String(createForm[key] || '').trim())
     if (missing) {
       setFormError(`${missing[1]} is required.`)
       const tabByField: Record<keyof CreateBookingForm, (typeof CREATE_TABS)[number]> = {
@@ -2017,6 +2140,9 @@ export function KiaBookingsClient({
         exchange: 'Customer',
         exchangeVehicleName: 'Customer',
         exchangeValue: 'Customer',
+        requestDiscount: 'Review',
+        discountRequestedAmount: 'Review',
+        discountReason: 'Review',
       }
       setCreateTab(tabByField[missing[0]] || 'Customer')
       return
@@ -2069,7 +2195,7 @@ export function KiaBookingsClient({
       ['expectedDeliveryDate', 'Estimated Delivery Date'],
       ['promiseDate', 'Promise Date'],
     ]
-    const missing = requiredFields.find(([key]) => !editForm[key]?.trim())
+    const missing = requiredFields.find(([key]) => !String(editForm[key] || '').trim())
     if (missing) {
       setFormError(`${missing[1]} is required.`)
       const tabByField: Record<keyof CreateBookingForm, (typeof CREATE_TABS)[number]> = {
@@ -2112,6 +2238,9 @@ export function KiaBookingsClient({
         exchange: 'Customer',
         exchangeVehicleName: 'Customer',
         exchangeValue: 'Customer',
+        requestDiscount: 'Review',
+        discountRequestedAmount: 'Review',
+        discountReason: 'Review',
       }
       setEditTab(tabByField[missing[0]] || 'Customer')
       return
@@ -2281,7 +2410,13 @@ export function KiaBookingsClient({
     })
   }
 
-  const currentHeading = stockMode
+  const currentHeading = shortageMode
+    ? {
+        badge: 'IDT Procurement',
+        title: 'Shortage & IDT Management',
+        subtitle: 'Identify vehicle shortages, log procurement plans, and trace regional transfers.',
+      }
+    : stockMode
     ? {
         badge: 'AM Kia Stock',
         title: 'Stock',
@@ -2309,7 +2444,44 @@ export function KiaBookingsClient({
 
   const headerActions = (
     <>
-      {canCreateBookings && !stockMode && (
+      {!stockMode && (
+        <div className="flex gap-2">
+          <Button
+            variant={crmViewMode === 'shortage' ? 'default' : 'outline'}
+            className={cn("h-10 rounded-2xl px-4 text-sm font-bold sm:h-11 border-indigo-200/60", crmViewMode === 'shortage' && "bg-indigo-600 hover:bg-indigo-700 text-white")}
+            onClick={() => setCrmViewMode(crmViewMode === 'shortage' ? 'list' : 'shortage')}
+          >
+            {crmViewMode === 'shortage' ? (
+              <>
+                <ClipboardList className="h-4 w-4" /> Bookings List
+              </>
+            ) : (
+              <>
+                <AlertTriangle className="h-4 w-4 text-indigo-500 animate-pulse" /> Manage Shortages
+              </>
+            )}
+          </Button>
+
+          {['md', 'ceo', 'developer', 'admin', 'sales_manager', 'general_manager'].includes(currentUserRole) && (
+            <Button
+              variant={crmViewMode === 'discounts' ? 'default' : 'outline'}
+              className={cn("h-10 rounded-2xl px-4 text-sm font-bold sm:h-11 border-indigo-200/60", crmViewMode === 'discounts' && "bg-indigo-600 hover:bg-indigo-700 text-white")}
+              onClick={() => setCrmViewMode(crmViewMode === 'discounts' ? 'list' : 'discounts')}
+            >
+              {crmViewMode === 'discounts' ? (
+                <>
+                  <ClipboardList className="h-4 w-4" /> Bookings List
+                </>
+              ) : (
+                <>
+                  <Percent className="h-4 w-4 text-indigo-500" /> Manage Discounts
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      )}
+      {canCreateBookings && !stockMode && crmViewMode === 'list' && (
         <>
           <Button className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" /> New Booking
@@ -2319,8 +2491,8 @@ export function KiaBookingsClient({
           </Button>
         </>
       )}
-      <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => listQuery.refetch()} disabled={listQuery.isFetching}>
-        <RefreshCw className={cn('h-4 w-4', listQuery.isFetching && 'animate-spin')} /> Refresh
+      <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => { listQuery.refetch(); shortageQuery.refetch(); globalDiscountsQuery.refetch() }} disabled={listQuery.isFetching || shortageQuery.isFetching || globalDiscountsQuery.isFetching}>
+        <RefreshCw className={cn('h-4 w-4', (listQuery.isFetching || globalDiscountsQuery.isFetching) && 'animate-spin')} /> Refresh
       </Button>
       {['edp', 'developer'].includes(currentUserRole) && (
         <Button
@@ -2467,7 +2639,197 @@ export function KiaBookingsClient({
           </div>
         </section>
 
-        {listQuery.isLoading ? (
+        {crmViewMode === 'discounts' ? (
+          <DiscountsDashboard
+            query={globalDiscountsQuery}
+            currentUserRole={currentUserRole}
+            onOpenBooking={(id) => {
+              const next = new URLSearchParams(window.location.search)
+              next.set('bookingId', id)
+              router.push(`${pathname}?${next.toString()}`)
+            }}
+          />
+        ) : shortageMode ? (
+          shortageQuery.isLoading ? (
+            <TableSkeleton columns={5} />
+          ) : shortageQuery.isError ? (
+            <EmptyState
+              illustration="error"
+              title="Unable to load shortages"
+              description={shortageQuery.error instanceof Error ? shortageQuery.error.message : 'The shortages request failed.'}
+              action={
+                <Button variant="outline" className="h-10 rounded-2xl font-bold" onClick={() => shortageQuery.refetch()}>
+                  <RefreshCw className="h-4 w-4" /> Retry
+                </Button>
+              }
+            />
+          ) : (
+            <section className={cn(PRIMARY_SURFACE, 'overflow-hidden')}>
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--kia-hairline)] px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-50" style={toneSoftStyle('warning')}>
+                    <AlertTriangle className="h-[1.05rem] w-[1.05rem] text-indigo-600" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">IDT Shortage List</p>
+                    <h2 className="text-sm font-extrabold text-[var(--kia-text)]">
+                      {groupedShortages.length} shortage models ({shortageQuery.data?.rows?.length || 0} active demands)
+                    </h2>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedShortageKeys.length > 0 && (
+                    <Button
+                      size="sm"
+                      className="h-8 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs"
+                      onClick={() => {
+                        const selectedGroups = groupedShortages.filter(g =>
+                          selectedShortageKeys.includes(`${g.model}|${g.variant}|${g.color}`)
+                        )
+                        const consolidatedBookings = selectedGroups.flatMap(g => g.bookings)
+                        
+                        setActiveShortageGroup({
+                          model: 'Bulk Vehicles Spec Selection',
+                          variant: `${selectedGroups.length} selected specifications`,
+                          color: 'Multiple colors',
+                          bookings: consolidatedBookings,
+                        })
+                        setShortageSelectedBookingIds(consolidatedBookings.map(b => b.id))
+                        setShortageStatus('pending')
+                        setShortageSourceDealer('')
+                        setShortageExpectedDate('')
+                        setShortageRemarks('')
+                        setShortageActionOpen(true)
+                      }}
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+                      Bulk Action ({selectedShortageKeys.length})
+                    </Button>
+                  )}
+                  {shortageQuery.isFetching && <InlineLoader variant="search" size={28} />}
+                </div>
+              </div>
+              
+              {groupedShortages.length === 0 ? (
+                <div className="flex h-[240px] flex-col items-center justify-center text-center p-6 bg-slate-50/20">
+                  <p className="text-sm font-medium text-[var(--kia-text-soft)]">No active vehicle shortages found.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table className="kia-table">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-10 px-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedShortageKeys.length === groupedShortages.length && groupedShortages.length > 0}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedShortageKeys(groupedShortages.map(g => `${g.model}|${g.variant}|${g.color}`))
+                              } else {
+                                setSelectedShortageKeys([])
+                              }
+                            }}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                        </TableHead>
+                        {['Vehicle Spec', 'Total Demand', 'Arrangement Status', 'Logistics Details', 'Actions'].map((head) => (
+                          <TableHead key={head} className="h-10 whitespace-nowrap px-3">{head}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {groupedShortages.map((group, idx) => {
+                        const total = group.bookings.length
+                        const arranged = group.bookings.filter(b => b.metadata?.idtArrangement?.status === 'arranged').length
+                        const cannot = group.bookings.filter(b => b.metadata?.idtArrangement?.status === 'cannot_arrange').length
+                        const pending = total - arranged - cannot
+                        
+                        const arrangedItems = group.bookings.filter(b => b.metadata?.idtArrangement?.status === 'arranged')
+                        const logistics = arrangedItems.map(b => {
+                          const dealer = b.metadata?.idtArrangement?.sourceDealer || '—'
+                          const date = b.metadata?.idtArrangement?.expectedDate ? new Date(b.metadata?.idtArrangement?.expectedDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'
+                          return `${dealer} (${date})`
+                        }).filter(Boolean)
+                        
+                        const groupKey = `${group.model}|${group.variant}|${group.color}`
+                        const isChecked = selectedShortageKeys.includes(groupKey)
+                        
+                        return (
+                          <tr key={idx} className="group border-b border-[var(--kia-hairline)] text-sm hover:bg-slate-50/40">
+                            <TableCell className="px-3 py-3 w-10">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setSelectedShortageKeys(prev =>
+                                    isChecked ? prev.filter(k => k !== groupKey) : [...prev, groupKey]
+                                  )
+                                }}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              />
+                            </TableCell>
+                            <TableCell className="px-3 py-3">
+                              <div className="text-sm font-bold text-[var(--kia-text)]">{group.model}</div>
+                              <div className="text-[11px] font-medium text-[var(--kia-text-soft)]">
+                                {[group.variant, group.color].filter(Boolean).join(' · ')}
+                              </div>
+                            </TableCell>
+                            <TableCell className="px-3 py-3 font-semibold text-[var(--kia-text)]">
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-black text-slate-800">
+                                {total} {total === 1 ? 'Booking' : 'Bookings'}
+                              </span>
+                            </TableCell>
+                            <TableCell className="px-3 py-3">
+                              <div className="flex flex-wrap gap-1.5 text-xs font-bold">
+                                {arranged > 0 && (
+                                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 border border-emerald-100">
+                                    Arranged: {arranged}
+                                  </span>
+                                )}
+                                {cannot > 0 && (
+                                  <span className="inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] text-rose-700 border border-rose-100">
+                                    No arrangement: {cannot}
+                                  </span>
+                                )}
+                                {pending > 0 && (
+                                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 border border-amber-100 animate-pulse">
+                                    Pending: {pending}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="px-3 py-3 text-xs text-[var(--kia-text-soft)] max-w-[200px] truncate">
+                              {logistics.length > 0 ? logistics.join(', ') : '—'}
+                            </TableCell>
+                            <TableCell className="px-3 py-3">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 rounded-xl font-bold text-xs hover:bg-indigo-50 border-indigo-200"
+                                onClick={() => {
+                                  setActiveShortageGroup(group)
+                                  setShortageSelectedBookingIds(group.bookings.map(b => b.id))
+                                  setShortageStatus('pending')
+                                  setShortageSourceDealer('')
+                                  setShortageExpectedDate('')
+                                  setShortageRemarks('')
+                                  setShortageActionOpen(true)
+                                }}
+                              >
+                                Action
+                              </Button>
+                            </TableCell>
+                          </tr>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </section>
+          )
+        ) : listQuery.isLoading ? (
           <TableSkeleton columns={8} />
         ) : listQuery.isError ? (
           <EmptyState
@@ -3221,6 +3583,8 @@ export function KiaBookingsClient({
               onPaymentNotReceived={markPaymentNotReceived}
               onStatusChange={(status) => { setLoaderVariant('generic'); statusMutation.mutate(status) }}
               onEdit={() => setEditingBookingId(detailQuery.data.booking.id)}
+              discounts={discountsQuery.data?.discounts || []}
+              onRefreshDiscounts={() => discountsQuery.refetch()}
             />
           ) : null}
         </DialogContent>
@@ -3255,6 +3619,140 @@ export function KiaBookingsClient({
           onChange={(key, value) => setEditForm((current) => ({ ...current, [key]: value }))}
           onSubmit={submitEdit}
         />
+      )}
+
+      {activeShortageGroup && (
+        <Dialog open={shortageActionOpen} onOpenChange={setShortageActionOpen}>
+          <DialogContent className="sm:max-w-[480px] p-6 rounded-2xl bg-white border border-slate-100">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-indigo-500" />
+                Manage Shortage Plan
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400 font-medium">
+                Update the arrangement plan for bookings of <span className="font-extrabold text-slate-700">{activeShortageGroup.model}</span> (Color: {activeShortageGroup.color}).
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 my-4">
+              {/* Selected Bookings Checklist */}
+              <div className="space-y-2 border border-slate-100 bg-slate-50/50 p-3 rounded-2xl max-h-[160px] overflow-y-auto">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Apply action to bookings:</p>
+                {activeShortageGroup.bookings.map((booking) => {
+                  const hasArrangement = booking.metadata?.idtArrangement
+                  const isChecked = shortageSelectedBookingIds.includes(booking.id)
+                  return (
+                    <div key={booking.id} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 last:border-0">
+                      <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setShortageSelectedBookingIds(prev =>
+                              isChecked ? prev.filter(id => id !== booking.id) : [...prev, booking.id]
+                            )
+                          }}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>{booking.bookingNumber} ({booking.customerName})</span>
+                      </label>
+                      <div className="text-[10px] text-slate-400 font-medium">
+                        {hasArrangement ? (
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded-full font-bold",
+                            booking.metadata.idtArrangement.status === 'arranged' && "bg-emerald-50 text-emerald-700",
+                            booking.metadata.idtArrangement.status === 'cannot_arrange' && "bg-rose-50 text-rose-700"
+                          )}>
+                            {booking.metadata.idtArrangement.status === 'arranged' ? `Arranged: ${booking.metadata.idtArrangement.sourceDealer}` : 'No arrangement'}
+                          </span>
+                        ) : (
+                          <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full font-bold">Pending</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Status selection */}
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Arrangement Status</label>
+                <select
+                  value={shortageStatus}
+                  onChange={(e) => setShortageStatus(e.target.value as any)}
+                  className="mt-1 block w-full rounded-xl border-slate-200 bg-white text-sm font-bold h-11"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="arranged">Arranged from other Dealer / Supplier</option>
+                  <option value="cannot_arrange">Will not arrange at this time</option>
+                </select>
+              </div>
+
+              {/* Dealer Code & Date */}
+              {shortageStatus === 'arranged' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400">Source Dealer Code</label>
+                    <Input
+                      type="text"
+                      value={shortageSourceDealer}
+                      onChange={(e) => setShortageSourceDealer(e.target.value)}
+                      placeholder="e.g. JK402, JK501"
+                      className="mt-1 block w-full rounded-xl border-slate-200 bg-white text-sm font-bold h-11"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400">Expected Received Date</label>
+                    <Input
+                      type="date"
+                      value={shortageExpectedDate}
+                      onChange={(e) => setShortageExpectedDate(e.target.value)}
+                      className="mt-1 block w-full rounded-xl border-slate-200 bg-white text-sm font-bold h-11"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Remarks */}
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Remarks</label>
+                <Textarea
+                  value={shortageRemarks}
+                  onChange={(e) => setShortageRemarks(e.target.value)}
+                  placeholder="Procurement notes, transfer dispatch details, etc."
+                  rows={2}
+                  className="mt-1 block w-full rounded-xl border-slate-200 bg-white text-sm font-bold p-3"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="flex gap-2">
+              <Button
+                variant="outline"
+                className="h-10 rounded-xl text-xs font-bold sm:h-11 sm:text-sm"
+                onClick={() => setShortageActionOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="h-10 rounded-xl text-xs font-bold sm:h-11 sm:text-sm bg-indigo-600 hover:bg-indigo-700 text-white"
+                disabled={shortageSelectedBookingIds.length === 0 || shortageActionMutation.isPending}
+                onClick={() => {
+                  shortageActionMutation.mutate({
+                    bookingIds: shortageSelectedBookingIds,
+                    status: shortageStatus,
+                    sourceDealer: shortageSourceDealer,
+                    expectedDate: shortageExpectedDate,
+                    remarks: shortageRemarks,
+                  })
+                }}
+              >
+                {shortageActionMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                Save Arrangement
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* IDT Stock Remark Dialog */}
@@ -3702,6 +4200,70 @@ function CreateBookingDialog({
           <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6" style={{ background: 'linear-gradient(180deg, #ffffff, color-mix(in srgb, var(--dashboard-action-bg) 6%, #f6f8ff))' }}>
             {(error || stepError) && <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error || stepError}</div>}
 
+            {/* Quick Discount Banner on All Stages (except Review stage where we render a detailed checkbox) */}
+            {activeTab !== 'Review' && (
+              <div className="mb-5 rounded-2xl border border-indigo-150 bg-indigo-50/30 p-3.5 shadow-sm shadow-indigo-50/5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-100/50">
+                      <Percent className="h-4 w-4 text-indigo-600" />
+                    </span>
+                    <div>
+                      <span className="text-xs font-black text-indigo-950 block">Apply for Booking Discount</span>
+                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
+                        Requires MD Approval
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500">Apply:</span>
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={form.requestDiscount}
+                      onClick={() => onChange('requestDiscount', !form.requestDiscount)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                        form.requestDiscount ? "bg-indigo-600" : "bg-slate-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                          form.requestDiscount ? "translate-x-4" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {form.requestDiscount && (
+                  <div className="mt-3.5 pt-3.5 border-t border-indigo-100/60 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Discount Amount (INR)</label>
+                      <Input
+                        type="number"
+                        placeholder="e.g. 15000"
+                        value={form.discountRequestedAmount || ''}
+                        onChange={(e) => onChange('discountRequestedAmount', e.target.value)}
+                        className="h-9 rounded-xl border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-800"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Reason / Remarks</label>
+                      <Input
+                        type="text"
+                        placeholder="Why is this discount needed?"
+                        value={form.discountReason || ''}
+                        onChange={(e) => onChange('discountReason', e.target.value)}
+                        className="h-9 rounded-xl border-slate-200/80 bg-white px-3 text-xs font-semibold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Quick Customer Info Bar */}
             {activeTab !== 'Customer' && (form.customerName || form.customerPhone || form.customerEmailId) && (
               <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-2.5 text-xs font-semibold text-slate-600 shadow-sm backdrop-blur-sm dark:border-white/5 dark:bg-slate-900/40">
@@ -4069,6 +4631,59 @@ function CreateBookingDialog({
                       </div>
                     </div>
                   </div>
+                  {/* Discount Request Summary / Form Checkbox */}
+                  <div className="rounded-3xl border border-indigo-200 bg-indigo-50/20 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-indigo-600 flex items-center gap-1.5">
+                        <Percent className="h-3.5 w-3.5" /> Discount Request (MD Approval)
+                      </p>
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={form.requestDiscount}
+                        onClick={() => onChange('requestDiscount', !form.requestDiscount)}
+                        className={cn(
+                          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                          form.requestDiscount ? "bg-indigo-600" : "bg-slate-200"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                            form.requestDiscount ? "translate-x-4" : "translate-x-0"
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    {form.requestDiscount ? (
+                      <div className="grid gap-2.5 mt-3 pt-3 border-t border-indigo-100/60">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500 font-bold uppercase block">Discount Amount (INR)</span>
+                          <Input
+                            type="number"
+                            placeholder="e.g. 15000"
+                            value={form.discountRequestedAmount || ''}
+                            onChange={(e) => onChange('discountRequestedAmount', e.target.value)}
+                            className="h-8 w-36 rounded-lg border-slate-200/80 bg-white px-2.5 text-xs font-bold text-slate-800 text-right"
+                          />
+                        </div>
+                        <div className="text-xs">
+                          <span className="text-slate-500 font-bold uppercase block mb-1">Reason / Remarks</span>
+                          <textarea
+                            placeholder="Please state why this discount is required..."
+                            value={form.discountReason || ''}
+                            onChange={(e) => onChange('discountReason', e.target.value)}
+                            className="w-full min-h-[44px] rounded-xl border border-indigo-100 bg-white p-2 text-xs font-semibold focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs font-semibold text-slate-500 italic mt-1.5">
+                        No discount requested. Toggle switch to add discount.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -4177,6 +4792,8 @@ function BookingDrawer({
   onPaymentNotReceived,
   onStatusChange,
   onEdit,
+  discounts = [],
+  onRefreshDiscounts,
 }: {
   detail: BookingDetailPayload
   currentUserRole: string
@@ -4193,10 +4810,45 @@ function BookingDrawer({
   onPaymentNotReceived: () => void
   onStatusChange: (status: string) => void
   onEdit?: () => void
+  discounts?: any[]
+  onRefreshDiscounts?: () => void
 }) {
   const router = useRouter()
   const [sharingLink, setSharingLink] = useState(false)
+  const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false)
+  const [discountAmount, setDiscountAmount] = useState('')
+  const [discountReason, setDiscountReason] = useState('')
+  const [isSubmittingDiscount, setIsSubmittingDiscount] = useState(false)
+
+  const handleRequestDiscount = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!discountAmount || isNaN(Number(discountAmount)) || Number(discountAmount) <= 0) {
+      toast({ title: 'Invalid amount', description: 'Please enter a valid positive discount amount.', variant: 'error' })
+      return
+    }
+    setIsSubmittingDiscount(true)
+    try {
+      const response = await fetch(`/api/brands/kia/bookings/${booking.id}/discounts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: Number(discountAmount), reason: discountReason }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to submit discount request.')
+      toast({ title: 'Discount requested', description: `Requested discount of INR ${Number(discountAmount).toLocaleString('en-IN')}` })
+      setIsDiscountDialogOpen(false)
+      setDiscountAmount('')
+      setDiscountReason('')
+      if (onRefreshDiscounts) onRefreshDiscounts()
+    } catch (err) {
+      toast({ title: 'Request failed', description: err instanceof Error ? err.message : 'Something went wrong', variant: 'error' })
+    } finally {
+      setIsSubmittingDiscount(false)
+    }
+  }
+
   const { booking, allocation, proforma, financeOrder, activities, transfers } = detail
+  const idtArrangement = booking.metadata?.idtArrangement as any
   // Live minute tick for the detail panel's "time waiting" indicator.
   const now = useMinuteTick()
 
@@ -4381,16 +5033,27 @@ function BookingDrawer({
                 now={now}
                 align="right"
               />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={shareTrackingLink}
-                disabled={sharingLink}
-                className="h-8 rounded-xl text-xs font-bold"
-              >
-                {sharingLink ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Share2 className="mr-1.5 h-3.5 w-3.5" />}
-                Share tracking link
-              </Button>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={shareTrackingLink}
+                  disabled={sharingLink}
+                  className="h-8 rounded-xl text-xs font-bold"
+                >
+                  {sharingLink ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Share2 className="mr-1.5 h-3.5 w-3.5" />}
+                  Share tracking link
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsDiscountDialogOpen(true)}
+                  className="h-8 rounded-xl text-xs font-bold border-indigo-200 hover:bg-indigo-50/50 hover:text-indigo-900"
+                >
+                  <Percent className="mr-1.5 h-3.5 w-3.5 text-indigo-500" />
+                  Apply Discount
+                </Button>
+              </div>
               {Boolean((booking.metadata as Record<string, unknown> | null)?.vehicleNotInStock) && (
                 <Chip tone="warning">Vehicle not in stock</Chip>
               )}
@@ -4535,6 +5198,96 @@ function BookingDrawer({
           )
         })()}
 
+        {/* Discount Requests Section */}
+        <section className="kia-surface p-4 sm:p-5">
+          <div className="flex items-center justify-between border-b pb-3 mb-4" style={{ borderColor: 'var(--kia-hairline)' }}>
+            <div className="flex items-center gap-3">
+              <IconTile icon={Percent} tone="accent" size="sm" />
+              <h3 className="text-[15px] font-extrabold tracking-tight text-[var(--kia-text)]">Discount Requests</h3>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDiscountDialogOpen(true)}
+              className="h-8 rounded-xl text-xs font-bold border-indigo-200 text-indigo-600 hover:bg-indigo-50/50"
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" /> Apply Discount
+            </Button>
+          </div>
+          {discounts && discounts.length > 0 ? (
+            <div className="space-y-3.5">
+              {discounts.map((discount: any) => {
+                const isPending = discount.status === 'PENDING'
+                const isApproved = discount.status === 'APPROVED'
+                const isRejected = discount.status === 'REJECTED'
+                return (
+                  <div 
+                    key={discount.id} 
+                    className={cn(
+                      "rounded-2xl p-4 border transition-all",
+                      isPending && "bg-amber-50/40 border-amber-200/60 shadow-sm shadow-amber-50/10",
+                      isApproved && "bg-emerald-50/40 border-emerald-200/60 shadow-sm shadow-emerald-50/10",
+                      isRejected && "bg-red-50/40 border-red-200/60 shadow-sm shadow-red-50/10"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Requested Amount</p>
+                        <p className="text-lg font-black text-slate-950">INR {Number(discount.requestedAmount).toLocaleString('en-IN')}</p>
+                      </div>
+                      <span 
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-[10px] font-black tracking-wider uppercase",
+                          isPending && "bg-amber-100 text-amber-800",
+                          isApproved && "bg-emerald-100 text-emerald-800",
+                          isRejected && "bg-red-100 text-red-800"
+                        )}
+                      >
+                        {discount.status}
+                      </span>
+                    </div>
+
+                    {discount.reason && (
+                      <div className="mt-2 text-xs text-slate-600">
+                        <span className="font-bold text-slate-700">Reason:</span> {discount.reason}
+                      </div>
+                    )}
+
+                    <div className="mt-2.5 flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
+                      <span>Requested by {discount.requestedByName}</span>
+                      <span>•</span>
+                      <span>{new Date(discount.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+
+                    {/* MD Action remarks */}
+                    {!isPending && (
+                      <div className="mt-3.5 pt-3 border-t border-dashed border-slate-200/70">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="font-bold text-slate-700">
+                            {isApproved ? 'Approved' : 'Rejected'} by {discount.actionByName}
+                          </span>
+                          {isApproved && discount.approvedAmount && (
+                            <span className="font-black text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded-lg">
+                              Approved: INR {Number(discount.approvedAmount).toLocaleString('en-IN')}
+                            </span>
+                          )}
+                        </div>
+                        {discount.actionRemarks && (
+                          <p className="text-xs italic text-slate-500">"{discount.actionRemarks}"</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed p-6 text-center text-xs font-semibold text-slate-400">
+              No discount requests have been made for this booking yet.
+            </div>
+          )}
+        </section>
+
         {/* Uploaded ID documents — links gated to PII-authorized viewers (MD / Super Admin / Finance Head). */}
         {(() => {
           const meta = (booking.metadata || {}) as Record<string, unknown>
@@ -4664,6 +5417,36 @@ function BookingDrawer({
                 <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--kia-text-faint)]">{isDelivered ? 'Delivery Status' : 'Expected Delivery'}</p>
                 <p className="mt-1 text-sm font-bold text-[var(--kia-text)]">{isDelivered ? `Delivered${expectedDeliveryValue ? ` · planned ${formatDate(expectedDeliveryValue)}` : ''}` : formatDate(expectedDeliveryValue)}</p>
               </div>
+              {idtArrangement && (
+                <div className="kia-surface-sunken border border-indigo-100 bg-indigo-50/20 px-3 py-2.5 rounded-xl">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-indigo-500">IDT Shortage Arrangement Plan</p>
+                  <p className="mt-1 text-sm font-bold text-slate-800">
+                    Status: <span className={cn(
+                      "capitalize font-extrabold",
+                      idtArrangement.status === 'arranged' ? "text-emerald-600" : "text-rose-600"
+                    )}>{idtArrangement.status?.replace('_', ' ')}</span>
+                  </p>
+                  {idtArrangement.status === 'arranged' && (
+                    <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold block uppercase">Source Dealer</span>
+                        <span className="text-slate-800 font-extrabold">{idtArrangement.sourceDealer || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold block uppercase">Expected Received</span>
+                        <span className="text-slate-800 font-extrabold">
+                          {idtArrangement.expectedDate ? new Date(idtArrangement.expectedDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {idtArrangement.remarks && (
+                    <div className="mt-2 pt-1.5 border-t border-indigo-50 text-xs font-medium text-slate-500 italic">
+                      Remarks: "{idtArrangement.remarks}"
+                    </div>
+                  )}
+                </div>
+              )}
               {transfers.slice(0, 4).map((transfer) => (
                 <div key={transfer.id} className="flex flex-wrap items-center gap-1.5 rounded-2xl border px-3 py-2.5 text-xs font-semibold text-[var(--kia-text-soft)]" style={{ borderColor: 'var(--kia-hairline)', backgroundColor: 'var(--kia-surface)' }}>
                   <span className="font-mono text-[var(--kia-text)]">{transfer.vinNumber}</span>
@@ -4705,6 +5488,68 @@ function BookingDrawer({
           </section>
         </div>
       </div>
+
+      {/* Apply Discount Request Dialog */}
+      <Dialog open={isDiscountDialogOpen} onOpenChange={setIsDiscountDialogOpen}>
+        <DialogContent className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl duration-200">
+          <DialogTitle className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+            <Percent className="h-5 w-5 text-indigo-600" /> Request Booking Discount
+          </DialogTitle>
+          <form onSubmit={handleRequestDiscount} className="mt-4 space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="discount-amount" className="text-xs font-black uppercase tracking-wider text-slate-500 block">
+                Discount Amount (INR) <span className="text-red-500">*</span>
+              </label>
+              <Input
+                id="discount-amount"
+                type="number"
+                required
+                placeholder="e.g. 15000"
+                value={discountAmount}
+                onChange={(e) => setDiscountAmount(e.target.value)}
+                className="h-11 rounded-xl border-slate-200 bg-white font-bold"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="discount-reason" className="text-xs font-black uppercase tracking-wider text-slate-500 block">
+                Reason / Remarks <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                id="discount-reason"
+                required
+                placeholder="Please explain why this discount is required..."
+                value={discountReason}
+                onChange={(e) => setDiscountReason(e.target.value)}
+                className="w-full min-h-[100px] rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+            <DialogFooter className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDiscountDialogOpen(false)}
+                disabled={isSubmittingDiscount}
+                className="h-10 rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmittingDiscount}
+                className="h-10 rounded-xl bg-slate-950 text-white hover:bg-slate-800"
+              >
+                {isSubmittingDiscount ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting
+                  </>
+                ) : (
+                  'Submit Request'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -5139,3 +5984,349 @@ function EmailQuoteDialog({
     </Dialog>
   )
 }
+
+interface DiscountsDashboardProps {
+  query: any
+  currentUserRole: string
+  onOpenBooking: (id: string) => void
+}
+
+function DiscountsDashboard({ query, currentUserRole, onOpenBooking }: DiscountsDashboardProps) {
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('PENDING')
+  const [searchQuery, setSearchQuery] = useState('')
+  
+  // MD Action states
+  const [activeActionRequest, setActiveActionRequest] = useState<any | null>(null)
+  const [approvedAmount, setApprovedAmount] = useState('')
+  const [actionRemarks, setActionRemarks] = useState('')
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false)
+
+  // Initialize approved amount when selecting a request
+  useEffect(() => {
+    if (activeActionRequest) {
+      setApprovedAmount(String(activeActionRequest.requestedAmount))
+      setActionRemarks('')
+    }
+  }, [activeActionRequest])
+
+  const handleMDAction = async (action: 'APPROVE' | 'REJECT') => {
+    if (!activeActionRequest) return
+    setIsSubmittingAction(true)
+    try {
+      const response = await fetch(`/api/brands/kia/bookings/discounts/${activeActionRequest.id}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          approvedAmount: action === 'APPROVE' ? (approvedAmount ? Number(approvedAmount) : Number(activeActionRequest.requestedAmount)) : undefined,
+          remarks: actionRemarks,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to complete action.')
+      toast({ 
+        title: `Discount ${action === 'APPROVE' ? 'Approved' : 'Rejected'}`, 
+        description: `Successfully ${action === 'APPROVE' ? 'approved' : 'rejected'} discount of INR ${Number(activeActionRequest.requestedAmount).toLocaleString('en-IN')}` 
+      })
+      setActiveActionRequest(null)
+      query.refetch()
+    } catch (err) {
+      toast({ title: 'Action failed', description: err instanceof Error ? err.message : 'Something went wrong', variant: 'error' })
+    } finally {
+      setIsSubmittingAction(false)
+    }
+  }
+
+  if (query.isLoading) {
+    return <TableSkeleton columns={7} />
+  }
+
+  if (query.isError) {
+    return (
+      <EmptyState
+        illustration="error"
+        title="Unable to load discount requests"
+        description={query.error instanceof Error ? query.error.message : 'The request failed.'}
+        action={
+          <Button variant="outline" className="h-10 rounded-2xl font-bold" onClick={() => query.refetch()}>
+            <RefreshCw className="h-4 w-4" /> Retry
+          </Button>
+        }
+      />
+    )
+  }
+
+  const discounts = query.data?.discounts || []
+  
+  // Filter logic
+  const filteredDiscounts = discounts.filter((d: any) => {
+    const matchesStatus = statusFilter === 'ALL' || d.status === statusFilter
+    const matchesSearch = 
+      !searchQuery ||
+      String(d.bookingNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(d.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(d.model || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(d.requestedByName || '').toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesStatus && matchesSearch
+  })
+
+  const pendingCount = discounts.filter((d: any) => d.status === 'PENDING').length
+
+  return (
+    <div className="space-y-4">
+      {/* Search and Status tabs */}
+      <section className={cn(PRIMARY_SURFACE, 'sticky top-2 z-20 p-2.5 sm:top-3 sm:p-3')}>
+        <div className="grid gap-4 md:grid-cols-[1.5fr_auto]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kia-text-faint)]" />
+            <Input 
+              value={searchQuery} 
+              onChange={(e) => setSearchQuery(e.target.value)} 
+              placeholder="Search by booking, customer, model, consultant…" 
+              className={cn(INPUT_STYLE, '!pl-10 sm:!pl-11')} 
+            />
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto rounded-xl bg-slate-100/50 p-1 border border-slate-100">
+            {[
+              { key: 'PENDING', label: `Pending (${pendingCount})` },
+              { key: 'APPROVED', label: 'Approved' },
+              { key: 'REJECTED', label: 'Rejected' },
+              { key: 'ALL', label: 'All Requests' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key as any)}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-xs font-bold transition-all",
+                  statusFilter === tab.key 
+                    ? "bg-indigo-600 text-white shadow-sm" 
+                    : "text-slate-600 hover:bg-slate-100/80"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Main Table */}
+      <section className={cn(PRIMARY_SURFACE, 'overflow-hidden')}>
+        <div className="flex items-center justify-between border-b px-4 py-3 border-[var(--kia-hairline)]">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-50" style={toneSoftStyle('accent')}>
+              <Percent className="h-[1.05rem] w-[1.05rem] text-indigo-600" />
+            </span>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">Approvals Queue</p>
+              <h2 className="text-sm font-extrabold text-[var(--kia-text)]">
+                {filteredDiscounts.length} discount requests listed ({pendingCount} pending)
+              </h2>
+            </div>
+          </div>
+          {query.isFetching && <InlineLoader variant="search" size={28} />}
+        </div>
+
+        {filteredDiscounts.length === 0 ? (
+          <div className="flex h-[240px] flex-col items-center justify-center text-center p-6 bg-slate-50/20">
+            <p className="text-sm font-medium text-[var(--kia-text-soft)]">No matching discount requests found.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table className="kia-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="px-4 py-3 text-left">Booking</TableHead>
+                  <TableHead className="px-4 py-3 text-left">Customer</TableHead>
+                  <TableHead className="px-4 py-3 text-left">Vehicle Details</TableHead>
+                  <TableHead className="px-4 py-3 text-left">Requested By</TableHead>
+                  <TableHead className="px-4 py-3 text-right">Discount (INR)</TableHead>
+                  <TableHead className="px-4 py-3 text-center">Status</TableHead>
+                  <TableHead className="px-4 py-3 text-center">Requested At</TableHead>
+                  <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredDiscounts.map((discount: any) => {
+                  const isPending = discount.status === 'PENDING'
+                  const isApproved = discount.status === 'APPROVED'
+                  const isRejected = discount.status === 'REJECTED'
+                  
+                  return (
+                    <TableRow 
+                      key={discount.id}
+                      className="hover:bg-slate-50/50 cursor-pointer"
+                      onClick={() => onOpenBooking(discount.bookingId)}
+                    >
+                      <TableCell className="px-4 py-3 font-mono font-bold text-xs text-[var(--kia-text)]">
+                        {discount.bookingNumber}
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
+                        <p className="text-xs font-black text-slate-800">{discount.customerName}</p>
+                        <p className="text-[10px] text-slate-400 font-semibold">{discount.dealerCode}</p>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-xs font-semibold text-slate-600">
+                        {discount.model} · {discount.variant}
+                        {discount.color && <span className="text-slate-400 block text-[10px]">{discount.color}</span>}
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-xs font-bold text-slate-700">
+                        {discount.requestedByName}
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right">
+                        <p className="text-xs font-black text-slate-900">
+                          {Number(discount.requestedAmount).toLocaleString('en-IN')}
+                        </p>
+                        {isApproved && discount.approvedAmount && (
+                          <span className="text-[10px] text-emerald-600 font-bold block">
+                            Approved: {Number(discount.approvedAmount).toLocaleString('en-IN')}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-center">
+                        <span 
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[9px] font-black tracking-wider uppercase",
+                            isPending && "bg-amber-100 text-amber-800",
+                            isApproved && "bg-emerald-100 text-emerald-800",
+                            isRejected && "bg-red-100 text-red-800"
+                          )}
+                        >
+                          {discount.status}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-center text-[10px] font-semibold text-slate-400">
+                        {new Date(discount.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        {isPending && ['md', 'ceo', 'developer', 'admin'].includes(currentUserRole) ? (
+                          <Button
+                            size="sm"
+                            className="h-8 rounded-xl bg-indigo-600 text-white font-extrabold text-xs shadow-md shadow-indigo-600/10 hover:bg-indigo-700"
+                            onClick={() => setActiveActionRequest(discount)}
+                          >
+                            Review
+                          </Button>
+                        ) : discount.actionRemarks ? (
+                          <span className="text-[10px] text-slate-400 font-medium italic block max-w-[120px] truncate" title={discount.actionRemarks}>
+                            "{discount.actionRemarks}"
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-medium">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </section>
+
+      {/* MD Action Dialog */}
+      <Dialog open={Boolean(activeActionRequest)} onOpenChange={(open) => { if (!open) setActiveActionRequest(null) }}>
+        <DialogContent className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl duration-200">
+          <DialogTitle className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+            <Percent className="h-5 w-5 text-indigo-600" /> Review Discount Request
+          </DialogTitle>
+          
+          {activeActionRequest && (
+            <div className="mt-4 space-y-4">
+              <div className="rounded-xl bg-slate-50 p-3 text-xs space-y-2 border border-slate-100">
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-bold uppercase block">Booking</span>
+                  <span className="text-slate-950 font-black">{activeActionRequest.bookingNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-bold uppercase block">Customer</span>
+                  <span className="text-slate-950 font-black">{activeActionRequest.customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-bold uppercase block">Vehicle</span>
+                  <span className="text-slate-950 font-black">{activeActionRequest.model} · {activeActionRequest.variant}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-bold uppercase block">Requested By</span>
+                  <span className="text-slate-950 font-black">{activeActionRequest.requestedByName}</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-slate-200">
+                  <span className="text-slate-400 font-bold uppercase block">Requested Discount</span>
+                  <span className="text-indigo-600 font-extrabold">INR {Number(activeActionRequest.requestedAmount).toLocaleString('en-IN')}</span>
+                </div>
+                {activeActionRequest.reason && (
+                  <div className="pt-2 border-t border-slate-200 text-slate-600">
+                    <span className="text-[10px] text-slate-400 font-bold block uppercase mb-0.5">Reason</span>
+                    <p className="font-semibold italic">"{activeActionRequest.reason}"</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label htmlFor="approved-amount" className="text-xs font-black uppercase tracking-wider text-slate-500 block">
+                    Approved Discount Amount (INR)
+                  </label>
+                  <Input
+                    id="approved-amount"
+                    type="number"
+                    value={approvedAmount}
+                    onChange={(e) => setApprovedAmount(e.target.value)}
+                    className="h-11 rounded-xl border-slate-200 bg-white font-bold"
+                    placeholder="e.g. 15000"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="action-remarks" className="text-xs font-black uppercase tracking-wider text-slate-500 block">
+                    MD Remarks / Feedback
+                  </label>
+                  <textarea
+                    id="action-remarks"
+                    value={actionRemarks}
+                    onChange={(e) => setActionRemarks(e.target.value)}
+                    className="w-full min-h-[80px] rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold focus:border-indigo-500 focus:outline-none"
+                    placeholder="Provide any comments or instructions..."
+                  />
+                </div>
+              </div>
+
+              <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setActiveActionRequest(null)}
+                  disabled={isSubmittingAction}
+                  className="h-10 rounded-xl w-full sm:w-auto"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => handleMDAction('REJECT')}
+                  disabled={isSubmittingAction}
+                  className="h-10 rounded-xl bg-rose-600 text-white hover:bg-rose-700 w-full sm:w-auto"
+                >
+                  Reject Request
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => handleMDAction('APPROVE')}
+                  disabled={isSubmittingAction || !approvedAmount || isNaN(Number(approvedAmount)) || Number(approvedAmount) < 0}
+                  className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 w-full sm:w-auto"
+                >
+                  {isSubmittingAction ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing
+                    </>
+                  ) : (
+                    'Approve Request'
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+

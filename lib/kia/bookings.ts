@@ -8,6 +8,7 @@ import {
   financeOrders,
   kiaBookingActivity,
   kiaBookings,
+  kiaBookingDiscounts,
   kiaFinancePayouts,
   kiaLeadFollowups,
   kiaProformas,
@@ -154,6 +155,9 @@ export type CreateBookingInput = {
   notes?: string | null
   deliveryTargetDate?: string | null
   metadata?: Record<string, unknown> | null
+  requestDiscount?: boolean
+  discountRequestedAmount?: string | number | null
+  discountReason?: string | null
 }
 
 export type UpdateBookingInput = Partial<CreateBookingInput> & {
@@ -1002,6 +1006,25 @@ export async function createKiaBooking(input: CreateBookingInput, appUser: AppUs
       after: booking as unknown as JsonRecord,
       appUser,
     })
+
+    if (input.requestDiscount && input.discountRequestedAmount) {
+      await tx.insert(kiaBookingDiscounts).values({
+        bookingId: booking.id,
+        requestedAmount: String(input.discountRequestedAmount),
+        reason: input.discountReason || 'Requested during booking creation',
+        requestedBy: appUser.id,
+        requestedByName: appUser.fullName,
+        status: 'PENDING',
+      })
+
+      await addActivity(tx, {
+        bookingId: booking.id,
+        type: 'remark',
+        title: 'Discount requested',
+        description: `Requested discount of INR ${Number(input.discountRequestedAmount).toLocaleString('en-IN')} during booking creation.`,
+        appUser,
+      })
+    }
 
     // Every booking enters the Booking Follow-ups pipeline the moment it exists — due immediately,
     // so it lands in the CRE's Pending queue rather than waiting for someone to remember.

@@ -257,7 +257,16 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     setGlLoading(true)
     fetch(`/api/brands/${brand}/gl-accounts`)
       .then(res => res.json())
-      .then(data => setGlAccounts(data.rows || []))
+      .then(data => {
+        const rows = data.rows || []
+        setGlAccounts(rows)
+        setForm(prev => {
+          if (prev.glAccountId) return prev
+          const targetCode = APPROVAL_TYPE_TO_GL_CODE[prev.approvalType] || 'GL-001'
+          const matched = rows.find((g: any) => g.glCode === targetCode) || rows[0]
+          return { ...prev, glAccountId: matched?.id || '' }
+        })
+      })
       .catch(err => console.error('Error fetching GL accounts:', err))
       .finally(() => setGlLoading(false))
   }, [brand])
@@ -265,16 +274,29 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
   // Auto-select GL from Vendor search input change
   useEffect(() => {
     const cleanName = vendorSearch.trim().toLowerCase()
-    if (!cleanName) return
+    if (!cleanName) {
+      const targetCode = APPROVAL_TYPE_TO_GL_CODE[form.approvalType] || 'GL-001'
+      const matchedGl = glAccounts.find(g => g.glCode === targetCode) || glAccounts[0]
+      if (matchedGl && form.glAccountId !== matchedGl.id) {
+        setForm(prev => ({ ...prev, glAccountId: matchedGl.id }))
+      }
+      return
+    }
     const matchedKey = Object.keys(VENDOR_TO_GL_CODE).find(k => cleanName.includes(k))
-    if (matchedKey) {
-      const glCode = VENDOR_TO_GL_CODE[matchedKey]
+    const glCode = matchedKey ? VENDOR_TO_GL_CODE[matchedKey] : null
+    if (glCode) {
       const matchedGl = glAccounts.find(g => g.glCode === glCode)
       if (matchedGl && form.glAccountId !== matchedGl.id) {
         setForm(prev => ({ ...prev, glAccountId: matchedGl.id }))
       }
+    } else {
+      const targetCode = APPROVAL_TYPE_TO_GL_CODE[form.approvalType] || 'GL-001'
+      const matchedGl = glAccounts.find(g => g.glCode === targetCode) || glAccounts[0]
+      if (matchedGl && form.glAccountId !== matchedGl.id) {
+        setForm(prev => ({ ...prev, glAccountId: matchedGl.id }))
+      }
     }
-  }, [vendorSearch, glAccounts])
+  }, [vendorSearch, glAccounts, form.approvalType])
 
   // Sync vendorSearch if form.vendorName is cleared or set externally
   useEffect(() => {
@@ -366,18 +388,22 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
         }
       } else if (key === 'approvalType') {
         const glCode = APPROVAL_TYPE_TO_GL_CODE[value]
+        const matchedGl = glAccounts.find(g => g.glCode === (glCode || 'GL-001')) || glAccounts[0]
+        if (matchedGl) {
+          next.glAccountId = matchedGl.id
+        }
+      } else if (key === 'vendorName') {
+        const cleanName = value.trim().toLowerCase()
+        const matchedKey = Object.keys(VENDOR_TO_GL_CODE).find(k => cleanName.includes(k))
+        const glCode = matchedKey ? VENDOR_TO_GL_CODE[matchedKey] : null
         if (glCode) {
           const matchedGl = glAccounts.find(g => g.glCode === glCode)
           if (matchedGl) {
             next.glAccountId = matchedGl.id
           }
-        }
-      } else if (key === 'vendorName') {
-        const cleanName = value.trim().toLowerCase()
-        const matchedKey = Object.keys(VENDOR_TO_GL_CODE).find(k => cleanName.includes(k))
-        if (matchedKey) {
-          const glCode = VENDOR_TO_GL_CODE[matchedKey]
-          const matchedGl = glAccounts.find(g => g.glCode === glCode)
+        } else {
+          const targetCode = APPROVAL_TYPE_TO_GL_CODE[next.approvalType] || 'GL-001'
+          const matchedGl = glAccounts.find(g => g.glCode === targetCode) || glAccounts[0]
           if (matchedGl) {
             next.glAccountId = matchedGl.id
           }
@@ -877,91 +903,7 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
             </div>
           </div>
 
-          {/* Section 3.5: Accounting Information */}
-          <div className="space-y-5">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-950 text-white">
-                <Calculator className="w-3.5 h-3.5" />
-              </div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-950">Accounting Information / लेखांकन जानकारी</h2>
-            </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5 col-span-1 sm:col-span-2">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex flex-wrap items-center gap-1">
-                  GL Account / जीएल खाता <span className="text-rose-500">*</span>
-                  {glLoading && <span className="text-[9px] text-indigo-400 font-bold">(loading...)</span>}
-                </label>
-                <select
-                  required
-                  value={form.glAccountId}
-                  onChange={e => handleTextChange('glAccountId', e.target.value)}
-                  className="w-full h-11 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800 cursor-pointer appearance-none"
-                >
-                  <option value="">Choose GL Account / जीएल खाता चुनें</option>
-                  {glAccounts.map(g => (
-                    <option key={g.id} value={g.id}>
-                      {g.glName} ({g.glCode})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Display Auto-Populated Ledger Attributes */}
-              {(() => {
-                const selectedGl = glAccounts.find(g => g.id === form.glAccountId)
-                if (!selectedGl) return null
-                return (
-                  <div className="col-span-1 sm:col-span-2 bg-indigo-50/30 border border-indigo-100 rounded-2xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold animate-fadeIn duration-200">
-                    <div className="space-y-0.5">
-                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">GL Code</span>
-                      <span className="text-indigo-950 font-black block">{selectedGl.glCode}</span>
-                    </div>
-                    <div className="space-y-0.5">
-                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Account Type</span>
-                      <span className="text-indigo-950 font-black block">{selectedGl.accountType}</span>
-                    </div>
-                    <div className="space-y-0.5">
-                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Expense Type</span>
-                      <span className="text-indigo-950 font-black block">{selectedGl.accountNature}</span>
-                    </div>
-                    <div className="space-y-0.5">
-                      <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Ledger Group</span>
-                      <span className="text-indigo-950 font-black block">{selectedGl.tallyGroup}</span>
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* Render Vendor Suggestions based on GL Account */}
-              {(() => {
-                const selectedGl = glAccounts.find(g => g.id === form.glAccountId)
-                if (!selectedGl) return null
-                const suggestions = GL_CODE_TO_VENDORS[selectedGl.glCode]
-                if (!suggestions || suggestions.length === 0) return null
-                return (
-                  <div className="col-span-1 sm:col-span-2 flex flex-wrap items-center gap-1.5 text-xs font-semibold">
-                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px] flex items-center gap-1">
-                      <Tags className="w-3 h-3" /> Suggest / सुझाव:
-                    </span>
-                    {suggestions.map(v => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => {
-                          handleTextChange('vendorName', v)
-                          setVendorSearch(v)
-                        }}
-                        className="bg-indigo-50 border border-indigo-100 text-indigo-700 font-black px-2.5 py-1 rounded-full hover:bg-indigo-100/70 transition-all text-[10px]"
-                      >
-                        {v}
-                      </button>
-                    ))}
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
 
           {/* Section 4: Remarks & Documents */}
           <div className="space-y-5">

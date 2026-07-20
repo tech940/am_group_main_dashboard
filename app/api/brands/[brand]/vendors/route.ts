@@ -1,40 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { approvalsCommonData } from '@/lib/db/schema'
-import { and, eq, or } from 'drizzle-orm'
+import { vendors, approvalsCommonData } from '@/lib/db/schema'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 
 export const dynamic = 'force-dynamic'
 
-// GET — list all active vendors for this brand
+// GET — list all active vendors from the central vendors master registry
 export async function GET(
   _request: NextRequest,
-  context: { params: Promise<{ brand: string }> }
+  _context: { params: Promise<{ brand: string }> }
 ) {
   try {
-    const { brand } = await context.params
-    const normalizedBrand = String(brand || '').trim().toLowerCase()
-
     const rows = await db
       .select()
-      .from(approvalsCommonData)
-      .where(
-        and(
-          eq(approvalsCommonData.category, 'vendor'),
-          or(
-            eq(approvalsCommonData.brand, normalizedBrand),
-            eq(approvalsCommonData.brand, 'all')
-          )
-        )
-      )
+      .from(vendors)
+      .where(isNull(vendors.deletedAt))
+      .orderBy(vendors.name)
 
-    // Map to structure expected by frontend (id, name, gstNumber)
-    const vendors = rows.map(r => ({
-      id: r.id,
-      name: r.value,
-      gstNumber: ''
-    }))
-
-    return NextResponse.json({ vendors })
+    return NextResponse.json({ vendors: rows })
   } catch (error) {
     console.error('Error fetching vendors:', error)
     return NextResponse.json(
@@ -44,58 +27,97 @@ export async function GET(
   }
 }
 
-// POST — create a new vendor
+// POST — create a new vendor with auto-assigned vendor code
 export async function POST(
   request: NextRequest,
-  context: { params: Promise<{ brand: string }> }
+  _context: { params: Promise<{ brand: string }> }
 ) {
   try {
-    const { brand } = await context.params
-    const normalizedBrand = String(brand || '').trim().toLowerCase()
-
     const body = await request.json()
-    const { name } = body
+    const { name, gstNumber, bankAccountNumber, email, phone, address } = body
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Vendor name is required' }, { status: 400 })
     }
 
     const trimmedName = name.trim()
+    const cleanGst = gstNumber?.trim() || null
+    const cleanBank = bankAccountNumber?.trim() || null
 
-    // Check duplicate
-    const existing = await db
+    // Check duplicate name case-insensitively
+    const [existing] = await db
       .select()
-      .from(approvalsCommonData)
+      .from(vendors)
       .where(
         and(
-          eq(approvalsCommonData.category, 'vendor'),
-          eq(approvalsCommonData.value, trimmedName)
+          sql`LOWER(${vendors.name}) = LOWER(${trimmedName})`,
+          isNull(vendors.deletedAt)
         )
       )
       .limit(1)
 
-    let insertedRow
-    if (existing.length > 0) {
-      insertedRow = existing[0]
-    } else {
-      const [inserted] = await db
-        .insert(approvalsCommonData)
-        .values({
+    if (existing) {
+      return NextResponse.json({ error: 'A vendor with this name already exists.' }, { status: 400 })
+    }
+
+    // Auto-assign vendorCode: find max number in the V-XXX sequence
+    const allVendors = await db
+      .select({ vendorCode: vendors.vendorCode })
+      .from(vendors)
+      .where(isNull(vendors.deletedAt))
+
+    let maxNum = 0
+    allVendors.forEach((v) => {
+      if (v.vendorCode && v.vendorCode.startsWith('V-')) {
+        const num = parseInt(v.vendorCode.replace('V-', ''), 10)
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num
+        }
+      }
+    })
+    const nextCode = `V-${String(maxNum + 1).padStart(3, '0')}`
+
+    // Insert into true vendors table
+    const [inserted] = await db
+      .insert(vendors)
+      .values({
+        name: trimmedName,
+        gstNumber: cleanGst,
+        vendorCode: nextCode,
+        bankAccountNumber: cleanBank,
+        email: email?.trim() || null,
+        phone: phone?.trim() || null,
+        address: address?.trim() || null,
+      })
+      .returning()
+
+    // Compatibility support: Also sync into approvalsCommonData to support legacy dropdown systems
+    try {
+      const [existingCommon] = await db
+        .select()
+        .from(approvalsCommonData)
+        .where(
+          and(
+            eq(approvalsCommonData.category, 'vendor'),
+            eq(approvalsCommonData.value, trimmedName)
+          )
+        )
+        .limit(1)
+
+      if (!existingCommon) {
+        await db.insert(approvalsCommonData).values({
           category: 'vendor',
           value: trimmedName,
-          brand: 'all', // make it common/accessible everywhere
+          brand: 'all',
         })
-        .returning()
-      insertedRow = inserted
+      }
+    } catch (err) {
+      console.warn('Failed to sync vendor to approvalsCommonData:', err)
     }
 
     return NextResponse.json({
       success: true,
-      vendor: {
-        id: insertedRow.id,
-        name: insertedRow.value,
-        gstNumber: ''
-      }
+      vendor: inserted
     })
   } catch (error) {
     console.error('Error creating vendor:', error)

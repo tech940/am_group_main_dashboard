@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { optimizeImage } from '@/lib/images/optimize'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,16 +14,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File size exceeds 15MB limit' }, { status: 400 })
     }
 
+    // Re-encode raster images to WebP before storing (PDFs pass through unchanged).
+    const optimized = await optimizeImage(Buffer.from(await file.arrayBuffer()), file.type)
     const timestamp = Date.now()
     const randomStr = Math.random().toString(36).substring(7)
-    const extension = file.name.split('.').pop()
+    const extension = optimized.optimized ? 'webp' : (file.name.split('.').pop() || 'bin')
     const filename = `approval_${timestamp}_${randomStr}.${extension}`
     const filePath = `approvals/${filename}`
 
     const { error } = await supabaseAdmin.storage
       .from('purchase-orders')
-      .upload(filePath, file, {
-        contentType: file.type,
+      .upload(filePath, optimized.buffer, {
+        contentType: optimized.contentType,
         upsert: false,
       })
 

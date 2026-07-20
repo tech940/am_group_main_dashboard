@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import sharp from 'sharp'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { requireBrandSectionApiAccess } from '@/lib/auth/brand-access'
+import { optimizeImage } from '@/lib/images/optimize'
 
 // Uploads a customer ID document (PAN / Aadhaar / Employee ID) for a KIA booking and, for PAN &
 // Aadhaar IMAGES, reads the number off the card with Groq vision. PDFs are stored but not OCR'd
@@ -117,15 +118,19 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await file.arrayBuffer())
     const isPdf = mimeType === 'application/pdf'
 
-    // 1. Store the ORIGINAL document (service role → bypasses storage RLS; upload happens before the
-    //    booking exists, so the filename is self-generated like the cost-sheet flow).
+    // 1. Store an OPTIMISED copy of the document (WebP for image cards, high-quality "document" preset
+    //    to keep the printed number legible; PDFs pass straight through). The OCR step below still runs
+    //    on the ORIGINAL `buffer`, so re-encoding can never affect number extraction. Service role →
+    //    bypasses storage RLS; upload happens before the booking exists, so the filename is
+    //    self-generated like the cost-sheet flow.
+    const stored = await optimizeImage(buffer, mimeType, { preset: 'document' })
     const timestamp = Date.now()
     const randomStr = Math.random().toString(36).substring(7)
-    const extension = file.name.split('.').pop() || (isPdf ? 'pdf' : 'jpg')
+    const extension = stored.optimized ? 'webp' : (file.name.split('.').pop() || (isPdf ? 'pdf' : 'jpg'))
     const filePath = `kia-bookings/id-documents/${docType}_${timestamp}_${randomStr}.${extension}`
     const { error: uploadError } = await supabaseAdmin.storage
       .from('purchase-orders')
-      .upload(filePath, buffer, { contentType: mimeType, upsert: false })
+      .upload(filePath, stored.buffer, { contentType: stored.contentType, upsert: false })
     if (uploadError) {
       console.error('Supabase upload error (extract-id-document):', uploadError)
       return NextResponse.json({ error: 'Failed to upload document: ' + uploadError.message }, { status: 500 })

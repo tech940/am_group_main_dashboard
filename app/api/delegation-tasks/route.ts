@@ -63,14 +63,17 @@ export async function POST(request: Request) {
     const task = await createDelegationTask(body, appUser)
     // Best-effort assignment email AFTER the task is committed — the task must not fail if mail does.
     // The EA(s) covering the task's brand are CC'd (they run the follow-ups); never CC the assignee.
-    const eaCc = (await getBrandEaEmails(task.brand).catch(() => []))
-      .filter((e) => e.toLowerCase() !== String(task.assignedEmail || '').toLowerCase())
-    await sendTaskAssignedEmail({
-      toEmail: task.assignedEmail, toName: task.assignedName, assignerName: appUser.fullName,
-      title: task.title, description: task.description, dueAt: task.dueAt, priority: task.priority, cc: eaCc,
-    }).catch((err) => {
-      console.error('[delegation-tasks] Failed to send assignment email:', err)
-    })
+    getBrandEaEmails(task.brand)
+      .then((eaList) => {
+        const eaCc = eaList.filter((e) => e.toLowerCase() !== String(task.assignedEmail || '').toLowerCase())
+        return sendTaskAssignedEmail({
+          toEmail: task.assignedEmail, toName: task.assignedName, assignerName: appUser.fullName,
+          title: task.title, description: task.description, dueAt: task.dueAt, priority: task.priority, cc: eaCc,
+        })
+      })
+      .catch((err) => {
+        console.error('[delegation-tasks] Failed to send assignment email:', err)
+      })
     return NextResponse.json({ ok: true, task })
   } catch (error) {
     console.error('Failed to create delegation task:', error)

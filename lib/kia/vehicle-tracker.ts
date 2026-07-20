@@ -4,6 +4,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { kiaVehicleTracker } from '@/lib/db/schema'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { optimizeImage } from '@/lib/images/optimize'
 
 const STORAGE_BUCKET = 'purchase-orders'
 const STORAGE_FOLDER = 'kia-vehicle-tracker'
@@ -87,13 +88,15 @@ export async function verifyImageHasVehicle(file: File): Promise<VehicleVerifica
 export async function uploadTrackerPhoto(file: File, kind: 'out' | 'in'): Promise<{ url: string; path: string }> {
   const buffer = Buffer.from(await file.arrayBuffer())
   const mimeType = file.type || 'image/jpeg'
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+  // The camera emits a lightly-compressed JPEG (q0.9); re-encode to WebP to cut stored size.
+  const optimized = await optimizeImage(buffer, mimeType)
+  const ext = optimized.optimized ? 'webp' : (file.name.split('.').pop() || 'jpg').toLowerCase()
   const filename = `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
   const path = `${STORAGE_FOLDER}/${filename}`
 
   const { error } = await supabaseAdmin.storage
     .from(STORAGE_BUCKET)
-    .upload(path, buffer, { contentType: mimeType, upsert: false })
+    .upload(path, optimized.buffer, { contentType: optimized.contentType, upsert: false })
   if (error) throw new Error(`Failed to store photo: ${error.message}`)
 
   const { data } = supabaseAdmin.storage.from(STORAGE_BUCKET).getPublicUrl(path)

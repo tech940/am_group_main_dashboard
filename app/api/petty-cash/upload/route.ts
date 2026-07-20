@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { db } from '@/lib/db'
 import { pettyCashExpenseAttachments } from '@/lib/db/schema'
 import { canAccessPettyCash } from '@/lib/petty-cash/access'
+import { optimizeImage } from '@/lib/images/optimize'
 
 const BUCKET_NAME = 'petty-cash'
 const MAX_FILE_SIZE = 100 * 1024 * 1024
@@ -47,11 +48,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only PDF and image files are allowed' }, { status: 400 })
     }
 
-    const extension = getExtension(file.name)
+    // Re-encode raster images to WebP before storing (PDFs/HEIC-without-libheif pass through).
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const optimized = await optimizeImage(buffer, file.type)
+
+    const extension = optimized.optimized ? 'webp' : getExtension(file.name)
     const folder = entity === 'request' ? 'requests' : 'expenses'
     const filePath = `${folder}/${appUser.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`
-    const { error } = await supabaseAdmin.storage.from(BUCKET_NAME).upload(filePath, file, {
-      contentType: file.type,
+    const { error } = await supabaseAdmin.storage.from(BUCKET_NAME).upload(filePath, optimized.buffer, {
+      contentType: optimized.contentType,
       upsert: false,
     })
 
@@ -64,11 +69,11 @@ export async function POST(request: NextRequest) {
     if (typeof expenseId === 'string' && expenseId) {
       await db.insert(pettyCashExpenseAttachments).values({
         expenseId,
-        fileName: file.name,
+        fileName: file.name, // original name for display
         filePath,
         fileUrl: data.publicUrl,
-        fileSize: file.size,
-        mimeType: file.type,
+        fileSize: optimized.finalBytes,
+        mimeType: optimized.contentType,
         uploadedBy: appUser.id,
       })
     }
@@ -77,8 +82,8 @@ export async function POST(request: NextRequest) {
       url: data.publicUrl,
       path: filePath,
       fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
+      fileSize: optimized.finalBytes,
+      mimeType: optimized.contentType,
     })
   } catch (error) {
     console.error('POST /api/petty-cash/upload failed:', error)

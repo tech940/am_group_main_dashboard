@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { optimizeImage } from '@/lib/images/optimize'
 
 const BUCKET_NAME = 'purchase-orders'
 
@@ -35,32 +36,39 @@ export async function uploadFile(
   try {
     const supabase = await createClient()
 
-    // Generate unique filename
-    const timestamp = Date.now()
-    const randomStr = Math.random().toString(36).substring(7)
-    const extension = typeof file === 'string' ? 'pdf' : file.name.split('.').pop()
-    const filename = `${orderId}_${timestamp}_${randomStr}.${extension}`
-    const filePath = `${folder}/${filename}`
-
-    let fileData: Buffer | Blob
-    let contentType: string
-
+    // Resolve the raw bytes + source content-type up front so we can optimise before uploading.
+    let sourceBuffer: Buffer
+    let sourceType: string
+    let originalExtension: string
     if (typeof file === 'string') {
-      // Handle base64 string
+      // Handle base64 string (used for generated PDFs — passes straight through the optimiser).
       const base64Data = file.split(',')[1] || file
-      fileData = Buffer.from(base64Data, 'base64')
-      contentType = file.includes('data:') ? file.split(';')[0].split(':')[1] : 'application/pdf'
+      sourceBuffer = Buffer.from(base64Data, 'base64')
+      sourceType = file.includes('data:') ? file.split(';')[0].split(':')[1] : 'application/pdf'
+      originalExtension = 'pdf'
     } else {
       // Handle File object
-      fileData = file
-      contentType = file.type
+      sourceBuffer = Buffer.from(await file.arrayBuffer())
+      sourceType = file.type || 'application/octet-stream'
+      originalExtension = file.name.split('.').pop() || 'bin'
     }
+
+    // Re-encode raster images to WebP; non-raster (PDF/etc.) returns unchanged.
+    const optimized = await optimizeImage(sourceBuffer, sourceType)
+
+    // Generate unique filename. Only rename to .webp when we actually re-encoded — otherwise keep the
+    // file's original extension so passthrough uploads (PDFs, anything non-raster) are untouched.
+    const timestamp = Date.now()
+    const randomStr = Math.random().toString(36).substring(7)
+    const extension = optimized.optimized ? 'webp' : originalExtension
+    const filename = `${orderId}_${timestamp}_${randomStr}.${extension}`
+    const filePath = `${folder}/${filename}`
 
     // Upload to Supabase Storage
     const { error } = await supabase.storage
       .from(BUCKET_NAME)
-      .upload(filePath, fileData, {
-        contentType,
+      .upload(filePath, optimized.buffer, {
+        contentType: optimized.contentType,
         upsert: false,
       })
 

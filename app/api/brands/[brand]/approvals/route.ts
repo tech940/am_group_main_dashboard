@@ -31,6 +31,8 @@ export async function POST(
       uploadBillUrl1,
       uploadBillUrl2,
       uploadDocUrl,
+      glAccountId,
+      gst,
     } = body
 
     if (!email || !email.trim()) {
@@ -41,6 +43,9 @@ export async function POST(
     }
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       return NextResponse.json({ error: 'A valid amount greater than 0 is required' }, { status: 400 })
+    }
+    if (!glAccountId) {
+      return NextResponse.json({ error: 'GL Account is required' }, { status: 400 })
     }
 
     // Auto-save new vendor to common list if it doesn't already exist
@@ -101,6 +106,8 @@ export async function POST(
         managementRemarks: '',
         emailSendStatus: 'Mail Sent',
         brand: normalizedBrand,
+        glAccountId: glAccountId,
+        gst: gst?.trim() || null,
       })
       .returning()
 

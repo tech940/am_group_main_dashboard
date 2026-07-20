@@ -107,6 +107,9 @@ export async function POST(request: Request) {
       financeRequired: body.bankFinance && body.bankFinance !== 'CASH',
       loanAmount: body.bookingAmount || '0',
       notes: body.notes || body.anyCommitmentWithCustomer,
+      requestDiscount: Boolean(body.requestDiscount),
+      discountRequestedAmount: body.discountRequestedAmount,
+      discountReason: body.discountReason,
       metadata: body,
     }, appUser!))
 

@@ -51,13 +51,15 @@ import {
   Users,
   ClipboardList,
   Database,
-  Activity
+  Activity,
+  CornerUpLeft
 } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 const LOCATION_OPTIONS = ['JAMMU', 'UDHAMPUR', 'BANIHAL']
+const BRAND_OPTIONS = ['KIA', 'HYUNDAI', 'MG', 'TATA', 'PLATINUM']
 
 interface ApprovalHistoryEntry {
   id: string
@@ -109,6 +111,14 @@ interface ApprovalRequest {
   quarterlyBudget: string | null
   annualBudget: string | null
   history: ApprovalHistoryEntry[]
+  brand: string | null
+  paymentStatus: string
+  utrNumber: string | null
+  paymentProofUrl: string | null
+  paymentRemarks: string | null
+  paymentCompletedAt: string | null
+  paymentCompletedBy: string | null
+  sendBackReason: string | null
   createdAt: string
   updatedAt: string
 }
@@ -134,8 +144,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return new Date(d.getFullYear(), d.getMonth(), 1)
   })
 
-  // Filter Scope: 'pending' (Pending My Approval), 'all' (All requests), or 'vendors' (Vendor Ledgers)
-  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'vendors'>('pending')
+  // Filter Scope: 'pending' (Pending My Approval), 'all' (All requests), 'vendors' (Vendor Ledgers), or 'gl_categories' (GL Category Ledgers)
+  const [filterScope, setFilterScope] = useState<'pending' | 'all' | 'vendors' | 'gl_categories'>('pending')
 
   // Bulk selection states
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([])
@@ -148,6 +158,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const [showAnalytics, setShowAnalytics] = useState<boolean>(false)
   const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null)
 
+  // GL Ledgers states
+  const [selectedGlName, setSelectedGlName] = useState<string | null>(null)
+  const [glStartDate, setGlStartDate] = useState<string>('')
+  const [glEndDate, setGlEndDate] = useState<string>('')
+  const [selectedGlMonth, setSelectedGlMonth] = useState<string>('all')
+  const [showAddGlDialog, setShowAddGlDialog] = useState<boolean>(false)
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
@@ -155,18 +172,23 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   // Details & Action Modal states
   const [detailRow, setDetailRow] = useState<ApprovalRequest | null>(null)
   const [actionRemarks, setActionRemarks] = useState('')
-  const [actionStage, setActionStage] = useState<'sales_manager' | 'accounts' | 'ea' | 'md' | null>(null)
-  const [actionDecision, setActionDecision] = useState<'APPROVE' | 'HOLD' | 'REJECT' | null>(null)
+  const [actionStage, setActionStage] = useState<'sales_manager' | 'accounts' | 'ea' | 'md' | 'payment_done' | null>(null)
+  const [actionDecision, setActionDecision] = useState<'APPROVE' | 'HOLD' | 'REJECT' | 'SEND_BACK' | null>(null)
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [invoiceDocUrl, setInvoiceDocUrl] = useState('')
   const [invoiceFileName, setInvoiceFileName] = useState('')
   const [uploadingInvoice, setUploadingInvoice] = useState(false)
+  const [utrNumberVal, setUtrNumberVal] = useState('')
+  const [paymentProofUrl, setPaymentProofUrl] = useState('')
+  const [paymentProofFileName, setPaymentProofFileName] = useState('')
+  const [uploadingPaymentProof, setUploadingPaymentProof] = useState(false)
   const [activeTab, setActiveTab] = useState<'timeline' | 'remarks'>('timeline')
   const [showTimeline, setShowTimeline] = useState(false)
   const [remarkText, setRemarkText] = useState('')
   const [addRemarkPending, setAddRemarkPending] = useState(false)
   const [selectedDepartment, setSelectedDepartment] = useState('All')
   const [selectedGlFilter, setSelectedGlFilter] = useState('All')
+  const [selectedBrand, setSelectedBrand] = useState('All')
   const [selectedGlId, setSelectedGlId] = useState('')
   const [glAccounts, setGlAccounts] = useState<any[]>([])
 
@@ -258,12 +280,24 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     return Array.from(depts).sort()
   }, [data?.rows])
 
+  const uniqueLocations = useMemo(() => {
+    const locs = new Set<string>(['JAMMU', 'UDHAMPUR', 'BANIHAL'])
+    if (data?.rows) {
+      data.rows.forEach(r => {
+        if (r.location) {
+          locs.add(r.location.trim().toUpperCase())
+        }
+      })
+    }
+    return Array.from(locs).sort()
+  }, [data?.rows])
+
   const actionMutation = useMutation({
-    mutationFn: async ({ id, action, stage, remarks, invoiceNumber, invoiceDocUrl, glAccountId }: { id: string; action: 'APPROVE' | 'REJECT' | 'HOLD'; stage: string; remarks: string; invoiceNumber?: string; invoiceDocUrl?: string; glAccountId?: string }) => {
+    mutationFn: async ({ id, action, stage, remarks, invoiceNumber, invoiceDocUrl, glAccountId, utrNumber, paymentProofUrl }: { id: string; action: 'APPROVE' | 'REJECT' | 'HOLD' | 'SEND_BACK'; stage: string; remarks: string; invoiceNumber?: string; invoiceDocUrl?: string; glAccountId?: string; utrNumber?: string; paymentProofUrl?: string }) => {
       const res = await fetch(`/api/brands/kia/approvals/${id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, stage, remarks, invoiceNumber, invoiceDocUrl, glAccountId })
+        body: JSON.stringify({ action, stage, remarks, invoiceNumber, invoiceDocUrl, glAccountId, utrNumber, paymentProofUrl })
       })
       const resData = await res.json()
       if (!res.ok || resData.error) throw new Error(resData.error || 'Failed to complete approval action')
@@ -316,6 +350,39 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       setInvoiceDocUrl('')
     } finally {
       setUploadingInvoice(false)
+    }
+  }
+
+  const handlePaymentProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingPaymentProof(true)
+    setPaymentProofFileName(file.name)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('folder', 'approvals')
+
+      const res = await fetch(`/api/brands/kia/approvals/upload`, {
+        method: 'POST',
+        body: fd
+      })
+
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Upload failed')
+      }
+
+      setPaymentProofUrl(data.url)
+      toast({ title: 'Payment proof uploaded', variant: 'success' })
+    } catch (err) {
+      console.error(err)
+      toast({ title: 'Upload failed', description: err instanceof Error ? err.message : 'Please try again', variant: 'error' })
+      setPaymentProofFileName('')
+      setPaymentProofUrl('')
+    } finally {
+      setUploadingPaymentProof(false)
     }
   }
 
@@ -846,34 +913,49 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   }
 
 
-  const getPendingStageLabel = (req: ApprovalRequest) => {
-    if (req.accountApproval === 'APPROVED') return 'Fully Approved'
-    if (req.accountApproval === 'NOT APPROVED') return 'Rejected by Accounts'
-    if (req.accountApproval === 'HELD') return 'Held by Accounts'
-    if (req.managementApproval === 'NOT APPROVED') return 'Rejected by MD'
-    if (req.managementApproval === 'HELD') return 'Held by MD'
-    if (req.eaApproval === 'NOT APPROVED') return 'Rejected by EA'
-    if (req.eaApproval === 'HELD') return 'Held by EA'
+  const getPendingStageLabel = (req: ApprovalRequest): string => {
     if (req.vpApproval === 'NOT APPROVED') return 'Rejected by ED'
     if (req.vpApproval === 'HELD') return 'Held by ED'
+    
+    if (req.accountApproval === 'NOT APPROVED') return 'Rejected by Accounts'
+    if (req.accountApproval === 'HELD') return 'Held by Accounts'
+
+    if (req.eaApproval === 'NOT APPROVED') return 'Rejected by EA'
+    if (req.eaApproval === 'HELD') return 'Held by EA'
+
+    if (req.managementApproval === 'NOT APPROVED') return 'Rejected by MD'
+    if (req.managementApproval === 'HELD') return 'Held by MD'
+
+    if (req.emailSendStatus === 'SentBack') return 'Sent Back / Clarification'
 
     if (!req.vpApproval || req.vpApproval === '') return 'Pending ED'
+    if (!req.accountApproval || req.accountApproval === '') return 'Pending Accounts'
     if (!req.eaApproval || req.eaApproval === '') return 'Pending EA'
     if (!req.managementApproval || req.managementApproval === '') return 'Pending MD'
-    if (!req.accountApproval || req.accountApproval === '') return 'Pending Accounts'
+
+    if (req.managementApproval === 'APPROVED') {
+      if (req.paymentStatus === 'PAID' || req.invoiceDocUrl) return 'Paid'
+      return 'Pending Payment'
+    }
+
     return 'Unknown'
   }
 
   const getActiveStageKey = (req: ApprovalRequest) => {
-    // MD can approve any order any time, and their action always corresponds to the MD stage
+    const pendingLabel = getPendingStageLabel(req)
+    if (pendingLabel === 'Sent Back / Clarification' || pendingLabel === 'Paid' || pendingLabel.startsWith('Rejected')) {
+      return null
+    }
+
     if (['md', 'ceo'].includes(effectiveRole)) {
+      if (pendingLabel === 'Pending Payment') return 'payment_done'
       return 'md'
     }
-    const pendingLabel = getPendingStageLabel(req)
     if (pendingLabel === 'Pending ED') return 'sales_manager'
+    if (pendingLabel === 'Pending Accounts') return 'accounts'
     if (pendingLabel === 'Pending EA') return 'ea'
     if (pendingLabel === 'Pending MD') return 'md'
-    if (pendingLabel === 'Pending Accounts') return 'accounts'
+    if (pendingLabel === 'Pending Payment') return 'payment_done'
     return null
   }
 
@@ -884,14 +966,19 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (stage === 'accounts') return ['accounts', 'finance_head'].includes(effectiveRole)
     if (stage === 'ea') return ['ea'].includes(effectiveRole)
     if (stage === 'md') return ['md', 'ceo'].includes(effectiveRole)
+    if (stage === 'payment_done') return ['accounts', 'finance_head', 'md', 'ceo'].includes(effectiveRole)
     return false
   }
 
   // Correlate whether a request is pending action specifically for the current logged-in user
   const getIsPendingForUser = (row: ApprovalRequest) => {
     const pendingLabel = getPendingStageLabel(row)
-    if (pendingLabel === 'Fully Approved' || pendingLabel.startsWith('Rejected')) {
+    if (pendingLabel === 'Paid' || pendingLabel.startsWith('Rejected') || pendingLabel === 'Sent Back / Clarification') {
       return false
+    }
+
+    if (pendingLabel === 'Pending Payment') {
+      return ['accounts', 'finance_head', 'md', 'ceo'].includes(effectiveRole)
     }
 
     // MD can approve any order any time no matter the stage (if they haven't already approved the MD stage)
@@ -902,13 +989,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (pendingLabel === 'Pending ED' && effectiveRole === 'ed') {
       return true
     }
+    if (pendingLabel === 'Pending Accounts' && ['accounts', 'finance_head'].includes(effectiveRole)) {
+      return true
+    }
     if (pendingLabel === 'Pending EA' && effectiveRole === 'ea') {
       return true
     }
     if (pendingLabel === 'Pending MD' && ['md', 'ceo'].includes(effectiveRole)) {
-      return true
-    }
-    if (pendingLabel === 'Pending Accounts' && ['accounts', 'finance_head'].includes(effectiveRole)) {
       return true
     }
 
@@ -954,6 +1041,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         (row.glCode && row.glCode.toLowerCase().includes(search.toLowerCase())) ||
         (row.tallyGroup && row.tallyGroup.toLowerCase().includes(search.toLowerCase())) ||
         (row.accountNature && row.accountNature.toLowerCase().includes(search.toLowerCase())) ||
+        (row.brand && row.brand.toLowerCase().includes(search.toLowerCase())) ||
         row.amount.includes(search)
 
       if (!matchesSearch) return false
@@ -970,6 +1058,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       // 4.5. GL Account filter
       const matchesGl = selectedGlFilter === 'All' || row.glAccountId === selectedGlFilter
       if (!matchesGl) return false
+
+      // 4.6. Brand filter
+      const matchesBrand = selectedBrand === 'All' || 
+        (row.brand && row.brand.trim().toUpperCase() === selectedBrand.trim().toUpperCase())
+      if (!matchesBrand) return false
 
       // 5. Date filter
       if (startDate) {
@@ -992,13 +1085,16 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
         (selectedStage === 'pending_accounts' && pendingLabel === 'Pending Accounts') ||
         (selectedStage === 'pending_ea' && pendingLabel === 'Pending EA') ||
         (selectedStage === 'pending_md' && pendingLabel === 'Pending MD') ||
-        (selectedStage === 'completed' && pendingLabel === 'Fully Approved') ||
+        (selectedStage === 'pending_payment' && pendingLabel === 'Pending Payment') ||
+        (selectedStage === 'paid' && pendingLabel === 'Paid') ||
+        (selectedStage === 'completed' && (pendingLabel === 'Fully Approved' || pendingLabel === 'Paid' || pendingLabel === 'Pending Payment')) ||
+        (selectedStage === 'sent_back' && pendingLabel === 'Sent Back / Clarification') ||
         (selectedStage === 'rejected' && pendingLabel.startsWith('Rejected'))
       if (!matchesStage) return false
 
       return true
     })
-  }, [data?.rows, filterScope, search, selectedLocation, selectedDepartment, startDate, endDate, selectedStage, effectiveRole])
+  }, [data?.rows, filterScope, search, selectedLocation, selectedDepartment, selectedGlFilter, selectedBrand, startDate, endDate, selectedStage, effectiveRole])
 
   const departmentAllocation = useMemo(() => {
     const map: Record<string, number> = {}
@@ -1030,6 +1126,89 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     })
     return Object.values(summaryMap).sort((a, b) => b.total - a.total)
   }, [data?.rows])
+
+  const glSummary = useMemo(() => {
+    if (!data?.rows) return []
+    const summaryMap: Record<string, { id: string; name: string; code: string; count: number; total: number; rows: ApprovalRequest[] }> = {}
+    data.rows.forEach(row => {
+      const glAcc = glAccounts.find(g => g.id === row.glAccountId)
+      const glName = glAcc ? glAcc.glName : 'Unknown GL Category'
+      const glCode = glAcc ? glAcc.glCode : '—'
+      const key = row.glAccountId || 'unknown'
+      if (!summaryMap[key]) {
+        summaryMap[key] = { id: key, name: glName, code: glCode, count: 0, total: 0, rows: [] }
+      }
+      summaryMap[key].count += 1
+      summaryMap[key].total += Number(row.amount || 0)
+      summaryMap[key].rows.push(row)
+    })
+    return Object.values(summaryMap).sort((a, b) => b.total - a.total)
+  }, [data?.rows, glAccounts])
+
+  const glFilteredRows = useMemo(() => {
+    if (!selectedGlName || !data?.rows) return []
+    const glItem = glSummary.find(g => g.name === selectedGlName)
+    if (!glItem) return []
+    return glItem.rows.filter(row => {
+      const rowDate = new Date(row.createdAt)
+      rowDate.setHours(0, 0, 0, 0)
+      
+      if (glStartDate) {
+        const start = new Date(glStartDate)
+        start.setHours(0, 0, 0, 0)
+        if (rowDate < start) return false
+      }
+      if (glEndDate) {
+        const end = new Date(glEndDate)
+        end.setHours(0, 0, 0, 0)
+        if (rowDate > end) return false
+      }
+      return true
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  }, [selectedGlName, glSummary, glStartDate, glEndDate])
+
+  const glTransactions = useMemo(() => {
+    if (!selectedGlName || !data?.rows) return []
+    const glItem = glSummary.find(g => g.name === selectedGlName)
+    return glItem ? glItem.rows : []
+  }, [selectedGlName, glSummary, data?.rows])
+
+  const glUniqueMonths = useMemo(() => {
+    const monthsSet = new Set<string>()
+    glTransactions.forEach(row => {
+      const date = new Date(row.createdAt)
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      monthsSet.add(`${year}-${month}`)
+    })
+    return Array.from(monthsSet).sort((a, b) => b.localeCompare(a))
+  }, [glTransactions])
+
+  const glMonthFilteredRows = useMemo(() => {
+    return glFilteredRows.filter(row => {
+      if (selectedGlMonth === 'all') return true
+      const date = new Date(row.createdAt)
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      return `${year}-${month}` === selectedGlMonth
+    })
+  }, [glFilteredRows, selectedGlMonth])
+
+  const glGroupedByMonth = useMemo(() => {
+    const groups: Record<string, { yearMonth: string; totalAmount: number; rows: ApprovalRequest[] }> = {}
+    glMonthFilteredRows.forEach(row => {
+      const date = new Date(row.createdAt)
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const key = `${year}-${month}`
+      if (!groups[key]) {
+        groups[key] = { yearMonth: key, totalAmount: 0, rows: [] }
+      }
+      groups[key].totalAmount += Number(row.amount || 0)
+      groups[key].rows.push(row)
+    })
+    return Object.values(groups).sort((a, b) => b.yearMonth.localeCompare(a.yearMonth))
+  }, [glMonthFilteredRows])
 
   const vendorFilteredRows = useMemo(() => {
     if (!selectedVendorName || !data?.rows) return []
@@ -1293,9 +1472,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     
     const stages = [
       { key: 'sales_manager', label: 'ED', status: req.vpApproval },
+      { key: 'accounts', label: 'Accounts (Invoice)', status: req.accountApproval },
       { key: 'ea', label: 'EA', status: req.eaApproval },
-      { key: 'md', label: 'MD Approval', status: req.managementApproval },
-      { key: 'accounts', label: 'Accounts', status: req.accountApproval },
+      { key: 'md', label: 'MD', status: req.managementApproval },
+      { key: 'payment_done', label: 'Payment', status: req.paymentStatus === 'PAID' ? 'APPROVED' : null },
     ]
 
     return (
@@ -1310,9 +1490,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             // Check if this is the active stage
             let isActive = false
             if (pendingLabel === 'Pending ED' && stg.key === 'sales_manager') isActive = true
+            else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
             else if (pendingLabel === 'Pending EA' && stg.key === 'ea') isActive = true
             else if (pendingLabel === 'Pending MD' && stg.key === 'md') isActive = true
-            else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
+            else if (pendingLabel === 'Pending Payment' && stg.key === 'payment_done') isActive = true
 
             let circleColor = 'bg-slate-100 text-slate-400 border-slate-200'
             let textColor = 'text-slate-400 font-semibold'
@@ -1401,6 +1582,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (t.includes('NEFT')) return 'border-emerald-200 text-emerald-600 bg-emerald-50/20'
     if (t.includes('RTGS') || t.includes('CHEQUE')) return 'border-violet-200 text-violet-600 bg-violet-50/20'
     return 'border-slate-200 text-slate-600 bg-slate-50/20'
+  }
+
+  const getBrandBadgeClass = (brand: string) => {
+    const b = (brand || '').trim().toLowerCase()
+    if (b === 'kia') return 'bg-red-50 text-red-700 border-red-200'
+    if (b === 'hyundai') return 'bg-blue-50 text-blue-700 border-blue-200'
+    if (b === 'mg') return 'bg-teal-50 text-teal-700 border-teal-200'
+    return 'bg-slate-50 text-slate-700 border-slate-200'
   }
 
   const getRoleRemarksStyles = (roleKey: string) => {
@@ -1520,12 +1709,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           </div>
           <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
             <select
-              value={selectedLocation}
-              onChange={e => setSelectedLocation(e.target.value)}
+              value={selectedBrand}
+              onChange={e => setSelectedBrand(e.target.value)}
               className="h-10 px-4 w-full sm:w-[150px] rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer appearance-none"
             >
-              <option value="All">All Locations</option>
-              {LOCATION_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}
+              <option value="All">All Brands</option>
+              {BRAND_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
             <select
               value={selectedDepartment}
@@ -1688,7 +1877,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               <option value="pending_accounts">Pending Accounts</option>
               <option value="pending_ea">Pending EA</option>
               <option value="pending_md">Pending MD</option>
-              <option value="completed">Completed (Approved)</option>
+              <option value="pending_payment">Pending Payment</option>
+              <option value="paid">Paid Cases</option>
+              <option value="completed">Completed (All Approved)</option>
+              <option value="sent_back">Sent Back / Clarification</option>
               <option value="rejected">Rejected Cases</option>
             </select>
 
@@ -1885,6 +2077,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full" />
               )}
             </button>
+            <button
+              onClick={() => setFilterScope('gl_categories')}
+              className={`pb-3 relative transition-all ${
+                filterScope === 'gl_categories' ? 'text-indigo-600 font-black' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <span>GL Categories ({glSummary.length})</span>
+              {filterScope === 'gl_categories' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-full" />
+              )}
+            </button>
           </div>
         </div>
 
@@ -1945,6 +2148,85 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               setVendorEndDate('')
                               setSelectedVendorMonth('all')
                               setSelectedVendorName(v.name)
+                            }}
+                            className="h-8 px-3.5 rounded-xl border border-slate-200 hover:border-slate-400 bg-white text-xs font-bold text-slate-700 transition-all shadow-sm"
+                          >
+                            View Ledger
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : filterScope === 'gl_categories' ? (
+          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-[0_20px_50px_rgba(15,23,42,0.04)] overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-400">GL Categories Summary</span>
+              <button
+                type="button"
+                onClick={() => setShowAddGlDialog(true)}
+                className="h-9 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add GL Category
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50">
+                    <th className="py-4 px-6 w-16">#</th>
+                    <th className="py-4 px-6">GL Code</th>
+                    <th className="py-4 px-6">GL Category Name</th>
+                    <th className="py-4 px-6 text-center">Transactions</th>
+                    <th className="py-4 px-6 text-right">Total Spend (₹)</th>
+                    <th className="py-4 px-6 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {glSummary.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400 text-xs font-semibold">
+                        No GL categories found.
+                      </td>
+                    </tr>
+                  ) : (
+                    glSummary.map((g, idx) => (
+                      <tr
+                        key={g.id || idx}
+                        onClick={() => {
+                          setGlStartDate('')
+                          setGlEndDate('')
+                          setSelectedGlMonth('all')
+                          setSelectedGlName(g.name)
+                        }}
+                        className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors cursor-pointer"
+                      >
+                        <td className="py-4 px-6 font-mono text-slate-400">
+                          {(idx + 1).toString().padStart(2, '0')}
+                        </td>
+                        <td className="py-4 px-6 font-mono text-xs font-bold text-slate-500">
+                          {g.code}
+                        </td>
+                        <td className="py-4 px-6 font-bold text-slate-900">
+                          {g.name}
+                        </td>
+                        <td className="py-4 px-6 text-center font-bold text-slate-600">
+                          {g.count}
+                        </td>
+                        <td className="py-4 px-6 text-right font-black text-slate-950 text-base">
+                          {g.total.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-4 px-6 text-right" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => {
+                              setGlStartDate('')
+                              setGlEndDate('')
+                              setSelectedGlMonth('all')
+                              setSelectedGlName(g.name)
                             }}
                             className="h-8 px-3.5 rounded-xl border border-slate-200 hover:border-slate-400 bg-white text-xs font-bold text-slate-700 transition-all shadow-sm"
                           >
@@ -2020,14 +2302,34 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           <span className="text-slate-400 text-[11px] font-bold pl-3">Pending</span>
                         </div>
                       )
-                      if (pendingLabel === 'Fully Approved') {
+                      if (pendingLabel === 'Paid') {
                         stageDisplay = (
                           <div className="flex flex-col">
                             <span className="text-slate-900 font-bold flex items-center gap-1.5">
                               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                              Fully Approved
+                              Paid / भुगतान किया
                             </span>
-                            <span className="text-emerald-600 text-[11px] font-bold pl-3">Approved</span>
+                            <span className="text-emerald-600 text-[11px] font-bold pl-3">Approved & Paid</span>
+                          </div>
+                        )
+                      } else if (pendingLabel === 'Pending Payment') {
+                        stageDisplay = (
+                          <div className="flex flex-col">
+                            <span className="text-slate-900 font-bold flex items-center gap-1.5">
+                              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                              Pending Payment
+                            </span>
+                            <span className="text-indigo-600 text-[11px] font-bold pl-3">Approved (Unpaid)</span>
+                          </div>
+                        )
+                      } else if (pendingLabel === 'Sent Back / Clarification') {
+                        stageDisplay = (
+                          <div className="flex flex-col">
+                            <span className="text-slate-900 font-bold flex items-center gap-1.5">
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-bounce" />
+                              Clarification Pending
+                            </span>
+                            <span className="text-amber-600 text-[11px] font-bold pl-3">Sent Back</span>
                           </div>
                         )
                       } else if (pendingLabel.startsWith('Rejected')) {
@@ -2048,10 +2350,22 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                           PENDING
                         </span>
                       )
-                      if (pendingLabel === 'Fully Approved') {
+                      if (pendingLabel === 'Paid') {
                         statusBadge = (
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase">
+                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase">
+                            PAID
+                          </span>
+                        )
+                      } else if (pendingLabel === 'Pending Payment') {
+                        statusBadge = (
+                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase">
                             APPROVED
+                          </span>
+                        )
+                      } else if (pendingLabel === 'Sent Back / Clarification') {
+                        statusBadge = (
+                          <span className="bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase">
+                            SENT BACK
                           </span>
                         )
                       } else if (pendingLabel.startsWith('Rejected')) {
@@ -2095,8 +2409,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                             </span>
                           </td>
                           <td className="py-4 px-5">
-                            <div className="flex flex-col">
-                              <span className="text-slate-950 font-bold block">{row.name}</span>
+                            <div className="flex flex-col gap-1 items-start">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-slate-950 font-bold">{row.name}</span>
+                                <span className={`inline-block border px-1.5 py-0.5 rounded-full text-[8px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
+                                  {row.brand || '—'}
+                                </span>
+                              </div>
                               <span className="text-slate-400 text-xs font-semibold">{row.email}</span>
                             </div>
                           </td>
@@ -2216,8 +2535,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         <span className={`inline-flex items-center justify-center h-8 w-8 rounded-full border text-xs font-black tabular-nums ${numberBadge}`}>
                           {globalIdx.toString().padStart(2, '0')}
                         </span>
-                        <div>
-                          <span className="text-slate-950 font-black block text-sm">{row.name}</span>
+                        <div className="flex flex-col items-start gap-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-slate-950 font-black text-sm">{row.name}</span>
+                            <span className={`inline-block border px-1.5 py-0.5 rounded-full text-[8px] font-black tracking-wider uppercase ${getBrandBadgeClass(row.brand || '')}`}>
+                              {row.brand || '—'}
+                            </span>
+                          </div>
                           <span className="text-slate-400 text-xs font-semibold">{row.email}</span>
                         </div>
                       </div>
@@ -2497,6 +2821,50 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 })
               }
 
+              if (req.invoiceDocUrl) {
+                events.push({
+                  id: 'invoice_doc',
+                  title: 'Invoice Added',
+                  description: (
+                    <div className="space-y-1 flex flex-col">
+                      <span className="text-[10px] font-bold text-slate-500">Invoice No: {req.invoiceNumber}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocUrl(req.invoiceDocUrl!)}
+                        className="text-emerald-600 hover:text-emerald-800 font-bold hover:underline text-left text-xs self-start"
+                      >
+                        View Uploaded Invoice
+                      </button>
+                    </div>
+                  ),
+                  user: 'Accounts',
+                  timestamp: new Date(req.updatedAt),
+                  iconType: 'clip'
+                })
+              }
+
+              if (req.paymentProofUrl) {
+                events.push({
+                  id: 'payment_proof_doc',
+                  title: 'Payment Proof Added',
+                  description: (
+                    <div className="space-y-1 flex flex-col">
+                      <span className="text-[10px] font-bold text-slate-500">UTR No: {req.utrNumber}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocUrl(req.paymentProofUrl!)}
+                        className="text-emerald-600 hover:text-emerald-800 font-bold hover:underline text-left text-xs self-start"
+                      >
+                        View Payment Proof
+                      </button>
+                    </div>
+                  ),
+                  user: req.paymentCompletedBy || 'Accounts',
+                  timestamp: new Date(req.paymentCompletedAt || req.updatedAt),
+                  iconType: 'clip'
+                })
+              }
+
               // 4. History Entries
               ;(req.history || []).forEach((entry: any) => {
                 let iconType: 'remark' | 'approve' | 'reject' | 'hold' | 'gl' = 'remark'
@@ -2511,6 +2879,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 } else if (entry.action === 'HELD') {
                   iconType = 'hold'
                   title = `${entry.role} Held`
+                } else if (entry.action === 'SENT BACK') {
+                  iconType = 'reject'
+                  title = `${entry.role} Sent Back`
+                } else if (entry.action === 'PAID') {
+                  iconType = 'approve'
+                  title = 'Payment Recorded'
                 } else if (entry.action === 'GL_UPDATE') {
                   iconType = 'gl'
                   title = 'GL Account Updated'
@@ -2540,9 +2914,10 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
             const pendingStageKey = (() => {
               if (pendingLabel === 'Pending ED') return 'sales_manager'
+              if (pendingLabel === 'Pending Accounts') return 'accounts'
               if (pendingLabel === 'Pending EA') return 'ea'
               if (pendingLabel === 'Pending MD') return 'md'
-              if (pendingLabel === 'Pending Accounts') return 'accounts'
+              if (pendingLabel === 'Pending Payment') return 'payment_done'
               return null
             })()
 
@@ -2623,9 +2998,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               let nameText = '—'
 
               if (isApproved) {
-                borderStyle = 'border-emerald-100 bg-emerald-50/10'
-                badgeText = 'Approved'
-                badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                if (stageKey === 'accounts' && detailRow?.invoiceDocUrl) {
+                  borderStyle = 'border-violet-200 bg-violet-50/20 shadow-sm'
+                  badgeText = 'Paid'
+                  badgeStyle = 'bg-violet-600 text-white border-violet-600 font-black shadow-sm shadow-violet-600/10'
+                } else {
+                  borderStyle = 'border-emerald-100 bg-emerald-50/10'
+                  badgeText = 'Approved'
+                  badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }
               } else if (isRejected) {
                 borderStyle = 'border-rose-100 bg-rose-50/10'
                 badgeText = 'Rejected'
@@ -2671,15 +3052,38 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
             const renderNewWorkflowStepper = (req: ApprovalRequest) => {
               const stages = [
-                { key: 'sales_manager', label: 'ED', status: req.vpApproval },
-                { key: 'ea', label: 'EA', status: req.eaApproval },
-                { key: 'md', label: 'MD', status: req.managementApproval },
-                { key: 'accounts', label: 'Accounts', status: req.accountApproval },
+                { key: 'created', label: 'Created', status: 'APPROVED' },
+                { key: 'sales_manager', label: 'Concerned Head', status: req.vpApproval },
+                { key: 'accounts', label: 'Payment', status: req.accountApproval },
+                { key: 'ea', label: 'EA Review', status: req.eaApproval },
+                { key: 'md', label: 'Director Approval', status: req.managementApproval },
+                { key: 'paid', label: 'Paid', status: req.paymentStatus === 'PAID' || (req.managementApproval === 'APPROVED' && req.invoiceDocUrl) ? 'APPROVED' : null },
               ]
+
+              const getStageDate = (key: string) => {
+                if (key === 'created') {
+                  return new Date(req.createdAt).toLocaleDateString('en-CA') // YYYY-MM-DD
+                }
+                if (key === 'paid') {
+                  if (req.paymentStatus === 'PAID' && req.paymentCompletedAt) {
+                    return new Date(req.paymentCompletedAt).toLocaleDateString('en-CA')
+                  }
+                  if (req.managementApproval === 'APPROVED' && req.invoiceDocUrl) {
+                    const mdEntry = (req.history || []).find((h: any) => h.roleKey === 'md' && h.action === 'APPROVED')
+                    if (mdEntry) return new Date(mdEntry.timestamp).toLocaleDateString('en-CA')
+                  }
+                  return null
+                }
+                const entry = (req.history || []).find((h: any) => h.roleKey === key && h.action === 'APPROVED')
+                if (entry) {
+                  return new Date(entry.timestamp).toLocaleDateString('en-CA')
+                }
+                return null
+              }
 
               return (
                 <div className="bg-white border border-slate-100 rounded-3xl p-4 sm:p-6 shadow-sm overflow-hidden">
-                  <div className="flex items-center justify-between w-full relative pb-1">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between w-full relative pb-1 gap-6 sm:gap-0">
                     {stages.map((stg, i) => {
                       const isApproved = stg.status === 'APPROVED'
                       const isRejected = stg.status === 'NOT APPROVED'
@@ -2687,68 +3091,73 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       
                       let isActive = false
                       if (pendingLabel === 'Pending ED' && stg.key === 'sales_manager') isActive = true
+                      else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
                       else if (pendingLabel === 'Pending EA' && stg.key === 'ea') isActive = true
                       else if (pendingLabel === 'Pending MD' && stg.key === 'md') isActive = true
-                      else if (pendingLabel === 'Pending Accounts' && stg.key === 'accounts') isActive = true
+                      else if (pendingLabel === 'Pending Payment' && stg.key === 'paid') isActive = true
 
                       let circleColor = 'bg-slate-100 text-slate-400 border-slate-200'
                       let textColor = 'text-slate-400 font-semibold'
-                      let statusLabel = 'Locked'
 
                       if (isApproved) {
-                        circleColor = 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/10'
-                        textColor = 'text-indigo-900 font-black'
-                        statusLabel = 'Approved'
+                        if (stg.key === 'accounts' && req.invoiceDocUrl) {
+                          circleColor = 'bg-violet-600 text-white border-violet-600 shadow-md shadow-violet-600/10'
+                          textColor = 'text-violet-900 font-black'
+                        } else {
+                          circleColor = 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/10'
+                          textColor = 'text-indigo-900 font-black'
+                        }
                       } else if (isRejected) {
                         circleColor = 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/10'
                         textColor = 'text-rose-700 font-black'
-                        statusLabel = 'Rejected'
                       } else if (isHeld) {
                         circleColor = 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/10'
                         textColor = 'text-amber-700 font-black'
-                        statusLabel = 'Held'
                       } else if (isActive) {
                         circleColor = 'bg-indigo-600 text-white border-indigo-600 ring-4 ring-indigo-100 shadow-md shadow-indigo-600/10'
                         textColor = 'text-indigo-600 font-black'
-                        statusLabel = 'Active'
                       }
 
-                      let approverName = '—'
-                      if (isApproved || isRejected || isHeld) {
-                        const entry = (req.history || []).find((h: any) => h.roleKey === stg.key)
-                        if (entry) approverName = entry.user
-                      }
+                      const stageDate = getStageDate(stg.key)
 
                       return (
-                        <div key={stg.key} className="flex-1 flex flex-col items-center relative z-10">
-                          {i > 0 && (
-                            <div className={`absolute top-3 sm:top-4 right-[50%] w-[100%] h-0.5 -z-10 ${
-                              stages[i - 1].status === 'APPROVED' || (pendingLabel === 'Pending ' + stages[i].label) || (isActive && i === 1) ? 'bg-indigo-600' : 'bg-slate-200'
-                            }`} />
+                        <div key={stg.key} className="flex-1 flex flex-row sm:flex-col items-center relative z-10 gap-3 sm:gap-0">
+                           {i < stages.length - 1 && (
+                            <div 
+                              className={cn(
+                                "absolute transition-colors duration-300",
+                                // Mobile vertical line:
+                                "left-3 top-[24px] w-0.5 h-[24px] sm:left-auto",
+                                // Desktop horizontal line:
+                                "sm:top-4 sm:left-[50%] sm:w-[100%] sm:h-0.5",
+                                stages[i].status === 'APPROVED' ? 'bg-indigo-600' : 'bg-slate-200'
+                              )}
+                              style={{ zIndex: 1 }}
+                            />
                           )}
                           
-                          <div className={cn("h-6 w-6 sm:h-8 sm:w-8 rounded-full border border-slate-200 flex items-center justify-center text-[10px] sm:text-xs font-black transition-all", circleColor)}>
+                          <div 
+                            className={cn("h-6 w-6 sm:h-8 sm:w-8 rounded-full border border-slate-200 flex items-center justify-center text-[10px] sm:text-xs font-black transition-all shrink-0 relative", circleColor)}
+                            style={{ zIndex: 2 }}
+                          >
                             {isApproved ? '✓' : isRejected ? '✗' : isHeld ? '‖' : i + 1}
                           </div>
                           
-                          <span className={cn("text-[8px] sm:text-[10px] uppercase tracking-wider mt-2 text-center block", textColor)}>
-                            {stg.label}
-                          </span>
-                          
-                          <span className={cn(
-                            "text-[7px] sm:text-[8px] font-black uppercase px-1 sm:px-2 py-0.5 rounded mt-1 sm:mt-1.5 border",
-                            statusLabel === 'Active' ? 'bg-indigo-50 text-indigo-600 border-indigo-200 animate-pulse' :
-                            statusLabel === 'Approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                            statusLabel === 'Rejected' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                            statusLabel === 'Held' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            'bg-slate-50 text-slate-400 border-slate-100'
-                          )}>
-                            {statusLabel}
-                          </span>
+                          <div className="flex flex-col sm:items-center">
+                            <span className={cn("text-[9px] sm:text-[10px] uppercase tracking-wider text-left sm:text-center block", textColor)}>
+                              {stg.label}
+                            </span>
 
-                          <span className="text-[8px] sm:text-[9px] font-bold text-slate-400 text-center block mt-1 truncate max-w-[60px] sm:max-w-none">
-                            {approverName}
-                          </span>
+                            {stageDate ? (
+                              <span className="text-[8px] sm:text-[9px] text-slate-400 font-semibold mt-0.5 text-left sm:text-center block">
+                                {stageDate}
+                              </span>
+                            ) : (
+                              <span className="text-[8px] sm:text-[9px] text-slate-300 font-medium mt-0.5 text-left sm:text-center block">
+                                —
+                              </span>
+                            )}
+                          </div>
                         </div>
                       )
                     })}
@@ -2847,6 +3256,21 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       )
                     })()}
 
+                    {detailRow.emailSendStatus === 'SentBack' && detailRow.sendBackReason && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 space-y-2 animate-in fade-in duration-200 shadow-sm">
+                        <div className="flex items-center gap-2 text-amber-800 text-xs font-black uppercase tracking-wider">
+                          <AlertTriangle className="w-4 h-4 text-amber-600" />
+                          <span>Clarification Required / स्पष्टीकरण आवश्यक</span>
+                        </div>
+                        <p className="text-xs font-semibold text-slate-700 leading-relaxed">
+                          This request was sent back to you with the following remarks:
+                        </p>
+                        <p className="text-sm font-bold text-amber-900 bg-white/70 p-3 rounded-2xl border border-amber-100 whitespace-pre-wrap">
+                          {detailRow.sendBackReason}
+                        </p>
+                      </div>
+                    )}
+
                     {/* Request Overview Card */}
                     <div className="bg-white border border-slate-100 rounded-3xl p-6 space-y-4 shadow-sm">
                       <div className="flex items-center gap-2 text-slate-800">
@@ -2857,6 +3281,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                         {renderOverviewItem('Requester', detailRow.name, User)}
                         {renderOverviewItem('Email', detailRow.email, Mail)}
+                        {renderOverviewItem('Brand', <span className="uppercase font-black text-slate-900">{detailRow.brand || '—'}</span>, Store)}
                         {renderOverviewItem('Dealer Name', detailRow.dealerName || '—', Building2)}
                         {renderOverviewItem('Dealer Code', detailRow.dealerCode || '—', Key)}
                         {renderOverviewItem('Vendor Name', detailRow.vendorName || '—', User)}
@@ -2867,6 +3292,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {renderOverviewItem('GST Details', detailRow.gst || '—', Percent)}
                         {renderOverviewItem('Reference / Invoice No.', detailRow.invoiceNumber || '—', FileText)}
                         {renderOverviewItem('Remarks (Submitter)', detailRow.remarks || '—', MessageSquare)}
+                        {detailRow.uploadDocUrl && renderOverviewItem('Support Document', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadDocUrl!)} className="text-indigo-600 font-black hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-indigo-500" />View Support Doc</button>, FileText)}
+                        {detailRow.invoiceDocUrl && renderOverviewItem('Uploaded Invoice', <button type="button" onClick={() => setPreviewDocUrl(detailRow.invoiceDocUrl!)} className="text-emerald-600 font-black hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-emerald-500" />View Invoice</button>, FileText)}
+                        {detailRow.paymentStatus === 'PAID' && renderOverviewItem('Payment Status', <span className="text-emerald-600 font-black">PAID / भुगतान किया</span>, CheckCircle2)}
+                        {detailRow.paymentStatus === 'PAID' && renderOverviewItem('UTR / Txn ID', detailRow.utrNumber || '—', Key)}
+                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentProofUrl && renderOverviewItem('Payment Proof', <button type="button" onClick={() => setPreviewDocUrl(detailRow.paymentProofUrl!)} className="text-indigo-600 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-indigo-500" />View Proof</button>, FileText)}
+                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentCompletedAt && renderOverviewItem('Paid On / By', `${new Date(detailRow.paymentCompletedAt).toLocaleDateString('en-IN')} by ${detailRow.paymentCompletedBy || '—'}`, User)}
                       </div>
                     </div>
 
@@ -2886,11 +3317,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         </div>
 
                         <div className="flex flex-wrap gap-3">
-                          <Button
+                          <button
+                            type="button"
                             disabled={actionMutation.isPending}
                             onClick={() => {
-                              if (pendingStageKey === 'accounts') {
-                                setActionStage('accounts')
+                              if (pendingStageKey === 'accounts' || pendingStageKey === 'payment_done') {
+                                setActionStage(pendingStageKey)
                                 setActionDecision('APPROVE')
                               } else {
                                 actionMutation.mutate({
@@ -2901,43 +3333,60 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                 })
                               }
                             }}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-500/10"
+                            className="text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+                            style={{ backgroundColor: '#059669', color: '#ffffff' }}
                           >
                             {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
                               <>
                                 <Check className="w-4 h-4" />
-                                <span>Approve & Forward</span>
+                                <span>{pendingStageKey === 'payment_done' ? 'Record Payment' : 'Approve & Forward'}</span>
                               </>
                             )}
-                          </Button>
+                          </button>
 
-                          <Button
+                          <button
+                            type="button"
+                            disabled={actionMutation.isPending}
+                            onClick={() => {
+                              setActionStage(pendingStageKey!)
+                              setActionDecision('SEND_BACK')
+                            }}
+                            className="text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                            style={{ backgroundColor: '#d97706', color: '#ffffff' }}
+                          >
+                            <CornerUpLeft className="w-4 h-4" />
+                            <span>Send Back</span>
+                          </button>
+
+                          <button
+                            type="button"
                             disabled={actionMutation.isPending}
                             onClick={() => {
                               setActionStage(pendingStageKey!)
                               setActionDecision('REJECT')
                             }}
-                            variant="outline"
-                            className="border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-black rounded-2xl h-12 px-6 flex items-center gap-2 cursor-pointer"
+                            className="text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                            style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
                           >
                             <X className="w-4 h-4" />
                             <span>Reject Request</span>
-                          </Button>
+                          </button>
 
-                          <Button
+                          <button
+                            type="button"
                             disabled={actionMutation.isPending}
                             onClick={() => {
                               setActionStage(pendingStageKey!)
                               setActionDecision('HOLD')
                             }}
-                            variant="outline"
-                            className="border-amber-200 text-amber-600 hover:bg-amber-50 text-xs font-black rounded-2xl h-12 px-6 flex items-center gap-2 cursor-pointer"
+                            className="text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                            style={{ backgroundColor: '#475569', color: '#ffffff' }}
                           >
                             <Clock className="w-4 h-4" />
-                            <span>Reschedule</span>
-                          </Button>
+                            <span>Hold Request</span>
+                          </button>
                         </div>
                       </div>
                     )}
@@ -3215,7 +3664,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                               </thead>
                               <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
                                 {group.rows.map((row, idx) => (
-                                  <tr key={row.id} className="hover:bg-slate-50/20 transition-colors">
+                                  <tr 
+                                    key={row.id} 
+                                    onClick={() => setDetailRow(row)}
+                                    className="hover:bg-indigo-50/45 cursor-pointer transition-colors"
+                                  >
                                     <td className="py-3 px-4 font-mono text-slate-400">
                                       {(idx + 1).toString().padStart(2, '0')}
                                     </td>
@@ -3262,36 +3715,18 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       </Dialog>
 
       {/* 5. TAKE ACTION CONFIRMATION MODAL */}
-      <Dialog open={Boolean(actionStage && detailRow)} onOpenChange={(open) => { if (!open) { setActionStage(null); setActionDecision(null); setActionRemarks(''); } }}>
+      <Dialog open={Boolean(actionStage && detailRow)} onOpenChange={(open) => { if (!open) { setActionStage(null); setActionDecision(null); setActionRemarks(''); setInvoiceNumber(''); setInvoiceDocUrl(''); setInvoiceFileName(''); setUtrNumberVal(''); setPaymentProofUrl(''); setPaymentProofFileName(''); } }}>
         <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-md bg-white p-6 shadow-2xl border border-slate-100">
           <DialogHeader>
             <DialogTitle className="text-lg font-black tracking-tight text-slate-900">
               Submit Action Confirmation
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500 font-semibold mt-1">
-              {actionDecision === 'HOLD' ? 'Provide a reason for putting this request on HOLD.' : actionDecision === 'REJECT' ? 'Provide a reason for DENYING this request.' : 'Select your decision for the request.'}
+              {actionDecision === 'HOLD' ? 'Provide a reason for putting this request on HOLD.' : actionDecision === 'REJECT' ? 'Provide a reason for DENYING this request.' : actionDecision === 'SEND_BACK' ? 'Provide comments explaining why the request is being sent back to the submitter.' : 'Select your decision for the request.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            {/* GL Account Selector Dropdown */}
-            <div className="space-y-1.5 border-b border-slate-100 pb-3">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                GL Account (Category) / जीएल खाता
-              </label>
-              <select
-                value={selectedGlId}
-                onChange={e => setSelectedGlId(e.target.value)}
-                className="w-full h-10 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-xs font-semibold text-slate-800 cursor-pointer"
-              >
-                <option value="">Select GL Account / जीएल खाता चुनें</option>
-                {glAccounts.map(g => (
-                  <option key={g.id} value={g.id}>
-                    {g.glName} ({g.glCode})
-                  </option>
-                ))}
-              </select>
-            </div>
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
@@ -3300,7 +3735,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               <Textarea
                 value={actionRemarks}
                 onChange={e => setActionRemarks(e.target.value)}
-                placeholder={actionDecision === 'HOLD' ? 'Reason for Hold...' : actionDecision === 'REJECT' ? 'Reason for Denial...' : 'Notes...'}
+                placeholder={actionDecision === 'HOLD' ? 'Reason for Hold...' : actionDecision === 'REJECT' ? 'Reason for Denial...' : actionDecision === 'SEND_BACK' ? 'Feedback / instructions for submitter...' : 'Notes...'}
                 className="min-h-[100px] rounded-2xl border-slate-200 focus:ring-slate-950 font-semibold text-slate-800 text-sm"
               />
             </div>
@@ -3335,7 +3770,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     />
                     <label
                       htmlFor="invoice-file-upload"
-                      className="flex items-center gap-2 px-4 py-2 border border-slate-200 hover:border-slate-300 rounded-2xl cursor-pointer text-xs font-bold text-slate-700 bg-slate-55 hover:bg-slate-100 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 border border-slate-200 hover:border-slate-300 rounded-2xl cursor-pointer text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 transition-colors"
                     >
                       <Upload className="w-4 h-4 text-slate-500" />
                       {uploadingInvoice ? 'Uploading...' : invoiceDocUrl ? 'Change File' : 'Upload Invoice'}
@@ -3352,12 +3787,60 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 </div>
               </div>
             )}
+
+            {actionStage === 'payment_done' && (actionDecision === 'APPROVE' || !actionDecision) && (
+              <div className="space-y-3 border-t border-slate-100 pt-3">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    UTR / Transaction Number *
+                  </label>
+                  <Input
+                    type="text"
+                    value={utrNumberVal}
+                    onChange={e => setUtrNumberVal(e.target.value)}
+                    placeholder="Enter UTR Number..."
+                    className="rounded-2xl border-slate-200 focus:ring-slate-950 font-semibold text-slate-800 text-sm"
+                  />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Payment Proof Document *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={handlePaymentProofUpload}
+                      disabled={uploadingPaymentProof}
+                      className="hidden"
+                      id="payment-proof-file-upload"
+                    />
+                    <label
+                      htmlFor="payment-proof-file-upload"
+                      className="flex items-center gap-2 px-4 py-2 border border-slate-200 hover:border-slate-300 rounded-2xl cursor-pointer text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 transition-colors"
+                    >
+                      <Upload className="w-4 h-4 text-slate-500" />
+                      {uploadingPaymentProof ? 'Uploading...' : paymentProofUrl ? 'Change File' : 'Upload Proof'}
+                    </label>
+                    {paymentProofUrl && (
+                      <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" /> Uploaded!
+                      </span>
+                    )}
+                  </div>
+                  {paymentProofFileName && (
+                    <p className="text-[10px] text-slate-400 font-semibold truncate max-w-xs">{paymentProofFileName}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2 justify-end mt-2">
             <Button
               variant="outline"
-              onClick={() => { setActionStage(null); setActionDecision(null); setActionRemarks(''); setInvoiceNumber(''); setInvoiceDocUrl(''); setInvoiceFileName(''); }}
+              onClick={() => { setActionStage(null); setActionDecision(null); setActionRemarks(''); setInvoiceNumber(''); setInvoiceDocUrl(''); setInvoiceFileName(''); setUtrNumberVal(''); setPaymentProofUrl(''); setPaymentProofFileName(''); }}
               disabled={actionMutation.isPending}
               className="h-10 rounded-2xl text-xs font-bold border-slate-200 order-last sm:order-none"
             >
@@ -3416,6 +3899,32 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               </Button>
             )}
 
+            {(!actionDecision || actionDecision === 'SEND_BACK') && (
+              <Button
+                onClick={() => {
+                  if (detailRow && actionStage) {
+                    if (!actionRemarks.trim()) {
+                      toast({ title: 'Remarks required', description: 'Please explain why the request is sent back (e.g. missing invoice/bill).', variant: 'error' })
+                      return
+                    }
+                    actionMutation.mutate({
+                      id: detailRow.id,
+                      action: 'SEND_BACK',
+                      stage: actionStage,
+                      remarks: actionRemarks,
+                      glAccountId: undefined
+                    })
+                  }
+                }}
+                disabled={actionMutation.isPending}
+                className="h-10 rounded-2xl text-xs font-black hover:opacity-90"
+                style={{ backgroundColor: '#d97706', color: '#ffffff' }}
+              >
+                {actionMutation.isPending && actionMutation.variables?.action === 'SEND_BACK' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+                Send Back
+              </Button>
+            )}
+
             {(!actionDecision || actionDecision === 'APPROVE') && (
               <Button
                 onClick={() => {
@@ -3430,6 +3939,16 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         return
                       }
                     }
+                    if (actionStage === 'payment_done') {
+                      if (!utrNumberVal.trim()) {
+                        toast({ title: 'UTR number required', description: 'Please enter the transaction UTR number.', variant: 'error' })
+                        return
+                      }
+                      if (!paymentProofUrl) {
+                        toast({ title: 'Payment proof required', description: 'Please upload the payment proof document.', variant: 'error' })
+                        return
+                      }
+                    }
                     actionMutation.mutate({
                       id: detailRow.id,
                       action: 'APPROVE',
@@ -3437,6 +3956,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       remarks: actionRemarks,
                       invoiceNumber: actionStage === 'accounts' ? invoiceNumber : undefined,
                       invoiceDocUrl: actionStage === 'accounts' ? invoiceDocUrl : undefined,
+                      utrNumber: actionStage === 'payment_done' ? utrNumberVal : undefined,
+                      paymentProofUrl: actionStage === 'payment_done' ? paymentProofUrl : undefined,
                       glAccountId: selectedGlId || undefined
                     })
                   }
@@ -3446,7 +3967,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 style={{ backgroundColor: '#059669', color: '#ffffff' }}
               >
                 {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
-                Approve
+                {actionStage === 'payment_done' ? 'Record Payment' : 'Approve'}
               </Button>
             )}
           </div>
@@ -3533,6 +4054,174 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* 4.6 GL CATEGORY LEDGER DETAILS DIALOG */}
+      <Dialog open={Boolean(selectedGlName)} onOpenChange={(open) => { if (!open) setSelectedGlName(null) }}>
+        <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-4xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100 max-h-[85vh] flex flex-col">
+          {selectedGlName && (() => {
+            const totalSpend = glFilteredRows.reduce((sum, r) => sum + Number(r.amount), 0)
+            const glItem = glSummary.find(g => g.name === selectedGlName)
+            const glCode = glItem ? glItem.code : ''
+            return (
+              <>
+                <DialogHeader className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <DialogTitle className="text-xl font-black tracking-tight text-slate-950">
+                        GL Category Ledger: {selectedGlName} ({glCode})
+                      </DialogTitle>
+                      <DialogDescription className="text-xs text-slate-400 font-semibold mt-1">
+                        Track historical expenditures categorized under this GL code.
+                      </DialogDescription>
+                    </div>
+                    <span className="text-indigo-600 text-lg font-black font-mono">Total Spend: ₹{totalSpend.toLocaleString('en-IN')}</span>
+                  </div>
+                </DialogHeader>
+
+                <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row items-center gap-3 bg-slate-50/20">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">From</span>
+                    <input
+                      type="date"
+                      value={glStartDate}
+                      onChange={e => setGlStartDate(e.target.value)}
+                      className="h-10 px-4 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-white text-xs font-bold text-slate-700 w-full sm:w-auto cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">To</span>
+                    <input
+                      type="date"
+                      value={glEndDate}
+                      onChange={e => setGlEndDate(e.target.value)}
+                      className="h-10 px-4 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-white text-xs font-bold text-slate-700 w-full sm:w-auto cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">Month</span>
+                    <select
+                      value={selectedGlMonth}
+                      onChange={e => setSelectedGlMonth(e.target.value)}
+                      className="h-10 px-4 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-white text-xs font-bold text-slate-700 w-full sm:w-auto cursor-pointer"
+                    >
+                      <option value="all">All Months</option>
+                      {glUniqueMonths.map(m => (
+                        <option key={m} value={m}>{formatYearMonth(m)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
+                    {(glStartDate || glEndDate || selectedGlMonth !== 'all') && (
+                      <Button
+                        onClick={() => {
+                          setGlStartDate('')
+                          setGlEndDate('')
+                          setSelectedGlMonth('all')
+                        }}
+                        variant="ghost"
+                        className="h-10 px-4 rounded-2xl text-xs font-bold text-slate-500 hover:text-slate-900"
+                      >
+                        Reset Filters
+                      </Button>
+                    )}
+                    <Button
+                      onClick={() => handlePrintLedger(`GL-${selectedGlName}`, glFilteredRows)}
+                      className="h-10 px-4 rounded-2xl text-xs font-black border-slate-200 hover:bg-slate-50"
+                      variant="outline"
+                    >
+                      Export Ledger
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/10">
+                  {glGroupedByMonth.length === 0 ? (
+                    <div className="border border-slate-100 rounded-3xl bg-white py-12 text-center text-slate-400 font-bold uppercase tracking-wider text-xs">
+                      No purchases matching filter criteria.
+                    </div>
+                  ) : (
+                    glGroupedByMonth.map((group) => (
+                      <div key={group.yearMonth} className="space-y-3">
+                        <div className="flex justify-between items-center bg-slate-50 border border-slate-100 rounded-2xl px-4 py-2.5 text-xs font-black text-slate-800 uppercase tracking-wider">
+                          <span>{formatYearMonth(group.yearMonth)}</span>
+                          <span className="text-indigo-600 font-mono">Monthly Spend: ₹{group.totalAmount.toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="border border-slate-100 rounded-3xl overflow-hidden bg-white shadow-sm">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50/50">
+                                  <th className="py-3 px-4 w-12">#</th>
+                                  <th className="py-3 px-4">Date</th>
+                                  <th className="py-3 px-4">Vendor</th>
+                                  <th className="py-3 px-4">Requester</th>
+                                  <th className="py-3 px-4 text-right">Amount (₹)</th>
+                                  <th className="py-3 px-4 text-right">Workflow Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+                                {group.rows.map((row, idx) => (
+                                  <tr 
+                                    key={row.id} 
+                                    onClick={() => setDetailRow(row)}
+                                    className="hover:bg-indigo-50/45 cursor-pointer transition-colors"
+                                  >
+                                    <td className="py-3 px-4 font-mono text-slate-400">
+                                      {(idx + 1).toString().padStart(2, '0')}
+                                    </td>
+                                    <td className="py-3 px-4 font-bold text-slate-900">
+                                      {new Date(row.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    </td>
+                                    <td className="py-3 px-4 font-bold text-slate-800">
+                                      {row.vendorName || '—'}
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <div className="flex flex-col">
+                                        <span className="font-bold text-slate-800">{row.name}</span>
+                                        <span className="text-[10px] text-slate-400 font-medium">{row.email}</span>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-black text-slate-950">
+                                      {Number(row.amount).toLocaleString('en-IN')}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-black">
+                                      {getPendingStageLabel(row)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+                  <Button variant="outline" onClick={() => setSelectedGlName(null)} className="h-10 rounded-2xl text-xs font-black border-slate-200">
+                    Close Ledger
+                  </Button>
+                </div>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* 4.7 ADD GL CATEGORY DIALOG */}
+      <AddGlDialog
+        open={showAddGlDialog}
+        onOpenChange={setShowAddGlDialog}
+        onSuccess={() => {
+          fetch('/api/brands/kia/gl-accounts')
+            .then(res => res.json())
+            .then(data => setGlAccounts(data.rows || []))
+            .catch(err => console.error('Error fetching GL accounts:', err))
+          toast({ title: 'GL Category added', description: 'New GL category saved successfully.', variant: 'success' })
+        }}
+      />
+
       {/* Floating Bulk Action Bar */}
       {selectedRequestIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white rounded-3xl px-6 py-4 flex items-center gap-6 shadow-2xl border border-slate-800 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -3568,3 +4257,124 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     </MainLayout>
   )
 }
+
+interface AddGlDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSuccess: () => void
+}
+
+function AddGlDialog({ open, onOpenChange, onSuccess }: AddGlDialogProps) {
+  const [glName, setGlName] = useState('')
+  const [tallyGroup, setTallyGroup] = useState('Indirect Expenses')
+  const [isPending, setIsPending] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!glName.trim()) {
+      toast({ title: 'Required Fields', description: 'Please fill GL Name.', variant: 'error' })
+      return
+    }
+
+    setIsPending(true)
+    try {
+      const res = await fetch('/api/brands/kia/gl-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          glName: glName.trim(),
+          tallyGroup: tallyGroup.trim(),
+          accountNature: 'Expense',
+          accountType: 'Indirect',
+          monthlyBudget: '0.00'
+        })
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to create GL category')
+      }
+      onSuccess()
+      setGlName('')
+      onOpenChange(false)
+    } catch (err) {
+      toast({ title: 'Error', description: err instanceof Error ? err.message : 'Something went wrong.', variant: 'error' })
+    } finally {
+      setIsPending(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-3xl w-[calc(100vw-1.5rem)] sm:max-w-md bg-white p-6 shadow-2xl border border-slate-100">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-black tracking-tight text-slate-900">
+            Create GL Category
+          </DialogTitle>
+          <DialogDescription className="text-xs text-slate-500 font-semibold mt-1">
+            Add a new General Ledger account category to the system.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+          <div className="space-y-1.5 bg-slate-50 border border-slate-100 rounded-2xl p-3">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+              GL Code / जीएल कोड
+            </span>
+            <span className="text-xs font-black text-indigo-600 font-mono">
+              [ System Generated / सिस्टम द्वारा जनरेटेड ]
+            </span>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              GL Category Name / जीएल श्रेणी का नाम
+            </label>
+            <Input
+              value={glName}
+              onChange={e => setGlName(e.target.value)}
+              placeholder="e.g. Office Stationery"
+              required
+              className="rounded-2xl bg-slate-50/50"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Tally Group / टैली ग्रुप
+            </label>
+            <select
+              value={tallyGroup}
+              onChange={e => setTallyGroup(e.target.value)}
+              className="w-full h-10 px-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-xs font-semibold text-slate-800 cursor-pointer"
+            >
+              <option value="Indirect Expenses">Indirect Expenses (अप्रत्यक्ष खर्च)</option>
+              <option value="Direct Expenses">Direct Expenses (प्रत्यक्ष खर्च)</option>
+              <option value="Administrative Expenses">Administrative Expenses (प्रशासनिक खर्च)</option>
+              <option value="Selling & Distribution">Selling & Distribution (बिक्री और वितरण)</option>
+            </select>
+          </div>
+
+          <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isPending}
+              onClick={() => onOpenChange(false)}
+              className="h-11 px-5 rounded-2xl text-xs font-black border-slate-200"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isPending}
+              className="h-11 px-5 rounded-2xl text-xs font-black text-white hover:opacity-90 bg-indigo-600"
+            >
+              {isPending ? 'Creating...' : 'Create Category'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+

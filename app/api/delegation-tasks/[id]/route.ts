@@ -6,7 +6,7 @@ import { sendTaskAssignedEmail } from '@/lib/delegation/emails'
 
 export const dynamic = 'force-dynamic'
 
-const ACTIONS: TaskAction[] = ['start', 'complete', 'reopen', 'cancel', 'reassign', 'edit']
+const ACTIONS: TaskAction[] = ['complete', 'reopen', 'cancel', 'reassign', 'edit', 'comment', 'remind']
 
 export async function GET(_request: Request, context: RouteContext<'/api/delegation-tasks/[id]'>) {
   const appUser = await getAuthenticatedAppUser()
@@ -52,9 +52,27 @@ export async function PATCH(request: Request, context: RouteContext<'/api/delega
     const task = await updateDelegationTask(id, action, body, appUser)
     // Tell the assignee they now own this task or details have been updated (best-effort, post-commit); CC the brand's EA(s).
     if (action === 'reassign' || action === 'edit') {
-      const eaCc = (await getBrandEaEmails(task.brand).catch(() => []))
-        .filter((e) => e.toLowerCase() !== String(task.assignedEmail || '').toLowerCase())
-      await sendTaskAssignedEmail({
+      getBrandEaEmails(task.brand)
+        .then((eaList) => {
+          const eaCc = eaList.filter((e) => e.toLowerCase() !== String(task.assignedEmail || '').toLowerCase())
+          return sendTaskAssignedEmail({
+            toEmail: task.assignedEmail,
+            toName: task.assignedName,
+            assignerName: appUser.fullName,
+            title: task.title,
+            description: task.description,
+            dueAt: task.dueAt,
+            priority: task.priority,
+            cc: eaCc,
+            isUpdate: action === 'edit',
+            isReassign: action === 'reassign'
+          })
+        })
+        .catch((err) => {
+          console.error(`[delegation-tasks-${action}] Failed to send email:`, err)
+        })
+    } else if (action === 'remind') {
+      void sendTaskAssignedEmail({
         toEmail: task.assignedEmail,
         toName: task.assignedName,
         assignerName: appUser.fullName,
@@ -62,10 +80,9 @@ export async function PATCH(request: Request, context: RouteContext<'/api/delega
         description: task.description,
         dueAt: task.dueAt,
         priority: task.priority,
-        cc: eaCc,
-        isUpdate: action === 'edit'
+        isReminder: true
       }).catch((err) => {
-        console.error(`[delegation-tasks-${action}] Failed to send email:`, err)
+        console.error(`[delegation-tasks-remind] Failed to send email:`, err)
       })
     }
     return NextResponse.json({ ok: true, task })

@@ -57,12 +57,12 @@ export async function POST(request: Request) {
       } else {
         if (!vpApp || vpApp === 'HELD' || vpApp === 'NOT APPROVED') {
           activeStageKey = 'sales_manager'
-        } else if (vpApp === 'APPROVED' && (!eaApp || eaApp === 'HELD' || eaApp === 'NOT APPROVED')) {
-          activeStageKey = 'ea'
-        } else if (vpApp === 'APPROVED' && eaApp === 'APPROVED' && (!mdApp || mdApp === 'HELD' || mdApp === 'NOT APPROVED')) {
-          activeStageKey = 'md'
-        } else if (vpApp === 'APPROVED' && eaApp === 'APPROVED' && mdApp === 'APPROVED' && (!accApp || accApp === 'HELD' || accApp === 'NOT APPROVED')) {
+        } else if (vpApp === 'APPROVED' && (!accApp || accApp === 'HELD' || accApp === 'NOT APPROVED')) {
           activeStageKey = 'accounts'
+        } else if (vpApp === 'APPROVED' && accApp === 'APPROVED' && (!eaApp || eaApp === 'HELD' || eaApp === 'NOT APPROVED')) {
+          activeStageKey = 'ea'
+        } else if (vpApp === 'APPROVED' && accApp === 'APPROVED' && eaApp === 'APPROVED' && (!mdApp || mdApp === 'HELD' || mdApp === 'NOT APPROVED')) {
+          activeStageKey = 'md'
         }
       }
 

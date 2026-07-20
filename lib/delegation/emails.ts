@@ -29,21 +29,27 @@ export async function sendTaskAssignedEmail(input: {
   priority: string
   cc?: string[]
   isUpdate?: boolean
+  isReminder?: boolean
+  isReassign?: boolean
 }): Promise<boolean> {
   const to = String(input.toEmail || '').trim()
   if (!to) return false
   const cc = (input.cc ?? []).map((e) => String(e || '').trim()).filter(Boolean)
   const due = input.dueAt ? (input.dueAt instanceof Date ? input.dueAt.toISOString() : input.dueAt) : null
 
-  const greetingText = input.isUpdate
-    ? `Hi ${escapeHtml(input.toName || 'there')}, the details for a task delegated to you by ${escapeHtml(input.assignerName)} have been updated.`
-    : `Hi ${escapeHtml(input.toName || 'there')}, ${escapeHtml(input.assignerName)} has delegated a task to you.`
+  let greetingText = `Hi ${escapeHtml(input.toName || 'there')}, ${escapeHtml(input.assignerName)} has delegated a task to you.`
+  if (input.isUpdate) {
+    greetingText = `Hi ${escapeHtml(input.toName || 'there')}, the details for a task delegated to you by ${escapeHtml(input.assignerName)} have been updated.`
+  } else if (input.isReminder) {
+    greetingText = `Hi ${escapeHtml(input.toName || 'there')}, this is a gentle reminder regarding the task delegated to you by ${escapeHtml(input.assignerName)}.`
+  } else if (input.isReassign) {
+    greetingText = `Hi ${escapeHtml(input.toName || 'there')}, the due date/follow-up date for a task delegated to you by ${escapeHtml(input.assignerName)} have been rescheduled.`
+  }
 
   const bodyHtml = `
     <p style="margin:0 0 16px;font-size:15px;color:#334155">${greetingText}</p>
     ${detailTable([
       ['Task', input.title],
-      ['Priority', PRIORITY_LABEL[input.priority] || input.priority],
       ['Due', fmtDate(due)],
     ])}
     
@@ -53,13 +59,21 @@ export async function sendTaskAssignedEmail(input: {
         <p style="margin:0;font-size:14px;color:#4b5563;white-space:pre-wrap;line-height:1.5;text-align:left;">${escapeHtml(input.description)}</p>
       </div>
     ` : ''}
-
-    <div style="height:20px"></div>
-    ${primaryButton(TASKS_URL, 'Open Delegation Tasks')}
   `
   try {
-    const subject = input.isUpdate ? `Updated task details: ${input.title}` : `New task assigned: ${input.title}`
-    const heading = input.isUpdate ? 'Task details were updated' : 'A task was delegated to you'
+    let subject = `New task assigned: ${input.title}`
+    let heading = 'A task was delegated to you'
+    if (input.isUpdate) {
+      subject = `Updated task details: ${input.title}`
+      heading = 'Task details were updated'
+    } else if (input.isReminder) {
+      subject = `Task Reminder: ${input.title}`
+      heading = 'Task Reminder / अनुस्मारक'
+    } else if (input.isReassign) {
+      subject = `Task Rescheduled: ${input.title}`
+      heading = 'Task Rescheduled / अनुसूची'
+    }
+
     await sendEmail({
       to,
       ...(cc.length ? { cc } : {}),
@@ -90,14 +104,13 @@ export async function runDelegationTaskReminders(): Promise<{ due: number; email
   let emailed = 0
   for (const [email, items] of byEmail) {
     try {
-      await sendEmail({ to: email, subject: `${items.length} task${items.length > 1 ? 's' : ''} due`, html: digestHtml(items) })
+      await sendEmail({ to: email, subject: `Daily Reminder: ${items.length} Pending Task${items.length > 1 ? 's' : ''}`, html: digestHtml(items) })
       emailed++
     } catch (error) {
       console.error('[delegation-reminders] email failed for', email, error)
     }
   }
 
-  // Mark ALL processed due tasks reminded (even any with no assignee email) so they aren't reprocessed.
   await markDelegationRemindersSent(due.map((t) => t.id))
   return { due: due.length, emailed }
 }
@@ -107,15 +120,12 @@ function digestHtml(items: DueTask[]): string {
   const rows = items
     .map((t) => detailTable([
       ['Task', t.title],
-      ['Priority', PRIORITY_LABEL[t.priority] || t.priority],
-      ['Due', fmtDate(t.dueAt)],
+      ['Due', t.dueAt ? fmtDate(t.dueAt) : 'No Deadline'],
     ]))
     .join('<div style="height:12px"></div>')
   const bodyHtml = `
-    <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${escapeHtml(name)}, these delegated tasks are due. Please action them.</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${escapeHtml(name)}, here is the daily digest of your pending delegated tasks. Please action them.</p>
     ${rows}
-    <div style="height:20px"></div>
-    ${primaryButton(TASKS_URL, 'Open Delegation Tasks')}
   `
-  return emailLayout({ heading: 'Tasks due', eyebrow: 'AM Group · Tasks', preheader: `${items.length} task(s) need your attention`, bodyHtml })
+  return emailLayout({ heading: 'Pending Tasks Digest', eyebrow: 'AM Group · Tasks', preheader: `${items.length} task(s) need your attention`, bodyHtml })
 }

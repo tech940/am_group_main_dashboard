@@ -1924,6 +1924,13 @@ export const kiaApprovalRequests = pgTable('kia_approval_requests', {
   emailSendStatus: text('email_send_status'),
   invoiceNumber: text('invoice_number'),
   invoiceDocUrl: text('invoice_doc_url'),
+  paymentStatus: text('payment_status').default('PENDING').notNull(),
+  utrNumber: text('utr_number'),
+  paymentProofUrl: text('payment_proof_url'),
+  paymentRemarks: text('payment_remarks'),
+  paymentCompletedAt: timestamp('payment_completed_at', { withTimezone: true }),
+  paymentCompletedBy: text('payment_completed_by'),
+  sendBackReason: text('send_back_reason'),
   history: jsonb('history').$type<any[]>().default([]).notNull(),
   brand: text('brand').default('kia').notNull(),
   glAccountId: uuid('gl_account_id').references(() => glAccounts.id),
@@ -1946,7 +1953,9 @@ export const kiaApprovalRequestsRelations = relations(kiaApprovalRequests, ({ on
 export const vendors = pgTable('vendors', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
-  gstNumber: text('gst_number').notNull(),
+  gstNumber: text('gst_number'),
+  vendorCode: text('vendor_code').unique(),
+  bankAccountNumber: text('bank_account_number'),
   email: text('email'),
   phone: text('phone'),
   address: text('address'),
@@ -1954,7 +1963,7 @@ export const vendors = pgTable('vendors', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 }, (table) => ({
-  vendorsGstIdx: uniqueIndex('vendors_gst_idx').on(table.gstNumber),
+  vendorsGstIdx: index('vendors_gst_idx').on(table.gstNumber),
   vendorsNameIdx: index('vendors_name_idx').on(table.name),
 }))
 
@@ -1982,16 +1991,27 @@ export const approvalsBranchesConfig = pgTable('approvals_branches_config', {
 // (not tied to a booking or a brand). assigned_to is a real FK + a denormalized name/email snapshot
 // (same reason kiaLeadFollowups does it). status/priority are validated in the lib layer, not a
 // pgEnum. See lib/delegation/tasks.ts + lib/delegation/access.ts.
+export const delegationContacts = pgTable('delegation_contacts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  email: text('email'),
+  phone: text('phone').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 export const delegationTasks = pgTable('delegation_tasks', {
   id: uuid('id').primaryKey().defaultRandom(),
   title: text('title').notNull(),
   description: text('description'),
   // Assignee (the delegatee)
-  assignedTo: uuid('assigned_to').references(() => users.id).notNull(),
+  assignedTo: uuid('assigned_to').references(() => users.id),
+  externalContactId: uuid('external_contact_id').references(() => delegationContacts.id),
   assignedName: text('assigned_name'),
   assignedEmail: text('assigned_email'),
   // Scheduling / classification
   dueAt: timestamp('due_at', { withTimezone: true }),
+  followUpAt: timestamp('follow_up_at', { withTimezone: true }),
   status: text('status').default('assigned').notNull(), // 'assigned' | 'in_progress' | 'done' | 'cancelled'
   priority: text('priority').default('normal').notNull(), // 'low' | 'normal' | 'high'
   // Optional cross-brand tagging (non-enforcing)
@@ -2030,6 +2050,27 @@ export const delegationTaskActivity = pgTable('delegation_task_activity', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   delegationTaskActivityTaskIdx: index('delegation_task_activity_task_idx').on(table.taskId, table.createdAt),
+}))
+
+// KIA Booking Discounts Table
+export const kiaBookingDiscounts = pgTable('kia_booking_discounts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id').references(() => kiaBookings.id, { onDelete: 'cascade' }).notNull(),
+  requestedAmount: decimal('requested_amount', { precision: 14, scale: 2 }).notNull(),
+  approvedAmount: decimal('approved_amount', { precision: 14, scale: 2 }),
+  reason: text('reason'),
+  status: text('status').default('PENDING').notNull(), // 'PENDING' | 'APPROVED' | 'REJECTED'
+  requestedBy: uuid('requested_by').references(() => users.id).notNull(),
+  requestedByName: text('requested_by_name').notNull(),
+  actionBy: uuid('action_by').references(() => users.id),
+  actionByName: text('action_by_name'),
+  actionRemarks: text('action_remarks'),
+  actionAt: timestamp('action_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  bookingIdIdx: index('kia_booking_discounts_booking_idx').on(table.bookingId),
+  statusIdx: index('kia_booking_discounts_status_idx').on(table.status),
 }))
 
 

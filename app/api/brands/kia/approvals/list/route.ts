@@ -60,7 +60,6 @@ export async function GET(request: NextRequest) {
       })
       .from(kiaApprovalRequests)
       .leftJoin(glAccounts, eq(kiaApprovalRequests.glAccountId, glAccounts.id))
-      .where(eq(kiaApprovalRequests.brand, 'kia'))
       .orderBy(desc(kiaApprovalRequests.createdAt))
 
     console.log('Payment Approvals list fetched rows:', rows.length)

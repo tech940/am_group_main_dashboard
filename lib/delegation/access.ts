@@ -34,6 +34,7 @@ export function concreteBrands(brand?: string | null): string[] {
 /** Group-wide = sees/assigns across ALL brands: MD, CEO, developer (system) roles, or the 'all' brand marker. */
 export function isGroupWideDelegation(user: { role?: string | null; brand?: string | null }): boolean {
   const role = norm(user.role)
+  if (role === 'ea' || role === 'eba') return false
   if (role === 'developer' || role === 'md' || role === 'ceo') return true
   return parseBrands(user.brand).includes('all')
 }

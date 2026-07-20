@@ -1,12 +1,12 @@
 import 'server-only'
 import { and, desc, eq, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { delegationTaskActivity, delegationTasks, users } from '@/lib/db/schema'
+import { delegationTaskActivity, delegationTasks, users, delegationContacts } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { canDelegateTasks, concreteBrands, isAssignableUnderBrands, isGroupWideDelegation, parseBrands, resolveTaskBrand } from '@/lib/delegation/access'
 
 // ── Validation vocabularies (text columns, checked here rather than as a pgEnum) ──────────────────
-export const TASK_STATUSES = ['assigned', 'in_progress', 'done', 'cancelled'] as const
+export const TASK_STATUSES = ['assigned', 'done', 'cancelled'] as const
 export const TASK_PRIORITIES = ['low', 'normal', 'high'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
 export type TaskPriority = (typeof TASK_PRIORITIES)[number]
@@ -26,23 +26,30 @@ export type TaskListInput = {
 }
 
 export type CreateTaskInput = {
-  title: string
+  title?: string | null
   description?: string | null
   assignedTo: string
   dueAt?: string | null
   priority?: string | null
   brand?: string | null
   dealerCode?: string | null
+  isExternal?: boolean
+  externalContactName?: string | null
+  externalContactEmail?: string | null
+  externalContactPhone?: string | null
 }
 
-export type TaskAction = 'start' | 'complete' | 'reopen' | 'cancel' | 'reassign' | 'edit'
+export type TaskAction = 'complete' | 'reopen' | 'cancel' | 'reassign' | 'edit' | 'comment' | 'remind'
 export type UpdateTaskInput = {
   completionRemark?: string | null
   assignedTo?: string | null
   title?: string | null
   description?: string | null
   dueAt?: string | null
+  followUpAt?: string | null
   priority?: string | null
+  isExternal?: boolean
+  remark?: string | null
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────────────────────
@@ -106,14 +113,14 @@ function scopeFilter(viewer: Viewer) {
   return own
 }
 
-function decorate(row: typeof delegationTasks.$inferSelect, viewer: Viewer) {
+function decorate(row: typeof delegationTasks.$inferSelect & { assignedPhone?: string | null }, viewer: Viewer) {
   const isCreator = row.createdBy === viewer.id
   const isAssignee = row.assignedTo === viewer.id
   const canManage = isCreator || isGroupWideDelegation(viewer)
   const isOverdue = Boolean(
-    row.dueAt && (row.status === 'assigned' || row.status === 'in_progress') && new Date(row.dueAt) < new Date(),
+    row.dueAt && row.status === 'assigned' && new Date(row.dueAt) < new Date(),
   )
-  const isEa = String(viewer.role || '').trim().toLowerCase() === 'ea'
+  const isEa = ['ea', 'eba', 'admin', 'developer'].includes(String(viewer.role || '').trim().toLowerCase())
   return { ...row, viewerIsCreator: isCreator, viewerIsAssignee: isAssignee, viewerCanManage: canManage, viewerIsEa: isEa, isOverdue }
 }
 
@@ -153,12 +160,37 @@ export async function listDelegationTasks(input: TaskListInput, viewer: Viewer) 
   }
 
   const rows = await db
-    .select()
+    .select({
+      id: delegationTasks.id,
+      title: delegationTasks.title,
+      description: delegationTasks.description,
+      assignedTo: delegationTasks.assignedTo,
+      externalContactId: delegationTasks.externalContactId,
+      assignedName: delegationTasks.assignedName,
+      assignedEmail: delegationTasks.assignedEmail,
+      dueAt: delegationTasks.dueAt,
+      followUpAt: delegationTasks.followUpAt,
+      status: delegationTasks.status,
+      priority: delegationTasks.priority,
+      brand: delegationTasks.brand,
+      dealerCode: delegationTasks.dealerCode,
+      completionRemark: delegationTasks.completionRemark,
+      completedBy: delegationTasks.completedBy,
+      completedAt: delegationTasks.completedAt,
+      reminderSentAt: delegationTasks.reminderSentAt,
+      createdBy: delegationTasks.createdBy,
+      metadata: delegationTasks.metadata,
+      createdAt: delegationTasks.createdAt,
+      updatedAt: delegationTasks.updatedAt,
+      assignedPhone: sql<string | null>`COALESCE(${users.phoneNumber}, ${delegationContacts.phone})`,
+    })
     .from(delegationTasks)
+    .leftJoin(users, eq(delegationTasks.assignedTo, users.id))
+    .leftJoin(delegationContacts, eq(delegationTasks.externalContactId, delegationContacts.id))
     .where(filters.length ? and(...filters) : undefined)
     // Open first, then by due date (soonest / overdue first), then newest.
     .orderBy(
-      sql`case when ${delegationTasks.status} in ('assigned','in_progress') then 0 else 1 end`,
+      sql`case when ${delegationTasks.status} = 'assigned' then 0 else 1 end`,
       sql`${delegationTasks.dueAt} asc nulls last`,
       desc(delegationTasks.createdAt),
     )
@@ -170,8 +202,33 @@ export async function listDelegationTasks(input: TaskListInput, viewer: Viewer) 
 export async function getDelegationTaskDetail(id: string, viewer: Viewer) {
   const scope = scopeFilter(viewer)
   const [row] = await db
-    .select()
+    .select({
+      id: delegationTasks.id,
+      title: delegationTasks.title,
+      description: delegationTasks.description,
+      assignedTo: delegationTasks.assignedTo,
+      externalContactId: delegationTasks.externalContactId,
+      assignedName: delegationTasks.assignedName,
+      assignedEmail: delegationTasks.assignedEmail,
+      dueAt: delegationTasks.dueAt,
+      followUpAt: delegationTasks.followUpAt,
+      status: delegationTasks.status,
+      priority: delegationTasks.priority,
+      brand: delegationTasks.brand,
+      dealerCode: delegationTasks.dealerCode,
+      completionRemark: delegationTasks.completionRemark,
+      completedBy: delegationTasks.completedBy,
+      completedAt: delegationTasks.completedAt,
+      reminderSentAt: delegationTasks.reminderSentAt,
+      createdBy: delegationTasks.createdBy,
+      metadata: delegationTasks.metadata,
+      createdAt: delegationTasks.createdAt,
+      updatedAt: delegationTasks.updatedAt,
+      assignedPhone: sql<string | null>`COALESCE(${users.phoneNumber}, ${delegationContacts.phone})`,
+    })
     .from(delegationTasks)
+    .leftJoin(users, eq(delegationTasks.assignedTo, users.id))
+    .leftJoin(delegationContacts, eq(delegationTasks.externalContactId, delegationContacts.id))
     .where(scope ? and(eq(delegationTasks.id, id), scope) : eq(delegationTasks.id, id))
     .limit(1)
   if (!row) return null
@@ -189,29 +246,170 @@ export async function getDelegationTaskDetail(id: string, viewer: Viewer) {
 // ── Writes ─────────────────────────────────────────────────────────────────────────────────────
 export async function createDelegationTask(input: CreateTaskInput, actor: AppUser) {
   if (!canDelegateTasks(actor.role)) throw new Error('You are not allowed to delegate tasks.')
-  const title = text(input.title)
-  if (!title) throw new Error('A task title is required.')
   const assignedTo = text(input.assignedTo)
   if (!assignedTo) throw new Error('An assignee is required.')
+
+  const descVal = nullableText(input.description)
+  // If title is not provided, generate from description
+  const title = text(input.title) || (descVal ? descVal.split('\n')[0].substring(0, 50) : 'Untitled Task')
+  if (!title) throw new Error('A task description or title is required.')
 
   const priority = text(input.priority) || 'normal'
   if (!(TASK_PRIORITIES as readonly string[]).includes(priority)) throw new Error('Invalid priority.')
 
   return db.transaction(async (tx) => {
-    const assignee = await resolveActiveUser(tx, assignedTo)
-    assertCanAssign(actor, assignee.brand)
-    // The task's brand = the delegator's brand (a KIA MD's tasks are KIA), or the assignee's branch
-    // when the delegator is group-wide (brand='all'). This is what the per-branch rollup groups on.
-    const taskBrand = resolveTaskBrand(actor.brand, assignee.brand)
+    let finalAssignedTo: string | null = null
+    let finalExternalContactId: string | null = null
+    let finalAssignedName = ''
+    let finalAssignedEmail: string | null = null
+    let finalAssignedBrand: string | null = null
+
+    // Determine if it is external
+    const isOther = assignedTo === 'other'
+    const isExternal = Boolean(input.isExternal)
+
+    if (isOther || isExternal) {
+      // 1. Manually entering or selecting external contact
+      let extName = text(input.externalContactName)
+      let extEmail = nullableText(input.externalContactEmail)
+      let extPhone = text(input.externalContactPhone)
+
+      if (isOther) {
+        if (!extName) throw new Error('External contact name is required.')
+        if (!extPhone) throw new Error('External contact phone number is mandatory.')
+      }
+
+      // Check if this contact matches an existing dashboard user to prevent duplicates
+      let existingUser: any = null
+      if (extPhone || extEmail) {
+        const filters = []
+        if (extPhone) filters.push(eq(users.phoneNumber, extPhone))
+        if (extEmail) filters.push(eq(users.email, extEmail))
+        
+        const [u] = await tx
+          .select({ id: users.id, fullName: users.fullName, email: users.email, brand: users.brand, phoneNumber: users.phoneNumber })
+          .from(users)
+          .where(and(or(...filters), eq(users.isActive, true), isNull(users.deletedAt)))
+          .limit(1)
+        existingUser = u
+      }
+
+      if (existingUser) {
+        // Resolve to existing dashboard user!
+        finalAssignedTo = existingUser.id
+        finalExternalContactId = null
+        finalAssignedName = existingUser.fullName
+        finalAssignedEmail = extEmail || existingUser.email
+        finalAssignedBrand = existingUser.brand
+
+        // Sync entered details back to users table
+        const updatesToMake: Record<string, any> = {}
+        if (extPhone && extPhone !== existingUser.phoneNumber) {
+          updatesToMake.phoneNumber = extPhone
+        }
+        if (extEmail && extEmail !== existingUser.email) {
+          updatesToMake.email = extEmail
+        }
+        if (Object.keys(updatesToMake).length > 0) {
+          await tx
+            .update(users)
+            .set(updatesToMake)
+            .where(eq(users.id, existingUser.id))
+        }
+      } else {
+        // Check if an external contact with the same phone or email exists
+        let existingContact: any = null
+        if (extPhone || extEmail) {
+          const filters = []
+          if (extPhone) filters.push(eq(delegationContacts.phone, extPhone))
+          if (extEmail) filters.push(eq(delegationContacts.email, extEmail))
+          
+          const [c] = await tx
+            .select()
+            .from(delegationContacts)
+            .where(or(...filters))
+            .limit(1)
+          existingContact = c
+        }
+
+        if (existingContact) {
+          // Resolve to existing external contact!
+          finalAssignedTo = null
+          finalExternalContactId = existingContact.id
+          finalAssignedName = existingContact.name
+          finalAssignedEmail = extEmail || existingContact.email
+
+          // Sync entered details back to contacts table
+          const updatesToMake: Record<string, any> = {}
+          if (extPhone && extPhone !== existingContact.phone) {
+            updatesToMake.phone = extPhone
+          }
+          if (extEmail && extEmail !== existingContact.email) {
+            updatesToMake.email = extEmail
+          }
+          if (Object.keys(updatesToMake).length > 0) {
+            await tx
+              .update(delegationContacts)
+              .set(updatesToMake)
+              .where(eq(delegationContacts.id, existingContact.id))
+          }
+        } else if (isOther) {
+          // Create new external contact record!
+          const [newContact] = await tx
+            .insert(delegationContacts)
+            .values({
+              name: extName,
+              email: extEmail,
+              phone: extPhone,
+            })
+            .returning()
+          
+          finalAssignedTo = null
+          finalExternalContactId = newContact.id
+          finalAssignedName = newContact.name
+          finalAssignedEmail = newContact.email
+        } else {
+          // It was selected from picker but not found in user or contact databases
+          // Find contact by id
+          const [contact] = await tx
+            .select()
+            .from(delegationContacts)
+            .where(eq(delegationContacts.id, assignedTo))
+            .limit(1)
+          if (!contact) throw new Error('External contact not found.')
+          
+          finalAssignedTo = null
+          finalExternalContactId = contact.id
+          finalAssignedName = contact.name
+          finalAssignedEmail = contact.email
+        }
+        finalAssignedBrand = 'all'
+      }
+    } else {
+      // 2. Dashboard user selection
+      const assignee = await resolveActiveUser(tx, assignedTo)
+      assertCanAssign(actor, assignee.brand)
+      finalAssignedTo = assignee.id
+      finalExternalContactId = null
+      finalAssignedName = assignee.fullName
+      finalAssignedEmail = assignee.email
+      finalAssignedBrand = assignee.brand
+    }
+
+    const taskBrand = resolveTaskBrand(actor.brand, finalAssignedBrand)
+    const dueAtDate = input.dueAt ? new Date(input.dueAt) : null
+
     const [task] = await tx
       .insert(delegationTasks)
       .values({
         title,
-        description: nullableText(input.description),
-        assignedTo: assignee.id,
-        assignedName: assignee.fullName,
-        assignedEmail: assignee.email,
-        dueAt: input.dueAt ? new Date(input.dueAt) : null,
+        description: descVal,
+        assignedTo: finalAssignedTo,
+        externalContactId: finalExternalContactId,
+        assignedName: finalAssignedName,
+        assignedEmail: finalAssignedEmail,
+        dueAt: dueAtDate,
+        followUpAt: dueAtDate, // Default follow-up date to due date!
         status: 'assigned',
         priority,
         brand: taskBrand,
@@ -219,7 +417,8 @@ export async function createDelegationTask(input: CreateTaskInput, actor: AppUse
         createdBy: actor.id,
       })
       .returning()
-    await addActivity(tx, task.id, 'assigned', `Assigned to ${assignee.fullName}`, actor)
+
+    await addActivity(tx, task.id, 'assigned', `Assigned to ${finalAssignedName}`, actor)
     return task
   })
 }
@@ -231,33 +430,24 @@ export async function updateDelegationTask(id: string, action: TaskAction, input
 
     const isAssignee = task.assignedTo === actor.id
     const isManager = task.createdBy === actor.id || isGroupWideDelegation(actor)
-    const isOpen = task.status === 'assigned' || task.status === 'in_progress'
+    const isOpen = task.status === 'assigned'
 
     const updates: Partial<typeof delegationTasks.$inferInsert> = { updatedAt: new Date() }
     let activityType = 'edited'
     let activityMessage: string | null = null
 
     switch (action) {
-      case 'start': {
-        if (!isAssignee) throw new Error('Only the assignee can start this task.')
-        if (task.status !== 'assigned') throw new Error('Only an assigned task can be started.')
-        updates.status = 'in_progress'
-        activityType = 'started'
-        activityMessage = 'Started working'
-        break
-      }
       case 'complete': {
-        const isEa = ['ea', 'eba'].includes(String(actor.role || '').trim().toLowerCase())
+        const isEa = ['ea', 'eba', 'admin', 'developer'].includes(String(actor.role || '').trim().toLowerCase())
         if (!isEa) throw new Error('Only an EA can mark this task as completed.')
         if (!isOpen) throw new Error('Only an open task can be completed.')
-        const remark = text(input.completionRemark)
-        if (!remark) throw new Error('A completion remark is required.')
+        const remark = nullableText(input.completionRemark)
         updates.status = 'done'
         updates.completionRemark = remark
         updates.completedBy = actor.id
         updates.completedAt = new Date()
         activityType = 'completed'
-        activityMessage = remark
+        activityMessage = remark || 'Task completed'
         break
       }
       case 'reopen': {
@@ -283,16 +473,47 @@ export async function updateDelegationTask(id: string, action: TaskAction, input
       case 'reassign': {
         if (!isManager) throw new Error('Only the delegator can reassign this task.')
         if (!isOpen) throw new Error('Only an open task can be reassigned.')
+        
         const nextId = text(input.assignedTo)
-        if (!nextId) throw new Error('A new assignee is required.')
-        const assignee = await resolveActiveUser(tx, nextId)
-        assertCanAssign(actor, assignee.brand)
-        updates.assignedTo = assignee.id
-        updates.assignedName = assignee.fullName
-        updates.assignedEmail = assignee.email
-        updates.reminderSentAt = null // the new assignee should get their own due reminder
+        if (nextId && nextId !== task.assignedTo && nextId !== task.externalContactId) {
+          const isExternal = Boolean(input.isExternal)
+          if (isExternal) {
+            const [contact] = await tx.select().from(delegationContacts).where(eq(delegationContacts.id, nextId)).limit(1)
+            if (!contact) throw new Error('External contact not found.')
+            updates.assignedTo = null
+            updates.externalContactId = contact.id
+            updates.assignedName = contact.name
+            updates.assignedEmail = contact.email
+          } else {
+            const [userRecord] = await tx.select().from(users).where(eq(users.id, nextId)).limit(1)
+            if (userRecord) {
+              assertCanAssign(actor, userRecord.brand)
+              updates.assignedTo = userRecord.id
+              updates.externalContactId = null
+              updates.assignedName = userRecord.fullName
+              updates.assignedEmail = userRecord.email
+            } else {
+              const [contact] = await tx.select().from(delegationContacts).where(eq(delegationContacts.id, nextId)).limit(1)
+              if (!contact) throw new Error('Assignee not found.')
+              updates.assignedTo = null
+              updates.externalContactId = contact.id
+              updates.assignedName = contact.name
+              updates.assignedEmail = contact.email
+            }
+          }
+        }
+        
+        if (input.dueAt !== undefined) {
+          updates.dueAt = input.dueAt ? new Date(input.dueAt) : null
+        }
+        if (input.followUpAt !== undefined) {
+          updates.followUpAt = input.followUpAt ? new Date(input.followUpAt) : null
+        }
+        
+        updates.reminderSentAt = null // reschedule -> re-arm due reminder
         activityType = 'reassigned'
-        activityMessage = `Reassigned to ${assignee.fullName}`
+        const remarkText = text(input.remark)
+        activityMessage = remarkText ? `Rescheduled: ${remarkText}` : `Rescheduled due date/follow-up date`
         break
       }
       case 'edit': {
@@ -315,6 +536,18 @@ export async function updateDelegationTask(id: string, action: TaskAction, input
         }
         activityType = 'edited'
         activityMessage = 'Task details updated'
+        break
+      }
+      case 'comment': {
+        const comment = text(input.completionRemark)
+        if (!comment) throw new Error('Note content is required.')
+        activityType = 'commented'
+        activityMessage = comment
+        break
+      }
+      case 'remind': {
+        activityType = 'reminded'
+        activityMessage = 'Sent task reminder email'
         break
       }
       default:
@@ -350,14 +583,13 @@ export async function getDueDelegationTasks(): Promise<DueTask[]> {
       assignedEmail: delegationTasks.assignedEmail,
     })
     .from(delegationTasks)
-    .where(and(
-      inArray(delegationTasks.status, ['assigned', 'in_progress']),
-      isNull(delegationTasks.reminderSentAt),
-      lte(delegationTasks.dueAt, new Date()),
-    ))
+    .where(eq(delegationTasks.status, 'assigned'))
     .orderBy(delegationTasks.dueAt)
-    .limit(500)
-  return rows.map((r) => ({ ...r, dueAt: (r.dueAt as Date).toISOString() }))
+    .limit(1000)
+  return rows.map((r) => ({
+    ...r,
+    dueAt: r.dueAt ? (r.dueAt as Date).toISOString() : '',
+  }))
 }
 
 export async function markDelegationRemindersSent(ids: string[]) {
