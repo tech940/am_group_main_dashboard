@@ -448,7 +448,10 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const monthlyCarrying = (stockValue * interestRate) / 100 / 12
   const dailyAgedBleed = aged90Rows.reduce((sum, row) => sum + (row.stockValue * interestRate) / 100 / 365, 0)
 
-  const retailed90 = summary?.movement?.monthly?.slice(0, 3).reduce((sum, row) => sum + row.retail, 0) || 0
+  // Accurate trailing-90-day retail (distinct VINs delivered in the last 90 days), computed server-
+  // side. Fall back to summing the last 3 monthly buckets only if the field is absent (old payload).
+  const retailed90 = summary?.movement?.retailed90
+    ?? (summary?.movement?.monthly?.slice(0, 3).reduce((sum, row) => sum + row.retail, 0) || 0)
   const avgDailySales = retailed90 / 90
   const daysOfSupply = avgDailySales > 0 ? Math.round(availableStock / avgDailySales) : 0
   const annualizedTurns = avgDailySales > 0 ? ((avgDailySales * 365) / Math.max(1, availableStock)).toFixed(1) : '0'
@@ -458,7 +461,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
   const kpiExplanations: Record<string, { title: string; formula: string; inputs: Array<[string, string]> }> = {
     units: {
       title: 'Units in stock',
-      formula: 'Count of VINs in the latest DMS stock feed that are not yet delivered (includes booked-but-not-delivered and in-transit cars), de-duplicated one per VIN.',
+      formula: 'Count of VINs in the latest DMS stock feed that are not yet delivered or retailed (includes booked-but-not-delivered and in-transit cars; excludes cars already delivered in the app or retailed in the sales feed), de-duplicated one per VIN.',
       inputs: [['Live units', String(availableStock)], ['Scope', selectedDealer === 'all' ? 'All dealers' : selectedDealer]],
     },
     value: {
@@ -473,7 +476,7 @@ export function KiaStockReportPage({ initialSearchParams }: { initialSearchParam
     },
     retailed: {
       title: 'Retailed this month',
-      formula: 'Cars delivered/retailed (kia_purchase_report.retail_date) during the latest month with retail data, scoped to the selected dealer. (This now measures deliveries, not bookings.)',
+      formula: 'Distinct vehicles delivered (kia_sales_report.delivery_date) during the latest month with retail data, scoped to the selected dealer. Measures actual deliveries, not bookings.',
       inputs: [['Month', retailMonthLabel || '—'], ['Retailed', String(soldThisMonth)]],
     },
     daysSupply: {

@@ -30,7 +30,13 @@ import {
   Check,
   Calendar,
   AlertTriangle,
-  Info
+  Info,
+  LayoutGrid,
+  List,
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+  Copy
 } from 'lucide-react'
 
 interface Vendor {
@@ -82,6 +88,11 @@ function validateGst(gst: string): string | null {
 export function KiaVendorsClient() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [activeFilter, setActiveFilter] = useState<'all' | 'gst' | 'bank' | 'contact'>('all')
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid')
+  const [currentPage, setCurrentPage] = useState(1)
+  const PAGE_SIZE = 12
+
   const [showForm, setShowForm] = useState(false)
   const [editVendor, setEditVendor] = useState<Vendor | null>(null)
   const [form, setForm] = useState<VendorFormState>(EMPTY_FORM)
@@ -196,9 +207,16 @@ export function KiaVendorsClient() {
   })
 
   const filteredVendors = useMemo(() => {
+    let list = data?.vendors || []
+
+    if (activeFilter === 'gst') list = list.filter(v => Boolean(v.gstNumber))
+    else if (activeFilter === 'bank') list = list.filter(v => Boolean(v.bankAccountNumber))
+    else if (activeFilter === 'contact') list = list.filter(v => Boolean(v.email || v.phone))
+
     const q = search.toLowerCase().trim()
-    if (!q) return data?.vendors || []
-    return (data?.vendors || []).filter(
+    if (!q) return list
+
+    return list.filter(
       (v) =>
         v.name.toLowerCase().includes(q) ||
         (v.gstNumber && v.gstNumber.toLowerCase().includes(q)) ||
@@ -208,7 +226,13 @@ export function KiaVendorsClient() {
         v.phone?.includes(q) ||
         v.address?.toLowerCase().includes(q)
     )
-  }, [data?.vendors, search])
+  }, [data?.vendors, search, activeFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredVendors.length / PAGE_SIZE))
+  const paginatedVendors = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return filteredVendors.slice(start, start + PAGE_SIZE)
+  }, [filteredVendors, currentPage])
 
   function openAddForm() {
     setEditVendor(null)
@@ -281,44 +305,133 @@ export function KiaVendorsClient() {
           </div>
         </div>
 
-        {/* ── Action Bar ── */}
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] p-4 flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-4 top-3 h-4 w-4 text-slate-400" />
-            <Input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name, GST, email, phone..."
-              className="pl-11 h-10 w-full rounded-2xl border-slate-200 font-semibold"
-            />
-          </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              className="h-10 rounded-2xl border-slate-200 font-bold"
-              disabled={isFetching}
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            </Button>
-            <Button
-              type="button"
-              onClick={openAddForm}
-              className="h-10 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 font-black text-sm flex-1 sm:flex-none text-white"
-            >
-              <Plus className="w-4 h-4 mr-1.5" />
-              Add Vendor
-            </Button>
-            <Button
-              type="button"
-              onClick={() => setShowAddGlDialog(true)}
-              className="h-10 px-5 rounded-2xl bg-slate-900 hover:bg-slate-800 font-black text-sm flex-1 sm:flex-none text-white"
-            >
-              <Plus className="w-4 h-4 mr-1.5" />
-              Add GL Category
-            </Button>
+        {/* ── Search Hero Section ── */}
+        <div className="bg-slate-950 rounded-[2.5rem] p-6 sm:p-8 text-white shadow-2xl relative overflow-hidden border border-slate-800">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-violet-500/10 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="relative z-10 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-bold mb-2">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Search-First Master Registry</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Vendor Search & Lookup</h2>
+                <p className="text-xs sm:text-sm text-slate-400 font-medium mt-1">
+                  Instantly look up across {data?.vendors.length || 0} registered vendor master records
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <Button
+                  type="button"
+                  onClick={openAddForm}
+                  className="h-11 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-black text-sm text-white shadow-lg shadow-indigo-600/30 transition-all"
+                >
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Add Vendor
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setShowAddGlDialog(true)}
+                  className="h-11 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 font-black text-sm text-white border border-slate-700"
+                >
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Add GL Category
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => refetch()}
+                  className="h-11 w-11 rounded-2xl border-slate-800 bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800"
+                  disabled={isFetching}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+            </div>
+
+            {/* Large Search Input */}
+            <div className="relative">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-indigo-400" />
+              <Input
+                value={search}
+                onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+                placeholder="Search vendor by name, GSTIN, code, bank account, phone, or email..."
+                className="pl-13 pr-12 h-14 w-full rounded-2xl border-2 border-slate-800 bg-slate-900/90 text-white placeholder:text-slate-500 font-bold text-base focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 shadow-inner"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => { setSearch(''); setCurrentPage(1); }}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 w-7 h-7 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Filter Tabs & View Toggle Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-slate-800/80">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { id: 'all', label: 'All Vendors', count: data?.vendors.length || 0 },
+                  { id: 'gst', label: 'With GST', count: data?.vendors.filter(v => v.gstNumber).length || 0 },
+                  { id: 'bank', label: 'With Bank Account', count: data?.vendors.filter(v => v.bankAccountNumber).length || 0 },
+                  { id: 'contact', label: 'With Contact', count: data?.vendors.filter(v => v.email || v.phone).length || 0 },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => { setActiveFilter(tab.id as any); setCurrentPage(1); }}
+                    className={cn(
+                      'px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5',
+                      activeFilter === tab.id
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                        : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800'
+                    )}
+                  >
+                    <span>{tab.label}</span>
+                    <span className={cn(
+                      'px-1.5 py-0.2 text-[10px] rounded-md font-bold',
+                      activeFilter === tab.id ? 'bg-indigo-700 text-white' : 'bg-slate-800 text-slate-400'
+                    )}>
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* View Switcher */}
+              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 self-end sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  className={cn(
+                    'p-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5',
+                    viewMode === 'grid' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                  )}
+                  title="Card Grid View"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  <span className="hidden sm:inline">Grid</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className={cn(
+                    'p-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5',
+                    viewMode === 'table' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                  )}
+                  title="Table View"
+                >
+                  <List className="w-4 h-4" />
+                  <span className="hidden sm:inline">Table</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -496,137 +609,271 @@ export function KiaVendorsClient() {
           </DialogContent>
         </Dialog>
 
-        {/* ── Vendor Table ── */}
-        {isLoading ? (
-          <div className="flex items-center justify-center py-24 text-slate-400">
-            <Loader2 className="w-8 h-8 animate-spin mr-3" />
-            <span className="text-sm font-semibold">Loading vendors...</span>
-          </div>
-        ) : filteredVendors.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center justify-center py-24 text-center px-6">
-            <div className="w-16 h-16 rounded-2xl bg-slate-50 border-2 border-slate-100 flex items-center justify-center mb-4">
-              <Users className="w-8 h-8 text-slate-300" />
-            </div>
-            <h3 className="text-lg font-black text-slate-800 mb-1">
-              {search ? 'No vendors match your search' : 'No vendors yet'}
-            </h3>
-            <p className="text-sm text-slate-400 font-medium mb-6 max-w-xs">
-              {search
-                ? `Try a different search term.`
-                : 'Add your first vendor to the registry so it appears in vendor payment forms.'}
-            </p>
-            {!search && (
-              <Button onClick={openAddForm} className="rounded-2xl bg-indigo-600 hover:bg-indigo-700 font-black">
-                <Plus className="w-4 h-4 mr-2" /> Add First Vendor
-              </Button>
+        {/* ── Search Results Bar & Pagination Controls ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-400">Search Results</span>
+            <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-black">
+              {filteredVendors.length} {filteredVendors.length === 1 ? 'vendor' : 'vendors'} found
+            </Badge>
+            {search && (
+              <span className="text-xs text-slate-500 font-medium hidden md:inline">
+                matching <strong className="text-slate-900">&ldquo;{search}&rdquo;</strong>
+              </span>
             )}
           </div>
-        ) : (
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] overflow-hidden">
-            {/* Table header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-indigo-500" />
-                <span className="text-sm font-black text-slate-800">Vendor Registry</span>
-                <Badge className="ml-1 bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-black">
-                  {filteredVendors.length}
-                </Badge>
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                Name · GST · Contact
-              </span>
-            </div>
 
-            {/* Desktop table */}
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full">
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <span className="text-xs text-slate-500 font-bold">
+                Page {currentPage} of {totalPages}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="h-8 w-8 rounded-xl border-slate-200"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  className="h-8 w-8 rounded-xl border-slate-200"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Main Results View ── */}
+        {isLoading ? (
+          <div className="bg-white rounded-3xl border border-slate-100 p-12 flex flex-col items-center justify-center text-slate-400">
+            <Loader2 className="w-8 h-8 animate-spin mb-3 text-indigo-600" />
+            <span className="text-sm font-semibold">Searching vendor registry...</span>
+          </div>
+        ) : filteredVendors.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-100 p-12 flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-4 text-indigo-500">
+              <Search className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 mb-1">
+              {search ? `No vendors found matching "${search}"` : 'No vendors match selected filter'}
+            </h3>
+            <p className="text-xs text-slate-400 font-medium mb-6 max-w-sm">
+              {search
+                ? 'Try searching with a different name, GSTIN, vendor code, phone number, or email.'
+                : 'Clear your active filters or add a new vendor master record.'}
+            </p>
+            <div className="flex items-center gap-2">
+              {(search || activeFilter !== 'all') && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => { setSearch(''); setActiveFilter('all'); setCurrentPage(1); }}
+                  className="rounded-2xl border-slate-200 font-bold text-xs"
+                >
+                  Clear Search & Filters
+                </Button>
+              )}
+              <Button type="button" onClick={openAddForm} className="rounded-2xl bg-indigo-600 hover:bg-indigo-700 font-black text-xs">
+                <Plus className="w-4 h-4 mr-1.5" /> Add New Vendor
+              </Button>
+            </div>
+          </div>
+        ) : viewMode === 'grid' ? (
+          /* ── GRID CARD VIEW ── */
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {paginatedVendors.map((vendor) => (
+              <div
+                key={vendor.id}
+                onClick={() => setSelectedVendorForLedger(vendor)}
+                className="group bg-white rounded-3xl border border-slate-100 shadow-[0_10px_30px_rgba(15,23,42,0.03)] hover:shadow-[0_20px_40px_rgba(79,70,229,0.08)] hover:border-indigo-200 p-5 transition-all duration-200 cursor-pointer relative flex flex-col justify-between"
+              >
+                <div>
+                  {/* Card Header: Icon, Code, Actions */}
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                        <Building2 className="w-5.5 h-5.5 text-indigo-600" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full inline-block mb-0.5">
+                          {vendor.vendorCode || 'VENDOR'}
+                        </span>
+                        <h4 className="text-base font-black text-slate-900 leading-snug line-clamp-1 group-hover:text-indigo-600 transition-colors">
+                          {vendor.name}
+                        </h4>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => openEditForm(vendor)}
+                        className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-100 flex items-center justify-center text-slate-400 transition-colors"
+                        title="Edit vendor"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      {deleteConfirmId === vendor.id ? (
+                        <button
+                          type="button"
+                          onClick={() => deleteMutation.mutate(vendor.id)}
+                          className="px-2.5 py-1 rounded-xl bg-rose-600 text-white text-[10px] font-black"
+                        >
+                          Confirm
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmId(vendor.id)}
+                          className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-rose-50 hover:text-rose-600 border border-slate-100 flex items-center justify-center text-slate-400 transition-colors"
+                          title="Delete vendor"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* GSTIN Badge */}
+                  <div className="mb-3">
+                    {vendor.gstNumber ? (
+                      <div className="inline-flex items-center gap-2 bg-slate-900 text-white px-3 py-1 rounded-xl text-xs font-mono font-bold tracking-wider">
+                        <span className="text-[9px] text-slate-400 font-sans font-black uppercase">GST</span>
+                        <span>{vendor.gstNumber}</span>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] font-medium text-slate-400 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-xl inline-block">
+                        No GSTIN Registered
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Contact Info Pills */}
+                  <div className="space-y-1.5 text-xs text-slate-600 font-medium">
+                    {vendor.bankAccountNumber && (
+                      <div className="flex items-center gap-2 text-slate-700 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-100">
+                        <span className="text-[9px] font-black text-slate-400">BANK A/C:</span>
+                        <span className="font-mono font-bold">{vendor.bankAccountNumber}</span>
+                      </div>
+                    )}
+                    {vendor.email && (
+                      <div className="flex items-center gap-2 text-slate-600">
+                        <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        <span className="truncate">{vendor.email}</span>
+                      </div>
+                    )}
+                    {vendor.phone && (
+                      <div className="flex items-center gap-2 text-slate-600">
+                        <Phone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        <span>{vendor.phone}</span>
+                      </div>
+                    )}
+                    {vendor.address && (
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        <span className="line-clamp-1 text-[11px]">{vendor.address}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer Action */}
+                <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Payment History</span>
+                  <span className="text-xs font-black text-indigo-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                    View Ledger &rarr;
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          /* ── TABLE VIEW ── */
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    <th className="text-left py-3 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400">#</th>
-                    <th className="text-left py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Code</th>
-                    <th className="text-left py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Vendor / Firm Name</th>
-                    <th className="text-left py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">GST Number</th>
-                    <th className="text-left py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Bank Account</th>
-                    <th className="text-left py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Email</th>
-                    <th className="text-left py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Phone</th>
-                    <th className="text-left py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Address</th>
-                    <th className="text-right py-3 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400">Actions</th>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <th className="py-3.5 px-6">Code</th>
+                    <th className="py-3.5 px-4">Vendor / Firm Name</th>
+                    <th className="py-3.5 px-4">GST Number</th>
+                    <th className="py-3.5 px-4">Bank Account</th>
+                    <th className="py-3.5 px-4">Email</th>
+                    <th className="py-3.5 px-4">Phone</th>
+                    <th className="py-3.5 px-4">Address</th>
+                    <th className="py-3.5 px-6 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredVendors.map((vendor, idx) => (
+                <tbody className="divide-y divide-slate-100 text-sm">
+                  {paginatedVendors.map((vendor) => (
                     <tr
                       key={vendor.id}
                       onClick={() => setSelectedVendorForLedger(vendor)}
-                      className="group hover:bg-slate-50/70 transition-colors cursor-pointer"
+                      className="hover:bg-slate-50/70 transition-colors cursor-pointer"
                     >
-                      <td className="py-4 px-6 text-sm font-black text-slate-300">{idx + 1}</td>
-                      <td className="py-4 px-4">
+                      <td className="py-3.5 px-6">
                         <span className="text-xs font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                           {vendor.vendorCode || '—'}
                         </span>
                       </td>
-                      <td className="py-4 px-4">
+                      <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0">
-                            <Building2 className="w-4 h-4 text-indigo-500" />
+                          <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0">
+                            <Building2 className="w-4 h-4 text-indigo-600" />
                           </div>
-                          <span className="text-sm font-black text-slate-900 leading-tight">{vendor.name}</span>
+                          <span className="font-black text-slate-900">{vendor.name}</span>
                         </div>
                       </td>
-                      <td className="py-4 px-4">
+                      <td className="py-3.5 px-4">
                         {vendor.gstNumber ? (
-                          <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg tracking-wider">
+                          <span className="text-xs font-mono font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg">
                             {vendor.gstNumber}
                           </span>
                         ) : (
                           <span className="text-slate-300">—</span>
                         )}
                       </td>
-                      <td className="py-4 px-4 text-sm text-slate-600 font-mono font-bold">
-                        {vendor.bankAccountNumber || <span className="text-slate-300 font-sans font-medium">—</span>}
+                      <td className="py-3.5 px-4 font-mono font-bold text-xs text-slate-700">
+                        {vendor.bankAccountNumber || <span className="text-slate-300 font-sans font-normal">—</span>}
                       </td>
-                      <td className="py-4 px-4 text-sm text-slate-600 font-medium">{vendor.email || <span className="text-slate-300">—</span>}</td>
-                      <td className="py-4 px-4 text-sm text-slate-600 font-medium">{vendor.phone || <span className="text-slate-300">—</span>}</td>
-                      <td className="py-4 px-4 max-w-[200px]">
-                        <span className="text-sm text-slate-600 font-medium truncate block">{vendor.address || <span className="text-slate-300">—</span>}</span>
-                      </td>
-                      <td className="py-4 px-6" onClick={(e) => e.stopPropagation()}>
+                      <td className="py-3.5 px-4 text-xs font-semibold text-slate-600">{vendor.email || <span className="text-slate-300">—</span>}</td>
+                      <td className="py-3.5 px-4 text-xs font-semibold text-slate-600">{vendor.phone || <span className="text-slate-300">—</span>}</td>
+                      <td className="py-3.5 px-4 text-xs font-medium text-slate-600 max-w-[180px] truncate">{vendor.address || <span className="text-slate-300">—</span>}</td>
+                      <td className="py-3.5 px-6 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
                             onClick={() => openEditForm(vendor)}
-                            className="w-8 h-8 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 flex items-center justify-center transition-colors"
-                            title="Edit vendor"
+                            className="w-8 h-8 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 flex items-center justify-center text-indigo-600 transition-colors"
                           >
-                            <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
+                            <Edit3 className="w-3.5 h-3.5" />
                           </button>
                           {deleteConfirmId === vendor.id ? (
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => deleteMutation.mutate(vendor.id)}
-                                disabled={deleteMutation.isPending}
-                                className="text-[10px] font-black uppercase px-3 py-1.5 rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition-colors"
-                              >
-                                {deleteMutation.isPending ? '...' : 'Confirm'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteConfirmId(null)}
-                                className="text-[10px] font-black uppercase px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-                              >
-                                Cancel
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => deleteMutation.mutate(vendor.id)}
+                              className="px-2.5 py-1 rounded-xl bg-rose-600 text-white text-[10px] font-black"
+                            >
+                              Confirm
+                            </button>
                           ) : (
                             <button
                               type="button"
                               onClick={() => setDeleteConfirmId(vendor.id)}
-                              className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-100 flex items-center justify-center transition-colors"
-                              title="Delete vendor"
+                              className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-100 flex items-center justify-center text-rose-500 transition-colors"
                             >
-                              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
@@ -636,103 +883,39 @@ export function KiaVendorsClient() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
 
-            {/* Mobile cards */}
-            <div className="sm:hidden divide-y divide-slate-100">
-              {filteredVendors.map((vendor, idx) => (
-                <div
-                  key={vendor.id}
-                  onClick={() => setSelectedVendorForLedger(vendor)}
-                  className="p-4 space-y-3 hover:bg-slate-50/50 cursor-pointer transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0">
-                        <Building2 className="w-5 h-5 text-indigo-500" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-sm font-black text-slate-900">{vendor.name}</p>
-                          <span className="text-[9px] font-black text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                            {vendor.vendorCode || '—'}
-                          </span>
-                        </div>
-                        {vendor.gstNumber ? (
-                          <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md tracking-wider inline-block mt-1">
-                            GST: {vendor.gstNumber}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 font-medium">No GST</span>
-                        )}
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-black text-slate-300">#{idx + 1}</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    {vendor.bankAccountNumber && (
-                      <div className="col-span-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-slate-400">BANK:</span>
-                        <span className="text-xs font-mono font-bold text-slate-700">{vendor.bankAccountNumber}</span>
-                      </div>
-                    )}
-                    {vendor.email && (
-                      <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 flex items-center gap-2">
-                        <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-slate-700 truncate">{vendor.email}</span>
-                      </div>
-                    )}
-                    {vendor.phone && (
-                      <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 flex items-center gap-2">
-                        <Phone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-slate-700">{vendor.phone}</span>
-                      </div>
-                    )}
-                    {vendor.address && (
-                      <div className="col-span-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 flex items-center gap-2">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-slate-700 line-clamp-1">{vendor.address}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => openEditForm(vendor)}
-                      className="flex-1 h-9 rounded-xl border-2 border-indigo-200 bg-indigo-50 text-xs font-black text-indigo-700 flex items-center justify-center gap-1.5"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" /> Edit
-                    </button>
-                    {deleteConfirmId === vendor.id ? (
-                      <div className="flex gap-1.5 flex-1">
-                        <button
-                          type="button"
-                          onClick={() => deleteMutation.mutate(vendor.id)}
-                          className="flex-1 h-9 rounded-xl bg-rose-600 text-white text-xs font-black"
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeleteConfirmId(null)}
-                          className="flex-1 h-9 rounded-xl bg-slate-100 text-slate-600 text-xs font-black"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmId(vendor.id)}
-                        className="flex-1 h-9 rounded-xl border-2 border-rose-200 bg-rose-50 text-xs font-black text-rose-600 flex items-center justify-center gap-1.5"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" /> Delete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+        {/* Bottom Pagination Bar */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-xs text-slate-500 font-bold">
+              Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredVendors.length)} of {filteredVendors.length} vendors
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                className="h-9 px-3 rounded-xl border-slate-200 text-xs font-bold"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" /> Previous
+              </Button>
+              <div className="px-3 text-xs font-black text-slate-700">
+                {currentPage} / {totalPages}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                className="h-9 px-3 rounded-xl border-slate-200 text-xs font-bold"
+              >
+                Next <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
             </div>
           </div>
         )}

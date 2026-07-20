@@ -50,6 +50,8 @@ export function canApprovePettyCashStage(role: PettyCashRole | null | undefined,
   // Super admin is a universal supervisor and may act on any stage.
   if (role === 'developer' || role === 'manager' || role === 'general_manager') return true
   switch (stage) {
+    case 'ed_approval':
+      return role === 'ed' || role === 'sales_manager'
     case 'ea_approval':
       return role === 'ea'
     case 'md_approval':

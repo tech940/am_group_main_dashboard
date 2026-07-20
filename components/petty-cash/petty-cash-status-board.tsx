@@ -36,6 +36,7 @@ type StatusBoardPayload = {
 type StatusFilter = 'all' | PettyCashStageBucket
 
 const BUCKET_TONE: Record<PettyCashStageBucket, Tone> = {
+  'ED Approval': 'amber',
   'EA Approval': 'amber',
   'MD Approval': 'blue',
   Accounts: 'violet',
@@ -44,6 +45,7 @@ const BUCKET_TONE: Record<PettyCashStageBucket, Tone> = {
 }
 
 const BUCKET_ICON: Record<PettyCashStageBucket, typeof ShieldCheck> = {
+  'ED Approval': UserCheck,
   'EA Approval': ShieldCheck,
   'MD Approval': UserCheck,
   Accounts: ClipboardList,
@@ -107,6 +109,7 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
   // Count per summary bucket.
   const bucketCounts = useMemo(() => {
     const counts: Record<PettyCashStageBucket, number> = {
+      'ED Approval': 0,
       'EA Approval': 0,
       'MD Approval': 0,
       Accounts: 0,
@@ -120,7 +123,7 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
     return counts
   }, [requests])
 
-  const pendingCount = bucketCounts['EA Approval'] + bucketCounts['MD Approval'] + bucketCounts.Accounts
+  const pendingCount = bucketCounts['ED Approval'] + bucketCounts['EA Approval'] + bucketCounts['MD Approval'] + bucketCounts.Accounts
 
   const visibleRequests = useMemo(() => {
     const filtered = filter === 'all'

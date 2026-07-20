@@ -1,6 +1,10 @@
 export const PETTY_CASH_REQUEST_STATUSES = [
   'draft',
   'submitted',
+  'ed_pending',
+  'ed_approved',
+  'ed_on_hold',
+  'ed_rejected',
   'ea_pending',
   'ea_approved',
   'ea_on_hold',
@@ -18,6 +22,9 @@ export const PETTY_CASH_REQUEST_STATUSES = [
 
 export const PETTY_CASH_EXPENSE_STATUSES = [
   'pending',
+  'ed_pending',
+  'ed_approved',
+  'ed_rejected',
   'ea_approved',
   'ea_rejected',
   'md_approved',
@@ -28,8 +35,8 @@ export const PETTY_CASH_EXPENSE_STATUSES = [
   'cancelled',
 ] as const
 
-export const PETTY_CASH_REQUEST_STAGES = ['draft', 'ea_approval', 'md_approval', 'accounts', 'allocated'] as const
-export const PETTY_CASH_EXPENSE_STAGES = ['ea_approval', 'md_approval', 'accounts', 'ledger'] as const
+export const PETTY_CASH_REQUEST_STAGES = ['draft', 'ed_approval', 'ea_approval', 'md_approval', 'accounts', 'allocated'] as const
+export const PETTY_CASH_EXPENSE_STAGES = ['ed_approval', 'ea_approval', 'md_approval', 'accounts', 'ledger'] as const
 export const PETTY_CASH_TOP_UP_THRESHOLD = 1000
 
 export const PETTY_CASH_DEPARTMENT_OPTIONS = [

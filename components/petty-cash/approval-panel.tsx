@@ -35,7 +35,7 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { getBranchLabel } from '@/lib/branches'
 
-type ApprovalStage = 'ea_approval' | 'md_approval' | 'accounts'
+type ApprovalStage = 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'
 
 type ApprovalRequest = {
   id: string
@@ -76,6 +76,11 @@ type RequestDetail = {
 }
 
 const STATUS_META: Record<string, { label: string; tone: Tone }> = {
+  submitted: { label: 'Awaiting ED', tone: 'sky' },
+  ed_pending: { label: 'Awaiting ED', tone: 'sky' },
+  ed_on_hold: { label: 'On Hold · ED', tone: 'sky' },
+  ed_approved: { label: 'Awaiting EA', tone: 'amber' },
+  ed_rejected: { label: 'Rejected · ED', tone: 'rose' },
   ea_pending: { label: 'Awaiting EA', tone: 'amber' },
   ea_on_hold: { label: 'On Hold · EA', tone: 'amber' },
   md_pending: { label: 'Awaiting MD', tone: 'blue' },
@@ -88,9 +93,10 @@ const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   md_rejected: { label: 'Rejected · MD', tone: 'rose' },
 }
 
-type Tone = 'amber' | 'blue' | 'violet' | 'emerald' | 'rose' | 'slate'
+type Tone = 'sky' | 'amber' | 'blue' | 'violet' | 'emerald' | 'rose' | 'slate'
 
 const TONE_CLASS: Record<Tone, string> = {
+  sky: 'bg-sky-50 text-sky-700 ring-sky-200',
   amber: 'bg-amber-50 text-amber-700 ring-amber-200',
   blue: 'bg-blue-50 text-blue-700 ring-blue-200',
   violet: 'bg-violet-50 text-violet-700 ring-violet-200',
@@ -100,6 +106,7 @@ const TONE_CLASS: Record<Tone, string> = {
 }
 
 const STAGE_LABEL: Record<ApprovalStage, string> = {
+  ed_approval: 'ED Approval',
   ea_approval: 'EA Approval',
   md_approval: 'MD Approval',
   accounts: 'Accounts',
@@ -111,6 +118,7 @@ function statusMeta(status: string) {
 
 function canActOnStage(role: string, stage: ApprovalStage | null) {
   if (role === 'developer' || role === 'manager' || role === 'general_manager') return true
+  if (stage === 'ed_approval') return role === 'ed' || role === 'sales_manager'
   if (stage === 'ea_approval') return role === 'ea'
   if (stage === 'md_approval') return role === 'md' || role === 'eba'
   if (stage === 'accounts') return role === 'accounts'

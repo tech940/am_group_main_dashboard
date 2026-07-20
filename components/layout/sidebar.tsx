@@ -76,7 +76,7 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Finance', href: '/finance' },
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
-          { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups', badge: 'TEST' },
+          { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
         ],

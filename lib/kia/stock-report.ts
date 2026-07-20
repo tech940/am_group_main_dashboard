@@ -47,6 +47,17 @@ const STOCK_SOURCE_JOINS = sql`
   LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
   LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL`
 const STOCK_SOURCE_NOT_DELIVERED = sql`NOT (va.id IS NOT NULL AND kb.status = 'delivered')`
+// A car is only "in stock" until it is RETAILED. The app's booking flow (va → kb delivered) only
+// catches cars sold THROUGH this app; the KIA DMS also retails cars directly, recording them in
+// kia_sales_report. Those sold VINs linger in the stock feed, so without this exclusion the report
+// counts already-retailed cars as available stock (measured ~11% over-count). Excluding any VIN with
+// a delivery_date in the sales feed is the retail source of truth. NOTE: this is intentionally
+// Stock-Report-only; the proforma/booking stock stays as-is (delivered there is marked via bookings).
+const STOCK_SOURCE_NOT_RETAILED = sql`NOT EXISTS (
+  SELECT 1 FROM kia_sales_report sr
+  WHERE UPPER(TRIM(sr.vin_number)) = UPPER(TRIM(sm.vin_number))
+    AND sr.delivery_date IS NOT NULL
+)`
 
 function parsedInvoiceDateSql(alias = 'sm.') {
   const col = `${alias}kin_invoice_date`
@@ -324,6 +335,7 @@ async function readCurrentRows(dealerCode: string | null) {
       ${STOCK_SOURCE_JOINS}
       WHERE COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text) IS NOT NULL
         AND ${STOCK_SOURCE_NOT_DELIVERED}
+        AND ${STOCK_SOURCE_NOT_RETAILED}
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
     )
@@ -397,7 +409,7 @@ export async function getKiaStockReportSummary(input: {
   dateMode?: string | null
 }): Promise<KiaStockSummaryPayload> {
   const dealerCode = normalizeKiaDealerCode(input.dealerCode) || null
-  const cacheKey = `kia:stock-report:summary:v15:${dealerCode || 'all'}`
+  const cacheKey = `kia:stock-report:summary:v16:${dealerCode || 'all'}`
   return getCachedData(cacheKey, async () => {
     // latestMonthFallback() is a non-index-usable MAX scan of kia_stock_management. It was previously
     // awaited OUTSIDE this factory, so it ran on every request even on a warm cache hit. It (and the
@@ -625,7 +637,7 @@ export async function getKiaStockReportSummary(input: {
       },
       overview: {
         kpis: [
-          { label: 'Available Stock', value: totalStock, formattedValue: totalStock.toLocaleString('en-IN'), helper: 'Current inventory (excludes delivered)' },
+          { label: 'Available Stock', value: totalStock, formattedValue: totalStock.toLocaleString('en-IN'), helper: 'Current inventory (excludes delivered & retailed)' },
           { label: 'Free Stock', value: freeStock, formattedValue: freeStock.toLocaleString('en-IN'), helper: 'Ready unsold units' },
           { label: 'In Transit', value: inTransit, formattedValue: inTransit.toLocaleString('en-IN'), helper: 'Unsold units on the way' },
           { label: 'Stock Value', value: stockValue, formattedValue: formatCurrency(stockValue), helper: 'Approx. invoice value' },
@@ -670,13 +682,16 @@ export async function getKiaStockReportSummary(input: {
         monthly: rows(movementMonthly).map((row) => ({
           month: safeText(row.month),
           arrivals: Number(row.arrivals) || 0,
-          // TRUE retail: units delivered (kia_purchase_report.retail_date, dealer-scoped in the `ret`
-          // CTE). Previously overridden with a booking-date count from kia_sales_report ("bookings",
-          // not retail). This feeds Retailed-this-month, days-of-supply and turns.
+          // TRUE retail: distinct VINs delivered that month (kia_sales_report.delivery_date, dealer-
+          // scoped in the `ret` CTE). Feeds Retailed-this-month. (Days-of-supply/turns use the
+          // accurate trailing-90-day `retailed90` below, not a sum of these monthly buckets.)
           retail: Number(row.retail) || 0,
           transfers: Number(row.transfers) || 0,
           testDrive: Number(row.test_drive) || 0,
         })),
+        // Accurate trailing-90-day retail (distinct VINs delivered in the last 90 days). Exposed so the
+        // client computes days-of-supply/turns from the real 90-day count, not a 3-month bucket sum.
+        retailed90,
       },
       aging: {
         buckets: ['0-15D', '16-30D', '31-60D', '61-90D', '90D+'].map((name) => ({ name, value: agingMap.get(name) || 0 })),
@@ -760,6 +775,7 @@ async function readReportRows(input: {
       ${STOCK_SOURCE_JOINS}
       WHERE COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text) IS NOT NULL
         AND ${STOCK_SOURCE_NOT_DELIVERED}
+        AND ${STOCK_SOURCE_NOT_RETAILED}
         ${dealerClause(dealerCode)}
       ORDER BY COALESCE(NULLIF(TRIM(sm.vin_number), ''), sm.id::text), sm.uploaded_at DESC NULLS LAST, sm.id DESC
     )
@@ -788,7 +804,7 @@ export async function getKiaStockReportTable(input: {
 }): Promise<KiaStockReportPayload> {
   const page = normalizePage(input.page, 1)
   const pageSize = Math.min(99999, normalizePage(input.pageSize, 10))
-  const cacheKey = `kia:stock-report:table:v9:${JSON.stringify({ ...input, page, pageSize })}`
+  const cacheKey = `kia:stock-report:table:v10:${JSON.stringify({ ...input, page, pageSize })}`
   return getCachedData(cacheKey, async () => {
     const { filters: _filters, ...readInput } = input
     const { columns, rows: fetchedRows } = await readReportRows(readInput)

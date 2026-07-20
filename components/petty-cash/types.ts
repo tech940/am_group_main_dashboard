@@ -160,4 +160,4 @@ export const EMPTY_EXPENSE_FORM: ExpenseFormState = {
 }
 
 export type RequestWorkflowAction = 'approve' | 'reject' | 'hold'
-export type ApprovalStage = 'ea_approval' | 'md_approval' | 'accounts'
+export type ApprovalStage = 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts'

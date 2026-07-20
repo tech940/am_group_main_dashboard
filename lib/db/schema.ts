@@ -12,8 +12,8 @@ export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['submitt
 export const financeOrderStageEnum = pgEnum('finance_order_stage', ['finance_head_submission', 'accounts_verification', 'ea_approval', 'md_approval', 'completed'])
 export const financeOrderStatusEnum = pgEnum('finance_order_status', ['draft', 'awaiting_accounts_verification', 'accounts_verified', 'accounts_denied', 'accounts_on_hold', 'awaiting_ea_approval', 'ea_approved', 'ea_denied', 'ea_on_hold', 'awaiting_md_approval', 'md_approved', 'md_denied', 'md_on_hold', 'completed', 'cancelled'])
 export const paymentModeEnum = pgEnum('payment_mode', ['cash', 'cheque', 'bank_transfer', 'upi', 'credit_card', 'other'])
-export const pettyCashRequestStatusEnum = pgEnum('petty_cash_request_status', ['draft', 'submitted', 'ea_pending', 'ea_approved', 'ea_on_hold', 'ea_rejected', 'md_pending', 'md_approved', 'md_on_hold', 'md_rejected', 'accounts_pending', 'accounts_on_hold', 'approved', 'rejected', 'cancelled'])
-export const pettyCashExpenseStatusEnum = pgEnum('petty_cash_expense_status', ['pending', 'ea_approved', 'ea_rejected', 'md_approved', 'md_rejected', 'accounts_pending', 'approved', 'rejected', 'cancelled'])
+export const pettyCashRequestStatusEnum = pgEnum('petty_cash_request_status', ['draft', 'submitted', 'ed_pending', 'ed_approved', 'ed_on_hold', 'ed_rejected', 'ea_pending', 'ea_approved', 'ea_on_hold', 'ea_rejected', 'md_pending', 'md_approved', 'md_on_hold', 'md_rejected', 'accounts_pending', 'accounts_on_hold', 'approved', 'rejected', 'cancelled'])
+export const pettyCashExpenseStatusEnum = pgEnum('petty_cash_expense_status', ['pending', 'ed_pending', 'ed_approved', 'ed_rejected', 'ea_approved', 'ea_rejected', 'md_approved', 'md_rejected', 'accounts_pending', 'approved', 'rejected', 'cancelled'])
 export const pettyCashAllocationStatusEnum = pgEnum('petty_cash_allocation_status', ['active', 'closed', 'cancelled'])
 export const pettyCashLedgerEntryTypeEnum = pgEnum('petty_cash_ledger_entry_type', ['allocation', 'expense', 'adjustment', 'closure'])
 
@@ -581,6 +581,9 @@ export const pettyCashRequests = pgTable('petty_cash_requests', {
   purpose: text('purpose').notNull(),
   requestForm: jsonb('request_form').$type<PettyCashRequestFormData>().default({}).notNull(),
   supportingFiles: jsonb('supporting_files').$type<string[]>().default([]).notNull(),
+  edApprovedBy: uuid('ed_approved_by').references(() => users.id),
+  edApprovedAt: timestamp('ed_approved_at', { withTimezone: true }),
+  edRemarks: text('ed_remarks'),
   eaApprovedBy: uuid('ea_approved_by').references(() => users.id),
   eaApprovedAt: timestamp('ea_approved_at', { withTimezone: true }),
   eaRemarks: text('ea_remarks'),
@@ -633,7 +636,7 @@ export const pettyCashExpenses = pgTable('petty_cash_expenses', {
   allocationId: uuid('allocation_id').references(() => pettyCashAllocations.id, { onDelete: 'restrict' }).notNull(),
   branchId: text('branch_id').notNull(),
   status: pettyCashExpenseStatusEnum('status').default('pending').notNull(),
-  currentStage: text('current_stage').default('ea_approval').notNull(),
+  currentStage: text('current_stage').default('ed_approval').notNull(),
   expenseDate: date('expense_date').notNull(),
   particulars: text('particulars').notNull(),
   department: text('department'),
@@ -644,6 +647,9 @@ export const pettyCashExpenses = pgTable('petty_cash_expenses', {
   purpose: text('purpose').notNull(),
   expenseForm: jsonb('expense_form').$type<PettyCashExpenseFormData>().default({}).notNull(),
   billFiles: jsonb('bill_files').$type<string[]>().default([]).notNull(),
+  edApprovedBy: uuid('ed_approved_by').references(() => users.id),
+  edApprovedAt: timestamp('ed_approved_at', { withTimezone: true }),
+  edRemarks: text('ed_remarks'),
   eaApprovedBy: uuid('ea_approved_by').references(() => users.id),
   eaApprovedAt: timestamp('ea_approved_at', { withTimezone: true }),
   eaRemarks: text('ea_remarks'),

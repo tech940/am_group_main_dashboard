@@ -101,6 +101,9 @@ export type KiaStockSummaryPayload = {
     arrivals: KiaStockMetricPoint[]
     statusCounts: KiaStockMetricPoint[]
     monthly: Array<{ month: string; arrivals: number; retail: number; transfers: number; testDrive: number }>
+    // Accurate trailing-90-day retail: COUNT(DISTINCT vin) delivered in the last 90 days. The client
+    // uses this for days-of-supply/turns instead of summing 3 calendar-month buckets.
+    retailed90: number
   }
   aging: {
     buckets: KiaStockMetricPoint[]

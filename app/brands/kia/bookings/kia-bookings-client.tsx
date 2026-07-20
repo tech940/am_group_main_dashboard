@@ -2465,7 +2465,7 @@ export function KiaBookingsClient({
           {['md', 'ceo', 'developer', 'admin', 'sales_manager', 'general_manager'].includes(currentUserRole) && (
             <Button
               variant={crmViewMode === 'discounts' ? 'default' : 'outline'}
-              className={cn("h-10 rounded-2xl px-4 text-sm font-bold sm:h-11 border-indigo-200/60", crmViewMode === 'discounts' && "bg-indigo-600 hover:bg-indigo-700 text-white")}
+              className={cn("h-10 rounded-2xl px-4 text-sm font-bold sm:h-11 border-slate-200", crmViewMode === 'discounts' && "bg-slate-950 hover:bg-slate-800 text-white")}
               onClick={() => setCrmViewMode(crmViewMode === 'discounts' ? 'list' : 'discounts')}
             >
               {crmViewMode === 'discounts' ? (
@@ -2474,7 +2474,7 @@ export function KiaBookingsClient({
                 </>
               ) : (
                 <>
-                  <Percent className="h-4 w-4 text-indigo-500" /> Manage Discounts
+                  <Percent className="h-4 w-4 text-slate-700" /> Manage Discounts
                 </>
               )}
             </Button>
@@ -4202,15 +4202,15 @@ function CreateBookingDialog({
 
             {/* Quick Discount Banner on All Stages (except Review stage where we render a detailed checkbox) */}
             {activeTab !== 'Review' && (
-              <div className="mb-5 rounded-2xl border border-indigo-150 bg-indigo-50/30 p-3.5 shadow-sm shadow-indigo-50/5">
+              <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-100/50">
-                      <Percent className="h-4 w-4 text-indigo-600" />
+                    <span className="grid h-8 w-8 place-items-center rounded-xl bg-slate-200/60">
+                      <Percent className="h-4 w-4 text-slate-800" />
                     </span>
                     <div>
-                      <span className="text-xs font-black text-indigo-950 block">Apply for Booking Discount</span>
-                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
+                      <span className="text-xs font-black text-slate-900 block">Apply for Booking Discount</span>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                         Requires MD Approval
                       </span>
                     </div>
@@ -4224,7 +4224,7 @@ function CreateBookingDialog({
                       onClick={() => onChange('requestDiscount', !form.requestDiscount)}
                       className={cn(
                         "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                        form.requestDiscount ? "bg-indigo-600" : "bg-slate-200"
+                        form.requestDiscount ? "bg-slate-950" : "bg-slate-200"
                       )}
                     >
                       <span
@@ -4238,7 +4238,7 @@ function CreateBookingDialog({
                 </div>
 
                 {form.requestDiscount && (
-                  <div className="mt-3.5 pt-3.5 border-t border-indigo-100/60 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="mt-3.5 pt-3.5 border-t border-slate-200/60 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Discount Amount (INR)</label>
                       <Input
@@ -4632,10 +4632,10 @@ function CreateBookingDialog({
                     </div>
                   </div>
                   {/* Discount Request Summary / Form Checkbox */}
-                  <div className="rounded-3xl border border-indigo-200 bg-indigo-50/20 p-4">
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-indigo-600 flex items-center gap-1.5">
-                        <Percent className="h-3.5 w-3.5" /> Discount Request (MD Approval)
+                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-900 flex items-center gap-1.5">
+                        <Percent className="h-3.5 w-3.5 text-slate-700" /> Discount Request (MD Approval)
                       </p>
                       <button
                         type="button"
@@ -4644,7 +4644,7 @@ function CreateBookingDialog({
                         onClick={() => onChange('requestDiscount', !form.requestDiscount)}
                         className={cn(
                           "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                          form.requestDiscount ? "bg-indigo-600" : "bg-slate-200"
+                          form.requestDiscount ? "bg-slate-950" : "bg-slate-200"
                         )}
                       >
                         <span
@@ -4657,7 +4657,7 @@ function CreateBookingDialog({
                     </div>
 
                     {form.requestDiscount ? (
-                      <div className="grid gap-2.5 mt-3 pt-3 border-t border-indigo-100/60">
+                      <div className="grid gap-2.5 mt-3 pt-3 border-t border-slate-100">
                         <div className="flex justify-between items-center text-xs">
                           <span className="text-slate-500 font-bold uppercase block">Discount Amount (INR)</span>
                           <Input
@@ -4674,7 +4674,7 @@ function CreateBookingDialog({
                             placeholder="Please state why this discount is required..."
                             value={form.discountReason || ''}
                             onChange={(e) => onChange('discountReason', e.target.value)}
-                            className="w-full min-h-[44px] rounded-xl border border-indigo-100 bg-white p-2 text-xs font-semibold focus:outline-none"
+                            className="w-full min-h-[44px] rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold focus:outline-none"
                           />
                         </div>
                       </div>
@@ -5048,9 +5048,9 @@ function BookingDrawer({
                   variant="outline"
                   size="sm"
                   onClick={() => setIsDiscountDialogOpen(true)}
-                  className="h-8 rounded-xl text-xs font-bold border-indigo-200 hover:bg-indigo-50/50 hover:text-indigo-900"
+                  className="h-8 rounded-xl text-xs font-bold border-slate-200 hover:bg-slate-100 text-slate-800"
                 >
-                  <Percent className="mr-1.5 h-3.5 w-3.5 text-indigo-500" />
+                  <Percent className="mr-1.5 h-3.5 w-3.5 text-slate-700" />
                   Apply Discount
                 </Button>
               </div>
@@ -5493,7 +5493,7 @@ function BookingDrawer({
       <Dialog open={isDiscountDialogOpen} onOpenChange={setIsDiscountDialogOpen}>
         <DialogContent className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl duration-200">
           <DialogTitle className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-            <Percent className="h-5 w-5 text-indigo-600" /> Request Booking Discount
+            <Percent className="h-5 w-5 text-slate-900" /> Request Booking Discount
           </DialogTitle>
           <form onSubmit={handleRequestDiscount} className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -5520,7 +5520,7 @@ function BookingDrawer({
                 placeholder="Please explain why this discount is required..."
                 value={discountReason}
                 onChange={(e) => setDiscountReason(e.target.value)}
-                className="w-full min-h-[100px] rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold focus:border-indigo-500 focus:outline-none"
+                className="w-full min-h-[100px] rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold focus:border-slate-950 focus:outline-none"
               />
             </div>
             <DialogFooter className="flex justify-end gap-2 pt-2">
@@ -6099,7 +6099,7 @@ function DiscountsDashboard({ query, currentUserRole, onOpenBooking }: Discounts
                 className={cn(
                   "rounded-lg px-3 py-1.5 text-xs font-bold transition-all",
                   statusFilter === tab.key 
-                    ? "bg-indigo-600 text-white shadow-sm" 
+                    ? "bg-slate-950 text-white shadow-sm" 
                     : "text-slate-600 hover:bg-slate-100/80"
                 )}
               >
@@ -6114,8 +6114,8 @@ function DiscountsDashboard({ query, currentUserRole, onOpenBooking }: Discounts
       <section className={cn(PRIMARY_SURFACE, 'overflow-hidden')}>
         <div className="flex items-center justify-between border-b px-4 py-3 border-[var(--kia-hairline)]">
           <div className="flex items-center gap-2.5">
-            <span className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-50" style={toneSoftStyle('accent')}>
-              <Percent className="h-[1.05rem] w-[1.05rem] text-indigo-600" />
+            <span className="grid h-8 w-8 place-items-center rounded-xl bg-slate-100" style={toneSoftStyle('accent')}>
+              <Percent className="h-[1.05rem] w-[1.05rem] text-slate-800" />
             </span>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--kia-text-faint)]">Approvals Queue</p>
@@ -6201,7 +6201,7 @@ function DiscountsDashboard({ query, currentUserRole, onOpenBooking }: Discounts
                         {isPending && ['md', 'ceo', 'developer', 'admin'].includes(currentUserRole) ? (
                           <Button
                             size="sm"
-                            className="h-8 rounded-xl bg-indigo-600 text-white font-extrabold text-xs shadow-md shadow-indigo-600/10 hover:bg-indigo-700"
+                            className="h-8 rounded-xl bg-slate-950 text-white font-extrabold text-xs shadow-md shadow-slate-950/10 hover:bg-slate-800"
                             onClick={() => setActiveActionRequest(discount)}
                           >
                             Review
@@ -6227,7 +6227,7 @@ function DiscountsDashboard({ query, currentUserRole, onOpenBooking }: Discounts
       <Dialog open={Boolean(activeActionRequest)} onOpenChange={(open) => { if (!open) setActiveActionRequest(null) }}>
         <DialogContent className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl duration-200">
           <DialogTitle className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-            <Percent className="h-5 w-5 text-indigo-600" /> Review Discount Request
+            <Percent className="h-5 w-5 text-slate-900" /> Review Discount Request
           </DialogTitle>
           
           {activeActionRequest && (
@@ -6251,7 +6251,7 @@ function DiscountsDashboard({ query, currentUserRole, onOpenBooking }: Discounts
                 </div>
                 <div className="flex justify-between pt-1 border-t border-slate-200">
                   <span className="text-slate-400 font-bold uppercase block">Requested Discount</span>
-                  <span className="text-indigo-600 font-extrabold">INR {Number(activeActionRequest.requestedAmount).toLocaleString('en-IN')}</span>
+                  <span className="text-slate-950 font-extrabold">INR {Number(activeActionRequest.requestedAmount).toLocaleString('en-IN')}</span>
                 </div>
                 {activeActionRequest.reason && (
                   <div className="pt-2 border-t border-slate-200 text-slate-600">
@@ -6283,7 +6283,7 @@ function DiscountsDashboard({ query, currentUserRole, onOpenBooking }: Discounts
                     id="action-remarks"
                     value={actionRemarks}
                     onChange={(e) => setActionRemarks(e.target.value)}
-                    className="w-full min-h-[80px] rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold focus:border-indigo-500 focus:outline-none"
+                    className="w-full min-h-[80px] rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold focus:border-slate-950 focus:outline-none"
                     placeholder="Provide any comments or instructions..."
                   />
                 </div>

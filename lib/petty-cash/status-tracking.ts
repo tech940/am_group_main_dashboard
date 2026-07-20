@@ -2,7 +2,7 @@
 // No `server-only` import here so both the server query and the client board
 // can share the exact same status -> stage/approver mapping.
 
-export type PettyCashApprover = 'EA' | 'MD' | 'Accounts'
+export type PettyCashApprover = 'ED' | 'EA' | 'MD' | 'Accounts'
 
 // 'pending'  = actively waiting on an approver (counts towards "time waiting")
 // 'draft'    = created but not yet submitted into the approval chain
@@ -20,7 +20,11 @@ export type PettyCashStageInfo = {
 // have no pending approver.
 const STAGE_INFO: Record<string, PettyCashStageInfo> = {
   draft: { stageLabel: 'Draft', approver: null, state: 'draft' },
-  submitted: { stageLabel: 'EA Approval', approver: 'EA', state: 'pending' },
+  submitted: { stageLabel: 'ED Approval', approver: 'ED', state: 'pending' },
+  ed_pending: { stageLabel: 'ED Approval', approver: 'ED', state: 'pending' },
+  ed_on_hold: { stageLabel: 'ED Approval · On Hold', approver: 'ED', state: 'pending' },
+  ed_approved: { stageLabel: 'EA Approval', approver: 'EA', state: 'pending' },
+  ed_rejected: { stageLabel: 'Rejected by ED', approver: null, state: 'terminal' },
   ea_pending: { stageLabel: 'EA Approval', approver: 'EA', state: 'pending' },
   ea_on_hold: { stageLabel: 'EA Approval · On Hold', approver: 'EA', state: 'pending' },
   ea_approved: { stageLabel: 'MD Approval', approver: 'MD', state: 'pending' },
@@ -44,12 +48,13 @@ export function getPettyCashStageInfo(status: string | null | undefined): PettyC
 }
 
 // Summary buckets shown as the counts row at the top of the board.
-export const PETTY_CASH_STAGE_BUCKETS = ['EA Approval', 'MD Approval', 'Accounts', 'Completed', 'Rejected'] as const
+export const PETTY_CASH_STAGE_BUCKETS = ['ED Approval', 'EA Approval', 'MD Approval', 'Accounts', 'Completed', 'Rejected'] as const
 export type PettyCashStageBucket = typeof PETTY_CASH_STAGE_BUCKETS[number]
 
 export function getPettyCashStageBucket(status: string | null | undefined): PettyCashStageBucket | null {
   const info = getPettyCashStageInfo(status)
   if (info.state === 'pending') {
+    if (info.approver === 'ED') return 'ED Approval'
     if (info.approver === 'EA') return 'EA Approval'
     if (info.approver === 'MD') return 'MD Approval'
     if (info.approver === 'Accounts') return 'Accounts'

@@ -96,7 +96,8 @@ const OPEN_REQUEST_STATUSES = ['draft', 'submitted', ...PENDING_STATUSES]
 function canActOnRequest(role: string, request: PettyCashRequest) {
   const status = request.status
   if (role === 'developer' || role === 'manager' || role === 'general_manager') return PENDING_STATUSES.includes(status)
-  if (role === 'ea') return status === 'ea_pending' || status === 'ea_on_hold'
+  if (role === 'ed' || role === 'sales_manager') return status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold'
+  if (role === 'ea') return status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved'
   if (role === 'md') return status === 'md_pending' || status === 'md_on_hold'
   if (role === 'accounts') return status === 'accounts_pending' || status === 'accounts_on_hold'
   return false
@@ -104,7 +105,8 @@ function canActOnRequest(role: string, request: PettyCashRequest) {
 
 function stageForRequest(request: PettyCashRequest): ApprovalStage {
   const status = request.status
-  if (status === 'ea_pending' || status === 'ea_on_hold') return 'ea_approval'
+  if (status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold') return 'ed_approval'
+  if (status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved') return 'ea_approval'
   if (status === 'md_pending' || status === 'md_on_hold') return 'md_approval'
   return 'accounts'
 }
@@ -112,6 +114,7 @@ function stageForRequest(request: PettyCashRequest): ApprovalStage {
 // Short, human "current stage" for the queue — makes it obvious at a glance where
 // a request is sitting and who needs to act next.
 function pettyCashStageLabel(status: string): { label: string; className: string } {
+  if (status === 'submitted' || status.startsWith('ed_')) return { label: 'ED', className: 'bg-sky-50 text-sky-700 ring-sky-200' }
   if (status.startsWith('ea_')) return { label: 'EA', className: 'bg-amber-50 text-amber-700 ring-amber-200' }
   if (status.startsWith('md_')) return { label: 'MD', className: 'bg-blue-50 text-blue-700 ring-blue-200' }
   if (status.startsWith('accounts')) return { label: 'Accounts', className: 'bg-violet-50 text-violet-700 ring-violet-200' }
@@ -299,7 +302,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
   const currentAllocation = payload?.currentAllocation || null
   const allocationAmount = Number(normalizeAllocatedAmount(currentAllocation))
   const spentAmount = Number(normalizeSpentAmount(currentAllocation))
-  const remainingAmount = summary?.remainingAmount ?? Math.max(0, allocationAmount - spentAmount)
+  const remainingAmount = summary?.remainingAmount ?? (allocationAmount - spentAmount)
   const spendPercentage = allocationAmount > 0 ? Math.min(100, Math.round((spentAmount / allocationAmount) * 100)) : 0
   const userRole = payload?.user.role || ''
   const currentBranchId = payload?.user.brand || ''
@@ -361,7 +364,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
   const allocationTotals = useMemo(() => allocations.reduce((acc, allocation) => {
     acc.allocated += Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
     acc.spent += Number(allocation.spentAmount || allocation.spent_amount || 0)
-    acc.remaining += Number(allocation.remainingAmount ?? Math.max(0, Number(allocation.allocatedAmount || allocation.allocated_amount || 0) - Number(allocation.spentAmount || allocation.spent_amount || 0)))
+    acc.remaining += Number(allocation.remainingAmount ?? (Number(allocation.allocatedAmount || allocation.allocated_amount || 0) - Number(allocation.spentAmount || allocation.spent_amount || 0)))
     return acc
   }, { allocated: 0, spent: 0, remaining: 0 }), [allocations])
   const contentLoading = dashboardLoading || ledgerLoading
@@ -437,7 +440,6 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
     if (!currentAllocation) { setError('No active allocation to post against.'); return }
     if (!location || !requestLocationOptions.includes(location)) { setError('Please select the location where the money was spent.'); return }
     if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a valid amount greater than 0.'); return }
-    if (amount > remainingAmount) { setError('Amount exceeds the remaining balance.'); return }
     if (purpose.length < 5) { setError('Purpose must be at least 5 characters.'); return }
     if (expenseFiles.length === 0) { setError('Please upload at least one bill image or PDF.'); return }
 
@@ -682,7 +684,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
                   {allocations.map((allocation) => {
                     const allocated = Number(allocation.allocatedAmount || allocation.allocated_amount || 0)
                     const spent = Number(allocation.spentAmount || allocation.spent_amount || 0)
-                    const remaining = Number(allocation.remainingAmount ?? Math.max(0, allocated - spent))
+                    const remaining = Number(allocation.remainingAmount ?? (allocated - spent))
                     return (
                       <button
                         key={allocation.id}
@@ -786,7 +788,14 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
               { header: 'Allocation #', cell: (allocation) => <span className="font-mono text-xs font-bold text-slate-500">{allocation.allocationNumber || allocation.allocation_number || '—'}</span> },
               { header: 'Allocated', align: 'right', cell: (allocation) => <span className="font-black tabular-nums text-slate-900">{formatCurrency(allocation.allocatedAmount || allocation.allocated_amount)}</span> },
               { header: 'Spent', align: 'right', cell: (allocation) => <span className="font-black tabular-nums text-rose-600">{formatCurrency(allocation.spentAmount || allocation.spent_amount)}</span> },
-              { header: 'Remaining', align: 'right', cell: (allocation) => <span className="font-black tabular-nums text-emerald-600">{formatCurrency(allocation.remainingAmount ?? Math.max(0, Number(allocation.allocatedAmount || allocation.allocated_amount || 0) - Number(allocation.spentAmount || allocation.spent_amount || 0)))}</span> },
+              { header: 'Remaining', align: 'right', cell: (allocation) => {
+                const rem = Number(allocation.remainingAmount ?? (Number(allocation.allocatedAmount || allocation.allocated_amount || 0) - Number(allocation.spentAmount || allocation.spent_amount || 0)))
+                return (
+                  <span className={cn('font-black tabular-nums', rem < 0 ? 'text-rose-600 font-extrabold' : 'text-emerald-600')}>
+                    {formatCurrency(rem)}
+                  </span>
+                )
+              }},
               { header: 'Status', cell: (allocation) => <StatusPill status={allocation.status} /> },
               { header: 'Allocated To', cell: (allocation) => <span className="text-slate-600">{allocation.allocatedToName || '—'}</span> },
             ]}

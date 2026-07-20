@@ -141,7 +141,6 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'PhoneCall',
-    badge: 'TEST',
   },
   {
     id: 'kia_lead_followups',
@@ -151,7 +150,6 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'Clock',
-    badge: 'TEST',
   },
   {
     id: 'kia_call_analytics',
@@ -161,7 +159,6 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'PieChart',
-    badge: 'TEST',
   },
   {
     id: 'kia_demo_cars_list',

@@ -66,7 +66,7 @@ export const createPettyCashExpenseSchema = z.object({
 export const pettyCashWorkflowSchema = z.object({
   id: uuidSchema,
   action: z.enum(['approve', 'reject', 'hold']),
-  stage: z.enum(['ea_approval', 'md_approval', 'accounts']),
+  stage: z.enum(['ed_approval', 'ea_approval', 'md_approval', 'accounts']),
   remarks: optionalText,
   allocatedAmount: moneySchema.optional(),
 })
@@ -117,7 +117,7 @@ function parseMoney(value: number | string | null | undefined) {
 }
 
 function getRemainingBalance(allocation: Pick<PettyCashAllocationRecord, 'allocatedAmount' | 'spentAmount'>) {
-  return Math.max(0, parseMoney(allocation.allocatedAmount) - parseMoney(allocation.spentAmount))
+  return parseMoney(allocation.allocatedAmount) - parseMoney(allocation.spentAmount)
 }
 
 function getTopUpStatus(allocation: Pick<PettyCashAllocationRecord, 'allocatedAmount' | 'spentAmount'> | null | undefined) {
@@ -279,14 +279,16 @@ export async function listPettyCashRequests(appUser: AppUser, input: z.input<typ
 type PettyCashRequestStatus = (typeof pettyCashRequests.$inferSelect)['status']
 
 const PETTY_CASH_APPROVAL_STATUSES = {
-  ea_approval: ['ea_pending', 'ea_on_hold'],
+  ed_approval: ['submitted', 'ed_pending', 'ed_on_hold'],
+  ea_approval: ['ea_pending', 'ea_on_hold', 'ed_approved'],
   md_approval: ['md_pending', 'md_on_hold'],
   accounts: ['accounts_pending', 'accounts_on_hold'],
 } as const satisfies Record<string, readonly PettyCashRequestStatus[]>
 
 /** Which approval stage a request's status currently sits at (null if terminal/creator-side). */
-export function pettyCashStageForStatus(status: string): 'ea_approval' | 'md_approval' | 'accounts' | null {
-  if (status === 'ea_pending' || status === 'ea_on_hold') return 'ea_approval'
+export function pettyCashStageForStatus(status: string): 'ed_approval' | 'ea_approval' | 'md_approval' | 'accounts' | null {
+  if (status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold') return 'ed_approval'
+  if (status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved') return 'ea_approval'
   if (status === 'md_pending' || status === 'md_on_hold') return 'md_approval'
   if (status === 'accounts_pending' || status === 'accounts_on_hold') return 'accounts'
   return null
@@ -294,9 +296,11 @@ export function pettyCashStageForStatus(status: string): 'ea_approval' | 'md_app
 
 /** The request statuses that belong in a given role's pending-approval queue. */
 function pettyCashApprovalStatusesForRole(role: AppUser['role']): PettyCashRequestStatus[] {
+  if (role === 'ed' || role === 'sales_manager') return [...PETTY_CASH_APPROVAL_STATUSES.ed_approval]
   if (role === 'ea') return [...PETTY_CASH_APPROVAL_STATUSES.ea_approval]
   if (role === 'md' || role === 'eba' || role === 'developer') {
     return [
+      ...PETTY_CASH_APPROVAL_STATUSES.ed_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.ea_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.md_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.accounts,
@@ -620,8 +624,8 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
     throw new Error(topUpStatus.topUpReason)
   }
 
-  const status = input.status === 'draft' ? 'draft' : 'ea_pending'
-  const currentStage = input.status === 'draft' ? 'draft' : 'ea_approval'
+  const status = input.status === 'draft' ? 'draft' : 'ed_pending'
+  const currentStage = input.status === 'draft' ? 'draft' : 'ed_approval'
 
   const [request] = await db
     .insert(pettyCashRequests)
@@ -638,7 +642,7 @@ export async function createPettyCashRequest(appUser: AppUser, rawInput: unknown
       requestForm: input.requestForm,
       supportingFiles: [],
       createdBy: appUser.id,
-      submittedAt: status === 'ea_pending' ? new Date() : null,
+      submittedAt: status === 'draft' ? null : new Date(),
     })
     .returning()
 
@@ -688,10 +692,6 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
     throw new Error('No active petty cash allocation found')
   }
 
-  if (input.amount > getRemainingBalance(activeAllocation)) {
-    throw new Error('Expense exceeds remaining allocation balance')
-  }
-
   const now = new Date()
   const { expense } = await db.transaction(async (tx) => {
     const [updatedAllocation] = await tx
@@ -702,12 +702,11 @@ export async function createPettyCashExpense(appUser: AppUser, rawInput: unknown
       })
       .where(and(
         eq(pettyCashAllocations.id, activeAllocation.id),
-        eq(pettyCashAllocations.status, 'active'),
-        sql`${pettyCashAllocations.allocatedAmount} - ${pettyCashAllocations.spentAmount} >= ${toMoney(input.amount)}::numeric`
+        eq(pettyCashAllocations.status, 'active')
       ))
       .returning()
 
-    if (!updatedAllocation) throw new Error('Expense exceeds remaining allocation balance')
+    if (!updatedAllocation) throw new Error('Active petty cash allocation not found or updated')
 
     const [expense] = await tx.insert(pettyCashExpenses).values({
       expenseNumber: makeReference('PCE'),
@@ -789,8 +788,22 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
   let newStatus = request.status
   let newStage = request.currentStage
 
-  if (input.stage === 'ea_approval') {
-    if (!['ea_pending', 'ea_on_hold'].includes(request.status)) throw new Error('Request is not awaiting EA approval')
+  if (input.stage === 'ed_approval') {
+    if (!['submitted', 'ed_pending', 'ed_on_hold'].includes(request.status)) throw new Error('Request is not awaiting ED approval')
+    if (input.action === 'approve') {
+      updateData = { ...updateData, status: 'ea_pending', currentStage: 'ea_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: null }
+      newStatus = 'ea_pending'
+      newStage = 'ea_approval'
+    } else if (input.action === 'hold') {
+      updateData = { ...updateData, status: 'ed_on_hold', currentStage: 'ed_approval', edRemarks: input.remarks || null }
+      newStatus = 'ed_on_hold'
+      newStage = 'ed_approval'
+    } else {
+      updateData = { ...updateData, status: 'ed_rejected', currentStage: 'ed_approval', rejectedAt: now, rejectedBy: appUser.id, edRemarks: input.remarks || null }
+      newStatus = 'ed_rejected'
+    }
+  } else if (input.stage === 'ea_approval') {
+    if (!['ea_pending', 'ea_on_hold', 'ed_approved'].includes(request.status)) throw new Error('Request is not awaiting EA approval')
     if (input.action === 'approve') {
       updateData = { ...updateData, status: 'md_pending', currentStage: 'md_approval', eaApprovedBy: appUser.id, eaApprovedAt: now, eaRemarks: null }
       newStatus = 'md_pending'
@@ -996,8 +1009,18 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
   let newStatus = expense.status
   let newStage = expense.currentStage
 
-  if (input.stage === 'ea_approval') {
-    if (expense.status !== 'pending') throw new Error('Expense is not awaiting EA approval')
+  if (input.stage === 'ed_approval') {
+    if (!['pending', 'ed_pending'].includes(expense.status)) throw new Error('Expense is not awaiting ED approval')
+    if (input.action === 'approve') {
+      updateData = { ...updateData, status: 'ed_approved', currentStage: 'ea_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: input.remarks || null }
+      newStatus = 'ed_approved'
+      newStage = 'ea_approval'
+    } else {
+      updateData = { ...updateData, status: 'ed_rejected', rejectedAt: now, rejectedBy: appUser.id, edRemarks: input.remarks || null }
+      newStatus = 'ed_rejected'
+    }
+  } else if (input.stage === 'ea_approval') {
+    if (!['pending', 'ed_approved'].includes(expense.status)) throw new Error('Expense is not awaiting EA approval')
     if (input.action === 'approve') {
       updateData = { ...updateData, status: 'ea_approved', currentStage: 'md_approval', eaApprovedBy: appUser.id, eaApprovedAt: now, eaRemarks: input.remarks || null }
       newStatus = 'ea_approved'
@@ -1031,12 +1054,11 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
           })
           .where(and(
             eq(pettyCashAllocations.id, expense.allocationId),
-            eq(pettyCashAllocations.status, 'active'),
-            sql`${pettyCashAllocations.allocatedAmount} - ${pettyCashAllocations.spentAmount} >= ${toMoney(expense.amount)}::numeric`
+            eq(pettyCashAllocations.status, 'active')
           ))
           .returning()
 
-        if (!updatedAllocation) throw new Error('Expense exceeds remaining allocation balance')
+        if (!updatedAllocation) throw new Error('Active petty cash allocation not found or updated')
 
         const [updatedExpense] = await tx
           .update(pettyCashExpenses)
