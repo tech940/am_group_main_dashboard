@@ -1303,6 +1303,7 @@ function EmployeeScoringBreakdownDialog({ employee, onClose }: {
     return (
       <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
         <DialogContent className="max-w-md rounded-2xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.08)] bg-white p-12 flex flex-col items-center justify-center">
+          <DialogTitle className="sr-only">Loading breakdown data</DialogTitle>
           <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
           <p className="mt-2 text-xs font-bold text-slate-400">Loading breakdown data...</p>
         </DialogContent>

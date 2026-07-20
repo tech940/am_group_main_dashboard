@@ -48,11 +48,11 @@ export function RemarksDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl sm:max-w-[520px]">
-        <div className="bg-gradient-to-r from-[#023468] to-[#034b82] px-6 py-5 text-white">
-          <DialogHeader className="space-y-2 text-left">
-            <DialogTitle className="text-2xl font-black tracking-tight text-white">{title}</DialogTitle>
+        <div className="bg-slate-50 border-b border-slate-100 px-6 py-5">
+          <DialogHeader className="space-y-1 text-left">
+            <DialogTitle className="text-xl font-black tracking-tight text-slate-900">{title}</DialogTitle>
             {description && (
-              <p className="text-sm leading-6 text-[#edf4fb]">{description}</p>
+              <p className="text-sm font-medium leading-relaxed text-slate-600">{description}</p>
             )}
           </DialogHeader>
         </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Clock3, ClipboardList, Hourglass, RefreshCw, ShieldCheck, UserCheck } from 'lucide-react'
+import { Clock3, ClipboardList, Hourglass, RefreshCw, ShieldCheck, UserCheck, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { getBranchLabel } from '@/lib/branches'
@@ -77,6 +77,7 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
   const [filter, setFilter] = useState<StatusFilter>('all')
   // Ticks every minute so the "time waiting" column stays live without a refetch.
   const [now, setNow] = useState(() => Date.now())
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const load = useCallback(async (options?: { preserveData?: boolean }) => {
     if (options?.preserveData) setRefreshing(true)
@@ -94,6 +95,21 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
     }
   }, [])
 
+  const handleDeleteRequest = async (requestId: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (!confirm('Are you sure you want to delete this petty cash request?')) return
+    setDeletingId(requestId)
+    try {
+      const res = await fetch(`/api/petty-cash/requests/${requestId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to delete request')
+      await load({ preserveData: true })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not delete request')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   useEffect(() => {
     const timer = setTimeout(() => { void load() }, 0)
     return () => clearTimeout(timer)
@@ -103,6 +119,31 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
     const interval = setInterval(() => setNow(Date.now()), 60_000)
     return () => clearInterval(interval)
   }, [])
+
+  const canDeleteRequest = useCallback((request: PettyCashRequest) => {
+    // Condition 1: Must be in a pending stage (not approved / completed / rejected)
+    const stageInfo = getPettyCashStageInfo(request.status)
+    const isPending = stageInfo.state === 'pending' || request.status === 'draft' || request.status === 'ed_pending' || request.status === 'ea_pending' || request.status === 'md_pending' || request.status === 'accounts_pending'
+    if (!isPending) return false
+
+    // Condition 2: Current user must be the submitter of the request (or developer/admin)
+    const curUserId = (payload as any)?.currentUserId
+    const curEmail = (payload as any)?.currentUserEmail?.toLowerCase()
+    const curName = (payload as any)?.currentUserName?.toLowerCase()
+    const curRole = (payload as any)?.currentUserRole
+
+    if (curRole === 'developer' || curRole === 'super_admin') return true
+
+    const reqCreatedBy = (request as any).createdBy || (request as any).created_by
+    const reqEmail = ((request as any).requestedByEmail || (request as any).requested_by_email || '').toLowerCase()
+    const reqName = (requestedByName(request) || '').toLowerCase()
+
+    if (curUserId && reqCreatedBy && curUserId === reqCreatedBy) return true
+    if (curEmail && reqEmail && curEmail === reqEmail) return true
+    if (curName && reqName && curName === reqName) return true
+
+    return false
+  }, [payload])
 
   const requests = useMemo(() => payload?.requests ?? [], [payload])
 
@@ -273,6 +314,26 @@ export function PettyCashStatusBoard({ embedded = false }: { embedded?: boolean 
               header: 'Time Waiting',
               align: 'right',
               cell: (request) => <WaitingCell request={request} now={now} />,
+            },
+            {
+              header: 'Actions',
+              align: 'right' as const,
+              cell: (request) => {
+                if (!canDeleteRequest(request)) return <span className="text-xs font-semibold text-slate-400">—</span>
+                return (
+                  <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={(e) => void handleDeleteRequest(request.id, e)}
+                      disabled={deletingId === request.id}
+                      title="Delete pending request"
+                      className="flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                    </button>
+                  </div>
+                )
+              },
             },
           ]}
         />

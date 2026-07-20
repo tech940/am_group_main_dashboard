@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { kiaBookingActivity, kiaBookings, kiaLeadFollowups, users } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
 import { canRevealKiaFollowupPhone } from '@/lib/kia/pii'
+import { getUserDealerScope } from '@/lib/auth/dealer-scope'
 
 // The KIA lead follow-up pipeline. A follow-up is a scheduled "next touch" on a booking.
 //
@@ -211,6 +212,7 @@ export async function listFollowups(appUser: AppUser, input: {
   search?: string | null; 
   reason?: string | null; 
   dealer?: string | null;
+  allowedDealers?: string[] | null;
   startDate?: string | null;
   endDate?: string | null;
 }) {
@@ -227,7 +229,14 @@ export async function listFollowups(appUser: AppUser, input: {
   ]
   if (input.mine) where.push(eq(kiaLeadFollowups.assignedTo, appUser.id))
   if (input.reason && REASONS.has(input.reason)) where.push(eq(kiaLeadFollowups.reason, input.reason))
-  if (input.dealer) where.push(eq(kiaLeadFollowups.dealerCode, input.dealer))
+  
+  const allowedDealers = input.allowedDealers !== undefined ? input.allowedDealers : getUserDealerScope(appUser, 'kia')
+  if (allowedDealers && allowedDealers.length) {
+    where.push(inArray(kiaLeadFollowups.dealerCode, allowedDealers))
+  } else if (input.dealer) {
+    where.push(eq(kiaLeadFollowups.dealerCode, input.dealer))
+  }
+
   if (search) {
     where.push(or(
       ilike(kiaBookings.customerName, `%${search}%`),
@@ -244,7 +253,11 @@ export async function listFollowups(appUser: AppUser, input: {
   ]
   if (input.mine) cancelledWhere.push(eq(kiaLeadFollowups.assignedTo, appUser.id))
   if (input.reason && REASONS.has(input.reason)) cancelledWhere.push(eq(kiaLeadFollowups.reason, input.reason))
-  if (input.dealer) cancelledWhere.push(eq(kiaLeadFollowups.dealerCode, input.dealer))
+  if (allowedDealers && allowedDealers.length) {
+    cancelledWhere.push(inArray(kiaLeadFollowups.dealerCode, allowedDealers))
+  } else if (input.dealer) {
+    cancelledWhere.push(eq(kiaLeadFollowups.dealerCode, input.dealer))
+  }
   if (search) {
     cancelledWhere.push(or(
       ilike(kiaBookings.customerName, `%${search}%`),

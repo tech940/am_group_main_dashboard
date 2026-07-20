@@ -18,6 +18,7 @@ import {
   TrendingDown,
   Wallet,
   XCircle,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { RemarksDialog } from '@/components/purchase-orders/remarks-dialog'
@@ -876,6 +877,36 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
     </div>
   )
 
+  async function handleDeleteRequest(requestId: string) {
+    if (!confirm('Are you sure you want to delete this petty cash request?')) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/petty-cash/requests/${requestId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to delete request')
+      toast({ title: 'Request deleted', variant: 'success' })
+      await refreshAfterMutation()
+    } catch (err) {
+      toast({ title: 'Could not delete', description: err instanceof Error ? err.message : 'Try again', variant: 'error' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleDeleteExpense(expenseId: string) {
+    if (!confirm('Are you sure you want to delete this expense?')) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/petty-cash/expenses/${expenseId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to delete expense')
+      toast({ title: 'Expense deleted', variant: 'success' })
+      await refreshAfterMutation()
+    } catch (err) {
+      toast({ title: 'Could not delete', description: err instanceof Error ? err.message : 'Try again', variant: 'error' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   /* ---- table renderers (closures over state/handlers) ---- */
   function renderRequestTable(rows: PettyCashRequest[], withActions: boolean) {
     return (
@@ -901,27 +932,36 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
               }]
             : []),
           { header: 'Status', cell: (request) => <StatusPill status={request.status} /> },
-          ...(withActions
-            ? [{
-                header: 'Actions',
-                align: 'right' as const,
-                cell: (request: PettyCashRequest) => (
-                  canActOnRequest(userRole, request) ? (
-                    <div className="flex items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()}>
-                      <button type="button" onClick={() => void applyRequestWorkflow(request.id, stageForRequest(request), 'approve')} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                      </button>
-                      <button type="button" onClick={() => setWorkflowDialog({ request, action: 'hold' })} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg border border-amber-200 px-2.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50">
-                        <PauseCircle className="h-3.5 w-3.5" /> Hold
-                      </button>
-                      <button type="button" onClick={() => setWorkflowDialog({ request, action: 'reject' })} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg border border-rose-200 px-2.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-50">
-                        <XCircle className="h-3.5 w-3.5" /> Reject
-                      </button>
-                    </div>
-                  ) : <span className="text-xs font-semibold text-slate-400">—</span>
-                ),
-              }]
-            : [{ header: 'Created', align: 'right' as const, cell: (request: PettyCashRequest) => <span className="text-xs font-semibold text-slate-500">{formatDateTime(request.createdAt || request.created_at)}</span> }]),
+          {
+            header: 'Actions',
+            align: 'right' as const,
+            cell: (request: PettyCashRequest) => (
+              <div className="flex items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()}>
+                {withActions && canActOnRequest(userRole, request) && (
+                  <>
+                    <button type="button" onClick={() => void applyRequestWorkflow(request.id, stageForRequest(request), 'approve')} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                    </button>
+                    <button type="button" onClick={() => setWorkflowDialog({ request, action: 'hold' })} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg border border-amber-200 px-2.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50">
+                      <PauseCircle className="h-3.5 w-3.5" /> Hold
+                    </button>
+                    <button type="button" onClick={() => setWorkflowDialog({ request, action: 'reject' })} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg border border-rose-200 px-2.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-50">
+                      <XCircle className="h-3.5 w-3.5" /> Reject
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteRequest(request.id)}
+                  disabled={submitting}
+                  title="Delete request"
+                  className="flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/50 px-2.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+              </div>
+            ),
+          },
         ]}
       />
     )

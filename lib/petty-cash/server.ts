@@ -401,6 +401,8 @@ export async function getPettyCashStatusBoard(appUser: AppUser) {
       branchId: pettyCashRequests.branchId,
       status: pettyCashRequests.status,
       requestedByName: pettyCashRequests.requestedByName,
+      requestedByEmail: pettyCashRequests.requestedByEmail,
+      createdBy: pettyCashRequests.createdBy,
       requestedAmount: pettyCashRequests.requestedAmount,
       purpose: pettyCashRequests.purpose,
       department: pettyCashRequests.department,
@@ -414,6 +416,10 @@ export async function getPettyCashStatusBoard(appUser: AppUser) {
 
   return {
     generatedAt: new Date().toISOString(),
+    currentUserId: appUser.id,
+    currentUserEmail: appUser.email,
+    currentUserName: appUser.fullName,
+    currentUserRole: appUser.role,
     requests: rows.map((row) => serializeUtcTimestampFields(row as Record<string, unknown>, ['createdAt', 'updatedAt'])),
   }
 }
@@ -1208,4 +1214,47 @@ export async function getPettyCashLedger(appUser: AppUser, allocationId?: string
     .limit(100)
 
   return rows.map((row) => ({ ...serializeLedger(row.ledger as Record<string, unknown>), location: row.location || null }))
+}
+
+export async function deletePettyCashRequest(appUser: AppUser, requestId: string) {
+  const [existing] = await db.select().from(pettyCashRequests).where(eq(pettyCashRequests.id, requestId)).limit(1)
+  if (!existing) throw new Error('Petty cash request not found')
+
+  // Rule 1: Only pending requests can be deleted
+  const isPending = existing.status === 'draft' || existing.status === 'ed_pending' || existing.status === 'ea_pending' || existing.status === 'md_pending' || existing.status === 'accounts_pending'
+  if (!isPending) {
+    throw new Error('Only pending requests can be deleted.')
+  }
+
+  // Rule 2: Only the user who submitted the request can delete it (super admin / developer allowed)
+  const isSubmitter = existing.createdBy === appUser.id ||
+    (Boolean(existing.requestedByEmail) && Boolean(appUser.email) && String(existing.requestedByEmail).toLowerCase() === String(appUser.email).toLowerCase()) ||
+    (Boolean(existing.requestedByName) && Boolean(appUser.fullName) && String(existing.requestedByName).toLowerCase() === String(appUser.fullName).toLowerCase())
+  const isDeveloperOrAdmin = (appUser.role as string) === 'developer' || (appUser.role as string) === 'super_admin'
+
+  if (!isSubmitter && !isDeveloperOrAdmin) {
+    throw new Error('Only the user who submitted this request can delete it.')
+  }
+
+  await db.transaction(async (tx) => {
+    const [alloc] = await tx.select({ id: pettyCashAllocations.id }).from(pettyCashAllocations).where(eq(pettyCashAllocations.requestId, requestId)).limit(1)
+    if (alloc) {
+      await tx.delete(pettyCashLedgerEntries).where(eq(pettyCashLedgerEntries.allocationId, alloc.id))
+      await tx.delete(pettyCashExpenses).where(eq(pettyCashExpenses.allocationId, alloc.id))
+      await tx.delete(pettyCashAllocations).where(eq(pettyCashAllocations.id, alloc.id))
+    }
+    await tx.delete(pettyCashRequests).where(eq(pettyCashRequests.id, requestId))
+  })
+  return { ok: true }
+}
+
+export async function deletePettyCashExpense(appUser: AppUser, expenseId: string) {
+  const [existing] = await db.select().from(pettyCashExpenses).where(eq(pettyCashExpenses.id, expenseId)).limit(1)
+  if (!existing) throw new Error('Petty cash expense not found')
+
+  await db.transaction(async (tx) => {
+    await tx.delete(pettyCashLedgerEntries).where(eq(pettyCashLedgerEntries.expenseId, expenseId))
+    await tx.delete(pettyCashExpenses).where(eq(pettyCashExpenses.id, expenseId))
+  })
+  return { ok: true }
 }
