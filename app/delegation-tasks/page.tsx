@@ -14,7 +14,7 @@ export default async function DelegationTasksRoute() {
   if (!appUser) redirect('/auth/login')
 
   const role = String(appUser.role || '').trim().toLowerCase()
-  const allowed = ['ea', 'eba', 'md', 'ceo', 'ed', 'developer', 'admin'].includes(role)
+  const allowed = ['ea', 'eba', 'md', 'developer', 'admin'].includes(role)
   if (!allowed) forbidden()
 
   const permission = await requirePermission(appUser, 'delegation_tasks.view')

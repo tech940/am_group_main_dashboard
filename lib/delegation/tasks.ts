@@ -1,5 +1,4 @@
-import 'server-only'
-import { and, desc, eq, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm'
+import { and, desc, eq, ilike, inArray, isNull, lte, or, sql, aliasedTable } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { delegationTaskActivity, delegationTasks, users, delegationContacts } from '@/lib/db/schema'
 import type { AppUser } from '@/lib/auth/app-user'
@@ -33,6 +32,7 @@ export type CreateTaskInput = {
   priority?: string | null
   brand?: string | null
   dealerCode?: string | null
+  mdUserId?: string | null
   isExternal?: boolean
   externalContactName?: string | null
   externalContactEmail?: string | null
@@ -48,6 +48,7 @@ export type UpdateTaskInput = {
   dueAt?: string | null
   followUpAt?: string | null
   priority?: string | null
+  mdUserId?: string | null
   isExternal?: boolean
   remark?: string | null
 }
@@ -102,18 +103,52 @@ async function addActivity(
  *  - a pure assignee → only created-by/assigned-to them.
  * Fail closed: an unidentifiable viewer sees nothing (mirrors lib/kia/bookings.ts).
  */
-function scopeFilter(viewer: Viewer) {
+/**
+ * The row-visibility predicate:
+ *  - GROUP-WIDE (brand 'all' / developer / admin) → all tasks, every brand.
+ *  - STRICT USER/BRANCH EA SCOPING → MD/EA sees tasks created by or assigned to themselves OR their branch EA/MD.
+ *  - Fail closed: an unidentifiable viewer sees nothing.
+ */
+async function getScopeFilter(viewer: Viewer) {
   if (isGroupWideDelegation(viewer)) return undefined
   if (!viewer.id) return sql`false`
+
+  const role = String(viewer.role || '').trim().toLowerCase()
   const own = or(eq(delegationTasks.createdBy, viewer.id), eq(delegationTasks.assignedTo, viewer.id))
-  const brands = concreteBrands(viewer.brand)
-  if (canDelegateTasks(viewer.role) && brands.length) {
-    return or(own, inArray(delegationTasks.brand, brands))
+
+  if (role === 'md') {
+    return or(
+      eq(delegationTasks.mdUserId, viewer.id),
+      own,
+      and(isNull(delegationTasks.mdUserId), eq(delegationTasks.createdBy, viewer.id))
+    )
   }
+
+  if (role === 'ea' || role === 'eba') {
+    const mdUsersInBrand = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(
+        eq(users.isActive, true),
+        isNull(users.deletedAt),
+        or(eq(users.role, 'md'), eq(users.role, 'ceo'))
+      ))
+
+    const mdIds = mdUsersInBrand.map((u) => u.id)
+    if (mdIds.length > 0) {
+      return or(
+        own,
+        inArray(delegationTasks.mdUserId, mdIds),
+        and(isNull(delegationTasks.mdUserId), inArray(delegationTasks.createdBy, mdIds))
+      )
+    }
+    return own
+  }
+
   return own
 }
 
-function decorate(row: typeof delegationTasks.$inferSelect & { assignedPhone?: string | null }, viewer: Viewer) {
+function decorate(row: typeof delegationTasks.$inferSelect & { assignedPhone?: string | null; mdUserName?: string | null }, viewer: Viewer) {
   const isCreator = row.createdBy === viewer.id
   const isAssignee = row.assignedTo === viewer.id
   const canManage = isCreator || isGroupWideDelegation(viewer)
@@ -121,13 +156,13 @@ function decorate(row: typeof delegationTasks.$inferSelect & { assignedPhone?: s
     row.dueAt && row.status === 'assigned' && new Date(row.dueAt) < new Date(),
   )
   const isEa = ['ea', 'eba', 'admin', 'developer'].includes(String(viewer.role || '').trim().toLowerCase())
-  return { ...row, viewerIsCreator: isCreator, viewerIsAssignee: isAssignee, viewerCanManage: canManage, viewerIsEa: isEa, isOverdue }
+  return { ...row, mdUserName: row.mdUserName || null, viewerIsCreator: isCreator, viewerIsAssignee: isAssignee, viewerCanManage: canManage, viewerIsEa: isEa, isOverdue }
 }
 
 // ── Reads ─────────────────────────────────────────────────────────────────────────────────────
 export async function listDelegationTasks(input: TaskListInput, viewer: Viewer) {
   const filters = [] as (ReturnType<typeof eq> | ReturnType<typeof or> | ReturnType<typeof sql>)[]
-  const scope = scopeFilter(viewer)
+  const scope = await getScopeFilter(viewer)
   if (scope) filters.push(scope)
 
   // Tab narrows WITHIN the scope: 'mine' = assigned to me, 'delegated' = created by me, 'all' = the
@@ -159,6 +194,8 @@ export async function listDelegationTasks(input: TaskListInput, viewer: Viewer) 
     }
   }
 
+  const mdUsersTable = aliasedTable(users, 'md_users')
+
   const rows = await db
     .select({
       id: delegationTasks.id,
@@ -178,6 +215,8 @@ export async function listDelegationTasks(input: TaskListInput, viewer: Viewer) 
       completedBy: delegationTasks.completedBy,
       completedAt: delegationTasks.completedAt,
       reminderSentAt: delegationTasks.reminderSentAt,
+      mdUserId: delegationTasks.mdUserId,
+      mdUserName: mdUsersTable.fullName,
       createdBy: delegationTasks.createdBy,
       metadata: delegationTasks.metadata,
       createdAt: delegationTasks.createdAt,
@@ -187,6 +226,7 @@ export async function listDelegationTasks(input: TaskListInput, viewer: Viewer) 
     .from(delegationTasks)
     .leftJoin(users, eq(delegationTasks.assignedTo, users.id))
     .leftJoin(delegationContacts, eq(delegationTasks.externalContactId, delegationContacts.id))
+    .leftJoin(mdUsersTable, eq(delegationTasks.mdUserId, mdUsersTable.id))
     .where(filters.length ? and(...filters) : undefined)
     // Open first, then by due date (soonest / overdue first), then newest.
     .orderBy(
@@ -200,7 +240,9 @@ export async function listDelegationTasks(input: TaskListInput, viewer: Viewer) 
 }
 
 export async function getDelegationTaskDetail(id: string, viewer: Viewer) {
-  const scope = scopeFilter(viewer)
+  const scope = await getScopeFilter(viewer)
+  const mdUsersTable = aliasedTable(users, 'md_users')
+
   const [row] = await db
     .select({
       id: delegationTasks.id,
@@ -220,6 +262,8 @@ export async function getDelegationTaskDetail(id: string, viewer: Viewer) {
       completedBy: delegationTasks.completedBy,
       completedAt: delegationTasks.completedAt,
       reminderSentAt: delegationTasks.reminderSentAt,
+      mdUserId: delegationTasks.mdUserId,
+      mdUserName: mdUsersTable.fullName,
       createdBy: delegationTasks.createdBy,
       metadata: delegationTasks.metadata,
       createdAt: delegationTasks.createdAt,
@@ -229,6 +273,7 @@ export async function getDelegationTaskDetail(id: string, viewer: Viewer) {
     .from(delegationTasks)
     .leftJoin(users, eq(delegationTasks.assignedTo, users.id))
     .leftJoin(delegationContacts, eq(delegationTasks.externalContactId, delegationContacts.id))
+    .leftJoin(mdUsersTable, eq(delegationTasks.mdUserId, mdUsersTable.id))
     .where(scope ? and(eq(delegationTasks.id, id), scope) : eq(delegationTasks.id, id))
     .limit(1)
   if (!row) return null
@@ -254,7 +299,7 @@ export async function createDelegationTask(input: CreateTaskInput, actor: AppUse
   const title = text(input.title) || (descVal ? descVal.split('\n')[0].substring(0, 50) : 'Untitled Task')
   if (!title) throw new Error('A task description or title is required.')
 
-  const priority = text(input.priority) || 'normal'
+  const priority = text(input.priority) || 'high'
   if (!(TASK_PRIORITIES as readonly string[]).includes(priority)) throw new Error('Invalid priority.')
 
   return db.transaction(async (tx) => {
@@ -414,6 +459,7 @@ export async function createDelegationTask(input: CreateTaskInput, actor: AppUse
         priority,
         brand: taskBrand,
         dealerCode: nullableText(input.dealerCode),
+        mdUserId: nullableText(input.mdUserId) || (actor.role === 'md' ? actor.id : null),
         createdBy: actor.id,
       })
       .returning()
@@ -534,6 +580,9 @@ export async function updateDelegationTask(id: string, action: TaskAction, input
           if (!(TASK_PRIORITIES as readonly string[]).includes(p)) throw new Error('Invalid priority.')
           updates.priority = p
         }
+        if (input.mdUserId !== undefined) {
+          updates.mdUserId = nullableText(input.mdUserId)
+        }
         activityType = 'edited'
         activityMessage = 'Task details updated'
         break
@@ -570,10 +619,12 @@ export type DueTask = {
   status: string
   assignedName: string | null
   assignedEmail: string | null
+  mdUserEmail: string | null
 }
 
 /** Open pending tasks (assigned or in_progress) that receive daily morning reminders at 9:30 AM until marked done. */
 export async function getDueDelegationTasks(): Promise<DueTask[]> {
+  const mdUsersTable = aliasedTable(users, 'md_users')
   const rows = await db
     .select({
       id: delegationTasks.id,
@@ -586,9 +637,11 @@ export async function getDueDelegationTasks(): Promise<DueTask[]> {
       assignedEmail: delegationTasks.assignedEmail,
       userEmail: users.email,
       userName: users.fullName,
+      mdUserEmail: mdUsersTable.email,
     })
     .from(delegationTasks)
     .leftJoin(users, eq(delegationTasks.assignedTo, users.id))
+    .leftJoin(mdUsersTable, eq(delegationTasks.mdUserId, mdUsersTable.id))
     .where(inArray(delegationTasks.status, ['assigned', 'in_progress']))
     .orderBy(delegationTasks.dueAt)
     .limit(1000)
@@ -602,6 +655,7 @@ export async function getDueDelegationTasks(): Promise<DueTask[]> {
     status: r.status || 'assigned',
     assignedName: r.assignedName || r.userName || 'Team Member',
     assignedEmail: r.assignedEmail || r.userEmail || null,
+    mdUserEmail: r.mdUserEmail || null,
   }))
 }
 

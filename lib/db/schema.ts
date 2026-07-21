@@ -2019,7 +2019,7 @@ export const delegationTasks = pgTable('delegation_tasks', {
   dueAt: timestamp('due_at', { withTimezone: true }),
   followUpAt: timestamp('follow_up_at', { withTimezone: true }),
   status: text('status').default('assigned').notNull(), // 'assigned' | 'in_progress' | 'done' | 'cancelled'
-  priority: text('priority').default('normal').notNull(), // 'low' | 'normal' | 'high'
+  priority: text('priority').default('high').notNull(), // 'low' | 'normal' | 'high'
   // Optional cross-brand tagging (non-enforcing)
   brand: text('brand'),
   dealerCode: text('dealer_code'),
@@ -2029,6 +2029,8 @@ export const delegationTasks = pgTable('delegation_tasks', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
   // Future email reminder (unused in v1)
   reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
+  // MD Ownership for strict EA/MD scoping (migration 0026)
+  mdUserId: uuid('md_user_id').references(() => users.id),
   // Audit
   createdBy: uuid('created_by').references(() => users.id).notNull(),
   metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}).notNull(),
@@ -2041,6 +2043,7 @@ export const delegationTasks = pgTable('delegation_tasks', {
   delegationTasksCreatedAtIdx: index('delegation_tasks_created_at_idx').on(table.createdAt),
   // Brand-scoped list filter + the group-MD per-branch rollup (migration 0025).
   delegationTasksBrandStatusIdx: index('delegation_tasks_brand_status_idx').on(table.brand, table.status),
+  delegationTasksMdIdx: index('delegation_tasks_md_idx').on(table.mdUserId, table.status),
 }))
 
 // Append-only, human-readable timeline for a task. Made IMMUTABLE by a DB trigger (migration 0024,

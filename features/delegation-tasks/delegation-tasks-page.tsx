@@ -20,7 +20,7 @@ type TaskRow = {
   assignedTo: string
   assignedName: string | null
   assignedEmail: string | null
-  assignedPhone: string | null
+  assignedPhone?: string | null
   dueAt: string | null
   followUpAt: string | null
   status: 'assigned' | 'in_progress' | 'done' | 'cancelled'
@@ -29,7 +29,11 @@ type TaskRow = {
   completionRemark: string | null
   completedAt: string | null
   createdBy: string
+  metadata: Record<string, unknown>
   createdAt: string
+  updatedAt: string
+  mdUserId?: string | null
+  mdUserName?: string | null
   viewerIsCreator: boolean
   viewerIsAssignee: boolean
   viewerCanManage: boolean
@@ -71,11 +75,13 @@ function fmtDateTime(v?: string | null) {
 }
 
 function getWhatsAppLink(r: any) {
-  if (!r.assignedPhone) return null
-  let phone = r.assignedPhone.replace(/\D/g, '')
+  let phone = r.assignedPhone ? r.assignedPhone.replace(/\D/g, '') : ''
   if (phone.length === 10) phone = '91' + phone
-  const msg = `Hi ${r.assignedName}, reminder for task: "${r.description || r.title}". Due on: ${fmtDate(r.dueAt)}. Please action it.`
-  return `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`
+  const msg = `Hi ${r.assignedName || 'there'}, reminder for task: "${r.description || r.title}". Due on: ${fmtDate(r.dueAt)}. Please action it.`
+  if (phone) {
+    return `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`
+  }
+  return `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`
 }
 
 function getEmailLink(r: any) {
@@ -92,8 +98,7 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
   const groupWide = canViewAllDelegationTasks({ role: currentUserRole, brand: currentUserBrand })
   const isEa = ['ea', 'eba', 'admin', 'developer'].includes(String(currentUserRole || '').trim().toLowerCase())
 
-  const isLeader = ['md', 'developer', 'admin', 'ea', 'eba'].includes(String(currentUserRole || '').trim().toLowerCase())
-  const [tab, setTab] = useState<'mine' | 'delegated' | 'all'>(isLeader ? 'all' : 'mine')
+  const [tab, setTab] = useState<'mine' | 'delegated' | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState('assigned')
   const [brandFilter, setBrandFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -317,17 +322,12 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
   const rollup = listQuery.data?.rollup ?? null
 
   const kpis = useMemo(() => {
-    const list = tab === 'mine'
-      ? rows.filter((r) => r.viewerIsAssignee)
-      : tab === 'delegated'
-      ? rows.filter((r) => r.viewerIsCreator)
-      : rows
     return {
-      open: list.filter((r) => r.status === 'assigned').length,
-      overdue: list.filter((r) => r.isOverdue).length,
-      done: list.filter((r) => r.status === 'done').length,
+      open: rows.filter((r) => r.status === 'assigned').length,
+      overdue: rows.filter((r) => r.isOverdue).length,
+      done: rows.filter((r) => r.status === 'done').length,
     }
-  }, [rows, tab])
+  }, [rows])
 
   const weeklyPerformance = useMemo(() => {
     if (!rows.length) return []
@@ -384,9 +384,9 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
     <div className="space-y-6">
       {/* KPIs */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Kpi icon={<ListChecks className="h-4 w-4" />} label={tab === 'mine' ? 'My Open' : tab === 'delegated' ? 'Delegated Open' : 'Total Open'} value={kpis.open} tone="text-slate-800" />
+        <Kpi icon={<ListChecks className="h-4 w-4" />} label="Open Tasks" value={kpis.open} tone="text-slate-800" />
         <Kpi icon={<TriangleAlert className="h-4 w-4" />} label="Overdue" value={kpis.overdue} tone="text-rose-600" />
-        <Kpi icon={<CheckCircle2 className="h-4 w-4" />} label={tab === 'mine' ? 'Completed' : tab === 'delegated' ? 'Delegated Done' : 'Total Completed'} value={kpis.done} tone="text-emerald-600" />
+        <Kpi icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={kpis.done} tone="text-emerald-600" />
       </div>
 
       {/* Weekly Performance Scoring */}
@@ -441,14 +441,8 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-xl border border-slate-200 bg-white p-0.5">
-          <TabBtn active={tab === 'mine' && activeView === 'list'} onClick={() => { setTab('mine'); setActiveView('list'); }}>My Tasks</TabBtn>
-          {canDelegate && <TabBtn active={tab === 'delegated' && activeView === 'list'} onClick={() => { setTab('delegated'); setActiveView('list'); }}>Delegated by Me</TabBtn>}
-          {canDelegate && <TabBtn active={tab === 'all' && activeView === 'list'} onClick={() => { setTab('all'); setActiveView('list'); }}>{groupWide ? 'All Tasks' : 'My Branch'}</TabBtn>}
-        </div>
-
         {/* View Switcher */}
-        <div className="flex rounded-xl border border-slate-200 bg-white p-0.5 ml-1">
+        <div className="flex rounded-xl border border-slate-200 bg-white p-0.5">
           <TabBtn active={activeView === 'list'} onClick={() => setActiveView('list')}>Tasks List</TabBtn>
           <TabBtn active={activeView === 'performance'} onClick={() => setActiveView('performance')}>Performance Leaderboard</TabBtn>
         </div>
@@ -464,15 +458,6 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
-            {groupWide && rollup && rollup.length > 0 && (
-              <Select value={brandFilter} onValueChange={setBrandFilter}>
-                <SelectTrigger className="h-9 w-36 rounded-xl text-xs font-bold"><SelectValue placeholder="Branch" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All branches</SelectItem>
-                  {rollup.map((b) => <SelectItem key={b.brand} value={b.brand} className="capitalize">{b.brand}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search title or assignee…" className="h-9 w-56 rounded-xl" />
           </>
         )}
@@ -580,20 +565,21 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 font-semibold text-slate-700">{r.assignedName || '—'}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-slate-800">{r.title}</p>
-                          {groupWide && r.brand && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">{r.brand}</span>}
+                      <td className="px-4 py-3 font-semibold text-slate-700 whitespace-nowrap">{r.assignedName || '—'}</td>
+                      <td className="px-4 py-3 max-w-[260px] lg:max-w-[320px] xl:max-w-[380px]">
+                        <div className="flex items-center gap-1.5 overflow-hidden">
+                          <p className="font-bold text-slate-800 line-clamp-1">{r.title}</p>
+                          {groupWide && r.brand && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">{r.brand}</span>}
+                          {r.mdUserName && <span className="shrink-0 rounded bg-indigo-50 border border-indigo-100/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">MD: {r.mdUserName}</span>}
                         </div>
                         {r.description && <p className="line-clamp-1 text-xs text-slate-400 mt-0.5">{r.description}</p>}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                         <span className={cn(r.isOverdue && 'font-bold text-rose-600')}>{fmtDate(r.dueAt)}{r.isOverdue && ' · overdue'}</span>
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{fmtDate(r.followUpAt)}</td>
-                      <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-2 flex-wrap">
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmtDate(r.followUpAt)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1.5 flex-nowrap">
                           {/* Call button */}
                           {r.assignedPhone && (
                             <Button size="sm" variant="ghost"
@@ -602,22 +588,20 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                                 message: `Mobile number for ${r.assignedName}:\n${r.assignedPhone}`,
                                 type: 'info'
                               })}
-                              className="h-7 gap-1.5 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-black text-sky-600 hover:bg-sky-100 hover:text-sky-700 transition shadow-sm border border-sky-100">
+                              className="h-8 gap-1.5 rounded-xl bg-sky-50 px-3 text-xs font-black text-sky-600 hover:bg-sky-100 hover:text-sky-700 transition shadow-xs border border-sky-100/80">
                               <Phone className="h-3.5 w-3.5" /> Call
                             </Button>
                           )}
                           {/* WhatsApp button */}
-                          {waUrl && (
-                            <a href={waUrl} target="_blank" rel="noopener noreferrer" title="WhatsApp Assignee"
-                              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 transition shadow-sm border border-emerald-100">
-                              <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-                            </a>
-                          )}
+                          <a href={waUrl} target="_blank" rel="noopener noreferrer" title="WhatsApp Assignee"
+                            className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-emerald-50 px-3 text-xs font-black text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 transition shadow-xs border border-emerald-100/80">
+                            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                          </a>
                           {/* Email button */}
                           {r.assignedEmail && (
                             <Button size="sm" variant="ghost" disabled={sendingEmailId === r.id}
                               onClick={() => remindMutation.mutate(r.id)}
-                              className="h-7 gap-1.5 rounded-full bg-violet-50 text-violet-600 hover:bg-violet-100 hover:text-violet-700 font-black text-xs px-2.5 shadow-sm border border-violet-100 disabled:opacity-50">
+                              className="h-8 gap-1.5 rounded-xl bg-violet-50 text-violet-600 hover:bg-violet-100 hover:text-violet-700 font-black text-xs px-3 shadow-xs border border-violet-100/80 disabled:opacity-50">
                               <Mail className="h-3.5 w-3.5" /> {sendingEmailId === r.id ? 'Sending...' : 'Email'}
                             </Button>
                           )}
@@ -625,22 +609,17 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                           {r.status === 'assigned' && r.viewerIsEa && (
                             <Button size="sm" variant="ghost" disabled={completingTaskId === r.id}
                               onClick={() => completeMutation.mutate(r.id)}
-                              className="h-7 gap-1.5 rounded-full bg-teal-50 text-teal-600 hover:bg-teal-100 hover:text-teal-700 font-black text-xs px-2.5 shadow-sm border border-teal-100 disabled:opacity-50">
+                              className="h-8 gap-1.5 rounded-xl bg-teal-50 text-teal-600 hover:bg-teal-100 hover:text-teal-700 font-black text-xs px-3 shadow-xs border border-teal-100/80 disabled:opacity-50">
                               <Check className="h-3.5 w-3.5" /> {completingTaskId === r.id ? 'Saving...' : 'Done'}
                             </Button>
                           )}
                           {/* Reassign button */}
                           {r.status === 'assigned' && r.viewerCanManage && canDelegate && (
                             <Button size="sm" variant="ghost" onClick={() => setReassignTaskId(r.id)}
-                              className="h-7 gap-1.5 rounded-full bg-amber-50 text-amber-600 hover:bg-amber-100 hover:text-amber-700 font-black text-xs px-2.5 shadow-sm border border-amber-100">
+                              className="h-8 gap-1.5 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-100 hover:text-amber-700 font-black text-xs px-3 shadow-xs border border-amber-100/80">
                               <UserPlus className="h-3.5 w-3.5" /> Reassign
                             </Button>
                           )}
-                          {/* Add Note button */}
-                          <Button size="sm" variant="ghost" onClick={() => setNoteTaskId(r.id)}
-                            className="h-7 gap-1.5 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-800 font-black text-xs px-2.5 shadow-sm border border-slate-200">
-                            <MessageSquare className="h-3.5 w-3.5" /> Add Note
-                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -906,10 +885,21 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
 }
 
 // ── Delegate dialog ─────────────────────────────────────────────────────────────────────────────
-function DelegateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function DelegateDialog({
+  currentUserRole,
+  currentUserId,
+  onClose,
+  onCreated,
+}: {
+  currentUserRole?: string
+  currentUserId?: string
+  onClose: () => void
+  onCreated: () => void
+}) {
   const [description, setDescription] = useState('')
   const [assignedTo, setAssignedTo] = useState('')
   const [dueAt, setDueAt] = useState('')
+  const [mdUserId, setMdUserId] = useState('')
 
   // Search and dropdown state for searchable selector
   const [searchEmp, setSearchEmp] = useState('')
@@ -925,6 +915,26 @@ function DelegateDialog({ onClose, onCreated }: { onClose: () => void; onCreated
     queryFn: () => fetchJson<{ assignees: Assignee[] }>(`/api/delegation-tasks/assignees`),
     staleTime: 5 * 60 * 1000,
   })
+
+  const mdList = useMemo(() => {
+    const list = assigneesQuery.data?.assignees ?? []
+    return list.filter((a) => {
+      const r = String(a.role || '').toLowerCase()
+      return r === 'md' || r === 'ceo'
+    })
+  }, [assigneesQuery.data?.assignees])
+
+  useEffect(() => {
+    if (!mdUserId && mdList.length > 0) {
+      if (String(currentUserRole || '').toLowerCase() === 'md') {
+        const selfMd = mdList.find((m) => m.id === currentUserId)
+        if (selfMd) setMdUserId(selfMd.id)
+        else if (mdList.length === 1) setMdUserId(mdList[0].id)
+      } else if (mdList.length === 1) {
+        setMdUserId(mdList[0].id)
+      }
+    }
+  }, [mdList, mdUserId, currentUserRole, currentUserId])
 
   // Filter assignees based on search input
   const filteredAssignees = useMemo(() => {
@@ -947,6 +957,8 @@ function DelegateDialog({ onClose, onCreated }: { onClose: () => void; onCreated
         assignedTo,
         description,
         dueAt: dueAt || null,
+        priority: 'high',
+        mdUserId: mdUserId || null,
         isExternal: selectedAssignee?.isExternal || assignedTo === 'other'
       }
       if (assignedTo === 'other') {
@@ -968,8 +980,9 @@ function DelegateDialog({ onClose, onCreated }: { onClose: () => void; onCreated
     if (assignedTo === 'other') {
       if (!extName.trim() || !extPhone.trim()) return false
     }
+    if (mdList.length > 0 && !mdUserId) return false
     return description.trim().length > 0
-  }, [assignedTo, extName, extPhone, description])
+  }, [assignedTo, extName, extPhone, mdList, mdUserId, description])
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
@@ -978,7 +991,26 @@ function DelegateDialog({ onClose, onCreated }: { onClose: () => void; onCreated
           <DialogTitle className="text-lg font-black text-slate-900">Delegate a task</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
-          {/* 1. Employee Name (searchable dropdown) */}
+          {/* 1. Belongs to MD Dropdown */}
+          {mdList.length > 0 && (
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Belongs to MD / Director (Required)</label>
+              <Select value={mdUserId} onValueChange={setMdUserId}>
+                <SelectTrigger className="mt-1.5 h-10 rounded-xl border-slate-200 focus:ring-slate-900 font-semibold">
+                  <SelectValue placeholder="Select MD..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {mdList.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.fullName} {m.brand && m.brand !== 'all' ? `(${m.brand.toUpperCase()})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* 2. Employee Name (searchable dropdown) */}
           <div className="relative">
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Employee Name</label>
             <Input

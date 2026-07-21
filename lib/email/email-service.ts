@@ -117,7 +117,7 @@ async function getTransporter(forceRefresh = false): Promise<Transporter> {
 }
 
 function fromAddress(): string {
-  return process.env.EMAIL_FROM || `AM Kia <${requireEnv('EMAIL_USER')}>`
+  return process.env.EMAIL_FROM || `AM Global <${requireEnv('EMAIL_USER')}>`
 }
 
 function looksLikeAuthError(error: unknown): boolean {

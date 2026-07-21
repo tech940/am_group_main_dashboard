@@ -694,8 +694,8 @@ export async function getKiaBookingsList(input: BookingListInput) {
   const [totalRows, bookingRows, aggRows] = await Promise.all([
     db.select({ value: count() }).from(kiaBookings).where(where),
     db.select().from(kiaBookings).where(where).orderBy(
-      isAscSort ? asc(kiaBookings.createdAt) : desc(kiaBookings.updatedAt),
       isAscSort ? asc(kiaBookings.createdAt) : desc(kiaBookings.createdAt),
+      isAscSort ? asc(kiaBookings.id) : desc(kiaBookings.id),
     ).limit(pageSize).offset(offset),
     db.execute(sql`
       SELECT
@@ -1231,7 +1231,10 @@ export async function updateKiaBooking(id: string, input: UpdateBookingInput, ap
     // through this shallow merge would write "••••••" over the real PAN/Aadhaar and null the document
     // URLs. Stripping means the merge falls through to `before.metadata` and the originals survive.
     if (input.metadata !== undefined) {
-      const incoming = mayWritePii ? (input.metadata || {}) : stripKiaBookingPiiKeys(input.metadata || {})
+      let incoming = mayWritePii ? (input.metadata || {}) : stripKiaBookingPiiKeys(input.metadata || {})
+      if (String(appUser.role || '').trim().toLowerCase() === 'sales_executive' && (before.metadata as Record<string, unknown> | null)?.bookingDate) {
+        incoming = { ...incoming, bookingDate: (before.metadata as Record<string, unknown>).bookingDate }
+      }
       updates.metadata = { ...(before.metadata || {}), ...incoming } as JsonRecord
     }
     if (input.deliveryTargetDate !== undefined) updates.deliveryTargetDate = input.deliveryTargetDate ? input.deliveryTargetDate : null

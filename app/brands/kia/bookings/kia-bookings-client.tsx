@@ -40,6 +40,8 @@ import {
   Share2,
   MessageSquare,
   Percent,
+  Receipt,
+  FileCheck,
 } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -1387,6 +1389,40 @@ export function KiaBookingsClient({
   const [priceUploadResult, setPriceUploadResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [isReplacePricesOpen, setIsReplacePricesOpen] = useState(false)
 
+  const [invoiceViewerBooking, setInvoiceViewerBooking] = useState<any | null>(null)
+  const [invoiceViewerOpen, setInvoiceViewerOpen] = useState(false)
+  const [uploadingInvoiceFile, setUploadingInvoiceFile] = useState<File | null>(null)
+  const [isUploadingInvoice, setIsUploadingInvoice] = useState(false)
+
+  async function handleUploadInvoiceDoc(bookingId: string) {
+    if (!uploadingInvoiceFile) return
+    setIsUploadingInvoice(true)
+    try {
+      const formData = new FormData()
+      formData.append('invoice', uploadingInvoiceFile)
+      const meta = (invoiceViewerBooking?.metadata || {}) as Record<string, unknown>
+      const accountsVerification = (meta.accountsVerification || {}) as Record<string, unknown>
+      if (accountsVerification.invoiceNumber) {
+        formData.append('invoiceNumber', String(accountsVerification.invoiceNumber))
+      }
+      const res = await fetch(`/api/brands/kia/bookings/${bookingId}/accounts-verify`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'Failed to upload invoice document.')
+      setActionMessage('Invoice PDF document uploaded successfully.')
+      listQuery.refetch()
+      if (selectedBookingId) detailQuery.refetch()
+      setInvoiceViewerBooking(data.booking || null)
+      setUploadingInvoiceFile(null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Upload failed.')
+    } finally {
+      setIsUploadingInvoice(false)
+    }
+  }
+
   const [idtRemarkBookingId, setIdtRemarkBookingId] = useState<string | null>(null)
   const [idtRemarkText, setIdtRemarkText] = useState('')
   const [idtRemarkOpen, setIdtRemarkOpen] = useState(false)
@@ -2651,12 +2687,17 @@ export function KiaBookingsClient({
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                className="h-10 flex-1 gap-1.5 rounded-2xl text-xs font-bold sm:h-11 sm:text-sm"
-                title={sortOrder === 'desc' ? 'Showing newest first — click to show oldest first' : 'Showing oldest first — click to show newest first'}
+                className={cn(
+                  "h-10 flex-1 gap-1.5 rounded-2xl text-xs font-black sm:h-11 sm:text-sm transition-all shadow-xs",
+                  sortOrder === 'desc'
+                    ? "bg-slate-900 text-white hover:bg-slate-800 border-slate-900"
+                    : "bg-white text-slate-800 hover:bg-slate-50 border-slate-200"
+                )}
+                title={sortOrder === 'desc' ? 'Showing newest bookings first — click to show oldest first' : 'Showing oldest bookings first — click to show newest first'}
                 onClick={() => { setSortOrder((prev) => prev === 'desc' ? 'asc' : 'desc'); setPage(1) }}
               >
                 <ArrowUpDown className="h-4 w-4" />
-                {sortOrder === 'desc' ? 'Newest' : 'Oldest'}
+                {sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}
               </Button>
               <Button
                 variant="outline"
@@ -3069,6 +3110,19 @@ export function KiaBookingsClient({
                           ) : (
                             <span className="grid h-8 w-8 place-items-center text-[var(--kia-text-faint)]"><FileText className="h-4 w-4 opacity-40" /></span>
                           )}
+                          {((row.metadata as any)?.accountsVerification?.invoiceNumber || ['ready_delivery', 'delivered'].includes(String(row.status))) && (
+                            <button
+                              type="button"
+                              title="View Invoice & Accounts Details"
+                              onClick={() => {
+                                setInvoiceViewerBooking(row)
+                                setInvoiceViewerOpen(true)
+                              }}
+                              className="grid h-8 w-8 place-items-center rounded-lg text-emerald-600 transition-colors hover:bg-emerald-50 shrink-0"
+                            >
+                              <Receipt className="h-4 w-4" />
+                            </button>
+                          )}
                           <button type="button" title="Open / act" onClick={() => openBooking(row.id)} className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--kia-text)]">
                             <MoreVertical className="h-4 w-4" />
                           </button>
@@ -3096,6 +3150,7 @@ export function KiaBookingsClient({
         open={createOpen}
         form={createForm}
         currentUserName={currentUserName}
+        currentUserRole={currentUserRole}
         activeTab={createTab}
         modelOptions={bookingModelOptions}
         variantOptions={bookingVariantOptions}
@@ -3641,6 +3696,10 @@ export function KiaBookingsClient({
               onEdit={() => setEditingBookingId(detailQuery.data.booking.id)}
               discounts={discountsQuery.data?.discounts || []}
               onRefreshDiscounts={() => discountsQuery.refetch()}
+              onOpenInvoiceViewer={(b) => {
+                setInvoiceViewerBooking(b)
+                setInvoiceViewerOpen(true)
+              }}
             />
           ) : null}
         </DialogContent>
@@ -3652,6 +3711,7 @@ export function KiaBookingsClient({
           open={isEditOpen}
           form={editForm}
           currentUserName={currentUserName}
+          currentUserRole={currentUserRole}
           activeTab={editTab}
           modelOptions={bookingModelOptions}
           variantOptions={bookingVariantOptions}
@@ -3864,6 +3924,141 @@ export function KiaBookingsClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Invoice Viewer & Details Dialog */}
+      <Dialog open={invoiceViewerOpen} onOpenChange={setInvoiceViewerOpen}>
+        <DialogContent className="max-w-2xl rounded-[28px] border-slate-200 bg-white p-6 shadow-2xl">
+          {invoiceViewerBooking && (() => {
+            const meta = (invoiceViewerBooking.metadata || {}) as Record<string, unknown>
+            const accountsVerification = (meta.accountsVerification || {}) as Record<string, unknown>
+            const paymentConfirmation = (meta.paymentConfirmation || {}) as Record<string, unknown>
+            const invoiceNumber = String(accountsVerification.invoiceNumber || invoiceViewerBooking.proformaNumber || 'REC-INV-DONE')
+            const invoiceUrl = accountsVerification.invoiceDocumentUrl ? String(accountsVerification.invoiceDocumentUrl) : null
+            const invoiceName = String(accountsVerification.invoiceDocumentName || 'Vehicle_Invoice.pdf')
+            const verifiedBy = String(accountsVerification.verifiedBy || 'Accounts Team')
+            const verifiedAt = accountsVerification.verifiedAt ? new Date(String(accountsVerification.verifiedAt)).toLocaleString('en-IN') : '-'
+
+            return (
+              <div className="space-y-5">
+                <DialogHeader>
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 shrink-0">
+                      <Receipt className="h-6 w-6" />
+                    </span>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        Accounts Verified · Tax Invoice
+                      </span>
+                      <DialogTitle className="text-2xl font-black text-slate-950 mt-1">
+                        Invoice #{invoiceNumber}
+                      </DialogTitle>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                {/* Summary Info Grid */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-xs space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Customer</span>
+                      <p className="font-extrabold text-slate-900 text-sm">{invoiceViewerBooking.customerName}</p>
+                      <p className="text-slate-500 font-semibold">{invoiceViewerBooking.customerPhone}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Vehicle & VIN</span>
+                      <p className="font-extrabold text-slate-900 text-sm">{invoiceViewerBooking.model} {invoiceViewerBooking.variant}</p>
+                      <p className="text-indigo-600 font-mono font-bold">{invoiceViewerBooking.allocatedVin || 'VIN Verified'}</p>
+                    </div>
+                  </div>
+                  <div className="border-t border-slate-200/80 pt-2.5 grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Accounts Verified By</span>
+                      <p className="font-bold text-slate-800">{verifiedBy}</p>
+                      <p className="text-[10px] text-slate-400">{verifiedAt}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Payment Reference</span>
+                      <p className="font-mono font-bold text-slate-800">{String(paymentConfirmation.reference || 'RELEASED')}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Document Action Box */}
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <FileText className="h-6 w-6 text-indigo-600 shrink-0" />
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-900">Tax Invoice PDF Document</h4>
+                        <p className="text-xs text-slate-500 font-semibold">{invoiceUrl ? invoiceName : 'No PDF document attached yet'}</p>
+                      </div>
+                    </div>
+                    {invoiceUrl && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <a
+                          href={invoiceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-xs hover:bg-indigo-50"
+                        >
+                          <Eye className="h-3.5 w-3.5" /> View PDF
+                        </a>
+                        <a
+                          href={invoiceUrl}
+                          download={invoiceName}
+                          className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700"
+                        >
+                          <Download className="h-3.5 w-3.5" /> Download
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Upload / Re-attach PDF */}
+                  <div className="pt-3 border-t border-indigo-100/80">
+                    <Label className="text-xs font-extrabold text-slate-800">
+                      {invoiceUrl ? 'Re-upload / Replace Invoice PDF' : 'Upload Tax Invoice PDF'}
+                    </Label>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <Input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp"
+                        onChange={(e) => setUploadingInvoiceFile(e.target.files?.[0] || null)}
+                        className="text-xs file:mr-2 file:rounded-lg file:border-0 file:bg-slate-900 file:px-2.5 file:py-1 file:text-xs file:font-bold file:text-white"
+                      />
+                      {uploadingInvoiceFile && (
+                        <Button
+                          size="sm"
+                          disabled={isUploadingInvoice}
+                          onClick={() => handleUploadInvoiceDoc(invoiceViewerBooking.id)}
+                          className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shrink-0"
+                        >
+                          {isUploadingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Upload File'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <DialogFooter className="flex items-center justify-between pt-2">
+                  <Button variant="outline" onClick={() => setInvoiceViewerOpen(false)} className="rounded-xl font-bold">
+                    Close
+                  </Button>
+                  {invoiceUrl && (
+                    <a
+                      href={invoiceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-slate-800"
+                    >
+                      <FileCheck className="h-4 w-4 text-emerald-400" /> Open Full Document
+                    </a>
+                  )}
+                </DialogFooter>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
     </KiaPiiContext.Provider>
   )
 
@@ -3972,6 +4167,7 @@ function CreateBookingDialog({
   open,
   form,
   currentUserName,
+  currentUserRole = '',
   activeTab,
   modelOptions,
   variantOptions,
@@ -3991,6 +4187,7 @@ function CreateBookingDialog({
   open: boolean
   form: CreateBookingForm
   currentUserName: string
+  currentUserRole?: string
   activeTab: (typeof CREATE_TABS)[number]
   modelOptions: string[]
   variantOptions: string[]
@@ -4007,6 +4204,7 @@ function CreateBookingDialog({
   isEdit?: boolean
   bookingNumber?: string
 }) {
+  const isSalesExec = String(currentUserRole || '').trim().toLowerCase() === 'sales_executive'
   const activeIndex = CREATE_TABS.indexOf(activeTab)
   const isLastStep = activeIndex === CREATE_TABS.length - 1
   const isFirstStep = activeIndex === 0
@@ -4570,7 +4768,8 @@ function CreateBookingDialog({
                     type="date"
                     value={form.bookingDate}
                     onChange={(event) => onChange('bookingDate', event.target.value)}
-                    className={INPUT_STYLE}
+                    disabled={isSalesExec}
+                    className={cn(INPUT_STYLE, isSalesExec && "bg-slate-100 text-slate-500 cursor-not-allowed opacity-80")}
                   />
                 </Field>
                 <Field label="Payment Source" required>
@@ -4850,6 +5049,7 @@ function BookingDrawer({
   onEdit,
   discounts = [],
   onRefreshDiscounts,
+  onOpenInvoiceViewer,
 }: {
   detail: BookingDetailPayload
   currentUserRole: string
@@ -4868,6 +5068,7 @@ function BookingDrawer({
   onEdit?: () => void
   discounts?: any[]
   onRefreshDiscounts?: () => void
+  onOpenInvoiceViewer?: (booking: any) => void
 }) {
   const router = useRouter()
   const [sharingLink, setSharingLink] = useState(false)
@@ -5247,7 +5448,22 @@ function BookingDrawer({
                   }
                 }}
               />
-              <ActionCard title="Accounts · Payment & Invoice" icon={ShieldCheck} value={accountsDone ? 'Invoice recorded' : allocation ? allocation.vinNumber : 'No active VIN'} status={accountsDone ? 'Payment released · Verified' : 'Pending Accounts'} action={accountsDone ? 'Completed' : 'Confirm Payment & Invoice'} disabled={actionLoading || !canActAsAccountsVerify || !allocation || accountsDone || !(booking.status === 'vehicle_allocated' || booking.status === 'transferring' || booking.status === 'transfer_requested' || booking.status === 'payment_confirmed')} loading={actionLoading} onClick={() => onAction('accounts')} />
+              <ActionCard
+                title="Accounts · Payment & Invoice"
+                icon={ShieldCheck}
+                value={accountsDone ? (accountsVerification.invoiceNumber ? `Invoice #${accountsVerification.invoiceNumber}` : 'Invoice recorded') : allocation ? allocation.vinNumber : 'No active VIN'}
+                status={accountsDone ? 'Payment released · Verified' : 'Pending Accounts'}
+                action={accountsDone ? (accountsVerification.invoiceDocumentUrl ? 'View Invoice PDF' : 'View Invoice Details') : 'Confirm Payment & Invoice'}
+                disabled={actionLoading || (!accountsDone && (!canActAsAccountsVerify || !allocation || !(booking.status === 'vehicle_allocated' || booking.status === 'transferring' || booking.status === 'transfer_requested' || booking.status === 'payment_confirmed')))}
+                loading={actionLoading}
+                onClick={() => {
+                  if (accountsDone) {
+                    if (onOpenInvoiceViewer) onOpenInvoiceViewer(booking)
+                  } else {
+                    onAction('accounts')
+                  }
+                }}
+              />
             </div>
           )
         })()}

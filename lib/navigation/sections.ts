@@ -433,7 +433,7 @@ export function canUserAccessSection(
 
   // Delegation Tasks
   if (href === '/delegation-tasks') {
-    const canAccessDelegationTasks = ['ea', 'eba', 'md', 'ceo', 'ed', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
+    const canAccessDelegationTasks = ['ea', 'eba', 'md', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
     if (!canAccessDelegationTasks) return false
   }
 

@@ -233,7 +233,7 @@ export function Sidebar() {
   // (lib/permissions/legacy-module-roles.ts) so they can never drift.
   const canAccessPettyCash = isPettyCashViewRole(userRole)
   const canAccessAmFinance = isAmFinanceViewRole(userRole)
-  const canAccessDelegationTasks = ['ea', 'eba', 'md', 'ceo', 'ed', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
+  const canAccessDelegationTasks = ['ea', 'eba', 'md', 'developer', 'admin'].includes(String(userRole || '').trim().toLowerCase())
   const favouriteHrefs = Array.isArray(favouriteHrefsValue) ? favouriteHrefsValue : []
 
   // The effective permission map, fetched through React Query so it is CACHED across sidebar remounts.

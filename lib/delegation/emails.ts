@@ -55,10 +55,15 @@ export async function sendTaskAssignedEmail(input: {
     
     ${input.description ? `
       <div style="margin-top:20px;padding:16px;border:1px solid #e6e8f0;border-radius:12px;background:#fbfbfd;">
-        <h4 style="margin:0 0 6px 0;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#9aa2b1;">Task Details / विवरण</h4>
+        <h4 style="margin:0 0 6px 0;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#9aa2b1;">Task Details</h4>
         <p style="margin:0;font-size:14px;color:#4b5563;white-space:pre-wrap;line-height:1.5;text-align:left;">${escapeHtml(input.description)}</p>
       </div>
     ` : ''}
+
+    <div style="margin-top:20px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;font-size:13px;color:#334155;line-height:1.6;">
+      <p style="margin:0 0 8px;">Please complete the task by the due date and inform the concerned EA once it is completed.</p>
+      <p style="margin:0;">If you require additional time, please contact the concerned EA before the due date, explain the reason for the delay, and provide a revised completion date. The EA will update the task accordingly.</p>
+    </div>
   `
   try {
     let subject = `New task assigned: ${input.title}`
@@ -68,10 +73,10 @@ export async function sendTaskAssignedEmail(input: {
       heading = 'Task details were updated'
     } else if (input.isReminder) {
       subject = `Task Reminder: ${input.title}`
-      heading = 'Task Reminder / अनुस्मारक'
+      heading = 'Task Reminder'
     } else if (input.isReassign) {
       subject = `Task Rescheduled: ${input.title}`
-      heading = 'Task Rescheduled / अनुसूची'
+      heading = 'Task Rescheduled'
     }
 
     await sendEmail({
@@ -104,7 +109,16 @@ export async function runDelegationTaskReminders(): Promise<{ due: number; email
   let emailed = 0
   for (const [email, items] of byEmail) {
     try {
-      await sendEmail({ to: email, subject: `Daily Reminder: ${items.length} Pending Task${items.length > 1 ? 's' : ''}`, html: digestHtml(items) })
+      // CC only the MD who owns these tasks (first item's mdUserEmail is sufficient since digest is per-assignee)
+      const mdEmail = items[0]?.mdUserEmail ? String(items[0].mdUserEmail).trim() : null
+      const cc = mdEmail && mdEmail.toLowerCase() !== email.toLowerCase() ? [mdEmail] : undefined
+
+      await sendEmail({
+        to: email,
+        ...(cc ? { cc } : {}),
+        subject: `Daily Reminder: ${items.length} Pending Task${items.length > 1 ? 's' : ''}`,
+        html: digestHtml(items),
+      })
       emailed++
     } catch (error) {
       console.error('[delegation-reminders] email failed for', email, error)
@@ -142,7 +156,12 @@ function digestHtml(items: DueTask[]): string {
 
     ${primaryButton('Open Delegation Tasks Board', TASKS_URL)}
 
-    <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;line-height:1.4;text-align:center;">
+    <div style="margin-top:20px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;font-size:13px;color:#334155;line-height:1.6;">
+      <p style="margin:0 0 8px;">Please complete the task by the due date and inform the concerned EA once it is completed.</p>
+      <p style="margin:0;">If you require additional time, please contact the concerned EA before the due date, explain the reason for the delay, and provide a revised completion date. The EA will update the task accordingly.</p>
+    </div>
+
+    <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;line-height:1.4;text-align:center;">
       Please mark tasks complete on the dashboard once done to stop further morning reminders.
     </p>
   `

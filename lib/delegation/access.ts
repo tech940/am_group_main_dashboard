@@ -31,11 +31,10 @@ export function concreteBrands(brand?: string | null): string[] {
   return parseBrands(brand).filter((b) => b !== 'all')
 }
 
-/** Group-wide = sees/assigns across ALL brands: MD, CEO, developer (system) roles, or the 'all' brand marker. */
+/** Group-wide = sees/assigns across ALL brands: developer/admin roles, or the 'all' brand marker. */
 export function isGroupWideDelegation(user: { role?: string | null; brand?: string | null }): boolean {
   const role = norm(user.role)
-  if (role === 'ea' || role === 'eba') return false
-  if (role === 'developer' || role === 'md' || role === 'ceo') return true
+  if (role === 'developer' || role === 'admin') return true
   return parseBrands(user.brand).includes('all')
 }
 
@@ -59,10 +58,9 @@ export function resolveTaskBrand(delegatorBrand?: string | null, assigneeBrand?:
   return concreteBrands(delegatorBrand)[0] || concreteBrands(assigneeBrand)[0] || null
 }
 
-// Leadership + managers who may CREATE and assign tasks down (and reassign / reopen / cancel / edit).
-// Everyone else can only act on tasks assigned to them. Adjust this set to change who can delegate.
+// Leadership allowed to create, manage, and delegate tasks (MD, EA, Developer, Admin).
 const DELEGATOR_ROLES = new Set([
-  'admin', 'developer', 'md', 'ceo', 'ea', 'eba', 'ed',
+  'admin', 'developer', 'md', 'ea', 'eba',
 ])
 
 /** May create/assign a task, and act on it as the delegator (reassign / reopen / cancel / edit). */

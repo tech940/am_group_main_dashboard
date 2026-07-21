@@ -6,7 +6,7 @@
 // (`email-service.ts`) attaches the logo file inline on every send, which renders far
 // more reliably than remote URLs (no image-proxy blocking) or data URIs (Gmail strips).
 
-export const BRAND = 'AM Kia'
+export const BRAND = 'AM Global'
 export const BRAND_LOGO_CID = 'am-brand-logo'
 
 // Refined, modern palette — a soft neutral canvas with an indigo→violet accent

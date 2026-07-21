@@ -9,6 +9,9 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const role = String(appUser.role || '').trim().toLowerCase()
+  const allowed = ['ea', 'eba', 'md', 'developer', 'admin'].includes(role)
+  if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const email = searchParams.get('email')
