@@ -35,10 +35,10 @@ type OpenRoChunk = 'summary' | 'details' | 'full'
 function openRoDealerFilter(filters: OpenRoFilters) {
   return hyundaiSourceDealerFilter(
     filters.dealerCode,
-    sql.raw('hyundai_repair_order_list.source_dealer_code'),
+    sql.raw('hyundai_open_ro_yearly.source_dealer_code'),
     [
-      sql.raw('hyundai_repair_order_list.dealer_code'),
-      sql.raw('hyundai_repair_order_list.dlr_no')
+      sql.raw('hyundai_open_ro_yearly.dealer_code'),
+      sql.raw('hyundai_open_ro_yearly.dealer')
     ]
   )
 }
@@ -79,9 +79,8 @@ function openRoBaseSql(filters: OpenRoFilters) {
         0::int AS re_open_count,
         special_message AS task_description,
         uploaded_at
-      FROM hyundai_repair_order_list
-      WHERE cancel_date IS NULL
-        AND LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), NULLIF(TRIM(status::text), ''), NULLIF(TRIM(new_r_o_status::text), ''), '')) = 'open'
+      FROM hyundai_open_ro_yearly
+      WHERE LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), '')) = 'open'
         AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
         AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}
@@ -370,9 +369,8 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
           work_type AS service_type,
           '-' AS insurance_company_name,
           r_o_date::date AS ro_date
-        FROM hyundai_repair_order_list
-      WHERE cancel_date IS NULL
-        AND LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), NULLIF(TRIM(status::text), ''), NULLIF(TRIM(new_r_o_status::text), ''), '')) = 'open'
+        FROM hyundai_open_ro_yearly
+      WHERE LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), '')) = 'open'
         AND (${filters.startDate}::date IS NULL OR r_o_date >= ${filters.startDate}::date)
         AND (${filters.endDate}::date IS NULL OR r_o_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}

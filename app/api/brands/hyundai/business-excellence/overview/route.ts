@@ -493,9 +493,8 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
         r_o_status AS status,
         NULL::date AS promise_date,
         uploaded_at
-      FROM hyundai_repair_order_list
-      WHERE cancel_date IS NULL
-        AND LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), NULLIF(TRIM(status::text), ''), NULLIF(TRIM(new_r_o_status::text), ''), '')) = 'open'
+      FROM hyundai_open_ro_yearly
+      WHERE LOWER(COALESCE(NULLIF(TRIM(r_o_status::text), ''), '')) = 'open'
         ${openRoDealerFilter(dealerCode)}
       ORDER BY
         ${openRoDealerKey} || ':' || COALESCE(NULLIF(r_o_no, ''), id::text),

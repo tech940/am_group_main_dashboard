@@ -282,9 +282,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       if (!response.ok) throw new Error('Failed to load stock data')
       return response.json()
     },
-    staleTime: DASHBOARD_STALE_TIME_MS,
+    staleTime: 5 * 1000,
     gcTime: DASHBOARD_GC_TIME_MS,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
   })
 
@@ -296,9 +296,9 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       if (!response.ok) throw new Error('Failed to load unallocated active bookings')
       return response.json()
     },
-    staleTime: DASHBOARD_STALE_TIME_MS,
+    staleTime: 5 * 1000,
     gcTime: DASHBOARD_GC_TIME_MS,
-    refetchOnMount: false,
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
   })
 
@@ -858,15 +858,17 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
 
             {/* Status dropdown */}
             <Select value={status} onValueChange={(val) => { setStatus(val); setPage(1) }}>
-              <SelectTrigger className="h-9 w-[150px] rounded-xl text-xs font-bold border-slate-200 bg-white shadow-sm">
+              <SelectTrigger className="h-9 w-[160px] rounded-xl text-xs font-bold border-slate-200 bg-white shadow-sm">
                 <SelectValue placeholder="All Status" />
               </SelectTrigger>
               <SelectContent className="bg-white border border-slate-200 z-[50] rounded-xl shadow-md">
                 <SelectItem value="All" className="text-xs font-bold cursor-pointer">All Status</SelectItem>
                 <SelectItem value="AVAILABLE" className="text-xs font-bold cursor-pointer">Available</SelectItem>
-                <SelectItem value="ALLOTTED" className="text-xs font-bold cursor-pointer">Allotted</SelectItem>
+                <SelectItem value="PAYMENT_PENDING" className="text-xs font-bold cursor-pointer">Payment Pending</SelectItem>
+                <SelectItem value="PAYMENT_OVERDUE" className="text-xs font-bold cursor-pointer">Payment Overdue</SelectItem>
                 <SelectItem value="PAID_TO_DELIVER" className="text-xs font-bold cursor-pointer">Paid - To Deliver</SelectItem>
                 <SelectItem value="DELIVERED" className="text-xs font-bold cursor-pointer">Delivered</SelectItem>
+                <SelectItem value="TRANSFERRED" className="text-xs font-bold cursor-pointer">Transferred</SelectItem>
               </SelectContent>
             </Select>
 
@@ -1200,9 +1202,15 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                     {(() => {
                       const row = data?.rows?.find(r => r.vin_number === allotVin)
                       const matchingBookings = row ? getMatchingBookings(row) : []
+                      const modelBookings = row ? bookingsList.filter(b => {
+                        const bModelStr = String(b.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
+                        const rModelStr = String(row.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
+                        return !bModelStr || !rModelStr || bModelStr === rModelStr || bModelStr.includes(rModelStr) || rModelStr.includes(bModelStr)
+                      }) : []
+                      const displayBookings = matchingBookings.length > 0 ? matchingBookings : modelBookings
                       return (
                         <>
-                          {matchingBookings.map((b) => (
+                          {displayBookings.map((b) => (
                             <SelectItem 
                               key={b.id} 
                               value={b.id} 
@@ -1215,7 +1223,7 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                               </div>
                             </SelectItem>
                           ))}
-                          {matchingBookings.length === 0 && (
+                          {displayBookings.length === 0 && (
                             <div className="text-xs font-semibold text-slate-400 text-center py-4">
                               No matching bookings waiting for allocation.
                             </div>

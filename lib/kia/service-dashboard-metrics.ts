@@ -124,19 +124,30 @@ export function operationDealerFilter(dealerCode: KiaServiceDealerFilter, alias 
 export function ewDealerFilter(dealerCode: KiaServiceDealerFilter) {
   const codes = getKiaDealerFilterValues(dealerCode)
   if (!codes?.length) return sql``
-  return coalescedDealerInListFilter(codes, ['outlet_code', 'main_dealer_code'])
+  return sql.raw(`AND (
+    UPPER(TRIM(COALESCE(dealer_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
+    OR UPPER(TRIM(COALESCE(outlet_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
+    OR UPPER(TRIM(COALESCE(main_dealer_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
+    OR dealer_code IS NULL
+  )`)
 }
 
 export function mcpDealerFilter(dealerCode: KiaServiceDealerFilter) {
   const codes = getKiaDealerFilterValues(dealerCode)
   if (!codes?.length) return sql``
-  return dealerInListFilter(codes, ['dealer_code'])
+  return sql.raw(`AND (
+    UPPER(TRIM(COALESCE(dealer_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
+    OR dealer_code IS NULL
+  )`)
 }
 
 export function rsaDealerFilter(dealerCode: KiaServiceDealerFilter) {
   const codes = getKiaDealerFilterValues(dealerCode)
   if (!codes?.length) return sql``
-  return dealerInListFilter(codes, ['dealer_workshop_code'])
+  return sql.raw(`AND (
+    UPPER(TRIM(COALESCE(dealer_workshop_code, ''))) IN (${codes.map((c) => `'${c}'`).join(', ')})
+    OR dealer_workshop_code IS NULL
+  )`)
 }
 
 export function serviceCategoryExpression(workTypeColumn: string, serviceTypeColumn: string) {
@@ -793,7 +804,6 @@ export async function fetchAddonKpisForPeriod(
         FROM ew_report
         WHERE reg_date >= ${startDate}::date
           AND reg_date < (${endDate}::date + INTERVAL '1 day')
-          AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
           ${ewDealerFilter(normalizedDealer)}
         ORDER BY COALESCE(NULLIF(TRIM(certi_no), ''), NULLIF(CONCAT_WS('|', NULLIF(TRIM(vin), ''), NULLIF(TRIM(scheme_desc), ''), reg_date::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
@@ -805,11 +815,29 @@ export async function fetchAddonKpisForPeriod(
         SELECT DISTINCT ON (
           COALESCE(NULLIF(TRIM(invoice_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin_chasis_no), ''), NULLIF(TRIM(policy_name), ''), invoice_date::text), id::text)
         )
-          invoice_date::date AS report_date,
+          (
+            CASE 
+              WHEN invoice_date ~ '^\d{4}-\d{2}-\d{2}' THEN invoice_date::date
+              WHEN invoice_date ~ '^\d{1,2}/\d{1,2}/\d{4}' THEN to_date(invoice_date, 'FMMonth/FMDD/YYYY')
+              ELSE invoice_date::date
+            END
+          ) AS report_date,
           ${numericText(sql.raw('total_amount'))} AS total_amount
         FROM rsa_report
-        WHERE invoice_date::date >= ${startDate}::date
-          AND invoice_date::date < (${endDate}::date + INTERVAL '1 day')
+        WHERE (
+          CASE 
+            WHEN invoice_date ~ '^\d{4}-\d{2}-\d{2}' THEN invoice_date::date
+            WHEN invoice_date ~ '^\d{1,2}/\d{1,2}/\d{4}' THEN to_date(invoice_date, 'FMMonth/FMDD/YYYY')
+            ELSE invoice_date::date
+          END
+        ) >= ${startDate}::date
+          AND (
+            CASE 
+              WHEN invoice_date ~ '^\d{4}-\d{2}-\d{2}' THEN invoice_date::date
+              WHEN invoice_date ~ '^\d{1,2}/\d{1,2}/\d{4}' THEN to_date(invoice_date, 'FMMonth/FMDD/YYYY')
+              ELSE invoice_date::date
+            END
+          ) < (${endDate}::date + INTERVAL '1 day')
           ${rsaDealerFilter(normalizedDealer)}
         ORDER BY COALESCE(NULLIF(TRIM(invoice_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin_chasis_no), ''), NULLIF(TRIM(policy_name), ''), invoice_date::text), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
@@ -827,7 +855,6 @@ export async function fetchAddonKpisForPeriod(
         FROM mcp_report
         WHERE package_purchase_date >= ${startDate}::date
           AND package_purchase_date < (${endDate}::date + INTERVAL '1 day')
-          AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
           ${mcpDealerFilter(normalizedDealer)}
         ORDER BY COALESCE(NULLIF(TRIM(cert_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin), ''), NULLIF(TRIM(package_name), ''), package_purchase_date::text), id::text), uploaded_at DESC NULLS LAST, id DESC
       )

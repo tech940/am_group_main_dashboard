@@ -37,6 +37,9 @@ function shouldUseSessionApiCache(input: RequestInfo | URL, init?: RequestInit) 
   if (!url.pathname.startsWith('/api/')) return false
 
   if (url.pathname.includes('/business-excellence/freshness')) return false
+  if (url.pathname.includes('/proforma/stock')) return false
+  if (url.pathname.includes('/bookings')) return false
+  if (url.pathname.includes('/stock/')) return false
 
   return true
 }

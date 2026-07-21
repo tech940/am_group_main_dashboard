@@ -556,7 +556,6 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
         FROM ew_report
         WHERE reg_date >= ${monthStart}::date
           AND reg_date < (${exportDate}::date + INTERVAL '1 day')
-          AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
           ${ewDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(TRIM(certi_no), ''), NULLIF(CONCAT_WS('|', NULLIF(TRIM(vin), ''), NULLIF(TRIM(scheme_desc), ''), reg_date::text), ''), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
@@ -570,10 +569,28 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
         SELECT DISTINCT ON (
           COALESCE(NULLIF(TRIM(invoice_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin_chasis_no), ''), NULLIF(TRIM(policy_name), ''), invoice_date::text), id::text)
         )
-          invoice_date::date AS report_date
+          (
+            CASE 
+              WHEN invoice_date ~ '^\d{4}-\d{2}-\d{2}' THEN invoice_date::date
+              WHEN invoice_date ~ '^\d{1,2}/\d{1,2}/\d{4}' THEN to_date(invoice_date, 'FMMonth/FMDD/YYYY')
+              ELSE invoice_date::date
+            END
+          ) AS report_date
         FROM rsa_report
-        WHERE invoice_date::date >= ${monthStart}::date
-          AND invoice_date::date < (${exportDate}::date + INTERVAL '1 day')
+        WHERE (
+          CASE 
+            WHEN invoice_date ~ '^\d{4}-\d{2}-\d{2}' THEN invoice_date::date
+            WHEN invoice_date ~ '^\d{1,2}/\d{1,2}/\d{4}' THEN to_date(invoice_date, 'FMMonth/FMDD/YYYY')
+            ELSE invoice_date::date
+          END
+        ) >= ${monthStart}::date
+          AND (
+            CASE 
+              WHEN invoice_date ~ '^\d{4}-\d{2}-\d{2}' THEN invoice_date::date
+              WHEN invoice_date ~ '^\d{1,2}/\d{1,2}/\d{4}' THEN to_date(invoice_date, 'FMMonth/FMDD/YYYY')
+              ELSE invoice_date::date
+            END
+          ) < (${exportDate}::date + INTERVAL '1 day')
           ${rsaDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(TRIM(invoice_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin_chasis_no), ''), NULLIF(TRIM(policy_name), ''), invoice_date::text), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
@@ -591,7 +608,6 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
         FROM mcp_report
         WHERE package_purchase_date >= ${monthStart}::date
           AND package_purchase_date < (${exportDate}::date + INTERVAL '1 day')
-          AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
           ${mcpDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(TRIM(cert_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin), ''), NULLIF(TRIM(package_name), ''), package_purchase_date::text), id::text), uploaded_at DESC NULLS LAST, id DESC
       )
@@ -611,7 +627,6 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
         FROM mcp_report
         WHERE package_purchase_date >= ${monthStart}::date
           AND package_purchase_date < (${exportDate}::date + INTERVAL '1 day')
-          AND LOWER(TRIM(COALESCE(department::text, ''))) = 'service'
           ${mcpDealerFilter(dealerCode)}
         ORDER BY COALESCE(NULLIF(TRIM(cert_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin), ''), NULLIF(TRIM(reg_no), ''), package_purchase_date::text), id::text), uploaded_at DESC NULLS LAST, id DESC
       ),

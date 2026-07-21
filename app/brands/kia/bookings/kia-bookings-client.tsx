@@ -4960,10 +4960,8 @@ function BookingDrawer({
   // testPersona has no setter, so effectivePersona is always 'actual'.
   const isIdtRole = normalizeRole(currentUserRole) === 'idt'
   const canDeliver = (effectivePersona === 'actual' ? canDeliverKiaBooking(currentUserRole) : false) && !isIdtRole
-  // Allotting to a booking is IDT-exclusive; stock transfers keep the wider rule, so they are
-  // deliberately separate gates now.
-  const canAllotVehicle = (effectivePersona === 'actual' ? canAllotKiaVehicleToBooking(currentUserRole) : false) && !isIdtRole
-  const canActOnStock = (effectivePersona === 'actual' ? canAllotKiaVehicle(currentUserRole) : effectivePersona !== 'sales_person') && !isIdtRole
+  const canAllotVehicle = effectivePersona === 'actual' ? canAllotKiaVehicleToBooking(currentUserRole) : false
+  const canActOnStock = effectivePersona === 'actual' ? canAllotKiaVehicle(currentUserRole) : effectivePersona !== 'sales_person'
   // Sales persons (and managers/admin) can edit booking details until the booking is closed.
   const canEditBooking = !isTerminal && (canActAsSalesPerson || canActAsSalesManager)
   const personaNote = canUseTestPersona && effectivePersona !== 'actual'

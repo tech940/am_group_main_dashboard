@@ -40,7 +40,7 @@ const REPORT_SOURCES: Record<string, FreshnessSource[]> = {
       maxDateSql: sql`MAX(bill_date)::text`,
     },
     {
-      table: 'hyundai_repair_order_list',
+      table: 'hyundai_open_ro_yearly',
       label: 'Open RO',
       dealerColumn: 'source_dealer_code',
       fallbackDealerColumns: ['dealer_code', 'dlr_no'],

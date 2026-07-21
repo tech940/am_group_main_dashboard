@@ -54,7 +54,7 @@ export async function GET(request: Request) {
     if (status !== 'All') {
       if (status === 'AVAILABLE') {
         filters.push('va.id IS NULL')
-      } else if (status === 'ALLOTTED') {
+      } else if (status === 'ALLOTTED' || status === 'PAYMENT_PENDING') {
         filters.push("va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered')")
       } else if (status === 'PAYMENT_OVERDUE') {
         filters.push("va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW()")
