@@ -187,10 +187,13 @@ function complaintsDealerFilter(dealerCode: DealerFilter) {
 }
 
 function openRoDealerFilter(dealerCode: DealerFilter) {
+  // hyundai_open_ro_yearly only carries source_dealer_code + dealer_code; dealer_code_2 / dlr_no /
+  // dealer_name do NOT exist on this table (they exist on the RO-billing/complaints feeds), so
+  // referencing them here threw "column dealer_code_2 does not exist". Match the ro-billing filter above.
   return hyundaiSourceDealerFilter(
     dealerCode,
     sql.raw('source_dealer_code'),
-    [sql.raw('dealer_code'), sql.raw('dealer_code_2'), sql.raw('dlr_no'), sql.raw('dealer_name')]
+    [sql.raw('dealer_code')]
   )
 }
 
@@ -479,7 +482,8 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
 
 function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFilter) {
   void startDate
-  const openRoDealerKey = sql`COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), NULLIF(dealer_code_2, ''), NULLIF(dlr_no, ''), NULLIF(dealer_name, ''), '-')`
+  // Only source_dealer_code + dealer_code exist on hyundai_open_ro_yearly (see openRoDealerFilter note).
+  const openRoDealerKey = sql`COALESCE(NULLIF(source_dealer_code, ''), NULLIF(dealer_code, ''), '-')`
   return sql`
     WITH active AS (
       SELECT DISTINCT ON (

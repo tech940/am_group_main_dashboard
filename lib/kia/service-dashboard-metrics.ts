@@ -109,7 +109,7 @@ export function advWiseDealerFilter(dealerCode: KiaServiceDealerFilter, alias = 
   ])
 }
 
-export function openRoDealerFilter(dealerCode: KiaServiceDealerFilter, alias = 'open_ro_yearly') {
+export function openRoDealerFilter(dealerCode: KiaServiceDealerFilter, alias = 'kia_open_ro_yearly') {
   const codes = getKiaDealerFilterValues(dealerCode)
   if (!codes?.length) return sql``
   return dealerInListFilter(codes, [`${alias}.dealer_code`])
