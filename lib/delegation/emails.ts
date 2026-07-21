@@ -118,14 +118,38 @@ export async function runDelegationTaskReminders(): Promise<{ due: number; email
 function digestHtml(items: DueTask[]): string {
   const name = items[0]?.assignedName || 'there'
   const rows = items
-    .map((t) => detailTable([
-      ['Task', t.title],
-      ['Due', t.dueAt ? fmtDate(t.dueAt) : 'No Deadline'],
-    ]))
-    .join('<div style="height:12px"></div>')
+    .map((t) => {
+      const details: [string, string][] = [
+        ['Task Title', t.title],
+        ['Status', t.status === 'in_progress' ? 'In Progress' : 'Pending / Assigned'],
+        ['Priority', PRIORITY_LABEL[t.priority] || 'Normal'],
+        ['Due Date', t.dueAt ? fmtDate(t.dueAt) : 'No Deadline Set'],
+      ]
+      if (t.description) {
+        details.push(['Details', t.description])
+      }
+      return detailTable(details)
+    })
+    .join('<div style="height:14px"></div>')
+
   const bodyHtml = `
-    <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi ${escapeHtml(name)}, here is the daily digest of your pending delegated tasks. Please action them.</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#334155">Hi <strong>${escapeHtml(name)}</strong>,</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.5;">
+      Here is your daily <strong>9:30 AM</strong> morning digest of pending delegated task(s). You will receive this daily summary every morning until your open tasks are marked <strong>Done</strong>.
+    </p>
+
     ${rows}
+
+    ${primaryButton('Open Delegation Tasks Board', TASKS_URL)}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;line-height:1.4;text-align:center;">
+      Please mark tasks complete on the dashboard once done to stop further morning reminders.
+    </p>
   `
-  return emailLayout({ heading: 'Pending Tasks Digest', eyebrow: 'AM Group · Tasks', preheader: `${items.length} task(s) need your attention`, bodyHtml })
+  return emailLayout({
+    heading: 'Daily Pending Tasks Reminder',
+    eyebrow: 'AM Group · Delegation Tasks (9:30 AM Digest)',
+    preheader: `${items.length} pending task(s) require your attention`,
+    bodyHtml,
+  })
 }

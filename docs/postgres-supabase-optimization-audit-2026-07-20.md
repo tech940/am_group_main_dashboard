@@ -324,6 +324,20 @@ ORDER BY proforma_date DESC LIMIT 200;
 
 ---
 
+## 16. Implemented — booking-detail invocation storm (client prefetch) (2026-07-20)
+
+**Evidence (production observability):** `/api/brands/kia/bookings/[id]` showed **606 invocations / 2m Active CPU / 0% errors** in a window, with **~488 Upstash-Redis** (per-invocation auth-cache) and **~211 Supabase** downstream calls. Supabase < invocations because many prefetches return at the auth/permission gate (4xx, not "errors") before any query. The invocation *count*, not per-call cost, is the driver — and it is **client-side prefetch**, so the server fixes (§14) don't reduce it.
+
+**Change:** [app/brands/kia/bookings/kia-bookings-client.tsx](../app/brands/kia/bookings/kia-bookings-client.tsx) `scheduleHoverPrefetch`:
+- **Hover-prefetch disabled in `embedMode`** (the proforma bookings view — the logged source, `/brands/kia/proforma/bookings`). It opens a drawer, not a page, so the instant-open payoff is marginal. `onPointerDown` still warms the cache on a real click.
+- **Hover-intent raised 180 ms → 300 ms** in the main CRM, so ordinary reading pauses no longer fire — only a deliberate dwell on a row you intend to open. `onPointerDown` + `:focus-visible` unchanged.
+
+**Why not a server-side detail cache (the offered option b):** the storm is one user hovering many **distinct** booking ids — a per-id cache doesn't help (client React Query already dedupes same-id within 60 s), and caching the raw detail in external Upstash Redis would place **customer PII** (phone/PAN/Aadhaar; redaction is per-request, *after* the read) in Redis. Low value for this pattern, real PII/staleness risk — deliberately not done.
+
+> **⚠️ Deploy note:** every fix in §14–§16 is a **local, uncommitted** change on `am_hyundai_4june`. The production dashboard above runs the **old** code and will not change until these are committed and deployed.
+
+---
+
 ## Appendix — audit method & coverage
 
 Performed by **direct source reading** (the strongest fidelity for exact file:line + query citations). Region-parallel subagents were attempted first but the background-agent infrastructure failed repeatedly (stream watchdog), so the audit proceeded by reading the hotspots in full and reconciling the remainder against a complete index inventory.

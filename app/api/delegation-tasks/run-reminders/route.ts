@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 // (reminder_sent_at), so safe to call on any interval. Accepts `Authorization: Bearer $CRON_SECRET`
 // (the scheduler) or `?secret=$DELEGATION_REMINDER_SECRET` (manual / n8n). authorizeCronRequest FAILS
 // CLOSED — an unconfigured secret refuses to run rather than exposing the endpoint.
-export async function POST(request: Request) {
+async function handleRunReminders(request: Request) {
   const url = new URL(request.url)
   const auth = authorizeCronRequest(request, url, {
     secret: process.env.DELEGATION_REMINDER_SECRET,
@@ -23,4 +23,12 @@ export async function POST(request: Request) {
     console.error('Delegation reminder run failed:', error)
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Failed' }, { status: 500 })
   }
+}
+
+export async function GET(request: Request) {
+  return handleRunReminders(request)
+}
+
+export async function POST(request: Request) {
+  return handleRunReminders(request)
 }

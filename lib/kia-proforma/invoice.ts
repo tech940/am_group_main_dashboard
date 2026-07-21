@@ -111,6 +111,7 @@ function readPdfLogoAsset(fileName: string, name: string): PdfImageAsset | null 
 
 const pdfHeaderLogo = readPdfLogoAsset('am-group-logo-pdf.jpg', 'Logo')
 const pdfWatermarkLogo = readPdfLogoAsset('am-group-logo-watermark.jpg', 'WatermarkLogo')
+const pdfCompanyScanner = readPdfLogoAsset('company_scanner.jpg', 'CompanyScanner')
 
 function text(value: unknown) {
   return String(value ?? '').trim()
@@ -275,12 +276,28 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
   </div>
 </div>
 
-<div class="payment">
-  <b>PAYMENT DETAILS:</b> All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD. Payable at Jammu<br>
-  <span class="payment-account">AC. No. 43418019645 | BRANCH: SBI-SME-JAMMU | IFSC: SBIN0014501</span>
-  <span class="dealership-code">DEALERSHIP CODE: ${dealershipCode}</span>
-  <b>Sales:</b> 9484211111 | <b>Finance:</b> 9484111111<br>
-  <i>Complete payment must be made 24 hours prior to delivery.</i>
+<div class="payment" style="border: 1px solid #000; padding: 14px; margin: 14px 0; border-radius: 8px;">
+  <table style="width: 100%; border: none; margin: 0; table-layout: auto;">
+    <tr style="border: none;">
+      <td style="border: none; vertical-align: top; text-align: left; padding: 4px;">
+        <b style="font-size: 13px;">PAYMENT DETAILS:</b><br><br>
+        All Payments favoring <b>M/S PLATINUM AUTOMOBILES PVT LTD</b>. Payable at Jammu<br><br>
+        <span class="payment-account" style="font-size: 11px;"><b>A/C No.</b> 43418019645 | <b>BRANCH:</b> SBI-SME-JAMMU | <b>IFSC:</b> SBIN0014501</span>
+        <span class="dealership-code" style="font-size: 16px; margin: 8px 0; display: block;"><b>DEALERSHIP CODE:</b> ${dealershipCode}</span>
+        <b>Sales:</b> 9484211111 | <b>Finance:</b> 9484111111<br><br>
+        <i>Complete payment must be made 24 hours prior to delivery.</i>
+      </td>
+      <td style="border: none; width: 190px; text-align: center; vertical-align: middle; padding-left: 10px;">
+        <img src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Scanner/company_scanner.jpg" alt="Official Company QR Code" style="width: 180px; border: 1px solid #cbd5e1; border-radius: 8px; display: block; margin: 0 auto;" />
+        <div style="font-size: 11px; font-weight: bold; margin-top: 6px; color: #0f172a;">Official Company QR</div>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border: 2px solid #dc2626; background-color: #fef2f2; color: #991b1b; padding: 12px 16px; margin: 12px 0; border-radius: 8px; font-size: 11px; text-align: center; line-height: 1.5;">
+  <b style="font-size: 12px; color: #b91c1c;">WARNING / PAYMENT SAFETY NOTICE:</b><br>
+  Customers are requested to make all payments only to the Company’s official bank account or by scanning the official Company QR Code. Do NOT transfer money to any employee’s personal account. The Company shall not be responsible for any payment made to an employee’s personal account.
 </div>
 
 <div class="tc">
@@ -387,6 +404,13 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   }
   const rect = (x: number, yy: number, w: number, h: number, fill = false) => {
     page.commands.push(fill ? `0.91 g ${x} ${yy} ${w} ${h} re f 0 g` : `${x} ${yy} ${w} ${h} re S`)
+  }
+  const textAtRed = (x: number, yy: number, value: string, size = 10, bold = false) => {
+    page.commands.push(`1 0 0 rg BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${yy} Td (${pdfEscape(value)}) Tj ET 0 g`)
+  }
+  const rectRed = (x: number, yy: number, w: number, h: number) => {
+    page.commands.push(`1 0.92 0.92 rg ${x} ${yy} ${w} ${h} re f 0 g`)
+    page.commands.push(`1 0 0 RG ${x} ${yy} ${w} ${h} re S 0 G`)
   }
   const drawImage = (asset: PdfImageAsset | null, x: number, yy: number, w: number, h: number, opacityName?: string, rotate = 0) => {
     if (!asset) return
@@ -496,18 +520,58 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   center(y - 30, '(Signature/Seal)', 9)
   y -= 58
 
+  // ── Payment Details & Large Official QR Scanner Box ────────────────────────
   const dealershipCode = isJkBank(text(row.bankName)) ? 'JKB0993J003' : 'NOT APPLICABLE'
-  ensure(82)
-  center(y, 'PAYMENT DETAILS: All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD. Payable at Jammu', 9, true)
-  y -= 15
-  center(y, 'AC. No. 43418019645 | BRANCH: SBI-SME-JAMMU | IFSC: SBIN0014501', 8, true)
-  y -= 24
-  center(y, `DEALERSHIP CODE: ${dealershipCode}`, 9, true)
-  y -= 24
-  center(y, 'Sales: 9484211111 | Finance: 9484111111', 9)
-  y -= 13
-  center(y, 'Complete payment must be made 24 hours prior to delivery.', 9)
-  y -= 13
+  const payBoxH = 190
+  ensure(payBoxH)
+  rect(margin, y - payBoxH, width - margin * 2, payBoxH)
+
+  // Large QR Scanner image on right (130pt x 178pt)
+  const qrW = 130
+  const qrH = 178
+  const qrX = width - margin - qrW - 8
+  const qrY = y - payBoxH + (payBoxH - qrH) / 2
+  if (pdfCompanyScanner) {
+    drawImage(pdfCompanyScanner, qrX, qrY, qrW, qrH)
+  }
+
+  // Payment text on left
+  const payTextX = margin + 12
+  let payY = y - 18
+  textAt(payTextX, payY, 'PAYMENT DETAILS:', 10, true)
+  payY -= 16
+  textAt(payTextX, payY, 'All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD', 8.5, true)
+  payY -= 14
+  textAt(payTextX, payY, 'Payable at Jammu', 8.5)
+  payY -= 18
+  textAt(payTextX, payY, 'A/C No. 43418019645', 9, true)
+  payY -= 15
+  textAt(payTextX, payY, 'BRANCH: SBI-SME-JAMMU', 8.5)
+  payY -= 15
+  textAt(payTextX, payY, 'IFSC: SBIN0014501', 8.5, true)
+  payY -= 18
+  textAt(payTextX, payY, `DEALERSHIP CODE: ${dealershipCode}`, 9, true)
+  payY -= 18
+  textAt(payTextX, payY, 'Sales: 9484211111 | Finance: 9484111111', 8.5)
+  payY -= 16
+  textAt(payTextX, payY, 'Complete payment must be made 24 hours prior to delivery.', 8, true)
+
+  y -= payBoxH + 12
+
+  // ── Payment Warning & Fraud Prevention Alert Box ─────────────────────────────
+  const alertLines = [
+    "Customers are requested to make all payments only to the Company's official bank account or by scanning",
+    "the official Company QR Code. Do NOT transfer money to any employee's personal account.",
+    "The Company shall not be responsible for any payment made to an employee's personal account."
+  ]
+  const alertH = 14 + (alertLines.length * 12) + 6
+  ensure(alertH)
+  rectRed(margin, y - alertH, width - margin * 2, alertH)
+  textAtRed(margin + 10, y - 14, 'WARNING / PAYMENT SAFETY NOTICE:', 9, true)
+  alertLines.forEach((line, idx) => {
+    textAtRed(margin + 10, y - 26 - (idx * 12), line, 8, idx === 1)
+  })
+  y -= alertH + 12
 
   y -= 8
   ensure(14)
@@ -563,6 +627,7 @@ export function buildKiaProformaPdf(row: KiaProformaInvoiceRow) {
   }
   addImageObject(pdfHeaderLogo)
   addImageObject(pdfWatermarkLogo)
+  addImageObject(pdfCompanyScanner)
   const xObjectResources = imageObjectIds.size > 0
     ? `/XObject << ${Array.from(imageObjectIds.entries()).map(([name, id]) => `/${name} ${id} 0 R`).join(' ')} >>`
     : ''
@@ -777,18 +842,58 @@ export function buildKiaQuotePdf(row: KiaQuotePdfRow) {
   y -= 58
 
   // ── Payment details ─────────────────────────────────────────────────────────
+  // ── Payment Details & Large Official QR Scanner Box ────────────────────────
   const dealershipCode = isJkBank(text(row.bankName)) ? 'JKB0993J003' : 'NOT APPLICABLE'
-  ensure(82)
-  center(y, 'PAYMENT DETAILS: All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD. Payable at Jammu', 9, true)
-  y -= 15
-  center(y, 'AC. No. 43418019645 | BRANCH: SBI-SME-JAMMU | IFSC: SBIN0014501', 8, true)
-  y -= 24
-  center(y, `DEALERSHIP CODE: ${dealershipCode}`, 9, true)
-  y -= 24
-  center(y, 'Sales: 9484211111 | Finance: 9484111111', 9)
-  y -= 13
-  center(y, 'Complete payment must be made 24 hours prior to delivery.', 9)
-  y -= 13
+  const payBoxH = 190
+  ensure(payBoxH)
+  rect(margin, y - payBoxH, width - margin * 2, payBoxH)
+
+  // Large QR Scanner image on right (130pt x 178pt)
+  const qrW = 130
+  const qrH = 178
+  const qrX = width - margin - qrW - 8
+  const qrY = y - payBoxH + (payBoxH - qrH) / 2
+  if (pdfCompanyScanner) {
+    drawImage(pdfCompanyScanner, qrX, qrY, qrW, qrH)
+  }
+
+  // Payment text on left
+  const payTextX = margin + 12
+  let payY = y - 18
+  textAt(payTextX, payY, 'PAYMENT DETAILS:', 10, true)
+  payY -= 16
+  textAt(payTextX, payY, 'All Payments favoring M/S PLATINUM AUTOMOBILES PVT LTD', 8.5, true)
+  payY -= 14
+  textAt(payTextX, payY, 'Payable at Jammu', 8.5)
+  payY -= 18
+  textAt(payTextX, payY, 'A/C No. 43418019645', 9, true)
+  payY -= 15
+  textAt(payTextX, payY, 'BRANCH: SBI-SME-JAMMU', 8.5)
+  payY -= 15
+  textAt(payTextX, payY, 'IFSC: SBIN0014501', 8.5, true)
+  payY -= 18
+  textAt(payTextX, payY, `DEALERSHIP CODE: ${dealershipCode}`, 9, true)
+  payY -= 18
+  textAt(payTextX, payY, 'Sales: 9484211111 | Finance: 9484111111', 8.5)
+  payY -= 16
+  textAt(payTextX, payY, 'Complete payment must be made 24 hours prior to delivery.', 8, true)
+
+  y -= payBoxH + 12
+
+  // ── Payment Warning & Fraud Prevention Alert Box ─────────────────────────────
+  const alertLines = [
+    "Customers are requested to make all payments only to the Company's official bank account or by scanning",
+    "the official Company QR Code. Do NOT transfer money to any employee's personal account.",
+    "The Company shall not be responsible for any payment made to an employee's personal account."
+  ]
+  const alertH = 14 + (alertLines.length * 12) + 6
+  ensure(alertH)
+  rectRed(margin, y - alertH, width - margin * 2, alertH)
+  textAtRed(margin + 10, y - 14, 'WARNING / PAYMENT SAFETY NOTICE:', 9, true)
+  alertLines.forEach((line, idx) => {
+    textAtRed(margin + 10, y - 26 - (idx * 12), line, 8, idx === 1)
+  })
+  y -= alertH + 12
 
   // ── Terms & Conditions ──────────────────────────────────────────────────────
   y -= 8
@@ -847,6 +952,7 @@ export function buildKiaQuotePdf(row: KiaQuotePdfRow) {
   }
   addImageObject(pdfHeaderLogo)
   addImageObject(pdfWatermarkLogo)
+  addImageObject(pdfCompanyScanner)
   const xObjectResources = imageObjectIds.size > 0
     ? `/XObject << ${Array.from(imageObjectIds.entries()).map(([name, id]) => `/${name} ${id} 0 R`).join(' ')} >>`
     : ''

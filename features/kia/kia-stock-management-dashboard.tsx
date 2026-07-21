@@ -9,6 +9,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { DASHBOARD_STALE_TIME_MS, DASHBOARD_GC_TIME_MS } from '@/components/providers/query-provider'
 import { 
   Car, Plus, Search, RefreshCw, Loader2, ShieldCheck, FileText, 
   CheckCircle2, XCircle, Truck, WalletCards, BadgeIndianRupee, 
@@ -281,10 +282,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       if (!response.ok) throw new Error('Failed to load stock data')
       return response.json()
     },
-    // refetchOnMount:'always' IGNORES staleTime — it refetched on every single mount. Every mutation
-    // below invalidates this key explicitly, so `true` (refetch only when actually stale) is enough.
-    staleTime: 60_000,
-    refetchOnMount: true,
+    staleTime: DASHBOARD_STALE_TIME_MS,
+    gcTime: DASHBOARD_GC_TIME_MS,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   })
 
   // Query unallocated active bookings for allotment matching
@@ -295,11 +296,10 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
       if (!response.ok) throw new Error('Failed to load unallocated active bookings')
       return response.json()
     },
-    // pageSize=1000 makes this one of the most expensive calls in the app (the list endpoint runs a
-    // correlated stock-match per row), and 'always' re-ran it on every mount. The mutations now
-    // invalidate this key, so mount-time refetching only needs to happen when the data is stale.
-    staleTime: 60_000,
-    refetchOnMount: true,
+    staleTime: DASHBOARD_STALE_TIME_MS,
+    gcTime: DASHBOARD_GC_TIME_MS,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   })
 
   const bookingsList = bookingsData?.rows || []
@@ -309,13 +309,19 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const getMatchingBookings = (row: StockRow) => {
     if (row.allocation_id) return []
     return bookingsList.filter((b) => {
-      const bModel = String(b.model || '').toLowerCase().trim()
-      const rModel = String(row.model || '').toLowerCase().trim()
-      if (bModel !== rModel) return false
+      const bModelStr = String(b.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
+      const rModelStr = String(row.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
+      const modelMatches =
+        !bModelStr ||
+        !rModelStr ||
+        bModelStr === rModelStr ||
+        bModelStr.includes(rModelStr) ||
+        rModelStr.includes(bModelStr)
+      if (!modelMatches) return false
 
       const bVar = String(b.variant || '').toLowerCase().replace(/[^a-z0-9]/g, '')
       const rVar = String(row.variant || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-      return bVar.includes(rVar) || rVar.includes(bVar)
+      return !bVar || !rVar || bVar.includes(rVar) || rVar.includes(bVar)
     })
   }
 

@@ -6,7 +6,8 @@ import { toast } from '@/hooks/use-toast'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { DASHBOARD_STALE_TIME_MS, DASHBOARD_GC_TIME_MS } from '@/components/providers/query-provider'
 import Link from 'next/link'
 import {
   Bar,
@@ -477,13 +478,8 @@ function useOptions() {
 }
 
 function useProformas(mode: string, enabled = true) {
-  const [rows, setRows] = useState<KiaProformaRow[]>([])
-  const [pagination, setPagination] = useState({ page: 1, totalPages: 1, totalRows: 0 })
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  // Debounce the server-side search so a 1000-row fetch does not fire on every
-  // keystroke — the input stays responsive while requests are coalesced.
   const [debouncedSearch, setDebouncedSearch] = useState('')
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 350)
@@ -491,34 +487,50 @@ function useProformas(mode: string, enabled = true) {
   }, [search])
   const [page, setPage] = useState(1)
   const [financeStatus, setFinanceStatus] = useState('all')
-  const reload = useCallback(async () => {
-    if (!enabled) return
-    setLoading(true)
-    setError('')
-    const params = new URLSearchParams({ page: '1', pageSize: String(PROFORMA_LIST_PAGE_SIZE), mode })
-    if (debouncedSearch) params.set('search', debouncedSearch)
-    if (financeStatus !== 'all') params.set('financeStatus', financeStatus)
-    try {
+
+  const queryKey = useMemo(
+    () => ['kia-proforma-list', mode, debouncedSearch, financeStatus],
+    [mode, debouncedSearch, financeStatus]
+  )
+
+  const query = useQuery({
+    queryKey,
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: '1', pageSize: String(PROFORMA_LIST_PAGE_SIZE), mode })
+      if (debouncedSearch) params.set('search', debouncedSearch)
+      if (financeStatus !== 'all') params.set('financeStatus', financeStatus)
       const response = await fetch(`/api/brands/kia/proforma?${params}`)
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
         throw new Error(payload?.error || `Failed to load proformas (${response.status})`)
       }
-      const payload = await response.json()
-      setRows(payload.rows || [])
-      setPagination(payload.pagination || { page: 1, totalPages: 1, totalRows: 0 })
-    } catch (err) {
-      setRows([])
-      setPagination({ page: 1, totalPages: 1, totalRows: 0 })
-      setError(err instanceof Error ? err.message : 'Failed to load proformas')
-    } finally {
-      setLoading(false)
-    }
-  }, [enabled, financeStatus, mode, debouncedSearch])
-  useEffect(() => {
-    reload()
-  }, [reload])
-  return { rows, loading, error, search, setSearch, page, setPage, pagination, financeStatus, setFinanceStatus, reload }
+      return (await response.json()) as { rows: KiaProformaRow[]; pagination: { page: number; totalPages: number; totalRows: number } }
+    },
+    enabled,
+    staleTime: DASHBOARD_STALE_TIME_MS,
+    gcTime: DASHBOARD_GC_TIME_MS,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    placeholderData: keepPreviousData,
+  })
+
+  const reload = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['kia-proforma-list'] })
+  }, [queryClient])
+
+  return {
+    rows: query.data?.rows || [],
+    loading: query.isLoading,
+    error: query.error ? (query.error as Error).message : '',
+    search,
+    setSearch,
+    page,
+    setPage,
+    pagination: query.data?.pagination || { page: 1, totalPages: 1, totalRows: 0 },
+    financeStatus,
+    setFinanceStatus,
+    reload,
+  }
 }
 
 const PROFORMA_NAV_ITEMS: { section: KiaProformaSection; label: string; href: string; approverOnly?: boolean; hideFromNav?: boolean }[] = [
@@ -1254,7 +1266,7 @@ function FilterBar({
           <Input type="date" value={financeDate || ''} onChange={(event) => setFinanceDate(event.target.value)} className="h-11 w-44 rounded-2xl border-slate-200 bg-white font-bold" />
         )}
         
-        {mode !== 'pending-approval' && (
+        {true && (
           <DropdownMenu
             open={monthPickerOpen}
             onOpenChange={(open) => {

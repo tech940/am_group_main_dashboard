@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { analyticsDb } from '@/lib/analytics/db'
 import {
@@ -119,6 +119,8 @@ export type BookingListInput = {
   model?: string | null
   status?: string | null
   consultant?: string | null
+  startDate?: string | null
+  endDate?: string | null
   page?: number | null
   pageSize?: number | null
   /** 'asc' = oldest first (createdAt ASC); anything else = newest first (default). */
@@ -609,9 +611,20 @@ function listFilters(input: BookingListInput) {
         )
       )
     `)
-  } else if (text(input.status) && text(input.status).toLowerCase() !== 'all') {
+  } else if (text(input.status) && text(input.status).toLowerCase() !== 'all' && text(input.status).toLowerCase() !== 'all_with_delivered') {
     filters.push(eq(kiaBookings.status, normalizeStatus(input.status)))
+  } else if (!input.status || text(input.status).toLowerCase() === 'all') {
+    // Active CRM list view excludes delivered bookings so delivered bookings reside in the Delivered section tab
+    filters.push(ne(kiaBookings.status, 'delivered'))
   }
+
+  if (text(input.startDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.startDate))) {
+    filters.push(sql`kia_bookings.created_at >= (${text(input.startDate)}::date AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'`)
+  }
+  if (text(input.endDate) && /^\d{4}-\d{2}-\d{2}$/.test(text(input.endDate))) {
+    filters.push(sql`kia_bookings.created_at <= ((${text(input.endDate)}::date + INTERVAL '1 day') AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'UTC'`)
+  }
+
   if (text(input.consultant) && text(input.consultant).toLowerCase() !== 'all') filters.push(ilike(kiaBookings.consultantName, text(input.consultant)))
 
   // Sales Executives (and any non-privileged role) only ever see their own
@@ -1575,13 +1588,26 @@ export async function getKiaBookingMatchingVehicles(id: string) {
 function alnumKey(value: unknown) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
+function normalizeKiaModel(value: unknown) {
+  let str = String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  str = str.replace(/^(thenew|allnew|new)/, '')
+  str = str.replace(/(petrol|diesel|ev|hev|mhev)$/, '')
+  return str.trim()
+}
 function assertKiaVehicleMatchesBooking(vehicle: JsonRecord, wanted: { model: string; variant: string }) {
-  const vehModel = alnumKey(vehicle.model)
+  const vehModel = normalizeKiaModel(vehicle.model)
+  const wantModel = normalizeKiaModel(wanted.model)
   const vehVariant = alnumKey(vehicle.variant)
-  const wantModel = alnumKey(wanted.model)
   const wantVariant = alnumKey(wanted.variant)
 
-  if (wantModel && vehModel && wantModel !== vehModel) {
+  const modelMatches =
+    !wantModel ||
+    !vehModel ||
+    wantModel === vehModel ||
+    vehModel.includes(wantModel) ||
+    wantModel.includes(vehModel)
+
+  if (!modelMatches) {
     throw new Error(`This vehicle is a ${text(vehicle.model) || 'different model'} but the booking is for a ${wanted.model}. Only the selected model can be allotted.`)
   }
   if (wantVariant && vehVariant && !(vehVariant.includes(wantVariant) || wantVariant.includes(vehVariant))) {

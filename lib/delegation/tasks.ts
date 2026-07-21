@@ -564,31 +564,44 @@ export async function updateDelegationTask(id: string, action: TaskAction, input
 export type DueTask = {
   id: string
   title: string
+  description?: string | null
   dueAt: string
   priority: string
+  status: string
   assignedName: string | null
   assignedEmail: string | null
 }
 
-/** Open tasks now due (or overdue) that have not been reminded yet. `lte` on a nullable due_at also
- *  excludes tasks with no due date, so a task without a deadline never triggers a reminder. */
+/** Open pending tasks (assigned or in_progress) that receive daily morning reminders at 9:30 AM until marked done. */
 export async function getDueDelegationTasks(): Promise<DueTask[]> {
   const rows = await db
     .select({
       id: delegationTasks.id,
       title: delegationTasks.title,
+      description: delegationTasks.description,
       dueAt: delegationTasks.dueAt,
       priority: delegationTasks.priority,
+      status: delegationTasks.status,
       assignedName: delegationTasks.assignedName,
       assignedEmail: delegationTasks.assignedEmail,
+      userEmail: users.email,
+      userName: users.fullName,
     })
     .from(delegationTasks)
-    .where(eq(delegationTasks.status, 'assigned'))
+    .leftJoin(users, eq(delegationTasks.assignedTo, users.id))
+    .where(inArray(delegationTasks.status, ['assigned', 'in_progress']))
     .orderBy(delegationTasks.dueAt)
     .limit(1000)
+
   return rows.map((r) => ({
-    ...r,
+    id: r.id,
+    title: r.title,
+    description: r.description,
     dueAt: r.dueAt ? (r.dueAt as Date).toISOString() : '',
+    priority: r.priority || 'normal',
+    status: r.status || 'assigned',
+    assignedName: r.assignedName || r.userName || 'Team Member',
+    assignedEmail: r.assignedEmail || r.userEmail || null,
   }))
 }
 

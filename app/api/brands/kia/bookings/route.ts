@@ -41,6 +41,8 @@ export async function GET(request: Request) {
       model: url.searchParams.get('model'),
       status: url.searchParams.get('status'),
       consultant: url.searchParams.get('consultant'),
+      startDate: url.searchParams.get('startDate'),
+      endDate: url.searchParams.get('endDate'),
       page: Number(url.searchParams.get('page') || 1),
       pageSize: Number(url.searchParams.get('pageSize') || 15),
       sortOrder: url.searchParams.get('sort'),

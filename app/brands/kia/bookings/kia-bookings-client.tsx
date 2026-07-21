@@ -6,12 +6,14 @@ import { toast } from '@/hooks/use-toast'
 
 import { ChangeEvent, createContext, FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { DASHBOARD_STALE_TIME_MS, DASHBOARD_GC_TIME_MS } from '@/components/providers/query-provider'
 import { canViewKiaCustomerPii, maskKiaPii } from '@/lib/kia/pii'
 import {
   AlertTriangle,
   ArrowUpDown,
   ArrowRight,
   BadgeIndianRupee,
+  Calendar,
   CalendarCheck,
   Car,
   CheckCircle2,
@@ -28,7 +30,9 @@ import {
   ShieldCheck,
   Truck,
   Upload,
+  UserCheck,
   UserRound,
+  X,
   XCircle,
   Eye,
   MoreVertical,
@@ -442,7 +446,6 @@ async function fetchJson<T>(url: string, label: string, init?: RequestInit): Pro
   try {
     const response = await fetch(url, {
       ...init,
-      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         ...(init?.headers || {}),
@@ -1318,6 +1321,8 @@ export function KiaBookingsClient({
   const [model, setModel] = useState(firstParam(initialSearchParams, 'model', ALL_VALUE))
   const [status, setStatus] = useState(firstParam(initialSearchParams, 'status', ALL_VALUE))
   const [consultant, setConsultant] = useState(firstParam(initialSearchParams, 'consultant', ALL_VALUE))
+  const [startDate, setStartDate] = useState(firstParam(initialSearchParams, 'startDate', ''))
+  const [endDate, setEndDate] = useState(firstParam(initialSearchParams, 'endDate', ''))
   const [page, setPage] = useState(Number(firstParam(initialSearchParams, 'page', '1')) || 1)
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>(firstParam(initialSearchParams, 'sort', 'desc') === 'asc' ? 'asc' : 'desc')
   const [notInStockModalOpen, setNotInStockModalOpen] = useState(false)
@@ -1610,7 +1615,7 @@ export function KiaBookingsClient({
     // render count of the single most-loaded route in the module. Omitting page 1 (the conventional
     // default) makes nextSearch === currentSearch on a clean load, so no replace fires. The list query
     // still sends `page` via its own buildQueryString call below, so pagination is unaffected.
-    const query = buildQueryString({ search: debouncedSearch, dealer_code: dealer, model, status, consultant, page: page > 1 ? page : undefined, sort: sortOrder === 'asc' ? 'asc' : undefined })
+    const query = buildQueryString({ search: debouncedSearch, dealer_code: dealer, model, status, consultant, startDate: startDate || undefined, endDate: endDate || undefined, page: page > 1 ? page : undefined, sort: sortOrder === 'asc' ? 'asc' : undefined })
     const next = new URLSearchParams(query)
     if (selectedBookingId && embedMode) next.set('bookingId', selectedBookingId)
     const nextSearch = next.toString() ? `?${next.toString()}` : ''
@@ -1618,7 +1623,7 @@ export function KiaBookingsClient({
     if (nextSearch !== currentSearch) {
       router.replace(`${pathname}${nextSearch}`, { scroll: false })
     }
-  }, [pathname, consultant, dealer, model, page, router, debouncedSearch, selectedBookingId, status, embedMode, sortOrder])
+  }, [pathname, consultant, dealer, model, page, router, debouncedSearch, selectedBookingId, status, embedMode, sortOrder, startDate, endDate])
 
   const listQueryString = useMemo(() => buildQueryString({
     search: debouncedSearch,
@@ -1626,17 +1631,21 @@ export function KiaBookingsClient({
     model,
     status,
     consultant,
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
     page,
     pageSize: DEFAULT_PAGE_SIZE,
     sort: sortOrder,
-  }), [consultant, dealer, debouncedSearch, model, page, status, sortOrder])
+  }), [consultant, dealer, debouncedSearch, model, page, status, sortOrder, startDate, endDate])
 
   const listQuery = useQuery({
     queryKey: ['kia-bookings', listQueryString],
     queryFn: () => fetchJson<BookingListPayload>(`/api/brands/kia/bookings?${listQueryString}`, 'kia-bookings-list'),
     retry: 2,
-    staleTime: 10_000,
+    staleTime: DASHBOARD_STALE_TIME_MS,
+    gcTime: DASHBOARD_GC_TIME_MS,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
     // Keep the current rows on screen while a page/filter change refetches, so the
     // table never flashes an empty skeleton — pagination + search feel instant.
     placeholderData: keepPreviousData,
@@ -1646,13 +1655,11 @@ export function KiaBookingsClient({
     queryKey: ['kia-booking-detail', selectedBookingId],
     queryFn: () => fetchJson<BookingDetailPayload>(`/api/brands/kia/bookings/${selectedBookingId}`, 'kia-booking-detail'),
     enabled: Boolean(selectedBookingId),
-    // staleTime matches the hover prefetch (60s) — at 10s the prefetch went stale before the user could
-    // click, so opening a row refetched what we had just fetched. retry:2 meant up to 3x the cost of the
-    // app's most expensive endpoint on a blip; every mutation below invalidates this key explicitly, so
-    // freshness does not depend on a short staleTime.
     retry: 1,
-    staleTime: 60_000,
+    staleTime: DASHBOARD_STALE_TIME_MS,
+    gcTime: DASHBOARD_GC_TIME_MS,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
     placeholderData: (previousData) => {
       if (previousData) return previousData
       const row = listQuery.data?.rows?.find((r) => r.id === selectedBookingId) as any
@@ -2032,9 +2039,16 @@ export function KiaBookingsClient({
   // cache rather than a skeleton. One shared timer for the whole table, not one per row.
   const hoverIntentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scheduleHoverPrefetch = useCallback((id: string) => {
+    // Hover-prefetch is OFF in the embedded (proforma) bookings view. There it opens a drawer, not a
+    // page, so the instant-open payoff is marginal — and per-row hover in that embed was the dominant
+    // source of the /api/brands/kia/bookings/[id] invocation volume seen in production. onPointerDown
+    // (below) still warms the cache on a real click, so opening still lands on a warm/in-flight cache.
+    if (embedMode) return
     if (hoverIntentTimer.current) clearTimeout(hoverIntentTimer.current)
-    hoverIntentTimer.current = setTimeout(() => prefetchBookingDetail(id), 180)
-  }, [prefetchBookingDetail])
+    // 300ms (was 180ms): only a genuine dwell — settling on a row you intend to open — fires, not the
+    // longer reading pauses of someone scanning the list. Fast clicks are covered by onPointerDown.
+    hoverIntentTimer.current = setTimeout(() => prefetchBookingDetail(id), 300)
+  }, [prefetchBookingDetail, embedMode])
   const cancelHoverPrefetch = useCallback(() => {
     if (hoverIntentTimer.current) { clearTimeout(hoverIntentTimer.current); hoverIntentTimer.current = null }
   }, [])
@@ -2597,7 +2611,7 @@ export function KiaBookingsClient({
         )}
 
         <section className={cn(PRIMARY_SURFACE, 'sticky top-2 z-20 p-2.5 sm:top-3 sm:p-3')}>
-          <div className="grid gap-2 sm:gap-2.5 lg:grid-cols-[1.5fr_repeat(4,minmax(0,0.85fr))_auto]">
+          <div className="grid gap-2 sm:gap-2.5 lg:grid-cols-[1.2fr_repeat(4,minmax(0,0.85fr))_auto_auto]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kia-text-faint)]" />
               <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Search booking, customer, phone, VIN…" className={cn(INPUT_STYLE, '!pl-10 sm:!pl-11')} />
@@ -2606,6 +2620,34 @@ export function KiaBookingsClient({
             <FilterSelect value={model} placeholder="Model" values={filters.models} onChange={(value) => { setModel(value); setPage(1) }} />
             <FilterSelect value={status} placeholder="Status" values={filters.statuses} onChange={(value) => { setStatus(value); setPage(1) }} labeler={statusLabel} />
             <FilterSelect value={consultant} placeholder="Consultant" values={filters.consultants} onChange={(value) => { setConsultant(value); setPage(1) }} />
+            <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white px-3 py-1 shadow-sm">
+              <Calendar className="h-4 w-4 shrink-0 text-slate-400" />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => { setStartDate(e.target.value); setPage(1) }}
+                className="h-8 w-28 bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                title="Start Date"
+              />
+              <span className="text-xs font-bold text-slate-400">to</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => { setEndDate(e.target.value); setPage(1) }}
+                className="h-8 w-28 bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                title="End Date"
+              />
+              {(startDate || endDate) && (
+                <button
+                  type="button"
+                  onClick={() => { setStartDate(''); setEndDate(''); setPage(1) }}
+                  className="ml-1 rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  title="Clear Date Filter"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
