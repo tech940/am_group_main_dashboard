@@ -288,7 +288,7 @@ export function buildKiaProformaInvoiceHtml(row: KiaProformaInvoiceRow) {
         <i>Complete payment must be made 24 hours prior to delivery.</i>
       </td>
       <td style="border: none; width: 190px; text-align: center; vertical-align: middle; padding-left: 10px;">
-        <img src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Scanner/company_scanner.jpg" alt="Official Company QR Code" style="width: 180px; border: 1px solid #cbd5e1; border-radius: 8px; display: block; margin: 0 auto;" />
+        <img src="https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Scanner/company_scanner.svg" alt="Official Company QR Code" style="width: 180px; border: 1px solid #cbd5e1; border-radius: 8px; display: block; margin: 0 auto;" />
         <div style="font-size: 11px; font-weight: bold; margin-top: 6px; color: #0f172a;">Official Company QR</div>
       </td>
     </tr>

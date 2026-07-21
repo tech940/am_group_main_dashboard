@@ -145,24 +145,24 @@ export default function LoginPage() {
               {ORBIT_NODES.map((node) => {
                 const Icon = node.icon
 
-                return (
-                  <div
-                    key={node.label}
-                    className="absolute left-1/2 top-1/2 group"
-                    style={{ transform: orbitTransform(node.angle, node.ring) }}
-                  >
-                    <div className="flex min-w-28 flex-col items-center gap-2.5 animate-[spin_120s_linear_infinite_reverse] transition-transform duration-300">
-                      <div
-                        className="flex h-[86px] w-[86px] items-center justify-center rounded-full border border-white/95 bg-white shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 ring-slate-100/70 transition-all duration-300 ease-out group-hover:scale-110 group-hover:shadow-[0_24px_56px_rgba(15,23,42,0.16)] group-hover:-translate-y-1"
-                      >
-                        <Icon className="h-10 w-10" style={{ color: node.color }} strokeWidth={1.5} />
+                  return (
+                    <div
+                      key={node.label}
+                      className="absolute left-1/2 top-1/2 group cursor-pointer"
+                      style={{ transform: orbitTransform(node.angle, node.ring) }}
+                    >
+                      <div className="relative flex h-[86px] w-[86px] flex-col items-center justify-center animate-[spin_120s_linear_infinite_reverse]">
+                        <div
+                          className="flex h-[86px] w-[86px] shrink-0 items-center justify-center rounded-full border border-white/95 bg-white shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 ring-slate-100/70 transition-all duration-300 ease-out group-hover:scale-110 group-hover:shadow-[0_24px_56px_rgba(15,23,42,0.16)] group-hover:-translate-y-1"
+                        >
+                          <Icon className="h-10 w-10" style={{ color: node.color }} strokeWidth={1.5} />
+                        </div>
+                        <span className="absolute top-[94px] whitespace-nowrap text-[15px] font-semibold tracking-[-0.01em] text-slate-950 transition-all duration-300 group-hover:font-bold">
+                          {node.label}
+                        </span>
                       </div>
-                      <span className="text-[15px] font-semibold tracking-[-0.01em] text-slate-950 transition-all duration-300 group-hover:font-bold">
-                        {node.label}
-                      </span>
                     </div>
-                  </div>
-                )
+                  )
               })}
 
               {ORBIT_DOTS.map((dot) => (

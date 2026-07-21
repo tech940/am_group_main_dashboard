@@ -162,21 +162,53 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
       setActiveTab('all')
       setSelectedIndex(0)
       setNavigatingSection(null)
-      setTimeout(() => searchInputRef.current?.focus(), 150)
+      const timer = setTimeout(() => {
+        if (searchInputRef.current) {
+          searchInputRef.current.focus()
+          searchInputRef.current.select()
+        }
+      }, 50)
+      return () => clearTimeout(timer)
     }
   }, [open])
 
   // Keyboard navigation logic
   useEffect(() => {
+    const getColumnsCount = () => {
+      if (typeof window === 'undefined') return 5
+      const width = window.innerWidth
+      if (width >= 1280) return 5
+      if (width >= 1024) return 4
+      if (width >= 768) return 3
+      if (width >= 640) return 2
+      return 1
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!open || navigatingSection) return // Block input when loading/navigating
 
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        e.stopPropagation()
+        onOpenChange(false)
+        return
+      }
+
+      const cols = getColumnsCount()
+      const total = filteredSections.length
+
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setSelectedIndex((prev) => (prev + 1) % Math.max(1, filteredSections.length))
+        setSelectedIndex((prev) => Math.min(total - 1, prev + cols))
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setSelectedIndex((prev) => (prev - 1 + filteredSections.length) % Math.max(1, filteredSections.length))
+        setSelectedIndex((prev) => Math.max(0, prev - cols))
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        setSelectedIndex((prev) => Math.min(total - 1, prev + 1))
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        setSelectedIndex((prev) => Math.max(0, prev - 1))
       } else if (e.key === 'Enter') {
         e.preventDefault()
         if (filteredSections[selectedIndex]) {
@@ -193,7 +225,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, filteredSections, selectedIndex, activeTab, navigatingSection])
+  }, [open, filteredSections, selectedIndex, activeTab, navigatingSection, onOpenChange])
 
   // Auto-scroll selected element into view
   useEffect(() => {
@@ -257,7 +289,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[94vw] w-[94vw] h-[80vh] max-h-[80vh] flex flex-col overflow-hidden p-0 border border-slate-100 bg-slate-50/90 shadow-2xl backdrop-blur-md dark:border-white/10 dark:bg-slate-950/90 rounded-[28px]">
+      <DialogContent className="max-w-[96vw] 2xl:max-w-[1640px] w-full h-[84vh] max-h-[850px] flex flex-col overflow-hidden p-0 border border-slate-200/80 bg-slate-50/95 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 rounded-[28px]">
         <DialogTitle className="sr-only">Search Sections</DialogTitle>
 
         {/* Search header area */}
@@ -269,11 +301,8 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Type to search dashboard sections..."
-            className="w-full bg-transparent pl-3 pr-20 text-base font-semibold text-slate-800 placeholder-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder-slate-500"
+            className="w-full bg-transparent pl-3 pr-12 text-base font-semibold text-slate-800 placeholder-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder-slate-500"
           />
-          <div className="absolute right-6 flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-2 py-1 text-[10px] font-black text-slate-400 shadow-sm dark:border-white/10 dark:bg-slate-900">
-            <span>ESC</span>
-          </div>
         </div>
 
         {/* Tab Filters */}
@@ -397,7 +426,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
         <div className="flex items-center justify-between border-t border-slate-200/50 bg-slate-100/50 px-6 py-3.5 dark:border-white/5 dark:bg-slate-900/30 text-[10px] font-bold text-slate-400 shrink-0">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1">
-              <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 shadow-sm dark:border-white/10 dark:bg-slate-850">↑↓</span>
+              <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 shadow-sm dark:border-white/10 dark:bg-slate-850">↑↓←→</span>
               to navigate
             </span>
             <span className="flex items-center gap-1">

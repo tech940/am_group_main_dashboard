@@ -77,7 +77,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setSearchOpen((prev) => !prev)
       }
@@ -168,7 +168,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
 
   return (
     <header className="sticky top-0 z-30 mx-4 sm:mx-5 mt-4 flex h-[72px] items-center justify-between rounded-[28px] border border-[color-mix(in_srgb,var(--dashboard-primary-border)_80%,transparent)] bg-[linear-gradient(135deg,#ffffff_0%,var(--dashboard-primary-soft)_48%,#eff6ff_100%)] px-3 sm:px-6 transition-colors dark:border-white/10 dark:bg-[linear-gradient(135deg,#020617_0%,var(--dashboard-primary-dark)_52%,#0f172a_100%)]">
-      <div className="flex items-center gap-3 sm:gap-6">
+      <div className="flex items-center gap-3 sm:gap-6 shrink-0">
         {/* Hamburger */}
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -185,33 +185,33 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
       </div>
 
       {/* Search Bar & Home Button Container */}
-      <div className="flex items-center gap-2 mx-4 hidden md:flex flex-1 max-w-[420px] lg:max-w-[540px]">
+      <div className="flex items-center gap-2 mx-2 sm:mx-4 hidden md:flex flex-1 max-w-[320px] lg:max-w-[420px] xl:max-w-[480px] min-w-0">
         <Link
           href="/dashboard"
-          className="flex h-11 items-center gap-2 rounded-[14px] border border-slate-300 bg-white px-3.5 text-[13px] font-bold text-slate-700 shadow-md transition-all hover:border-slate-400 hover:bg-[var(--dashboard-primary-soft)] hover:text-[var(--dashboard-primary)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-slate-100 shrink-0"
+          className="flex h-11 items-center gap-2 rounded-[14px] border border-slate-300 bg-white px-3 text-[13px] font-bold text-slate-700 shadow-md transition-all hover:border-slate-400 hover:bg-[var(--dashboard-primary-soft)] hover:text-[var(--dashboard-primary)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-slate-100 shrink-0"
           title="Go to Home Page"
         >
           <Home className="h-4.5 w-4.5 text-[var(--dashboard-primary)]" />
-          <span>Home</span>
+          <span className="hidden sm:inline">Home</span>
         </Link>
 
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-slate-500 dark:text-slate-400" />
           <button
             onClick={() => setSearchOpen(true)}
-            className="flex h-11 w-full items-center justify-between rounded-[14px] border border-slate-300 bg-white pl-10 pr-3.5 text-[13px] font-semibold text-slate-700 shadow-md transition-all hover:border-slate-400 hover:text-slate-900 hover:shadow-lg dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-slate-100"
+            className="flex h-11 w-full items-center justify-between rounded-[14px] border border-slate-300 bg-white pl-10 pr-3 text-[13px] font-semibold text-slate-700 shadow-md transition-all hover:border-slate-400 hover:text-slate-900 hover:shadow-lg dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-slate-100 truncate"
           >
-            <span>Search sections...</span>
-            <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-black tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            <span className="truncate">Search sections...</span>
+            <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-black tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 shrink-0 ml-1">
               Ctrl+K
             </span>
           </button>
         </div>
       </div>
  
-      <div className="flex items-center gap-3 sm:gap-8">
+      <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 shrink-0">
         {/* Right Actions */}
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-3">
           {/* Mobile Home button */}
           <Link
             href="/dashboard"
@@ -281,19 +281,19 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
           </DropdownMenu>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <div className="flex cursor-pointer items-center gap-1.5 sm:gap-3 border-l border-slate-200/70 pl-3 sm:pl-6 transition-opacity hover:opacity-85 dark:border-white/10">
-                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border-2 border-white/80 bg-[linear-gradient(135deg,var(--dashboard-primary),var(--dashboard-primary-light))] text-sm font-bold text-white shadow-sm ring-1 ring-[color-mix(in_srgb,var(--dashboard-primary)_20%,transparent)]">
+              <div className="flex cursor-pointer items-center gap-1.5 sm:gap-2.5 border-l border-slate-200/70 pl-2 sm:pl-3.5 transition-opacity hover:opacity-85 dark:border-white/10 shrink-0">
+                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border-2 border-white/80 bg-[linear-gradient(135deg,var(--dashboard-primary),var(--dashboard-primary-light))] text-sm font-bold text-white shadow-sm ring-1 ring-[color-mix(in_srgb,var(--dashboard-primary)_20%,transparent)] shrink-0">
                   {loading ? '...' : user?.fullName.charAt(0).toUpperCase()}
                 </div>
-                <div className="hidden md:flex flex-col">
-                  <p className="text-xs font-semibold leading-none text-slate-900 dark:text-white">
+                <div className="hidden lg:flex flex-col">
+                  <p className="text-xs font-semibold leading-none text-slate-900 dark:text-white truncate max-w-[110px]">
                     {loading ? 'Loading...' : user?.fullName}
                   </p>
                   <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-[color-mix(in_srgb,var(--dashboard-primary)_70%,transparent)] dark:text-blue-200/70">
                     {loading ? '...' : user?.role}
                   </p>
                 </div>
-                <ChevronDown className="h-4 w-4 text-slate-500 dark:text-slate-300" />
+                <ChevronDown className="h-4 w-4 text-slate-500 dark:text-slate-300 shrink-0" />
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72 rounded-2xl border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-slate-950">
