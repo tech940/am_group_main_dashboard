@@ -25,7 +25,7 @@ export const POSTGRES_TO_BIGQUERY_TABLE: Record<string, string> = {
   mcp_report: 'kia_facts.mcp_report',
   rsa_report: 'kia_facts.rsa_report',
   adv_wise_lubricants_vas: 'kia_facts.adv_wise_lubricants_vas',
-  service_appointment: 'kia_facts.service_appointment',
+  kia_service_appointment: 'kia_facts.service_appointment',
   demo_job_cards: 'kia_facts.demo_job_cards',
   demo_car_list: 'kia_facts.demo_car_list',
   ro_billing_daily_summary_v2: 'kia_aggregates.ro_billing_daily_summary',

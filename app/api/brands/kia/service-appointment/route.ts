@@ -91,11 +91,11 @@ async function tableExists(tableName: string) {
 }
 
 async function getSourceVersion(dealerCode: string) {
-  if (!await tableExists('service_appointment')) return 'missing'
+  if (!await tableExists('kia_service_appointment')) return 'missing'
 
   const result = await db.execute(sql`
     SELECT MAX(uploaded_at)::text AS source_version
-    FROM service_appointment
+    FROM kia_service_appointment
     WHERE UPPER(TRIM(COALESCE(dealer_code::text, ''))) = ${dealerCode}
   `)
 
@@ -159,7 +159,7 @@ function baseSql(filters: AppointmentFilters) {
         COALESCE(NULLIF(TRIM(customer_demand::text), ''), '-') AS customer_demand,
         UPPER(TRIM(COALESCE(dealer_code::text, ''))) AS dealer_code,
         uploaded_at
-      FROM service_appointment
+      FROM kia_service_appointment
       WHERE UPPER(TRIM(COALESCE(dealer_code::text, ''))) = ${filters.dealerCode}
     ),
     filtered AS (
@@ -316,7 +316,7 @@ function buildCalendar(filters: AppointmentFilters, calendarCounts: unknown) {
 }
 
 async function buildPayload(filters: AppointmentFilters) {
-  const hasTable = await tableExists('service_appointment')
+  const hasTable = await tableExists('kia_service_appointment')
 
   if (!hasTable) {
     return {
