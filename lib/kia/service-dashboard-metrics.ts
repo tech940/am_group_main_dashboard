@@ -180,7 +180,7 @@ export async function resolveOperationAnalysisPeriod(
       SELECT DISTINCT
         report_period_start::date AS period_start,
         report_period_end::date AS period_end
-      FROM operation_wise_analysis_report
+      FROM kia_operation_wise_analysis_report
       WHERE report_period_start::date = ${monthStart}::date
         ${operationDealerFilter(dealerCode)}
     ),
@@ -269,7 +269,7 @@ async function fetchAdvisorWheelMetrics(period: OperationAnalysisPeriod, dealerC
         LOWER(CONCAT_WS(' ', source.report_type, source.op_part_code, source.op_part_desc)) AS description,
         LOWER(COALESCE(source.op_part_code, '')) AS operation_code,
         LOWER(COALESCE(source.report_type, '')) AS report_type
-      FROM operation_wise_analysis_advisor_report source
+      FROM kia_operation_wise_analysis_advisor_report source
       WHERE source.report_period_start::date = ${period.periodStart}::date
         AND source.report_period_end::date = ${period.periodEnd}::date
         ${operationDealerFilter(dealerCode, 'source.')}
@@ -320,7 +320,7 @@ async function fetchOperationWheelCounts(period: OperationAnalysisPeriod, dealer
         LOWER(CONCAT_WS(' ', source.report_type, source.op_part_code, source.op_part_desc)) AS description,
         LOWER(COALESCE(source.op_part_code, '')) AS operation_code,
         LOWER(COALESCE(source.report_type, '')) AS report_type
-      FROM operation_wise_analysis_report source
+      FROM kia_operation_wise_analysis_report source
       WHERE source.report_period_start::date = ${period.periodStart}::date
         AND source.report_period_end::date = ${period.periodEnd}::date
         ${operationDealerFilter(dealerCode, 'source.')}
@@ -374,7 +374,7 @@ async function fetchWorkshopOverviewVasFromOperationReport(
         ${numericText(sql.raw('source.total_amt'))} AS amount,
         LOWER(COALESCE(source.op_part_desc, '')) AS description,
         LOWER(COALESCE(source.report_type, '')) AS report_type
-      FROM operation_wise_analysis_report source
+      FROM kia_operation_wise_analysis_report source
       WHERE source.report_period_start::date = ${period.periodStart}::date
         AND source.report_period_end::date = ${period.periodEnd}::date
         ${operationDealerFilter(dealerCode, 'source.')}
@@ -419,7 +419,7 @@ export async function fetchWheelLabourAmounts(period: OperationAnalysisPeriod, d
         LOWER(CONCAT_WS(' ', source.report_type, source.op_part_code, source.op_part_desc)) AS description,
         LOWER(COALESCE(source.op_part_code, '')) AS operation_code,
         LOWER(COALESCE(source.report_type, '')) AS report_type
-      FROM operation_wise_analysis_report source
+      FROM kia_operation_wise_analysis_report source
       WHERE source.report_period_start::date = ${period.periodStart}::date
         AND source.report_period_end::date = ${period.periodEnd}::date
         ${operationDealerFilter(dealerCode, 'source.')}
@@ -453,7 +453,7 @@ async function fetchWheelBalancingBc5Labour(period: OperationAnalysisPeriod, dea
     WITH operation_rows AS (
       SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
         ${numericText(sql.raw('source.total_amt'))} AS amount
-      FROM operation_wise_analysis_report source
+      FROM kia_operation_wise_analysis_report source
       WHERE source.report_period_start::date = ${period.periodStart}::date
         AND source.report_period_end::date = ${period.periodEnd}::date
         AND ${wheelBalancingBc5LabourSql('source.')}
@@ -524,7 +524,7 @@ export async function fetchVasAmount(
         SELECT DISTINCT ON (COALESCE(NULLIF(row_hash, ''), id::text))
           ${numericText(sql.raw('taxable_amount'))} AS amount,
           LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc)) AS description
-        FROM adv_wise_lubricants_vas
+        FROM kia_adv_wise_lubricants_vas
         WHERE COALESCE(gst_invoice_date, ro_close_date::date) >= ${monthStart}::date
           AND COALESCE(gst_invoice_date, ro_close_date::date) < (${exportDate}::date + INTERVAL '1 day')
           ${advWiseDealerFilter(dealerCode)}
@@ -551,7 +551,7 @@ export async function fetchVasAmount(
           ${numericText(sql.raw('source.total_amt'))} AS amount,
           LOWER(COALESCE(source.op_part_desc, '')) AS description,
           LOWER(COALESCE(source.report_type, '')) AS report_type
-        FROM operation_wise_analysis_advisor_report source
+        FROM kia_operation_wise_analysis_advisor_report source
         WHERE source.report_period_start::date = ${period.periodStart}::date
           AND source.report_period_end::date = ${period.periodEnd}::date
           ${operationDealerFilter(dealerCode, 'source.')}
@@ -571,7 +571,7 @@ export async function fetchVasAmount(
       SELECT DISTINCT ON (COALESCE(NULLIF(source.row_hash, ''), source.id::text))
         ${numericText(sql.raw('source.total_amt'))} AS amount,
         LOWER(COALESCE(source.op_part_desc, '')) AS description
-      FROM operation_wise_analysis_report source
+      FROM kia_operation_wise_analysis_report source
       WHERE source.report_period_start::date = ${period.periodStart}::date
         AND source.report_period_end::date = ${period.periodEnd}::date
         AND LOWER(COALESCE(source.report_type, '')) = 'operation'
@@ -616,7 +616,7 @@ export async function fetchWorkshopVasAmountDetailed(
           COALESCE(gst_invoice_date, ro_close_date::date) AS report_date,
           ${numericText(sql.raw('taxable_amount'))} AS amount,
           LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc)) AS description
-        FROM adv_wise_lubricants_vas
+        FROM kia_adv_wise_lubricants_vas
         WHERE COALESCE(gst_invoice_date, ro_close_date::date) >= ${monthStart}::date
           AND COALESCE(gst_invoice_date, ro_close_date::date) < (${endDate}::date + INTERVAL '1 day')
           ${advWiseDealerFilter(normalizedDealer)}
@@ -801,7 +801,7 @@ export async function fetchAddonKpisForPeriod(
           COALESCE(NULLIF(TRIM(certi_no), ''), NULLIF(CONCAT_WS('|', NULLIF(TRIM(vin), ''), NULLIF(TRIM(scheme_desc), ''), reg_date::text), ''), id::text)
         )
           reg_date::date AS report_date
-        FROM ew_report
+        FROM kia_ew_report
         WHERE reg_date >= ${startDate}::date
           AND reg_date < (${endDate}::date + INTERVAL '1 day')
           ${ewDealerFilter(normalizedDealer)}
@@ -823,7 +823,7 @@ export async function fetchAddonKpisForPeriod(
             END
           ) AS report_date,
           ${numericText(sql.raw('total_amount'))} AS total_amount
-        FROM rsa_report
+        FROM kia_rsa_report
         WHERE (
           CASE 
             WHEN invoice_date ~ '^\d{4}-\d{2}-\d{2}' THEN invoice_date::date
@@ -852,7 +852,7 @@ export async function fetchAddonKpisForPeriod(
           COALESCE(NULLIF(TRIM(cert_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin), ''), NULLIF(TRIM(package_name), ''), package_purchase_date::text), id::text)
         )
           package_purchase_date::date AS report_date
-        FROM mcp_report
+        FROM kia_mcp_report
         WHERE package_purchase_date >= ${startDate}::date
           AND package_purchase_date < (${endDate}::date + INTERVAL '1 day')
           ${mcpDealerFilter(normalizedDealer)}

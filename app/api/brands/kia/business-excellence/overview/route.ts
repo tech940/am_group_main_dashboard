@@ -241,7 +241,7 @@ async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, de
     ),
     raw AS (
       SELECT COUNT(DISTINCT COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text))::int AS total_jc
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${kiaActiveBillStatusSql()}
@@ -266,7 +266,7 @@ function roBillingBaseSql(startDate: string, endDate: string, dealerCode: Dealer
         ${numericText(sql.raw('labour_amt'))} AS labour_amt,
         ${numericText(sql.raw('part_amt'))} AS part_amt,
         ${numericText(sql.raw('total_amt'))} AS total_amt
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
@@ -316,19 +316,19 @@ function openRoBaseSql(startDate: string, endDate: string, dealerCode: DealerFil
         status,
         COALESCE(revised_promise_date_time, promise_date_time) AS promise_date,
         uploaded_at
-      FROM open_ro_yearly
+      FROM kia_open_ro_yearly
       WHERE ${kiaOpenRoActiveStateSql()}
         AND ro_date >= ${startDate}::date
         AND ro_date < (${endDate}::date + INTERVAL '1 day')
         ${kiaOpenRoDealerFilter(dealerCode)}
         AND NOT EXISTS (
           SELECT 1
-          FROM ro_billing_report rb
+          FROM kia_ro_billing_report rb
           WHERE rb.bill_date < (${endDate}::date + INTERVAL '1 day')
             AND ${kiaActiveBillStatusSql('rb.')}
             ${kiaRoBillingDealerFilter(dealerCode, 'rb.')}
             AND COALESCE(NULLIF(rb.ro_no, ''), NULLIF(rb.bill_no, ''), rb.id::text)
-              = COALESCE(NULLIF(open_ro_yearly.r_o_no, ''), open_ro_yearly.id::text)
+              = COALESCE(NULLIF(kia_open_ro_yearly.r_o_no, ''), kia_open_ro_yearly.id::text)
         )
       ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
@@ -431,7 +431,7 @@ async function fetchWorkshopSnapshot(startDate: string, endDate: string, dealerC
         ${serviceCategoryExpression('work_type', 'service_type')} AS service_type,
         ${numericText(sql.raw('labour_amt'))} AS labour_amt,
         ${numericText(sql.raw('part_amt'))} AS part_amt
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}

@@ -200,7 +200,7 @@ function buildScoredPerformanceSql(startDate: Date, endDate: Date, filters: Perf
           ${numericText(sql.raw('labour_disc'))},
           ${numericText(sql.raw('part_disc'))}
         ) AS discount
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE ${whereClause}
     ),
     dedup AS (

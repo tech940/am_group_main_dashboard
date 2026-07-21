@@ -177,7 +177,7 @@ async function shouldUseWorkshopJcSummary(startDate: string, endDate: string, de
             COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
             COALESCE(labour_amt, 0)::numeric AS labour,
             COALESCE(part_amt, 0)::numeric AS parts
-          FROM ro_billing_report
+          FROM kia_ro_billing_report
           WHERE bill_date >= ${startDate}::date
             AND bill_date < (${endDate}::date + INTERVAL '1 day')
             AND ${kiaActiveBillStatusSql()}
@@ -252,7 +252,7 @@ async function fetchServiceSummary(startDate: string, endDate: string, advisor: 
           ${numericText(sql.raw('labour_disc'))},
           ${numericText(sql.raw('part_disc'))}
         ) AS discount_amount
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${kiaActiveBillStatusSql()}
@@ -326,7 +326,7 @@ async function fetchCoreServiceSummary(startDate: string, endDate: string, advis
           ${numericText(sql.raw('labour_disc'))},
           ${numericText(sql.raw('part_disc'))}
         ) AS discount_amount
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${kiaActiveBillStatusSql()}
@@ -395,7 +395,7 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
       SELECT
         report_period_start::date AS report_period_start,
         report_period_end::date AS report_period_end
-      FROM operation_wise_analysis_advisor_report
+      FROM kia_operation_wise_analysis_advisor_report
       WHERE report_period_start = ${startDate}::date
         AND report_period_end <= ${endDate}::date
         ${operationDealerFilter(dealerCode)}
@@ -436,7 +436,7 @@ async function fetchAddonSummary(startDate: string, endDate: string, advisor: st
           source.op_part_desc
         )) AS description,
         LOWER(COALESCE(source.op_part_desc, '')) AS vas_description
-      FROM operation_wise_analysis_advisor_report source
+      FROM kia_operation_wise_analysis_advisor_report source
       INNER JOIN latest_period
         ON source.report_period_start::date = latest_period.report_period_start
         AND source.report_period_end::date = latest_period.report_period_end
@@ -535,7 +535,7 @@ async function fetchDailyTrend(startDate: string, endDate: string, advisor: stri
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${kiaActiveBillStatusSql()}
@@ -590,7 +590,7 @@ async function fetchAdvisorSummary(startDate: string, endDate: string, dealerCod
         COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS jc_key,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${kiaActiveBillStatusSql()}

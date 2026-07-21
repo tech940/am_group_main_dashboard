@@ -69,16 +69,16 @@ function demoDealerFilter(filters: DemoFilters) {
   return sql`
     AND EXISTS (
       SELECT 1
-      FROM ro_billing_report rb
+      FROM kia_ro_billing_report rb
       WHERE UPPER(TRIM(COALESCE(NULLIF(rb.dealer_code, ''), NULLIF(rb.main_dealer_code, '')))) = ${filters.dealerCode}
         AND (
           (
-            NULLIF(TRIM(demo_job_cards.vin), '') IS NOT NULL
-            AND UPPER(TRIM(COALESCE(rb.vin, ''))) = UPPER(TRIM(demo_job_cards.vin))
+            NULLIF(TRIM(kia_demo_job_cards.vin), '') IS NOT NULL
+            AND UPPER(TRIM(COALESCE(rb.vin, ''))) = UPPER(TRIM(kia_demo_job_cards.vin))
           )
           OR (
-            NULLIF(TRIM(demo_job_cards.reg_no), '') IS NOT NULL
-            AND UPPER(TRIM(COALESCE(rb.vehicle_reg_no, ''))) = UPPER(TRIM(demo_job_cards.reg_no))
+            NULLIF(TRIM(kia_demo_job_cards.reg_no), '') IS NOT NULL
+            AND UPPER(TRIM(COALESCE(rb.vehicle_reg_no, ''))) = UPPER(TRIM(kia_demo_job_cards.reg_no))
           )
         )
     )
@@ -175,7 +175,7 @@ function buildVehicleTrackerSql(filters: DemoFilters, hasRemarksTable: boolean) 
         ro_date::date AS last_bill_date,
         COALESCE(NULLIF(TRIM(service_adv), ''), 'Unassigned') AS service_advisor,
         COALESCE(NULLIF(TRIM(status), ''), '-') AS status
-      FROM demo_job_cards
+      FROM kia_demo_job_cards
       WHERE work_type = ${DEMO_WORK_TYPE}
         AND COALESCE(NULLIF(TRIM(vin), ''), NULLIF(TRIM(reg_no), '')) IS NOT NULL
         AND ro_date IS NOT NULL

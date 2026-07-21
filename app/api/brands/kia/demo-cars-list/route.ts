@@ -241,7 +241,7 @@ function buildDemoCarsSql(filters: DemoCarsFilters, hasDetailsTable: boolean, co
           ELSE COALESCE(NULLIF(${textExpression(columns, 'billing_dealer_code')}, '-'), 'Other')
         END AS location,
         ${hasColumn(columns, 'uploaded_at') ? sql`uploaded_at` : sql`NULL::timestamptz`} AS uploaded_at
-      FROM demo_car_list
+      FROM kia_demo_car_list
       WHERE UPPER(TRIM(test_drive_vin::text)) = 'YES'
         AND NULLIF(TRIM(vin_no::text), '') IS NOT NULL
     ),

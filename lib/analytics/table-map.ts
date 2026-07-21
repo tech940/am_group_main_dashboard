@@ -28,6 +28,19 @@ export const POSTGRES_TO_BIGQUERY_TABLE: Record<string, string> = {
   kia_service_appointment: 'kia_facts.service_appointment',
   demo_job_cards: 'kia_facts.demo_job_cards',
   demo_car_list: 'kia_facts.demo_car_list',
+  // kia_-prefixed aliases over the compatibility views (docs/kia-generic-table-rename-candidates.md).
+  // Kept ALONGSIDE the bare keys so a query on either name resolves under BigQuery mode during the
+  // migration; drop the bare keys once every query is confirmed on the kia_ name.
+  kia_ro_billing_report: 'kia_facts.ro_billing',
+  kia_operation_wise_analysis_report: 'kia_facts.operation_wise_analysis',
+  kia_operation_wise_analysis_advisor_report: 'kia_facts.operation_wise_analysis_advisor',
+  kia_open_ro_yearly: 'kia_facts.open_ro_yearly',
+  kia_ew_report: 'kia_facts.ew_report',
+  kia_mcp_report: 'kia_facts.mcp_report',
+  kia_rsa_report: 'kia_facts.rsa_report',
+  kia_adv_wise_lubricants_vas: 'kia_facts.adv_wise_lubricants_vas',
+  kia_demo_job_cards: 'kia_facts.demo_job_cards',
+  kia_demo_car_list: 'kia_facts.demo_car_list',
   ro_billing_daily_summary_v2: 'kia_aggregates.ro_billing_daily_summary',
   workshop_performance_jc_summary_v1: 'kia_aggregates.workshop_performance_jc_summary',
   workshop_operation_addon_summary_v1: 'kia_aggregates.workshop_operation_addon_summary',

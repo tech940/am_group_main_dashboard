@@ -760,7 +760,7 @@ async function fetchDailyAggregateRows(startDate: Date, endDate: Date, compariso
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           COALESCE(part_amt, 0)::numeric AS part_amt
-        FROM ro_billing_report
+        FROM kia_ro_billing_report
         WHERE bill_date >= ${toDateInputValue(relationalStart)}::date
           AND bill_date < (${toDateInputValue(relationalEnd)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
@@ -829,7 +829,7 @@ async function fetchFiscalAggregateRows(dealerCode: DealerFilter = null) {
           bill_date::date AS bill_date,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           COALESCE(part_amt, 0)::numeric AS part_amt
-        FROM ro_billing_report
+        FROM kia_ro_billing_report
         WHERE bill_date IS NOT NULL
           AND ${activeBillStatusSql()}
           AND ${activeServiceCategoryFilter()}
@@ -871,7 +871,7 @@ async function fetchAnalyticsQualitySummary(startDate: Date, endDate: Date, deal
         bill_date::date AS bill_date,
         NULLIF(regexp_replace(COALESCE(avg_rating::text, ''), '[^0-9.-]', '', 'g'), '')::numeric AS rating,
         LOWER(TRIM(COALESCE(pick_drop::text, ''))) AS pick_drop_value
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${toDateInputValue(lyStart)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
@@ -984,7 +984,7 @@ async function fetchAdvisorLeaderboardRows(startDate: Date, endDate: Date, deale
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           COALESCE(part_amt, 0)::numeric AS part_amt,
           COALESCE(total_amt, 0)::numeric AS total_amt
-        FROM ro_billing_report
+        FROM kia_ro_billing_report
         WHERE bill_date >= ${toDateInputValue(startDate)}::date
           AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
@@ -1069,7 +1069,7 @@ async function fetchTechnicianReportRows(
           COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text) AS bill_key,
           COALESCE(labour_amt, 0)::numeric AS labour_amt,
           (CASE WHEN TRIM(labour_disc) ~ '^-?[0-9]+(\.[0-9]+)?$' THEN TRIM(labour_disc)::numeric ELSE 0 END) AS labour_disc
-        FROM ro_billing_report
+        FROM kia_ro_billing_report
         WHERE bill_date >= ${toDateInputValue(startDate)}::date
           AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
@@ -1139,7 +1139,7 @@ async function fetchRawWorkTypeAggregateRows(windows: Record<PeriodKey, PeriodWi
         bill_date::date AS bill_date,
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${toDateInputValue(windows.ytd.lyStart)}::date
         AND bill_date < (${toDateInputValue(windows.ytd.cyEnd)}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
@@ -1260,7 +1260,7 @@ async function fetchRows({ startDate, endDate, dealerCode }: { startDate?: Date;
           uploaded_at,
           labour_disc,
           dealer_code
-        FROM ro_billing_report
+        FROM kia_ro_billing_report
         WHERE bill_date BETWEEN ${toDateInputValue(startDate!)}::date AND ${toDateInputValue(endDate!)}::date
           AND ${activeBillStatusSql()}
           AND ${activeServiceCategoryFilter()}
@@ -1286,7 +1286,7 @@ async function fetchRows({ startDate, endDate, dealerCode }: { startDate?: Date;
           uploaded_at,
           labour_disc,
           dealer_code
-        FROM ro_billing_report
+        FROM kia_ro_billing_report
         WHERE bill_date IS NOT NULL
           AND ${activeBillStatusSql()}
           AND ${activeServiceCategoryFilter()}
@@ -1296,7 +1296,7 @@ async function fetchRows({ startDate, endDate, dealerCode }: { startDate?: Date;
       SELECT
         MAX(uploaded_at) AS "uploadedAt",
         COUNT(*) FILTER (WHERE ${activeBillStatusSql()} AND ${activeServiceCategoryFilter()} ${roBillingDealerFilter(dealerCode || null)})::int AS "totalRows"
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
     `),
   ])
 
@@ -1325,7 +1325,7 @@ async function fetchCancelledBillingSummary(startDate: Date, endDate: Date, deal
         COALESCE(labour_amt, 0)::numeric AS labour_amt,
         COALESCE(part_amt, 0)::numeric AS part_amt,
         COALESCE(total_amt, 0)::numeric AS total_amt
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${toDateInputValue(startDate)}::date
         AND bill_date < (${toDateInputValue(endDate)}::date + INTERVAL '1 day')
         AND ${cancelledBillStatusSql()}

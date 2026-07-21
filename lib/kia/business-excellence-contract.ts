@@ -234,7 +234,7 @@ export async function fetchKiaBillingSourceMetadata(
         SELECT
           COUNT(DISTINCT COALESCE(NULLIF(bill_no, ''), NULLIF(ro_no, ''), id::text))::int AS row_count,
           MAX(bill_date)::text AS latest_available_date
-        FROM ro_billing_report
+        FROM kia_ro_billing_report
         WHERE bill_date >= ${startDate}::date
           AND bill_date < (${endDate}::date + INTERVAL '1 day')
           AND ${kiaActiveBillStatusSql()}

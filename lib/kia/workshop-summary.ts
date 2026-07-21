@@ -53,7 +53,7 @@ function dedupCte(start: string, end: string, dealerCode: KiaDealerCode | null) 
         bill_date::date AS report_date,
         uploaded_at,
         id
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${start}::date
         AND bill_date < (${end}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}

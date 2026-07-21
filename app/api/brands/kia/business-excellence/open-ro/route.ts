@@ -46,7 +46,7 @@ type OpenRoFilters = {
 type OpenRoChunk = 'summary' | 'details' | 'full'
 
 function openRoDealerFilter(filters: OpenRoFilters) {
-  return kiaOpenRoDealerFilter(normalizeKiaDealerCode(filters.dealerCode), 'open_ro_yearly.')
+  return kiaOpenRoDealerFilter(normalizeKiaDealerCode(filters.dealerCode), 'kia_open_ro_yearly.')
 }
 
 function openRoBaseSql(filters: OpenRoFilters) {
@@ -83,19 +83,19 @@ function openRoBaseSql(filters: OpenRoFilters) {
         re_open_count,
         task_description,
         uploaded_at
-      FROM open_ro_yearly
+      FROM kia_open_ro_yearly
       WHERE ${kiaOpenRoActiveStateSql()}
         AND (${filters.startDate}::date IS NULL OR ro_date >= ${filters.startDate}::date)
         AND (${filters.endDate}::date IS NULL OR ro_date < (${filters.endDate}::date + INTERVAL '1 day'))
         ${openRoDealerFilter(filters)}
         AND NOT EXISTS (
           SELECT 1
-          FROM ro_billing_report rb
+          FROM kia_ro_billing_report rb
           WHERE (${filters.endDate}::date IS NULL OR rb.bill_date < (${filters.endDate}::date + INTERVAL '1 day'))
             AND ${kiaActiveBillStatusSql('rb.')}
             ${kiaRoBillingDealerFilter(normalizeKiaDealerCode(filters.dealerCode), 'rb.')}
             AND COALESCE(NULLIF(rb.ro_no, ''), NULLIF(rb.bill_no, ''), rb.id::text)
-              = COALESCE(NULLIF(open_ro_yearly.r_o_no, ''), open_ro_yearly.id::text)
+              = COALESCE(NULLIF(kia_open_ro_yearly.r_o_no, ''), kia_open_ro_yearly.id::text)
         )
       ORDER BY COALESCE(NULLIF(r_o_no, ''), id::text), uploaded_at DESC NULLS LAST, id DESC
     ),
@@ -365,7 +365,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
           service_type,
           insurance_company_name,
           ro_date
-        FROM open_ro_yearly
+        FROM kia_open_ro_yearly
         WHERE ${kiaOpenRoActiveStateSql()}
           AND (${filters.startDate}::date IS NULL OR ro_date >= ${filters.startDate}::date)
           AND (${filters.endDate}::date IS NULL OR ro_date < (${filters.endDate}::date + INTERVAL '1 day'))
@@ -507,7 +507,7 @@ async function buildOpenRoPayload(filters: OpenRoFilters, chunk: OpenRoChunk = '
       }),
       comparison: {
         supported: false,
-        reason: 'open_ro_yearly currently has only Apr 2026 onward coverage, so historical comparisons are disabled.',
+        reason: 'kia_open_ro_yearly currently has only Apr 2026 onward coverage, so historical comparisons are disabled.',
         preset: filters.periodPreset,
         comparisonMode: filters.comparisonMode || 'none',
         comparisonStartDate: filters.comparisonStartDate,

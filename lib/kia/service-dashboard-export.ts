@@ -210,7 +210,7 @@ async function fetchEngineOilQtyByPeriod(period: OperationAnalysisPeriod, dealer
         ${numericText(sql.raw('source.total_count'))} AS quantity,
         UPPER(TRIM(COALESCE(source.op_part_code, ''))) AS op_part_code,
         LOWER(COALESCE(source.op_part_desc, '')) AS description
-      FROM operation_wise_analysis_report source
+      FROM kia_operation_wise_analysis_report source
       WHERE source.report_period_start::date = ${period.periodStart}::date
         AND source.report_period_end::date = ${period.periodEnd}::date
         AND LOWER(COALESCE(source.report_type, '')) IN ('operation', 'part')
@@ -247,7 +247,7 @@ async function resolveExportDate(requestedEndDate: string | null, dealerCode: De
     async () => {
       const result = await db.execute(sql`
         SELECT MAX(bill_date)::text AS max_date
-        FROM ro_billing_report
+        FROM kia_ro_billing_report
         WHERE bill_date IS NOT NULL
           ${roBillingDealerFilter(dealerCode)}
       `)
@@ -266,7 +266,7 @@ async function fetchIntakeCounts(monthStart: string, exportDate: string, dealerC
         COALESCE(NULLIF(ro_no, ''), NULLIF(bill_no, ''), id::text) AS jc_key,
         ro_date::date AS ro_date,
         ${serviceCategoryExpression('work_type', 'service_type')} AS category
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE
         ro_date >= ${monthStart}::date
         AND ro_date < (${exportDate}::date + INTERVAL '1 day')
@@ -280,7 +280,7 @@ async function fetchIntakeCounts(monthStart: string, exportDate: string, dealerC
         COALESCE(NULLIF(r_o_no, ''), id::text) AS jc_key,
         ro_date::date AS ro_date,
         ${serviceCategoryExpression('work_type', 'service_type')} AS category
-      FROM open_ro_yearly
+      FROM kia_open_ro_yearly
       WHERE
         ro_date >= ${monthStart}::date
         AND ro_date < (${exportDate}::date + INTERVAL '1 day')
@@ -330,7 +330,7 @@ async function fetchRevenueAndDelivered(monthStart: string, exportDate: string, 
         ${numericText(sql.raw('part_amt'))} AS part_amt,
         uploaded_at,
         id
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${monthStart}::date
         AND bill_date < (${exportDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
@@ -365,7 +365,7 @@ async function fetchRevenueAndDelivered(monthStart: string, exportDate: string, 
     db.execute(sql`
       WITH billed AS (
         SELECT DISTINCT COALESCE(NULLIF(ro_no, ''), NULLIF(bill_no, ''), id::text) AS jc_key
-        FROM ro_billing_report
+        FROM kia_ro_billing_report
         WHERE bill_date >= ${monthStart}::date
           AND bill_date < (${exportDate}::date + INTERVAL '1 day')
           AND ${activeBillStatusSql()}
@@ -379,7 +379,7 @@ async function fetchRevenueAndDelivered(monthStart: string, exportDate: string, 
           LOWER(TRIM(COALESCE(o.ro_sub_status, ''))) AS ro_sub_status,
           o.uploaded_at,
           o.id
-        FROM open_ro_yearly o
+        FROM kia_open_ro_yearly o
         WHERE o.ro_date >= ${monthStart}::date
           AND o.ro_date < (${exportDate}::date + INTERVAL '1 day')
           AND LOWER(TRIM(COALESCE(o.status, ''))) IN ('open', 'close', 'closed')
@@ -466,14 +466,14 @@ async function fetchPendingCounts(monthStart: string, exportDate: string, dealer
         ${serviceCategoryExpression('o.work_type', 'o.service_type')} AS service_category,
         o.uploaded_at,
         o.id
-      FROM open_ro_yearly o
+      FROM kia_open_ro_yearly o
       WHERE LOWER(TRIM(COALESCE(o.status, ''))) IN ('open', 'close', 'closed')
         AND o.ro_date >= (${exportDate}::date - INTERVAL '30 days')::date
         AND o.ro_date < (${exportDate}::date + INTERVAL '1 day')
         ${openRoDealerFilter(dealerCode, 'o')}
         AND NOT EXISTS (
           SELECT 1
-          FROM ro_billing_report rb2
+          FROM kia_ro_billing_report rb2
           WHERE rb2.bill_date < (${exportDate}::date + INTERVAL '1 day')
             AND ${activeBillStatusSql('rb2.')}
             ${roBillingDealerFilter(dealerCode, 'rb2.')}
@@ -522,7 +522,7 @@ async function fetchPendingCounts(monthStart: string, exportDate: string, dealer
 async function fetchBodyshopPnaCases(exportDate: string, dealerCode: DealerFilter) {
   const result = await db.execute(sql`
     SELECT COUNT(DISTINCT COALESCE(NULLIF(o.r_o_no, ''), o.id::text))::int AS count
-    FROM open_ro_yearly o
+    FROM kia_open_ro_yearly o
     WHERE LOWER(TRIM(COALESCE(o.status, ''))) IN ('open', 'close', 'closed')
       AND o.ro_date < (${exportDate}::date + INTERVAL '1 day')
       AND (
@@ -553,7 +553,7 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
           COALESCE(NULLIF(TRIM(certi_no), ''), NULLIF(CONCAT_WS('|', NULLIF(TRIM(vin), ''), NULLIF(TRIM(scheme_desc), ''), reg_date::text), ''), id::text)
         )
           reg_date::date AS report_date
-        FROM ew_report
+        FROM kia_ew_report
         WHERE reg_date >= ${monthStart}::date
           AND reg_date < (${exportDate}::date + INTERVAL '1 day')
           ${ewDealerFilter(dealerCode)}
@@ -576,7 +576,7 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
               ELSE invoice_date::date
             END
           ) AS report_date
-        FROM rsa_report
+        FROM kia_rsa_report
         WHERE (
           CASE 
             WHEN invoice_date ~ '^\d{4}-\d{2}-\d{2}' THEN invoice_date::date
@@ -605,7 +605,7 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
           COALESCE(NULLIF(TRIM(cert_no), ''), CONCAT_WS('|', NULLIF(TRIM(vin), ''), NULLIF(TRIM(package_name), ''), package_purchase_date::text), id::text)
         )
           package_purchase_date::date AS report_date
-        FROM mcp_report
+        FROM kia_mcp_report
         WHERE package_purchase_date >= ${monthStart}::date
           AND package_purchase_date < (${exportDate}::date + INTERVAL '1 day')
           ${mcpDealerFilter(dealerCode)}
@@ -624,7 +624,7 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
           package_purchase_date::date AS report_date,
           vin,
           reg_no
-        FROM mcp_report
+        FROM kia_mcp_report
         WHERE package_purchase_date >= ${monthStart}::date
           AND package_purchase_date < (${exportDate}::date + INTERVAL '1 day')
           ${mcpDealerFilter(dealerCode)}
@@ -635,7 +635,7 @@ async function fetchAddonCounts(monthStart: string, exportDate: string, dealerCo
         FROM dedup source
         WHERE EXISTS (
           SELECT 1
-          FROM ro_billing_report rb
+          FROM kia_ro_billing_report rb
           WHERE rb.bill_date >= ${monthStart}::date
             AND rb.bill_date < (${exportDate}::date + INTERVAL '1 day')
             AND ${activeBillStatusSql('rb.')}
@@ -690,7 +690,7 @@ async function fetchOilMetrics(monthStart: string, exportDate: string, dealerCod
           UPPER(TRIM(COALESCE(part_no, ''))) AS part_no,
           UPPER(TRIM(COALESCE(op_part_code, ''))) AS op_part_code,
           LOWER(CONCAT_WS(' ', op_part_desc, labour_desc, part_desc, part_no, op_part_code)) AS description
-        FROM adv_wise_lubricants_vas
+        FROM kia_adv_wise_lubricants_vas
         WHERE COALESCE(gst_invoice_date, ro_close_date::date) >= ${monthStart}::date
           AND COALESCE(gst_invoice_date, ro_close_date::date) < (${exportDate}::date + INTERVAL '1 day')
           ${advWiseDealerFilter(dealerCode)}

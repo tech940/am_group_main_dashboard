@@ -111,7 +111,7 @@ export async function fetchDeliveredBillingKpis(
         ${numericText(sql.raw('part_amt'))} AS part_amt,
         uploaded_at,
         id
-      FROM ro_billing_report
+      FROM kia_ro_billing_report
       WHERE bill_date >= ${startDate}::date
         AND bill_date < (${endDate}::date + INTERVAL '1 day')
         AND ${activeBillStatusSql()}
