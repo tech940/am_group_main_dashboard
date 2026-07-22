@@ -59,6 +59,7 @@ function detailPayload(detail: Awaited<ReturnType<typeof getKiaBookingDetail>>, 
       createdAt: transfer.createdAt,
     })),
     activities: detail.activity.map((row) => activityPayload(row as unknown as Record<string, unknown>)),
+    discounts: detail.discounts || [],
   }
 }
 

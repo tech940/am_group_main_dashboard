@@ -227,6 +227,13 @@ BEGIN
   END IF;
 END $$;
 
+-- ============================================================================
+-- 6. Enable RLS on Public Tables (lint 0013 & 0023)
+-- ============================================================================
+ALTER TABLE IF EXISTS public.am_hyundai_vehicle ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.am_hyundai_trips ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.am_hyundai_employees ENABLE ROW LEVEL SECURITY;
+
 -- Post-run verification:
 --   Re-run Supabase Database Linter; function search_path, RLS, and security-definer-view warnings should clear.
 --   Smoke-test: Kia/Hyundai/Platinum analytics APIs, purchase orders, proforma flows.

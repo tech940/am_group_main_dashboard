@@ -1086,7 +1086,33 @@ export async function getKiaBookingDetail(id: string) {
   const [head] = await db
     .select({
       booking: kiaBookings,
-      allocation: kiaVehicleAllocations,
+      // Project the allocation to SCALARS only — the client uses vinNumber/model/variant/color/
+      // dealerCode/stockStatus/stockMissingAt/expiresAt and never vehicle_snapshot. Selecting the whole
+      // row pulled a full DMS vehicle_snapshot JSONB the driver deserialised and the route re-serialised
+      // into every (hover-prefetched) detail response for nothing.
+      allocation: {
+        id: kiaVehicleAllocations.id,
+        bookingId: kiaVehicleAllocations.bookingId,
+        vinNumber: kiaVehicleAllocations.vinNumber,
+        dealerCode: kiaVehicleAllocations.dealerCode,
+        model: kiaVehicleAllocations.model,
+        variant: kiaVehicleAllocations.variant,
+        color: kiaVehicleAllocations.color,
+        engineNo: kiaVehicleAllocations.engineNo,
+        stockSource: kiaVehicleAllocations.stockSource,
+        allocationStatus: kiaVehicleAllocations.allocationStatus,
+        expiresAt: kiaVehicleAllocations.expiresAt,
+        paymentConfirmedAt: kiaVehicleAllocations.paymentConfirmedAt,
+        paymentReference: kiaVehicleAllocations.paymentReference,
+        allocatedAt: kiaVehicleAllocations.allocatedAt,
+        releasedAt: kiaVehicleAllocations.releasedAt,
+        releaseReason: kiaVehicleAllocations.releaseReason,
+        stockLastSeenAt: kiaVehicleAllocations.stockLastSeenAt,
+        stockMissingAt: kiaVehicleAllocations.stockMissingAt,
+        stockStatus: kiaVehicleAllocations.stockStatus,
+        createdAt: kiaVehicleAllocations.createdAt,
+        updatedAt: kiaVehicleAllocations.updatedAt,
+      },
       proformaId: kiaProformas.id,
       proformaApprovalStatus: kiaProformas.approvalStatus,
       proformaCreatedAt: kiaProformas.createdAt,
@@ -1111,7 +1137,7 @@ export async function getKiaBookingDetail(id: string) {
   // app/api/brands/kia/bookings/[id]/route.ts). A bare `db.select()` here was pulling activity
   // before_value/after_value (whole-booking JSONB snapshots, up to 100 rows) and transfer
   // metadata/vehicle_snapshot JSONB the route discards — deserialising that was the CPU bill.
-  const [activity, transfers, followupNotes] = await Promise.all([
+  const [activity, transfers, followupNotes, discounts] = await Promise.all([
     db.select({
       id: kiaBookingActivity.id,
       activityType: kiaBookingActivity.activityType,
@@ -1135,6 +1161,7 @@ export async function getKiaBookingDetail(id: string) {
       createdAt: kiaLeadFollowups.createdAt,
       updatedAt: kiaLeadFollowups.updatedAt,
     }).from(kiaLeadFollowups).where(eq(kiaLeadFollowups.bookingId, id)),
+    db.select().from(kiaBookingDiscounts).where(eq(kiaBookingDiscounts.bookingId, id)).orderBy(desc(kiaBookingDiscounts.createdAt)).limit(50),
   ])
 
   const followupRemarks = (followupNotes || [])
@@ -1161,6 +1188,7 @@ export async function getKiaBookingDetail(id: string) {
     financeOrder: head.financeOrderId ? { id: head.financeOrderId, orderNumber: head.financeOrderNumber, status: head.financeOrderStatus, createdAt: head.financeOrderCreatedAt } : null,
     transfers,
     activity: combinedActivity,
+    discounts: discounts || [],
   }
 }
 

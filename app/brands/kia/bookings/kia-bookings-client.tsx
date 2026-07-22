@@ -1614,7 +1614,12 @@ export function KiaBookingsClient({
     }
   }, [editingBookingId, editingDetailQuery.data])
 
-  const selectedBookingId = searchParams.get('bookingId') || ''
+  // Detail-drawer state is LOCAL, seeded once from ?bookingId for deep-links. It used to read the URL
+  // live, so opening/closing had to router.replace/push — and in Next 16 each of those is a network RSC
+  // round-trip (see the URL-sync note below), which is exactly the "it calls the API again when I close"
+  // problem. Local state makes open/close a pure client update: open is a React Query cache hit (the
+  // detail is prefetched on pointer-down) and close does ZERO network.
+  const [selectedBookingId, setSelectedBookingId] = useState(() => searchParams.get('bookingId') || '')
 
   // Debounce search so the bookings list query doesn't refire on every keystroke.
   useEffect(() => {
@@ -1653,13 +1658,12 @@ export function KiaBookingsClient({
     // still sends `page` via its own buildQueryString call below, so pagination is unaffected.
     const query = buildQueryString({ search: debouncedSearch, dealer_code: dealer, model, status, consultant, startDate: startDate || undefined, endDate: endDate || undefined, page: page > 1 ? page : undefined, sort: sortOrder === 'asc' ? 'asc' : undefined })
     const next = new URLSearchParams(query)
-    if (selectedBookingId && embedMode) next.set('bookingId', selectedBookingId)
     const nextSearch = next.toString() ? `?${next.toString()}` : ''
     const currentSearch = typeof window !== 'undefined' ? window.location.search : ''
     if (nextSearch !== currentSearch) {
       router.replace(`${pathname}${nextSearch}`, { scroll: false })
     }
-  }, [pathname, consultant, dealer, model, page, router, debouncedSearch, selectedBookingId, status, embedMode, sortOrder, startDate, endDate])
+  }, [pathname, consultant, dealer, model, page, router, debouncedSearch, status, embedMode, sortOrder, startDate, endDate])
 
   const listQueryString = useMemo(() => buildQueryString({
     search: debouncedSearch,
@@ -1731,9 +1735,13 @@ export function KiaBookingsClient({
   const discountsQuery = useQuery({
     queryKey: ['kia-booking-discounts', selectedBookingId],
     queryFn: () => fetchJson<{ success: boolean; discounts: any[] }>(`/api/brands/kia/bookings/${selectedBookingId}/discounts`, 'kia-booking-discounts'),
-    enabled: Boolean(selectedBookingId),
+    enabled: Boolean(selectedBookingId) && !(detailQuery.data as any)?.discounts,
     retry: 1,
+    staleTime: DASHBOARD_STALE_TIME_MS,
+    gcTime: DASHBOARD_GC_TIME_MS,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    initialData: (detailQuery.data as any)?.discounts ? { success: true, discounts: (detailQuery.data as any).discounts } : undefined,
   })
 
   const globalDiscountsQuery = useQuery({
@@ -2091,23 +2099,16 @@ export function KiaBookingsClient({
   useEffect(() => () => { if (hoverIntentTimer.current) clearTimeout(hoverIntentTimer.current) }, [])
 
   function openBooking(id: string) {
-    if (embedMode) {
-      const next = new URLSearchParams(searchParams.toString())
-      next.set('bookingId', id)
-      router.replace(`${pathname}?${next.toString()}`, { scroll: false })
-    } else {
-      router.push(`${pathname}/${id}`)
-    }
+    // Pure client state — no router navigation (each is an RSC round-trip in Next 16). The detail is
+    // prefetched on pointer-down, so opening the drawer is a React Query cache hit with no new request.
+    setSelectedBookingId(id)
   }
 
   function closeBooking() {
-    if (embedMode) {
-      const next = new URLSearchParams(searchParams.toString())
-      next.delete('bookingId')
-      router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ''}`, { scroll: false })
-    } else {
-      router.push(pathname)
-    }
+    // Pure client state — closing does ZERO network. Previously each close was a router.replace/push
+    // (an RSC round-trip), which is the "it calls the API again on close" you saw. The detail stays in
+    // the React Query cache for the next open.
+    setSelectedBookingId('')
     setActionMessage('')
   }
 
@@ -2988,13 +2989,12 @@ export function KiaBookingsClient({
                       key={row.id}
                       className="group cursor-pointer border-b border-[var(--kia-hairline)] text-sm"
                       onClick={() => openBooking(row.id)}
-                      onMouseEnter={() => scheduleHoverPrefetch(row.id)}
+                      // Mouse-hover prefetch REMOVED. On the Vercel dashboard it kept
+                      // /api/brands/kia/bookings/[id] at ~150 invocations/hr (each ~190ms Active CPU) for
+                      // rows the user merely passed the pointer over. onPointerDown (below) still pre-warms
+                      // the cache on real click-intent — ~100ms before the row opens — so opening stays
+                      // instant; only the wasted pass-over calls are cut.
                       onMouseLeave={cancelHoverPrefetch}
-                      // Immediate on real intent: pointerdown (before click) and keyboard focus only.
-                      // `:focus-visible` is the browser's own "focus came from the keyboard" signal, so
-                      // Radix restoring focus to a Pencil button after a mouse-opened dialog closes —
-                      // which bubbles a focusin to this row — no longer fires a phantom prefetch.
-                      onPointerDown={() => prefetchBookingDetail(row.id)}
                       onFocus={(e) => { if (e.target.matches(':focus-visible')) scheduleHoverPrefetch(row.id) }}
                       initial={animated ? { opacity: 0, y: 6 } : false}
                       animate={{ opacity: 1, y: 0 }}
