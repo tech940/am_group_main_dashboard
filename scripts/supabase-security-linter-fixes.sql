@@ -228,11 +228,21 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- 6. Enable RLS on Public Tables (lint 0013 & 0023)
+-- 6. Enable & Force RLS + Revoke Public Grants (lint 0013 & 0023)
 -- ============================================================================
 ALTER TABLE IF EXISTS public.am_hyundai_vehicle ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.am_hyundai_trips ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.am_hyundai_employees ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE IF EXISTS public.am_hyundai_vehicle FORCE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.am_hyundai_trips FORCE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.am_hyundai_employees FORCE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE public.am_hyundai_vehicle FROM anon, authenticated, public;
+REVOKE ALL ON TABLE public.am_hyundai_trips FROM anon, authenticated, public;
+REVOKE ALL ON TABLE public.am_hyundai_employees FROM anon, authenticated, public;
+
+NOTIFY pgrst, 'reload schema';
 
 -- Post-run verification:
 --   Re-run Supabase Database Linter; function search_path, RLS, and security-definer-view warnings should clear.

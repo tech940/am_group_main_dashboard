@@ -15,6 +15,7 @@ import {
   ClipboardList,
   FileCheck,
   Users,
+  Recycle,
 } from 'lucide-react'
 import { CascadingNav, type NavNode, type NavGroup } from './sidebar-cascading-nav'
 import { useEffect, useMemo, useCallback, useRef } from 'react'
@@ -24,11 +25,13 @@ import { useSidebar } from '@/context/sidebar-context'
 import { useUserRole } from '@/lib/hooks/use-user-role'
 import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
+import { canViewBookingPaymentHistory } from '@/lib/kia/booking-payment-history-access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
 import { isAmFinanceViewRole, isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
 
 const VEHICLE_TRACKER_HREF = '/brands/kia/vehicle-tracker'
+const BOOKING_PAYMENT_HISTORY_HREF = '/brands/kia/booking-payment-history'
 
 const HYUNDAI_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/am_hyundai.svg'
 
@@ -76,6 +79,7 @@ const brandNavigation: SidebarBrand[] = [
           { name: 'Finance', href: '/finance' },
           { name: 'Sales Report', href: '/brands/kia/sales-report' },
           { name: 'Stock Report', href: '/brands/kia/stock-report' },
+          { name: 'Booking Payment History', href: '/brands/kia/booking-payment-history' },
           { name: 'Booking Follow-ups', href: '/brands/kia/follow-ups' },
           { name: 'Demo Job Cards', href: '/brands/kia/demo-job-cards' },
           { name: 'Demo Cars List', href: '/brands/kia/demo-cars-list' },
@@ -319,6 +323,13 @@ export function Sidebar() {
       const isKiaUser = userBrand === 'kia' || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
       return canViewVehicleTracker(userRole) && isKiaUser
     }
+    // Booking Payment History is role-gated (hardcoded allowlist), not permission-gated — same reason
+    // as Vehicle Tracker. MD/Developer/Admin + EA + Sales/General Manager only. Branch scoping (a
+    // manager sees only their branch's data) is enforced server-side in the API, not here.
+    if (href === BOOKING_PAYMENT_HISTORY_HREF) {
+      const isKiaUser = userBrand === 'kia' || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
+      return canViewBookingPaymentHistory(userRole) && isKiaUser
+    }
     // Everything else is gated by the user's effective permissions. Brand users are no longer
     // auto-granted their whole brand here, so a per-section Deny — and restricted-role defaults
     // (branch_admin, sales_executive, sensitive reports) — hide the link. hasPermission handles
@@ -469,6 +480,14 @@ export function Sidebar() {
         active: Boolean(pathname?.startsWith('/admin')),
       })
     }
+    commonNodes.push({
+      key: '/scrap-erp',
+      label: 'Scrap ERP',
+      href: '/scrap-erp',
+      icon: Recycle,
+      external: true,
+      active: Boolean(pathname?.startsWith('/scrap-erp')),
+    })
     if (commonNodes.length > 0) groups.push({ key: 'common', label: 'Common', nodes: commonNodes })
 
     // ── Branches → Sections → Submenus (cascade), reusing the existing gating ──

@@ -42,6 +42,9 @@ import {
   Percent,
   Receipt,
   FileCheck,
+  Calculator,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -159,6 +162,7 @@ type BookingRow = {
   createdAt?: string | null
   updatedAt?: string | null
   idtRemark?: string | null
+  notes?: string | null
   managerName?: string | null
   tlName?: string | null
   metadata?: Record<string, unknown> | null
@@ -626,6 +630,9 @@ function BookingWaitingIndicator({
   now,
   align = 'left',
   className,
+  onAddOverdueRemark,
+  remarksCount = 0,
+  latestRemarkText,
 }: {
   status: string
   approvalStatus?: string | null
@@ -633,6 +640,9 @@ function BookingWaitingIndicator({
   now: number
   align?: 'left' | 'right'
   className?: string
+  onAddOverdueRemark?: () => void
+  remarksCount?: number
+  latestRemarkText?: string | null
 }) {
   const info = getKiaBookingStageInfo(status, approvalStatus)
   const isPending = info.state === 'pending'
@@ -647,11 +657,32 @@ function BookingWaitingIndicator({
         )}
       </span>
       {isPending && (
-        <span className={cn('inline-flex items-center gap-1 text-[11px] font-bold leading-4', stale ? 'text-rose-600' : 'text-[var(--kia-text-faint)]')}>
-          <Clock3 className="h-3 w-3" />
-          {formatWaitingDuration(updatedAt, now)}
-          {stale ? ' · overdue' : ' waiting'}
-        </span>
+        <div className="flex flex-wrap items-center gap-1">
+          <span className={cn('inline-flex items-center gap-1 text-[11px] font-bold leading-4', stale ? 'text-rose-600 font-extrabold' : 'text-[var(--kia-text-faint)]')}>
+            <Clock3 className="h-3 w-3 shrink-0" />
+            {formatWaitingDuration(updatedAt, now)}
+            {stale ? ' · overdue' : ' waiting'}
+          </span>
+          {stale && onAddOverdueRemark && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAddOverdueRemark()
+              }}
+              className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700 hover:bg-rose-100 hover:text-rose-900 transition border border-rose-200/80 shadow-2xs cursor-pointer"
+              title="Add or view remarks for overdue booking"
+            >
+              <MessageSquare className="h-2.5 w-2.5" />
+              <span>{remarksCount > 0 ? `${remarksCount} Remark${remarksCount > 1 ? 's' : ''}` : '+ Remark'}</span>
+            </button>
+          )}
+        </div>
+      )}
+      {latestRemarkText && (
+        <p className="text-[10px] font-semibold text-slate-500 italic max-w-[200px] truncate" title={latestRemarkText}>
+          &quot;{latestRemarkText}&quot;
+        </p>
       )}
     </div>
   )
@@ -689,38 +720,79 @@ function BookingMobileCard({
   now,
   onEdit,
   isSalesPerson,
+  normalizedCurrentRole,
+  onAddRemark,
 }: {
   row: BookingRow
   onOpen: (id: string) => void
   now: number
   onEdit?: (id: string) => void
   isSalesPerson?: boolean
+  normalizedCurrentRole?: string
+  onAddRemark?: (type: 'overdue' | 'idt' | 'general') => void
 }) {
   const router = useRouter()
   const canViewPii = useCanViewPii()
+
+  const metaRemarks = Array.isArray(row.metadata?.remarks) ? (row.metadata?.remarks as any[]) : []
+  const remarksList = metaRemarks.length > 0
+    ? metaRemarks
+    : [
+        ...(row.notes ? [{ id: '1', text: row.notes, authorName: 'Staff', createdAt: '' }] : []),
+        ...(row.idtRemark ? [{ id: '2', text: row.idtRemark, authorName: 'IDT Team', createdAt: '' }] : [])
+      ]
+  const remarksCount = remarksList.length
+  const latestRemark = remarksList.length > 0 ? remarksList[remarksList.length - 1] : null
+
+  const isRowPending = getKiaBookingStageInfo(row.status, row.proformaApprovalStatus).state === 'pending'
+  const isRowOverdue = isRowPending && isKiaBookingWaitLong(row.updatedAt, now)
+  const isRemarkEnabled = isRowOverdue || remarksCount > 0 || (row.stockNotAvailable && normalizedCurrentRole === 'idt')
+
   return (
-    <article className="kia-surface-flush kia-lift p-3.5" onClick={() => onOpen(row.id)}>
-      <div className="flex items-start justify-between gap-3">
+    <article className="kia-surface-flush kia-lift p-3.5 space-y-3 overflow-hidden" onClick={() => onOpen(row.id)}>
+      {/* Top Header Row: Booking Number + Status Badge */}
+      <div className="flex items-center justify-between gap-2 border-b border-[var(--kia-hairline)] pb-2 min-w-0">
         <div className="min-w-0">
           <Kicker>Booking</Kicker>
-          <h3 className="mt-0.5 text-sm font-extrabold leading-5 text-[var(--kia-text)] kia-tnum">{row.bookingNumber}</h3>
-          <p className="mt-1 truncate text-xs font-bold text-[var(--kia-text-soft)]">{row.customerName}</p>
-          <p className="text-[11px] font-medium text-[var(--kia-text-faint)]">{maskKiaPii(row.customerPhone, canViewPii)}</p>
+          <h3 className="text-sm font-extrabold leading-5 text-[var(--kia-text)] kia-tnum truncate">{row.bookingNumber}</h3>
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <StatusBadge status={row.status} />
-          {row.stockNotAvailable && <StockUnavailableFlag />}
-          {row.stockAvailable && <StockAvailableFlag />}
-          <BookingWaitingIndicator status={row.status} approvalStatus={row.proformaApprovalStatus} updatedAt={row.updatedAt} now={now} align="right" />
+        <StatusBadge status={row.status} className="shrink-0 text-[10px]" />
+      </div>
+
+      {/* Customer Info & Pending/Stock Details */}
+      <div className="flex flex-col gap-2 min-w-0">
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-extrabold text-[var(--kia-text)] truncate">{row.customerName}</p>
+            <p className="text-[11px] font-medium text-[var(--kia-text-faint)] mt-0.5">{maskKiaPii(row.customerPhone, canViewPii)}</p>
+          </div>
+
+          <div className="flex flex-col items-end gap-1 shrink-0 text-right min-w-0">
+            {row.stockNotAvailable && <StockUnavailableFlag className="shrink-0" />}
+            {row.stockAvailable && <StockAvailableFlag className="shrink-0" />}
+            <BookingWaitingIndicator
+              status={row.status}
+              approvalStatus={row.proformaApprovalStatus}
+              updatedAt={row.updatedAt}
+              now={now}
+              align="right"
+              remarksCount={remarksCount}
+              latestRemarkText={latestRemark?.text}
+              onAddOverdueRemark={onAddRemark ? () => onAddRemark('overdue') : undefined}
+            />
+          </div>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2.5 text-xs">
+
+      {/* Vehicle & Consultant Grid */}
+      <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50/70 p-2.5 rounded-xl border border-slate-150">
         <FieldValue label="Vehicle" value={<><span className="font-bold text-[var(--kia-text)]">{row.model || '—'}</span><br /><span className="text-[var(--kia-text-soft)]">{row.variant || '—'}</span></>} />
         <FieldValue label="Consultant" value={<>{row.consultantName || '—'}<br /><span className="text-[var(--kia-text-faint)]">{formatDate(row.updatedAt)}</span></>} />
         <FieldValue label="VIN" value={row.allocatedVin || '—'} mono />
         <FieldValue label="Finance" value={row.financeOrderNumber || '—'} />
       </div>
-      <div className="mt-3 flex gap-2" onClick={(event) => event.stopPropagation()}>
+
+      <div className="flex items-center gap-2 pt-0.5" onClick={(event) => event.stopPropagation()}>
         {row.proformaNumber ? (
           <div className="flex gap-2 flex-1">
             {!isSalesPerson ? (
@@ -759,6 +831,47 @@ function BookingMobileCard({
             Generate Proforma
           </Button>
         )}
+        <div className="relative inline-flex items-center shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!isRemarkEnabled}
+            title={
+              remarksCount > 0
+                ? `${remarksCount} Remark${remarksCount > 1 ? 's' : ''}: "${remarksList[remarksList.length - 1]?.text}"`
+                : isRowOverdue
+                  ? 'Add remark for overdue booking'
+                  : 'Add / View remark'
+            }
+            className={cn(
+              "relative h-9 w-9 rounded-xl p-0 shrink-0 border-slate-200 cursor-pointer flex items-center justify-center",
+              isRowOverdue
+                ? "text-rose-600 hover:bg-rose-100 bg-rose-50 border-rose-200/80 shadow-2xs"
+                : remarksCount > 0
+                  ? "text-indigo-600 hover:bg-indigo-50 bg-indigo-50/50 border-indigo-200/60"
+                  : isRemarkEnabled
+                    ? "text-amber-500 hover:bg-amber-50"
+                    : "text-slate-300 cursor-not-allowed"
+            )}
+            onClick={() => {
+              if (!onAddRemark) return
+              if (isRowOverdue) {
+                onAddRemark('overdue')
+              } else if (row.stockNotAvailable) {
+                onAddRemark('idt')
+              } else {
+                onAddRemark('general')
+              }
+            }}
+          >
+            <MessageSquare className="h-4 w-4" />
+            {remarksCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[9px] font-black text-white shadow-xs">
+                {remarksCount}
+              </span>
+            )}
+          </Button>
+        </div>
         {onEdit && (
           <Button
             variant="outline"
@@ -1391,6 +1504,8 @@ export function KiaBookingsClient({
 
   const [invoiceViewerBooking, setInvoiceViewerBooking] = useState<any | null>(null)
   const [invoiceViewerOpen, setInvoiceViewerOpen] = useState(false)
+  const [isEmiCalculatorOpen, setIsEmiCalculatorOpen] = useState(false)
+  const [emiCalcTarget, setEmiCalcTarget] = useState<{ model?: string; variant?: string; exShowroom?: number } | null>(null)
   const [uploadingInvoiceFile, setUploadingInvoiceFile] = useState<File | null>(null)
   const [isUploadingInvoice, setIsUploadingInvoice] = useState(false)
 
@@ -1423,35 +1538,108 @@ export function KiaBookingsClient({
     }
   }
 
-  const [idtRemarkBookingId, setIdtRemarkBookingId] = useState<string | null>(null)
-  const [idtRemarkText, setIdtRemarkText] = useState('')
-  const [idtRemarkOpen, setIdtRemarkOpen] = useState(false)
-  const [idtRemarkMode, setIdtRemarkMode] = useState<'edit' | 'view'>('view')
-  const [idtRemarkSubmitting, setIdtRemarkSubmitting] = useState(false)
+  type BookingRemarkItem = {
+    id: string
+    text: string
+    authorName: string
+    authorRole?: string
+    createdAt: string
+    type?: 'overdue' | 'idt' | 'general'
+  }
 
-  async function handleSaveIdtRemark() {
-    if (!idtRemarkBookingId) return
-    setIdtRemarkSubmitting(true)
+  const [remarkBookingId, setRemarkBookingId] = useState<string | null>(null)
+  const [remarkBookingNumber, setRemarkBookingNumber] = useState<string>('')
+  const [remarkBookingCustomer, setRemarkBookingCustomer] = useState<string>('')
+  const [remarkText, setRemarkText] = useState('')
+  const [existingRemarksList, setExistingRemarksList] = useState<BookingRemarkItem[]>([])
+  const [remarkType, setRemarkType] = useState<'overdue' | 'idt' | 'general'>('overdue')
+  const [remarkOpen, setRemarkOpen] = useState(false)
+  const [remarkSubmitting, setRemarkSubmitting] = useState(false)
+
+  const openRemarkDialog = useCallback((row: { id: string; bookingNumber?: string; customerName?: string; notes?: string | null; idtRemark?: string | null; metadata?: Record<string, unknown> | null; stockNotAvailable?: boolean; status?: string; proformaApprovalStatus?: string | null; updatedAt?: string | null }, type: 'overdue' | 'idt' | 'general') => {
+    setRemarkBookingId(row.id)
+    setRemarkBookingNumber(row.bookingNumber || '')
+    setRemarkBookingCustomer(row.customerName || '')
+    
+    const metaRemarks = Array.isArray(row.metadata?.remarks) ? (row.metadata?.remarks as BookingRemarkItem[]) : []
+    let initialList = [...metaRemarks]
+    
+    if (initialList.length === 0) {
+      if (row.notes) {
+        initialList.push({
+          id: 'legacy-notes',
+          text: row.notes,
+          authorName: 'Staff',
+          authorRole: 'Remark',
+          createdAt: row.updatedAt || '',
+          type: 'general',
+        })
+      }
+      if (row.idtRemark && !initialList.some(r => r.text === row.idtRemark)) {
+        initialList.push({
+          id: 'legacy-idt',
+          text: row.idtRemark,
+          authorName: 'IDT Team',
+          authorRole: 'IDT Stock',
+          createdAt: row.updatedAt || '',
+          type: 'idt',
+        })
+      }
+    }
+    
+    setExistingRemarksList(initialList)
+    setRemarkText('')
+    setRemarkType(type)
+    setRemarkOpen(true)
+  }, [])
+
+  async function handleSaveRemark() {
+    if (!remarkBookingId || !remarkText.trim()) return
+    setRemarkSubmitting(true)
     try {
-      const response = await fetch(`/api/brands/kia/bookings/${idtRemarkBookingId}`, {
+      const newRemarkItem: BookingRemarkItem = {
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        text: remarkText.trim(),
+        authorName: currentUserName || 'Team Member',
+        authorRole: currentUserRole ? currentUserRole.toUpperCase() : 'Staff',
+        createdAt: new Date().toISOString(),
+        type: remarkType,
+      }
+
+      const updatedRemarks = [...existingRemarksList, newRemarkItem]
+
+      const bodyPayload = remarkType === 'idt'
+        ? {
+            idtRemark: remarkText.trim(),
+            notes: remarkText.trim(),
+            metadata: { remarks: updatedRemarks }
+          }
+        : {
+            notes: remarkText.trim(),
+            metadata: { remarks: updatedRemarks }
+          }
+
+      const response = await fetch(`/api/brands/kia/bookings/${remarkBookingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idtRemark: idtRemarkText.trim() }),
+        body: JSON.stringify(bodyPayload),
       })
       const payload = await response.json()
       if (!response.ok) {
-        throw new Error(payload?.error || 'Failed to save stock remark.')
+        throw new Error(payload?.error || 'Failed to save remark.')
       }
-      setActionMessage('Stock remark updated successfully.')
+
+      setExistingRemarksList(updatedRemarks)
+      setRemarkText('')
+      setActionMessage('Remark added successfully.')
       listQuery.refetch()
       if (selectedBookingId) {
         detailQuery.refetch()
       }
-      setIdtRemarkOpen(false)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to save remark.')
     } finally {
-      setIdtRemarkSubmitting(false)
+      setRemarkSubmitting(false)
     }
   }
 
@@ -2544,6 +2732,16 @@ export function KiaBookingsClient({
           </Button>
         </>
       )}
+      <Button
+        variant="outline"
+        className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11 border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100/70 text-indigo-900 flex items-center gap-1.5 shadow-xs"
+        onClick={() => {
+          setEmiCalcTarget(null)
+          setIsEmiCalculatorOpen(true)
+        }}
+      >
+        <Calculator className="h-4 w-4 text-indigo-600" /> EMI Calculator
+      </Button>
       <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => { listQuery.refetch(); shortageQuery.refetch(); globalDiscountsQuery.refetch() }} disabled={listQuery.isFetching || shortageQuery.isFetching || globalDiscountsQuery.isFetching}>
         <RefreshCw className={cn('h-4 w-4', (listQuery.isFetching || globalDiscountsQuery.isFetching) && 'animate-spin')} /> Refresh
       </Button>
@@ -2967,6 +3165,8 @@ export function KiaBookingsClient({
                     now={nowTick}
                     onEdit={canEdit ? (id) => setEditingBookingId(id) : undefined}
                     isSalesPerson={roleCanActAsSalesPerson(normalizedCurrentRole)}
+                    normalizedCurrentRole={normalizedCurrentRole}
+                    onAddRemark={(type) => openRemarkDialog(row, type)}
                   />
                 )
               })}
@@ -3024,7 +3224,29 @@ export function KiaBookingsClient({
                           <StatusBadge status={row.status} />
                           {row.stockNotAvailable && <StockUnavailableFlag />}
           {row.stockAvailable && <StockAvailableFlag />}
-                          <BookingWaitingIndicator status={row.status} approvalStatus={row.proformaApprovalStatus} updatedAt={row.updatedAt} now={nowTick} />
+                          {(() => {
+                            const metaRemarks = Array.isArray(row.metadata?.remarks) ? (row.metadata?.remarks as any[]) : []
+                            const remarksList = metaRemarks.length > 0
+                              ? metaRemarks
+                              : [
+                                  ...(row.notes ? [{ id: '1', text: row.notes, authorName: 'Staff', createdAt: '' }] : []),
+                                  ...(row.idtRemark ? [{ id: '2', text: row.idtRemark, authorName: 'IDT Team', createdAt: '' }] : [])
+                                ]
+                            const remarksCount = remarksList.length
+                            const latestRemark = remarksList.length > 0 ? remarksList[remarksList.length - 1] : null
+
+                            return (
+                              <BookingWaitingIndicator
+                                status={row.status}
+                                approvalStatus={row.proformaApprovalStatus}
+                                updatedAt={row.updatedAt}
+                                now={nowTick}
+                                remarksCount={remarksCount}
+                                latestRemarkText={latestRemark?.text}
+                                onAddOverdueRemark={() => openRemarkDialog(row, 'overdue')}
+                              />
+                            )
+                          })()}
                         </div>
                       </TableCell>
                       <TableCell className="px-3 py-3 text-xs font-semibold text-[var(--kia-text-soft)]">{formatDate(row.createdAt || row.updatedAt)}</TableCell>
@@ -3034,37 +3256,61 @@ export function KiaBookingsClient({
                           <button type="button" title="View booking" onClick={() => openBooking(row.id)} className="grid h-8 w-8 place-items-center rounded-lg text-[var(--kia-text-soft)] transition-colors hover:bg-[var(--kia-surface-sunken)] hover:text-[var(--kia-text)]">
                             <Eye className="h-4 w-4" />
                           </button>
-                          <button
-                            type="button"
-                            title={
-                              !row.stockNotAvailable
-                                ? 'Vehicle is in stock'
-                                : normalizedCurrentRole === 'idt'
-                                  ? row.idtRemark ? 'Edit stock remark' : 'Add stock remark'
-                                  : row.idtRemark ? 'View IDT stock remark' : 'No IDT stock remark'
-                            }
-                            disabled={!row.stockNotAvailable || (normalizedCurrentRole !== 'idt' && !row.idtRemark)}
-                            onClick={() => {
-                              setIdtRemarkBookingId(row.id)
-                              setIdtRemarkText(row.idtRemark || '')
-                              setIdtRemarkMode(normalizedCurrentRole === 'idt' ? 'edit' : 'view')
-                              setIdtRemarkOpen(true)
-                            }}
-                            className={cn(
-                              "grid h-8 w-8 place-items-center rounded-lg transition-colors",
-                              !row.stockNotAvailable
-                                ? "text-slate-200 dark:text-slate-800 cursor-not-allowed"
-                                : normalizedCurrentRole === 'idt'
-                                  ? row.idtRemark
-                                    ? "text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700"
-                                    : "text-amber-500 hover:bg-amber-50 hover:text-amber-600"
-                                  : row.idtRemark
-                                    ? "text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700"
-                                    : "text-slate-350 dark:text-slate-700 cursor-not-allowed"
-                            )}
-                          >
-                            <MessageSquare className="h-4 w-4" />
-                          </button>
+                          {(() => {
+                            const isRowPending = getKiaBookingStageInfo(row.status, row.proformaApprovalStatus).state === 'pending'
+                            const isRowOverdue = isRowPending && isKiaBookingWaitLong(row.updatedAt, nowTick)
+                            const metaRemarks = Array.isArray(row.metadata?.remarks) ? (row.metadata?.remarks as any[]) : []
+                            const remarksList = metaRemarks.length > 0
+                              ? metaRemarks
+                              : [
+                                  ...(row.notes ? [{ id: '1', text: row.notes, authorName: 'Staff', createdAt: '' }] : []),
+                                  ...(row.idtRemark ? [{ id: '2', text: row.idtRemark, authorName: 'IDT Team', createdAt: '' }] : [])
+                                ]
+                            const remarksCount = remarksList.length
+                            const isRemarkEnabled = isRowOverdue || remarksCount > 0 || (row.stockNotAvailable && normalizedCurrentRole === 'idt')
+
+                            return (
+                              <div className="relative inline-flex items-center">
+                                <button
+                                  type="button"
+                                  title={
+                                    remarksCount > 0
+                                      ? `${remarksCount} Remark${remarksCount > 1 ? 's' : ''}: "${remarksList[remarksList.length - 1]?.text}"`
+                                      : isRowOverdue
+                                        ? 'Add remark for overdue booking'
+                                        : 'Add / View remark'
+                                  }
+                                  disabled={!isRemarkEnabled}
+                                  onClick={() => {
+                                    if (isRowOverdue) {
+                                      openRemarkDialog(row, 'overdue')
+                                    } else if (row.stockNotAvailable) {
+                                      openRemarkDialog(row, 'idt')
+                                    } else {
+                                      openRemarkDialog(row, 'general')
+                                    }
+                                  }}
+                                  className={cn(
+                                    "relative grid h-8 w-8 place-items-center rounded-lg transition-colors cursor-pointer",
+                                    isRowOverdue
+                                      ? "text-rose-600 hover:bg-rose-100 hover:text-rose-700 bg-rose-50 border border-rose-200/80 shadow-2xs"
+                                      : remarksCount > 0
+                                        ? "text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 bg-indigo-50/50 border border-indigo-200/60"
+                                        : isRemarkEnabled
+                                          ? "text-amber-500 hover:bg-amber-50"
+                                          : "text-slate-200 dark:text-slate-800 cursor-not-allowed"
+                                  )}
+                                >
+                                  <MessageSquare className="h-4 w-4" />
+                                  {remarksCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[9px] font-black text-white shadow-xs">
+                                      {remarksCount}
+                                    </span>
+                                  )}
+                                </button>
+                              </div>
+                            )
+                          })()}
                           {!isClosed && (roleCanActAsSalesPerson(normalizedCurrentRole) || roleCanActAsSalesManager(normalizedCurrentRole)) && (
                             <button
                               type="button"
@@ -3700,6 +3946,13 @@ export function KiaBookingsClient({
                 setInvoiceViewerBooking(b)
                 setInvoiceViewerOpen(true)
               }}
+              onOpenEmiCalculator={(target) => {
+                setEmiCalcTarget(target)
+                setIsEmiCalculatorOpen(true)
+              }}
+              onOpenOverdueRemark={(target) => {
+                openRemarkDialog(target, 'overdue')
+              }}
             />
           ) : null}
         </DialogContent>
@@ -3871,57 +4124,108 @@ export function KiaBookingsClient({
         </Dialog>
       )}
 
-      {/* IDT Stock Remark Dialog */}
-      <Dialog open={idtRemarkOpen} onOpenChange={setIdtRemarkOpen}>
-        <DialogContent className="max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-100">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-black text-slate-900">
-              {idtRemarkMode === 'edit' ? 'Update Stock Remark' : 'Stock Remark'}
-            </DialogTitle>
-            <DialogDescription className="text-xs font-semibold text-slate-500 mt-1">
-              {idtRemarkMode === 'edit'
-                ? 'Only the IDT can add or update this remark for bookings where the vehicle is not in stock.'
-                : 'This remark was added by the IDT because the vehicle is not in stock.'}
-            </DialogDescription>
+      {/* Booking Remark Dialog (Timeline List + Add Remark) */}
+      <Dialog open={remarkOpen} onOpenChange={setRemarkOpen}>
+        <DialogContent className="max-w-md w-full rounded-3xl bg-white p-6 shadow-2xl border border-slate-100 flex flex-col max-h-[85vh]">
+          <DialogHeader className="shrink-0 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              {remarkType === 'overdue' ? (
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-100 border border-rose-200 text-rose-600 shrink-0">
+                  <Clock3 className="h-5 w-5" />
+                </span>
+              ) : (
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-100 border border-indigo-200 text-indigo-600 shrink-0">
+                  <MessageSquare className="h-5 w-5" />
+                </span>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <DialogTitle className="text-lg font-black text-slate-900 truncate">
+                    {remarkType === 'overdue' ? 'Overdue Booking Remarks' : 'Booking Remarks & History'}
+                  </DialogTitle>
+                  <span className="rounded-full bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-[10px] font-black text-indigo-700 shrink-0">
+                    {existingRemarksList.length} {existingRemarksList.length === 1 ? 'Remark' : 'Remarks'}
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-slate-500 truncate mt-0.5">
+                  #{remarkBookingNumber || '—'} · {remarkBookingCustomer}
+                </p>
+              </div>
+            </div>
           </DialogHeader>
 
-          <div className="my-4">
-            {idtRemarkMode === 'edit' ? (
-              <Textarea
-                placeholder="Enter stock remark..."
-                value={idtRemarkText}
-                onChange={(e) => setIdtRemarkText(e.target.value)}
-                className="min-h-[100px] w-full rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500 font-medium text-sm p-3"
-                maxLength={500}
-              />
-            ) : (
-              <div className="rounded-xl bg-slate-50 p-4 border border-slate-150 font-bold text-slate-700 text-sm whitespace-pre-wrap min-h-[80px]">
-                {idtRemarkText || 'No remark has been added yet.'}
+          {/* Remarks History List */}
+          <div className="flex-1 overflow-y-auto my-4 pr-1 space-y-3 min-h-[140px] max-h-[320px]">
+            {existingRemarksList.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/80 rounded-2xl border border-dashed border-slate-200 p-4">
+                <MessageSquare className="h-8 w-8 text-slate-300 mb-2" />
+                <p className="text-xs font-bold text-slate-600">No remarks added yet</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Type a remark below to update the team on this booking.</p>
               </div>
+            ) : (
+              existingRemarksList.map((r, idx) => {
+                const dateStr = r.createdAt ? new Date(r.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
+                return (
+                  <div key={r.id || idx} className="rounded-2xl border border-slate-150 bg-slate-50/70 p-3 space-y-1.5 shadow-2xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-6 w-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-extrabold uppercase">
+                          {(r.authorName || 'U').charAt(0)}
+                        </span>
+                        <span className="text-xs font-extrabold text-slate-900">{r.authorName || 'Team Member'}</span>
+                        {r.authorRole && (
+                          <span className="text-[9px] font-black uppercase tracking-wider bg-slate-200/80 text-slate-700 px-1.5 py-0.5 rounded">
+                            {r.authorRole}
+                          </span>
+                        )}
+                      </div>
+                      {dateStr && <span className="text-[10px] font-semibold text-slate-400">{dateStr}</span>}
+                    </div>
+                    <p className="text-xs font-semibold text-slate-800 leading-relaxed whitespace-pre-wrap pl-7">
+                      {r.text}
+                    </p>
+                  </div>
+                )
+              })
             )}
           </div>
 
-          <DialogFooter className="flex justify-end gap-2 border-t border-slate-50 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIdtRemarkOpen(false)}
-              className="h-10 rounded-xl px-4 text-xs font-bold"
-            >
-              Close
-            </Button>
-            {idtRemarkMode === 'edit' && (
+          {/* Add New Remark Box */}
+          <div className="shrink-0 border-t border-slate-100 pt-3 space-y-3">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Add New Remark</label>
+              <Textarea
+                placeholder="Type your remark here (e.g. Customer delay reason, financier status, follow-up notes)..."
+                value={remarkText}
+                onChange={(e) => setRemarkText(e.target.value)}
+                className="min-h-[80px] w-full rounded-2xl border-slate-200 font-medium text-xs p-3 mt-1 text-slate-900 focus:border-indigo-500 focus:ring-indigo-500"
+                maxLength={500}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
               <Button
                 type="button"
-                onClick={handleSaveIdtRemark}
-                disabled={idtRemarkSubmitting}
-                className="h-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 text-xs font-black"
+                variant="outline"
+                onClick={() => setRemarkOpen(false)}
+                className="h-10 rounded-xl px-4 text-xs font-bold"
               >
-                {idtRemarkSubmitting ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-                Save Remark
+                Close
               </Button>
-            )}
-          </DialogFooter>
+              <Button
+                type="button"
+                onClick={handleSaveRemark}
+                disabled={remarkSubmitting || !remarkText.trim()}
+                className={cn(
+                  "h-10 rounded-xl px-5 text-xs font-black text-white shadow-md transition",
+                  remarkType === 'overdue' ? "bg-rose-600 hover:bg-rose-700" : "bg-indigo-600 hover:bg-indigo-700"
+                )}
+              >
+                {remarkSubmitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}
+                Add Remark
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
       {/* Invoice Viewer & Details Dialog */}
@@ -4059,6 +4363,18 @@ export function KiaBookingsClient({
           })()}
         </DialogContent>
       </Dialog>
+
+      <EmiCalculatorDialog
+        open={isEmiCalculatorOpen}
+        onClose={() => setIsEmiCalculatorOpen(false)}
+        initialModel={emiCalcTarget?.model}
+        initialVariant={emiCalcTarget?.variant}
+        initialExShowroom={emiCalcTarget?.exShowroom}
+        optionsData={priceOptions || proformaOptionsQuery.data}
+        prices={priceOptions?.prices || proformaOptionsQuery.data?.prices || []}
+        modelOptions={bookingModelOptions}
+        priceTrims={priceTrims}
+      />
     </KiaPiiContext.Provider>
   )
 
@@ -5050,6 +5366,8 @@ function BookingDrawer({
   discounts = [],
   onRefreshDiscounts,
   onOpenInvoiceViewer,
+  onOpenEmiCalculator,
+  onOpenOverdueRemark,
 }: {
   detail: BookingDetailPayload
   currentUserRole: string
@@ -5069,6 +5387,8 @@ function BookingDrawer({
   discounts?: any[]
   onRefreshDiscounts?: () => void
   onOpenInvoiceViewer?: (booking: any) => void
+  onOpenEmiCalculator?: (target: { model?: string; variant?: string; exShowroom?: number }) => void
+  onOpenOverdueRemark?: (target: { id: string; bookingNumber?: string; customerName?: string; notes?: string | null }) => void
 }) {
   const router = useRouter()
   const [sharingLink, setSharingLink] = useState(false)
@@ -5308,6 +5628,42 @@ function BookingDrawer({
                   <Percent className="mr-1.5 h-3.5 w-3.5 text-slate-700" />
                   Apply Discount
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (onOpenEmiCalculator) {
+                      onOpenEmiCalculator({
+                        model: booking.model,
+                        variant: booking.variant,
+                      })
+                    }
+                  }}
+                  className="h-8 rounded-xl text-xs font-bold border-indigo-200 hover:bg-indigo-50 text-indigo-700 bg-indigo-50/50"
+                >
+                  <Calculator className="mr-1.5 h-3.5 w-3.5 text-indigo-600" />
+                  Calculate EMI
+                </Button>
+                {Boolean(isKiaBookingWaitLong(booking.updatedAt)) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (onOpenOverdueRemark) {
+                        onOpenOverdueRemark({
+                          id: booking.id,
+                          bookingNumber: booking.bookingNumber,
+                          customerName: booking.customerName,
+                          notes: booking.notes,
+                        })
+                      }
+                    }}
+                    className="h-8 rounded-xl text-xs font-bold border-rose-300 hover:bg-rose-100 text-rose-800 bg-rose-50"
+                  >
+                    <MessageSquare className="mr-1.5 h-3.5 w-3.5 text-rose-600" />
+                    {booking.notes ? 'Edit Overdue Remark' : '+ Add Overdue Remark'}
+                  </Button>
+                )}
               </div>
               {Boolean((booking.metadata as Record<string, unknown> | null)?.vehicleNotInStock) && (
                 <Chip tone="warning">Vehicle not in stock</Chip>
@@ -6597,6 +6953,482 @@ function DiscountsDashboard({ query, currentUserRole, onOpenBooking }: Discounts
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function EmiCalculatorDialog({
+  open,
+  onClose,
+  initialModel,
+  initialVariant,
+  initialExShowroom,
+  optionsData,
+  prices = [],
+  modelOptions = [],
+  priceTrims = [],
+}: {
+  open: boolean
+  onClose: () => void
+  initialModel?: string
+  initialVariant?: string
+  initialExShowroom?: number
+  optionsData?: ProformaOptionsPayload
+  prices?: any[]
+  modelOptions?: string[]
+  priceTrims?: Array<{ model: string; trim_description: string }>
+}) {
+  const [selectedModel, setSelectedModel] = useState(initialModel || '')
+  const [selectedVariant, setSelectedVariant] = useState(initialVariant || '')
+  const [roi, setRoi] = useState<number>(8.5)
+  const [tenureYears, setTenureYears] = useState<number>(5)
+  const [downPaymentType, setDownPaymentType] = useState<'percent' | 'amount'>('percent')
+  const [downPaymentPercent, setDownPaymentPercent] = useState<number>(20)
+  const [downPaymentAmountInput, setDownPaymentAmountInput] = useState<string>('')
+  const [priceMode, setPriceMode] = useState<'on_road' | 'ex_showroom' | 'custom'>('on_road')
+  const [customPriceInput, setCustomPriceInput] = useState<string>('')
+  const [copied, setCopied] = useState(false)
+
+  const activePrices = useMemo(() => {
+    return prices.length > 0 ? prices : (optionsData?.prices || [])
+  }, [prices, optionsData?.prices])
+
+  const models = useMemo(() => {
+    if (modelOptions.length > 0) return modelOptions
+    const fromOptions = optionsData?.models || []
+    const fromPrices = activePrices.map((p) => p.model).filter(Boolean)
+    const all = Array.from(new Set([...fromOptions, ...fromPrices]))
+    return all.length > 0 ? all : ['CARENS', 'CARNIVAL', 'EV6', 'SELTOS', 'SONET', 'SYROS']
+  }, [modelOptions, optionsData?.models, activePrices])
+
+  useEffect(() => {
+    if (open) {
+      if (initialModel) {
+        const match = models.find((m) => m.trim().toLowerCase() === initialModel.trim().toLowerCase())
+        setSelectedModel(match || initialModel)
+      } else if (!selectedModel && models.length > 0) {
+        setSelectedModel(models[0])
+      }
+      if (initialVariant) setSelectedVariant(initialVariant)
+    }
+  }, [open, initialModel, initialVariant, models, selectedModel])
+
+  const variantOptions = useMemo(() => {
+    if (!selectedModel) return []
+    const norm = selectedModel.trim().toLowerCase()
+    const allTrims = priceTrims.length > 0 ? priceTrims : (optionsData?.trims || [])
+
+    const filteredFromTrims = allTrims
+      .filter((t) => String(t.model || '').trim().toLowerCase() === norm)
+      .map((t) => t.trim_description)
+      .filter(Boolean)
+
+    const filteredFromPrices = activePrices
+      .filter((p) => String(p.model || '').trim().toLowerCase() === norm)
+      .map((p) => p.trimDescription)
+      .filter(Boolean)
+
+    return Array.from(new Set([...filteredFromTrims, ...filteredFromPrices]))
+  }, [selectedModel, priceTrims, optionsData?.trims, activePrices])
+
+  useEffect(() => {
+    if (variantOptions.length > 0 && (!selectedVariant || !variantOptions.includes(selectedVariant))) {
+      setSelectedVariant(variantOptions[0])
+    }
+  }, [selectedModel, variantOptions, selectedVariant])
+
+  const priceDetail = useMemo(() => {
+    if (!activePrices.length) return null
+
+    const normVariant = (selectedVariant || '').trim().toLowerCase()
+    const normModel = (selectedModel || '').trim().toLowerCase()
+
+    if (!normVariant && !normModel) return null
+
+    // 1. Try matching trimDescription first (exact match, since trim descriptions like 'Seltos G1.5T iMT HTE (O)' are unique in DB)
+    if (normVariant) {
+      const exactTrimMatch = activePrices.find(
+        (p) => String(p.trimDescription || '').trim().toLowerCase() === normVariant
+      )
+      if (exactTrimMatch) return exactTrimMatch
+    }
+
+    // 2. Try model + trim partial match
+    if (normModel && normVariant) {
+      const modelAndTrimMatch = activePrices.find((p) => {
+        const pModel = String(p.model || '').trim().toLowerCase()
+        const pTrim = String(p.trimDescription || '').trim().toLowerCase()
+        const modelMatches = normModel.includes(pModel) || pModel.includes(normModel)
+        const trimMatches = normVariant.includes(pTrim) || pTrim.includes(normVariant)
+        return modelMatches && trimMatches
+      })
+      if (modelAndTrimMatch) return modelAndTrimMatch
+    }
+
+    // 3. Fallback to model match only
+    if (normModel) {
+      const firstModelMatch = activePrices.find((p) => {
+        const pModel = String(p.model || '').trim().toLowerCase()
+        return normModel.includes(pModel) || pModel.includes(normModel)
+      })
+      if (firstModelMatch) return firstModelMatch
+    }
+
+    return null
+  }, [activePrices, selectedModel, selectedVariant])
+
+  const exShowroom = useMemo(() => {
+    if (priceMode === 'custom' && customPriceInput) {
+      return Number(customPriceInput) || 0
+    }
+    if (priceDetail) {
+      const priceVal = Number(
+        (priceDetail as any).exShowroomPrice ??
+        (priceDetail as any).exShowroom ??
+        (priceDetail as any).newExShowroomPrice ??
+        0
+      )
+      if (priceVal > 0) return priceVal
+    }
+    if (initialExShowroom) return initialExShowroom
+    return 0
+  }, [priceMode, customPriceInput, priceDetail, initialExShowroom])
+
+  const onRoadPrice = useMemo(() => {
+    if (!priceDetail) return exShowroom
+    const p = priceDetail as any
+    const reg = Number(p.registrationCharges || p.registration || 0) + Number(p.statutoryCharges || p.statutoryTaxes || 0)
+    const ins = Number(p.insurance || 0)
+    const tcs = Number(p.tcs || 0)
+    const fastag = Number(p.fastag || 0)
+    const acc = Number(p.accessoriesKit || p.accessories || 0)
+    const ew = Number(p.extendedWarranty4thYear || p.extendedWarranty || 0)
+    const totalOnRoad = exShowroom + reg + ins + tcs + fastag + acc + ew
+    return totalOnRoad > 0 ? totalOnRoad : exShowroom
+  }, [priceDetail, exShowroom])
+
+  const effectiveVehiclePrice = priceMode === 'on_road' ? onRoadPrice : exShowroom
+
+  const downPayment = useMemo(() => {
+    if (downPaymentType === 'percent') {
+      return Math.round((effectiveVehiclePrice * (downPaymentPercent || 0)) / 100)
+    }
+    return Math.min(Number(downPaymentAmountInput) || 0, effectiveVehiclePrice)
+  }, [effectiveVehiclePrice, downPaymentType, downPaymentPercent, downPaymentAmountInput])
+
+  const loanAmount = Math.max(0, effectiveVehiclePrice - downPayment)
+
+  const { emi, totalInterest, totalPayable } = useMemo(() => {
+    if (!loanAmount || loanAmount <= 0 || !tenureYears || tenureYears <= 0) {
+      return { emi: 0, totalInterest: 0, totalPayable: 0 }
+    }
+    const r = (roi || 0) / 12 / 100
+    const n = tenureYears * 12
+
+    if (r === 0) {
+      const emiVal = Math.round(loanAmount / n)
+      return { emi: emiVal, totalInterest: 0, totalPayable: loanAmount }
+    }
+
+    const emiVal = Math.round((loanAmount * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1))
+    const payable = emiVal * n
+    const interest = Math.max(0, payable - loanAmount)
+
+    return { emi: emiVal, totalInterest: interest, totalPayable: payable }
+  }, [loanAmount, roi, tenureYears])
+
+  const formatINR = (val: number) => `₹ ${val.toLocaleString('en-IN')}`
+
+  const copySummaryText = () => {
+    const summary = `🚗 *KIA EMI & Finance Summary*
+Model: ${selectedModel || 'N/A'}
+Variant: ${selectedVariant || 'N/A'}
+Vehicle Price (${priceMode === 'on_road' ? 'On-Road' : 'Ex-Showroom'}): ${formatINR(effectiveVehiclePrice)}
+Down Payment: ${formatINR(downPayment)} (${downPaymentType === 'percent' ? `${downPaymentPercent}%` : 'Lump-sum'})
+------------------------------------------
+Loan Amount: ${formatINR(loanAmount)}
+Interest Rate: ${roi}% p.a.
+Tenure: ${tenureYears} Years (${tenureYears * 12} Months)
+------------------------------------------
+👉 *Monthly EMI: ${formatINR(emi)} / month*
+Total Interest: ${formatINR(totalInterest)}
+Total Amount Payable: ${formatINR(totalPayable)}`
+
+    navigator.clipboard.writeText(summary)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
+  }
+
+  if (!open) return null
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-3xl w-full rounded-3xl border border-slate-100 shadow-2xl bg-white p-0 overflow-hidden flex flex-col max-h-[92vh]">
+        <div className="bg-slate-900 text-white p-6 shrink-0 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
+              <Calculator className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-black text-white">KIA Vehicle EMI Calculator</DialogTitle>
+              <p className="text-xs text-slate-400 mt-0.5">Calculate monthly EMI, interest, and loan breakdown for Indian auto loans</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+            <p className="text-xs font-black uppercase tracking-wider text-slate-500">1. Select Vehicle & Variant</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Model</label>
+                <Select value={selectedModel} onValueChange={setSelectedModel}>
+                  <SelectTrigger className="mt-1 h-10 rounded-xl bg-white border-slate-200 font-bold text-slate-800">
+                    <SelectValue placeholder="Choose Model..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Variant / Trim</label>
+                <div className="mt-1">
+                  <SearchableVariantSelect
+                    value={selectedVariant}
+                    onChange={setSelectedVariant}
+                    options={variantOptions}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 bg-slate-200/60 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setPriceMode('on_road')}
+                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition", priceMode === 'on_road' ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900")}
+                >
+                  On-Road Price
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPriceMode('ex_showroom')}
+                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition", priceMode === 'ex_showroom' ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900")}
+                >
+                  Ex-Showroom Price
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPriceMode('custom')}
+                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition", priceMode === 'custom' ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900")}
+                >
+                  Custom Amount
+                </button>
+              </div>
+
+              {priceMode === 'custom' ? (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold text-slate-600">Enter Price (₹):</label>
+                  <Input
+                    type="number"
+                    value={customPriceInput}
+                    onChange={(e) => setCustomPriceInput(e.target.value)}
+                    placeholder="e.g. 1500000"
+                    className="h-9 w-40 rounded-xl border-slate-200 font-bold"
+                  />
+                </div>
+              ) : (
+                <div className="text-right">
+                  <p className="text-[10px] font-black uppercase text-slate-400">Total Vehicle Price</p>
+                  <p className="text-lg font-black text-slate-900">{formatINR(effectiveVehiclePrice)}</p>
+                </div>
+              )}
+            </div>
+
+            {priceDetail && priceMode === 'on_road' && (
+              <div className="text-[11px] text-slate-500 grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 border-t border-slate-100 font-medium">
+                <span>Ex-Showroom: {formatINR(Number(priceDetail.exShowroomPrice || 0))}</span>
+                <span>Reg & Tax: {formatINR(Number(priceDetail.registrationCharges || 0) + Number(priceDetail.statutoryCharges || 0))}</span>
+                <span>Insurance: {formatINR(Number(priceDetail.insurance || 0))}</span>
+                <span>Acc & EW: {formatINR(Number(priceDetail.accessoriesKit || 0) + Number(priceDetail.extendedWarranty4thYear || 0))}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-black uppercase tracking-wider text-slate-500">Down Payment</p>
+                <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setDownPaymentType('percent')}
+                    className={cn("px-2 py-0.5 rounded", downPaymentType === 'percent' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500")}
+                  >
+                    % Percent
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDownPaymentType('amount')}
+                    className={cn("px-2 py-0.5 rounded", downPaymentType === 'amount' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500")}
+                  >
+                    ₹ Amount
+                  </button>
+                </div>
+              </div>
+
+              {downPaymentType === 'percent' ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">{downPaymentPercent}% of Price</span>
+                    <span className="text-sm font-black text-slate-900">{formatINR(downPayment)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="80"
+                    step="5"
+                    value={downPaymentPercent}
+                    onChange={(e) => setDownPaymentPercent(Number(e.target.value))}
+                    className="w-full accent-slate-900 cursor-pointer"
+                  />
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {[10, 15, 20, 25, 30, 40, 50].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => setDownPaymentPercent(pct)}
+                        className={cn("px-2 py-1 rounded-lg text-xs font-bold transition border", downPaymentPercent === pct ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50")}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase text-slate-400">Enter Lump-sum Down Payment (₹)</label>
+                  <Input
+                    type="number"
+                    value={downPaymentAmountInput}
+                    onChange={(e) => setDownPaymentAmountInput(e.target.value)}
+                    placeholder="e.g. 250000"
+                    className="h-10 rounded-xl border-slate-200 font-bold"
+                  />
+                  <p className="text-[11px] text-slate-500 font-semibold">Calculated Down Payment: <span className="font-bold text-slate-800">{formatINR(downPayment)}</span></p>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
+              <p className="text-xs font-black uppercase tracking-wider text-slate-500">Interest Rate & Tenure</p>
+              
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase text-slate-400">Interest Rate (% p.a.)</label>
+                  <span className="text-xs font-black text-indigo-600">{roi}%</span>
+                </div>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={roi}
+                  onChange={(e) => setRoi(Number(e.target.value))}
+                  className="mt-1 h-9 rounded-xl border-slate-200 font-bold text-slate-800"
+                />
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {[7.5, 8.0, 8.1, 8.5, 9.0, 9.5, 10.0].map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => setRoi(rate)}
+                      className={cn("px-2 py-0.5 rounded-lg text-xs font-bold transition border", roi === rate ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50")}
+                    >
+                      {rate}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400">Loan Tenure (Years)</label>
+                <div className="grid grid-cols-6 gap-1 mt-1">
+                  {[1, 2, 3, 4, 5, 7].map((yrs) => (
+                    <button
+                      key={yrs}
+                      type="button"
+                      onClick={() => setTenureYears(yrs)}
+                      className={cn("py-1.5 rounded-xl text-xs font-bold text-center transition border", tenureYears === yrs ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50")}
+                    >
+                      {yrs} {yrs === 1 ? 'Yr' : 'Yrs'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-950 p-6 text-white shadow-xl space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Calculated Monthly EMI</span>
+                <p className="text-3xl md:text-4xl font-black text-white mt-0.5">{formatINR(emi)} <span className="text-sm font-semibold text-indigo-200">/ month</span></p>
+              </div>
+
+              <Button
+                type="button"
+                onClick={copySummaryText}
+                className={cn("h-11 rounded-2xl px-4 text-xs font-bold transition shadow-lg", copied ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-white text-slate-900 hover:bg-indigo-50")}
+              >
+                {copied ? <Check className="mr-1.5 h-4 w-4 text-white" /> : <Copy className="mr-1.5 h-4 w-4 text-indigo-600" />}
+                {copied ? 'Copied Summary!' : 'Copy Summary (WhatsApp)'}
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4 border-t border-white/10">
+              <div className="rounded-2xl bg-white/5 p-3 border border-white/10">
+                <span className="text-[9px] font-black uppercase text-indigo-300">Loan Amount</span>
+                <p className="text-base font-bold text-white mt-0.5">{formatINR(loanAmount)}</p>
+              </div>
+              <div className="rounded-2xl bg-white/5 p-3 border border-white/10">
+                <span className="text-[9px] font-black uppercase text-indigo-300">Down Payment</span>
+                <p className="text-base font-bold text-white mt-0.5">{formatINR(downPayment)}</p>
+              </div>
+              <div className="rounded-2xl bg-white/5 p-3 border border-white/10">
+                <span className="text-[9px] font-black uppercase text-amber-300">Total Interest</span>
+                <p className="text-base font-bold text-amber-200 mt-0.5">{formatINR(totalInterest)}</p>
+              </div>
+              <div className="rounded-2xl bg-white/5 p-3 border border-white/10">
+                <span className="text-[9px] font-black uppercase text-emerald-300">Total Payable</span>
+                <p className="text-base font-bold text-emerald-200 mt-0.5">{formatINR(totalPayable)}</p>
+              </div>
+            </div>
+
+            {totalPayable > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <div className="flex justify-between text-[10px] font-bold text-indigo-200">
+                  <span>Principal: {Math.round((loanAmount / totalPayable) * 100)}%</span>
+                  <span>Interest: {Math.round((totalInterest / totalPayable) * 100)}%</span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden flex">
+                  <div style={{ width: `${(loanAmount / totalPayable) * 100}%` }} className="bg-indigo-400 h-full" />
+                  <div style={{ width: `${(totalInterest / totalPayable) * 100}%` }} className="bg-amber-400 h-full" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-slate-100 bg-slate-50 shrink-0 flex justify-end">
+          <Button variant="outline" onClick={onClose} className="rounded-xl h-10 px-6 font-bold">
+            Close
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -2082,4 +2082,139 @@ export const kiaBookingDiscounts = pgTable('kia_booking_discounts', {
   statusIdx: index('kia_booking_discounts_status_idx').on(table.status),
 }))
 
+// ----------------------------------------------------
+// SCRAP ERP TABLES
+// ----------------------------------------------------
+
+export const scrapLocations = pgTable('scrap_locations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  code: text('code').notNull(),
+  address: text('address'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const scrapDepartments = pgTable('scrap_departments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  code: text('code').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const scrapTypes = pgTable('scrap_types', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  unit: text('unit').default('Kg').notNull(),
+  defaultRatePerUnit: decimal('default_rate_per_unit', { precision: 12, scale: 2 }).default('0').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const scrapDescriptions = pgTable('scrap_descriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  scrapTypeId: uuid('scrap_type_id').references(() => scrapTypes.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const scrapEmployees = pgTable('scrap_employees', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  role: text('role').default('Staff').notNull(),
+  phone: text('phone'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const scrapPaymentModes = pgTable('scrap_payment_modes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  isOnline: boolean('is_online').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const scrapHandoverUsers = pgTable('scrap_handover_users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  designation: text('designation'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const scrapTransactions = pgTable('scrap_transactions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  transactionNumber: text('transaction_number').notNull(),
+  groupName: text('group_name').default('JAM'),
+  timestamp: timestamp('timestamp', { withTimezone: true }).defaultNow().notNull(),
+  locationId: uuid('location_id').references(() => scrapLocations.id),
+  locationName: text('location_name').notNull(),
+  departmentId: uuid('department_id').references(() => scrapDepartments.id),
+  departmentName: text('department_name').notNull(),
+  scrapTypeId: uuid('scrap_type_id').references(() => scrapTypes.id),
+  scrapTypeName: text('scrap_type_name').notNull(),
+  description: text('description').notNull(),
+  weightQty: decimal('weight_qty', { precision: 12, scale: 2 }).default('0').notNull(),
+  ratePerUnit: decimal('rate_per_unit', { precision: 12, scale: 2 }).default('0').notNull(),
+  calculatedTotal: decimal('calculated_total', { precision: 14, scale: 2 }).default('0').notNull(),
+  amountReceived: decimal('amount_received', { precision: 14, scale: 2 }).default('0').notNull(),
+  outstandingAmount: decimal('outstanding_amount', { precision: 14, scale: 2 }).default('0').notNull(),
+  soldById: uuid('sold_by_id').references(() => scrapEmployees.id),
+  soldByName: text('sold_by_name').notNull(),
+  soldTo: text('sold_to').notNull(),
+  soldDate: timestamp('sold_date', { withTimezone: true }).defaultNow().notNull(),
+  paymentModeId: uuid('payment_mode_id').references(() => scrapPaymentModes.id),
+  paymentModeName: text('payment_mode_name').notNull(),
+  paymentHandoverToId: uuid('payment_handover_to_id').references(() => scrapHandoverUsers.id),
+  paymentHandoverToName: text('payment_handover_to_name').notNull(),
+  remarks: text('remarks'),
+  status: text('status').default('COMPLETED').notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  scrapTransNoIdx: uniqueIndex('scrap_trans_no_idx').on(table.transactionNumber),
+  scrapTransDateIdx: index('scrap_trans_date_idx').on(table.timestamp),
+  scrapTransLocIdx: index('scrap_trans_loc_idx').on(table.locationName),
+  scrapTransDeptIdx: index('scrap_trans_dept_idx').on(table.departmentName),
+  scrapTransTypeIdx: index('scrap_trans_type_idx').on(table.scrapTypeName),
+}))
+
+export const scrapAttachments = pgTable('scrap_attachments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  transactionId: uuid('transaction_id').references(() => scrapTransactions.id, { onDelete: 'cascade' }).notNull(),
+  type: text('type').notNull(),
+  url: text('url').notNull(),
+  fileName: text('file_name').notNull(),
+  fileSize: decimal('file_size', { precision: 12, scale: 0 }),
+  mimeType: text('mime_type'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  scrapAttTransIdx: index('scrap_att_trans_idx').on(table.transactionId),
+}))
+
+// ----------------------------------------------------
+// SCRAP MASTER DATA TABLE (DYNAMIC STORE FOR ALL DROPDOWNS)
+// ----------------------------------------------------
+
+export const scrapMasterData = pgTable('scrap_master_data', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  category: text('category').notNull(), // 'location' | 'department' | 'scrap_type' | 'description' | 'sold_by' | 'payment_mode' | 'payment_handover_to' | 'group'
+  name: text('name').notNull(),
+  code: text('code'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  isActive: boolean('is_active').default(true).notNull(),
+  sortOrder: decimal('sort_order', { precision: 8, scale: 0 }).default('0').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  scrapMasterCategoryIdx: index('scrap_master_category_idx').on(table.category),
+  scrapMasterNameCategoryIdx: uniqueIndex('scrap_master_name_category_idx').on(table.category, table.name),
+}))
+
+
+
 

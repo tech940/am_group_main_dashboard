@@ -2,6 +2,7 @@ import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
 import { isSuperAdminRole, hasGlobalAccessRole } from '@/lib/auth/roles'
 import { hasAllBranchAccess } from '@/lib/branches'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
+import { canViewBookingPaymentHistory } from '@/lib/kia/booking-payment-history-access'
 import { isPettyCashViewRole, isAmFinanceViewRole, isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 
 // Define the departments we support
@@ -159,6 +160,15 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'sales',
     brand: 'kia',
     iconName: 'PieChart',
+  },
+  {
+    id: 'kia_booking_payment_history',
+    name: 'Booking Payment History',
+    description: 'Booking payment receipts — collections register with summary, analytics and a filterable list.',
+    href: '/brands/kia/booking-payment-history',
+    department: 'sales',
+    brand: 'kia',
+    iconName: 'Banknote',
   },
   {
     id: 'kia_demo_cars_list',
@@ -360,10 +370,11 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/finance',
   '/brands/kia/sales-report',
   '/brands/kia/stock-report',
+  '/brands/kia/booking-payment-history',
   '/brands/kia/follow-ups',
   '/brands/kia/demo-job-cards',
   '/brands/kia/demo-cars-list',
-  
+
   // Hyundai
   '/brands/hyundai/business-excellence',
   '/brands/hyundai/service-appointment',
@@ -422,6 +433,12 @@ export function canUserAccessSection(
   // Vehicle Tracker
   if (href === '/brands/kia/vehicle-tracker') {
     return canViewVehicleTracker(userRole)
+  }
+
+  // Booking Payment History — hardcoded role allowlist (MD/Developer/Admin + EA + Sales/General
+  // Manager), same rationale as Vehicle Tracker. Branch scoping is enforced server-side in the API.
+  if (href === '/brands/kia/booking-payment-history') {
+    return canViewBookingPaymentHistory(userRole)
   }
 
   // Petty Cash
