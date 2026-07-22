@@ -57,11 +57,7 @@ const STATUS_STYLE: Record<TaskRow['status'], string> = {
   done: 'bg-emerald-100 text-emerald-700',
   cancelled: 'bg-slate-100 text-slate-400 line-through',
 }
-const PRIORITY_STYLE: Record<TaskRow['priority'], string> = {
-  low: 'bg-slate-100 text-slate-500',
-  normal: 'bg-sky-100 text-sky-700',
-  high: 'bg-rose-100 text-rose-700',
-}
+
 
 function fmtDate(v?: string | null) {
   if (!v) return '—'
@@ -418,26 +414,7 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
         </div>
       )}
 
-      {/* Cross-branch rollup — group MD only. Click a brand card to drill the list into it. */}
-      {groupWide && rollup && rollup.length > 0 && (
-        <div>
-          <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Tasks by branch</p>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-            {rollup.map((b) => (
-              <button key={b.brand} onClick={() => setBrandFilter(brandFilter === b.brand ? 'all' : b.brand)}
-                className={cn('rounded-2xl border p-3 text-left transition', brandFilter === b.brand ? 'border-slate-800 bg-slate-50' : 'border-slate-200 bg-white hover:border-slate-300')}>
-                <p className="text-xs font-black uppercase tracking-wider text-slate-700">{b.brand}</p>
-                <p className="mt-0.5 text-2xl font-black text-slate-900">{b.total}<span className="ml-1 text-xs font-bold text-slate-400">tasks</span></p>
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] font-semibold">
-                  <span className="text-slate-500">{b.assigned} open</span>
-                  {b.overdue > 0 && <span className="text-rose-600">{b.overdue} overdue</span>}
-                  <span className="text-emerald-600">{b.done} done</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -533,6 +510,7 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                   </th>
                   <th className="px-4 py-2.5 text-left">Employee</th>
                   <th className="px-4 py-2.5 text-left">Task</th>
+                  <th className="px-4 py-2.5 text-left">Mobile</th>
                   <th className="px-4 py-2.5 text-left">Due Date</th>
                   <th className="px-4 py-2.5 text-left">Follow-up Date</th>
                   <th className="px-4 py-2.5 text-right">Actions</th>
@@ -574,24 +552,18 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                         </div>
                         {r.description && <p className="line-clamp-1 text-xs text-slate-400 mt-0.5">{r.description}</p>}
                       </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {r.assignedPhone
+                          ? <span className="font-semibold text-slate-700 text-sm">{r.assignedPhone}</span>
+                          : <span className="text-slate-400 text-xs">—</span>
+                        }
+                      </td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                         <span className={cn(r.isOverdue && 'font-bold text-rose-600')}>{fmtDate(r.dueAt)}{r.isOverdue && ' · overdue'}</span>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmtDate(r.followUpAt)}</td>
+                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap text-[15px] font-bold">{fmtDate(r.followUpAt)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5 flex-nowrap">
-                          {/* Call button */}
-                          {r.assignedPhone && (
-                            <Button size="sm" variant="ghost"
-                              onClick={() => setAlertInfo({
-                                title: 'Mobile Number',
-                                message: `Mobile number for ${r.assignedName}:\n${r.assignedPhone}`,
-                                type: 'info'
-                              })}
-                              className="h-8 gap-1.5 rounded-xl bg-sky-50 px-3 text-xs font-black text-sky-600 hover:bg-sky-100 hover:text-sky-700 transition shadow-xs border border-sky-100/80">
-                              <Phone className="h-3.5 w-3.5" /> Call
-                            </Button>
-                          )}
                           {/* WhatsApp button */}
                           <a href={waUrl} target="_blank" rel="noopener noreferrer" title="WhatsApp Assignee"
                             className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-emerald-50 px-3 text-xs font-black text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 transition shadow-xs border border-emerald-100/80">
@@ -762,6 +734,12 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
   const queryClient = useQueryClient()
   const [remark, setRemark] = useState('')
   const [reassignTo, setReassignTo] = useState('')
+  const [searchEmp, setSearchEmp] = useState('')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [extName, setExtName] = useState('')
+  const [extEmail, setExtEmail] = useState('')
+  const [extPhone, setExtPhone] = useState('')
+
   const detailQuery = useQuery({
     queryKey: ['delegation-task', taskId],
     queryFn: () => fetchJson<{ task: TaskRow; activity: Activity[] }>(`/api/delegation-tasks/${taskId}`),
@@ -774,13 +752,25 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
     staleTime: 5 * 60 * 1000,
   })
 
+  const filteredAssignees = useMemo(() => {
+    const list = assigneesQuery.data?.assignees ?? []
+    if (!searchEmp.trim()) return list
+    const q = searchEmp.toLowerCase()
+    return list.filter((a) => a.fullName.toLowerCase().includes(q) || a.email?.toLowerCase().includes(q) || a.role.toLowerCase().includes(q))
+  }, [assigneesQuery.data?.assignees, searchEmp])
+
   const action = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       fetchJson(`/api/delegation-tasks/${taskId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['delegation-task', taskId] })
       onChanged()
-      setRemark(''); setReassignTo('')
+      setRemark('')
+      setReassignTo('')
+      setSearchEmp('')
+      setExtName('')
+      setExtEmail('')
+      setExtPhone('')
     },
   })
 
@@ -803,7 +793,7 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
             <h2 className="text-lg font-black text-slate-900">{task.title}</h2>
             <div className="mt-2 flex flex-wrap gap-2">
               <span className={cn('rounded-md px-2 py-0.5 text-[11px] font-bold', STATUS_STYLE[task.status])}>{STATUS_LABEL[task.status]}</span>
-              <span className={cn('rounded-md px-2 py-0.5 text-[11px] font-bold capitalize', PRIORITY_STYLE[task.priority])}>{task.priority} priority</span>
+
             </div>
             {task.description && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{task.description}</p>}
 
@@ -835,18 +825,114 @@ function TaskDrawer({ taskId, initialTask, onClose, onChanged, canDelegate, assi
                   className="w-full rounded-xl">Reopen task</Button>
               )}
               {task.viewerCanManage && isOpen && canDelegate && (
-                <div className="rounded-xl border border-slate-200 p-3">
+                <div className="rounded-xl border border-slate-200 p-3 space-y-3">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Reassign</p>
-                  <Select value={reassignTo} onValueChange={setReassignTo}>
-                    <SelectTrigger className="mt-2 h-9 rounded-lg"><SelectValue placeholder="Choose a person…" /></SelectTrigger>
-                    <SelectContent>
-                      {(assigneesQuery.data?.assignees ?? []).map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.fullName} · {a.role}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={() => action.mutate({ action: 'reassign', assignedTo: reassignTo })}
-                    disabled={action.isPending || !reassignTo} variant="outline" className="mt-2 w-full rounded-xl">Reassign</Button>
+                  <div className="relative">
+                    <Input
+                      value={searchEmp}
+                      onChange={(e) => {
+                        setSearchEmp(e.target.value)
+                        setDropdownOpen(true)
+                        setReassignTo('')
+                      }}
+                      onFocus={() => setDropdownOpen(true)}
+                      placeholder="Search employee or external contact..."
+                      className="h-9 rounded-xl border-slate-200 focus:ring-slate-900 font-semibold text-xs"
+                    />
+                    {dropdownOpen && (
+                      <div className="absolute z-50 mt-1 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                        {filteredAssignees.length === 0 && (
+                          <div className="px-3 py-2 text-xs text-slate-500">No matches found.</div>
+                        )}
+                        {filteredAssignees.map((a) => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => {
+                              setReassignTo(a.id)
+                              setSearchEmp(a.fullName)
+                              setDropdownOpen(false)
+                            }}
+                            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs hover:bg-slate-50"
+                          >
+                            <div>
+                              <p className="font-bold text-slate-800">{a.fullName}</p>
+                              {a.email && <p className="text-[10px] text-slate-400">{a.email}</p>}
+                            </div>
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-500">{a.role}</span>
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReassignTo('other')
+                            setSearchEmp('Other (Enter manually)')
+                            setDropdownOpen(false)
+                          }}
+                          className="flex w-full items-center justify-between rounded-lg border-t border-slate-100 px-3 py-2 text-left text-xs text-slate-900 hover:bg-slate-50 font-bold"
+                        >
+                          <span>Other...</span>
+                          <span className="text-[9px] font-black uppercase text-slate-400">Add external contact</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {reassignTo === 'other' && (
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 space-y-2.5">
+                      <p className="text-xs font-bold text-slate-700">Enter External Contact Details</p>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Name</label>
+                        <Input
+                          value={extName}
+                          onChange={(e) => setExtName(e.target.value)}
+                          placeholder="Employee / Contact Name"
+                          className="mt-0.5 h-8 text-xs rounded-lg border-slate-200 bg-white font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Email</label>
+                        <Input
+                          value={extEmail}
+                          onChange={(e) => setExtEmail(e.target.value)}
+                          placeholder="contact@email.com (optional)"
+                          className="mt-0.5 h-8 text-xs rounded-lg border-slate-200 bg-white font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Phone Number (Mandatory)</label>
+                        <Input
+                          value={extPhone}
+                          onChange={(e) => setExtPhone(e.target.value)}
+                          placeholder="e.g. +91 98765 43210"
+                          className="mt-0.5 h-8 text-xs rounded-lg border-slate-200 bg-white font-semibold"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={() => {
+                      const selectedObj = assigneesQuery.data?.assignees?.find(a => a.id === reassignTo)
+                      action.mutate({
+                        action: 'reassign',
+                        assignedTo: reassignTo,
+                        isExternal: reassignTo === 'other' || Boolean(selectedObj?.isExternal),
+                        externalContactName: extName,
+                        externalContactEmail: extEmail,
+                        externalContactPhone: extPhone,
+                      })
+                    }}
+                    disabled={
+                      action.isPending ||
+                      !reassignTo ||
+                      (reassignTo === 'other' && (!extName.trim() || !extPhone.trim()))
+                    }
+                    variant="outline"
+                    className="w-full rounded-xl h-9 text-xs font-bold"
+                  >
+                    Reassign Task
+                  </Button>
                 </div>
               )}
               {task.viewerCanManage && isOpen && (
@@ -986,11 +1072,11 @@ function DelegateDialog({
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-lg rounded-2xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.08)] bg-white p-6">
-        <DialogHeader>
+      <DialogContent className="max-w-lg w-full rounded-2xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.08)] bg-white p-0 flex flex-col max-h-[90vh]">
+        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle className="text-lg font-black text-slate-900">Delegate a task</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 pt-2">
+        <div className="overflow-y-auto flex-1 px-6 py-2 space-y-4">
           {/* 1. Belongs to MD Dropdown */}
           {mdList.length > 0 && (
             <div>
@@ -1119,9 +1205,10 @@ function DelegateDialog({
             />
           </div>
 
-          {create.error && <p className="text-xs font-semibold text-rose-600">{(create.error as Error).message}</p>}
-          
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+        </div>
+        <div className="px-6 pb-6 pt-3 border-t border-slate-100 shrink-0">
+          {create.error && <p className="text-xs font-semibold text-rose-600 mb-2">{(create.error as Error).message}</p>}
+          <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose} className="rounded-xl h-10">Cancel</Button>
             <Button
               onClick={() => create.mutate()}
@@ -1274,8 +1361,8 @@ function ReassignTaskDialog({ taskId, onClose, onReassigned }: { taskId: string;
                 <Input
                   type="date"
                   value={dueAt}
-                  onChange={(e) => setDueAt(e.target.value)}
-                  className="mt-1.5 h-10 rounded-xl border-slate-200 focus:ring-slate-900 font-semibold text-slate-700"
+                  disabled
+                  className="mt-1.5 h-10 rounded-xl bg-slate-50 border-slate-200 text-slate-500 font-semibold cursor-not-allowed"
                 />
               </div>
               <div>

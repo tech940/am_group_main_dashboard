@@ -50,6 +50,9 @@ export type UpdateTaskInput = {
   priority?: string | null
   mdUserId?: string | null
   isExternal?: boolean
+  externalContactName?: string | null
+  externalContactEmail?: string | null
+  externalContactPhone?: string | null
   remark?: string | null
 }
 
@@ -521,15 +524,54 @@ export async function updateDelegationTask(id: string, action: TaskAction, input
         if (!isOpen) throw new Error('Only an open task can be reassigned.')
         
         const nextId = text(input.assignedTo)
-        if (nextId && nextId !== task.assignedTo && nextId !== task.externalContactId) {
-          const isExternal = Boolean(input.isExternal)
-          if (isExternal) {
-            const [contact] = await tx.select().from(delegationContacts).where(eq(delegationContacts.id, nextId)).limit(1)
-            if (!contact) throw new Error('External contact not found.')
-            updates.assignedTo = null
-            updates.externalContactId = contact.id
-            updates.assignedName = contact.name
-            updates.assignedEmail = contact.email
+        const isExternal = Boolean(input.isExternal)
+        const extName = text(input.externalContactName)
+        const extEmail = nullableText(input.externalContactEmail)
+        const extPhone = text(input.externalContactPhone)
+        const isOther = nextId === 'other' || (isExternal && Boolean(extName || extPhone))
+
+        if (nextId && (nextId !== task.assignedTo && nextId !== task.externalContactId || isOther)) {
+          if (isOther || isExternal) {
+            if (isOther && (!extName || !extPhone)) {
+              throw new Error('Name and Phone Number are required for external contacts.')
+            }
+
+            let existingContact = null
+            if (extPhone) {
+              const [c] = await tx.select().from(delegationContacts).where(eq(delegationContacts.phone, extPhone)).limit(1)
+              existingContact = c
+            }
+            if (!existingContact && extName) {
+              const [c] = await tx.select().from(delegationContacts).where(eq(delegationContacts.name, extName)).limit(1)
+              existingContact = c
+            }
+
+            if (existingContact) {
+              updates.assignedTo = null
+              updates.externalContactId = existingContact.id
+              updates.assignedName = existingContact.name
+              updates.assignedEmail = extEmail || existingContact.email
+            } else if (extName && extPhone) {
+              const [newContact] = await tx
+                .insert(delegationContacts)
+                .values({
+                  name: extName,
+                  email: extEmail,
+                  phone: extPhone,
+                })
+                .returning()
+              updates.assignedTo = null
+              updates.externalContactId = newContact.id
+              updates.assignedName = newContact.name
+              updates.assignedEmail = newContact.email
+            } else if (nextId && nextId !== 'other') {
+              const [contact] = await tx.select().from(delegationContacts).where(eq(delegationContacts.id, nextId)).limit(1)
+              if (!contact) throw new Error('External contact not found.')
+              updates.assignedTo = null
+              updates.externalContactId = contact.id
+              updates.assignedName = contact.name
+              updates.assignedEmail = contact.email
+            }
           } else {
             const [userRecord] = await tx.select().from(users).where(eq(users.id, nextId)).limit(1)
             if (userRecord) {
