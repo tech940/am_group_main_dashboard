@@ -6,7 +6,7 @@
 // (`email-service.ts`) attaches the logo file inline on every send, which renders far
 // more reliably than remote URLs (no image-proxy blocking) or data URIs (Gmail strips).
 
-export const BRAND = 'AM Global'
+export const BRAND = 'AM Group'
 export const BRAND_LOGO_CID = 'am-brand-logo'
 
 // Refined, modern palette — a soft neutral canvas with an indigo→violet accent
@@ -70,7 +70,7 @@ export function emailLayout({ heading, bodyHtml, preheader, eyebrow }: EmailLayo
       </div>
       <p style="margin:18px 0 0;text-align:center;font-size:11px;line-height:1.6;color:${INK_FAINT};">
         This is an automated message from ${escapeHtml(BRAND)}. Please do not reply to this email.<br />
-        &copy; ${escapeHtml(BRAND)} · AM Group. All rights reserved.
+        &copy; ${escapeHtml(BRAND)}. All rights reserved.
       </p>
     </div>
   </body>

@@ -297,158 +297,161 @@ export function KiaVendorsClient() {
             </div>
           </div>
           <div className="kia-surface p-4 sm:p-5 flex flex-col justify-between col-span-2 sm:col-span-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Showing</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Showing</span>
             <div className="flex items-baseline gap-2 mt-2">
-              <span className="text-3xl font-black text-indigo-600">{filteredVendors.length}</span>
+              <span className="text-3xl font-black text-slate-900 dark:text-slate-100">{filteredVendors.length}</span>
               <span className="text-xs font-semibold text-slate-500">result{filteredVendors.length !== 1 ? 's' : ''}</span>
             </div>
           </div>
         </div>
 
-        {/* ── Search Hero Section ── */}
-        <div className="bg-slate-950 rounded-[2.5rem] p-6 sm:p-8 text-white shadow-2xl relative overflow-hidden border border-slate-800">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-80 h-80 bg-violet-500/10 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="relative z-10 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-bold mb-2">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Search-First Master Registry</span>
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Vendor Search & Lookup</h2>
-                <p className="text-xs sm:text-sm text-slate-400 font-medium mt-1">
-                  Instantly look up across {data?.vendors.length || 0} registered vendor master records
-                </p>
+        {/* ── Search Hero Section (Clean Light Theme) ── */}
+        <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 sm:p-8 shadow-xs border border-slate-200 dark:border-slate-800 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold mb-2">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Search-First Master Registry</span>
               </div>
-
-              <div className="flex items-center gap-2.5">
-                <Button
-                  type="button"
-                  onClick={openAddForm}
-                  className="h-11 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-black text-sm text-white shadow-lg shadow-indigo-600/30 transition-all"
-                >
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Add Vendor
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setShowAddGlDialog(true)}
-                  className="h-11 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 font-black text-sm text-white border border-slate-700"
-                >
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Add GL Category
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => refetch()}
-                  className="h-11 w-11 rounded-2xl border-slate-800 bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800"
-                  disabled={isFetching}
-                >
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                </Button>
-              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Vendor Search & Lookup</h2>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-1">
+                Instantly look up across {data?.vendors.length || 0} registered vendor master records
+              </p>
             </div>
 
-            {/* Large Search Input */}
-            <div className="relative">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-indigo-400" />
-              <Input
-                value={search}
-                onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-                placeholder="Search vendor by name, GSTIN, code, bank account, phone, or email..."
-                className="pl-13 pr-12 h-14 w-full rounded-2xl border-2 border-slate-800 bg-slate-900/90 text-white placeholder:text-slate-500 font-bold text-base focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 shadow-inner"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => { setSearch(''); setCurrentPage(1); }}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 w-7 h-7 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <Button
+                type="button"
+                onClick={openAddForm}
+                style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+                className="h-11 px-5 rounded-2xl font-black text-sm shadow-md cursor-pointer border-0"
+              >
+                <Plus className="w-4 h-4 mr-1.5" />
+                Add Vendor
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowAddGlDialog(true)}
+                className="h-11 px-5 rounded-2xl border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-extrabold text-sm text-slate-800 dark:text-slate-200 shadow-xs"
+              >
+                <Plus className="w-4 h-4 mr-1.5" />
+                Add GL Category
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                className="h-11 w-11 rounded-2xl border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300"
+                disabled={isFetching}
+              >
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              </Button>
             </div>
+          </div>
 
-            {/* Filter Tabs & View Toggle Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-slate-800/80">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {[
-                  { id: 'all', label: 'All Vendors', count: data?.vendors.length || 0 },
-                  { id: 'gst', label: 'With GST', count: data?.vendors.filter(v => v.gstNumber).length || 0 },
-                  { id: 'bank', label: 'With Bank Account', count: data?.vendors.filter(v => v.bankAccountNumber).length || 0 },
-                  { id: 'contact', label: 'With Contact', count: data?.vendors.filter(v => v.email || v.phone).length || 0 },
-                ].map(tab => (
+          {/* Large Search Input */}
+          <div className="relative">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+            <Input
+              value={search}
+              onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+              placeholder="Search vendor by name, GSTIN, code, bank account, phone, or email..."
+              className="pl-13 pr-12 h-14 w-full rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 font-bold text-base focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 shadow-xs"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => { setSearch(''); setCurrentPage(1); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-7 h-7 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Tabs & View Toggle Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {[
+                { id: 'all', label: 'All Vendors', count: data?.vendors.length || 0 },
+                { id: 'gst', label: 'With GST', count: data?.vendors.filter(v => v.gstNumber).length || 0 },
+                { id: 'bank', label: 'With Bank Account', count: data?.vendors.filter(v => v.bankAccountNumber).length || 0 },
+                { id: 'contact', label: 'With Contact', count: data?.vendors.filter(v => v.email || v.phone).length || 0 },
+              ].map(tab => {
+                const isActive = activeFilter === tab.id
+                return (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => { setActiveFilter(tab.id as any); setCurrentPage(1); }}
+                    style={isActive ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
                     className={cn(
-                      'px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5',
-                      activeFilter === tab.id
-                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                        : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800'
+                      'px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 border cursor-pointer',
+                      isActive
+                        ? 'shadow-xs border-transparent'
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
                     )}
                   >
                     <span>{tab.label}</span>
                     <span className={cn(
                       'px-1.5 py-0.2 text-[10px] rounded-md font-bold',
-                      activeFilter === tab.id ? 'bg-indigo-700 text-white' : 'bg-slate-800 text-slate-400'
+                      isActive ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                     )}>
                       {tab.count}
                     </span>
                   </button>
-                ))}
-              </div>
+                )
+              })}
+            </div>
 
-              {/* View Switcher */}
-              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 self-end sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('grid')}
-                  className={cn(
-                    'p-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5',
-                    viewMode === 'grid' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                  )}
-                  title="Card Grid View"
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                  <span className="hidden sm:inline">Grid</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('table')}
-                  className={cn(
-                    'p-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5',
-                    viewMode === 'table' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                  )}
-                  title="Table View"
-                >
-                  <List className="w-4 h-4" />
-                  <span className="hidden sm:inline">Table</span>
-                </button>
-              </div>
+            {/* View Switcher */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                style={viewMode === 'grid' ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                className={cn(
+                  'p-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer',
+                  viewMode === 'grid' ? 'shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                )}
+                title="Card Grid View"
+              >
+                <LayoutGrid className="w-4 h-4" />
+                <span className="hidden sm:inline">Grid</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                style={viewMode === 'table' ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                className={cn(
+                  'p-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer',
+                  viewMode === 'table' ? 'shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                )}
+                title="Table View"
+              >
+                <List className="w-4 h-4" />
+                <span className="hidden sm:inline">Table</span>
+              </button>
             </div>
           </div>
         </div>
 
         {/* ── Add / Edit Form Modal ── */}
         <Dialog open={showForm} onOpenChange={(open) => { if (!open) { setShowForm(false); setEditVendor(null); setForm(EMPTY_FORM); setGstError(null); } }}>
-          <DialogContent className="rounded-[2rem] w-[calc(100vw-1.5rem)] sm:max-w-xl bg-white p-0 overflow-hidden shadow-2xl border border-slate-100">
+          <DialogContent className="rounded-[2rem] w-[calc(100vw-1.5rem)] sm:max-w-xl bg-white dark:bg-slate-900 p-0 overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800">
             {/* Form header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-4 flex items-center justify-between">
+            <div className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
-                  <Building2 className="w-5 h-5 text-white" />
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
+                  <Building2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div>
-                  <DialogTitle className="text-base font-black text-white">
+                  <DialogTitle className="text-base font-black text-slate-900 dark:text-slate-100">
                     {editVendor ? 'Edit Vendor' : 'Add New Vendor'}
                   </DialogTitle>
-                  <DialogDescription className="text-xs text-indigo-200 font-medium">
+                  <DialogDescription className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                     {editVendor ? `Editing: ${editVendor.name}` : 'Enter vendor details for the registry'}
                   </DialogDescription>
                 </div>
@@ -472,7 +475,7 @@ export function KiaVendorsClient() {
                       placeholder="e.g. Sharma Enterprises Pvt. Ltd."
                       value={form.name}
                       onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                      className="w-full h-11 pl-10 pr-4 rounded-2xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 transition-colors"
+                      className="w-full h-11 pl-10 pr-4 rounded-2xl border-2 border-slate-200 focus:border-emerald-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 transition-colors"
                     />
                   </div>
                 </div>
@@ -495,7 +498,7 @@ export function KiaVendorsClient() {
                       }}
                       maxLength={15}
                       className={`w-full h-11 pl-10 pr-4 rounded-2xl border-2 focus:outline-none bg-slate-50/50 text-sm font-mono font-semibold text-slate-800 uppercase tracking-wider transition-colors ${
-                        gstError ? 'border-rose-400 focus:border-rose-500' : 'border-slate-200 focus:border-indigo-500'
+                        gstError ? 'border-rose-400 focus:border-rose-500' : 'border-slate-200 focus:border-emerald-500'
                       }`}
                     />
                     {form.gstNumber.length === 15 && !gstError && (
@@ -524,7 +527,7 @@ export function KiaVendorsClient() {
                       placeholder="e.g. 50200012345678"
                       value={form.bankAccountNumber}
                       onChange={e => setForm(f => ({ ...f, bankAccountNumber: e.target.value.replace(/\D/g, '') }))}
-                      className="w-full h-11 pl-10 pr-4 rounded-2xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 transition-colors"
+                      className="w-full h-11 pl-10 pr-4 rounded-2xl border-2 border-slate-200 focus:border-emerald-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 transition-colors"
                     />
                   </div>
                 </div>
@@ -541,7 +544,7 @@ export function KiaVendorsClient() {
                       placeholder="vendor@example.com"
                       value={form.email}
                       onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                      className="w-full h-11 pl-10 pr-4 rounded-2xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 transition-colors"
+                      className="w-full h-11 pl-10 pr-4 rounded-2xl border-2 border-slate-200 focus:border-emerald-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 transition-colors"
                     />
                   </div>
                 </div>
@@ -558,7 +561,7 @@ export function KiaVendorsClient() {
                       placeholder="+91 98765 43210"
                       value={form.phone}
                       onChange={e => setForm(f => ({ ...f, phone: formatPhone(e.target.value) }))}
-                      className="w-full h-11 pl-10 pr-4 rounded-2xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 transition-colors"
+                      className="w-full h-11 pl-10 pr-4 rounded-2xl border-2 border-slate-200 focus:border-emerald-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 transition-colors"
                     />
                   </div>
                 </div>
@@ -575,7 +578,7 @@ export function KiaVendorsClient() {
                       placeholder="Shop No., Street, City, State, PIN"
                       value={form.address}
                       onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                      className="w-full pl-10 pr-4 pt-3 pb-3 rounded-2xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 resize-none transition-colors"
+                      className="w-full pl-10 pr-4 pt-3 pb-3 rounded-2xl border-2 border-slate-200 focus:border-emerald-500 focus:outline-none bg-slate-50/50 text-sm font-semibold text-slate-800 resize-none transition-colors"
                     />
                   </div>
                 </div>
@@ -594,7 +597,8 @@ export function KiaVendorsClient() {
                 <Button
                   type="submit"
                   disabled={isSaving || (form.gstNumber.trim().length > 0 && !!gstError) || !form.name.trim()}
-                  className="h-11 px-8 rounded-2xl bg-indigo-600 hover:bg-indigo-700 font-black flex-1 sm:flex-none text-white"
+                  style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+                  className="h-11 px-8 rounded-2xl font-black flex-1 sm:flex-none border-0 shadow-md cursor-pointer"
                 >
                   {isSaving ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>
@@ -613,12 +617,12 @@ export function KiaVendorsClient() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
           <div className="flex items-center gap-2">
             <span className="text-xs font-black uppercase tracking-wider text-slate-400">Search Results</span>
-            <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-black">
+            <Badge className="bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-black">
               {filteredVendors.length} {filteredVendors.length === 1 ? 'vendor' : 'vendors'} found
             </Badge>
             {search && (
               <span className="text-xs text-slate-500 font-medium hidden md:inline">
-                matching <strong className="text-slate-900">&ldquo;{search}&rdquo;</strong>
+                matching <strong className="text-slate-900 dark:text-slate-100">&ldquo;{search}&rdquo;</strong>
               </span>
             )}
           </div>
@@ -635,7 +639,7 @@ export function KiaVendorsClient() {
                   size="icon"
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  className="h-8 w-8 rounded-xl border-slate-200"
+                  className="h-8 w-8 rounded-xl border-slate-200 dark:border-slate-700"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
@@ -645,7 +649,7 @@ export function KiaVendorsClient() {
                   size="icon"
                   disabled={currentPage === totalPages}
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  className="h-8 w-8 rounded-xl border-slate-200"
+                  className="h-8 w-8 rounded-xl border-slate-200 dark:border-slate-700"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </Button>
@@ -656,16 +660,16 @@ export function KiaVendorsClient() {
 
         {/* ── Main Results View ── */}
         {isLoading ? (
-          <div className="bg-white rounded-3xl border border-slate-100 p-12 flex flex-col items-center justify-center text-slate-400">
-            <Loader2 className="w-8 h-8 animate-spin mb-3 text-indigo-600" />
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-12 flex flex-col items-center justify-center text-slate-400">
+            <Loader2 className="w-8 h-8 animate-spin mb-3 text-emerald-600" />
             <span className="text-sm font-semibold">Searching vendor registry...</span>
           </div>
         ) : filteredVendors.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-slate-100 p-12 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-4 text-indigo-500">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-12 flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center mb-4 text-slate-600 dark:text-slate-300">
               <Search className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-black text-slate-900 mb-1">
+            <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 mb-1">
               {search ? `No vendors found matching "${search}"` : 'No vendors match selected filter'}
             </h3>
             <p className="text-xs text-slate-400 font-medium mb-6 max-w-sm">
@@ -679,12 +683,17 @@ export function KiaVendorsClient() {
                   type="button"
                   variant="outline"
                   onClick={() => { setSearch(''); setActiveFilter('all'); setCurrentPage(1); }}
-                  className="rounded-2xl border-slate-200 font-bold text-xs"
+                  className="rounded-2xl border-slate-200 dark:border-slate-700 font-bold text-xs"
                 >
                   Clear Search & Filters
                 </Button>
               )}
-              <Button type="button" onClick={openAddForm} className="rounded-2xl bg-indigo-600 hover:bg-indigo-700 font-black text-xs">
+              <Button
+                type="button"
+                onClick={openAddForm}
+                style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+                className="rounded-2xl font-black text-xs border-0 cursor-pointer"
+              >
                 <Plus className="w-4 h-4 mr-1.5" /> Add New Vendor
               </Button>
             </div>
@@ -696,20 +705,20 @@ export function KiaVendorsClient() {
               <div
                 key={vendor.id}
                 onClick={() => setSelectedVendorForLedger(vendor)}
-                className="group bg-white rounded-3xl border border-slate-100 shadow-[0_10px_30px_rgba(15,23,42,0.03)] hover:shadow-[0_20px_40px_rgba(79,70,229,0.08)] hover:border-indigo-200 p-5 transition-all duration-200 cursor-pointer relative flex flex-col justify-between"
+                className="group bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-emerald-300 dark:hover:border-emerald-700 p-5 transition-all duration-200 cursor-pointer relative flex flex-col justify-between"
               >
                 <div>
                   {/* Card Header: Icon, Code, Actions */}
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
-                        <Building2 className="w-5.5 h-5.5 text-indigo-600" />
+                      <div className="w-11 h-11 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                        <Building2 className="w-5.5 h-5.5 text-slate-700 dark:text-slate-300" />
                       </div>
                       <div>
-                        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full inline-block mb-0.5">
+                        <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full inline-block mb-0.5">
                           {vendor.vendorCode || 'VENDOR'}
                         </span>
-                        <h4 className="text-base font-black text-slate-900 leading-snug line-clamp-1 group-hover:text-indigo-600 transition-colors">
+                        <h4 className="text-base font-black text-slate-900 dark:text-slate-100 leading-snug line-clamp-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                           {vendor.name}
                         </h4>
                       </div>
@@ -719,7 +728,7 @@ export function KiaVendorsClient() {
                       <button
                         type="button"
                         onClick={() => openEditForm(vendor)}
-                        className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-100 flex items-center justify-center text-slate-400 transition-colors"
+                        className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-600 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 transition-colors"
                         title="Edit vendor"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
@@ -736,7 +745,7 @@ export function KiaVendorsClient() {
                         <button
                           type="button"
                           onClick={() => setDeleteConfirmId(vendor.id)}
-                          className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-rose-50 hover:text-rose-600 border border-slate-100 flex items-center justify-center text-slate-400 transition-colors"
+                          className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 transition-colors"
                           title="Delete vendor"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -753,28 +762,28 @@ export function KiaVendorsClient() {
                         <span>{vendor.gstNumber}</span>
                       </div>
                     ) : (
-                      <span className="text-[11px] font-medium text-slate-400 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-xl inline-block">
+                      <span className="text-[11px] font-medium text-slate-400 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-xl inline-block">
                         No GSTIN Registered
                       </span>
                     )}
                   </div>
 
                   {/* Contact Info Pills */}
-                  <div className="space-y-1.5 text-xs text-slate-600 font-medium">
+                  <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 font-medium">
                     {vendor.bankAccountNumber && (
-                      <div className="flex items-center gap-2 text-slate-700 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-100">
+                      <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
                         <span className="text-[9px] font-black text-slate-400">BANK A/C:</span>
                         <span className="font-mono font-bold">{vendor.bankAccountNumber}</span>
                       </div>
                     )}
                     {vendor.email && (
-                      <div className="flex items-center gap-2 text-slate-600">
+                      <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                         <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                         <span className="truncate">{vendor.email}</span>
                       </div>
                     )}
                     {vendor.phone && (
-                      <div className="flex items-center gap-2 text-slate-600">
+                      <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                         <Phone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                         <span>{vendor.phone}</span>
                       </div>
@@ -789,9 +798,9 @@ export function KiaVendorsClient() {
                 </div>
 
                 {/* Footer Action */}
-                <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
+                <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Payment History</span>
-                  <span className="text-xs font-black text-indigo-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                  <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
                     View Ledger &rarr;
                   </span>
                 </div>
@@ -800,11 +809,11 @@ export function KiaVendorsClient() {
           </div>
         ) : (
           /* ── TABLE VIEW ── */
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.02)] overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase tracking-widest text-slate-400">
                     <th className="py-3.5 px-6">Code</th>
                     <th className="py-3.5 px-4">Vendor / Firm Name</th>
                     <th className="py-3.5 px-4">GST Number</th>
@@ -815,24 +824,24 @@ export function KiaVendorsClient() {
                     <th className="py-3.5 px-6 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-sm">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
                   {paginatedVendors.map((vendor) => (
                     <tr
                       key={vendor.id}
                       onClick={() => setSelectedVendorForLedger(vendor)}
-                      className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
                     >
                       <td className="py-3.5 px-6">
-                        <span className="text-xs font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                        <span className="text-xs font-black text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                           {vendor.vendorCode || '—'}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0">
-                            <Building2 className="w-4 h-4 text-indigo-600" />
+                          <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0">
+                            <Building2 className="w-4 h-4 text-slate-700 dark:text-slate-300" />
                           </div>
-                          <span className="font-black text-slate-900">{vendor.name}</span>
+                          <span className="font-black text-slate-900 dark:text-slate-100">{vendor.name}</span>
                         </div>
                       </td>
                       <td className="py-3.5 px-4">
@@ -855,7 +864,7 @@ export function KiaVendorsClient() {
                           <button
                             type="button"
                             onClick={() => openEditForm(vendor)}
-                            className="w-8 h-8 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 flex items-center justify-center text-indigo-600 transition-colors"
+                            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 transition-colors"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
@@ -903,7 +912,7 @@ export function KiaVendorsClient() {
               >
                 <ChevronLeft className="w-4 h-4 mr-1" /> Previous
               </Button>
-              <div className="px-3 text-xs font-black text-slate-700">
+              <div className="px-3 text-xs font-black text-slate-700 dark:text-slate-300">
                 {currentPage} / {totalPages}
               </div>
               <Button
@@ -923,15 +932,15 @@ export function KiaVendorsClient() {
 
       {/* ── Vendor Ledger Modal ── */}
       <Dialog open={selectedVendorForLedger !== null} onOpenChange={(open) => { if (!open) setSelectedVendorForLedger(null) }}>
-        <DialogContent className="max-w-4xl w-[95vw] max-h-[85vh] overflow-y-auto rounded-3xl p-6 sm:p-8">
+        <DialogContent className="max-w-4xl w-[95vw] max-h-[85vh] overflow-y-auto rounded-3xl p-6 sm:p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
           {selectedVendorForLedger && (
             <>
               <DialogHeader>
-                <div className="flex items-center gap-2 text-indigo-600 text-xs font-black uppercase tracking-widest">
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs font-black uppercase tracking-widest">
                   <Building2 className="w-4 h-4" />
                   <span>Vendor Ledger & Payment History / विक्रेता बहीखाता</span>
                 </div>
-                <DialogTitle className="text-xl sm:text-2xl font-black text-slate-900 mt-1 flex items-center gap-2.5">
+                <DialogTitle className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-2.5">
                   {selectedVendorForLedger.name}
                   {selectedVendorForLedger.vendorCode && (
                     <Badge className="bg-slate-900 text-white text-[10px] font-black">{selectedVendorForLedger.vendorCode}</Badge>
@@ -944,24 +953,24 @@ export function KiaVendorsClient() {
 
               {loadingLedger ? (
                 <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                  <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                  <Loader2 className="w-8 h-8 animate-spin mb-2 text-emerald-600" />
                   <span className="text-xs font-semibold">Fetching payment ledger...</span>
                 </div>
               ) : (
                 <div className="space-y-6 mt-4">
                   {/* Vendor Details Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 bg-slate-50 border border-slate-100 p-4 rounded-2xl text-xs font-semibold text-slate-700">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-2xl text-xs font-semibold text-slate-700 dark:text-slate-300">
                     <div>
                       <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">GST Number</span>
-                      <span className="font-mono font-bold text-slate-900">{ledgerData?.vendor?.gstNumber || '—'}</span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{ledgerData?.vendor?.gstNumber || '—'}</span>
                     </div>
                     <div>
                       <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Bank Account Number</span>
-                      <span className="font-mono font-bold text-slate-900">{ledgerData?.vendor?.bankAccountNumber || '—'}</span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{ledgerData?.vendor?.bankAccountNumber || '—'}</span>
                     </div>
                     <div>
                       <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Email / Phone</span>
-                      <span className="text-slate-900">
+                      <span className="text-slate-900 dark:text-slate-100">
                         {ledgerData?.vendor?.email || '—'} / {ledgerData?.vendor?.phone || '—'}
                       </span>
                     </div>
@@ -979,17 +988,17 @@ export function KiaVendorsClient() {
 
                     return (
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex flex-col justify-between">
-                          <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800">Total Paid (सकल भुगतान)</span>
-                          <span className="text-2xl font-black text-emerald-600 tracking-tight mt-1 font-sans">₹{totalPaid.toLocaleString('en-IN')}</span>
+                        <div className="bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 p-4 rounded-2xl flex flex-col justify-between">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Total Paid (सकल भुगतान)</span>
+                          <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight mt-1 font-sans">₹{totalPaid.toLocaleString('en-IN')}</span>
                         </div>
-                        <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex flex-col justify-between">
-                          <span className="text-[9px] font-black uppercase tracking-wider text-indigo-800">Unpaid / In Approval Stage</span>
-                          <span className="text-2xl font-black text-indigo-600 tracking-tight mt-1 font-sans">₹{totalPending.toLocaleString('en-IN')}</span>
+                        <div className="bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl flex flex-col justify-between">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">Unpaid / In Approval Stage</span>
+                          <span className="text-2xl font-black text-amber-600 dark:text-amber-400 tracking-tight mt-1 font-sans">₹{totalPending.toLocaleString('en-IN')}</span>
                         </div>
-                        <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl flex flex-col justify-between">
-                          <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">Total Requests Count</span>
-                          <span className="text-2xl font-black text-slate-900 tracking-tight mt-1">{payments.length}</span>
+                        <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-2xl flex flex-col justify-between">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Requests Count</span>
+                          <span className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight mt-1">{payments.length}</span>
                         </div>
                       </div>
                     )
@@ -997,19 +1006,19 @@ export function KiaVendorsClient() {
 
                   {/* Payments Timeline / Table */}
                   <div>
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 mb-3 flex items-center gap-1.5">
-                      <Info className="w-4 h-4 text-indigo-500" />
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-1.5">
+                      <Info className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                       Cross-Company Payments List / भुगतान सूची
                     </h4>
 
                     {(!ledgerData?.payments || ledgerData.payments.length === 0) ? (
-                      <div className="text-center py-10 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-semibold text-slate-400">
+                      <div className="text-center py-10 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold text-slate-400">
                         No payment requests found for this vendor.
                       </div>
                     ) : (
-                      <div className="border border-slate-100 rounded-2xl overflow-hidden overflow-x-auto">
-                        <table className="w-full text-xs text-left font-semibold text-slate-700">
-                          <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                      <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden overflow-x-auto">
+                        <table className="w-full text-xs text-left font-semibold text-slate-700 dark:text-slate-300">
+                          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase tracking-wider text-slate-400">
                             <tr>
                               <th className="py-2.5 px-4">Date</th>
                               <th className="py-2.5 px-4">Company</th>
@@ -1020,20 +1029,20 @@ export function KiaVendorsClient() {
                               <th className="py-2.5 px-4 text-right">Documents</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100 font-medium">
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                             {ledgerData.payments.map((payment: any) => {
                               const isPaid = payment.paymentStatus === 'PAID'
                               return (
                                 <tr 
                                   key={payment.id} 
                                   onClick={() => setSelectedPaymentDetail(payment)}
-                                  className="hover:bg-indigo-50/45 cursor-pointer transition-colors"
+                                  className="hover:bg-slate-50 dark:hover:bg-slate-800/80 cursor-pointer transition-colors"
                                 >
-                                  <td className="py-3 px-4 font-semibold text-slate-500">
+                                  <td className="py-3 px-4 font-semibold text-slate-500 dark:text-slate-400">
                                     {new Date(payment.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                                   </td>
                                   <td className="py-3 px-4">
-                                    <Badge className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50 border border-indigo-100 uppercase font-black text-[9px] rounded-full">
+                                    <Badge className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 border border-slate-200 dark:border-slate-700 uppercase font-black text-[9px] rounded-full">
                                       {payment.brand || 'KIA'}
                                     </Badge>
                                   </td>
@@ -1067,7 +1076,7 @@ export function KiaVendorsClient() {
                                         <button
                                           type="button"
                                           onClick={() => setPreviewDocUrl(payment.uploadBillUrl1 || payment.uploadBillUrl2)}
-                                          className="text-indigo-600 hover:underline flex items-center gap-0.5 font-bold cursor-pointer"
+                                          className="text-emerald-600 hover:underline flex items-center gap-0.5 font-bold cursor-pointer"
                                           title="View Invoice Bill"
                                         >
                                           <FileText className="w-3.5 h-3.5" /> Bill
@@ -1115,7 +1124,7 @@ export function KiaVendorsClient() {
                   window.open(previewDocUrl, '_blank')
                 }
               }}
-              className="text-[10px] font-black uppercase text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer mr-8"
+              className="text-[10px] font-black uppercase text-emerald-600 hover:underline flex items-center gap-1 cursor-pointer mr-8"
             >
               <ExternalLink className="w-3.5 h-3.5" /> Open in New Tab
             </button>
@@ -1151,7 +1160,7 @@ export function KiaVendorsClient() {
                         View workflow status and metadata parameters.
                       </DialogDescription>
                     </div>
-                    <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-100 uppercase font-black text-[9px] rounded-full">
+                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase font-black text-[9px] rounded-full">
                       {row.brand || 'KIA'}
                     </Badge>
                   </div>
@@ -1191,7 +1200,7 @@ export function KiaVendorsClient() {
                     </div>
                     <div className="space-y-1">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Workflow Status</span>
-                      <p className="text-xs font-black uppercase text-indigo-600">{row.paymentStatus === 'PAID' ? 'PAID / भुगतान किया' : 'UNPAID / लंबित'}</p>
+                      <p className="text-xs font-black uppercase text-emerald-600">{row.paymentStatus === 'PAID' ? 'PAID / भुगतान किया' : 'UNPAID / लंबित'}</p>
                     </div>
                   </div>
 
@@ -1206,9 +1215,9 @@ export function KiaVendorsClient() {
                             setSelectedPaymentDetail(null)
                             setPreviewDocUrl(row.uploadBillUrl1 || row.uploadBillUrl2)
                           }}
-                          className="h-10 px-4 rounded-xl border border-slate-200 hover:border-indigo-200 bg-white hover:bg-indigo-50/20 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all shadow-sm cursor-pointer animate-in fade-in"
+                          className="h-10 px-4 rounded-xl border border-slate-200 hover:border-emerald-200 bg-white hover:bg-emerald-50/20 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all shadow-sm cursor-pointer animate-in fade-in"
                         >
-                          <FileText className="w-4 h-4 text-indigo-500" />
+                          <FileText className="w-4 h-4 text-emerald-500" />
                           View Invoice Bill
                         </button>
                       )}
@@ -1339,7 +1348,7 @@ function AddGlDialog({ open, onOpenChange, onSuccess }: AddGlDialogProps) {
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
               GL Code / जीएल कोड
             </span>
-            <span className="text-xs font-black text-indigo-600 font-mono">
+            <span className="text-xs font-black text-emerald-600 font-mono">
               [ System Generated / सिस्टम द्वारा जनरेटेड ]
             </span>
           </div>
@@ -1386,7 +1395,8 @@ function AddGlDialog({ open, onOpenChange, onSuccess }: AddGlDialogProps) {
             <Button
               type="submit"
               disabled={isPending}
-              className="h-11 px-5 rounded-2xl text-xs font-black text-white hover:opacity-90 bg-indigo-600"
+              style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+              className="h-11 px-5 rounded-2xl text-xs font-black border-0 shadow-md cursor-pointer"
             >
               {isPending ? 'Creating...' : 'Create Category'}
             </Button>

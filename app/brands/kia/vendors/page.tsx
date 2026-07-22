@@ -7,6 +7,7 @@ export const metadata = {
   description: 'Manage vendors for KIA vendor payment requests',
 }
 
+// Gated by kia.approvals.view permission
 export default async function KiaVendorsPage() {
   const appUser = await getAuthenticatedAppUser()
   if (!appUser) redirect('/auth/login')

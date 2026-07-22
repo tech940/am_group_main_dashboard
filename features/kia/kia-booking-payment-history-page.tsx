@@ -3,30 +3,81 @@
 import { useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell,
 } from 'recharts'
 import {
-  Loader2, IndianRupee, Receipt, Users, BookOpen, Wallet,
-  Search, ChevronLeft, ChevronRight, Download, X,
+  Loader2,
+  IndianRupee,
+  Receipt,
+  Users,
+  BookOpen,
+  Wallet,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  X,
+  Printer,
+  Building2,
+  CreditCard,
+  TrendingUp,
+  Sparkles,
+  ShieldCheck,
+  CheckCircle2,
+  ArrowUpRight,
+  BarChart3,
+  PieChart as PieChartIcon,
+  Filter,
+  Eye,
+  FileText,
+  BadgeCheck,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 type Slice = { name: string; count: number; amount: number }
 type TrendPoint = { date: string; count: number; amount: number }
 type ReceiptRow = {
-  id: string; receiptNo: string; receiptDate: string | null; amount: number; paymentType: string
-  customer: string; customerId: string; model: string; bookingNo: string; invoiceNo: string
-  kec: string; bank: string; chequeNo: string; remarks: string; dealerCode: string
+  id: string
+  receiptNo: string
+  receiptDate: string | null
+  amount: number
+  paymentType: string
+  customer: string
+  customerId: string
+  model: string
+  bookingNo: string
+  invoiceNo: string
+  kec: string
+  bank: string
+  chequeNo: string
+  remarks: string
+  dealerCode: string
 }
 type Payload = {
   summary: {
-    receiptCount: number; totalAmount: number; avgReceipt: number
-    uniqueBookings: number; uniqueCustomers: number; minDate: string | null; maxDate: string | null
+    receiptCount: number
+    totalAmount: number
+    avgReceipt: number
+    uniqueBookings: number
+    uniqueCustomers: number
+    minDate: string | null
+    maxDate: string | null
   }
   trend: TrendPoint[]
   byPaymentType: Slice[]
@@ -40,13 +91,15 @@ type Payload = {
 }
 
 const DEALER_LABELS: Record<string, string> = { JK402: 'Jammu', JK501: 'Udhampur' }
-function dealerLabel(code: string) { return DEALER_LABELS[code] ? `${DEALER_LABELS[code]} (${code})` : code }
+function dealerLabel(code: string) {
+  return DEALER_LABELS[code] ? `${DEALER_LABELS[code]} (${code})` : code
+}
 
 const PRESETS = [
-  { key: '30d', label: '30 days', days: 30 },
-  { key: '90d', label: '90 days', days: 90 },
-  { key: 'fy', label: 'This year', days: 0 },
-  { key: 'all', label: 'All time', days: -1 },
+  { key: '30d', label: '30 Days', days: 30 },
+  { key: '90d', label: '90 Days', days: 90 },
+  { key: 'fy', label: 'This Year', days: 0 },
+  { key: 'all', label: 'All Time', days: -1 },
 ]
 
 function isoDaysAgo(days: number) {
@@ -54,8 +107,12 @@ function isoDaysAgo(days: number) {
   d.setDate(d.getDate() - days)
   return d.toISOString().slice(0, 10)
 }
-function todayIso() { return new Date().toISOString().slice(0, 10) }
-function yearStartIso() { return `${new Date().getFullYear()}-01-01` }
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
+function yearStartIso() {
+  return `${new Date().getFullYear()}-01-01`
+}
 
 function formatCurrency(value: number) {
   const rounded = Math.round(Number.isFinite(value) ? value : 0)
@@ -69,7 +126,12 @@ function formatFull(value: number) {
 function formatNumber(value: number) {
   return Math.round(Number.isFinite(value) ? value : 0).toLocaleString('en-IN')
 }
+// Receipts can be negative (refunds / reversals) — those must read as red, not collection-green.
+function amountToneClass(value: number) {
+  return value < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+}
 function shortDate(iso: string) {
+  if (!iso) return ''
   const d = new Date(iso + 'T00:00:00')
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
 }
@@ -80,7 +142,10 @@ function longDate(iso: string | null) {
 }
 
 export function KiaBookingPaymentHistoryPage() {
+  const [activeTab, setActiveTab] = useState<'analytics' | 'register'>('analytics')
   const [preset, setPreset] = useState('90d')
+  const [startDateInput, setStartDateInput] = useState(isoDaysAgo(90))
+  const [endDateInput, setEndDateInput] = useState(todayIso())
   const [startDate, setStartDate] = useState(isoDaysAgo(90))
   const [endDate, setEndDate] = useState(todayIso())
   const [dealer, setDealer] = useState('all')
@@ -89,20 +154,45 @@ export function KiaBookingPaymentHistoryPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
 
+  // Voucher modal state
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRow | null>(null)
+
   function applyPreset(key: string) {
     setPreset(key)
     setPage(1)
-    if (key === '30d') { setStartDate(isoDaysAgo(30)); setEndDate(todayIso()) }
-    else if (key === '90d') { setStartDate(isoDaysAgo(90)); setEndDate(todayIso()) }
-    else if (key === 'fy') { setStartDate(yearStartIso()); setEndDate(todayIso()) }
-    else if (key === 'all') { setStartDate(''); setEndDate('') }
+    let s = ''
+    let e = ''
+    if (key === '30d') {
+      s = isoDaysAgo(30)
+      e = todayIso()
+    } else if (key === '90d') {
+      s = isoDaysAgo(90)
+      e = todayIso()
+    } else if (key === 'fy') {
+      s = yearStartIso()
+      e = todayIso()
+    } else if (key === 'all') {
+      s = ''
+      e = ''
+    }
+    setStartDateInput(s)
+    setEndDateInput(e)
+    setStartDate(s)
+    setEndDate(e)
+  }
+
+  function handleApplyDates() {
+    setPreset('custom')
+    setStartDate(startDateInput)
+    setEndDate(endDateInput)
+    setPage(1)
   }
 
   const query = useQuery<Payload>({
     queryKey: ['kia-booking-payment-history', startDate, endDate, dealer, paymentType, search, page],
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      const params = new URLSearchParams({ page: String(page), pageSize: '20' })
+      const params = new URLSearchParams({ page: String(page), pageSize: '25' })
       if (startDate) params.set('startDate', startDate)
       if (endDate) params.set('endDate', endDate)
       if (dealer !== 'all') params.set('dealer', dealer)
@@ -115,271 +205,745 @@ export function KiaBookingPaymentHistoryPage() {
   })
   const d = query.data
 
-  function runSearch() { setSearch(searchInput.trim()); setPage(1) }
+  function runSearch() {
+    setSearch(searchInput.trim())
+    setPage(1)
+  }
   function resetFilters() {
-    applyPreset('90d'); setDealer('all'); setPaymentType('all'); setSearchInput(''); setSearch(''); setPage(1)
+    applyPreset('90d')
+    setDealer('all')
+    setPaymentType('all')
+    setSearchInput('')
+    setSearch('')
+    setPage(1)
   }
 
   const dealerOptions = useMemo(() => d?.filters.dealers ?? [], [d])
   const paymentOptions = useMemo(() => d?.filters.paymentTypes ?? [], [d])
   const hasActiveFilters = dealer !== 'all' || paymentType !== 'all' || Boolean(search) || preset !== '90d'
 
+  // Digital vs Cash calculation
+  const digitalSharePercentage = useMemo(() => {
+    if (!d || !d.byPaymentType || d.summary.totalAmount === 0) return 0
+    const digitalTotal = d.byPaymentType
+      .filter((p) => {
+        const name = p.name.toLowerCase()
+        return name.includes('online') || name.includes('neft') || name.includes('rtgs') || name.includes('upi') || name.includes('card')
+      })
+      .reduce((sum, item) => sum + item.amount, 0)
+    return Math.round((digitalTotal / d.summary.totalAmount) * 100)
+  }, [d])
+
+  // Dynamic XAxis Tick Interval for consecutive daily rendering (1, 2, 3, 4...)
+  const tickInterval = useMemo(() => {
+    if (!d?.trend) return 0
+    const len = d.trend.length
+    if (len <= 31) return 0 // Consecutive days (1, 2, 3, 4...)
+    if (len <= 60) return 1 // Every 2nd day (1, 3, 5...)
+    if (len <= 90) return 2 // Every 3rd day (1, 4, 7...)
+    return Math.floor(len / 30)
+  }, [d?.trend])
+
   return (
-    <MainLayout title="Booking Payment History" subtitle="Customer payment receipts against bookings — collections register & analytics">
+    <MainLayout
+      title="Booking Payment History"
+      subtitle="Executive collections register, digital payment analytics & customer receipt vouchers"
+    >
       <div className="space-y-6">
-        {/* Filter bar */}
-        <Card className="rounded-2xl border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
-          <CardContent className="space-y-3 p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-flex rounded-xl bg-slate-100 p-1">
-                {PRESETS.map((o) => (
-                  <button
-                    key={o.key}
-                    onClick={() => applyPreset(o.key)}
-                    className={cn(
-                      'rounded-lg px-3 py-1.5 text-xs font-black uppercase tracking-wider transition-colors',
-                      preset === o.key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900',
-                    )}
-                  >
-                    {o.label}
-                  </button>
-                ))}
+        {/* Executive Header & View Mode Switcher (Clean Light Theme) */}
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className="bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 text-xs font-black px-3 py-1">
+                  <ShieldCheck className="h-3.5 w-3.5 mr-1 text-emerald-600" /> AM KIA Collections Register
+                </Badge>
+                {d?.summary.minDate && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700">
+                    {longDate(d.summary.minDate)} → {longDate(d.summary.maxDate)}
+                  </span>
+                )}
               </div>
-
-              <div className="flex items-center gap-1.5">
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => { setStartDate(e.target.value); setPreset('custom'); setPage(1) }}
-                  className="h-9 w-[9.5rem] rounded-xl text-xs font-bold"
-                  aria-label="Start date"
-                />
-                <span className="text-xs font-black text-slate-400">→</span>
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => { setEndDate(e.target.value); setPreset('custom'); setPage(1) }}
-                  className="h-9 w-[9.5rem] rounded-xl text-xs font-bold"
-                  aria-label="End date"
-                />
-              </div>
-
-              <Select value={dealer} onValueChange={(v) => { setDealer(v); setPage(1) }}>
-                <SelectTrigger className="h-9 w-40 rounded-xl text-xs font-bold"><SelectValue placeholder="All dealers" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All dealers</SelectItem>
-                  {dealerOptions.map((code) => <SelectItem key={code} value={code}>{dealerLabel(code)}</SelectItem>)}
-                </SelectContent>
-              </Select>
-
-              <Select value={paymentType} onValueChange={(v) => { setPaymentType(v); setPage(1) }}>
-                <SelectTrigger className="h-9 w-40 rounded-xl text-xs font-bold"><SelectValue placeholder="All payment types" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All payment types</SelectItem>
-                  {paymentOptions.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-3">
+                {formatCurrency(d?.summary.totalAmount || 0)}
+                <span className="text-sm font-bold text-slate-500 dark:text-slate-400 font-mono">
+                  ({formatFull(d?.summary.totalAmount || 0)})
+                </span>
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium max-w-xl">
+                Total customer payment receipts collected against vehicle bookings across AM KIA dealership locations.
+              </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 min-w-[16rem]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') runSearch() }}
-                  placeholder="Search customer, receipt no, booking (B…), invoice, model, consultant…"
-                  className="h-9 rounded-xl pl-9 text-xs font-semibold"
-                />
+            {/* View Module Selector Tabs & Export */}
+            <div className="flex items-center gap-3 flex-wrap shrink-0">
+              <div className="flex items-center p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('analytics')}
+                  style={activeTab === 'analytics' ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border',
+                    activeTab === 'analytics'
+                      ? 'shadow-xs border-transparent'
+                      : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  )}
+                >
+                  <BarChart3 className="h-4 w-4" /> Analytics & Breakdown
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('register')}
+                  style={activeTab === 'register' ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border',
+                    activeTab === 'register'
+                      ? 'shadow-xs border-transparent'
+                      : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  )}
+                >
+                  <Receipt className="h-4 w-4" /> Receipt Register ({formatNumber(d?.pagination.total || 0)})
+                </button>
               </div>
-              <Button onClick={runSearch} className="h-9 rounded-xl bg-slate-900 px-4 text-xs font-black uppercase tracking-wider hover:bg-slate-800">Search</Button>
-              {hasActiveFilters && (
-                <Button onClick={resetFilters} variant="outline" className="h-9 rounded-xl px-3 text-xs font-bold">
-                  <X className="mr-1 h-3.5 w-3.5" /> Reset
+
+              {d && d.rows.length > 0 && (
+                <Button
+                  onClick={() => exportCsv(d.rows)}
+                  variant="outline"
+                  className="rounded-2xl border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-extrabold text-xs h-10 px-4 shadow-xs"
+                >
+                  <Download className="mr-1.5 h-4 w-4 text-emerald-600" /> Export CSV ({d.rows.length})
                 </Button>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Controls Bar */}
+        <Card className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
+          <CardContent className="space-y-3.5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Presets */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700">
+                  {PRESETS.map((o) => {
+                    const isActive = preset === o.key
+                    return (
+                      <button
+                        key={o.key}
+                        onClick={() => applyPreset(o.key)}
+                        style={
+                          isActive
+                            ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }
+                            : undefined
+                        }
+                        className={cn(
+                          'rounded-lg px-3 py-1.5 text-xs font-extrabold transition-all cursor-pointer',
+                          isActive
+                            ? 'shadow-sm'
+                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                        )}
+                      >
+                        {o.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Date Inputs & Apply Button */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Input
+                    type="date"
+                    value={startDateInput}
+                    onChange={(e) => setStartDateInput(e.target.value)}
+                    className="h-9 w-[9.5rem] rounded-xl text-xs font-bold bg-white dark:bg-slate-900"
+                    aria-label="Start date"
+                  />
+                  <span className="text-xs font-black text-slate-400">→</span>
+                  <Input
+                    type="date"
+                    value={endDateInput}
+                    onChange={(e) => setEndDateInput(e.target.value)}
+                    className="h-9 w-[9.5rem] rounded-xl text-xs font-bold bg-white dark:bg-slate-900"
+                    aria-label="End date"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleApplyDates}
+                    style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+                    className="h-9 rounded-xl px-3.5 text-xs font-black uppercase tracking-wider shadow-xs cursor-pointer"
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </div>
+
+              {/* Facet Selects */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Select
+                  value={dealer}
+                  onValueChange={(v) => {
+                    setDealer(v)
+                    setPage(1)
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-44 rounded-xl text-xs font-bold bg-white dark:bg-slate-900">
+                    <SelectValue placeholder="All Dealerships" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Dealerships</SelectItem>
+                    {dealerOptions.map((code) => (
+                      <SelectItem key={code} value={code}>
+                        {dealerLabel(code)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={paymentType}
+                  onValueChange={(v) => {
+                    setPaymentType(v)
+                    setPage(1)
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-44 rounded-xl text-xs font-bold bg-white dark:bg-slate-900">
+                    <SelectValue placeholder="All Payment Modes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Payment Modes</SelectItem>
+                    {paymentOptions.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {hasActiveFilters && (
+                  <Button
+                    onClick={resetFilters}
+                    variant="outline"
+                    className="h-9 rounded-xl px-3 text-xs font-bold text-slate-600 hover:text-rose-600"
+                  >
+                    <X className="mr-1 h-3.5 w-3.5" /> Clear Filters
+                  </Button>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
 
         {query.isLoading ? (
-          <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
+          <div className="flex h-72 flex-col items-center justify-center gap-3 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-sm">
+            <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+            <p className="text-xs font-bold text-slate-500">Loading collection records and analytics...</p>
+          </div>
         ) : query.isError ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm font-bold text-rose-700">{(query.error as Error)?.message || 'Failed to load.'}</div>
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm font-bold text-rose-700">
+            {(query.error as Error)?.message || 'Failed to load.'}
+          </div>
         ) : d ? (
           <div className={cn('space-y-6 transition-opacity', query.isFetching && 'opacity-60')}>
-            {/* KPI cards */}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-              <Kpi icon={<IndianRupee className="h-4 w-4" />} label="Total collected" value={formatCurrency(d.summary.totalAmount)} tone="text-emerald-600" sub={formatFull(d.summary.totalAmount)} />
-              <Kpi icon={<Receipt className="h-4 w-4" />} label="Receipts" value={formatNumber(d.summary.receiptCount)} tone="text-indigo-600" />
-              <Kpi icon={<Wallet className="h-4 w-4" />} label="Avg receipt" value={formatCurrency(d.summary.avgReceipt)} tone="text-slate-700" />
-              <Kpi icon={<BookOpen className="h-4 w-4" />} label="Bookings paid" value={formatNumber(d.summary.uniqueBookings)} tone="text-sky-600" />
-              <Kpi icon={<Users className="h-4 w-4" />} label="Customers" value={formatNumber(d.summary.uniqueCustomers)} tone="text-amber-600" />
+            {/* 5 WOW KPI Executive Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <KpiCard
+                icon={<IndianRupee className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />}
+                iconBg="bg-emerald-50 dark:bg-emerald-950/80 border-emerald-200 dark:border-emerald-800"
+                label="Total Collections"
+                value={formatCurrency(d.summary.totalAmount)}
+                subtext={formatFull(d.summary.totalAmount)}
+                badge={`${d.summary.receiptCount} Receipts`}
+                badgeTone="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+              />
+
+              <KpiCard
+                icon={<Receipt className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />}
+                iconBg="bg-indigo-50 dark:bg-indigo-950/80 border-indigo-200 dark:border-indigo-800"
+                label="Total Receipts Logged"
+                value={formatNumber(d.summary.receiptCount)}
+                subtext={`Avg ${formatCurrency(d.summary.avgReceipt)}`}
+                badge="100% Verified"
+                badgeTone="bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300"
+              />
+
+              <KpiCard
+                icon={<BookOpen className="h-5 w-5 text-sky-600 dark:text-sky-400" />}
+                iconBg="bg-sky-50 dark:bg-sky-950/80 border-sky-200 dark:border-sky-800"
+                label="Bookings Paid"
+                value={formatNumber(d.summary.uniqueBookings)}
+                subtext="Unique Bookings"
+                badge="Paid Orders"
+                badgeTone="bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+              />
+
+              <KpiCard
+                icon={<Users className="h-5 w-5 text-amber-600 dark:text-amber-400" />}
+                iconBg="bg-amber-50 dark:bg-amber-950/80 border-amber-200 dark:border-amber-800"
+                label="Unique Customers"
+                value={formatNumber(d.summary.uniqueCustomers)}
+                subtext="Verified Buyers"
+                badge="Customers"
+                badgeTone="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+              />
+
+              <KpiCard
+                icon={<CreditCard className="h-5 w-5 text-purple-600 dark:text-purple-400" />}
+                iconBg="bg-purple-50 dark:bg-purple-950/80 border-purple-200 dark:border-purple-800"
+                label="Digital Payment Share"
+                value={`${digitalSharePercentage}%`}
+                subtext="Online / Bank / NEFT / UPI"
+                badge={digitalSharePercentage >= 50 ? 'Digital First' : 'Cash Heavy'}
+                badgeTone="bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
+              />
             </div>
 
-            {d.summary.minDate && (
-              <p className="-mt-3 text-[11px] font-bold text-slate-400">
-                Showing receipts from {longDate(d.summary.minDate)} to {longDate(d.summary.maxDate)}
-              </p>
-            )}
+            {/* Tab Module: Executive Analytics vs Receipt Register */}
+            {activeTab === 'analytics' ? (
+              <div className="space-y-6">
+                {/* Main Trend Line Chart */}
+                <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm p-5">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <div>
+                      <h3 className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-emerald-600" /> Daily Collections Velocity & Trend
+                      </h3>
+                      <p className="text-xs text-slate-500 font-medium">
+                        Daily aggregate collection volume (₹) recorded across all dealership branches
+                      </p>
+                    </div>
 
-            {/* Collections trend */}
-            <Card className="rounded-2xl border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
-              <CardContent className="p-5">
-                <p className="mb-3 text-[12px] font-black uppercase tracking-wider text-slate-500">Daily collections</p>
-                <div className="h-64 w-full">
-                  {d.trend.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-[12px] font-semibold text-slate-400">No receipts in this period.</div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={d.trend} margin={{ top: 4, right: 8, left: 4, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="collGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
-                            <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                        <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: '#94a3b8' }} interval={Math.max(0, Math.floor(d.trend.length / 12))} tickLine={false} axisLine={false} />
-                        <YAxis tickFormatter={(v) => formatCurrency(Number(v))} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} width={64} />
-                        <Tooltip
-                          labelFormatter={(v) => shortDate(String(v))}
-                          formatter={(value, key) => key === 'amount' ? [formatFull(Number(value)), 'Collected'] : [formatNumber(Number(value)), 'Receipts']}
-                          contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600 }}
-                        />
-                        <Area type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={2} fill="url(#collGrad)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs font-bold">
+                        {d.trend.length} Data Days
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="h-80 w-full">
+                    {d.trend.length === 0 ? (
+                      <div className="flex h-full items-center justify-center text-xs font-semibold text-slate-400">
+                        No receipt activity found for the selected period.
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={d.trend} margin={{ top: 10, right: 15, left: 10, bottom: 30 }}>
+                          <defs>
+                            <linearGradient id="collGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
+                              <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                          <XAxis
+                            dataKey="date"
+                            tickFormatter={shortDate}
+                            tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                            interval={tickInterval}
+                            tickLine={false}
+                            axisLine={false}
+                            dy={10}
+                          />
+                          <YAxis
+                            tickFormatter={(v) => formatCurrency(Number(v))}
+                            tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                            tickLine={false}
+                            axisLine={false}
+                            width={70}
+                          />
+                          <Tooltip
+                            labelFormatter={(v) => longDate(String(v))}
+                            formatter={(value, key) =>
+                              key === 'amount'
+                                ? [formatFull(Number(value)), 'Total Collected']
+                                : [formatNumber(Number(value)), 'Receipts']
+                            }
+                            contentStyle={{
+                              borderRadius: 16,
+                              border: '1px solid #e2e8f0',
+                              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
+                              fontSize: 12,
+                              fontWeight: 700,
+                            }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="amount"
+                            stroke="#10b981"
+                            strokeWidth={3}
+                            fill="url(#collGrad)"
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Grid Breakdowns */}
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <BreakdownCard
+                    title="Payment Mode Distribution"
+                    subtitle="Collections categorized by payment channel"
+                    items={d.byPaymentType}
+                    total={d.summary.totalAmount}
+                    tone="bg-indigo-500"
+                    icon={<CreditCard className="h-4 w-4 text-indigo-500" />}
+                  />
+                  <BreakdownCard
+                    title="Model Revenue Ranking"
+                    subtitle="Collections grouped by vehicle model"
+                    items={d.byModel}
+                    total={d.summary.totalAmount}
+                    tone="bg-emerald-500"
+                    icon={<Sparkles className="h-4 w-4 text-emerald-500" />}
+                  />
+                </div>
+
+                <div className="grid gap-6 lg:grid-cols-3">
+                  <BreakdownCard
+                    title="Dealership Branch Breakdown"
+                    subtitle="Collections by dealership location"
+                    items={d.byDealer}
+                    total={d.summary.totalAmount}
+                    tone="bg-sky-500"
+                    mapName={dealerLabel}
+                    icon={<Building2 className="h-4 w-4 text-sky-500" />}
+                  />
+                  <BreakdownCard
+                    title="Top Sales Consultants (KEC)"
+                    subtitle="Top performing consultants by collections"
+                    items={d.byKec}
+                    total={d.summary.totalAmount}
+                    tone="bg-amber-500"
+                    icon={<Users className="h-4 w-4 text-amber-500" />}
+                  />
+                  <BreakdownCard
+                    title="Top Banking Partners"
+                    subtitle="Bank accounts receiving payments"
+                    items={d.byBank}
+                    total={d.summary.totalAmount}
+                    tone="bg-violet-500"
+                    icon={<Wallet className="h-4 w-4 text-violet-500" />}
+                  />
+                </div>
+              </div>
+            ) : (
+              /* Receipt Register Table View */
+              <Card className="overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-0">
+                {/* Search — sits directly above the register header */}
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 px-6 py-4">
+                  <div className="relative flex-1 min-w-[16rem]">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      value={searchInput}
+                      onChange={(e) => setSearchInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') runSearch()
+                      }}
+                      placeholder="Search customer name, receipt #, booking (B…), invoice #, vehicle model, consultant..."
+                      className="h-9 rounded-xl pl-9 text-xs font-semibold bg-white dark:bg-slate-900"
+                    />
+                  </div>
+                  <Button
+                    onClick={runSearch}
+                    style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+                    className="h-9 rounded-xl px-5 text-xs font-black uppercase tracking-wider shadow-sm cursor-pointer"
+                  >
+                    Search
+                  </Button>
+                  {search && (
+                    <Button
+                      onClick={() => {
+                        setSearchInput('')
+                        setSearch('')
+                        setPage(1)
+                      }}
+                      variant="outline"
+                      className="h-9 rounded-xl px-3 text-xs font-bold text-slate-600 hover:text-rose-600"
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" /> Clear
+                    </Button>
                   )}
                 </div>
-              </CardContent>
-            </Card>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 px-6 py-4 bg-slate-50/50 dark:bg-slate-900/50 gap-3">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-emerald-600" /> Customer Payment Receipt Register
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Showing {formatNumber(d.pagination.total)} verified receipt entries (Click any row to open receipt voucher)
+                    </p>
+                  </div>
 
-            {/* Breakdowns */}
-            <div className="grid gap-3 lg:grid-cols-2">
-              <BreakdownCard title="By payment mode" items={d.byPaymentType} total={d.summary.totalAmount} tone="bg-indigo-500" />
-              <BreakdownCard title="By model" items={d.byModel} total={d.summary.totalAmount} tone="bg-emerald-500" />
-            </div>
-            <div className="grid gap-3 lg:grid-cols-3">
-              <BreakdownCard title="By dealer" items={d.byDealer} total={d.summary.totalAmount} tone="bg-sky-500" mapName={dealerLabel} />
-              <BreakdownCard title="Top consultants (KEC)" items={d.byKec} total={d.summary.totalAmount} tone="bg-amber-500" />
-              <BreakdownCard title="Top banks" items={d.byBank} total={d.summary.totalAmount} tone="bg-violet-500" />
-            </div>
-
-            {/* Receipt list */}
-            <Card className="overflow-hidden rounded-2xl border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
-              <div className="flex items-center justify-between border-b border-[var(--kia-hairline)] px-5 py-3">
-                <p className="text-[12px] font-black uppercase tracking-wider text-slate-500">
-                  Receipts <span className="ml-1 text-slate-400">· {formatNumber(d.pagination.total)}</span>
-                </p>
-                <Button
-                  variant="outline"
-                  className="h-8 rounded-lg px-3 text-[11px] font-bold"
-                  onClick={() => exportCsv(d.rows)}
-                  disabled={d.rows.length === 0}
-                >
-                  <Download className="mr-1 h-3.5 w-3.5" /> Export page
-                </Button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--kia-hairline)] bg-slate-50/60">
-                      {['Date', 'Receipt', 'Customer', 'Booking', 'Model', 'Mode', 'Consultant', 'Dealer', 'Amount'].map((h, i) => (
-                        <th key={h} className={cn('whitespace-nowrap px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400', i === 8 ? 'text-right' : 'text-left')}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {d.rows.length === 0 ? (
-                      <tr><td colSpan={9} className="p-10 text-center text-[12px] font-semibold text-slate-400">No receipts match these filters.</td></tr>
-                    ) : d.rows.map((r) => (
-                      <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
-                        <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-slate-600">{longDate(r.receiptDate)}</td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-bold text-[var(--kia-text)]">{r.receiptNo || '—'}</td>
-                        <td className="px-4 py-2.5">
-                          <div className="font-bold text-[var(--kia-text)]">{r.customer || '—'}</div>
-                          {r.invoiceNo && <div className="text-[11px] font-semibold text-slate-400">Inv {r.invoiceNo}</div>}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-slate-600">{r.bookingNo || '—'}</td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-slate-600">{r.model || '—'}</td>
-                        <td className="whitespace-nowrap px-4 py-2.5">
-                          <ModeBadge mode={r.paymentType} />
-                          {r.bank && <div className="mt-0.5 text-[11px] font-semibold text-slate-400">{r.bank}</div>}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-slate-600">{r.kec || '—'}</td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-slate-500">{DEALER_LABELS[r.dealerCode] || r.dealerCode || '—'}</td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right font-black text-emerald-700">{formatFull(r.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              <div className="flex items-center justify-between border-t border-[var(--kia-hairline)] px-5 py-3">
-                <p className="text-[11px] font-bold text-slate-400">
-                  Page {d.pagination.page} of {d.pagination.totalPages}
-                </p>
-                <div className="flex items-center gap-1.5">
-                  <Button variant="outline" className="h-8 w-8 rounded-lg p-0" disabled={d.pagination.page <= 1 || query.isFetching} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" className="h-8 w-8 rounded-lg p-0" disabled={d.pagination.page >= d.pagination.totalPages || query.isFetching} onClick={() => setPage((p) => p + 1)}>
-                    <ChevronRight className="h-4 w-4" />
+                  <Button
+                    variant="outline"
+                    className="h-9 rounded-xl px-4 text-xs font-bold border-slate-300 dark:border-slate-700"
+                    onClick={() => exportCsv(d.rows)}
+                    disabled={d.rows.length === 0}
+                  >
+                    <Download className="mr-1.5 h-4 w-4" /> Export CSV Page
                   </Button>
                 </div>
-              </div>
-            </Card>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-800/60">
+                        {[
+                          'Date',
+                          'Receipt #',
+                          'Customer Details',
+                          'Booking ID',
+                          'Vehicle Model',
+                          'Payment Mode & Bank',
+                          'Consultant (KEC)',
+                          'Dealership',
+                          'Amount Collected',
+                          'Action',
+                        ].map((h, i) => (
+                          <th
+                            key={h}
+                            className={cn(
+                              'whitespace-nowrap px-4 py-3 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400',
+                              i === 8 ? 'text-right' : i === 9 ? 'text-center' : 'text-left'
+                            )}
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                      {d.rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="p-12 text-center text-xs font-bold text-slate-400">
+                            No payment receipts match your selected date range or search filter.
+                          </td>
+                        </tr>
+                      ) : (
+                        <>
+                        {/* Total row — pinned at the TOP of the register (net across ALL pages of this filter). */}
+                        <tr className="bg-slate-100/80 dark:bg-slate-800/60 border-b-2 border-slate-200 dark:border-slate-700">
+                          <td colSpan={8} className="whitespace-nowrap px-4 py-3 text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                            Total
+                            <span className="ml-1.5 font-bold text-slate-400 normal-case tracking-normal">
+                              ({formatNumber(d.pagination.total)} receipts{d.pagination.totalPages > 1 ? ' · all pages' : ''})
+                            </span>
+                          </td>
+                          <td className={cn('whitespace-nowrap px-4 py-3 text-right font-black text-sm', amountToneClass(d.summary.totalAmount))}>
+                            {formatFull(d.summary.totalAmount)}
+                          </td>
+                          <td />
+                        </tr>
+                        {d.rows.map((r) => (
+                          <tr
+                            key={r.id}
+                            onClick={() => setSelectedReceipt(r)}
+                            className="cursor-pointer hover:bg-emerald-50/40 dark:hover:bg-slate-800/50 transition-colors group"
+                          >
+                            <td className="whitespace-nowrap px-4 py-3 font-extrabold text-xs text-slate-600 dark:text-slate-400">
+                              {longDate(r.receiptDate)}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 font-black text-xs text-slate-900 dark:text-slate-100">
+                              {r.receiptNo || '—'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="font-extrabold text-xs text-slate-900 dark:text-slate-100 truncate max-w-[180px]">
+                                {r.customer || '—'}
+                              </div>
+                              {r.invoiceNo && (
+                                <div className="text-[10px] font-bold text-slate-400">Inv: {r.invoiceNo}</div>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 font-extrabold text-xs text-slate-700 dark:text-slate-300">
+                              <Badge variant="outline" className="text-[10px] font-bold">
+                                {r.bookingNo || '—'}
+                              </Badge>
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 font-extrabold text-xs text-slate-800 dark:text-slate-200">
+                              {r.model || '—'}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3">
+                              <ModeBadge mode={r.paymentType} />
+                              {r.bank && (
+                                <div className="mt-0.5 text-[10px] font-bold text-slate-400 truncate max-w-[140px]">
+                                  {r.bank}
+                                </div>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 font-semibold text-xs text-slate-600 dark:text-slate-400">
+                              {r.kec || '—'}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 font-semibold text-xs text-slate-500">
+                              {DEALER_LABELS[r.dealerCode] || r.dealerCode || '—'}
+                            </td>
+                            <td className={cn('whitespace-nowrap px-4 py-3 text-right font-black text-xs', amountToneClass(r.amount))}>
+                              {formatFull(r.amount)}
+                            </td>
+                            <td className="text-center px-4 py-3" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSelectedReceipt(r)}
+                                className="h-7 px-2 text-xs font-bold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/80 rounded-lg"
+                                title="View Full Receipt Voucher"
+                              >
+                                <Eye className="h-3.5 w-3.5 mr-1" /> Voucher
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                        </>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Footer */}
+                <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 px-6 py-4">
+                  <p className="text-xs font-bold text-slate-500">
+                    Page <span className="font-extrabold text-slate-900 dark:text-slate-100">{d.pagination.page}</span> of{' '}
+                    <span className="font-extrabold text-slate-900 dark:text-slate-100">{d.pagination.totalPages}</span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={d.pagination.page <= 1 || query.isFetching}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      className="rounded-xl text-xs font-bold"
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={d.pagination.page >= d.pagination.totalPages || query.isFetching}
+                      onClick={() => setPage((p) => p + 1)}
+                      className="rounded-xl text-xs font-bold"
+                    >
+                      Next <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            )}
           </div>
         ) : null}
       </div>
+
+      {/* Official Receipt Voucher Modal */}
+      {selectedReceipt && (
+        <KiaReceiptVoucherModal
+          isOpen={Boolean(selectedReceipt)}
+          onClose={() => setSelectedReceipt(null)}
+          receipt={selectedReceipt}
+        />
+      )}
     </MainLayout>
   )
 }
 
-function Kpi({ icon, label, value, tone, sub }: { icon: React.ReactNode; label: string; value: string | number; tone: string; sub?: string }) {
+function KpiCard({
+  icon,
+  iconBg,
+  label,
+  value,
+  subtext,
+  badge,
+  badgeTone,
+}: {
+  icon: React.ReactNode
+  iconBg: string
+  label: string
+  value: string
+  subtext: string
+  badge: string
+  badgeTone: string
+}) {
   return (
-    <Card className="rounded-2xl border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
-      <CardContent className="p-4">
-        <div className={cn('flex items-center gap-1.5', tone)}>{icon}<span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</span></div>
-        <p className={cn('mt-1 text-2xl font-black', tone)}>{value}</p>
-        {sub && <p className="text-[10px] font-bold text-slate-400">{sub}</p>}
-      </CardContent>
+    <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className={cn('flex h-10 w-10 items-center justify-center rounded-2xl border shadow-xs', iconBg)}>
+          {icon}
+        </div>
+        <span className={cn('rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider', badgeTone)}>
+          {badge}
+        </span>
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+        <p className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">{value}</p>
+        <p className="text-[11px] font-bold text-slate-500">{subtext}</p>
+      </div>
     </Card>
   )
 }
 
-function BreakdownCard({ title, items, total, tone, mapName }: { title: string; items: Slice[]; total: number; tone: string; mapName?: (name: string) => string }) {
+function BreakdownCard({
+  title,
+  subtitle,
+  items,
+  total,
+  tone,
+  mapName,
+  icon,
+}: {
+  title: string
+  subtitle: string
+  items: Slice[]
+  total: number
+  tone: string
+  mapName?: (name: string) => string
+  icon: React.ReactNode
+}) {
   const max = Math.max(1, ...items.map((i) => i.amount))
   return (
-    <Card className="rounded-2xl border border-[var(--kia-hairline)] bg-[var(--kia-surface)] shadow-sm">
-      <CardContent className="p-5">
-        <p className="mb-3 text-[12px] font-black uppercase tracking-wider text-slate-500">{title}</p>
-        {items.length === 0 ? (
-          <p className="py-6 text-center text-[12px] font-semibold text-slate-400">No data in this period.</p>
-        ) : (
-          <div className="space-y-2.5">
-            {items.map((i) => (
-              <div key={i.name}>
-                <div className="flex items-center justify-between text-[12px] font-bold">
-                  <span className="truncate pr-2 text-slate-600">{mapName ? mapName(i.name) : i.name}</span>
-                  <span className="shrink-0 text-slate-500">
-                    {formatCurrency(i.amount)}
-                    {total > 0 && <span className="ml-1 text-slate-400">· {Math.round((i.amount / total) * 100)}%</span>}
+    <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm p-5">
+      <div className="flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+        {icon}
+        <div>
+          <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100">
+            {title}
+          </h4>
+          <p className="text-[10px] text-slate-400 font-medium">{subtitle}</p>
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="py-8 text-center text-xs font-semibold text-slate-400">No records found for this period.</p>
+      ) : (
+        <div className="space-y-3">
+          {items.slice(0, 7).map((i) => {
+            const pct = total > 0 ? Math.round((i.amount / total) * 100) : 0
+            const fillPct = Math.round((i.amount / max) * 100)
+            return (
+              <div key={i.name} className="space-y-1">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="truncate text-slate-800 dark:text-slate-200 font-extrabold pr-2">
+                    {mapName ? mapName(i.name) : i.name}
+                  </span>
+                  <span className="shrink-0 text-slate-600 dark:text-slate-400 font-black">
+                    {formatCurrency(i.amount)} <span className="text-slate-400 font-semibold text-[11px]">({pct}%)</span>
                   </span>
                 </div>
-                <div className="mt-1 flex items-center gap-2">
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                    <div className={cn('h-full rounded-full', tone)} style={{ width: `${Math.round((i.amount / max) * 100)}%` }} />
+
+                <div className="flex items-center gap-2">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div className={cn('h-full rounded-full transition-all duration-500', tone)} style={{ width: `${fillPct}%` }} />
                   </div>
-                  <span className="w-14 shrink-0 text-right text-[10px] font-bold text-slate-400">{formatNumber(i.count)} rcpt</span>
+                  <span className="w-16 shrink-0 text-right text-[10px] font-extrabold text-slate-400">
+                    {formatNumber(i.count)} rcpts
+                  </span>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
+            )
+          })}
+        </div>
+      )}
     </Card>
   )
 }
@@ -387,27 +951,223 @@ function BreakdownCard({ title, items, total, tone, mapName }: { title: string; 
 function ModeBadge({ mode }: { mode: string }) {
   const m = mode.toLowerCase()
   const tone =
-    m.includes('online') || m.includes('neft') || m.includes('rtgs') || m.includes('upi') ? 'bg-indigo-50 text-indigo-700'
-    : m.includes('cash') ? 'bg-emerald-50 text-emerald-700'
-    : m.includes('cheque') || m.includes('check') ? 'bg-amber-50 text-amber-700'
-    : m.includes('card') ? 'bg-sky-50 text-sky-700'
-    : 'bg-slate-100 text-slate-600'
-  return <span className={cn('inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide', tone)}>{mode || '—'}</span>
+    m.includes('online') || m.includes('neft') || m.includes('rtgs') || m.includes('upi')
+      ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+      : m.includes('cash')
+      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+      : m.includes('cheque') || m.includes('check')
+      ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+      : m.includes('card')
+      ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+      : 'bg-slate-100 text-slate-600 border-slate-200'
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide border',
+        tone
+      )}
+    >
+      {mode || '—'}
+    </span>
+  )
+}
+
+/* Official Receipt Voucher Modal Component */
+function KiaReceiptVoucherModal({
+  isOpen,
+  onClose,
+  receipt,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  receipt: ReceiptRow
+}) {
+  const handlePrint = () => {
+    if (typeof window !== 'undefined') window.print()
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-xl p-0 overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">
+        {/* Top Official Header */}
+        <div className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 p-6 pr-14">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 text-[10px] font-black uppercase">
+                AM KIA Official Receipt Voucher
+              </Badge>
+              <DialogTitle className="text-xl font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                Receipt #{receipt.receiptNo || 'N/A'}
+              </DialogTitle>
+              <p className="text-xs text-slate-500 font-medium">
+                {DEALER_LABELS[receipt.dealerCode] || receipt.dealerCode || 'AM KIA Dealership'} Branch
+              </p>
+            </div>
+
+            <div className="text-right shrink-0">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Date</span>
+              <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 inline-block mt-0.5">
+                {longDate(receipt.receiptDate)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Voucher Content Breakdown */}
+        <div className="p-6 space-y-6">
+          {/* Amount Large Highlight — rose for negative (refund / reversal) receipts */}
+          <div
+            className={cn(
+              'rounded-2xl border p-4 text-center space-y-1',
+              receipt.amount < 0
+                ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60'
+                : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60'
+            )}
+          >
+            <span
+              className={cn(
+                'text-[11px] font-black uppercase tracking-wider',
+                receipt.amount < 0 ? 'text-rose-700 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'
+              )}
+            >
+              {receipt.amount < 0 ? 'Amount Refunded / Reversed' : 'Total Amount Collected'}
+            </span>
+            <div className={cn('text-3xl font-black', amountToneClass(receipt.amount))}>
+              {formatFull(receipt.amount)}
+            </div>
+          </div>
+
+          {/* Details Grid */}
+          <div className="grid grid-cols-2 gap-4 text-xs">
+            <div className="space-y-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Customer Name</span>
+              <span className="font-extrabold text-slate-900 dark:text-slate-100 text-sm block">
+                {receipt.customer || '—'}
+              </span>
+              {receipt.customerId && (
+                <span className="text-[11px] font-bold text-slate-500 block">ID: {receipt.customerId}</span>
+              )}
+            </div>
+
+            <div className="space-y-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Booking & Invoice</span>
+              <span className="font-extrabold text-slate-900 dark:text-slate-100 block">
+                Booking #: {receipt.bookingNo || '—'}
+              </span>
+              {receipt.invoiceNo && (
+                <span className="text-[11px] font-bold text-slate-500 block">Invoice #: {receipt.invoiceNo}</span>
+              )}
+            </div>
+
+            <div className="space-y-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Vehicle Model</span>
+              <span className="font-extrabold text-slate-900 dark:text-slate-100 block">
+                {receipt.model || '—'}
+              </span>
+            </div>
+
+            <div className="space-y-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Sales Consultant (KEC)</span>
+              <span className="font-extrabold text-slate-900 dark:text-slate-100 block">
+                {receipt.kec || '—'}
+              </span>
+            </div>
+
+            <div className="space-y-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 col-span-2">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Payment Mode & Banking</span>
+              <div className="flex items-center justify-between gap-2">
+                <ModeBadge mode={receipt.paymentType} />
+                {receipt.bank && (
+                  <span className="font-extrabold text-slate-800 dark:text-slate-200">Bank: {receipt.bank}</span>
+                )}
+              </div>
+              {receipt.chequeNo && (
+                <span className="text-[11px] font-bold text-slate-500 block mt-1">
+                  Cheque / Reference #: {receipt.chequeNo}
+                </span>
+              )}
+            </div>
+
+            {receipt.remarks && (
+              <div className="space-y-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 col-span-2">
+                <span className="text-[10px] font-black uppercase text-slate-400 block">Remarks & Notes</span>
+                <span className="font-medium text-slate-700 dark:text-slate-300 block italic">
+                  {receipt.remarks}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              className="rounded-xl text-xs font-bold px-4"
+            >
+              Close
+            </Button>
+            <Button
+              type="button"
+              onClick={handlePrint}
+              style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+              className="rounded-xl text-xs font-black px-4 shadow-md cursor-pointer flex items-center gap-1.5"
+            >
+              <Printer className="h-4 w-4" /> Print Receipt Voucher
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 function exportCsv(rows: ReceiptRow[]) {
   if (typeof document === 'undefined' || rows.length === 0) return
-  const headers = ['Date', 'Receipt No', 'Customer', 'Customer ID', 'Booking', 'Invoice', 'Model', 'Payment Mode', 'Bank', 'Cheque No', 'Consultant', 'Dealer', 'Amount', 'Remarks']
+  const headers = [
+    'Date',
+    'Receipt No',
+    'Customer',
+    'Customer ID',
+    'Booking',
+    'Invoice',
+    'Model',
+    'Payment Mode',
+    'Bank',
+    'Cheque No',
+    'Consultant',
+    'Dealer',
+    'Amount',
+    'Remarks',
+  ]
   const escape = (v: string | number) => {
     const s = String(v ?? '')
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
   const lines = [headers.join(',')]
   for (const r of rows) {
-    lines.push([
-      r.receiptDate || '', r.receiptNo, r.customer, r.customerId, r.bookingNo, r.invoiceNo,
-      r.model, r.paymentType, r.bank, r.chequeNo, r.kec, r.dealerCode, r.amount, r.remarks,
-    ].map(escape).join(','))
+    lines.push(
+      [
+        r.receiptDate || '',
+        r.receiptNo,
+        r.customer,
+        r.customerId,
+        r.bookingNo,
+        r.invoiceNo,
+        r.model,
+        r.paymentType,
+        r.bank,
+        r.chequeNo,
+        r.kec,
+        r.dealerCode,
+        r.amount,
+        r.remarks,
+      ]
+        .map(escape)
+        .join(',')
+    )
   }
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)

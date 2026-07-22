@@ -45,7 +45,7 @@ export function ScrapRecordDetailModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-[95vw] lg:max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl p-6">
+      <DialogContent className="max-w-[96vw] xl:max-w-6xl 2xl:max-w-7xl max-h-[92vh] overflow-hidden flex flex-col rounded-2xl p-6">
         <DialogHeader className="shrink-0 border-b border-border pb-4 pr-8">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>

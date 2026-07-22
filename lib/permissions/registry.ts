@@ -45,6 +45,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     actions: ['view'],
   },
   {
+    key: 'scrap_erp',
+    name: 'Scrap ERP',
+    parentKey: null,
+    description: 'Scrap material disposal, dynamic master records, reports, valuation & sales analytics.',
+    sortOrder: 7,
+    actions: ['view'],
+  },
+  {
     key: 'kia',
     name: 'KIA',
     parentKey: null,
@@ -279,6 +287,14 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
     parentKey: 'kia.sales',
     description: 'AM KIA vendor payment approvals and the vendor registry.',
     sortOrder: 42,
+    actions: ['view'],
+  },
+  {
+    key: 'kia.booking_payment_history',
+    name: 'Booking Payment History',
+    parentKey: 'kia.sales',
+    description: 'AM KIA booking payment receipts and daily collections register.',
+    sortOrder: 44,
     actions: ['view'],
   },
   {
@@ -763,7 +779,8 @@ export const SECTION_ROUTES: Record<string, { href: string; aliases?: string[] }
   am_finance: { href: '/am-finance' },
   ca: { href: '/ca' },
   finance: { href: '/finance' },
-  user_management: { href: '/admin' },
+  scrap_erp: { href: '/scrap-erp' },
+  'kia.booking_payment_history': { href: '/brands/kia/booking-payment-history' },
   'kia.business_excellence': { href: '/brands/kia/business-excellence', aliases: ['/brands/kia/business-excellence/executive-dashboard', '/brands/kia/business-excellence/overview'] },
   'kia.service_appointment': { href: '/brands/kia/service-appointment' },
   'kia.demo_job_cards': { href: '/brands/kia/demo-job-cards' },
@@ -999,6 +1016,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'finance_orders',
     'petty_cash',
     'am_finance',
+    'scrap_erp',
+    'kia.booking_payment_history',
     'reports',
   ], ['view', 'approve', 'audit']),
   eba: keysForGroups([
@@ -1038,6 +1057,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'finance_orders',
     'petty_cash',
     'am_finance',
+    'scrap_erp',
+    'kia.booking_payment_history',
   ], ['view', 'approve']),
   purchase_manager: [
     ...keysForGroups(['purchase_orders'], ['view', 'create', 'edit']),

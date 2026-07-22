@@ -26,6 +26,7 @@ import { useUserRole } from '@/lib/hooks/use-user-role'
 import { hasGlobalAccessRole, isSuperAdminRole } from '@/lib/auth/roles'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import { canViewBookingPaymentHistory } from '@/lib/kia/booking-payment-history-access'
+import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
 import { SIDEBAR_PERMISSION_BY_HREF } from '@/lib/permissions/navigation'
 import { isAmFinanceViewRole, isPettyCashViewRole } from '@/lib/permissions/legacy-module-roles'
@@ -323,12 +324,14 @@ export function Sidebar() {
       const isKiaUser = userBrand === 'kia' || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
       return canViewVehicleTracker(userRole) && isKiaUser
     }
-    // Booking Payment History is role-gated (hardcoded allowlist), not permission-gated — same reason
-    // as Vehicle Tracker. MD/Developer/Admin + EA + Sales/General Manager only. Branch scoping (a
-    // manager sees only their branch's data) is enforced server-side in the API, not here.
+    // Booking Payment History
     if (href === BOOKING_PAYMENT_HISTORY_HREF) {
       const isKiaUser = userBrand === 'kia' || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
-      return canViewBookingPaymentHistory(userRole) && isKiaUser
+      return canViewBookingPaymentHistory(userRole, permissionMap) && isKiaUser
+    }
+    // Scrap ERP
+    if (href === '/scrap-erp') {
+      return canAccessScrapErp(userRole, permissionMap)
     }
     // Everything else is gated by the user's effective permissions. Brand users are no longer
     // auto-granted their whole brand here, so a per-section Deny — and restricted-role defaults

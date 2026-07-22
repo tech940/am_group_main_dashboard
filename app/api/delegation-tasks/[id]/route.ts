@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requirePermission } from '@/lib/permissions/service'
-import { getDelegationTaskDetail, updateDelegationTask, getBrandEaEmails, type TaskAction } from '@/lib/delegation/tasks'
+import { getDelegationTaskDetail, updateDelegationTask, deleteDelegationTask, getBrandEaEmails, type TaskAction } from '@/lib/delegation/tasks'
 import { sendTaskAssignedEmail } from '@/lib/delegation/emails'
 
 export const dynamic = 'force-dynamic'
@@ -89,5 +89,26 @@ export async function PATCH(request: Request, context: RouteContext<'/api/delega
   } catch (error) {
     console.error('Failed to update delegation task:', error)
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to update task' }, { status: 400 })
+  }
+}
+
+export async function DELETE(_request: Request, context: RouteContext<'/api/delegation-tasks/[id]'>) {
+  const appUser = await getAuthenticatedAppUser()
+  if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const role = String(appUser.role || '').trim().toLowerCase()
+  const allowed = ['ea', 'eba', 'md', 'developer', 'admin'].includes(role)
+  if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const permission = await requirePermission(appUser, 'delegation_tasks.view')
+  if (!permission.allowed) return NextResponse.json({ error: permission.reason }, { status: 403 })
+
+  try {
+    const { id } = await context.params
+    await deleteDelegationTask(id, appUser)
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('Failed to delete delegation task:', error)
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to delete task' }, { status: 400 })
   }
 }

@@ -46,6 +46,10 @@ const EXCEPTIONS: Record<string, { reason: string; requireToken?: string }> = {
   user_management: { reason: 'super-admin gated', requireToken: 'isSuperAdminRole' },
   // CA is HARDCODED to CA/MD/Developer via isCaViewRole (product decision), not the `ca.view` permission.
   ca: { reason: 'hardcoded role gate (CA/MD/Developer)', requireToken: 'isCaViewRole' },
+  // Scrap ERP uses custom role & permission guard (MD/EA/Developer default).
+  scrap_erp: { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canAccessScrapErp' },
+  // Booking Payment History uses custom role & permission guard (MD/EA/Developer default).
+  'kia.booking_payment_history': { reason: 'custom role & permission gate (MD/EA/Developer)', requireToken: 'canViewBookingPaymentHistory' },
 }
 
 console.log('\n=== Guard parity (sidebar visibility ↔ page guard) ===\n')

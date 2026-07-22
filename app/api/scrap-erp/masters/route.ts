@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import {
   DEFAULT_SCRAP_GROUPS,
   DEFAULT_SCRAP_LOCATIONS,
@@ -30,6 +32,11 @@ let paymentModesStore: ScrapPaymentMode[] = [...DEFAULT_SCRAP_PAYMENT_MODES]
 let handoverUsersStore: ScrapHandoverUser[] = [...DEFAULT_SCRAP_HANDOVER_USERS]
 
 export async function GET() {
+  const appUser = await getAuthenticatedAppUser()
+  if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!canAccessScrapErp(appUser.role)) {
+    return NextResponse.json({ error: 'You do not have access to Scrap ERP.' }, { status: 403 })
+  }
   return NextResponse.json({
     success: true,
     masters: {

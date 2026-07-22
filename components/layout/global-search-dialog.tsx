@@ -42,6 +42,8 @@ import {
   CornerDownLeft,
   Loader2,
   Star,
+  Recycle,
+  HandCoins,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUserPreferences } from '@/lib/hooks/use-user-preferences'
@@ -70,6 +72,8 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   ClipboardList,
   Sparkles,
   ShieldAlert,
+  Recycle,
+  HandCoins,
 }
 
 function SectionIcon({ name, className }: { name: string; className?: string }) {
@@ -239,6 +243,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
 
   const handleNavigate = (section: SearchSection) => {
     setNavigatingSection(section)
+    setTimeout(() => onOpenChange(false), 200)
     router.push(section.href)
   }
 
@@ -443,18 +448,25 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
           </div>
         </div>
 
-        {/* Loading overlay when a section is clicked/loading */}
+        {/* Sleek executive top progress bar & badge when navigating */}
         {navigatingSection && (
-          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200">
-            <div className="flex flex-col items-center gap-4 p-8 rounded-[24px] bg-slate-900/80 border border-white/10 shadow-2xl text-center max-w-xs animate-in zoom-in-95 duration-200">
-              <Loader2 className="w-10 h-10 animate-spin text-indigo-400" />
-              <div className="space-y-1">
-                <p className="text-sm font-black text-white">Opening Section...</p>
-                <p className="text-xs font-semibold text-slate-400 truncate max-w-[200px]">
-                  {navigatingSection.name}
-                </p>
+          <div className="absolute top-0 left-0 right-0 z-50 overflow-hidden rounded-t-[28px] bg-slate-900/95 backdrop-blur-md p-3 border-b border-emerald-500/30 flex items-center justify-between animate-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-black text-white flex items-center gap-1.5">
+                  Opening {navigatingSection.name}...
+                </span>
+                <span className="text-[10px] font-bold text-emerald-400">
+                  Navigating to {navigatingSection.href}
+                </span>
               </div>
             </div>
+
+            {/* Glowing top accent line */}
+            <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 animate-pulse" />
           </div>
         )}
       </DialogContent>

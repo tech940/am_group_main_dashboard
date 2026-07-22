@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Clock, ListChecks, Loader2, Plus, TriangleAlert, X, Check, MessageSquare, Mail, MessageCircle, Phone, UserPlus, Download } from 'lucide-react'
+import { CheckCircle2, Clock, ListChecks, Loader2, Plus, TriangleAlert, X, Check, MessageSquare, Mail, MessageCircle, Phone, UserPlus, Download, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -110,6 +110,7 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   useEffect(() => {
     setSelectedTaskIds([])
@@ -240,6 +241,28 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
       })
       setCompletingTaskId(null)
     }
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (taskId: string) =>
+      fetchJson(`/api/delegation-tasks/${taskId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      setDeleteConfirmId(null)
+      setAlertInfo({
+        title: 'Task Deleted',
+        message: 'The task has been permanently deleted.',
+        type: 'success',
+      })
+      invalidate()
+    },
+    onError: (err) => {
+      setDeleteConfirmId(null)
+      setAlertInfo({
+        title: 'Error',
+        message: (err as Error).message || 'Failed to delete task',
+        type: 'error',
+      })
+    },
   })
 
   const listQuery = useQuery({
@@ -592,6 +615,18 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
                               <UserPlus className="h-3.5 w-3.5" /> Reassign
                             </Button>
                           )}
+                          {/* Delete button */}
+                          {r.viewerCanManage && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setDeleteConfirmId(r.id)}
+                              disabled={deleteMutation.isPending && deleteConfirmId === r.id}
+                              className="h-8 gap-1.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 font-black text-xs px-3 shadow-xs border border-rose-100/80 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" /> Delete
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -723,6 +758,57 @@ export function DelegationTasksPage({ currentUserRole, currentUserId, currentUse
           </DialogContent>
         </Dialog>
       )}
+
+      {/* ── Delete Confirmation Dialog ── */}
+      {deleteConfirmId && (() => {
+        const taskToDelete = filteredRows.find(r => r.id === deleteConfirmId)
+        return (
+          <Dialog open onOpenChange={(o) => { if (!o) setDeleteConfirmId(null) }}>
+            <DialogContent className="max-w-md rounded-2xl border border-slate-100 shadow-[0_15px_40px_rgba(15,23,42,0.12)] bg-white p-6">
+              <div className="flex flex-col items-center text-center space-y-4 pt-2">
+                <div className="rounded-full p-3 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200">
+                  <Trash2 className="h-6 w-6" />
+                </div>
+                <DialogTitle className="text-lg font-black text-slate-900">Delete Task?</DialogTitle>
+                {taskToDelete && (
+                  <div className="w-full rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-left">
+                    <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-1">Task</p>
+                    <p className="text-sm font-bold text-slate-900 line-clamp-2">{taskToDelete.title}</p>
+                    {taskToDelete.assignedName && (
+                      <p className="text-xs font-semibold text-slate-400 mt-1">Assigned to: {taskToDelete.assignedName}</p>
+                    )}
+                  </div>
+                )}
+                <p className="text-sm font-semibold text-slate-500 leading-relaxed">
+                  This action is <span className="font-black text-rose-600">permanent</span> and cannot be undone.
+                  The task and all its activity history will be erased.
+                </p>
+                <div className="flex gap-3 w-full pt-1">
+                  <Button
+                    variant="ghost"
+                    onClick={() => setDeleteConfirmId(null)}
+                    disabled={deleteMutation.isPending}
+                    className="flex-1 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 h-10 font-bold"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => deleteMutation.mutate(deleteConfirmId)}
+                    disabled={deleteMutation.isPending}
+                    className="flex-1 rounded-xl bg-rose-600 text-white hover:bg-rose-700 h-10 font-black gap-2 disabled:opacity-60"
+                  >
+                    {deleteMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> Deleting…</>
+                    ) : (
+                      <><Trash2 className="h-4 w-4" /> Delete Permanently</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
     </div>
   )
 }

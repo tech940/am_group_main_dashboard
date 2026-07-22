@@ -2740,7 +2740,7 @@ export function KiaBookingsClient({
           setIsEmiCalculatorOpen(true)
         }}
       >
-        <Calculator className="h-4 w-4 text-indigo-600" /> EMI Calculator
+        <Calculator className="h-4 w-4 text-slate-700 dark:text-slate-300" /> EMI Calculator
       </Button>
       <Button variant="outline" className="h-10 rounded-2xl px-4 text-sm font-bold sm:h-11" onClick={() => { listQuery.refetch(); shortageQuery.refetch(); globalDiscountsQuery.refetch() }} disabled={listQuery.isFetching || shortageQuery.isFetching || globalDiscountsQuery.isFetching}>
         <RefreshCw className={cn('h-4 w-4', (listQuery.isFetching || globalDiscountsQuery.isFetching) && 'animate-spin')} /> Refresh
@@ -5639,9 +5639,9 @@ function BookingDrawer({
                       })
                     }
                   }}
-                  className="h-8 rounded-xl text-xs font-bold border-indigo-200 hover:bg-indigo-50 text-indigo-700 bg-indigo-50/50"
+                  className="h-8 rounded-xl text-xs font-bold border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50"
                 >
-                  <Calculator className="mr-1.5 h-3.5 w-3.5 text-indigo-600" />
+                  <Calculator className="mr-1.5 h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />
                   Calculate EMI
                 </Button>
                 {Boolean(isKiaBookingWaitLong(booking.updatedAt)) && (
@@ -7162,27 +7162,29 @@ Total Amount Payable: ${formatINR(totalPayable)}`
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-3xl w-full rounded-3xl border border-slate-100 shadow-2xl bg-white p-0 overflow-hidden flex flex-col max-h-[92vh]">
-        <div className="bg-slate-900 text-white p-6 shrink-0 flex items-center justify-between">
+      <DialogContent className="max-w-3xl w-full rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900 p-0 overflow-hidden flex flex-col max-h-[92vh]">
+        {/* Clean Light Executive Header */}
+        <div className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
+            <div className="w-9 h-9 rounded-xl bg-slate-200/80 dark:bg-slate-700 text-slate-800 dark:text-slate-200 flex items-center justify-center border border-slate-300 dark:border-slate-600">
               <Calculator className="h-5 w-5" />
             </div>
             <div>
-              <DialogTitle className="text-lg font-black text-white">KIA Vehicle EMI Calculator</DialogTitle>
-              <p className="text-xs text-slate-400 mt-0.5">Calculate monthly EMI, interest, and loan breakdown for Indian auto loans</p>
+              <DialogTitle className="text-base font-black text-slate-900 dark:text-slate-100">KIA Vehicle EMI Calculator</DialogTitle>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">Calculate monthly EMI, interest, and loan breakdown for Indian auto loans</p>
             </div>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
-            <p className="text-xs font-black uppercase tracking-wider text-slate-500">1. Select Vehicle & Variant</p>
+          {/* Section 1: Vehicle & Variant Selection */}
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 p-4 space-y-4">
+            <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">1. Select Vehicle & Variant</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Model</label>
                 <Select value={selectedModel} onValueChange={setSelectedModel}>
-                  <SelectTrigger className="mt-1 h-10 rounded-xl bg-white border-slate-200 font-bold text-slate-800">
+                  <SelectTrigger className="mt-1 h-10 rounded-xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 font-bold text-slate-800 dark:text-slate-200">
                     <SelectValue placeholder="Choose Model..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -7205,26 +7207,29 @@ Total Amount Payable: ${formatINR(totalPayable)}`
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 bg-slate-200/60 p-1 rounded-xl">
+            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 bg-slate-200/60 dark:bg-slate-800 p-1 rounded-xl">
                 <button
                   type="button"
                   onClick={() => setPriceMode('on_road')}
-                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition", priceMode === 'on_road' ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900")}
+                  style={priceMode === 'on_road' ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer", priceMode === 'on_road' ? "shadow-xs border-0" : "text-slate-600 dark:text-slate-400 hover:text-slate-900")}
                 >
                   On-Road Price
                 </button>
                 <button
                   type="button"
                   onClick={() => setPriceMode('ex_showroom')}
-                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition", priceMode === 'ex_showroom' ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900")}
+                  style={priceMode === 'ex_showroom' ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer", priceMode === 'ex_showroom' ? "shadow-xs border-0" : "text-slate-600 dark:text-slate-400 hover:text-slate-900")}
                 >
                   Ex-Showroom Price
                 </button>
                 <button
                   type="button"
                   onClick={() => setPriceMode('custom')}
-                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition", priceMode === 'custom' ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900")}
+                  style={priceMode === 'custom' ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                  className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer", priceMode === 'custom' ? "shadow-xs border-0" : "text-slate-600 dark:text-slate-400 hover:text-slate-900")}
                 >
                   Custom Amount
                 </button>
@@ -7232,25 +7237,25 @@ Total Amount Payable: ${formatINR(totalPayable)}`
 
               {priceMode === 'custom' ? (
                 <div className="flex items-center gap-2">
-                  <label className="text-xs font-bold text-slate-600">Enter Price (₹):</label>
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Enter Price (₹):</label>
                   <Input
                     type="number"
                     value={customPriceInput}
                     onChange={(e) => setCustomPriceInput(e.target.value)}
                     placeholder="e.g. 1500000"
-                    className="h-9 w-40 rounded-xl border-slate-200 font-bold"
+                    className="h-9 w-40 rounded-xl border-slate-200 dark:border-slate-700 font-bold"
                   />
                 </div>
               ) : (
                 <div className="text-right">
                   <p className="text-[10px] font-black uppercase text-slate-400">Total Vehicle Price</p>
-                  <p className="text-lg font-black text-slate-900">{formatINR(effectiveVehiclePrice)}</p>
+                  <p className="text-lg font-black text-slate-900 dark:text-slate-100">{formatINR(effectiveVehiclePrice)}</p>
                 </div>
               )}
             </div>
 
             {priceDetail && priceMode === 'on_road' && (
-              <div className="text-[11px] text-slate-500 grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 border-t border-slate-100 font-medium">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 border-t border-slate-200 dark:border-slate-700 font-medium">
                 <span>Ex-Showroom: {formatINR(Number(priceDetail.exShowroomPrice || 0))}</span>
                 <span>Reg & Tax: {formatINR(Number(priceDetail.registrationCharges || 0) + Number(priceDetail.statutoryCharges || 0))}</span>
                 <span>Insurance: {formatINR(Number(priceDetail.insurance || 0))}</span>
@@ -7260,21 +7265,22 @@ Total Amount Payable: ${formatINR(totalPayable)}`
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
+            {/* Down Payment Card */}
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3 bg-white dark:bg-slate-900">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-black uppercase tracking-wider text-slate-500">Down Payment</p>
-                <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[10px] font-bold">
+                <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Down Payment</p>
+                <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-0.5 text-[10px] font-bold">
                   <button
                     type="button"
                     onClick={() => setDownPaymentType('percent')}
-                    className={cn("px-2 py-0.5 rounded", downPaymentType === 'percent' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500")}
+                    className={cn("px-2 py-0.5 rounded cursor-pointer", downPaymentType === 'percent' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-xs" : "text-slate-500")}
                   >
                     % Percent
                   </button>
                   <button
                     type="button"
                     onClick={() => setDownPaymentType('amount')}
-                    className={cn("px-2 py-0.5 rounded", downPaymentType === 'amount' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500")}
+                    className={cn("px-2 py-0.5 rounded cursor-pointer", downPaymentType === 'amount' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-xs" : "text-slate-500")}
                   >
                     ₹ Amount
                   </button>
@@ -7284,8 +7290,8 @@ Total Amount Payable: ${formatINR(totalPayable)}`
               {downPaymentType === 'percent' ? (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">{downPaymentPercent}% of Price</span>
-                    <span className="text-sm font-black text-slate-900">{formatINR(downPayment)}</span>
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{downPaymentPercent}% of Price</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-slate-100">{formatINR(downPayment)}</span>
                   </div>
                   <input
                     type="range"
@@ -7294,19 +7300,23 @@ Total Amount Payable: ${formatINR(totalPayable)}`
                     step="5"
                     value={downPaymentPercent}
                     onChange={(e) => setDownPaymentPercent(Number(e.target.value))}
-                    className="w-full accent-slate-900 cursor-pointer"
+                    className="w-full accent-slate-900 dark:accent-slate-100 cursor-pointer"
                   />
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {[10, 15, 20, 25, 30, 40, 50].map((pct) => (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => setDownPaymentPercent(pct)}
-                        className={cn("px-2 py-1 rounded-lg text-xs font-bold transition border", downPaymentPercent === pct ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50")}
-                      >
-                        {pct}%
-                      </button>
-                    ))}
+                    {[10, 15, 20, 25, 30, 40, 50].map((pct) => {
+                      const isActive = downPaymentPercent === pct
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setDownPaymentPercent(pct)}
+                          style={isActive ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                          className={cn("px-2.5 py-1 rounded-lg text-xs font-bold transition border cursor-pointer", isActive ? "shadow-xs border-0" : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50")}
+                        >
+                          {pct}%
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               ) : (
@@ -7317,113 +7327,126 @@ Total Amount Payable: ${formatINR(totalPayable)}`
                     value={downPaymentAmountInput}
                     onChange={(e) => setDownPaymentAmountInput(e.target.value)}
                     placeholder="e.g. 250000"
-                    className="h-10 rounded-xl border-slate-200 font-bold"
+                    className="h-10 rounded-xl border-slate-200 dark:border-slate-700 font-bold"
                   />
-                  <p className="text-[11px] text-slate-500 font-semibold">Calculated Down Payment: <span className="font-bold text-slate-800">{formatINR(downPayment)}</span></p>
+                  <p className="text-[11px] text-slate-500 font-semibold">Calculated Down Payment: <span className="font-bold text-slate-800 dark:text-slate-200">{formatINR(downPayment)}</span></p>
                 </div>
               )}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
-              <p className="text-xs font-black uppercase tracking-wider text-slate-500">Interest Rate & Tenure</p>
+            {/* Interest Rate & Tenure Card */}
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3 bg-white dark:bg-slate-900">
+              <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Interest Rate & Tenure</p>
               
               <div>
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-black uppercase text-slate-400">Interest Rate (% p.a.)</label>
-                  <span className="text-xs font-black text-indigo-600">{roi}%</span>
+                  <span className="text-xs font-black text-slate-900 dark:text-slate-100">{roi}%</span>
                 </div>
                 <Input
                   type="number"
                   step="0.1"
                   value={roi}
                   onChange={(e) => setRoi(Number(e.target.value))}
-                  className="mt-1 h-9 rounded-xl border-slate-200 font-bold text-slate-800"
+                  className="mt-1 h-9 rounded-xl border-slate-200 dark:border-slate-700 font-bold text-slate-800 dark:text-slate-200"
                 />
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {[7.5, 8.0, 8.1, 8.5, 9.0, 9.5, 10.0].map((rate) => (
-                    <button
-                      key={rate}
-                      type="button"
-                      onClick={() => setRoi(rate)}
-                      className={cn("px-2 py-0.5 rounded-lg text-xs font-bold transition border", roi === rate ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50")}
-                    >
-                      {rate}%
-                    </button>
-                  ))}
+                  {[7.5, 8.0, 8.1, 8.5, 9.0, 9.5, 10.0].map((rate) => {
+                    const isActive = roi === rate
+                    return (
+                      <button
+                        key={rate}
+                        type="button"
+                        onClick={() => setRoi(rate)}
+                        style={isActive ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                        className={cn("px-2.5 py-1 rounded-lg text-xs font-bold transition border cursor-pointer", isActive ? "shadow-xs border-0" : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50")}
+                      >
+                        {rate}%
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
               <div>
                 <label className="text-[10px] font-black uppercase text-slate-400">Loan Tenure (Years)</label>
                 <div className="grid grid-cols-6 gap-1 mt-1">
-                  {[1, 2, 3, 4, 5, 7].map((yrs) => (
-                    <button
-                      key={yrs}
-                      type="button"
-                      onClick={() => setTenureYears(yrs)}
-                      className={cn("py-1.5 rounded-xl text-xs font-bold text-center transition border", tenureYears === yrs ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50")}
-                    >
-                      {yrs} {yrs === 1 ? 'Yr' : 'Yrs'}
-                    </button>
-                  ))}
+                  {[1, 2, 3, 4, 5, 7].map((yrs) => {
+                    const isActive = tenureYears === yrs
+                    return (
+                      <button
+                        key={yrs}
+                        type="button"
+                        onClick={() => setTenureYears(yrs)}
+                        style={isActive ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                        className={cn("py-1.5 rounded-xl text-xs font-bold text-center transition border cursor-pointer", isActive ? "shadow-xs border-0" : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50")}
+                      >
+                        {yrs} {yrs === 1 ? 'Yr' : 'Yrs'}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-950 p-6 text-white shadow-xl space-y-5">
+          {/* Section 3: Clean Executive EMI Result Box */}
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/80 p-6 text-slate-900 dark:text-slate-100 shadow-xs space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Calculated Monthly EMI</span>
-                <p className="text-3xl md:text-4xl font-black text-white mt-0.5">{formatINR(emi)} <span className="text-sm font-semibold text-indigo-200">/ month</span></p>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Calculated Monthly EMI</span>
+                <p className="text-3xl md:text-4xl font-black text-slate-900 dark:text-slate-100 mt-0.5">
+                  {formatINR(emi)} <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">/ month</span>
+                </p>
               </div>
 
               <Button
                 type="button"
                 onClick={copySummaryText}
-                className={cn("h-11 rounded-2xl px-4 text-xs font-bold transition shadow-lg", copied ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-white text-slate-900 hover:bg-indigo-50")}
+                style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+                className="h-11 rounded-2xl px-5 text-xs font-black shadow-md border-0 cursor-pointer"
               >
-                {copied ? <Check className="mr-1.5 h-4 w-4 text-white" /> : <Copy className="mr-1.5 h-4 w-4 text-indigo-600" />}
+                {copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
                 {copied ? 'Copied Summary!' : 'Copy Summary (WhatsApp)'}
               </Button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4 border-t border-white/10">
-              <div className="rounded-2xl bg-white/5 p-3 border border-white/10">
-                <span className="text-[9px] font-black uppercase text-indigo-300">Loan Amount</span>
-                <p className="text-base font-bold text-white mt-0.5">{formatINR(loanAmount)}</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div className="rounded-2xl bg-white dark:bg-slate-900 p-3.5 border border-slate-200 dark:border-slate-700 shadow-xs">
+                <span className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">Loan Amount</span>
+                <p className="text-base font-black text-slate-900 dark:text-slate-100">{formatINR(loanAmount)}</p>
               </div>
-              <div className="rounded-2xl bg-white/5 p-3 border border-white/10">
-                <span className="text-[9px] font-black uppercase text-indigo-300">Down Payment</span>
-                <p className="text-base font-bold text-white mt-0.5">{formatINR(downPayment)}</p>
+              <div className="rounded-2xl bg-white dark:bg-slate-900 p-3.5 border border-slate-200 dark:border-slate-700 shadow-xs">
+                <span className="text-[9px] font-black uppercase text-slate-400 block mb-0.5">Down Payment</span>
+                <p className="text-base font-black text-slate-900 dark:text-slate-100">{formatINR(downPayment)}</p>
               </div>
-              <div className="rounded-2xl bg-white/5 p-3 border border-white/10">
-                <span className="text-[9px] font-black uppercase text-amber-300">Total Interest</span>
-                <p className="text-base font-bold text-amber-200 mt-0.5">{formatINR(totalInterest)}</p>
+              <div className="rounded-2xl bg-white dark:bg-slate-900 p-3.5 border border-slate-200 dark:border-slate-700 shadow-xs">
+                <span className="text-[9px] font-black uppercase text-amber-600 dark:text-amber-400 block mb-0.5">Total Interest</span>
+                <p className="text-base font-black text-amber-700 dark:text-amber-300">{formatINR(totalInterest)}</p>
               </div>
-              <div className="rounded-2xl bg-white/5 p-3 border border-white/10">
-                <span className="text-[9px] font-black uppercase text-emerald-300">Total Payable</span>
-                <p className="text-base font-bold text-emerald-200 mt-0.5">{formatINR(totalPayable)}</p>
+              <div className="rounded-2xl bg-white dark:bg-slate-900 p-3.5 border border-slate-200 dark:border-slate-700 shadow-xs">
+                <span className="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-400 block mb-0.5">Total Payable</span>
+                <p className="text-base font-black text-emerald-700 dark:text-emerald-300">{formatINR(totalPayable)}</p>
               </div>
             </div>
 
             {totalPayable > 0 && (
               <div className="space-y-1.5 pt-1">
-                <div className="flex justify-between text-[10px] font-bold text-indigo-200">
+                <div className="flex justify-between text-[10px] font-bold text-slate-600 dark:text-slate-400">
                   <span>Principal: {Math.round((loanAmount / totalPayable) * 100)}%</span>
                   <span>Interest: {Math.round((totalInterest / totalPayable) * 100)}%</span>
                 </div>
-                <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden flex">
-                  <div style={{ width: `${(loanAmount / totalPayable) * 100}%` }} className="bg-indigo-400 h-full" />
-                  <div style={{ width: `${(totalInterest / totalPayable) * 100}%` }} className="bg-amber-400 h-full" />
+                <div className="h-2.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden flex">
+                  <div style={{ width: `${(loanAmount / totalPayable) * 100}%` }} className="bg-slate-900 dark:bg-slate-100 h-full" />
+                  <div style={{ width: `${(totalInterest / totalPayable) * 100}%` }} className="bg-amber-500 h-full" />
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        <div className="p-4 border-t border-slate-100 bg-slate-50 shrink-0 flex justify-end">
-          <Button variant="outline" onClick={onClose} className="rounded-xl h-10 px-6 font-bold">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/80 shrink-0 flex justify-end">
+          <Button variant="outline" onClick={onClose} className="rounded-2xl h-10 px-6 font-bold border-slate-200 dark:border-slate-700">
             Close
           </Button>
         </div>

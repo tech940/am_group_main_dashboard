@@ -32,7 +32,7 @@ export function ScrapDrilldownModal({
 }) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-[95vw] lg:max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+      <DialogContent className="max-w-[96vw] xl:max-w-6xl 2xl:max-w-7xl max-h-[92vh] overflow-hidden flex flex-col rounded-2xl p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
         <DialogHeader className="shrink-0 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">

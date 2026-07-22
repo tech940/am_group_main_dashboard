@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
+import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { INITIAL_SCRAP_TRANSACTIONS } from '@/lib/scrap-erp/mock-data'
 import { ScrapTransaction } from '@/lib/scrap-erp/types'
 
@@ -6,6 +8,11 @@ import { ScrapTransaction } from '@/lib/scrap-erp/types'
 let globalTransactions: ScrapTransaction[] = [...INITIAL_SCRAP_TRANSACTIONS]
 
 export async function GET(request: Request) {
+  const appUser = await getAuthenticatedAppUser()
+  if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!canAccessScrapErp(appUser.role)) {
+    return NextResponse.json({ error: 'You do not have access to Scrap ERP.' }, { status: 403 })
+  }
   try {
     const { searchParams } = new URL(request.url)
     const search = (searchParams.get('search') || '').toLowerCase().trim()

@@ -9,7 +9,12 @@ import { getDueDelegationTasks, markDelegationRemindersSent, type DueTask } from
 // delegation tool that matters more than usual: with no bell, the assignee learns they have a task
 // from the assignment email, and is nudged again by the due-reminder sweep.
 
-const TASKS_URL = `${String(env.app.url || '').replace(/\/$/, '')}/delegation-tasks`
+function getTasksUrl(): string {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` :
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : env.app.url || 'http://localhost:3000'))
+  return `${String(baseUrl).replace(/\/$/, '')}/delegation-tasks`
+}
 const PRIORITY_LABEL: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High' }
 const fmtDate = (v?: string | null) =>
   v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'No due date'
@@ -36,6 +41,7 @@ export async function sendTaskAssignedEmail(input: {
   if (!to) return false
   const cc = (input.cc ?? []).map((e) => String(e || '').trim()).filter(Boolean)
   const due = input.dueAt ? (input.dueAt instanceof Date ? input.dueAt.toISOString() : input.dueAt) : null
+  const tasksUrl = getTasksUrl()
 
   let greetingText = `Hi ${escapeHtml(input.toName || 'there')}, ${escapeHtml(input.assignerName)} has delegated a task to you.`
   if (input.isUpdate) {
@@ -59,6 +65,8 @@ export async function sendTaskAssignedEmail(input: {
         <p style="margin:0;font-size:14px;color:#4b5563;white-space:pre-wrap;line-height:1.5;text-align:left;">${escapeHtml(input.description)}</p>
       </div>
     ` : ''}
+
+    ${primaryButton(tasksUrl, 'Open Delegation Tasks Board')}
 
     <div style="margin-top:20px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;font-size:13px;color:#334155;line-height:1.6;">
       <p style="margin:0 0 8px;">Please complete the task by the due date and inform the concerned EA once it is completed.</p>
@@ -131,6 +139,7 @@ export async function runDelegationTaskReminders(): Promise<{ due: number; email
 
 function digestHtml(items: DueTask[]): string {
   const name = items[0]?.assignedName || 'there'
+  const tasksUrl = getTasksUrl()
   const rows = items
     .map((t) => {
       const details: [string, string][] = [
@@ -154,7 +163,7 @@ function digestHtml(items: DueTask[]): string {
 
     ${rows}
 
-    ${primaryButton('Open Delegation Tasks Board', TASKS_URL)}
+    ${primaryButton(tasksUrl, 'Open Delegation Tasks Board')}
 
     <div style="margin-top:20px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;font-size:13px;color:#334155;line-height:1.6;">
       <p style="margin:0 0 8px;">Please complete the task by the due date and inform the concerned EA once it is completed.</p>

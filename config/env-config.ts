@@ -21,7 +21,7 @@ export const env = {
     url: process.env.DATABASE_URL || '',
   },
   app: {
-    url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+    url: process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')),
     name: process.env.NEXT_PUBLIC_APP_NAME || 'Internal Operations Platform',
   },
   analytics: {

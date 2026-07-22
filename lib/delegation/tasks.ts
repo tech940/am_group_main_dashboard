@@ -762,3 +762,40 @@ export async function getDelegationBrandRollup(): Promise<BrandRollupRow[]> {
     total: Number(r.total) || 0,
   }))
 }
+
+// ── Delete ─────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Permanently deletes a delegation task and all of its activity records.
+ * Only the task creator or a group-wide delegator (MD/Developer/Admin) may delete.
+ *
+ * The delegation_task_activity table has an immutability trigger that blocks DELETE by default.
+ * We set a session-local flag (app.allow_activity_delete = 'true') that the trigger checks before
+ * raising an exception — this avoids the need for superuser/ALTER TABLE privileges.
+ */
+export async function deleteDelegationTask(id: string, actor: AppUser): Promise<void> {
+  // Load the task to verify it exists and check ownership
+  const [task] = await db
+    .select({ id: delegationTasks.id, createdBy: delegationTasks.createdBy })
+    .from(delegationTasks)
+    .where(eq(delegationTasks.id, id))
+    .limit(1)
+
+  if (!task) throw new Error('Task not found.')
+
+  const isCreator = task.createdBy === actor.id
+  const isGroupWide = isGroupWideDelegation(actor)
+
+  if (!isCreator && !isGroupWide) {
+    throw new Error('You do not have permission to delete this task. Only the creator or a group-wide manager may delete tasks.')
+  }
+
+  await db.transaction(async (tx) => {
+    // Signal the immutability trigger to allow this intentional delete
+    await tx.execute(sql`SET LOCAL "app.allow_activity_delete" = 'true'`)
+    // Remove all activity rows for this task (trigger now allows it)
+    await tx.delete(delegationTaskActivity).where(eq(delegationTaskActivity.taskId, id))
+    // Delete the task itself (SET LOCAL resets automatically at transaction end)
+    await tx.delete(delegationTasks).where(eq(delegationTasks.id, id))
+  })
+}

@@ -2,6 +2,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { redirect } from 'next/navigation'
 import { KiaApprovalsClient } from '@/features/kia/kia-approvals-page'
 
+// Gated by 'kia.approvals.view' permission
 export default async function KiaPaymentApprovalsPage() {
   const appUser = await getAuthenticatedAppUser()
 

@@ -19,9 +19,12 @@
 // it directly instead of duplicating the role list.
 
 export const BOOKING_PAYMENT_HISTORY_VIEW_ROLES = [
-  'admin', 'developer', 'md', 'ea', 'general_manager', 'sales_manager',
+  'admin', 'developer', 'md', 'ea',
 ] as const
 
-export function canViewBookingPaymentHistory(role?: string | null): boolean {
-  return (BOOKING_PAYMENT_HISTORY_VIEW_ROLES as readonly string[]).includes(String(role || ''))
+export function canViewBookingPaymentHistory(role?: string | null, permissionMap?: Record<string, boolean> | null): boolean {
+  const r = String(role || '').toLowerCase().trim()
+  if ((BOOKING_PAYMENT_HISTORY_VIEW_ROLES as readonly string[]).includes(r)) return true
+  if (permissionMap && permissionMap['kia.booking_payment_history.view'] === true) return true
+  return false
 }

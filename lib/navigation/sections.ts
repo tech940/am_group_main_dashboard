@@ -3,6 +3,7 @@ import { isSuperAdminRole, hasGlobalAccessRole } from '@/lib/auth/roles'
 import { hasAllBranchAccess } from '@/lib/branches'
 import { canViewVehicleTracker } from '@/lib/kia/vehicle-tracker-access'
 import { canViewBookingPaymentHistory } from '@/lib/kia/booking-payment-history-access'
+import { canAccessScrapErp } from '@/lib/scrap-erp/access'
 import { isPettyCashViewRole, isAmFinanceViewRole, isCaViewRole } from '@/lib/permissions/legacy-module-roles'
 
 // Define the departments we support
@@ -49,6 +50,15 @@ export const ALL_SECTIONS: SearchSection[] = [
     iconName: 'ShoppingCart',
   },
   {
+    id: 'scrap_erp',
+    name: 'Scrap Management (Scrap ERP)',
+    description: 'Scrap material disposal, dynamic master records, reports, valuation & sales analytics.',
+    href: '/scrap-erp',
+    department: 'admin',
+    brand: 'common',
+    iconName: 'Recycle',
+  },
+  {
     id: 'admin_panel',
     name: 'Admin Panel',
     description: 'System administration, user account creation, role assignments, and permission overrides.',
@@ -76,6 +86,15 @@ export const ALL_SECTIONS: SearchSection[] = [
     department: 'finance',
     brand: 'common',
     iconName: 'Landmark',
+  },
+  {
+    id: 'finance',
+    name: 'Customer Vehicle Financing',
+    description: 'Track retail vehicle financing orders, bank logins, approval status, and disbursals.',
+    href: '/finance',
+    department: 'finance',
+    brand: 'common',
+    iconName: 'HandCoins',
   },
   {
     id: 'kia_approvals',
@@ -358,20 +377,25 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/delegation-tasks',
   '/purchase-orders',
   '/petty-cash',
+  '/am-finance',
+  '/finance',
   '/brands/kia/payment-approvals',
   '/brands/kia/vendors',
   '/admin',
+  '/scrap-erp',
   
   // Kia
   '/brands/kia/business-excellence',
   '/brands/kia/service-appointment',
   '/brands/kia/vehicle-tracker',
   '/brands/kia/proforma',
-  '/finance',
   '/brands/kia/sales-report',
   '/brands/kia/stock-report',
-  '/brands/kia/booking-payment-history',
+  '/brands/kia/sales-performance',
+  '/brands/kia/call-center',
   '/brands/kia/follow-ups',
+  '/brands/kia/call-analytics',
+  '/brands/kia/booking-payment-history',
   '/brands/kia/demo-job-cards',
   '/brands/kia/demo-cars-list',
 
@@ -435,10 +459,14 @@ export function canUserAccessSection(
     return canViewVehicleTracker(userRole)
   }
 
-  // Booking Payment History — hardcoded role allowlist (MD/Developer/Admin + EA + Sales/General
-  // Manager), same rationale as Vehicle Tracker. Branch scoping is enforced server-side in the API.
+  // Booking Payment History
   if (href === '/brands/kia/booking-payment-history') {
-    return canViewBookingPaymentHistory(userRole)
+    return canViewBookingPaymentHistory(userRole, permissionMap)
+  }
+
+  // Scrap ERP
+  if (href === '/scrap-erp') {
+    return canAccessScrapErp(userRole, permissionMap)
   }
 
   // Petty Cash
