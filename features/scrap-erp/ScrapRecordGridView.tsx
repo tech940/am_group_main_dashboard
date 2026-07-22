@@ -10,13 +10,20 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
+  Pencil,
+  Calendar,
+  Search,
+  X,
+  Filter,
 } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { ScrapRecordDetailModal } from './ScrapRecordDetailModal'
+import { cn } from '@/lib/utils'
 
 function formatINR(val: number) {
   return new Intl.NumberFormat('en-IN', {
@@ -31,11 +38,13 @@ export function ScrapRecordGridView({
   onOpenImageGallery,
   onDeleteSelected,
   onSelectTransaction,
+  onEditRecord,
 }: {
   transactions: ScrapTransaction[]
   onOpenImageGallery: (txn: ScrapTransaction) => void
   onDeleteSelected?: (ids: string[]) => void
   onSelectTransaction?: (txn: ScrapTransaction) => void
+  onEditRecord?: (txn: ScrapTransaction) => void
 }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [sortField, setSortField] = useState<keyof ScrapTransaction>('timestamp')
@@ -43,11 +52,76 @@ export function ScrapRecordGridView({
   const [page, setPage] = useState(1)
   const pageSize = 15
 
-  // Local detail modal state if parent didn't pass custom callback
+  // Date Range & Search State
+  const [startDate, setStartDate] = useState<string>('')
+  const [endDate, setEndDate] = useState<string>('')
+  const [gridSearch, setGridSearch] = useState<string>('')
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'month' | '30days' | 'custom'>('all')
+
+  // Local detail modal state
   const [localDetailTxn, setLocalDetailTxn] = useState<ScrapTransaction | null>(null)
 
-  const sortedRows = useMemo(() => {
-    const result = [...transactions]
+  const handleApplyPreset = (preset: 'all' | 'today' | 'month' | '30days') => {
+    setDatePreset(preset)
+    const today = new Date().toISOString().split('T')[0]
+    if (preset === 'all') {
+      setStartDate('')
+      setEndDate('')
+    } else if (preset === 'today') {
+      setStartDate(today)
+      setEndDate(today)
+    } else if (preset === 'month') {
+      const d = new Date()
+      const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
+      setStartDate(firstDay)
+      setEndDate(today)
+    } else if (preset === '30days') {
+      const d = new Date()
+      d.setDate(d.getDate() - 30)
+      setStartDate(d.toISOString().split('T')[0])
+      setEndDate(today)
+    }
+    setPage(1)
+  }
+
+  const handleClearFilters = () => {
+    setStartDate('')
+    setEndDate('')
+    setGridSearch('')
+    setDatePreset('all')
+    setPage(1)
+  }
+
+  // Filtered & Sorted Rows
+  const filteredAndSortedRows = useMemo(() => {
+    let result = [...transactions]
+
+    // Date Range Filter
+    if (startDate || endDate) {
+      result = result.filter((tx) => {
+        const txDate = tx.soldDate || tx.timestamp?.slice(0, 10) || ''
+        if (startDate && txDate < startDate) return false
+        if (endDate && txDate > endDate) return false
+        return true
+      })
+    }
+
+    // Grid Search Filter
+    if (gridSearch) {
+      const q = gridSearch.toLowerCase().trim()
+      result = result.filter(
+        (tx) =>
+          tx.transactionNumber.toLowerCase().includes(q) ||
+          tx.locationName.toLowerCase().includes(q) ||
+          tx.departmentName.toLowerCase().includes(q) ||
+          tx.scrapTypeName.toLowerCase().includes(q) ||
+          tx.soldTo.toLowerCase().includes(q) ||
+          tx.soldByName.toLowerCase().includes(q) ||
+          tx.paymentHandoverToName.toLowerCase().includes(q)
+      )
+    }
+
+    // Sort
     result.sort((a, b) => {
       const valA = a[sortField] || ''
       const valB = b[sortField] || ''
@@ -55,26 +129,15 @@ export function ScrapRecordGridView({
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1
       return 0
     })
-    return result
-  }, [transactions, sortField, sortDirection])
 
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize))
+    return result
+  }, [transactions, startDate, endDate, gridSearch, sortField, sortDirection])
+
+  const totalPages = Math.ceil(filteredAndSortedRows.length / pageSize) || 1
   const paginatedRows = useMemo(() => {
     const start = (page - 1) * pageSize
-    return sortedRows.slice(start, start + pageSize)
-  }, [sortedRows, page, pageSize])
-
-  const handleSelectAll = () => {
-    if (selectedIds.length === paginatedRows.length) {
-      setSelectedIds([])
-    } else {
-      setSelectedIds(paginatedRows.map((r) => r.id))
-    }
-  }
-
-  const toggleSelectRow = (id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
-  }
+    return filteredAndSortedRows.slice(start, start + pageSize)
+  }, [filteredAndSortedRows, page, pageSize])
 
   const handleSort = (field: keyof ScrapTransaction) => {
     if (sortField === field) {
@@ -85,45 +148,44 @@ export function ScrapRecordGridView({
     }
   }
 
-  const handleRowClick = (txn: ScrapTransaction, e: React.MouseEvent) => {
-    // Prevent triggering row click if clicking checkbox or action button
-    const target = e.target as HTMLElement
-    if (target.closest('button') || target.closest('input') || target.closest('[role="checkbox"]')) {
-      return
-    }
-
-    if (onSelectTransaction) {
-      onSelectTransaction(txn)
+  const handleSelectAll = () => {
+    if (selectedIds.length === paginatedRows.length) {
+      setSelectedIds([])
     } else {
-      setLocalDetailTxn(txn)
+      setSelectedIds(paginatedRows.map((r) => r.id))
+    }
+  }
+
+  const handleToggleRow = (id: string) => {
+    if (selectedIds.includes(id)) {
+      setSelectedIds(selectedIds.filter((i) => i !== id))
+    } else {
+      setSelectedIds([...selectedIds, id])
     }
   }
 
   const handleExportCsv = () => {
+    const targets = selectedIds.length > 0 ? filteredAndSortedRows.filter((r) => selectedIds.includes(r.id)) : filteredAndSortedRows
     const csvHeader = [
-      'Transaction #',
+      'Transaction Number',
       'Date',
       'Group',
       'Location',
       'Department',
       'Scrap Type',
-      'Description',
-      'Weight Qty',
+      'Unit',
+      'Weight/Qty',
       'Rate/Unit',
       'Calculated Total',
       'Amount Received',
-      'Outstanding',
-      'Buyer / Sold To',
+      'Outstanding Amount',
+      'Sold To',
       'Sold By',
       'Payment Mode',
-      'Handover To',
+      'Payment Handover To',
     ].join(',')
 
-    const rowsToExport = selectedIds.length > 0
-      ? transactions.filter((t) => selectedIds.includes(t.id))
-      : sortedRows
-
-    const csvBody = rowsToExport
+    const csvBody = targets
       .map((t) =>
         [
           `"${t.transactionNumber}"`,
@@ -132,7 +194,7 @@ export function ScrapRecordGridView({
           `"${t.locationName}"`,
           `"${t.departmentName}"`,
           `"${t.scrapTypeName}"`,
-          `"${t.description || ''}"`,
+          `"${t.unit}"`,
           t.weightQty,
           t.ratePerUnit,
           t.calculatedTotal,
@@ -155,13 +217,13 @@ export function ScrapRecordGridView({
 
   return (
     <>
-      <Card className="space-y-4">
+      <Card className="space-y-0 overflow-hidden border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
         {/* Table Action Controls Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 border-b border-border">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 border-b border-border bg-white dark:bg-slate-900">
           <div className="flex items-center gap-2">
             <span className="text-sm font-extrabold text-foreground">Scrap Disposal Records</span>
             <Badge variant="outline" className="text-xs font-bold">
-              {transactions.length} Total Entries
+              {filteredAndSortedRows.length} {filteredAndSortedRows.length === transactions.length ? 'Total Entries' : `Filtered of ${transactions.length}`}
             </Badge>
             <span className="text-xs text-muted-foreground hidden sm:inline ml-2">
               (Click any row to view full transaction breakdown)
@@ -191,8 +253,106 @@ export function ScrapRecordGridView({
               onClick={handleExportCsv}
               className="rounded-xl text-xs font-bold"
             >
-              <Download className="h-3.5 w-3.5 mr-1" /> Export CSV ({selectedIds.length || transactions.length})
+              <Download className="h-3.5 w-3.5 mr-1" /> Export CSV ({selectedIds.length || filteredAndSortedRows.length})
             </Button>
+          </div>
+        </div>
+
+        {/* Date Range & Filter Controls Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50/70 dark:bg-slate-900/60 border-b border-border">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 text-xs font-black text-slate-800 dark:text-slate-200">
+              <Calendar className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Date Range Filter:</span>
+            </div>
+
+            {/* Date Range Picker Inputs */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] font-bold text-slate-500">From</span>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value)
+                    setDatePreset('custom')
+                    setPage(1)
+                  }}
+                  className="h-8 w-36 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-900"
+                />
+              </div>
+
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] font-bold text-slate-500">To</span>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value)
+                    setDatePreset('custom')
+                    setPage(1)
+                  }}
+                  className="h-8 w-36 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-900"
+                />
+              </div>
+            </div>
+
+            {/* Quick Range Presets */}
+            <div className="flex items-center gap-1 flex-wrap">
+              {[
+                { key: 'all', label: 'All Time' },
+                { key: 'today', label: 'Today' },
+                { key: 'month', label: 'This Month' },
+                { key: '30days', label: 'Last 30 Days' },
+              ].map((p) => {
+                const isActive = datePreset === p.key
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => handleApplyPreset(p.key as any)}
+                    style={isActive ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' } : undefined}
+                    className={cn(
+                      'px-2.5 py-1 rounded-xl text-xs font-extrabold transition-all cursor-pointer border',
+                      isActive
+                        ? 'shadow-xs border-transparent'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Quick Search & Clear */}
+          <div className="flex items-center gap-2">
+            <div className="relative w-48 sm:w-60">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Search location, buyer, txn..."
+                value={gridSearch}
+                onChange={(e) => {
+                  setGridSearch(e.target.value)
+                  setPage(1)
+                }}
+                className="h-8 pl-8 rounded-xl text-xs font-medium border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+              />
+            </div>
+
+            {(startDate || endDate || gridSearch || datePreset !== 'all') && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClearFilters}
+                className="h-8 text-xs font-bold text-slate-500 hover:text-rose-600 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700"
+              >
+                <X className="h-3.5 w-3.5 mr-1" /> Clear Filter
+              </Button>
+            )}
           </div>
         </div>
 
@@ -217,24 +377,32 @@ export function ScrapRecordGridView({
                     Date <ArrowUpDown className="h-3 w-3" />
                   </div>
                 </TableHead>
-                <TableHead className="text-xs font-extrabold">Group</TableHead>
-                <TableHead className="text-xs font-extrabold">Dealership Location</TableHead>
-                <TableHead className="text-xs font-extrabold">Department</TableHead>
-                <TableHead className="text-xs font-extrabold">Scrap Type & Unit</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Weight / Qty</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Rate / Unit</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Total Amount</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Received</TableHead>
+                <TableHead className="cursor-pointer text-xs font-extrabold" onClick={() => handleSort('groupName')}>
+                  Group
+                </TableHead>
+                <TableHead className="cursor-pointer text-xs font-extrabold" onClick={() => handleSort('locationName')}>
+                  Dealership Location
+                </TableHead>
+                <TableHead className="cursor-pointer text-xs font-extrabold" onClick={() => handleSort('departmentName')}>
+                  Department
+                </TableHead>
+                <TableHead className="cursor-pointer text-xs font-extrabold" onClick={() => handleSort('scrapTypeName')}>
+                  Scrap Type & Unit
+                </TableHead>
+                <TableHead className="text-right text-xs font-extrabold">Weight / Qty</TableHead>
+                <TableHead className="text-right text-xs font-extrabold">Rate / Unit</TableHead>
+                <TableHead className="text-right text-xs font-extrabold">Total Amount</TableHead>
+                <TableHead className="text-right text-xs font-extrabold">Received</TableHead>
                 <TableHead className="text-xs font-extrabold">Buyer / Vendor</TableHead>
                 <TableHead className="text-xs font-extrabold">Payment Handover To</TableHead>
-                <TableHead className="text-xs font-extrabold text-center">Actions</TableHead>
+                <TableHead className="text-center text-xs font-extrabold">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={14} className="h-32 text-center text-xs text-muted-foreground font-medium">
-                    No scrap records match the active filters.
+                  <TableCell colSpan={14} className="h-32 text-center text-xs font-medium text-muted-foreground">
+                    No scrap transaction records match your selected date range or search filter.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -243,30 +411,29 @@ export function ScrapRecordGridView({
                   return (
                     <TableRow
                       key={row.id}
-                      onClick={(e) => handleRowClick(row, e)}
-                      className={`cursor-pointer hover:bg-accent/50 transition-colors ${
-                        isSelected ? 'bg-muted/80' : ''
-                      }`}
+                      data-state={isSelected ? 'selected' : undefined}
+                      onClick={() => (onSelectTransaction ? onSelectTransaction(row) : setLocalDetailTxn(row))}
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
                     >
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox checked={isSelected} onCheckedChange={() => toggleSelectRow(row.id)} />
+                        <Checkbox checked={isSelected} onCheckedChange={() => handleToggleRow(row.id)} />
                       </TableCell>
-                      <TableCell className="font-extrabold text-xs text-foreground whitespace-nowrap">
+                      <TableCell className="text-xs font-black text-foreground whitespace-nowrap">
                         {row.transactionNumber}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                      <TableCell className="text-xs font-bold text-muted-foreground whitespace-nowrap">
                         {row.soldDate || row.timestamp.slice(0, 10)}
                       </TableCell>
-                      <TableCell className="text-xs">
-                        <Badge variant="outline" className="font-bold text-[10px]">
+                      <TableCell className="text-xs font-bold">
+                        <Badge variant="outline" className="text-[10px] font-extrabold">
                           {row.groupName || 'JAM'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs font-bold text-foreground max-w-[180px] truncate">
+                      <TableCell className="text-xs font-extrabold text-foreground max-w-[180px] truncate">
                         {row.locationName}
                       </TableCell>
-                      <TableCell className="text-xs">
-                        <Badge variant="secondary" className="font-extrabold text-[10px]">
+                      <TableCell className="text-xs font-bold text-muted-foreground">
+                        <Badge variant="secondary" className="text-[10px]">
                           {row.departmentName}
                         </Badge>
                       </TableCell>
@@ -304,6 +471,18 @@ export function ScrapRecordGridView({
                           >
                             <Info className="h-3.5 w-3.5" />
                           </Button>
+                          {onEditRecord && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => onEditRecord(row)}
+                              className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                              title="Edit Record"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             variant="ghost"
@@ -327,46 +506,47 @@ export function ScrapRecordGridView({
         {/* Pagination Footer */}
         <div className="flex items-center justify-between p-4 border-t border-border">
           <span className="text-xs text-muted-foreground">
-            Showing <span className="font-extrabold text-foreground">{Math.min(sortedRows.length, (page - 1) * pageSize + 1)}</span> to{' '}
-            <span className="font-extrabold text-foreground">{Math.min(sortedRows.length, page * pageSize)}</span> of{' '}
-            <span className="font-extrabold text-foreground">{sortedRows.length}</span> records
+            Showing <span className="font-extrabold text-foreground">{Math.min(filteredAndSortedRows.length, (page - 1) * pageSize + 1)}</span> to{' '}
+            <span className="font-extrabold text-foreground">{Math.min(filteredAndSortedRows.length, page * pageSize)}</span> of{' '}
+            <span className="font-extrabold text-foreground">{filteredAndSortedRows.length}</span> entries
           </span>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={page <= 1}
+              disabled={page === 1}
               onClick={() => setPage(page - 1)}
-              className="rounded-xl h-8 px-2 text-xs"
+              className="rounded-xl text-xs font-bold"
             >
-              <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+              <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous
             </Button>
-            <span className="text-xs font-bold px-2 text-foreground">
+            <span className="text-xs font-extrabold px-2 text-foreground">
               Page {page} of {totalPages}
             </span>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={page >= totalPages}
+              disabled={page === totalPages}
               onClick={() => setPage(page + 1)}
-              className="rounded-xl h-8 px-2 text-xs"
+              className="rounded-xl text-xs font-bold"
             >
-              Next <ChevronRight className="h-4 w-4 ml-1" />
+              Next <ChevronRight className="h-3.5 w-3.5 ml-1" />
             </Button>
           </div>
         </div>
       </Card>
 
-      {/* Local Detail Modal fallback if parent didn't bind onSelectTransaction */}
+      {/* Local Detail Modal Fallback */}
       {localDetailTxn && (
         <ScrapRecordDetailModal
           isOpen={Boolean(localDetailTxn)}
           onClose={() => setLocalDetailTxn(null)}
+          onOpenGallery={onOpenImageGallery}
+          onEditRecord={onEditRecord}
           transaction={localDetailTxn}
-          onOpenGallery={(txn) => onOpenImageGallery(txn)}
         />
       )}
     </>

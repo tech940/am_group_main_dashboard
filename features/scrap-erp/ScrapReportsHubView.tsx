@@ -284,19 +284,20 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
             variant="default"
             size="sm"
             onClick={handleExportCurrentReportToExcel}
-            className="rounded-xl text-xs font-black bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+            style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+            className="rounded-xl text-xs font-black shadow-md border-0"
           >
             <Download className="h-3.5 w-3.5 mr-1.5" /> Export to Excel (.xlsx)
           </Button>
 
-          <Button type="button" variant="outline" size="sm" onClick={handlePrintReport} className="rounded-xl text-xs font-bold border-border">
+          <Button type="button" variant="outline" size="sm" onClick={handlePrintReport} className="rounded-xl text-xs font-bold border-slate-300 dark:border-slate-700">
             <Printer className="h-3.5 w-3.5 mr-1" /> Print
           </Button>
         </div>
       </div>
 
       {/* Report Selector Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-border">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-slate-100 dark:border-slate-800">
         {[
           { key: 'location_summary', label: 'Location Summary', icon: MapPin, count: locationMatrix.length },
           { key: 'location_month_summary', label: 'Location Month Summary', icon: Calendar, count: locationMonthMatrix.rows.length },
@@ -313,11 +314,12 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
               key={tab.key}
               type="button"
               onClick={() => setReportType(tab.key as any)}
+              style={isActive ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)', borderColor: 'var(--dashboard-action-bg)' } : undefined}
               className={cn(
-                'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all whitespace-nowrap',
+                'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all whitespace-nowrap border',
                 isActive
-                  ? 'bg-primary text-primary-foreground border-primary shadow-sm font-black'
-                  : 'border border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
+                  ? 'shadow-md font-black'
+                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
               )}
             >
               <Icon className="h-4 w-4" />
@@ -327,8 +329,8 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
                   className={cn(
                     'rounded-full px-2 py-0.5 text-[10px] font-black',
                     isActive
-                      ? 'bg-primary-foreground/20 text-primary-foreground'
-                      : 'bg-muted text-muted-foreground'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                   )}
                 >
                   {tab.count}

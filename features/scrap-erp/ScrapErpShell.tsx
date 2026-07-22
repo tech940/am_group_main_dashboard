@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import {
   ScrapTransaction,
-  ScrapFilterState,
   ScrapLocation,
   ScrapDepartment,
   ScrapType,
@@ -11,8 +10,9 @@ import {
   ScrapEmployee,
   ScrapPaymentMode,
   ScrapHandoverUser,
-  ScrapAiInsight,
   ScrapGroup,
+  ScrapFilterState,
+  ScrapAiInsight,
 } from '@/lib/scrap-erp/types'
 import {
   DEFAULT_SCRAP_GROUPS,
@@ -26,27 +26,21 @@ import {
   INITIAL_SCRAP_TRANSACTIONS,
   DEFAULT_AI_INSIGHTS,
 } from '@/lib/scrap-erp/mock-data'
-
+import {
+  LayoutDashboard,
+  PlusCircle,
+  Table as TableIcon,
+  BarChart3,
+  Settings,
+} from 'lucide-react'
 import { ScrapExecutiveDashboardView } from './ScrapExecutiveDashboardView'
 import { ScrapEntryFormView } from './ScrapEntryFormView'
 import { ScrapRecordGridView } from './ScrapRecordGridView'
 import { ScrapMasterDataManager } from './ScrapMasterDataManager'
 import { ScrapReportsHubView } from './ScrapReportsHubView'
-import { ScrapFilterPanel } from './ScrapFilterPanel'
-import { ScrapAiInsightsBanner } from './ScrapAiInsightsBanner'
-import { ScrapImageGalleryModal } from './ScrapImageGalleryModal'
 import { ScrapRecordDetailModal } from './ScrapRecordDetailModal'
-
-import {
-  LayoutDashboard,
-  PlusCircle,
-  Table,
-  Settings,
-  FileSpreadsheet,
-  Recycle,
-  X,
-} from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ScrapImageGalleryModal } from './ScrapImageGalleryModal'
+import { ScrapDrilldownModal } from './ScrapDrilldownModal'
 import { cn } from '@/lib/utils'
 
 export function ScrapErpShell() {
@@ -86,26 +80,28 @@ export function ScrapErpShell() {
   const [isGalleryOpen, setIsGalleryOpen] = useState(false)
   const [selectedDetailTxn, setSelectedDetailTxn] = useState<ScrapTransaction | null>(null)
 
+  // Active Transaction for Editing (direct form edit mode)
+  const [editingTxn, setEditingTxn] = useState<ScrapTransaction | null>(null)
+
   // Drilldown Modal State
   const [drilldownTitle, setDrilldownTitle] = useState('')
   const [drilldownRows, setDrilldownRows] = useState<ScrapTransaction[] | null>(null)
 
-  // Filtered Transactions Calculation
+  // Filter logic
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
-      // Global Search
+      // Search
       if (filters.searchQuery) {
         const q = filters.searchQuery.toLowerCase()
-        const matches =
-          t.transactionNumber.toLowerCase().includes(q) ||
-          t.locationName.toLowerCase().includes(q) ||
-          t.departmentName.toLowerCase().includes(q) ||
-          t.scrapTypeName.toLowerCase().includes(q) ||
-          t.soldTo.toLowerCase().includes(q) ||
-          t.soldByName.toLowerCase().includes(q) ||
-          t.paymentHandoverToName.toLowerCase().includes(q) ||
-          t.description.toLowerCase().includes(q)
-        if (!matches) return false
+        const matchNum = t.transactionNumber.toLowerCase().includes(q)
+        const matchLoc = t.locationName.toLowerCase().includes(q)
+        const matchDept = t.departmentName.toLowerCase().includes(q)
+        const matchType = t.scrapTypeName.toLowerCase().includes(q)
+        const matchSoldTo = t.soldTo.toLowerCase().includes(q)
+        const matchSoldBy = t.soldByName.toLowerCase().includes(q)
+        if (!matchNum && !matchLoc && !matchDept && !matchType && !matchSoldTo && !matchSoldBy) {
+          return false
+        }
       }
 
       // Group Filter
@@ -132,23 +128,41 @@ export function ScrapErpShell() {
     })
   }, [transactions, filters])
 
-  // Add new transaction
-  const handleCreateTransaction = async (formData: any) => {
+  // Save or Update transaction directly from Scrap Entry Form
+  const handleSaveFormTransaction = async (formData: any) => {
+    const isEditing = Boolean(formData.id)
     try {
       const res = await fetch('/api/scrap-erp', {
-        method: 'POST',
+        method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       })
       const data = await res.json()
 
       if (data.success && data.transaction) {
-        setTransactions([data.transaction, ...transactions])
-        setActiveModule('grid')
+        if (isEditing) {
+          setTransactions(
+            transactions.map((t) => (t.id === formData.id || t.transactionNumber === formData.transactionNumber ? data.transaction : t))
+          )
+        } else {
+          setTransactions([data.transaction, ...transactions])
+        }
+      } else if (isEditing) {
+        setTransactions(transactions.map((t) => (t.id === formData.id ? { ...t, ...formData } : t)))
       }
+
+      setEditingTxn(null)
+      setActiveModule('grid')
     } catch (err) {
       console.error('Failed to save scrap transaction:', err)
     }
+  }
+
+  // Start editing a record: switches directly to Scrap Entry tab with populated fields!
+  const handleStartEdit = (txn: ScrapTransaction) => {
+    setEditingTxn(txn)
+    setSelectedDetailTxn(null)
+    setActiveModule('entry')
   }
 
   // Add master item
@@ -188,12 +202,12 @@ export function ScrapErpShell() {
     <div className="space-y-6">
       {/* Top Module Tabs Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
           {[
             { key: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard },
-            { key: 'entry', label: 'Scrap Entry', icon: PlusCircle },
-            { key: 'grid', label: 'Record Grid', icon: Table, count: filteredTransactions.length },
-            { key: 'reports', label: 'Reports Hub', icon: FileSpreadsheet },
+            { key: 'entry', label: editingTxn ? `Editing #${editingTxn.transactionNumber}` : 'Scrap Entry', icon: PlusCircle },
+            { key: 'grid', label: 'Record Grid', icon: TableIcon, count: filteredTransactions.length },
+            { key: 'reports', label: 'Reports Hub', icon: BarChart3 },
             { key: 'masters', label: 'Master Data', icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon
@@ -203,17 +217,23 @@ export function ScrapErpShell() {
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveModule(tab.key as any)}
+                style={isActive ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)', borderColor: 'var(--dashboard-action-bg)' } : undefined}
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-bold transition-all',
+                  'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-bold transition-all shadow-xs cursor-pointer',
                   isActive
-                    ? 'bg-primary text-primary-foreground border-primary shadow-sm font-black'
-                    : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
+                    ? 'shadow-md font-black'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                 )}
               >
                 <Icon className="h-4 w-4" />
                 {tab.label}
                 {tab.count !== undefined && (
-                  <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-black text-slate-700 dark:text-slate-300">
+                  <span
+                    className={cn(
+                      'rounded-full px-2 py-0.5 text-[10px] font-black',
+                      isActive ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    )}
+                  >
                     {tab.count}
                   </span>
                 )}
@@ -241,7 +261,9 @@ export function ScrapErpShell() {
           employees={employees}
           paymentModes={paymentModes}
           handoverUsers={handoverUsers}
-          onSubmit={handleCreateTransaction}
+          initialData={editingTxn}
+          onCancelEdit={() => setEditingTxn(null)}
+          onSubmit={handleSaveFormTransaction}
         />
       )}
 
@@ -253,6 +275,7 @@ export function ScrapErpShell() {
             setIsGalleryOpen(true)
           }}
           onSelectTransaction={(txn) => setSelectedDetailTxn(txn)}
+          onEditRecord={handleStartEdit}
           onDeleteSelected={handleDeleteTransactions}
         />
       )}
@@ -292,35 +315,29 @@ export function ScrapErpShell() {
         <ScrapRecordDetailModal
           isOpen={Boolean(selectedDetailTxn)}
           onClose={() => setSelectedDetailTxn(null)}
-          transaction={selectedDetailTxn}
-          onOpenGallery={(txn) => {
+          onOpenGallery={(txn: ScrapTransaction) => {
             setSelectedGalleryTxn(txn)
             setIsGalleryOpen(true)
           }}
+          onEditRecord={handleStartEdit}
+          transaction={selectedDetailTxn}
         />
       )}
 
-      {/* Drilldown Modal (Fixed close button, scrolling inner body) */}
-      <Dialog open={Boolean(drilldownRows)} onOpenChange={() => setDrilldownRows(null)}>
-        <DialogContent className="max-w-[95vw] lg:max-w-6xl xl:max-w-7xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl p-6">
-          <DialogHeader className="shrink-0 pb-2 pr-8">
-            <DialogTitle className="text-base font-extrabold text-foreground">
-              {drilldownTitle}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 pt-2">
-            <ScrapRecordGridView
-              transactions={drilldownRows || []}
-              onOpenImageGallery={(txn) => {
-                setSelectedGalleryTxn(txn)
-                setIsGalleryOpen(true)
-              }}
-              onSelectTransaction={(txn) => setSelectedDetailTxn(txn)}
-              onDeleteSelected={() => {}}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Drilldown List Modal */}
+      {drilldownRows && (
+        <ScrapDrilldownModal
+          title={drilldownTitle}
+          rows={drilldownRows}
+          isOpen={Boolean(drilldownRows)}
+          onClose={() => setDrilldownRows(null)}
+          onOpenGallery={(txn: ScrapTransaction) => {
+            setSelectedGalleryTxn(txn)
+            setIsGalleryOpen(true)
+          }}
+          onSelectTransaction={(txn: ScrapTransaction) => setSelectedDetailTxn(txn)}
+        />
+      )}
     </div>
   )
 }

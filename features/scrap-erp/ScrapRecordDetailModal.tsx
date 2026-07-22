@@ -15,6 +15,7 @@ import {
   Eye,
   CheckCircle2,
   AlertTriangle,
+  Pencil,
 } from 'lucide-react'
 
 function formatINR(val: number) {
@@ -30,11 +31,13 @@ export function ScrapRecordDetailModal({
   isOpen,
   onClose,
   onOpenGallery,
+  onEditRecord,
 }: {
   transaction: ScrapTransaction | null
   isOpen: boolean
   onClose: () => void
   onOpenGallery?: (txn: ScrapTransaction) => void
+  onEditRecord?: (txn: ScrapTransaction) => void
 }) {
   if (!transaction) return null
 
@@ -44,9 +47,9 @@ export function ScrapRecordDetailModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[95vw] lg:max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl p-6">
         <DialogHeader className="shrink-0 border-b border-border pb-4 pr-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline" className="text-xs font-black text-foreground border-border">
                   {transaction.transactionNumber}
                 </Badge>
@@ -70,6 +73,22 @@ export function ScrapRecordDetailModal({
                 Recorded on {transaction.soldDate || transaction.timestamp.slice(0, 10)}
               </p>
             </div>
+
+            {onEditRecord && (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  onClose()
+                  onEditRecord(transaction)
+                }}
+                style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
+                className="rounded-xl text-xs font-black h-9 px-4 shadow-sm cursor-pointer border-0 shrink-0 flex items-center gap-1.5"
+              >
+                <Pencil className="h-3.5 w-3.5" /> Edit Record
+              </Button>
+            )}
           </div>
         </DialogHeader>
 

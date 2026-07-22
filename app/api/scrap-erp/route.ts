@@ -56,8 +56,8 @@ export async function POST(request: Request) {
 
     const weightQty = Number(body.weightQty || 0)
     const ratePerUnit = Number(body.ratePerUnit || 0)
-    const calculatedTotal = weightQty * ratePerUnit
-    const amountReceived = Number(body.amountReceived || calculatedTotal)
+    const calculatedTotal = Math.round(weightQty * ratePerUnit * 100) / 100
+    const amountReceived = Number(body.amountReceived !== undefined ? body.amountReceived : calculatedTotal)
     const outstandingAmount = Math.max(0, calculatedTotal - amountReceived)
 
     const nextNumber = `SCRAP-${new Date().getFullYear()}-${String(globalTransactions.length + 482).padStart(4, '0')}`
@@ -66,12 +66,14 @@ export async function POST(request: Request) {
       id: `tx-${Date.now()}`,
       transactionNumber: nextNumber,
       timestamp: body.timestamp || new Date().toISOString(),
+      groupId: body.groupId || 'grp-1',
+      groupName: body.groupName || 'JAM',
       locationId: body.locationId || 'loc-1',
-      locationName: body.locationName || 'Jammu Main Showroom & Workshop',
+      locationName: body.locationName || 'Dealership Location',
       departmentId: body.departmentId || 'dept-1',
-      departmentName: body.departmentName || 'Bodyshop & Denting Paint',
+      departmentName: body.departmentName || 'SERVICE',
       scrapTypeId: body.scrapTypeId || 'type-1',
-      scrapTypeName: body.scrapTypeName || 'Used Iron & Sheet Metal Scrap',
+      scrapTypeName: body.scrapTypeName || 'PLASTIC',
       unit: body.unit || 'Kg',
       description: body.description || 'Scrap Disposal Entry',
       weightQty,
@@ -84,11 +86,11 @@ export async function POST(request: Request) {
       soldTo: body.soldTo || 'Local Vendor',
       soldDate: body.soldDate || new Date().toISOString().split('T')[0],
       paymentModeId: body.paymentModeId || 'pm-1',
-      paymentModeName: body.paymentModeName || 'Cash',
+      paymentModeName: body.paymentModeName || 'CASH',
       paymentHandoverToId: body.paymentHandoverToId || 'ho-1',
       paymentHandoverToName: body.paymentHandoverToName || 'Accounts Team',
       remarks: body.remarks || '',
-      status: outstandingAmount > 0 ? 'FLAGGED' : 'COMPLETED',
+      status: outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED',
       attachments: body.attachments || [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -104,5 +106,51 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Error in POST /api/scrap-erp:', error)
     return NextResponse.json({ error: 'Failed to create scrap transaction' }, { status: 500 })
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json()
+    const { id, transactionNumber } = body
+
+    if (!id && !transactionNumber) {
+      return NextResponse.json({ error: 'Transaction ID or number is required' }, { status: 400 })
+    }
+
+    const index = globalTransactions.findIndex((t) => t.id === id || t.transactionNumber === transactionNumber)
+    if (index === -1) {
+      return NextResponse.json({ error: 'Transaction record not found' }, { status: 404 })
+    }
+
+    const existing = globalTransactions[index]
+    const weightQty = body.weightQty !== undefined ? Number(body.weightQty) : existing.weightQty
+    const ratePerUnit = body.ratePerUnit !== undefined ? Number(body.ratePerUnit) : existing.ratePerUnit
+    const calculatedTotal = Math.round(weightQty * ratePerUnit * 100) / 100
+    const amountReceived = body.amountReceived !== undefined ? Number(body.amountReceived) : calculatedTotal
+    const outstandingAmount = Math.max(0, calculatedTotal - amountReceived)
+
+    const updatedTransaction: ScrapTransaction = {
+      ...existing,
+      ...body,
+      weightQty,
+      ratePerUnit,
+      calculatedTotal,
+      amountReceived,
+      outstandingAmount,
+      status: outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED',
+      updatedAt: new Date().toISOString(),
+    }
+
+    globalTransactions[index] = updatedTransaction
+
+    return NextResponse.json({
+      success: true,
+      transaction: updatedTransaction,
+      message: 'Scrap transaction updated successfully',
+    })
+  } catch (error) {
+    console.error('Error in PUT /api/scrap-erp:', error)
+    return NextResponse.json({ error: 'Failed to update scrap transaction' }, { status: 500 })
   }
 }
