@@ -40,7 +40,7 @@ export function buildUpdatedProformaEmail(data: UpdatedProformaEmailData): {
 
   const html = emailLayout({
     heading: 'Your Proforma has been Updated',
-    eyebrow: 'Order Update',
+    eyebrow: 'AM Kia · Proforma Updated',
     preheader: 'Your Kia vehicle proforma has been updated — PDF attached.',
     bodyHtml,
   })

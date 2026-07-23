@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { ScrapTransaction } from '@/lib/scrap-erp/types'
-import { FileSpreadsheet, Printer, Download, MapPin, Building2, Layers, Users, ShieldCheck, Folder, Calendar } from 'lucide-react'
+import { FileSpreadsheet, Printer, Download, MapPin, Building2, Layers, Users, ShieldCheck, Folder, Calendar, Tag } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -130,6 +130,102 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
         avgRate: data.weight > 0 ? data.revenue / data.weight : 0,
       }))
       .sort((a, b) => b.revenue - a.revenue)
+  }, [transactions])
+
+  // Monthwise Average Rate (₹ / Unit) Matrix by Scrap Type & Month Computation
+  const scrapTypeRateAnalytics = useMemo(() => {
+    const monthOrder = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar']
+    const monthSet = new Set<string>()
+
+    const typeUnitMap: Record<
+      string,
+      {
+        scrapTypeName: string
+        unit: string
+        totalAmount: number
+        totalWeight: number
+        monthData: Record<string, { amount: number; weight: number; count: number }>
+      }
+    > = {}
+
+    transactions.forEach((t) => {
+      const typeName = (t.scrapTypeName || 'OTHER').toUpperCase().trim()
+      const unit = (t.unit || 'Kg').trim()
+      const key = `${typeName}___${unit}`
+
+      const d = t.soldDate || t.timestamp || t.createdAt
+      if (!d) return
+      const dt = new Date(d)
+      if (isNaN(dt.getTime())) return
+
+      const monthShort = dt.toLocaleString('en-IN', { month: 'short' })
+      monthSet.add(monthShort)
+
+      const amt = Number(t.amountReceived || t.calculatedTotal || 0)
+      const wt = Number(t.weightQty || 0)
+
+      if (!typeUnitMap[key]) {
+        typeUnitMap[key] = {
+          scrapTypeName: typeName,
+          unit,
+          totalAmount: 0,
+          totalWeight: 0,
+          monthData: {},
+        }
+      }
+
+      typeUnitMap[key].totalAmount += amt
+      typeUnitMap[key].totalWeight += wt
+
+      if (!typeUnitMap[key].monthData[monthShort]) {
+        typeUnitMap[key].monthData[monthShort] = { amount: 0, weight: 0, count: 0 }
+      }
+
+      typeUnitMap[key].monthData[monthShort].amount += amt
+      typeUnitMap[key].monthData[monthShort].weight += wt
+      typeUnitMap[key].monthData[monthShort].count += 1
+    })
+
+    const availableMonths = Array.from(monthSet).sort(
+      (a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b)
+    )
+    const monthColumns = availableMonths.length > 0 ? availableMonths : ['Apr', 'May', 'Jun', 'Jul']
+
+    const rows = Object.values(typeUnitMap)
+      .map((item) => {
+        const overallAvgRate = item.totalWeight > 0 ? item.totalAmount / item.totalWeight : 0
+
+        const monthAvgRates: Record<
+          string,
+          { avgRate: number; totalAmount: number; totalWeight: number; count: number }
+        > = {}
+
+        monthColumns.forEach((m) => {
+          const mData = item.monthData[m] || { amount: 0, weight: 0, count: 0 }
+          const avgRate = mData.weight > 0 ? mData.amount / mData.weight : 0
+          monthAvgRates[m] = {
+            avgRate,
+            totalAmount: mData.amount,
+            totalWeight: mData.weight,
+            count: mData.count,
+          }
+        })
+
+        return {
+          scrapTypeName: item.scrapTypeName,
+          unit: item.unit,
+          totalAmount: item.totalAmount,
+          totalWeight: item.totalWeight,
+          overallAvgRate,
+          monthAvgRates,
+        }
+      })
+      .sort((a, b) => b.totalAmount - a.totalAmount)
+
+    return {
+      monthColumns,
+      rows,
+    }
   }, [transactions])
 
   // 5. Department Summary Matrix
@@ -462,36 +558,141 @@ export function ScrapReportsHubView({ transactions }: { transactions: ScrapTrans
           </Table>
         )}
 
-        {/* 4. SCRAP TYPE SUMMARY TABLE */}
+        {/* 4. SCRAP TYPE SUMMARY TABLE & MONTHWISE AVERAGE RATE MATRIX */}
         {reportType === 'scrap_type_summary' && (
-          <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow>
-                <TableHead className="text-xs font-extrabold">Scrap Category</TableHead>
-                <TableHead className="text-xs font-extrabold">Unit</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Transactions</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Total Weight Disposed</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Avg Rate / Unit</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Total Revenue</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Received</TableHead>
-                <TableHead className="text-xs font-extrabold text-right">Outstanding</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {scrapTypeMatrix.map((row) => (
-                <TableRow key={row.name}>
-                  <TableCell className="font-extrabold text-xs text-foreground">{row.name}</TableCell>
-                  <TableCell className="text-xs font-bold text-muted-foreground">{row.unit}</TableCell>
-                  <TableCell className="text-xs text-right font-bold">{row.count}</TableCell>
-                  <TableCell className="text-xs text-right font-bold">{row.weight.toLocaleString('en-IN')}</TableCell>
-                  <TableCell className="text-xs text-right font-bold text-indigo-600 dark:text-indigo-400">₹{row.avgRate.toFixed(2)}</TableCell>
-                  <TableCell className="text-xs text-right font-black text-foreground">{formatINR(row.revenue)}</TableCell>
-                  <TableCell className="text-xs text-right font-bold text-emerald-600 dark:text-emerald-400">{formatINR(row.received)}</TableCell>
-                  <TableCell className="text-xs text-right font-bold text-rose-600">{row.due > 0 ? formatINR(row.due) : '₹0'}</TableCell>
+          <div className="space-y-6">
+            <Table>
+              <TableHeader className="bg-muted/50">
+                <TableRow>
+                  <TableHead className="text-xs font-extrabold">Scrap Category</TableHead>
+                  <TableHead className="text-xs font-extrabold">Unit</TableHead>
+                  <TableHead className="text-xs font-extrabold text-right">Transactions</TableHead>
+                  <TableHead className="text-xs font-extrabold text-right">Total Weight Disposed</TableHead>
+                  <TableHead className="text-xs font-extrabold text-right">Avg Rate / Unit</TableHead>
+                  <TableHead className="text-xs font-extrabold text-right">Total Revenue</TableHead>
+                  <TableHead className="text-xs font-extrabold text-right">Received</TableHead>
+                  <TableHead className="text-xs font-extrabold text-right">Outstanding</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {scrapTypeMatrix.map((row) => (
+                  <TableRow key={row.name}>
+                    <TableCell className="font-extrabold text-xs text-foreground">{row.name}</TableCell>
+                    <TableCell className="text-xs font-bold text-muted-foreground">{row.unit}</TableCell>
+                    <TableCell className="text-xs text-right font-bold">{row.count}</TableCell>
+                    <TableCell className="text-xs text-right font-bold">{row.weight.toLocaleString('en-IN')}</TableCell>
+                    <TableCell className="text-xs text-right font-bold text-indigo-600 dark:text-indigo-400">₹{row.avgRate.toFixed(2)}</TableCell>
+                    <TableCell className="text-xs text-right font-black text-foreground">{formatINR(row.revenue)}</TableCell>
+                    <TableCell className="text-xs text-right font-bold text-emerald-600 dark:text-emerald-400">{formatINR(row.received)}</TableCell>
+                    <TableCell className="text-xs text-right font-bold text-rose-600">{row.due > 0 ? formatINR(row.due) : '₹0'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            {/* MONTH-BY-MONTH AVERAGE RATE (₹ / UNIT) MATRIX TABLE */}
+            <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden border-l-4 border-l-emerald-600">
+              <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-800 bg-emerald-50/30 dark:bg-emerald-950/20">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-emerald-100 dark:bg-emerald-900/60 p-2.5 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                      <Tag className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-sm font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                        Month-by-Month Average Selling Rate (₹ / Unit) by Scrap Type & Unit
+                      </CardTitle>
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+                        Historical average selling price trends per unit across months (e.g. CARDBOARD: ₹15.00/Kg in Apr vs ₹16.20/Kg in May).
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700 text-xs font-black self-start md:self-auto">
+                    {scrapTypeRateAnalytics.rows.length} Categories Tracked
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {scrapTypeRateAnalytics.rows.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-900 text-white dark:bg-slate-800 border-b border-slate-800 dark:border-slate-700">
+                        <tr>
+                          <th className="py-3 px-4 font-black uppercase text-[10px] tracking-wider text-slate-100 border-r border-slate-800 dark:border-slate-700">
+                            SCRAP TYPE & UNIT
+                          </th>
+                          {scrapTypeRateAnalytics.monthColumns.map((m) => (
+                            <th key={m} className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-slate-100">
+                              {m.toUpperCase()} AVG RATE
+                            </th>
+                          ))}
+                          <th className="py-3 px-4 text-center font-black uppercase text-[10px] tracking-wider text-emerald-400 bg-slate-800/80">
+                            OVERALL AVG RATE
+                          </th>
+                          <th className="py-3 px-4 text-right font-black uppercase text-[10px] tracking-wider text-slate-100">
+                            TOTAL QTY
+                          </th>
+                          <th className="py-3 px-4 text-right font-black uppercase text-[10px] tracking-wider text-amber-400">
+                            TOTAL REVENUE
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium">
+                        {scrapTypeRateAnalytics.rows.map((row) => (
+                          <tr key={`${row.scrapTypeName}-${row.unit}`} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                            <td className="py-3 px-4 font-black text-slate-900 dark:text-slate-100 border-r border-slate-100 dark:border-slate-800">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-slate-900 dark:text-slate-100 text-xs">
+                                  {row.scrapTypeName}
+                                </span>
+                                <span className="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 text-[10px] font-black border border-slate-200 dark:border-slate-700">
+                                  /{row.unit}
+                                </span>
+                              </div>
+                            </td>
+                            {scrapTypeRateAnalytics.monthColumns.map((m) => {
+                              const mInfo = row.monthAvgRates[m]
+                              return (
+                                <td key={m} className="py-3 px-3 text-center">
+                                  {mInfo.count > 0 ? (
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <span className="inline-flex items-center rounded-md bg-emerald-100 text-emerald-950 dark:bg-emerald-950 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 px-2 py-0.5 text-xs font-black shadow-2xs">
+                                        ₹{mInfo.avgRate.toFixed(2)}
+                                      </span>
+                                      <span className="text-[9px] text-slate-400 font-bold">
+                                        {mInfo.totalWeight.toLocaleString('en-IN')} {row.unit}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-300 dark:text-slate-600 font-bold">-</span>
+                                  )}
+                                </td>
+                              )
+                            })}
+                            <td className="py-3 px-4 text-center font-black text-emerald-700 dark:text-emerald-400 bg-emerald-50/20 dark:bg-emerald-950/20">
+                              <span className="inline-flex items-center rounded-md bg-emerald-100 text-emerald-950 dark:bg-emerald-950 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 px-2.5 py-1 text-xs font-black shadow-2xs">
+                                ₹{row.overallAvgRate.toFixed(2)} /{row.unit}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right font-black text-slate-800 dark:text-slate-200">
+                              {row.totalWeight.toLocaleString('en-IN')} {row.unit}
+                            </td>
+                            <td className="py-3 px-4 text-right font-black text-amber-700 dark:text-amber-400">
+                              {formatINR(row.totalAmount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-slate-400 text-xs font-medium">
+                    No scrap type rate data available.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {/* 5. DEPARTMENT SUMMARY TABLE */}

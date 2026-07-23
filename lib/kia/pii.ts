@@ -24,7 +24,7 @@ export function canViewKiaCustomerPii(role?: string | null): boolean {
  */
 export function canRevealKiaFollowupPhone(role?: string | null): boolean {
   const r = String(role || '').trim().toLowerCase()
-  return canViewKiaCustomerPii(r) || r === 'cre'
+  return canViewKiaCustomerPii(r) || r === 'cre' || r === 'ccm'
 }
 
 const REDACTED = '••••••'

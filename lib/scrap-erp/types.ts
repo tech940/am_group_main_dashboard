@@ -99,6 +99,9 @@ export interface ScrapTransaction {
   remarks?: string
   status: 'COMPLETED' | 'FLAGGED' | 'DRAFT'
   attachments: ScrapAttachment[]
+  isDistributed?: boolean
+  distributedAt?: string
+  distributedBy?: string
   createdAt: string
   updatedAt: string
 }

@@ -64,6 +64,10 @@ export async function GET(request: Request) {
       dealer: url.searchParams.get('dealer'),
       startDate: url.searchParams.get('startDate'),
       endDate: url.searchParams.get('endDate'),
+      dateField: (url.searchParams.get('dateField') as 'due_date' | 'booking_date' | 'completed_date' | null) || null,
+      model: url.searchParams.get('model'),
+      bookingStatus: url.searchParams.get('bookingStatus'),
+      priority: url.searchParams.get('priority'),
     })
 
     const wb = new ExcelJS.Workbook()

@@ -237,8 +237,14 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   const [mine, setMine] = useState(false)
   const [search, setSearch] = useState('')
   const [reason, setReason] = useState('all')
+  const [dealer, setDealer] = useState('all')
+  const [model, setModel] = useState('all')
+  const [bookingStatus, setBookingStatus] = useState('all')
+  const [priority, setPriority] = useState('all')
+  const [dateField, setDateField] = useState<'due_date' | 'booking_date' | 'completed_date'>('due_date')
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<Followup['bucket']>('pending')
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null)
   const [sidebarTab, setSidebarTab] = useState<'details' | 'activity' | 'remarks'>('details')
@@ -273,15 +279,65 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
 
   const canCall = canRevealKiaFollowupPhone(currentUserRole)
 
+  // Build params helper — shared by list query + export
+  const buildParams = () => {
+    const params = new URLSearchParams()
+    if (mine) params.set('mine', '1')
+    if (search) params.set('search', search)
+    if (reason !== 'all') params.set('reason', reason)
+    if (dealer !== 'all') params.set('dealer', dealer)
+    if (model !== 'all') params.set('model', model)
+    if (bookingStatus !== 'all') params.set('bookingStatus', bookingStatus)
+    if (priority !== 'all') params.set('priority', priority)
+    if (dateField !== 'due_date') params.set('dateField', dateField)
+    if (startDate) params.set('startDate', startDate)
+    if (endDate) params.set('endDate', endDate)
+    return params
+  }
+
+  // Count active (non-default) filters for the badge
+  const activeFilterCount = [
+    mine,
+    reason !== 'all',
+    dealer !== 'all',
+    model !== 'all',
+    bookingStatus !== 'all',
+    priority !== 'all',
+    Boolean(startDate || endDate),
+  ].filter(Boolean).length
+
+  // Quick date preset helper (IST-aware)
+  const applyDatePreset = (preset: 'today' | 'tomorrow' | 'this_week' | 'this_month' | 'all') => {
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    if (preset === 'all') { setStartDate(''); setEndDate(''); return }
+    if (preset === 'today') { setStartDate(fmt(now)); setEndDate(fmt(now)); return }
+    const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
+    if (preset === 'tomorrow') { setStartDate(fmt(tomorrow)); setEndDate(fmt(tomorrow)); return }
+    if (preset === 'this_week') {
+      const day = now.getDay()
+      const mon = new Date(now); mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1))
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+      setStartDate(fmt(mon)); setEndDate(fmt(sun)); return
+    }
+    if (preset === 'this_month') {
+      setStartDate(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`)
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      setEndDate(fmt(lastDay)); return
+    }
+  }
+
+  const clearAllFilters = () => {
+    setMine(false); setSearch(''); setReason('all'); setDealer('all')
+    setModel('all'); setBookingStatus('all'); setPriority('all')
+    setDateField('due_date'); setStartDate(''); setEndDate('')
+  }
+
   const query = useQuery<ListResponse>({
-    queryKey: ['kia-followups', mine, search, reason, startDate, endDate],
+    queryKey: ['kia-followups', mine, search, reason, dealer, model, bookingStatus, priority, dateField, startDate, endDate],
     queryFn: async () => {
-      const params = new URLSearchParams()
-      if (mine) params.set('mine', '1')
-      if (search) params.set('search', search)
-      if (reason !== 'all') params.set('reason', reason)
-      if (startDate) params.set('startDate', startDate)
-      if (endDate) params.set('endDate', endDate)
+      const params = buildParams()
       const res = await fetch(`/api/brands/kia/follow-ups?${params.toString()}`, { cache: 'no-store' })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to load')
       return res.json()
@@ -296,12 +352,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
     if (exporting) return
     setExporting(true)
     try {
-      const params = new URLSearchParams()
-      if (mine) params.set('mine', '1')
-      if (search) params.set('search', search)
-      if (reason !== 'all') params.set('reason', reason)
-      if (startDate) params.set('startDate', startDate)
-      if (endDate) params.set('endDate', endDate)
+      const params = buildParams()
       const res = await fetch(`/api/brands/kia/follow-ups/export?${params.toString()}`, { cache: 'no-store' })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Export failed')
       const blob = await res.blob()
@@ -427,7 +478,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   useEffect(() => {
     setCurrentPage(1)
     setSelectedBookingId(null)
-  }, [activeTab, search, reason, mine, startDate, endDate])
+  }, [activeTab, search, reason, mine, dealer, model, bookingStatus, priority, dateField, startDate, endDate])
 
   // Fetch selected booking details
   const bookingDetailQuery = useQuery<BookingDetailPayload>({
@@ -566,75 +617,313 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
     <MainLayout title="Booking Follow-ups" subtitle="Redesigned followup desk — scheduled next-touch on every booking so no lead goes cold">
       <div className="space-y-4 w-full">
           
-          {/* Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              
-              <Select value={reason} onValueChange={setReason}>
-                <SelectTrigger className="h-9 w-40 rounded-xl text-xs font-black uppercase tracking-wider">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="font-bold">
-                  <SelectItem value="all">All reasons</SelectItem>
-                  {REASONS.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+          {/* ── Toolbar ─────────────────────────────────────────────────── */}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
 
-              <div className="relative flex items-center rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-1.5 focus-within:bg-white focus-within:border-slate-300 transition-colors">
-                <Search className="h-4 w-4 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Name, model or booking #…"
-                  className="ml-2 w-44 border-0 bg-transparent text-xs font-semibold outline-none text-slate-700"
-                />
-              </div>
+            {/* Primary bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+              {/* Left: search + toggle */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Search */}
+                <div className="relative flex items-center h-9 w-72 rounded-xl border border-slate-200 bg-slate-50 px-3 gap-2 focus-within:bg-white focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
+                  <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search name, model, booking #, consultant…"
+                    className="flex-1 border-0 bg-transparent text-xs font-medium outline-none text-slate-700 placeholder:text-slate-400"
+                  />
+                  {search && (
+                    <button onClick={() => setSearch('')} className="text-slate-400 hover:text-slate-600 shrink-0">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0">From</span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="h-9 px-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-slate-700 w-28 cursor-pointer"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0">To</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="h-9 px-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white text-xs font-bold text-slate-700 w-28 cursor-pointer"
-                />
-              </div>
-              {(startDate || endDate) && (
-                <Button 
-                  onClick={() => { setStartDate(''); setEndDate('') }}
-                  variant="ghost" 
-                  className="h-9 px-2.5 rounded-xl text-xs font-black uppercase text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                {/* Filters toggle button */}
+                <button
+                  onClick={() => setFiltersOpen((v) => !v)}
+                  className={cn(
+                    'inline-flex items-center gap-2 h-9 px-4 rounded-xl border text-xs font-bold tracking-wide transition-all duration-150',
+                    filtersOpen || activeFilterCount > 0
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+                  )}
                 >
-                  Clear
-                </Button>
-              )}
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className={cn(
+                      'inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-black',
+                      filtersOpen ? 'bg-white/20 text-white' : 'bg-indigo-600 text-white'
+                    )}>
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </button>
 
-              <Button variant="outline" className="h-9 gap-1.5 rounded-xl text-xs font-black uppercase tracking-wider border-slate-200">
-                <SlidersHorizontal className="h-3.5 w-3.5" /> Filters
-              </Button>
-            </div>
-            
-            <div className="flex items-center gap-2">
+                {/* Clear-all pill */}
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-500 text-xs font-bold hover:bg-rose-100 transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              {/* Right: export */}
               <Button
                 onClick={handleExport}
                 disabled={exporting}
                 variant="outline"
                 title="Download all follow-ups as Excel (mobile numbers excluded)"
-                className="h-9 gap-1.5 rounded-xl px-4 text-xs font-black uppercase tracking-wider border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                className="h-9 gap-2 rounded-xl px-4 text-xs font-bold border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
               >
-                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                 {exporting ? 'Exporting…' : 'Export Excel'}
               </Button>
             </div>
+
+            {/* Active filter chips strip */}
+            {activeFilterCount > 0 && !filtersOpen && (
+              <div className="flex flex-wrap gap-1.5 px-4 pb-3">
+                {reason !== 'all' && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-semibold">
+                    Reason: {REASONS.find(r => r.value === reason)?.label ?? reason}
+                    <button onClick={() => setReason('all')} className="ml-0.5 hover:text-indigo-900"><X className="h-3 w-3" /></button>
+                  </span>
+                )}
+                {dealer !== 'all' && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-semibold">
+                    Dealer: {dealer}
+                    <button onClick={() => setDealer('all')} className="ml-0.5 hover:text-indigo-900"><X className="h-3 w-3" /></button>
+                  </span>
+                )}
+                {model !== 'all' && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-semibold">
+                    Model: {model}
+                    <button onClick={() => setModel('all')} className="ml-0.5 hover:text-indigo-900"><X className="h-3 w-3" /></button>
+                  </span>
+                )}
+                {bookingStatus !== 'all' && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-semibold">
+                    Status: {bookingStatus.replace(/_/g, ' ')}
+                    <button onClick={() => setBookingStatus('all')} className="ml-0.5 hover:text-indigo-900"><X className="h-3 w-3" /></button>
+                  </span>
+                )}
+                {priority !== 'all' && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-semibold">
+                    Priority: {priority}
+                    <button onClick={() => setPriority('all')} className="ml-0.5 hover:text-indigo-900"><X className="h-3 w-3" /></button>
+                  </span>
+                )}
+                {(startDate || endDate) && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-violet-700 text-[11px] font-semibold">
+                    {dateField === 'due_date' ? 'Due' : dateField === 'booking_date' ? 'Booked' : 'Completed'}: {startDate || '…'} → {endDate || '…'}
+                    <button onClick={() => { setStartDate(''); setEndDate('') }} className="ml-0.5 hover:text-violet-900"><X className="h-3 w-3" /></button>
+                  </span>
+                )}
+                {mine && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-semibold">
+                    My follow-ups
+                    <button onClick={() => setMine(false)} className="ml-0.5 hover:text-emerald-900"><X className="h-3 w-3" /></button>
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* ── Expanded filter drawer ──────────────────────────────── */}
+            {filtersOpen && (
+              <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-5 py-5 space-y-5">
+
+                {/* Section: Date range */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Date Range</span>
+                    <div className="flex-1 h-px bg-slate-200" />
+                  </div>
+                  <div className="flex flex-wrap items-end gap-3">
+                    {/* Date Field selector */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Filter by</label>
+                      <Select value={dateField} onValueChange={(v) => setDateField(v as typeof dateField)}>
+                        <SelectTrigger className="h-9 w-44 rounded-xl border-slate-200 text-xs font-semibold bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="due_date">Due Date</SelectItem>
+                          <SelectItem value="booking_date">Booking Date</SelectItem>
+                          <SelectItem value="completed_date">Completed Date</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* From */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">From</label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="h-9 px-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 bg-white text-xs font-semibold text-slate-700 w-36 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* To */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">To</label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="h-9 px-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 bg-white text-xs font-semibold text-slate-700 w-36 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Quick presets */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quick</label>
+                      <div className="flex items-center gap-1">
+                        {(['today', 'tomorrow', 'this_week', 'this_month', 'all'] as const).map((p) => {
+                          const isActive =
+                            p === 'all' ? !startDate && !endDate : false
+                          return (
+                            <button
+                              key={p}
+                              onClick={() => applyDatePreset(p)}
+                              className={cn(
+                                'h-9 px-3 rounded-xl border text-[10px] font-bold uppercase tracking-wide transition-all',
+                                isActive
+                                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                                  : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50'
+                              )}
+                            >
+                              {p === 'this_week' ? 'Week' : p === 'this_month' ? 'Month' : p.charAt(0).toUpperCase() + p.slice(1).replace('_', ' ')}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section: Attribute filters */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Filters</span>
+                    <div className="flex-1 h-px bg-slate-200" />
+                  </div>
+                  <div className="flex flex-wrap items-end gap-3">
+
+                    {/* Dealer */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dealer</label>
+                      <Select value={dealer} onValueChange={setDealer}>
+                        <SelectTrigger className={cn('h-9 w-40 rounded-xl text-xs font-semibold bg-white', dealer !== 'all' ? 'border-indigo-400 text-indigo-700' : 'border-slate-200')}>
+                          <SelectValue placeholder="All Dealers" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Dealers</SelectItem>
+                          <SelectItem value="JK402">Jammu (JK402)</SelectItem>
+                          <SelectItem value="JK501">Udhampur (JK501)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Model */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vehicle Model</label>
+                      <Select value={model} onValueChange={setModel}>
+                        <SelectTrigger className={cn('h-9 w-40 rounded-xl text-xs font-semibold bg-white', model !== 'all' ? 'border-indigo-400 text-indigo-700' : 'border-slate-200')}>
+                          <SelectValue placeholder="All Models" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Models</SelectItem>
+                          <SelectItem value="Seltos">Seltos</SelectItem>
+                          <SelectItem value="Sonet">Sonet</SelectItem>
+                          <SelectItem value="Carens">Carens</SelectItem>
+                          <SelectItem value="EV6">EV6</SelectItem>
+                          <SelectItem value="Carnival">Carnival</SelectItem>
+                          <SelectItem value="Syros">Syros</SelectItem>
+                          <SelectItem value="EV9">EV9</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Booking Status */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Booking Status</label>
+                      <Select value={bookingStatus} onValueChange={setBookingStatus}>
+                        <SelectTrigger className={cn('h-9 w-48 rounded-xl text-xs font-semibold bg-white', bookingStatus !== 'all' ? 'border-indigo-400 text-indigo-700' : 'border-slate-200')}>
+                          <SelectValue placeholder="All Statuses" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Statuses</SelectItem>
+                          <SelectItem value="booking_done">Booking Done</SelectItem>
+                          <SelectItem value="allotted">Allotted</SelectItem>
+                          <SelectItem value="proforma_generated">Proforma Generated</SelectItem>
+                          <SelectItem value="payment_confirmed">Payment Confirmed</SelectItem>
+                          <SelectItem value="ready_delivery">Ready for Delivery</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Priority */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Priority</label>
+                      <Select value={priority} onValueChange={setPriority}>
+                        <SelectTrigger className={cn('h-9 w-36 rounded-xl text-xs font-semibold bg-white', priority !== 'all' ? 'border-indigo-400 text-indigo-700' : 'border-slate-200')}>
+                          <SelectValue placeholder="All" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Priorities</SelectItem>
+                          <SelectItem value="high">🔴 High</SelectItem>
+                          <SelectItem value="normal">🟡 Normal</SelectItem>
+                          <SelectItem value="low">🟢 Low</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Reason */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Follow-up Reason</label>
+                      <Select value={reason} onValueChange={setReason}>
+                        <SelectTrigger className={cn('h-9 w-48 rounded-xl text-xs font-semibold bg-white', reason !== 'all' ? 'border-indigo-400 text-indigo-700' : 'border-slate-200')}>
+                          <SelectValue placeholder="All Reasons" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Reasons</SelectItem>
+                          {REASONS.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Mine toggle */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned To</label>
+                      <button
+                        onClick={() => setMine((v) => !v)}
+                        className={cn(
+                          'inline-flex items-center gap-2 h-9 px-4 rounded-xl border text-xs font-semibold transition-all',
+                          mine
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+                        )}
+                      >
+                        <User2 className="h-3.5 w-3.5" />
+                        {mine ? 'My Follow-ups' : 'All Staff'}
+                      </button>
+                    </div>
+
+                  </div>
+                </div>
+
+              </div>
+            )}
           </div>
 
           {/* CRE Performance Stats Bar */}

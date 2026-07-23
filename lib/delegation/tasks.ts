@@ -112,7 +112,7 @@ async function addActivity(
  *  - STRICT USER/BRANCH EA SCOPING → MD/EA sees tasks created by or assigned to themselves OR their branch EA/MD.
  *  - Fail closed: an unidentifiable viewer sees nothing.
  */
-async function getScopeFilter(viewer: Viewer) {
+export async function getScopeFilter(viewer: Viewer) {
   if (isGroupWideDelegation(viewer)) return undefined
   if (!viewer.id) return sql`false`
 
@@ -703,7 +703,20 @@ export async function getDueDelegationTasks(): Promise<DueTask[]> {
 
 export async function markDelegationRemindersSent(ids: string[]) {
   if (!ids.length) return
-  await db.update(delegationTasks).set({ reminderSentAt: new Date() }).where(inArray(delegationTasks.id, ids))
+  const now = new Date()
+  await db.update(delegationTasks).set({ reminderSentAt: now }).where(inArray(delegationTasks.id, ids))
+
+  await db.insert(delegationTaskActivity).values(
+    ids.map((taskId) => ({
+      taskId,
+      type: 'reminded',
+      message: 'Sent daily 9:30 AM morning pending task reminder email',
+      actorUserId: null,
+      actorName: 'System',
+      actorRole: 'System',
+      createdAt: now,
+    }))
+  )
 }
 
 // ── EA notification target ────────────────────────────────────────────────────────────────────────

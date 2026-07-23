@@ -49,7 +49,7 @@ export function buildApprovedProformaEmail(data: ApprovedProformaEmailData): {
 
   const html = emailLayout({
     heading: 'Your Proforma is Approved',
-    eyebrow: 'Order Update',
+    eyebrow: 'AM Kia · Proforma Approved',
     preheader: 'Your Kia vehicle proforma has been approved — PDF attached.',
     bodyHtml,
   })

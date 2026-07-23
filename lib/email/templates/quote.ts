@@ -22,7 +22,7 @@ export function buildQuoteEmail(data: QuoteEmailData = {}): {
 
   const html = emailLayout({
     heading: 'Your Vehicle Quote',
-    eyebrow: 'Quotation',
+    eyebrow: 'AM Kia · Quotation',
     preheader: 'Your requested vehicle quotation is attached.',
     bodyHtml,
   })

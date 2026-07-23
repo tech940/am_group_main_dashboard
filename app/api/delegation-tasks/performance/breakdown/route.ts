@@ -3,6 +3,7 @@ import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { delegationTasks } from '@/lib/db/schema'
 import { eq, or, and, not } from 'drizzle-orm'
+import { getScopeFilter } from '@/lib/delegation/tasks'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +27,10 @@ export async function GET(request: Request) {
     if (email) filters.push(eq(delegationTasks.assignedEmail, email))
     if (name) filters.push(eq(delegationTasks.assignedName, name))
 
+    const scope = await getScopeFilter(appUser)
+    const baseCondition = and(or(...filters), not(eq(delegationTasks.status, 'cancelled')))
+    const whereClause = scope ? and(baseCondition, scope) : baseCondition
+
     const list = await db
       .select({
         id: delegationTasks.id,
@@ -46,7 +51,7 @@ export async function GET(request: Request) {
         updatedAt: delegationTasks.updatedAt,
       })
       .from(delegationTasks)
-      .where(and(or(...filters), not(eq(delegationTasks.status, 'cancelled'))))
+      .where(whereClause)
       .orderBy(delegationTasks.dueAt)
 
     return NextResponse.json({ tasks: list })

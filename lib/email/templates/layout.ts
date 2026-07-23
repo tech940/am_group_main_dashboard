@@ -6,8 +6,9 @@
 // (`email-service.ts`) attaches the logo file inline on every send, which renders far
 // more reliably than remote URLs (no image-proxy blocking) or data URIs (Gmail strips).
 
-export const BRAND = 'AM Group'
+export const BRAND = 'AM Kia'
 export const BRAND_LOGO_CID = 'am-brand-logo'
+export const BRAND_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg'
 
 // Refined, modern palette — a soft neutral canvas with an indigo→violet accent
 // (echoing the dashboard's Midnight Lavender theme). Deliberately NOT a heavy red.
@@ -27,9 +28,11 @@ export type EmailLayoutOptions = {
   preheader?: string
   /** Small eyebrow label above the heading, e.g. 'Order Update'. */
   eyebrow?: string
+  brand?: string
+  logoUrl?: string
 }
 
-export function emailLayout({ heading, bodyHtml, preheader, eyebrow }: EmailLayoutOptions): string {
+export function emailLayout({ heading, bodyHtml, preheader, eyebrow, brand = BRAND, logoUrl = BRAND_LOGO_URL }: EmailLayoutOptions): string {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -47,8 +50,8 @@ export function emailLayout({ heading, bodyHtml, preheader, eyebrow }: EmailLayo
         <div style="height:5px;background:linear-gradient(90deg,${ACCENT},${ACCENT_2});"></div>
 
         <!-- Brand header -->
-        <div style="padding:28px 28px 10px;text-align:center;">
-          <img src="cid:${BRAND_LOGO_CID}" alt="${escapeHtml(BRAND)}" height="46" style="height:46px;width:auto;display:inline-block;border:0;outline:none;text-decoration:none;" />
+        <div style="padding:28px 28px 10px;text-align:center;background:transparent;">
+          <img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(brand)}" height="48" style="height:48px;max-height:50px;width:auto;display:inline-block;border:0;outline:none;text-decoration:none;background:transparent;" />
         </div>
 
         <!-- Heading -->
@@ -65,12 +68,12 @@ export function emailLayout({ heading, bodyHtml, preheader, eyebrow }: EmailLayo
         <!-- Footer -->
         <div style="padding:22px 28px;border-top:1px solid ${HAIRLINE};background:${ACCENT_TINT};">
           <p style="margin:0;font-size:13px;color:${INK_SOFT};">Warm regards,</p>
-          <p style="margin:3px 0 0;font-size:15px;font-weight:800;color:${INK};">The ${escapeHtml(BRAND)} Team</p>
+          <p style="margin:3px 0 0;font-size:15px;font-weight:800;color:${INK};">The ${escapeHtml(brand)} Team</p>
         </div>
       </div>
       <p style="margin:18px 0 0;text-align:center;font-size:11px;line-height:1.6;color:${INK_FAINT};">
-        This is an automated message from ${escapeHtml(BRAND)}. Please do not reply to this email.<br />
-        &copy; ${escapeHtml(BRAND)}. All rights reserved.
+        This is an automated message from ${escapeHtml(brand)}. Please do not reply to this email.<br />
+        &copy; ${escapeHtml(brand)}. All rights reserved.
       </p>
     </div>
   </body>

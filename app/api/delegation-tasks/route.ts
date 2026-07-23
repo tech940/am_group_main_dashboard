@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requirePermission } from '@/lib/permissions/service'
 import { canDelegateTasks, isGroupWideDelegation } from '@/lib/delegation/access'
-import { createDelegationTask, listDelegationTasks, getDelegationBrandRollup, getBrandEaEmails } from '@/lib/delegation/tasks'
+import { createDelegationTask, listDelegationTasks, getDelegationBrandRollup } from '@/lib/delegation/tasks'
 import { sendTaskAssignedEmail } from '@/lib/delegation/emails'
 
 export const dynamic = 'force-dynamic'
@@ -62,18 +62,18 @@ export async function POST(request: Request) {
     const body = await request.json()
     const task = await createDelegationTask(body, appUser)
     // Best-effort assignment email AFTER the task is committed — the task must not fail if mail does.
-    // The EA(s) covering the task's brand are CC'd (they run the follow-ups); never CC the assignee.
-    getBrandEaEmails(task.brand)
-      .then((eaList) => {
-        const eaCc = eaList.filter((e) => e.toLowerCase() !== String(task.assignedEmail || '').toLowerCase())
-        return sendTaskAssignedEmail({
-          toEmail: task.assignedEmail, toName: task.assignedName, assignerName: appUser.fullName,
-          title: task.title, description: task.description, dueAt: task.dueAt, priority: task.priority, cc: eaCc,
-        })
-      })
-      .catch((err) => {
-        console.error('[delegation-tasks] Failed to send assignment email:', err)
-      })
+    // Email is sent directly to the assigned user only.
+    sendTaskAssignedEmail({
+      toEmail: task.assignedEmail,
+      toName: task.assignedName,
+      assignerName: appUser.fullName,
+      title: task.title,
+      description: task.description,
+      dueAt: task.dueAt,
+      priority: task.priority,
+    }).catch((err) => {
+      console.error('[delegation-tasks] Failed to send assignment email:', err)
+    })
     return NextResponse.json({ ok: true, task })
   } catch (error) {
     console.error('Failed to create delegation task:', error)

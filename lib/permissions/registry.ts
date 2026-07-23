@@ -1186,9 +1186,9 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
   cxm: [
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
   ],
-  // CCM (Customer Care Manager): the delivery backup for when the CXM is absent — identical needs,
-  // therefore an identical template. NOT the follow-up caller; that is the CRE.
+  // CCM (Customer Care Manager): manages customer care, delivery backup & lead follow-up pipeline.
   ccm: [
+    ...keysForGroups(['kia.lead_followups'], ['view', 'create', 'edit']),
     ...keysForGroups(['kia.bookings'], ['view', 'edit']),
   ],
 }

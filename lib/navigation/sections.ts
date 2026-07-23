@@ -51,7 +51,7 @@ export const ALL_SECTIONS: SearchSection[] = [
   },
   {
     id: 'scrap_erp',
-    name: 'Scrap Management (Scrap ERP)',
+    name: 'Scrap Management',
     description: 'Scrap material disposal, dynamic master records, reports, valuation & sales analytics.',
     href: '/scrap-erp',
     department: 'admin',

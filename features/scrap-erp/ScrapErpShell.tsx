@@ -32,8 +32,11 @@ import {
   Table as TableIcon,
   BarChart3,
   Settings,
+  Coins,
 } from 'lucide-react'
+import { useUserRole } from '@/lib/hooks/use-user-role'
 import { ScrapExecutiveDashboardView } from './ScrapExecutiveDashboardView'
+import { ScrapDistributionView } from './ScrapDistributionView'
 import { ScrapEntryFormView } from './ScrapEntryFormView'
 import { ScrapRecordGridView } from './ScrapRecordGridView'
 import { ScrapMasterDataManager } from './ScrapMasterDataManager'
@@ -44,8 +47,12 @@ import { ScrapDrilldownModal } from './ScrapDrilldownModal'
 import { cn } from '@/lib/utils'
 
 export function ScrapErpShell() {
+  const { userRole } = useUserRole()
+  const roleLower = String(userRole || '').trim().toLowerCase()
+  const canAccessDistribution = roleLower === 'md' || roleLower === 'developer'
+
   const [activeModule, setActiveModule] = useState<
-    'dashboard' | 'entry' | 'grid' | 'masters' | 'reports'
+    'dashboard' | 'distribution' | 'entry' | 'grid' | 'masters' | 'reports'
   >('dashboard')
 
   // Master Data State
@@ -198,6 +205,28 @@ export function ScrapErpShell() {
     setDrilldownRows(filtered)
   }
 
+  const handleToggleDistribution = (id: string, currentStatus: boolean) => {
+    const nextStatus = !currentStatus
+    setTransactions((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? { ...t, isDistributed: nextStatus, distributedAt: nextStatus ? new Date().toISOString() : undefined }
+          : t
+      )
+    )
+    fetch('/api/scrap-erp', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        isDistributed: nextStatus,
+        distributedAt: nextStatus ? new Date().toISOString() : null,
+      }),
+    }).catch((err) => {
+      console.error('Failed to update distribution status:', err)
+    })
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Module Tabs Bar */}
@@ -205,6 +234,7 @@ export function ScrapErpShell() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
           {[
             { key: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard },
+            ...(canAccessDistribution ? [{ key: 'distribution', label: 'Distribution', icon: Coins }] : []),
             { key: 'entry', label: editingTxn ? `Editing #${editingTxn.transactionNumber}` : 'Scrap Entry', icon: PlusCircle },
             { key: 'grid', label: 'Record Grid', icon: TableIcon, count: filteredTransactions.length },
             { key: 'reports', label: 'Reports Hub', icon: BarChart3 },
@@ -248,6 +278,14 @@ export function ScrapErpShell() {
         <ScrapExecutiveDashboardView
           transactions={filteredTransactions}
           onDrilldown={handleOpenDrilldown}
+        />
+      )}
+
+      {activeModule === 'distribution' && canAccessDistribution && (
+        <ScrapDistributionView
+          transactions={filteredTransactions}
+          onDrilldown={handleOpenDrilldown}
+          onToggleDistribution={handleToggleDistribution}
         />
       )}
 

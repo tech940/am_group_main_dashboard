@@ -1,4 +1,4 @@
-// Access control helper for Scrap Management (Scrap ERP).
+// Access control helper for Scrap Management.
 // Default allowed roles: MD, EA, Developer, Admin (super admins).
 // Access can also be granted to individual users/roles via the Access Control map (scrap_erp.view).
 

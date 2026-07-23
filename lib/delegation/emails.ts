@@ -115,6 +115,8 @@ export async function runDelegationTaskReminders(): Promise<{ due: number; email
   }
 
   let emailed = 0
+  const successfullySentIds: string[] = []
+
   for (const [email, items] of byEmail) {
     try {
       // CC only the MD who owns these tasks (first item's mdUserEmail is sufficient since digest is per-assignee)
@@ -128,12 +130,15 @@ export async function runDelegationTaskReminders(): Promise<{ due: number; email
         html: digestHtml(items),
       })
       emailed++
+      successfullySentIds.push(...items.map((i) => i.id))
     } catch (error) {
       console.error('[delegation-reminders] email failed for', email, error)
     }
   }
 
-  await markDelegationRemindersSent(due.map((t) => t.id))
+  if (successfullySentIds.length > 0) {
+    await markDelegationRemindersSent(successfullySentIds)
+  }
   return { due: due.length, emailed }
 }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { requirePermission } from '@/lib/permissions/service'
-import { getDelegationTaskDetail, updateDelegationTask, deleteDelegationTask, getBrandEaEmails, type TaskAction } from '@/lib/delegation/tasks'
+import { getDelegationTaskDetail, updateDelegationTask, deleteDelegationTask, type TaskAction } from '@/lib/delegation/tasks'
 import { sendTaskAssignedEmail } from '@/lib/delegation/emails'
 
 export const dynamic = 'force-dynamic'
@@ -50,27 +50,21 @@ export async function PATCH(request: Request, context: RouteContext<'/api/delega
     }
     // Relationship + role are enforced inside updateDelegationTask (assignee vs delegator vs super).
     const task = await updateDelegationTask(id, action, body, appUser)
-    // Tell the assignee they now own this task or details have been updated (best-effort, post-commit); CC the brand's EA(s).
+    // Tell the assignee they now own this task or details have been updated (best-effort, post-commit).
     if (action === 'reassign' || action === 'edit') {
-      getBrandEaEmails(task.brand)
-        .then((eaList) => {
-          const eaCc = eaList.filter((e) => e.toLowerCase() !== String(task.assignedEmail || '').toLowerCase())
-          return sendTaskAssignedEmail({
-            toEmail: task.assignedEmail,
-            toName: task.assignedName,
-            assignerName: appUser.fullName,
-            title: task.title,
-            description: task.description,
-            dueAt: task.dueAt,
-            priority: task.priority,
-            cc: eaCc,
-            isUpdate: action === 'edit',
-            isReassign: action === 'reassign'
-          })
-        })
-        .catch((err) => {
-          console.error(`[delegation-tasks-${action}] Failed to send email:`, err)
-        })
+      sendTaskAssignedEmail({
+        toEmail: task.assignedEmail,
+        toName: task.assignedName,
+        assignerName: appUser.fullName,
+        title: task.title,
+        description: task.description,
+        dueAt: task.dueAt,
+        priority: task.priority,
+        isUpdate: action === 'edit',
+        isReassign: action === 'reassign',
+      }).catch((err) => {
+        console.error(`[delegation-tasks-${action}] Failed to send email:`, err)
+      })
     } else if (action === 'remind') {
       void sendTaskAssignedEmail({
         toEmail: task.assignedEmail,

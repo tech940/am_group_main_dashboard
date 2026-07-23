@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { db } from '@/lib/db'
 import { delegationTasks } from '@/lib/db/schema'
-import { not, eq } from 'drizzle-orm'
+import { not, eq, and } from 'drizzle-orm'
+import { getScopeFilter } from '@/lib/delegation/tasks'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,11 @@ export async function GET() {
   if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   try {
-    // Fetch all active tasks (excluding cancelled)
+    const scope = await getScopeFilter(appUser)
+    const baseCondition = not(eq(delegationTasks.status, 'cancelled'))
+    const whereClause = scope ? and(baseCondition, scope) : baseCondition
+
+    // Fetch active tasks scoped to the user
     const tasks = await db
       .select({
         id: delegationTasks.id,
@@ -26,7 +31,7 @@ export async function GET() {
         completedAt: delegationTasks.completedAt,
       })
       .from(delegationTasks)
-      .where(not(eq(delegationTasks.status, 'cancelled')))
+      .where(whereClause)
 
     // Group by assignee name/id
     const stats: Record<string, {
