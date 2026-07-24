@@ -49,7 +49,7 @@ import { cn } from '@/lib/utils'
 export function ScrapErpShell() {
   const { userRole } = useUserRole()
   const roleLower = String(userRole || '').trim().toLowerCase()
-  const canAccessDistribution = roleLower === 'md' || roleLower === 'developer'
+  const canAccessDistribution = ['eba', 'md', 'developer'].includes(roleLower)
 
   const [activeModule, setActiveModule] = useState<
     'dashboard' | 'distribution' | 'entry' | 'grid' | 'masters' | 'reports'
