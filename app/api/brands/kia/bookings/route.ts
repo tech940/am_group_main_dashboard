@@ -4,7 +4,7 @@ import { requireBrandApiAccess } from '@/lib/auth/brand-access'
 import { createApiTimer, withServerTiming } from '@/lib/api/timing'
 import { requirePermission } from '@/lib/permissions/service'
 import { getUserDealerScope } from '@/lib/auth/dealer-scope'
-import { createKiaBooking, getKiaBookingsList } from '@/lib/kia/bookings'
+import { createKiaBooking, getKiaBookingsList, expireKiaTemporaryAllocations } from '@/lib/kia/bookings'
 import { ensureKiaUserProfile } from '@/lib/kia-proforma/server'
 
 export const dynamic = 'force-dynamic'
@@ -29,6 +29,13 @@ export async function GET(request: Request) {
     if (!permission.allowed) {
       const timing = timer.finish()
       return withServerTiming(NextResponse.json({ error: permission.reason }, { status: 403 }), timing.serverTiming)
+    }
+
+    // Automatically sweep expired allocations so overdue vehicles immediately return to Free Stock
+    try {
+      await expireKiaTemporaryAllocations()
+    } catch (err) {
+      console.error('Failed to run expireKiaTemporaryAllocations in bookings route:', err)
     }
 
     const profile = await timer.time('profile', () => ensureKiaUserProfile(appUser))

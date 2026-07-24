@@ -1,5 +1,3 @@
-import 'server-only'
-
 import { and, asc, count, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { analyticsDb } from '@/lib/analytics/db'

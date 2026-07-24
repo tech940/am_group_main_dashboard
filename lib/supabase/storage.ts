@@ -54,13 +54,14 @@ export async function uploadFile(
     }
 
     // Re-encode raster images to WebP; non-raster (PDF/etc.) returns unchanged.
-    const optimized = await optimizeImage(sourceBuffer, sourceType)
+    const filenameOpt = typeof file === 'string' ? undefined : file.name
+    const optimized = await optimizeImage(sourceBuffer, sourceType, { filename: filenameOpt })
 
     // Generate unique filename. Only rename to .webp when we actually re-encoded — otherwise keep the
     // file's original extension so passthrough uploads (PDFs, anything non-raster) are untouched.
     const timestamp = Date.now()
     const randomStr = Math.random().toString(36).substring(7)
-    const extension = optimized.optimized ? 'webp' : originalExtension
+    const extension = optimized.contentType === 'image/webp' ? 'webp' : originalExtension
     const filename = `${orderId}_${timestamp}_${randomStr}.${extension}`
     const filePath = `${folder}/${filename}`
 

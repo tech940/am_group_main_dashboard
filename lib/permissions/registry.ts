@@ -1041,6 +1041,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<PermissionRole, string[]> = {
     'finance_orders',
     'petty_cash',
     'am_finance',
+    'scrap_erp',
     'reports',
   ], ['view', 'approve', 'audit']),
   ea: keysForGroups([

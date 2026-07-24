@@ -2965,7 +2965,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               const Icon = icon
               return (
                 <div className="border border-slate-100 bg-[#f8fafc]/40 rounded-2xl p-4 flex gap-3 items-start">
-                  <div className="h-8 w-8 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                  <div className="h-8 w-8 rounded-xl bg-slate-100 border border-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
                     <Icon className="w-4 h-4" />
                   </div>
                   <div className="space-y-0.5 overflow-hidden">
@@ -2999,9 +2999,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
               if (isApproved) {
                 if (stageKey === 'accounts' && detailRow?.invoiceDocUrl) {
-                  borderStyle = 'border-violet-200 bg-violet-50/20 shadow-sm'
+                  borderStyle = 'border-slate-200 bg-slate-50/50 shadow-sm'
                   badgeText = 'Paid'
-                  badgeStyle = 'bg-violet-600 text-white border-violet-600 font-black shadow-sm shadow-violet-600/10'
+                  badgeStyle = 'bg-slate-900 text-white border-slate-900 font-black shadow-sm'
                 } else {
                   borderStyle = 'border-emerald-100 bg-emerald-50/10'
                   badgeText = 'Approved'
@@ -3016,9 +3016,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 badgeText = 'Held'
                 badgeStyle = 'bg-amber-50 text-amber-700 border-amber-200'
               } else if (isActive) {
-                borderStyle = 'border-indigo-100 bg-indigo-50/10 ring-2 ring-indigo-50'
+                borderStyle = 'border-blue-100 bg-blue-50/10 ring-2 ring-blue-50'
                 badgeText = 'Pending'
-                badgeStyle = 'bg-indigo-50 text-indigo-600 border-indigo-200 animate-pulse'
+                badgeStyle = 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse'
               }
 
               // Find user name from history
@@ -3100,13 +3100,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       let textColor = 'text-slate-400 font-semibold'
 
                       if (isApproved) {
-                        if (stg.key === 'accounts' && req.invoiceDocUrl) {
-                          circleColor = 'bg-violet-600 text-white border-violet-600 shadow-md shadow-violet-600/10'
-                          textColor = 'text-violet-900 font-black'
-                        } else {
-                          circleColor = 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/10'
-                          textColor = 'text-indigo-900 font-black'
-                        }
+                        circleColor = 'bg-slate-900 text-white border-slate-900 shadow-md shadow-slate-900/10'
+                        textColor = 'text-slate-900 font-black'
                       } else if (isRejected) {
                         circleColor = 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/10'
                         textColor = 'text-rose-700 font-black'
@@ -3114,8 +3109,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         circleColor = 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/10'
                         textColor = 'text-amber-700 font-black'
                       } else if (isActive) {
-                        circleColor = 'bg-indigo-600 text-white border-indigo-600 ring-4 ring-indigo-100 shadow-md shadow-indigo-600/10'
-                        textColor = 'text-indigo-600 font-black'
+                        circleColor = 'bg-blue-600 text-white border-blue-600 ring-4 ring-blue-100 shadow-md shadow-blue-600/10'
+                        textColor = 'text-blue-600 font-black'
                       }
 
                       const stageDate = getStageDate(stg.key)
@@ -3130,7 +3125,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                                 "left-3 top-[24px] w-0.5 h-[24px] sm:left-auto",
                                 // Desktop horizontal line:
                                 "sm:top-4 sm:left-[50%] sm:w-[100%] sm:h-0.5",
-                                stages[i].status === 'APPROVED' ? 'bg-indigo-600' : 'bg-slate-200'
+                                stages[i].status === 'APPROVED' ? 'bg-slate-900' : 'bg-slate-200'
                               )}
                               style={{ zIndex: 1 }}
                             />
@@ -3172,8 +3167,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                 <DialogHeader className="p-5 sm:p-8 pb-4 bg-white border-b border-slate-100 flex flex-col gap-2 relative">
                   <div className="flex flex-wrap items-center gap-1.5 pr-8">
                     <Badge className="bg-slate-900 text-white hover:bg-slate-900 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.location}</Badge>
-                    <Badge className="bg-indigo-50 hover:bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.department}</Badge>
-                    <Badge className="bg-violet-50 hover:bg-violet-50 border border-violet-100 text-violet-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
+                    <Badge className="bg-slate-100 hover:bg-slate-100 border border-slate-200 text-slate-800 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.department}</Badge>
+                    <Badge className="bg-blue-50 hover:bg-blue-50 border border-blue-100 text-blue-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
                   </div>
                   
                   <div className="flex flex-col sm:flex-row justify-between sm:items-end gap-4 mt-1 pr-10">
@@ -3187,7 +3182,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     </div>
                     <div className="text-left sm:text-right">
                       <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">Request Amount</span>
-                      <span className="text-xl sm:text-2xl font-black text-indigo-600 font-sans tracking-tight">₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 font-sans tracking-tight">₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}</span>
                     </div>
                   </div>
                 </DialogHeader>
@@ -3274,7 +3269,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     {/* Request Overview Card */}
                     <div className="bg-white border border-slate-100 rounded-3xl p-6 space-y-4 shadow-sm">
                       <div className="flex items-center gap-2 text-slate-800">
-                        <ClipboardList className="w-4 h-4 text-indigo-600" />
+                        <ClipboardList className="w-4 h-4 text-slate-700" />
                         <span className="text-xs font-black uppercase tracking-wider">Request Overview</span>
                       </div>
                       
@@ -3286,32 +3281,118 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {renderOverviewItem('Dealer Code', detailRow.dealerCode || '—', Key)}
                         {renderOverviewItem('Vendor Name', detailRow.vendorName || '—', User)}
                         {renderOverviewItem('Payment Type', detailRow.typeOfPayment || '—', CreditCard)}
-                        {renderOverviewItem('Workflow Status', <span className="text-indigo-600">{pendingLabel}</span>, Clock)}
+                        {renderOverviewItem('Workflow Status', <span className="text-blue-700 font-bold">{pendingLabel}</span>, Clock)}
                         {renderOverviewItem('Submitted On', new Date(detailRow.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), Calendar)}
                         {renderOverviewItem('GL Account', detailRow.glName ? `${detailRow.glName} (${detailRow.glCode})` : '—', Database)}
                         {renderOverviewItem('GST Details', detailRow.gst || '—', Percent)}
                         {renderOverviewItem('Reference / Invoice No.', detailRow.invoiceNumber || '—', FileText)}
                         {renderOverviewItem('Remarks (Submitter)', detailRow.remarks || '—', MessageSquare)}
-                        {detailRow.uploadDocUrl && renderOverviewItem('Support Document', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadDocUrl!)} className="text-indigo-600 font-black hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-indigo-500" />View Support Doc</button>, FileText)}
-                        {detailRow.invoiceDocUrl && renderOverviewItem('Uploaded Invoice', <button type="button" onClick={() => setPreviewDocUrl(detailRow.invoiceDocUrl!)} className="text-emerald-600 font-black hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-emerald-500" />View Invoice</button>, FileText)}
-                        {detailRow.paymentStatus === 'PAID' && renderOverviewItem('Payment Status', <span className="text-emerald-600 font-black">PAID / भुगतान किया</span>, CheckCircle2)}
+                        {detailRow.uploadBillUrl1 && renderOverviewItem('Primary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl1!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Bill 1</button>, FileText)}
+                        {detailRow.uploadBillUrl2 && renderOverviewItem('Secondary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl2!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Bill 2</button>, FileText)}
+                        {detailRow.uploadDocUrl && renderOverviewItem('Support Document', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadDocUrl!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Support Doc</button>, FileText)}
+                        {detailRow.invoiceDocUrl && renderOverviewItem('Uploaded Invoice', <button type="button" onClick={() => setPreviewDocUrl(detailRow.invoiceDocUrl!)} className="text-emerald-700 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-emerald-600" />View Invoice</button>, FileText)}
+                        {detailRow.paymentStatus === 'PAID' && renderOverviewItem('Payment Status', <span className="text-emerald-700 font-black">PAID / भुगतान किया</span>, CheckCircle2)}
                         {detailRow.paymentStatus === 'PAID' && renderOverviewItem('UTR / Txn ID', detailRow.utrNumber || '—', Key)}
-                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentProofUrl && renderOverviewItem('Payment Proof', <button type="button" onClick={() => setPreviewDocUrl(detailRow.paymentProofUrl!)} className="text-indigo-600 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-indigo-500" />View Proof</button>, FileText)}
+                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentProofUrl && renderOverviewItem('Payment Proof', <button type="button" onClick={() => setPreviewDocUrl(detailRow.paymentProofUrl!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Proof</button>, FileText)}
                         {detailRow.paymentStatus === 'PAID' && detailRow.paymentCompletedAt && renderOverviewItem('Paid On / By', `${new Date(detailRow.paymentCompletedAt).toLocaleDateString('en-IN')} by ${detailRow.paymentCompletedBy || '—'}`, User)}
                       </div>
                     </div>
+
+                    {/* Prominent Attached Bill & Documents Card Section */}
+                    {(() => {
+                      const docs = [
+                        { label: 'Primary Bill / Invoice', url: detailRow.uploadBillUrl1 },
+                        { label: 'Secondary Bill / Attachment', url: detailRow.uploadBillUrl2 },
+                        { label: 'Support Document', url: detailRow.uploadDocUrl },
+                        { label: 'Accounts Invoice', url: detailRow.invoiceDocUrl },
+                        { label: 'Payment Proof', url: detailRow.paymentProofUrl },
+                      ].filter((d) => Boolean(d.url))
+
+                      if (docs.length === 0) return null
+
+                      return (
+                        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-slate-900">
+                              <FileText className="w-4.5 h-4.5 text-slate-800" />
+                              <span className="text-xs font-black uppercase tracking-wider">Attached Bill & Documents ({docs.length})</span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {docs.map((doc, idx) => {
+                              const url = doc.url!
+                              const isImage = /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(url) || !url.toLowerCase().endsWith('.pdf')
+                              return (
+                                <div key={idx} className="border border-slate-200 bg-slate-50/60 hover:bg-slate-50 rounded-2xl p-3.5 space-y-3 transition-all flex flex-col justify-between">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-black uppercase tracking-wider text-slate-800 truncate">{doc.label}</span>
+                                    <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">{isImage ? 'Image' : 'File'}</span>
+                                  </div>
+
+                                  {isImage ? (
+                                    <div 
+                                      onClick={() => setPreviewDocUrl(url)}
+                                      className="relative h-44 w-full rounded-xl overflow-hidden bg-slate-900/5 border border-slate-200 cursor-pointer group flex items-center justify-center"
+                                    >
+                                      <img 
+                                        src={url} 
+                                        alt={doc.label} 
+                                        className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+                                      />
+                                      <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-xs font-bold">
+                                        <Eye className="w-4 h-4" />
+                                        <span>Click to Expand Bill</span>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div 
+                                      onClick={() => setPreviewDocUrl(url)}
+                                      className="h-36 w-full rounded-xl bg-slate-100 border border-slate-200 cursor-pointer group flex flex-col items-center justify-center p-4 gap-2 hover:bg-slate-200/70 transition-colors"
+                                    >
+                                      <FileText className="w-8 h-8 text-slate-600 group-hover:scale-110 transition-transform" />
+                                      <span className="text-xs font-bold text-slate-700 text-center line-clamp-1">{doc.label}</span>
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewDocUrl(url)}
+                                      className="flex-1 text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 rounded-xl py-2.5 px-3 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>View Bill</span>
+                                    </button>
+                                    <a
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs font-bold bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl py-2.5 px-3 flex items-center justify-center gap-1 transition-colors"
+                                      title="Open in new tab"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </a>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     {/* Actions Available For You Card */}
                     {isUserEligibleForPendingStage && !isApproved && !isRejected && (
                       <div className="bg-white border border-slate-100 rounded-3xl p-6 space-y-4 shadow-sm animate-in fade-in duration-200">
                         <div className="flex items-center gap-2 text-slate-800">
-                          <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                          <ShieldCheck className="w-4 h-4 text-slate-700" />
                           <span className="text-xs font-black uppercase tracking-wider">Actions Available For You</span>
                         </div>
 
-                        <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-4 flex gap-3 items-center">
-                          <Info className="w-4 h-4 text-indigo-600 shrink-0" />
-                          <p className="text-xs font-semibold text-indigo-900">
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex gap-3 items-center">
+                          <Info className="w-4 h-4 text-slate-700 shrink-0" />
+                          <p className="text-xs font-semibold text-slate-800">
                             You are currently in the <span className="font-bold">{pendingLabel.replace('Pending ', '')}</span> stage. Please review the request details and take appropriate action.
                           </p>
                         </div>

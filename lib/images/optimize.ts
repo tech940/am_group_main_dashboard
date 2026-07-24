@@ -1,5 +1,3 @@
-import 'server-only'
-
 import sharp from 'sharp'
 
 // Shared server-side image optimizer. Every upload choke-point routes its bytes through
@@ -28,6 +26,23 @@ const RASTER_TYPES = new Set([
   'image/webp',
   'image/heic',
   'image/heif',
+  'image/bmp',
+  'image/x-ms-bmp',
+  'image/tiff',
+  'image/avif',
+])
+
+const RASTER_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'heic',
+  'heif',
+  'bmp',
+  'tiff',
+  'tif',
+  'avif',
 ])
 
 export type ImagePreset = 'default' | 'document'
@@ -47,16 +62,18 @@ export interface OptimizeOptions {
   maxDimension?: number
   /** Overrides the preset's WebP quality (1-100). */
   quality?: number
+  /** Optional filename to infer MIME type if mimeType parameter is generic or missing. */
+  filename?: string
 }
 
 export interface OptimizeResult {
-  /** The bytes to store — WebP when `optimized`, otherwise the original input verbatim. */
+  /** The bytes to store — WebP when `optimized` or contentType is image/webp, otherwise original. */
   buffer: Buffer
-  /** Content-Type to send to storage — `image/webp` when `optimized`, else the original mime. */
+  /** Content-Type to send to storage — `image/webp` for raster images, else the original mime. */
   contentType: string
-  /** File extension to name the stored object with — `webp` when `optimized`, else derived from mime. */
+  /** File extension to name the stored object with — `webp` for raster images, else derived from mime. */
   extension: string
-  /** true only when we actually produced a smaller WebP; false for every passthrough. */
+  /** true when successfully converted to WebP. */
   optimized: boolean
   originalBytes: number
   finalBytes: number
@@ -69,6 +86,9 @@ const EXT_BY_TYPE: Record<string, string> = {
   'image/webp': 'webp',
   'image/heic': 'heic',
   'image/heif': 'heif',
+  'image/bmp': 'bmp',
+  'image/tiff': 'tiff',
+  'image/avif': 'avif',
   'image/gif': 'gif',
   'image/svg+xml': 'svg',
   'application/pdf': 'pdf',
@@ -84,9 +104,11 @@ function normaliseMime(mimeType: string): string {
 }
 
 /**
- * Re-encode a raster image to WebP, or return it untouched when that isn't appropriate/beneficial.
- * @param input   the raw file bytes
+ * Re-encode any raster image to WebP format before storing in database/storage.
+ * Non-raster files (e.g. PDFs) pass through untouched.
+ * @param input    the raw file bytes
  * @param mimeType the source content type (e.g. from `File.type`)
+ * @param opts     optional preset, dimensions, quality, or filename
  */
 export async function optimizeImage(
   input: Buffer,
@@ -94,7 +116,15 @@ export async function optimizeImage(
   opts: OptimizeOptions = {},
 ): Promise<OptimizeResult> {
   const originalBytes = input.byteLength
-  const contentType = normaliseMime(mimeType) || 'application/octet-stream'
+  let contentType = normaliseMime(mimeType) || 'application/octet-stream'
+
+  // If MIME is generic, check filename extension
+  if ((contentType === 'application/octet-stream' || !contentType) && opts.filename) {
+    const ext = opts.filename.split('.').pop()?.toLowerCase() || ''
+    if (RASTER_EXTENSIONS.has(ext)) {
+      contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`
+    }
+  }
 
   const passthrough = (): OptimizeResult => ({
     buffer: input,
@@ -105,26 +135,37 @@ export async function optimizeImage(
     finalBytes: originalBytes,
   })
 
-  // Non-raster (pdf/svg/gif/unknown) — never touch it.
-  if (!RASTER_TYPES.has(contentType)) return passthrough()
+  let isRaster = RASTER_TYPES.has(contentType)
+
+  // Probe sharp metadata if MIME check didn't confirm raster type
+  if (!isRaster) {
+    try {
+      const probeMeta = await sharp(input, { failOn: 'none' }).metadata()
+      if (probeMeta.format && ['jpeg', 'png', 'webp', 'heif', 'avif', 'tiff', 'magick'].includes(probeMeta.format)) {
+        isRaster = true
+      }
+    } catch {
+      // Not a valid image format readable by sharp
+    }
+  }
+
+  // Non-raster (pdf/svg/unknown binary) — pass through untouched
+  if (!isRaster) return passthrough()
 
   const preset = PRESETS[opts.preset ?? 'default']
   const maxDimension = opts.maxDimension ?? preset.maxDimension
   const quality = opts.quality ?? preset.quality
 
   try {
-    // Don't flatten multi-frame images (animated WebP/GIF-in-webp): drop to passthrough.
     const meta = await sharp(input, { failOn: 'none' }).metadata()
+    // Don't flatten multi-frame images (animated WebP/GIF-in-webp): drop to passthrough
     if ((meta.pages ?? 1) > 1) return passthrough()
 
     const out = await sharp(input, { failOn: 'none' })
-      .rotate() // bake in EXIF orientation from phone photos; metadata (incl. GPS) is then dropped by default
+      .rotate() // bake in EXIF orientation from phone photos; metadata (incl. GPS) dropped by default
       .resize({ width: maxDimension, height: maxDimension, fit: 'inside', withoutEnlargement: true })
       .webp({ quality, effort: 4 })
       .toBuffer()
-
-    // Guarantee #2 — never grow the stored object (tiny/already-optimised inputs can round-trip larger).
-    if (out.byteLength >= originalBytes) return passthrough()
 
     return {
       buffer: out,
@@ -135,7 +176,6 @@ export async function optimizeImage(
       finalBytes: out.byteLength,
     }
   } catch (error) {
-    // Guarantee #1 — an optimiser failure must never fail the upload.
     console.error('[optimizeImage] sharp failed; storing original unchanged:', error)
     return passthrough()
   }

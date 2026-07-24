@@ -48,11 +48,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only PDF and image files are allowed' }, { status: 400 })
     }
 
-    // Re-encode raster images to WebP before storing (PDFs/HEIC-without-libheif pass through).
+    // Re-encode raster images to WebP before storing (PDFs pass through).
     const buffer = Buffer.from(await file.arrayBuffer())
-    const optimized = await optimizeImage(buffer, file.type)
+    const optimized = await optimizeImage(buffer, file.type, { filename: file.name })
 
-    const extension = optimized.optimized ? 'webp' : getExtension(file.name)
+    const extension = optimized.contentType === 'image/webp' ? 'webp' : getExtension(file.name)
     const folder = entity === 'request' ? 'requests' : 'expenses'
     const filePath = `${folder}/${appUser.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`
     const { error } = await supabaseAdmin.storage.from(BUCKET_NAME).upload(filePath, optimized.buffer, {

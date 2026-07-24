@@ -15,10 +15,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Re-encode raster images to WebP before storing (PDFs pass through unchanged).
-    const optimized = await optimizeImage(Buffer.from(await file.arrayBuffer()), file.type)
+    const optimized = await optimizeImage(Buffer.from(await file.arrayBuffer()), file.type, { filename: file.name })
     const timestamp = Date.now()
     const randomStr = Math.random().toString(36).substring(7)
-    const extension = optimized.optimized ? 'webp' : (file.name.split('.').pop() || 'bin')
+    const extension = optimized.contentType === 'image/webp' ? 'webp' : (file.name.split('.').pop() || 'bin')
     const filename = `approval_${timestamp}_${randomStr}.${extension}`
     const filePath = `approvals/${filename}`
 

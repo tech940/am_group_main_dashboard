@@ -3,7 +3,7 @@
 // Access can also be granted to individual users/roles via the Access Control map (scrap_erp.view).
 
 export const SCRAP_ERP_VIEW_ROLES = [
-  'admin', 'developer', 'md', 'ea',
+  'admin', 'developer', 'md', 'ea', 'eba',
 ] as const
 
 export function canAccessScrapErp(role?: string | null, permissionMap?: Record<string, boolean> | null): boolean {
