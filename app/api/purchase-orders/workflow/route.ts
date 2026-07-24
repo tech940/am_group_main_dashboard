@@ -141,8 +141,8 @@ export async function POST(request: NextRequest) {
         createdBy: appUser.id,
         assignedTo: appUser.role === 'purchase_manager' ? appUser.id : null,
         brand: branch,
-        currentStage: 'ea_approval',
-        status: 'awaiting_ea_approval',
+        currentStage: 'md_approval',
+        status: 'awaiting_md_approval',
         department: String(formData.department || ''),
         subDepartment: String(formData.subDepartment || ''),
         specifyOther: formData.specifyOther ? String(formData.specifyOther) : null,
@@ -164,12 +164,12 @@ export async function POST(request: NextRequest) {
           action: 'submit',
           stage: 'initial_submission',
           previousStatus: null,
-          newStatus: 'awaiting_ea_approval',
+          newStatus: 'awaiting_md_approval',
           remarks: formData.specialInstructions ? String(formData.specialInstructions) : null,
           metadata: {
             ...formData,
             branch,
-            resultingStage: 'ea_approval',
+            resultingStage: 'md_approval',
           },
         })
 
@@ -178,8 +178,8 @@ export async function POST(request: NextRequest) {
         message: 'Purchase order created successfully',
         orderId: newOrder.id,
         orderNumber: newOrder.orderNumber,
-        newStage: 'ea_approval',
-        newStatus: 'awaiting_ea_approval',
+        newStage: 'md_approval',
+        newStatus: 'awaiting_md_approval',
       })
     }
 
@@ -220,8 +220,8 @@ export async function POST(request: NextRequest) {
           quantityRequired: getEditableTextValue(formData, 'quantityRequired', order.quantityRequired),
           estimateIfAny: getEditableTextValue(formData, 'estimateIfAny', order.estimateIfAny),
           supportingImages: order.supportingImages,
-          currentStage: order.currentStage || 'ea_approval',
-          status: order.status || 'awaiting_ea_approval',
+          currentStage: order.currentStage || 'md_approval',
+          status: order.status || 'awaiting_md_approval',
         }
         newStage = updateData.currentStage || order.currentStage
         newStatus = updateData.status || order.status
@@ -266,8 +266,8 @@ export async function POST(request: NextRequest) {
           vendorDetails: hasVendorOptions ? vendorOptions : order.vendorDetails,
           billImages: hasBillImages ? billImages : order.billImages,
           grnImages: nextGrnImages,
-          currentStage: shouldAdvanceLegacyVendorFlow ? 'ea_approval' : order.currentStage,
-          status: shouldAdvanceLegacyVendorFlow ? 'awaiting_ea_approval' : order.status,
+          currentStage: shouldAdvanceLegacyVendorFlow ? 'md_approval' : order.currentStage,
+          status: shouldAdvanceLegacyVendorFlow ? 'awaiting_md_approval' : order.status,
           assignedTo: order.assignedTo || appUser.id,
         }
         newStage = updateData.currentStage || order.currentStage

@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
         mdHeldBy: action === 'hold' ? appUser.id : null,
         holdRemarks: action === 'hold' ? remarks || null : null,
         status: action === 'approve' ? 'awaiting_grn' : action === 'deny' ? 'md_denied' : 'md_on_hold',
-        currentStage: action === 'approve' ? 'grn' : action === 'deny' ? 'ea_approval' : 'md_approval',
+        currentStage: action === 'approve' ? 'grn' : 'md_approval',
       }
     }
 

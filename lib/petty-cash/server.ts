@@ -824,9 +824,9 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
   if (input.stage === 'ed_approval') {
     if (!['submitted', 'ed_pending', 'ed_on_hold'].includes(request.status)) throw new Error('Request is not awaiting ED approval')
     if (input.action === 'approve') {
-      updateData = { ...updateData, status: 'ea_pending', currentStage: 'ea_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: null }
-      newStatus = 'ea_pending'
-      newStage = 'ea_approval'
+      updateData = { ...updateData, status: 'md_pending', currentStage: 'md_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: null }
+      newStatus = 'md_pending'
+      newStage = 'md_approval'
     } else if (input.action === 'hold') {
       updateData = { ...updateData, status: 'ed_on_hold', currentStage: 'ed_approval', edRemarks: input.remarks || null }
       newStatus = 'ed_on_hold'
@@ -850,7 +850,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
       newStatus = 'ea_rejected'
     }
   } else if (input.stage === 'md_approval') {
-    if (!['md_pending', 'md_on_hold'].includes(request.status)) throw new Error('Request is not awaiting MD approval')
+    if (!['md_pending', 'md_on_hold', 'ea_pending', 'ea_on_hold', 'ed_approved'].includes(request.status)) throw new Error('Request is not awaiting MD approval')
     if (input.action === 'approve') {
       updateData = { ...updateData, status: 'accounts_pending', currentStage: 'accounts', mdApprovedBy: appUser.id, mdApprovedAt: now, mdRemarks: null }
       newStatus = 'accounts_pending'
@@ -1045,9 +1045,9 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
   if (input.stage === 'ed_approval') {
     if (!['pending', 'ed_pending'].includes(expense.status)) throw new Error('Expense is not awaiting ED approval')
     if (input.action === 'approve') {
-      updateData = { ...updateData, status: 'ed_approved', currentStage: 'ea_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: input.remarks || null }
+      updateData = { ...updateData, status: 'ed_approved', currentStage: 'md_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: input.remarks || null }
       newStatus = 'ed_approved'
-      newStage = 'ea_approval'
+      newStage = 'md_approval'
     } else {
       updateData = { ...updateData, status: 'ed_rejected', rejectedAt: now, rejectedBy: appUser.id, edRemarks: input.remarks || null }
       newStatus = 'ed_rejected'
@@ -1063,7 +1063,7 @@ export async function applyPettyCashExpenseWorkflow(appUser: AppUser, rawInput: 
       newStatus = 'ea_rejected'
     }
   } else if (input.stage === 'md_approval') {
-    if (expense.status !== 'ea_approved') throw new Error('Expense is not awaiting MD approval')
+    if (!['ed_approved', 'ea_approved'].includes(expense.status)) throw new Error('Expense is not awaiting MD approval')
     if (input.action === 'approve') {
       updateData = { ...updateData, status: 'accounts_pending', currentStage: 'accounts', mdApprovedBy: appUser.id, mdApprovedAt: now, mdRemarks: input.remarks || null }
       newStatus = 'accounts_pending'

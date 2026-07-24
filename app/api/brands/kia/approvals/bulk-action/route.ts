@@ -44,7 +44,7 @@ export async function POST(request: Request) {
 
     for (const row of rows) {
       // Determine what stage this request is currently in
-      let activeStageKey: 'sales_manager' | 'accounts' | 'ea' | 'md' | null = null
+      let activeStageKey: 'sales_manager' | 'accounts' | 'md' | null = null
       
       const vpApp = row.vpApproval
       const accApp = row.accountApproval
@@ -59,9 +59,7 @@ export async function POST(request: Request) {
           activeStageKey = 'sales_manager'
         } else if (vpApp === 'APPROVED' && (!accApp || accApp === 'HELD' || accApp === 'NOT APPROVED')) {
           activeStageKey = 'accounts'
-        } else if (vpApp === 'APPROVED' && accApp === 'APPROVED' && (!eaApp || eaApp === 'HELD' || eaApp === 'NOT APPROVED')) {
-          activeStageKey = 'ea'
-        } else if (vpApp === 'APPROVED' && accApp === 'APPROVED' && eaApp === 'APPROVED' && (!mdApp || mdApp === 'HELD' || mdApp === 'NOT APPROVED')) {
+        } else if (vpApp === 'APPROVED' && accApp === 'APPROVED' && (!mdApp || mdApp === 'HELD' || mdApp === 'NOT APPROVED')) {
           activeStageKey = 'md'
         }
       }
@@ -77,8 +75,6 @@ export async function POST(request: Request) {
         isAuthorized = isTester || appUser.role === 'ed'
       } else if (activeStageKey === 'accounts') {
         isAuthorized = isTester || ['accounts', 'finance_head'].includes(appUser.role)
-      } else if (activeStageKey === 'ea') {
-        isAuthorized = isTester || ['ea'].includes(appUser.role)
       } else if (activeStageKey === 'md') {
         isAuthorized = isTester || isSuperUser
       }
@@ -94,8 +90,6 @@ export async function POST(request: Request) {
 
       if (activeStageKey === 'sales_manager') {
         updates.vpApproval = statusVal
-      } else if (activeStageKey === 'ea') {
-        updates.eaApproval = statusVal
       } else if (activeStageKey === 'md') {
         updates.managementApproval = statusVal
         updates.managementRemarks = remarks || ''
@@ -122,7 +116,6 @@ export async function POST(request: Request) {
       const roleLabel = 
         activeStageKey === 'sales_manager' ? 'ED' : 
         activeStageKey === 'accounts' ? 'Accounts' : 
-        activeStageKey === 'ea' ? 'EA' : 
         'MD'
 
       const historyEntry = {

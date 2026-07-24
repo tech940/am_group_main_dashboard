@@ -90,16 +90,14 @@ export async function POST(
       } else if (stage === 'md' && !isSuperUser && !isTester) {
         if (
           requestRow.vpApproval !== 'APPROVED' ||
-          requestRow.accountApproval !== 'APPROVED' ||
-          requestRow.eaApproval !== 'APPROVED'
+          requestRow.accountApproval !== 'APPROVED'
         ) {
-          return NextResponse.json({ error: 'Previous approval stages (ED, Accounts & EA) must be completed.' }, { status: 400 })
+          return NextResponse.json({ error: 'Previous approval stages (ED & Accounts) must be completed.' }, { status: 400 })
         }
       } else if (stage === 'payment_done' && !isSuperUser && !isTester) {
         if (
           requestRow.vpApproval !== 'APPROVED' ||
           requestRow.accountApproval !== 'APPROVED' ||
-          requestRow.eaApproval !== 'APPROVED' ||
           requestRow.managementApproval !== 'APPROVED'
         ) {
           return NextResponse.json({ error: 'MD approval must be completed before recording payment.' }, { status: 400 })
