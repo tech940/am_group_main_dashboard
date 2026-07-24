@@ -36,9 +36,9 @@ export type PermissionAllowedResult = {
 
 export type PermissionCheckResult = PermissionAllowedResult | PermissionDeniedResult
 
-// Bumped for each new role or permission key (v16 delegation_tasks, v17 kia.approvals, v18 scrap_erp & kia.booking_payment_history, v19 ccm lead_followups, v20 eba scrap_erp access) — cached snapshots are keyed on this, so without a bump an
+// Bumped for each new role or permission key (v16 delegation_tasks, v17 kia.approvals, v18 scrap_erp & kia.booking_payment_history, v19 ccm lead_followups, v20 eba scrap_erp access, v21 scrap_erp default visible) — cached snapshots are keyed on this, so without a bump an
 // existing session would carry stale permissions for up to the cache TTL.
-const PERMISSION_CACHE_VERSION = 'v20'
+const PERMISSION_CACHE_VERSION = 'v21'
 const PERMISSION_CACHE_TTL_SECONDS = 75 * 60
 
 // Tiered ("pyramid") access resolver — now the DEFAULT (Phase-4 cutover). The runtime snapshot is

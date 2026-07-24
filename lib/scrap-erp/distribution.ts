@@ -1,6 +1,6 @@
 import { ScrapTransaction } from './types'
 
-export type ShareholderKey = 'sanjay' | 'ankur' | 'sanjeev'
+export type ShareholderKey = 'sanjay' | 'ankur' | 'sanjeev' | 'tarun'
 
 export type ShareholderInfo = {
   key: ShareholderKey
@@ -12,6 +12,7 @@ export const SHAREHOLDERS: ShareholderInfo[] = [
   { key: 'sanjay', name: 'Sanjay Mahajan', color: '#0284c7' }, // Sky/Blue
   { key: 'ankur', name: 'Ankur Mahajan', color: '#16a34a' },  // Green
   { key: 'sanjeev', name: 'Sanjeev Mahajan', color: '#d97706' }, // Amber
+  { key: 'tarun', name: 'Tarun Mahajan', color: '#8b5cf6' }, // Violet/Purple
 ]
 
 export type CompanyShareConfig = {
@@ -24,32 +25,37 @@ export const COMPANY_SHARE_CONFIGS: CompanyShareConfig[] = [
   {
     matchKeys: ['JAM', 'JAMMU AUTOMART', 'JAMMU AUTO MART'],
     displayName: 'JAMMU AUTOMART',
-    shares: { sanjay: 70, ankur: 30, sanjeev: 0 },
+    shares: { sanjay: 70, ankur: 30, sanjeev: 0, tarun: 0 },
   },
   {
     matchKeys: ['PLATINUM', 'PLATINUM AUTO'],
     displayName: 'PLATINUM AUTO',
-    shares: { sanjay: 50, ankur: 50, sanjeev: 0 },
+    shares: { sanjay: 50, ankur: 50, sanjeev: 0, tarun: 0 },
   },
   {
     matchKeys: ['MG', 'AM MG', 'MG MOTORS'],
     displayName: 'AM MG',
-    shares: { sanjay: 50, ankur: 50, sanjeev: 0 },
+    shares: { sanjay: 50, ankur: 50, sanjeev: 0, tarun: 0 },
   },
   {
-    matchKeys: ['SMAM TATA', 'SMAM', 'TATA'],
+    matchKeys: ['SMAM TATA', 'SMAM', 'TATA', 'AM TATA'],
     displayName: 'SMAM TATA',
-    shares: { sanjay: 33.333333333333336, ankur: 33.333333333333336, sanjeev: 33.333333333333336 },
+    shares: { sanjay: 35, ankur: 30, tarun: 35, sanjeev: 0 },
   },
   {
     matchKeys: ['BAJAJ', 'AM BAJAJ'],
     displayName: 'AM BAJAJ',
-    shares: { sanjay: 33.333333333333336, ankur: 33.333333333333336, sanjeev: 33.333333333333336 },
+    shares: { sanjay: 33.333333333333336, ankur: 33.333333333333336, sanjeev: 33.333333333333336, tarun: 0 },
   },
   {
     matchKeys: ['DIAMOND', 'DIAMOND AUTO'],
     displayName: 'DIAMOND AUTO',
-    shares: { sanjay: 70, ankur: 0, sanjeev: 30 },
+    shares: { sanjay: 70, ankur: 0, sanjeev: 30, tarun: 0 },
+  },
+  {
+    matchKeys: ['KTM', 'AM KTM', 'KTM MOTORS'],
+    displayName: 'AM KTM',
+    shares: { sanjay: 50, sanjeev: 50, ankur: 0, tarun: 0 },
   },
 ]
 
@@ -57,6 +63,7 @@ export const DEFAULT_COMPANY_SHARE: Record<ShareholderKey, number> = {
   sanjay: 50,
   ankur: 50,
   sanjeev: 0,
+  tarun: 0,
 }
 
 export function getCompanyShareConfig(companyName: string): { displayName: string; shares: Record<ShareholderKey, number> } {
@@ -111,6 +118,7 @@ export function calculateScrapDistribution(transactions: ScrapTransaction[]): Di
     sanjay: { name: 'Sanjay Mahajan', amount: 0, percentage: 0, txns: [] },
     ankur: { name: 'Ankur Mahajan', amount: 0, percentage: 0, txns: [] },
     sanjeev: { name: 'Sanjeev Mahajan', amount: 0, percentage: 0, txns: [] },
+    tarun: { name: 'Tarun Mahajan', amount: 0, percentage: 0, txns: [] },
   }
 
   const companyRows: CompanyDistributionRow[] = Object.entries(companyMap).map(([company, data]) => {
@@ -120,10 +128,11 @@ export function calculateScrapDistribution(transactions: ScrapTransaction[]): Di
       sanjay: (data.totalRevenue * (shares.sanjay || 0)) / 100,
       ankur: (data.totalRevenue * (shares.ankur || 0)) / 100,
       sanjeev: (data.totalRevenue * (shares.sanjeev || 0)) / 100,
+      tarun: (data.totalRevenue * (shares.tarun || 0)) / 100,
     }
 
     // Accumulate to person totals
-    const keys: ShareholderKey[] = ['sanjay', 'ankur', 'sanjeev']
+    const keys: ShareholderKey[] = ['sanjay', 'ankur', 'sanjeev', 'tarun']
     keys.forEach((key) => {
       personTotals[key].amount += shareAmounts[key]
       if (shareAmounts[key] > 0) {
@@ -143,7 +152,7 @@ export function calculateScrapDistribution(transactions: ScrapTransaction[]): Di
 
   // Calculate overall percentage for each person
   if (grandTotalRevenue > 0) {
-    const keys: ShareholderKey[] = ['sanjay', 'ankur', 'sanjeev']
+    const keys: ShareholderKey[] = ['sanjay', 'ankur', 'sanjeev', 'tarun']
     keys.forEach((key) => {
       personTotals[key].percentage = (personTotals[key].amount / grandTotalRevenue) * 100
     })
@@ -156,3 +165,4 @@ export function calculateScrapDistribution(transactions: ScrapTransaction[]): Di
     companyRows,
   }
 }
+

@@ -841,7 +841,7 @@ export const DEFAULT_VISIBLE_SECTIONS = new Set<string>([
   // Broadly visible on purpose: every user gets a personal task inbox. Who may DELEGATE is role-gated
   // (lib/delegation/access.ts), and the list only shows tasks a user created or was assigned.
   'delegation_tasks',
-  'purchase_orders', 'finance_orders', 'petty_cash', 'am_finance', 'user_management',
+  'purchase_orders', 'finance_orders', 'petty_cash', 'am_finance', 'user_management', 'scrap_erp',
   'kia.business_excellence', 'kia.service_appointment', 'kia.demo_job_cards', 'kia.demo_cars_list',
   'kia.sales_report', 'kia.stock_report', 'kia.bookings', 'kia.proforma',
   'hyundai.business_excellence', 'hyundai.service_appointment', 'hyundai.demo_job_cards',

@@ -151,7 +151,7 @@ export function ScrapDistributionView({
       </div>
 
       {/* ── Individual Partner July+ Share Cards ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {SHAREHOLDERS.map((s) => {
           const personData = julyDistribution.personTotals[s.key]
           const pctOfTotal = julyDistribution.totalRevenue > 0 ? (personData.amount / julyDistribution.totalRevenue) * 100 : 0
@@ -285,6 +285,9 @@ export function ScrapDistributionView({
                   <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-amber-300 border-l border-slate-800 dark:border-slate-700">
                     SANJEEV SHARE
                   </th>
+                  <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-violet-300 border-l border-slate-800 dark:border-slate-700">
+                    TARUN SHARE
+                  </th>
                   <th className="py-3 px-4 text-center font-black uppercase text-[10px] tracking-wider text-slate-100 border-l border-slate-800 dark:border-slate-700">
                     DISTRIBUTION ACTION
                   </th>
@@ -293,7 +296,7 @@ export function ScrapDistributionView({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium">
                 {displayedTxns.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-400 font-bold">
+                    <td colSpan={8} className="py-8 text-center text-slate-400 font-bold">
                       No July distribution records found matching criteria.
                     </td>
                   </tr>
@@ -306,6 +309,7 @@ export function ScrapDistributionView({
                     const sanjayShare = (amt * (shares.sanjay || 0)) / 100
                     const ankurShare = (amt * (shares.ankur || 0)) / 100
                     const sanjeevShare = (amt * (shares.sanjeev || 0)) / 100
+                    const tarunShare = (amt * (shares.tarun || 0)) / 100
 
                     const isDone = Boolean(t.isDistributed)
 
@@ -358,6 +362,17 @@ export function ScrapDistributionView({
                             <div>
                               <div>{formatINR(sanjeevShare)}</div>
                               <div className="text-[9px] text-amber-600/70 dark:text-amber-400/70 font-black">({formatPercent(shares.sanjeev)})</div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-600">-</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap font-bold text-violet-700 dark:text-violet-400">
+                          {tarunShare > 0 ? (
+                            <div>
+                              <div>{formatINR(tarunShare)}</div>
+                              <div className="text-[9px] text-violet-600/70 dark:text-violet-400/70 font-black">({formatPercent(shares.tarun)})</div>
                             </div>
                           ) : (
                             <span className="text-slate-300 dark:text-slate-600">-</span>

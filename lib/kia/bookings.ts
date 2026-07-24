@@ -609,6 +609,8 @@ function listFilters(input: BookingListInput) {
         )
       )
     `)
+  } else if (text(input.status) && (text(input.status).toLowerCase() === 'vehicle_allocated' || text(input.status).toLowerCase() === 'payment_pending')) {
+    filters.push(inArray(kiaBookings.status, ['vehicle_allocated', 'transferring']))
   } else if (text(input.status) && text(input.status).toLowerCase() !== 'all' && text(input.status).toLowerCase() !== 'all_with_delivered') {
     filters.push(eq(kiaBookings.status, normalizeStatus(input.status)))
   } else if (!input.status || text(input.status).toLowerCase() === 'all') {
@@ -894,7 +896,7 @@ export async function getKiaBookingsList(input: BookingListInput) {
       today: todayCount,
       pendingProforma: statusCounts.booking_created || 0,
       waitingAllocation: statusCounts.proforma_generated || 0,
-      financePending: statusCounts.vehicle_allocated || 0,
+      financePending: (statusCounts.vehicle_allocated || 0) + (statusCounts.transferring || 0),
       readyDelivery: statusCounts.ready_delivery || 0,
       delivered: statusCounts.delivered || 0,
       cancelled: statusCounts.cancelled || 0,

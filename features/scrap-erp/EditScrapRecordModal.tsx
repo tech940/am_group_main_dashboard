@@ -247,7 +247,7 @@ export function EditScrapRecordModal({
                 >
                   {scrapTypes.map((st) => (
                     <option key={st.id} value={st.id}>
-                      {st.name} ({st.unit})
+                      {st.name}
                     </option>
                   ))}
                 </select>
