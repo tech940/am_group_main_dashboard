@@ -52,6 +52,18 @@ export const MIN_REMARK_LENGTH = 10
  * a follow-up with no note is a call nobody can audit, and the next CRE to pick the booking up has
  * no idea what was said. The minimum length is what stops "ok" / "done" passing as detail.
  */
+function parseIstDate(value: string | Date): Date {
+  if (value instanceof Date) return value
+  const str = String(value || '').trim()
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(str)) {
+    return new Date(`${str}:00+05:30`)
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(str)) {
+    return new Date(`${str}+05:30`)
+  }
+  return new Date(str)
+}
+
 function requireRemarks(value: unknown): string {
   const notes = String(value ?? '').trim()
   if (!notes) throw new Error('Remarks are required — record what was discussed with the customer.')
@@ -596,7 +608,7 @@ export async function createFollowup(appUser: AppUser, input: {
 }): Promise<FollowupRow> {
   const bookingId = String(input.bookingId || '').trim()
   if (!bookingId) throw new Error('Select a customer to follow up with.')
-  const due = new Date(input.dueAt)
+  const due = parseIstDate(input.dueAt)
   if (Number.isNaN(due.getTime())) throw new Error('Enter a valid follow-up date and time.')
   const notes = requireRemarks(input.notes)
 
@@ -681,7 +693,7 @@ export async function updateFollowup(appUser: AppUser, id: string, patch: {
   const activityBits: string[] = []
 
   if (patch.dueAt) {
-    const due = new Date(patch.dueAt)
+    const due = parseIstDate(patch.dueAt)
     if (Number.isNaN(due.getTime())) throw new Error('Enter a valid follow-up date and time.')
     updates.dueAt = due
     updates.reminderSentAt = null // rescheduling re-arms the reminder
@@ -785,7 +797,7 @@ export async function completeFollowup(appUser: AppUser, id: string, input: {
 
   if (shouldRepeat) {
     const dueAt = input.nextDueAt
-      ? new Date(input.nextDueAt)
+      ? parseIstDate(input.nextDueAt)
       : new Date(Date.now() + FOLLOWUP_REPEAT_DAYS * 24 * 60 * 60 * 1000)
     next = await createFollowup(appUser, {
       bookingId: existing.bookingId,

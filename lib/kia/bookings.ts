@@ -269,7 +269,7 @@ export async function expireKiaTemporaryAllocations() {
       updated_bookings AS (
         UPDATE kia_bookings kb
         SET
-          status = 'on_hold',
+          status = 'proforma_generated',
           updated_at = now()
         FROM expired e
         WHERE kb.id = e.booking_id
@@ -1767,6 +1767,11 @@ export async function releaseKiaBookingVehicle(id: string, reason: string | null
 // remembered in metadata so Resume can restore it. Allotment/transfer rows are left untouched (a
 // held booking keeps its VIN); only the workflow status changes.
 export async function holdKiaBookingVehicle(id: string, reason: string | null, appUser: AppUser) {
+  const cleanReason = text(reason).trim()
+  if (!cleanReason) {
+    throw new Error('Mandatory hold remarks are required. Please provide a reason for putting this booking on hold.')
+  }
+
   return db.transaction(async (tx) => {
     const [booking] = await tx.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
     if (!booking) throw new Error('Booking not found')
@@ -1777,7 +1782,7 @@ export async function holdKiaBookingVehicle(id: string, reason: string | null, a
     const meta = (booking.metadata as Record<string, unknown> | null) || {}
     const [updated] = await tx.update(kiaBookings).set({
       status: 'on_hold',
-      metadata: { ...meta, heldFromStatus: booking.status, heldReason: nullableText(reason) },
+      metadata: { ...meta, heldFromStatus: booking.status, heldReason: cleanReason },
       updatedBy: appUser.id,
       updatedAt: new Date(),
     }).where(eq(kiaBookings.id, id)).returning()
@@ -1786,7 +1791,7 @@ export async function holdKiaBookingVehicle(id: string, reason: string | null, a
       bookingId: id,
       type: 'hold',
       title: 'Booking put on hold',
-      description: reason || null,
+      description: cleanReason,
       appUser,
     })
     return updated

@@ -96,11 +96,11 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
   const { data: userData, isLoading: loading } = useQuery({
     queryKey: ['auth', 'user'],
     queryFn: async () => {
-      const response = await fetch('/api/auth/user', { credentials: 'same-origin' })
+      const response = await fetch('/api/auth/user', { credentials: 'same-origin', cache: 'no-store' })
       if (!response.ok) return null
       return await response.json()
     },
-    staleTime: DASHBOARD_STALE_TIME_MS,
+    staleTime: 60 * 1000,
   })
   const user = useMemo<UserData | null>(() => {
     if (!userData) return null
@@ -119,8 +119,7 @@ export function Header({ title = 'Dashboard', subtitle = 'Operational Monitoring
       await fetch('/api/auth/logout', { method: 'POST' })
       queryClient.clear()
       await supabase.auth.signOut()
-      router.push('/auth/login')
-      router.refresh()
+      window.location.href = '/auth/login'
     } catch (error) {
       console.error('Error logging out:', error)
       setSigningOut(false)

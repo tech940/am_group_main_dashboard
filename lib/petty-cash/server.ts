@@ -31,6 +31,7 @@ import {
   getPettyCashRequestVisibilityFilter,
 } from './access'
 import { PETTY_CASH_TOP_UP_THRESHOLD, isPettyCashExpenseStatus, isPettyCashRequestStatus } from './constants'
+import { sendPettyCashApprovalEmail } from './emails'
 
 type PettyCashAllocationRecord = typeof pettyCashAllocations.$inferSelect
 
@@ -296,9 +297,13 @@ export function pettyCashStageForStatus(status: string): 'ed_approval' | 'ea_app
 
 /** The request statuses that belong in a given role's pending-approval queue. */
 function pettyCashApprovalStatusesForRole(role: AppUser['role']): PettyCashRequestStatus[] {
-  if (role === 'ed' || role === 'sales_manager') return [...PETTY_CASH_APPROVAL_STATUSES.ed_approval]
-  if (role === 'ea') return [...PETTY_CASH_APPROVAL_STATUSES.ea_approval]
-  if (role === 'md' || role === 'eba' || role === 'developer') {
+  if (!role) return []
+  const r = String(role).trim().toLowerCase()
+  const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
+
+  if (r === 'ed') return [...PETTY_CASH_APPROVAL_STATUSES.ed_approval]
+  if (r === 'ea') return [...PETTY_CASH_APPROVAL_STATUSES.ea_approval]
+  if (r === 'md' || r === 'eba' || r === 'developer') {
     return [
       ...PETTY_CASH_APPROVAL_STATUSES.ed_approval,
       ...PETTY_CASH_APPROVAL_STATUSES.ea_approval,
@@ -306,7 +311,7 @@ function pettyCashApprovalStatusesForRole(role: AppUser['role']): PettyCashReque
       ...PETTY_CASH_APPROVAL_STATUSES.accounts,
     ]
   }
-  if (role === 'accounts') return [...PETTY_CASH_APPROVAL_STATUSES.accounts]
+  if (isAccounts) return [...PETTY_CASH_APPROVAL_STATUSES.accounts]
   return []
 }
 
@@ -875,7 +880,7 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
     } else {
       const approvedAmount = parseMoney(request.requestedAmount)
 
-      const { updatedRequest } = await db.transaction(async (tx) => {
+      return await db.transaction(async (tx) => {
         const [activeAllocation] = await tx
           .select()
           .from(pettyCashAllocations)
@@ -993,10 +998,26 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
           },
         })
 
-        return { updatedRequest }
-      })
+        if (input.action === 'approve') {
+          void sendPettyCashApprovalEmail({
+            requestNumber: request.requestNumber,
+            requestedByName: request.requestedByName || 'User',
+            requestedByEmail: request.requestedByEmail,
+            createdByUserId: request.createdBy,
+            requestedAmount: request.requestedAmount,
+            allocatedAmount: approvedAmount,
+            purpose: request.purpose,
+            stage: input.stage,
+            action: input.action,
+            approvedByName: appUser.fullName,
+            approvedByRole: appUser.role,
+            newStatus: 'approved',
+            remarks: input.remarks || null,
+          })
+        }
 
-      return serializeRequest(updatedRequest)
+        return serializeRequest(updatedRequest)
+      })
     }
   }
 
@@ -1020,6 +1041,23 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
     newStatus,
     metadata: { nextStage: newStage },
   })
+
+  if (input.action === 'approve') {
+    void sendPettyCashApprovalEmail({
+      requestNumber: request.requestNumber,
+      requestedByName: request.requestedByName || 'User',
+      requestedByEmail: request.requestedByEmail,
+      createdByUserId: request.createdBy,
+      requestedAmount: request.requestedAmount,
+      purpose: request.purpose,
+      stage: input.stage,
+      action: input.action,
+      approvedByName: appUser.fullName,
+      approvedByRole: appUser.role,
+      newStatus,
+      remarks: input.remarks || null,
+    })
+  }
 
   return serializeRequest(updatedRequest)
 }

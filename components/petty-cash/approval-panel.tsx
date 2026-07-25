@@ -117,11 +117,16 @@ function statusMeta(status: string) {
 }
 
 function canActOnStage(role: string, stage: ApprovalStage | null) {
-  if (role === 'developer' || role === 'manager' || role === 'general_manager') return true
-  if (stage === 'ed_approval') return role === 'ed' || role === 'sales_manager'
-  if (stage === 'ea_approval') return role === 'ea'
-  if (stage === 'md_approval') return role === 'md' || role === 'eba'
-  if (stage === 'accounts') return role === 'accounts'
+  if (!role || !stage) return false
+  const r = String(role).trim().toLowerCase()
+  if (r === 'developer') return true
+
+  const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
+
+  if (stage === 'ed_approval') return r === 'ed'
+  if (stage === 'ea_approval') return r === 'ea'
+  if (stage === 'md_approval') return r === 'md' || r === 'eba'
+  if (stage === 'accounts') return isAccounts
   return false
 }
 

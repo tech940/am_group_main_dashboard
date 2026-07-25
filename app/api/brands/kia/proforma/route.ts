@@ -232,9 +232,28 @@ export async function POST(request: NextRequest) {
     const bookingId = readText(body, 'bookingId')
     const forceSave = body.forceSave === true
 
-    // ── Duplicate guard ──────────────────────────────────────────────────────
+    // ── Strict Booking Duplicate Guard ───────────────────────────────────────
+    // If a proforma is already generated/linked to this booking, reject duplicate creation.
+    if (bookingId) {
+      const [existingBooking] = await db
+        .select({
+          proformaId: kiaBookings.proformaId,
+          bookingNumber: kiaBookings.bookingNumber,
+        })
+        .from(kiaBookings)
+        .where(eq(kiaBookings.id, bookingId))
+        .limit(1)
+      if (existingBooking?.proformaId) {
+        return NextResponse.json({
+          error: `A Proforma Invoice is already generated and linked to booking #${existingBooking.bookingNumber}. Duplicate proformas are not allowed.`,
+          existingProformaId: existingBooking.proformaId,
+        }, { status: 409 })
+      }
+    }
+
+    // ── Customer Details Duplicate Guard ─────────────────────────────────────
     // Check for any existing non-deleted proforma with the same mobile, email,
-    // or customer name. Allow override with forceSave=true.
+    // or customer name. Allow override with forceSave=true only if bookingId is not linked.
     if (!forceSave) {
       const mobile = readText(body, 'mobileNumber')
       const email = readText(body, 'customerEmail').toLowerCase()

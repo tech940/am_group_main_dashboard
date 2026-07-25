@@ -40,7 +40,8 @@ export const COMPANY_SHARE_CONFIGS: CompanyShareConfig[] = [
   {
     matchKeys: ['SMAM TATA', 'SMAM', 'TATA', 'AM TATA'],
     displayName: 'SMAM TATA',
-    shares: { sanjay: 35, ankur: 30, tarun: 35, sanjeev: 0 },
+    // Distribution: Sanjay Mahajan 35%, Ankur Mahajan 35%, Tarun Mahajan 30%
+    shares: { sanjay: 35, ankur: 35, tarun: 30, sanjeev: 0 },
   },
   {
     matchKeys: ['BAJAJ', 'AM BAJAJ'],
@@ -48,8 +49,8 @@ export const COMPANY_SHARE_CONFIGS: CompanyShareConfig[] = [
     shares: { sanjay: 33.333333333333336, ankur: 33.333333333333336, sanjeev: 33.333333333333336, tarun: 0 },
   },
   {
-    matchKeys: ['DIAMOND', 'DIAMOND AUTO'],
-    displayName: 'DIAMOND AUTO',
+    matchKeys: ['DIAMOND', 'DIAMOND AUTO', 'DIAMOND HONDA'],
+    displayName: 'DIAMOND HONDA',
     shares: { sanjay: 70, ankur: 0, sanjeev: 30, tarun: 0 },
   },
   {

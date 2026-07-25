@@ -102,7 +102,7 @@ const NOT_INTERESTED_REASONS = [
 const REASON_LABEL: Record<string, string> = Object.fromEntries(REASONS.map((r) => [r.value, r.label]))
 
 const BUCKETS = [
-  { key: 'pending', label: 'Pending', tone: 'text-amber-600', hint: 'Open follow-ups' },
+  { key: 'pending', label: 'Pending Call', tone: 'text-amber-600', hint: 'Open follow-ups' },
   { key: 'not_connected', label: 'Not Connected', tone: 'text-rose-600', hint: 'Last call failed' },
   { key: 'rescheduled', label: 'Rescheduled', tone: 'text-violet-600', hint: 'Rescheduled open touches' },
   { key: 'next_day', label: 'Next Day', tone: 'text-indigo-600', hint: 'Due tomorrow' },
@@ -119,28 +119,60 @@ const FOLLOWUP_REPEAT_DAYS = 7
 const CONTACTED_OUTCOME_VALUES = new Set(['reached', 'done'])
 
 function dealerLabel(code: string | null) { return code ? (DEALER_LABELS[code] || code) : '—' }
+
+/** Converts an HTML datetime-local string (e.g. "2026-07-25T16:30") explicitly to IST ISO. */
+function toIstIso(value: string): string {
+  if (!value) return new Date().toISOString()
+  const trimmed = value.trim()
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+    return new Date(`${trimmed}:00+05:30`).toISOString()
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    return new Date(`${trimmed}+05:30`).toISOString()
+  }
+  return new Date(trimmed).toISOString()
+}
+
 function defaultLocal(daysAhead = 1) {
-  const d = new Date(); d.setDate(d.getDate() + daysAhead); d.setHours(10, 0, 0, 0)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const now = new Date()
+  const options: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Kolkata' }
+  const formatter = new Intl.DateTimeFormat('en-CA', { ...options, year: 'numeric', month: '2-digit', day: '2-digit' })
+  const targetTime = new Date(now.getTime() + daysAhead * 86_400_000)
+  const ymd = formatter.format(targetTime)
+  return `${ymd}T10:00`
 }
 
 function formatDue(iso: string, bucket: Followup['bucket']) {
+  if (!iso) return '—'
   const d = new Date(iso)
-  const date = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-  const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-  const diffMs = d.getTime() - Date.now()
-  if (diffMs < 0 && bucket === 'pending') {
+  if (Number.isNaN(d.getTime())) return '—'
+
+  const options: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Kolkata' }
+  const time = d.toLocaleTimeString('en-IN', { ...options, hour: '2-digit', minute: '2-digit', hour12: true })
+  const dateStr = d.toLocaleDateString('en-IN', { ...options, day: '2-digit', month: 'short' })
+
+  const now = new Date()
+  const targetFormatter = new Intl.DateTimeFormat('en-CA', { ...options, year: 'numeric', month: '2-digit', day: '2-digit' })
+  const targetYmd = targetFormatter.format(d)
+  const nowYmd = targetFormatter.format(now)
+
+  const targetDate = new Date(`${targetYmd}T00:00:00+05:30`)
+  const nowDate = new Date(`${nowYmd}T00:00:00+05:30`)
+  const dayDiff = Math.round((targetDate.getTime() - nowDate.getTime()) / 86_400_000)
+
+  const diffMs = d.getTime() - now.getTime()
+  if (diffMs < 0 && (bucket === 'pending' || bucket === 'rescheduled')) {
     const mins = Math.floor(-diffMs / 60_000)
     if (mins < 60) return 'Due now'
     const hours = Math.floor(mins / 60)
     if (hours < 24) return `${hours}h overdue`
     return `${Math.floor(hours / 24)}d overdue`
   }
-  const days = Math.round(diffMs / 86_400_000)
-  if (days === 0) return `Today · ${time}`
-  if (days === 1) return `Tomorrow · ${time}`
-  return `${date} · ${time}`
+
+  if (dayDiff === 0) return `Today · ${time}`
+  if (dayDiff === 1) return `Tomorrow · ${time}`
+  if (dayDiff === -1) return `Yesterday · ${time}`
+  return `${dateStr} · ${time}`
 }
 
 function agingLabel(dueAt: string, isDone: boolean): { text: string; cls: string } | null {
@@ -167,9 +199,9 @@ function getPaymentStatus(f: Followup) {
   const status = (f.bookingStatus || '').toLowerCase()
   if (status === 'cancelled') return { label: 'Cancelled', tone: 'neutral' as const }
   if (status === 'delivered' || status === 'ready_delivery' || status === 'payment_confirmed') {
-    return { label: 'Paid', tone: 'emerald' as const }
+    return { label: 'Payment Confirmed', tone: 'emerald' as const }
   }
-  return { label: 'Pending', tone: 'rose' as const }
+  return { label: 'Payment Pending', tone: 'amber' as const }
 }
 
 function Badge({ label, tone }: { label: string; tone: 'indigo' | 'rose' | 'amber' | 'emerald' | 'violet' | 'slate' | 'neutral' | 'blue' }) {
@@ -601,7 +633,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
       try {
         const res = await fetch(`/api/brands/kia/follow-ups/${id}`, {
           method: 'PATCH', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'update', dueAt: new Date(bulkDueAt).toISOString(), notes: 'Bulk rescheduled by CRE team.' }),
+          body: JSON.stringify({ action: 'update', dueAt: toIstIso(bulkDueAt), notes: 'Bulk rescheduled by CRE team.' }),
         })
         if (res.ok) ok++
       } catch { /* continue */ }
@@ -1678,7 +1710,7 @@ function CompleteDialog({ f, onClose, onSaved }: { f: Followup; onClose: () => v
           outcome: effectiveOutcome || undefined,
           notes,
           notInterestedReason: isNotInterested ? notInterestedReason : undefined,
-          nextDueAt: scheduleNext && nextAt ? new Date(nextAt).toISOString() : undefined,
+          nextDueAt: scheduleNext && nextAt ? toIstIso(nextAt) : undefined,
         }),
       })
       const result = await res.json().catch(() => ({}))
@@ -1776,7 +1808,7 @@ function RescheduleDialog({ f, onClose, onSaved }: { f: Followup; onClose: () =>
     try {
       const res = await fetch(`/api/brands/kia/follow-ups/${f.id}`, {
         method: 'PATCH', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'update', dueAt: new Date(dueAt).toISOString(), priority, notes }),
+        body: JSON.stringify({ action: 'update', dueAt: toIstIso(dueAt), priority, notes }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed')
       toast({ title: 'Rescheduled', variant: 'success' })
@@ -1879,7 +1911,7 @@ function AddFollowupDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
     try {
       const res = await fetch('/api/brands/kia/follow-ups', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ bookingId: selected.id, dueAt: new Date(dueAt).toISOString(), reason, priority, notes }),
+        body: JSON.stringify({ bookingId: selected.id, dueAt: toIstIso(dueAt), reason, priority, notes }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to create')
       toast({ title: 'Follow-up scheduled', variant: 'success' })

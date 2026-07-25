@@ -50,10 +50,10 @@ export const ALL_SECTIONS: SearchSection[] = [
     iconName: 'ShoppingCart',
   },
   {
-    id: 'scrap_erp',
-    name: 'Scrap Management',
+    id: 'scrap',
+    name: 'Scrap',
     description: 'Scrap material disposal, dynamic master records, reports, valuation & sales analytics.',
-    href: '/scrap-erp',
+    href: '/scrap',
     department: 'admin',
     brand: 'common',
     iconName: 'Recycle',
@@ -382,9 +382,11 @@ export const ALLOWED_SIDEBAR_HREFS = new Set<string>([
   '/brands/kia/payment-approvals',
   '/brands/kia/vendors',
   '/admin',
+  '/scrap',
   '/scrap-erp',
   
   // Kia
+  '/brands/kia/activity',
   '/brands/kia/business-excellence',
   '/brands/kia/service-appointment',
   '/brands/kia/vehicle-tracker',
@@ -464,8 +466,8 @@ export function canUserAccessSection(
     return canViewBookingPaymentHistory(userRole, permissionMap)
   }
 
-  // Scrap ERP
-  if (href === '/scrap-erp') {
+  // Scrap
+  if (href === '/scrap' || href === '/scrap-erp') {
     return canAccessScrapErp(userRole, permissionMap)
   }
 

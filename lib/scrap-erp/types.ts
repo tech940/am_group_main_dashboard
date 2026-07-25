@@ -69,6 +69,16 @@ export interface ScrapAttachment {
   mimeType?: string
 }
 
+/** Used in the entry form to track uploaded documents before they are submitted */
+export interface ScrapFormAttachment {
+  id: string
+  url: string
+  fileName: string
+  fileType: 'image' | 'pdf' | 'document'
+  type: 'weight_picture' | 'tally_receipt' | 'scrap_picture'
+  size?: number
+}
+
 export interface ScrapTransaction {
   id: string
   transactionNumber: string
@@ -102,6 +112,10 @@ export interface ScrapTransaction {
   isDistributed?: boolean
   distributedAt?: string
   distributedBy?: string
+  /** When true, this transaction's revenue was routed directly to accounts (not distributed to shareholders) */
+  sentToAccounts?: boolean
+  accountsReceivedAt?: string
+  accountsNote?: string
   createdAt: string
   updatedAt: string
 }

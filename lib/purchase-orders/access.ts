@@ -104,13 +104,9 @@ export function getPurchaseOrderListVisibilityFilter(appUser: AppUser): SQL<unkn
     case 'developer':
     case 'md':
     case 'eba':
+    case 'ea':
       return and(...baseFilters)!
     case 'purchase_manager':
-      return and(
-        ...baseFilters,
-        ...(branchFilter ? [branchFilter] : [])
-      )!
-    case 'ea':
       return and(
         ...baseFilters,
         ...(branchFilter ? [branchFilter] : [])
@@ -150,13 +146,12 @@ export function canReadPurchaseOrder(appUser: AppUser, order: Pick<PurchaseOrder
 
   const branchMatches = hasAllBranchAccess(appUser.brand) || !order.brand || order.brand === appUser.brand
 
-    switch (appUser.role) {
+  switch (appUser.role) {
     case 'md':
     case 'eba':
+    case 'ea':
       return true
     case 'purchase_manager':
-      return branchMatches
-    case 'ea':
       return branchMatches
     case 'accounts':
       return ['awaiting_accounts', 'completed'].includes(order.status)

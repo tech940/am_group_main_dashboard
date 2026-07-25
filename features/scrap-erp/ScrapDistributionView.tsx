@@ -1,29 +1,33 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ScrapTransaction } from '@/lib/scrap-erp/types'
+import { ScrapTransaction, ScrapHandoverUser } from '@/lib/scrap-erp/types'
+import { DEFAULT_SCRAP_HANDOVER_USERS } from '@/lib/scrap-erp/mock-data'
 import {
   calculateScrapDistribution,
-  SHAREHOLDERS,
-  ShareholderKey,
   getCompanyShareConfig,
 } from '@/lib/scrap-erp/distribution'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 import {
   Coins,
-  UserCheck,
   CheckCircle2,
-  Clock,
   Search,
   Building2,
-  PieChart as PieChartIcon,
-  Sparkles,
-  ArrowUpRight,
-  Filter,
   Check,
   RotateCcw,
+  Landmark,
+  UserCheck,
+  ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -35,36 +39,71 @@ function formatINR(val: number) {
   }).format(val || 0)
 }
 
-function formatPercent(val: number) {
-  if (Math.abs(val - 33.333333333333336) < 0.1) return '33.33%'
-  return `${Number(val.toFixed(1))}%`
-}
-
 export function ScrapDistributionView({
   transactions,
+  handoverUsers = [],
   onDrilldown,
   onToggleDistribution,
 }: {
   transactions: ScrapTransaction[]
+  handoverUsers?: ScrapHandoverUser[]
   onDrilldown: (title: string, filtered: ScrapTransaction[]) => void
-  onToggleDistribution?: (transactionId: string, currentStatus: boolean) => void
+  onToggleDistribution?: (
+    transactionId: string,
+    currentStatus: boolean,
+    customPayload?: Partial<ScrapTransaction>
+  ) => void
 }) {
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'distributed'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'distributed' | 'accounts'>('all')
 
-  // Filter records for July 2026 onwards & new entries (soldDate >= 2026-07-01 or new)
+  // Modal State for "Mark as Distributed"
+  const [selectedTxnForDist, setSelectedTxnForDist] = useState<ScrapTransaction | null>(null)
+  const [distTarget, setDistTarget] = useState<'md' | 'accounts'>('md')
+  const [selectedHandoverUserId, setSelectedHandoverUserId] = useState<string>('')
+  const [handoverSearch, setHandoverSearch] = useState<string>('')
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false)
+
+  // Eligible handover users: exact same list from Scrap Entry Form, with "CASH HANDOVER TO MD" REMOVED
+  const eligibleAccountsHandoverUsers = useMemo(() => {
+    const list = handoverUsers.length > 0 ? handoverUsers : DEFAULT_SCRAP_HANDOVER_USERS
+    return list.filter((u) => {
+      const nameUpper = (u.name || '').toUpperCase()
+      return !nameUpper.includes('CASH HANDOVER TO MD') && !nameUpper.includes('HANDOVER TO MD')
+    })
+  }, [handoverUsers])
+
+  // Filtered dropdown items based on search input
+  const filteredHandoverUsers = useMemo(() => {
+    if (!handoverSearch.trim()) return eligibleAccountsHandoverUsers
+    const q = handoverSearch.toLowerCase()
+    return eligibleAccountsHandoverUsers.filter((u) => u.name.toLowerCase().includes(q))
+  }, [eligibleAccountsHandoverUsers, handoverSearch])
+
+  // ── Distribution Start Date ── Only records from 1 July 2026 onwards
+  const DISTRIBUTION_START_DATE = '2026-07-01'
+
   const julyAndNewTxns = useMemo(() => {
-    return transactions.filter((t) => {
-      const d = t.soldDate || t.timestamp || t.createdAt
-      if (!d) return true
-      const dateStr = d.slice(0, 10) // 'YYYY-MM-DD'
-      return dateStr >= '2026-07-01' || t.id.startsWith('tx-')
+    const list = transactions.filter((t) => {
+      const dateStr = (t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
+      return dateStr >= DISTRIBUTION_START_DATE
+    })
+
+    return [...list].sort((a, b) => {
+      const dA = new Date(a.soldDate || a.timestamp || a.createdAt || 0).getTime()
+      const dB = new Date(b.soldDate || b.timestamp || b.createdAt || 0).getTime()
+      return dB - dA
     })
   }, [transactions])
 
   // Filtered by search query & distribution status tab
   const displayedTxns = useMemo(() => {
     return julyAndNewTxns.filter((t) => {
+      const isSentToAccounts = Boolean((t as ScrapTransaction & { sentToAccounts?: boolean }).sentToAccounts)
+
+      if (statusFilter === 'accounts') return isSentToAccounts
+      if (isSentToAccounts) return false // hide accounts-routed records from all other tabs
+
       if (statusFilter === 'pending' && Boolean(t.isDistributed)) return false
       if (statusFilter === 'distributed' && !Boolean(t.isDistributed)) return false
 
@@ -83,21 +122,22 @@ export function ScrapDistributionView({
     })
   }, [julyAndNewTxns, searchQuery, statusFilter])
 
-  // Calculate overall distribution metrics for July+ transactions
-  const julyDistribution = useMemo(() => {
-    return calculateScrapDistribution(julyAndNewTxns)
-  }, [julyAndNewTxns])
-
-  // Distributed vs Pending Totals
+  // Distributed vs Pending vs Accounts Totals
   const distributedStats = useMemo(() => {
     let distributedAmt = 0
     let pendingAmt = 0
     let distributedCount = 0
     let pendingCount = 0
+    let accountsAmt = 0
+    let accountsCount = 0
 
     julyAndNewTxns.forEach((t) => {
       const amt = Number(t.amountReceived || 0)
-      if (t.isDistributed) {
+      const isSentToAccounts = Boolean((t as ScrapTransaction & { sentToAccounts?: boolean }).sentToAccounts)
+      if (isSentToAccounts) {
+        accountsAmt += amt
+        accountsCount++
+      } else if (t.isDistributed) {
         distributedAmt += amt
         distributedCount++
       } else {
@@ -111,9 +151,48 @@ export function ScrapDistributionView({
       pendingAmt,
       distributedCount,
       pendingCount,
+      accountsAmt,
+      accountsCount,
       totalCount: julyAndNewTxns.length,
     }
   }, [julyAndNewTxns])
+
+  const handleOpenDistributionModal = (txn: ScrapTransaction) => {
+    setSelectedTxnForDist(txn)
+    setDistTarget('md')
+    setHandoverSearch('')
+    setSelectedHandoverUserId(eligibleAccountsHandoverUsers[0]?.id || '')
+    setIsDropdownOpen(false)
+  }
+
+  const handleConfirmDistributionModal = () => {
+    if (!selectedTxnForDist || !onToggleDistribution) return
+
+    if (distTarget === 'md') {
+      // Option 1: Handover to MD -> Mark as distributed directly
+      onToggleDistribution(selectedTxnForDist.id, false, {
+        isDistributed: true,
+        sentToAccounts: false,
+        distributedAt: new Date().toISOString(),
+      })
+    } else {
+      // Option 2: Accounts department -> Route directly to Accounts under selected handover user
+      const selectedUserObj = eligibleAccountsHandoverUsers.find((u) => u.id === selectedHandoverUserId) || eligibleAccountsHandoverUsers[0]
+      const handoverName = selectedUserObj ? selectedUserObj.name : (handoverSearch.trim() || 'Accounts Department')
+      const handoverId = selectedUserObj ? selectedUserObj.id : 'ho-accounts'
+
+      onToggleDistribution(selectedTxnForDist.id, false, {
+        isDistributed: false,
+        sentToAccounts: true,
+        accountsReceivedAt: new Date().toISOString(),
+        paymentHandoverToId: handoverId,
+        paymentHandoverToName: handoverName,
+        accountsNote: `Received directly in accounts via ${handoverName}`,
+      })
+    }
+
+    setSelectedTxnForDist(null)
+  }
 
   return (
     <div className="space-y-6">
@@ -139,58 +218,25 @@ export function ScrapDistributionView({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2 rounded-xl border border-emerald-200/80 dark:border-emerald-800 text-right">
-            <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block">Distributed</span>
-            <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">{formatINR(distributedStats.distributedAmt)}</span>
-          </div>
           <div className="bg-amber-50 dark:bg-amber-950/40 px-3.5 py-2 rounded-xl border border-amber-200/80 dark:border-amber-800 text-right">
-            <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest block">Pending Distribution</span>
+            <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest block flex items-center justify-end gap-1">
+              Pending ({distributedStats.pendingCount})
+            </span>
             <span className="text-sm font-black text-amber-700 dark:text-amber-300">{formatINR(distributedStats.pendingAmt)}</span>
           </div>
+          <div className="bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2 rounded-xl border border-emerald-200/80 dark:border-emerald-800 text-right">
+            <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block flex items-center justify-end gap-1">
+              Distributed ({distributedStats.distributedCount})
+            </span>
+            <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">{formatINR(distributedStats.distributedAmt)}</span>
+          </div>
+          <div className="bg-blue-50 dark:bg-blue-950/40 px-3.5 py-2 rounded-xl border border-blue-200/80 dark:border-blue-800 text-right">
+            <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest block flex items-center justify-end gap-1">
+              <Landmark className="h-3 w-3 inline" /> Direct Accounts ({distributedStats.accountsCount})
+            </span>
+            <span className="text-sm font-black text-blue-700 dark:text-blue-300">{formatINR(distributedStats.accountsAmt)}</span>
+          </div>
         </div>
-      </div>
-
-      {/* ── Individual Partner July+ Share Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {SHAREHOLDERS.map((s) => {
-          const personData = julyDistribution.personTotals[s.key]
-          const pctOfTotal = julyDistribution.totalRevenue > 0 ? (personData.amount / julyDistribution.totalRevenue) * 100 : 0
-
-          return (
-            <Card
-              key={s.key}
-              onClick={() => onDrilldown(`July+ Scrap Share: ${personData.name}`, personData.txns)}
-              className="cursor-pointer transition-all hover:shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl overflow-hidden group"
-            >
-              <div className="h-1.5 w-full" style={{ backgroundColor: s.color }} />
-              <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm font-black text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                    <UserCheck className="h-4 w-4" style={{ color: s.color }} />
-                    {personData.name}
-                  </CardTitle>
-                  <CardDescription className="text-[11px] font-bold text-slate-400 mt-0.5">
-                    July Share: {formatPercent(pctOfTotal)} of total July pool
-                  </CardDescription>
-                </div>
-                <Badge className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-extrabold text-[10px] group-hover:bg-amber-100 group-hover:text-amber-900 transition-colors">
-                  View Records <ArrowUpRight className="h-3 w-3 ml-0.5" />
-                </Badge>
-              </CardHeader>
-
-              <CardContent className="pt-2 space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <div className="text-2xl font-black tracking-tight" style={{ color: s.color }}>
-                    {formatINR(personData.amount)}
-                  </div>
-                  <span className="text-xs font-black text-slate-500 dark:text-slate-400">
-                    {personData.txns.length} July sales
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
       </div>
 
       {/* ── July+ Transactions Manual Distribution Action Table ── */}
@@ -231,7 +277,7 @@ export function ScrapDistributionView({
                       : 'text-slate-600 dark:text-slate-400'
                   )}
                 >
-                  All ({julyAndNewTxns.length})
+                  All ({distributedStats.pendingCount + distributedStats.distributedCount})
                 </button>
                 <button
                   type="button"
@@ -256,6 +302,19 @@ export function ScrapDistributionView({
                   )}
                 >
                   Distributed ({distributedStats.distributedCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('accounts')}
+                  className={cn(
+                    'px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1',
+                    statusFilter === 'accounts'
+                      ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                      : 'text-slate-600 dark:text-slate-400'
+                  )}
+                >
+                  <Landmark className="h-3 w-3" />
+                  Accounts ({distributedStats.accountsCount})
                 </button>
               </div>
             </div>
@@ -305,6 +364,7 @@ export function ScrapDistributionView({
                     const rawGroup = t.groupName || 'JAM'
                     const { displayName, shares } = getCompanyShareConfig(rawGroup)
                     const amt = Number(t.amountReceived || 0)
+                    const isSentToAccounts = Boolean((t as ScrapTransaction & { sentToAccounts?: boolean }).sentToAccounts)
 
                     const sanjayShare = (amt * (shares.sanjay || 0)) / 100
                     const ankurShare = (amt * (shares.ankur || 0)) / 100
@@ -314,7 +374,10 @@ export function ScrapDistributionView({
                     const isDone = Boolean(t.isDistributed)
 
                     return (
-                      <tr key={t.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                      <tr key={t.id} className={cn(
+                        'hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors',
+                        isSentToAccounts && 'bg-blue-50/50 dark:bg-blue-950/20'
+                      )}>
                         <td className="py-3 px-4 font-black text-slate-900 dark:text-slate-100 whitespace-nowrap">
                           <div>#{t.transactionNumber}</div>
                           <div className="text-[10px] text-slate-400 font-semibold">{t.soldDate || t.timestamp?.slice(0, 10)}</div>
@@ -334,54 +397,56 @@ export function ScrapDistributionView({
                           {formatINR(amt)}
                         </td>
 
-                        {/* Share splits */}
-                        <td className="py-3 px-3 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap font-bold text-sky-700 dark:text-sky-400">
-                          {sanjayShare > 0 ? (
-                            <div>
-                              <div>{formatINR(sanjayShare)}</div>
-                              <div className="text-[9px] text-sky-600/70 dark:text-sky-400/70 font-black">({formatPercent(shares.sanjay)})</div>
+                        {/* Share splits — hidden for accounts-routed records */}
+                        {isSentToAccounts ? (
+                          <td colSpan={4} className="py-3 px-4 text-center border-l border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Landmark className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                              <span className="text-xs font-black text-blue-700 dark:text-blue-400 italic">
+                                Revenue routed to accounts
+                              </span>
                             </div>
-                          ) : (
-                            <span className="text-slate-300 dark:text-slate-600">-</span>
-                          )}
-                        </td>
+                          </td>
+                        ) : (
+                          <>
+                            <td className="py-3 px-3 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap font-extrabold text-sky-700 dark:text-sky-400">
+                              {sanjayShare > 0 ? formatINR(sanjayShare) : <span className="text-slate-300 dark:text-slate-600">-</span>}
+                            </td>
 
-                        <td className="py-3 px-3 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap font-bold text-emerald-700 dark:text-emerald-400">
-                          {ankurShare > 0 ? (
-                            <div>
-                              <div>{formatINR(ankurShare)}</div>
-                              <div className="text-[9px] text-emerald-600/70 dark:text-emerald-400/70 font-black">({formatPercent(shares.ankur)})</div>
-                            </div>
-                          ) : (
-                            <span className="text-slate-300 dark:text-slate-600">-</span>
-                          )}
-                        </td>
+                            <td className="py-3 px-3 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap font-extrabold text-emerald-700 dark:text-emerald-400">
+                              {ankurShare > 0 ? formatINR(ankurShare) : <span className="text-slate-300 dark:text-slate-600">-</span>}
+                            </td>
 
-                        <td className="py-3 px-3 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap font-bold text-amber-700 dark:text-amber-400">
-                          {sanjeevShare > 0 ? (
-                            <div>
-                              <div>{formatINR(sanjeevShare)}</div>
-                              <div className="text-[9px] text-amber-600/70 dark:text-amber-400/70 font-black">({formatPercent(shares.sanjeev)})</div>
-                            </div>
-                          ) : (
-                            <span className="text-slate-300 dark:text-slate-600">-</span>
-                          )}
-                        </td>
+                            <td className="py-3 px-3 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap font-bold text-amber-700 dark:text-amber-400">
+                              {sanjeevShare > 0 ? formatINR(sanjeevShare) : <span className="text-slate-300 dark:text-slate-600">-</span>}
+                            </td>
 
-                        <td className="py-3 px-3 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap font-bold text-violet-700 dark:text-violet-400">
-                          {tarunShare > 0 ? (
-                            <div>
-                              <div>{formatINR(tarunShare)}</div>
-                              <div className="text-[9px] text-violet-600/70 dark:text-violet-400/70 font-black">({formatPercent(shares.tarun)})</div>
-                            </div>
-                          ) : (
-                            <span className="text-slate-300 dark:text-slate-600">-</span>
-                          )}
-                        </td>
+                            <td className="py-3 px-3 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap font-bold text-violet-700 dark:text-violet-400">
+                              {tarunShare > 0 ? formatINR(tarunShare) : <span className="text-slate-300 dark:text-slate-600">-</span>}
+                            </td>
+                          </>
+                        )}
 
                         {/* Distribution Action Button */}
                         <td className="py-3 px-4 text-center border-l border-slate-100 dark:border-slate-800 whitespace-nowrap">
-                          {isDone ? (
+                          {isSentToAccounts ? (
+                             <div className="flex items-center justify-center gap-1.5">
+                              <Badge className="bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-300 font-extrabold text-[10px] px-2.5 py-1 inline-flex items-center gap-1 border border-blue-300 dark:border-blue-800">
+                                <Landmark className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                                Received in Accounts
+                              </Badge>
+                              {onToggleDistribution && (
+                                <button
+                                  type="button"
+                                  onClick={() => onToggleDistribution(t.id, false, { sentToAccounts: false, accountsReceivedAt: undefined })}
+                                  title="Undo accounts status"
+                                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                >
+                                  <RotateCcw className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          ) : isDone ? (
                             <div className="flex items-center justify-center gap-2">
                               <Badge className="bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 font-extrabold text-[10px] px-2.5 py-1 inline-flex items-center gap-1 border border-emerald-300 dark:border-emerald-800">
                                 <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
@@ -390,7 +455,7 @@ export function ScrapDistributionView({
                               {onToggleDistribution && (
                                 <button
                                   type="button"
-                                  onClick={() => onToggleDistribution(t.id, true)}
+                                  onClick={() => onToggleDistribution(t.id, true, { isDistributed: false })}
                                   title="Undo distribution status"
                                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                                 >
@@ -401,11 +466,7 @@ export function ScrapDistributionView({
                           ) : (
                             <button
                               type="button"
-                              onClick={() => {
-                                if (onToggleDistribution) {
-                                  onToggleDistribution(t.id, false)
-                                }
-                              }}
+                              onClick={() => handleOpenDistributionModal(t)}
                               className="inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black px-3 py-1.5 rounded-xl transition-all shadow-2xs active:scale-95 cursor-pointer"
                             >
                               <Check className="h-3.5 w-3.5" />
@@ -422,6 +483,166 @@ export function ScrapDistributionView({
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Interactive Distribution Choice Modal ── */}
+      <Dialog open={Boolean(selectedTxnForDist)} onOpenChange={(open) => !open && setSelectedTxnForDist(null)}>
+        <DialogContent className="max-w-lg rounded-2xl p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+          <DialogHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
+            <DialogTitle className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Coins className="h-5 w-5 text-amber-600" />
+              Distribution Target for #{selectedTxnForDist?.transactionNumber}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 font-medium mt-1">
+              Select how the proceeds (₹{selectedTxnForDist?.amountReceived.toLocaleString('en-IN')}) for{' '}
+              <strong>{selectedTxnForDist?.locationName}</strong> will be processed.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-3">
+            {/* Target Options Radio Cards */}
+            <div className="grid grid-cols-2 gap-3">
+              {/* Option A: Handover to MD */}
+              <div
+                onClick={() => setDistTarget('md')}
+                className={cn(
+                  'p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-2',
+                  distTarget === 'md'
+                    ? 'border-amber-600 bg-amber-50/50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 flex items-center justify-center font-black">
+                    <UserCheck className="h-4 w-4" />
+                  </div>
+                  {distTarget === 'md' && <Check className="h-4 w-4 text-amber-600" />}
+                </div>
+                <div>
+                  <div className="text-xs font-black">Handover to MD</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
+                    Distributed to Directors / Shareholders
+                  </div>
+                </div>
+              </div>
+
+              {/* Option B: Accounts Department */}
+              <div
+                onClick={() => setDistTarget('accounts')}
+                className={cn(
+                  'p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between gap-2',
+                  distTarget === 'accounts'
+                    ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 text-blue-900 dark:text-blue-200 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 flex items-center justify-center font-black">
+                    <Landmark className="h-4 w-4" />
+                  </div>
+                  {distTarget === 'accounts' && <Check className="h-4 w-4 text-blue-600" />}
+                </div>
+                <div>
+                  <div className="text-xs font-black">Accounts Department</div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
+                    Received directly into Branch Accounts
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Option Details & Inputs */}
+            {distTarget === 'md' ? (
+              <div className="p-3 bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 rounded-xl text-xs text-amber-900 dark:text-amber-300 font-semibold">
+                ✓ Record will be logged as <strong>Distributed</strong> under the standard shareholder split formula for{' '}
+                {selectedTxnForDist?.groupName || 'this company'}.
+              </div>
+            ) : (
+              <div className="space-y-2 pt-1">
+                <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">
+                  Select Payment Handover Person / Account:
+                </label>
+                <div className="relative">
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      placeholder="Type to filter or choose handover account..."
+                      value={handoverSearch}
+                      onChange={(e) => {
+                        setHandoverSearch(e.target.value)
+                        setIsDropdownOpen(true)
+                      }}
+                      onFocus={() => setIsDropdownOpen(true)}
+                      className="pr-8 h-9 text-xs font-bold bg-white dark:bg-slate-900 rounded-xl border-slate-300 dark:border-slate-700"
+                    />
+                    <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
+                  </div>
+
+                  {/* Filtered Dropdown Options List */}
+                  {isDropdownOpen && (
+                    <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg p-1 divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredHandoverUsers.length === 0 ? (
+                        <div className="p-2 text-center text-xs text-slate-400 font-semibold italic">
+                          No matching handover user found. Custom entry "{handoverSearch}" will be used.
+                        </div>
+                      ) : (
+                        filteredHandoverUsers.map((ho) => {
+                          const isSelected = selectedHandoverUserId === ho.id
+                          return (
+                            <div
+                              key={ho.id}
+                              onClick={() => {
+                                setSelectedHandoverUserId(ho.id)
+                                setHandoverSearch(ho.name)
+                                setIsDropdownOpen(false)
+                              }}
+                              className={cn(
+                                'px-3 py-2 text-xs font-extrabold cursor-pointer rounded-lg transition-colors flex items-center justify-between',
+                                isSelected
+                                  ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                                  : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                              )}
+                            >
+                              <span>{ho.name}</span>
+                              {isSelected && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 font-semibold italic">
+                  Note: "CASH HANDOVER TO MD" is excluded from this Accounts dropdown.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800 mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedTxnForDist(null)}
+              className="rounded-xl text-xs font-bold border-slate-300 dark:border-slate-700"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleConfirmDistributionModal}
+              className={cn(
+                'rounded-xl text-xs font-black px-4 shadow-sm border-0 cursor-pointer text-white',
+                distTarget === 'md' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'
+              )}
+            >
+              <Check className="h-3.5 w-3.5 mr-1" />
+              {distTarget === 'md' ? 'Confirm MD Distribution' : 'Confirm Accounts Handover'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

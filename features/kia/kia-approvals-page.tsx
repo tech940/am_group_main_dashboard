@@ -916,9 +916,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
   const getPendingStageLabel = (req: ApprovalRequest): string => {
     if (req.vpApproval === 'NOT APPROVED') return 'Rejected by ED'
     if (req.vpApproval === 'HELD') return 'Held by ED'
-    
-    if (req.accountApproval === 'NOT APPROVED') return 'Rejected by Accounts'
-    if (req.accountApproval === 'HELD') return 'Held by Accounts'
 
     if (req.eaApproval === 'NOT APPROVED') return 'Rejected by EA'
     if (req.eaApproval === 'HELD') return 'Held by EA'
@@ -926,16 +923,24 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (req.managementApproval === 'NOT APPROVED') return 'Rejected by MD'
     if (req.managementApproval === 'HELD') return 'Held by MD'
 
+    if (req.accountApproval === 'NOT APPROVED') return 'Rejected by Accounts'
+    if (req.accountApproval === 'HELD') return 'Held by Accounts'
+
     if (req.emailSendStatus === 'SentBack') return 'Sent Back / Clarification'
 
     if (!req.vpApproval || req.vpApproval === '') return 'Pending ED'
-    if (!req.accountApproval || req.accountApproval === '') return 'Pending Accounts'
-    if (!req.eaApproval || req.eaApproval === '') return 'Pending EA'
-    if (!req.managementApproval || req.managementApproval === '') return 'Pending MD'
 
-    if (req.managementApproval === 'APPROVED') {
-      if (req.paymentStatus === 'PAID' || req.invoiceDocUrl) return 'Paid'
-      return 'Pending Payment'
+    if (req.vpApproval === 'APPROVED' && (!req.managementApproval || req.managementApproval === '')) {
+      return 'Pending MD'
+    }
+
+    if (req.managementApproval === 'APPROVED' && (!req.accountApproval || req.accountApproval === '' || req.paymentStatus !== 'PAID')) {
+      if (req.paymentStatus === 'PAID') return 'Paid'
+      return 'Pending Accounts'
+    }
+
+    if (req.accountApproval === 'APPROVED' || req.paymentStatus === 'PAID') {
+      return 'Paid'
     }
 
     return 'Unknown'
@@ -948,14 +953,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     }
 
     if (['md', 'ceo'].includes(effectiveRole)) {
-      if (pendingLabel === 'Pending Payment') return 'payment_done'
       return 'md'
     }
     if (pendingLabel === 'Pending ED') return 'sales_manager'
-    if (pendingLabel === 'Pending Accounts') return 'accounts'
-    if (pendingLabel === 'Pending EA') return 'ea'
+    if (effectiveRole === 'ea' && req.vpApproval === 'APPROVED' && (!req.eaApproval || req.eaApproval === '')) return 'ea'
     if (pendingLabel === 'Pending MD') return 'md'
-    if (pendingLabel === 'Pending Payment') return 'payment_done'
+    if (pendingLabel === 'Pending Accounts') return 'accounts'
     return null
   }
 
@@ -963,10 +966,9 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (['developer', 'admin'].includes(currentUser.role)) return true
 
     if (stage === 'sales_manager') return effectiveRole === 'ed'
-    if (stage === 'accounts') return ['accounts', 'finance_head'].includes(effectiveRole)
     if (stage === 'ea') return ['ea'].includes(effectiveRole)
     if (stage === 'md') return ['md', 'ceo'].includes(effectiveRole)
-    if (stage === 'payment_done') return ['accounts', 'finance_head', 'md', 'ceo'].includes(effectiveRole)
+    if (stage === 'accounts' || stage === 'payment_done') return ['accounts', 'finance_head', 'md', 'ceo'].includes(effectiveRole)
     return false
   }
 
@@ -977,25 +979,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return false
     }
 
-    if (pendingLabel === 'Pending Payment') {
-      return ['accounts', 'finance_head', 'md', 'ceo'].includes(effectiveRole)
-    }
-
-    // MD can approve any order any time no matter the stage (if they haven't already approved the MD stage)
     if (['md', 'ceo'].includes(effectiveRole)) {
-      return !row.managementApproval || row.managementApproval === ''
+      return row.vpApproval === 'APPROVED' && (!row.managementApproval || row.managementApproval === '')
     }
 
     if (pendingLabel === 'Pending ED' && effectiveRole === 'ed') {
       return true
     }
+    if (effectiveRole === 'ea' && row.vpApproval === 'APPROVED' && (!row.eaApproval || row.eaApproval === '') && (!row.managementApproval || row.managementApproval === '')) {
+      return true
+    }
     if (pendingLabel === 'Pending Accounts' && ['accounts', 'finance_head'].includes(effectiveRole)) {
-      return true
-    }
-    if (pendingLabel === 'Pending EA' && effectiveRole === 'ea') {
-      return true
-    }
-    if (pendingLabel === 'Pending MD' && ['md', 'ceo'].includes(effectiveRole)) {
       return true
     }
 
@@ -2961,14 +2955,14 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
               }
             }
 
-            const renderOverviewItem = (label: string, value: string | React.ReactNode, icon: any) => {
+            const renderOverviewItem = (label: string, value: string | React.ReactNode, icon: any, className?: string) => {
               const Icon = icon
               return (
-                <div className="border border-slate-100 bg-[#f8fafc]/40 rounded-2xl p-4 flex gap-3 items-start">
+                <div className={cn("border border-slate-100 bg-[#f8fafc]/40 rounded-2xl p-4 flex gap-3 items-start", className)}>
                   <div className="h-8 w-8 rounded-xl bg-slate-100 border border-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
                     <Icon className="w-4 h-4" />
                   </div>
-                  <div className="space-y-0.5 overflow-hidden">
+                  <div className="space-y-0.5 overflow-hidden flex-1">
                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block">{label}</span>
                     <span className="text-xs font-black text-slate-900 block break-words" title={typeof value === 'string' ? value : undefined}>{value}</span>
                   </div>
@@ -3053,11 +3047,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
             const renderNewWorkflowStepper = (req: ApprovalRequest) => {
               const stages = [
                 { key: 'created', label: 'Created', status: 'APPROVED' },
-                { key: 'sales_manager', label: 'Concerned Head', status: req.vpApproval },
-                { key: 'accounts', label: 'Payment', status: req.accountApproval },
-                { key: 'ea', label: 'EA Review', status: req.eaApproval },
-                { key: 'md', label: 'Director Approval', status: req.managementApproval },
-                { key: 'paid', label: 'Paid', status: req.paymentStatus === 'PAID' || (req.managementApproval === 'APPROVED' && req.invoiceDocUrl) ? 'APPROVED' : null },
+                { key: 'sales_manager', label: 'ED Approval', status: req.vpApproval },
+                { key: 'ea', label: 'EA Review (Optional)', status: req.eaApproval },
+                { key: 'md', label: 'MD Approval', status: req.managementApproval },
+                { key: 'accounts', label: 'Accounts Processing', status: req.accountApproval },
+                { key: 'paid', label: 'Paid', status: req.paymentStatus === 'PAID' ? 'APPROVED' : null },
               ]
 
               const getStageDate = (key: string) => {
@@ -3286,7 +3280,6 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {renderOverviewItem('GL Account', detailRow.glName ? `${detailRow.glName} (${detailRow.glCode})` : '—', Database)}
                         {renderOverviewItem('GST Details', detailRow.gst || '—', Percent)}
                         {renderOverviewItem('Reference / Invoice No.', detailRow.invoiceNumber || '—', FileText)}
-                        {renderOverviewItem('Remarks (Submitter)', detailRow.remarks || '—', MessageSquare)}
                         {detailRow.uploadBillUrl1 && renderOverviewItem('Primary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl1!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Bill 1</button>, FileText)}
                         {detailRow.uploadBillUrl2 && renderOverviewItem('Secondary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl2!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Bill 2</button>, FileText)}
                         {detailRow.uploadDocUrl && renderOverviewItem('Support Document', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadDocUrl!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Support Doc</button>, FileText)}
@@ -3295,6 +3288,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {detailRow.paymentStatus === 'PAID' && renderOverviewItem('UTR / Txn ID', detailRow.utrNumber || '—', Key)}
                         {detailRow.paymentStatus === 'PAID' && detailRow.paymentProofUrl && renderOverviewItem('Payment Proof', <button type="button" onClick={() => setPreviewDocUrl(detailRow.paymentProofUrl!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Proof</button>, FileText)}
                         {detailRow.paymentStatus === 'PAID' && detailRow.paymentCompletedAt && renderOverviewItem('Paid On / By', `${new Date(detailRow.paymentCompletedAt).toLocaleDateString('en-IN')} by ${detailRow.paymentCompletedBy || '—'}`, User)}
+                        {renderOverviewItem('Remarks (Submitter)', detailRow.remarks || '—', MessageSquare, 'col-span-1 sm:col-span-2 md:col-span-4 bg-amber-50/40 border-amber-100/80')}
                       </div>
                     </div>
 

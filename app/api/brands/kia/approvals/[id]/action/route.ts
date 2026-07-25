@@ -77,30 +77,22 @@ export async function POST(
     }
 
     // Check steps order
-    // Flow: ED (sales_manager) -> Accounts Invoice Upload (accounts) -> EA -> MD -> Payment (payment_done)
+    // Flow: 1: ED (sales_manager) -> 2: EA (not mandatory) -> 3: MD -> 4: Accounts (payment_done)
     if (action !== 'SEND_BACK') {
-      if (stage === 'accounts' && !isSuperUser && !isTester) {
+      if (stage === 'ea' && !isSuperUser && !isTester) {
         if (requestRow.vpApproval !== 'APPROVED') {
           return NextResponse.json({ error: 'ED approval is pending.' }, { status: 400 })
         }
-      } else if (stage === 'ea' && !isSuperUser && !isTester) {
-        if (requestRow.vpApproval !== 'APPROVED' || requestRow.accountApproval !== 'APPROVED') {
-          return NextResponse.json({ error: 'ED approval and Accounts invoice upload must be completed.' }, { status: 400 })
-        }
       } else if (stage === 'md' && !isSuperUser && !isTester) {
-        if (
-          requestRow.vpApproval !== 'APPROVED' ||
-          requestRow.accountApproval !== 'APPROVED'
-        ) {
-          return NextResponse.json({ error: 'Previous approval stages (ED & Accounts) must be completed.' }, { status: 400 })
+        if (requestRow.vpApproval !== 'APPROVED') {
+          return NextResponse.json({ error: 'ED approval must be completed first.' }, { status: 400 })
         }
-      } else if (stage === 'payment_done' && !isSuperUser && !isTester) {
+      } else if ((stage === 'accounts' || stage === 'payment_done') && !isSuperUser && !isTester) {
         if (
           requestRow.vpApproval !== 'APPROVED' ||
-          requestRow.accountApproval !== 'APPROVED' ||
           requestRow.managementApproval !== 'APPROVED'
         ) {
-          return NextResponse.json({ error: 'MD approval must be completed before recording payment.' }, { status: 400 })
+          return NextResponse.json({ error: 'MD approval must be completed before Accounts stage.' }, { status: 400 })
         }
       }
     }
@@ -156,47 +148,36 @@ export async function POST(
       } else if (stage === 'md') {
         updates.managementApproval = statusVal
         updates.managementRemarks = remarks || ''
-        if (action === 'APPROVE' && requestRow.invoiceDocUrl) {
-          updates.paymentStatus = 'PAID'
-          updates.paymentCompletedAt = new Date()
-          updates.paymentCompletedBy = appUser.fullName
-          updates.emailSendStatus = 'Completed'
-        } else if (action === 'REJECT') {
+        if (action === 'REJECT') {
           updates.emailSendStatus = 'Rejected'
         } else if (action === 'HOLD') {
           updates.emailSendStatus = 'Held'
         }
-      } else if (stage === 'accounts') {
+      } else if (stage === 'accounts' || stage === 'payment_done') {
         updates.accountApproval = statusVal
         if (action === 'APPROVE') {
-          if (!invoiceNumber || !invoiceNumber.trim()) {
-            return NextResponse.json({ error: 'Invoice number is required for accounts stage.' }, { status: 400 })
+          if (invoiceNumber && invoiceNumber.trim()) {
+            updates.invoiceNumber = invoiceNumber.trim()
           }
-          if (!invoiceDocUrl || !invoiceDocUrl.trim()) {
-            return NextResponse.json({ error: 'Invoice file upload is required for accounts stage.' }, { status: 400 })
+          if (invoiceDocUrl && invoiceDocUrl.trim()) {
+            updates.invoiceDocUrl = invoiceDocUrl.trim()
           }
-          updates.invoiceNumber = invoiceNumber.trim()
-          updates.invoiceDocUrl = invoiceDocUrl.trim()
+          if (utrNumber && utrNumber.trim()) {
+            updates.utrNumber = utrNumber.trim()
+          }
+          if (paymentProofUrl && paymentProofUrl.trim()) {
+            updates.paymentProofUrl = paymentProofUrl.trim()
+          }
+          updates.paymentStatus = 'PAID'
+          updates.paymentCompletedAt = new Date()
+          updates.paymentCompletedBy = appUser.fullName
+          updates.emailSendStatus = 'Completed'
+          statusVal = 'PAID'
         } else if (action === 'REJECT') {
           updates.emailSendStatus = 'Rejected'
         } else {
           updates.emailSendStatus = 'Held'
         }
-      } else if (stage === 'payment_done') {
-        if (!utrNumber || !utrNumber.trim()) {
-          return NextResponse.json({ error: 'UTR number is required to record payment.' }, { status: 400 })
-        }
-        if (!paymentProofUrl || !paymentProofUrl.trim()) {
-          return NextResponse.json({ error: 'Payment proof document upload is required.' }, { status: 400 })
-        }
-        updates.paymentStatus = 'PAID'
-        updates.utrNumber = utrNumber.trim()
-        updates.paymentProofUrl = paymentProofUrl.trim()
-        updates.paymentRemarks = remarks || ''
-        updates.paymentCompletedAt = new Date()
-        updates.paymentCompletedBy = appUser.fullName
-        updates.emailSendStatus = 'Completed'
-        statusVal = 'PAID'
       }
     }
 

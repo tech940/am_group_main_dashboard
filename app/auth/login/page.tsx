@@ -84,8 +84,7 @@ export default function LoginPage() {
       }
 
       shouldResetLoading = false
-      router.replace(result?.redirectTo || '/dashboard')
-      router.refresh()
+      window.location.href = result?.redirectTo || '/dashboard'
     } catch (err) {
       setError('Connection failed. Please check your network and try again.')
       console.error(err)

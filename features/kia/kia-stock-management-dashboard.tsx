@@ -800,7 +800,6 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
             { key: 'All', label: 'Total VINs', value: data.metrics.total_vins, icon: Car, tone: 'blue' as Tone, hint: 'Whole inventory' },
             { key: 'AVAILABLE', label: 'Available', value: data.metrics.available, icon: CheckCircle2, tone: 'emerald' as Tone, hint: 'Free to allot' },
             { key: 'PAYMENT_PENDING', label: 'Payment Pending', value: data.metrics.payment_pending, icon: WalletCards, tone: 'amber' as Tone, hint: 'Within window' },
-            { key: 'PAYMENT_OVERDUE', label: 'Payment Overdue', value: data.metrics.payment_overdue, icon: AlertTriangle, tone: 'rose' as Tone, hint: 'Past 72h' },
             { key: 'PAID_TO_DELIVER', label: 'Paid · To Deliver', value: data.metrics.paid_to_deliver, icon: BadgeIndianRupee, tone: 'violet' as Tone, hint: 'Ready to hand over' },
             { key: 'DELIVERED', label: 'Delivered', value: data.metrics.delivered, icon: Truck, tone: 'teal' as Tone, hint: 'Completed' },
             { key: 'TRANSFERRED', label: 'Transfers', value: (data.metrics.transfers || 0) + (data.metrics.transfer_missing || 0), icon: RefreshCw, tone: 'sky' as Tone, hint: 'Inter-outlet' },
@@ -865,7 +864,6 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
                 <SelectItem value="All" className="text-xs font-bold cursor-pointer">All Status</SelectItem>
                 <SelectItem value="AVAILABLE" className="text-xs font-bold cursor-pointer">Available</SelectItem>
                 <SelectItem value="PAYMENT_PENDING" className="text-xs font-bold cursor-pointer">Payment Pending</SelectItem>
-                <SelectItem value="PAYMENT_OVERDUE" className="text-xs font-bold cursor-pointer">Payment Overdue</SelectItem>
                 <SelectItem value="PAID_TO_DELIVER" className="text-xs font-bold cursor-pointer">Paid - To Deliver</SelectItem>
                 <SelectItem value="DELIVERED" className="text-xs font-bold cursor-pointer">Delivered</SelectItem>
                 <SelectItem value="TRANSFERRED" className="text-xs font-bold cursor-pointer">Transferred</SelectItem>

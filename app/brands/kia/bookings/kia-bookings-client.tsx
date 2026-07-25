@@ -1478,6 +1478,8 @@ export function KiaBookingsClient({
   const [paymentReference, setPaymentReference] = useState('')
   const [paymentInvoiceFile, setPaymentInvoiceFile] = useState<File | null>(null)
   const [accountsDialogOpen, setAccountsDialogOpen] = useState(false)
+  const [holdDialogOpen, setHoldDialogOpen] = useState(false)
+  const [holdReasonInput, setHoldReasonInput] = useState('')
   const [accountsInvoiceNumber, setAccountsInvoiceNumber] = useState('')
   const [accountsReference, setAccountsReference] = useState('')
   const [accountsInvoiceFile, setAccountsInvoiceFile] = useState<File | null>(null)
@@ -2507,10 +2509,8 @@ export function KiaBookingsClient({
       return
     }
     if (action === 'hold') {
-      const reason = window.prompt('Put this booking on hold? Optionally add a reason:', '')
-      if (reason === null) return // user cancelled the prompt
-      setLoaderVariant('generic')
-      actionMutation.mutate({ endpoint: `/api/brands/kia/bookings/${selectedBookingId}/hold`, body: { action: 'hold', reason } })
+      setHoldReasonInput('')
+      setHoldDialogOpen(true)
       return
     }
     if (action === 'resume') {
@@ -2551,6 +2551,17 @@ export function KiaBookingsClient({
     }
     setLoaderVariant(action === 'deliver' ? 'delivery' : 'generic')
     actionMutation.mutate({ endpoint: `/api/brands/kia/bookings/${selectedBookingId}/${action}` })
+  }
+
+  function submitHold() {
+    if (!selectedBookingId || !holdReasonInput.trim()) return
+    setLoaderVariant('generic')
+    actionMutation.mutate({
+      endpoint: `/api/brands/kia/bookings/${selectedBookingId}/hold`,
+      body: { action: 'hold', reason: holdReasonInput.trim() },
+    })
+    setHoldDialogOpen(false)
+    setHoldReasonInput('')
   }
 
   function openTransferDialog(vehicle?: MatchingVehicle | null) {
@@ -3605,6 +3616,51 @@ export function KiaBookingsClient({
             <Button type="button" className="h-10 rounded-xl bg-emerald-600 text-xs font-black text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 sm:text-sm" onClick={confirmPayment} disabled={paymentMutation.isPending}>
               {paymentMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
               Confirm Payment Received
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mandatory Hold Remarks Dialog */}
+      <Dialog open={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <PauseCircle className="h-5 w-5 text-amber-500" />
+              Put Booking on Hold
+            </DialogTitle>
+            <DialogDescription className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Please enter mandatory remarks explaining why this booking is being placed on hold. This will be logged in the activity timeline.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-3">
+            <div>
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Hold Remarks / Reason <span className="text-rose-500">*</span>
+              </Label>
+              <Textarea
+                value={holdReasonInput}
+                onChange={(e) => setHoldReasonInput(e.target.value)}
+                placeholder="e.g. Customer requested a 2-week hold for personal finance arrangement"
+                className="mt-1.5 h-24 rounded-2xl border-slate-200 dark:border-slate-700 font-medium text-xs resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setHoldDialogOpen(false)}
+              className="rounded-xl border-slate-200 dark:border-slate-700 text-xs font-bold"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!holdReasonInput.trim() || actionMutation.isPending}
+              onClick={submitHold}
+              className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+            >
+              {actionMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              Confirm Hold
             </Button>
           </DialogFooter>
         </DialogContent>

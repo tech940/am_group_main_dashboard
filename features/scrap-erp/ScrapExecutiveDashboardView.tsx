@@ -83,18 +83,24 @@ export function ScrapExecutiveDashboardView({
     setEndDateInput(end)
   }
 
-  // Active Date-Filtered Transactions
+  // Active Date-Filtered Transactions (Sorted Date High to Low -> Newest Sale First)
   const activeTxns = useMemo(() => {
-    if (!appliedStartDate && !appliedEndDate) return transactions
+    let list = transactions
+    if (appliedStartDate || appliedEndDate) {
+      list = transactions.filter((t) => {
+        const d = t.soldDate || t.timestamp || t.createdAt
+        if (!d) return false
+        const dStr = d.slice(0, 10) // 'YYYY-MM-DD'
 
-    return transactions.filter((t) => {
-      const d = t.soldDate || t.timestamp || t.createdAt
-      if (!d) return false
-      const dStr = d.slice(0, 10) // 'YYYY-MM-DD'
-
-      if (appliedStartDate && dStr < appliedStartDate) return false
-      if (appliedEndDate && dStr > appliedEndDate) return false
-      return true
+        if (appliedStartDate && dStr < appliedStartDate) return false
+        if (appliedEndDate && dStr > appliedEndDate) return false
+        return true
+      })
+    }
+    return [...list].sort((a, b) => {
+      const dA = new Date(a.soldDate || a.timestamp || a.createdAt || 0).getTime()
+      const dB = new Date(b.soldDate || b.timestamp || b.createdAt || 0).getTime()
+      return dB - dA
     })
   }, [transactions, appliedStartDate, appliedEndDate])
 
@@ -119,7 +125,7 @@ export function ScrapExecutiveDashboardView({
     const monthMap: Record<string, { amount: number; weight: number; count: number; dateObj: Date }> = {}
 
     // Reference Date for relative calculations
-    const now = new Date('2026-07-22T00:00:00')
+    const now = new Date()
 
     activeTxns.forEach((t) => {
       const amt = Number(t.amountReceived || 0)
@@ -333,16 +339,33 @@ export function ScrapExecutiveDashboardView({
     )
   }, [companyOilList])
 
+  const [agingCompanyFilter, setAgingCompanyFilter] = useState<string>('all')
 
+  // Available Companies for Company-wise Aging Filter
+  const availableCompanies = useMemo(() => {
+    const set = new Set<string>()
+    transactions.forEach((t) => {
+      const c = formatCompanyName(t.groupName || 'JAMMU AUTOMART')
+      if (c) set.add(c)
+    })
+    return Array.from(set).sort()
+  }, [transactions])
 
-  // Disposal Aging Heatmap Matrix Computation
+  // Disposal Aging Heatmap Matrix Computation (ALL TIME, NEVER DATE FILTERED)
   const agingMatrix = useMemo(() => {
+    let sourceTxns = transactions
+    if (agingCompanyFilter !== 'all') {
+      sourceTxns = transactions.filter(
+        (t) => formatCompanyName(t.groupName || 'JAMMU AUTOMART') === agingCompanyFilter
+      )
+    }
+
     const locNames = Array.from(
-      new Set(activeTxns.map((t) => t.locationName).filter(Boolean))
+      new Set(sourceTxns.map((t) => t.locationName).filter(Boolean))
     ).sort()
 
     const rows = locNames.map((locName) => {
-      const locTxns = activeTxns.filter((t) => t.locationName === locName)
+      const locTxns = sourceTxns.filter((t) => t.locationName === locName)
 
       const cellData: Record<
         string,
@@ -373,7 +396,7 @@ export function ScrapExecutiveDashboardView({
 
         const latest = sorted[0]
         const latestDate = new Date(latest.soldDate || latest.timestamp || latest.createdAt)
-        const diffMs = metrics.now.getTime() - latestDate.getTime()
+        const diffMs = new Date().getTime() - latestDate.getTime()
         const days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
         const lastDateStr = latestDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
@@ -391,7 +414,7 @@ export function ScrapExecutiveDashboardView({
     })
 
     return rows
-  }, [transactions, metrics.now])
+  }, [transactions, agingCompanyFilter])
 
   return (
     <div className="space-y-6">
@@ -1048,8 +1071,40 @@ export function ScrapExecutiveDashboardView({
               </p>
             </div>
 
-            {/* Interactive Status Legend Pills */}
+            {/* Controls: Company Filter Dropdown & Status Legend Pills */}
             <div className="flex flex-wrap items-center gap-2">
+              {/* Company Filter (No date filter applied) */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                <Building className="h-3.5 w-3.5 text-slate-500" />
+                <select
+                  value={agingCompanyFilter}
+                  onChange={(e) => setAgingCompanyFilter(e.target.value)}
+                  className="bg-transparent text-xs font-black text-slate-800 dark:text-slate-100 focus:outline-hidden cursor-pointer"
+                >
+                  <option value="all">All Companies</option>
+                  {availableCompanies.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Explicit 'All' Button to reset to all statuses */}
+              <button
+                type="button"
+                onClick={() => setAgingFilter('all')}
+                className={cn(
+                  'rounded-full px-3.5 py-1 text-[11px] font-black transition-all border cursor-pointer flex items-center gap-1.5',
+                  agingFilter === 'all'
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+                    : 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-200'
+                )}
+              >
+                <Filter className="h-3 w-3" />
+                All
+              </button>
+
               <button
                 type="button"
                 onClick={() => setAgingFilter(agingFilter === 'on_schedule' ? 'all' : 'on_schedule')}
@@ -1150,10 +1205,18 @@ export function ScrapExecutiveDashboardView({
                       {/* Scrap Type Cells */}
                       {SCRAP_AGING_CONFIG.map((cfg) => {
                         const cell = row.cellData[cfg.key]
+                        const isMatch = agingFilter === 'all' || cell?.status === agingFilter
+
                         if (!cell || cell.days === null) {
                           return (
-                            <td key={cfg.key} className="py-2.5 px-3 text-center text-slate-300 dark:text-slate-600 font-bold">
-                              -
+                            <td key={cfg.key} className={cn('py-2.5 px-3 text-center transition-opacity', !isMatch && 'opacity-20')}>
+                              {cell?.status === 'never' && agingFilter === 'never' ? (
+                                <span className="inline-flex items-center justify-center rounded-md px-2 py-0.5 text-[10px] font-extrabold bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900">
+                                  Never
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 dark:text-slate-600 font-bold">-</span>
+                              )}
                             </td>
                           )
                         }
@@ -1162,13 +1225,13 @@ export function ScrapExecutiveDashboardView({
                         if (cell.status === 'on_schedule') {
                           badgeStyle = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                         } else if (cell.status === 'overdue') {
-                          badgeStyle = 'bg-amber-50 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-black'
+                          badgeStyle = 'bg-amber-50 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-black scale-105 shadow-xs'
                         } else if (cell.status === 'investigate') {
-                          badgeStyle = 'bg-rose-50 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300 border-rose-200 dark:border-rose-800 font-black'
+                          badgeStyle = 'bg-rose-50 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300 border-rose-200 dark:border-rose-800 font-black scale-105 shadow-xs'
                         }
 
                         return (
-                          <td key={cfg.key} className="py-2.5 px-3 text-center">
+                          <td key={cfg.key} className={cn('py-2.5 px-3 text-center transition-opacity', !isMatch && 'opacity-20')}>
                             <button
                               type="button"
                               onClick={() => onDrilldown(`${row.locationName} · ${cfg.label} (Last sold ${cell.lastDateStr})`, cell.txns)}

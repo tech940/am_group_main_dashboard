@@ -5,7 +5,17 @@ import { INITIAL_SCRAP_TRANSACTIONS } from '@/lib/scrap-erp/mock-data'
 import { ScrapTransaction } from '@/lib/scrap-erp/types'
 
 // In-memory global store initialized with seed transactions
-let globalTransactions: ScrapTransaction[] = [...INITIAL_SCRAP_TRANSACTIONS]
+// Distribution is only valid from 1 July 2026 onwards — strip any stale isDistributed from earlier records.
+const DISTRIBUTION_START_DATE = '2026-07-01'
+let globalTransactions: ScrapTransaction[] = INITIAL_SCRAP_TRANSACTIONS.map((t) => {
+  const dateStr = (t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
+  if (dateStr < DISTRIBUTION_START_DATE && t.isDistributed) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { isDistributed, distributedAt, distributedBy, ...rest } = t as ScrapTransaction & { isDistributed?: boolean; distributedAt?: string; distributedBy?: string }
+    return rest
+  }
+  return { ...t }
+})
 
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
@@ -131,15 +141,26 @@ export async function PUT(request: Request) {
     }
 
     const existing = globalTransactions[index]
-    const weightQty = body.weightQty !== undefined ? Number(body.weightQty) : existing.weightQty
-    const ratePerUnit = body.ratePerUnit !== undefined ? Number(body.ratePerUnit) : existing.ratePerUnit
+    const existingDateStr = (existing.soldDate || existing.timestamp || existing.createdAt || '').slice(0, 10)
+    const isPreJuly = existingDateStr < DISTRIBUTION_START_DATE
+
+    // Strip isDistributed / distributedAt from body if this is a pre-July record — distribution only from July 2026
+    const sanitizedBody = { ...body }
+    if (isPreJuly) {
+      delete sanitizedBody.isDistributed
+      delete sanitizedBody.distributedAt
+      delete sanitizedBody.distributedBy
+    }
+
+    const weightQty = sanitizedBody.weightQty !== undefined ? Number(sanitizedBody.weightQty) : existing.weightQty
+    const ratePerUnit = sanitizedBody.ratePerUnit !== undefined ? Number(sanitizedBody.ratePerUnit) : existing.ratePerUnit
     const calculatedTotal = Math.round(weightQty * ratePerUnit * 100) / 100
-    const amountReceived = body.amountReceived !== undefined ? Number(body.amountReceived) : calculatedTotal
+    const amountReceived = sanitizedBody.amountReceived !== undefined ? Number(sanitizedBody.amountReceived) : calculatedTotal
     const outstandingAmount = Math.max(0, calculatedTotal - amountReceived)
 
     const updatedTransaction: ScrapTransaction = {
       ...existing,
-      ...body,
+      ...sanitizedBody,
       weightQty,
       ratePerUnit,
       calculatedTotal,

@@ -1,11 +1,12 @@
 'use client'
 
+import { useMemo } from 'react'
 import { ScrapTransaction } from '@/lib/scrap-erp/types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Eye, Info } from 'lucide-react'
+import { Eye, Info, ArrowLeft, CheckCircle2 } from 'lucide-react'
 
 function formatINR(val: number) {
   return new Intl.NumberFormat('en-IN', {
@@ -30,17 +31,37 @@ export function ScrapDrilldownModal({
   onOpenGallery: (txn: ScrapTransaction) => void
   onSelectTransaction: (txn: ScrapTransaction) => void
 }) {
+  // Sort rows date high to low (latest sale visible first)
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      const dA = new Date(a.soldDate || a.timestamp || a.createdAt || 0).getTime()
+      const dB = new Date(b.soldDate || b.timestamp || b.createdAt || 0).getTime()
+      return dB - dA
+    })
+  }, [rows])
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[96vw] xl:max-w-6xl 2xl:max-w-7xl max-h-[92vh] overflow-hidden flex flex-col rounded-2xl p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
         <DialogHeader className="shrink-0 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <span>{title}</span>
-              <Badge variant="outline" className="text-xs font-bold">
-                {rows.length} Records
-              </Badge>
-            </DialogTitle>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onClose}
+                className="h-8 rounded-xl text-xs font-bold border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <ArrowLeft className="h-4 w-4" /> Back
+              </Button>
+              <DialogTitle className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <span>{title}</span>
+                <Badge variant="outline" className="text-xs font-bold">
+                  {sortedRows.length} Records
+                </Badge>
+              </DialogTitle>
+            </div>
           </div>
         </DialogHeader>
 
@@ -54,11 +75,12 @@ export function ScrapDrilldownModal({
                 <TableHead className="text-xs font-black">Category</TableHead>
                 <TableHead className="text-xs font-black text-right">Valuation</TableHead>
                 <TableHead className="text-xs font-black text-right">Received</TableHead>
+                <TableHead className="text-xs font-black text-center">Distribution Status</TableHead>
                 <TableHead className="text-xs font-black text-center">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {sortedRows.map((row) => (
                 <TableRow
                   key={row.id}
                   onClick={() => {
@@ -68,10 +90,10 @@ export function ScrapDrilldownModal({
                   className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50"
                 >
                   <TableCell className="text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                    {row.soldDate || row.timestamp.slice(0, 10)}
+                    {row.soldDate || row.timestamp?.slice(0, 10)}
                   </TableCell>
                   <TableCell className="text-xs font-black text-slate-900 dark:text-slate-100">
-                    {row.transactionNumber}
+                    #{row.transactionNumber}
                   </TableCell>
                   <TableCell className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     {row.locationName}
@@ -85,6 +107,12 @@ export function ScrapDrilldownModal({
                   <TableCell className="text-xs font-black text-right text-slate-900 dark:text-slate-100 whitespace-nowrap">
                     {formatINR(row.amountReceived)}
                   </TableCell>
+                  <TableCell className="text-center whitespace-nowrap">
+                    <Badge className="bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 font-extrabold text-[10px] px-2 py-0.5 inline-flex items-center gap-1 border border-emerald-300 dark:border-emerald-800">
+                      <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                      Distributed
+                    </Badge>
+                  </TableCell>
                   <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-center gap-1">
                       <Button
@@ -95,7 +123,7 @@ export function ScrapDrilldownModal({
                           onClose()
                           onSelectTransaction(row)
                         }}
-                        className="h-7 w-7 text-slate-500 hover:text-slate-900"
+                        className="h-7 w-7 text-slate-500 hover:text-slate-900 cursor-pointer"
                         title="View Details"
                       >
                         <Info className="h-3.5 w-3.5" />
@@ -105,7 +133,7 @@ export function ScrapDrilldownModal({
                         variant="ghost"
                         size="icon"
                         onClick={() => onOpenGallery(row)}
-                        className="h-7 w-7 text-slate-500 hover:text-slate-900"
+                        className="h-7 w-7 text-slate-500 hover:text-slate-900 cursor-pointer"
                         title="View Photos"
                       >
                         <Eye className="h-3.5 w-3.5" />

@@ -115,8 +115,20 @@ export function KpiRow({
   onSelect?: (key: string) => void
   className?: string
 }) {
+  const count = items.length
+  const defaultCols =
+    count === 6
+      ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6'
+      : count === 5
+        ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
+        : count === 4
+          ? 'grid-cols-2 sm:grid-cols-4'
+          : count === 8
+            ? 'grid-cols-2 sm:grid-cols-4 xl:grid-cols-8'
+            : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7'
+
   return (
-    <Stagger className={cn('grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7', className)}>
+    <Stagger className={cn('grid gap-2.5', defaultCols, className)}>
       {items.map((item) => (
         <StaggerItem key={item.key} className="h-full">
           <KpiCard

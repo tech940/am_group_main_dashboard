@@ -60,7 +60,7 @@ export async function GET(request: Request) {
 
     if (status !== 'All') {
       if (status === 'AVAILABLE') {
-        filters.push('va.id IS NULL')
+        filters.push("va.id IS NULL AND vt.id IS NULL AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail') AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED')")
       } else if (status === 'ALLOTTED' || status === 'PAYMENT_PENDING') {
         filters.push("va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered')")
       } else if (status === 'PAYMENT_OVERDUE') {
@@ -119,7 +119,13 @@ export async function GET(request: Request) {
     const metricsResult = await db.execute(sql.raw(`
       SELECT
         COUNT(CASE WHEN NOT ${deliveredExpr} THEN 1 END)::int AS total_vins,
-        COUNT(CASE WHEN va.id IS NULL THEN 1 END)::int AS available,
+        COUNT(
+          CASE WHEN va.id IS NULL
+                AND vt.id IS NULL
+                AND COALESCE(ls.local_status, '') NOT IN ('hold_customer', 'hold_dealer', 'retail')
+                AND UPPER(COALESCE(sm.stock_status, '')) NOT IN ('DELIVERED', 'TRANSFERRED', 'SOLD', 'ALLOCATED', 'ALLOTTED')
+          THEN 1 END
+        )::int AS available,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') THEN 1 END)::int AS payment_pending,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status NOT IN ('ready_delivery', 'delivered') AND va.expires_at <= NOW() THEN 1 END)::int AS payment_overdue,
         COUNT(CASE WHEN va.id IS NOT NULL AND kb.status = 'ready_delivery' THEN 1 END)::int AS paid_to_deliver,
@@ -129,6 +135,7 @@ export async function GET(request: Request) {
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
       LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
+      LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
       WHERE ${scopeWhereClause}
     `))
 

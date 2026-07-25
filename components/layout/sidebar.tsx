@@ -329,8 +329,8 @@ export function Sidebar() {
       const isKiaUser = userBrand === 'kia' || hasAllBranchAccess(userBrand) || hasGlobalAccessRole(userRole)
       return canViewBookingPaymentHistory(userRole, permissionMap) && isKiaUser
     }
-    // Scrap ERP
-    if (href === '/scrap-erp') {
+    // Scrap
+    if (href === '/scrap' || href === '/scrap-erp') {
       return canAccessScrapErp(userRole, permissionMap)
     }
     // Everything else is gated by the user's effective permissions. Brand users are no longer
@@ -483,14 +483,16 @@ export function Sidebar() {
         active: Boolean(pathname?.startsWith('/admin')),
       })
     }
-    commonNodes.push({
-      key: '/scrap-erp',
-      label: 'Scrap ERP',
-      href: '/scrap-erp',
-      icon: Recycle,
-      external: true,
-      active: Boolean(pathname?.startsWith('/scrap-erp')),
-    })
+    if (canAccessScrapErp(userRole, permissionMap)) {
+      commonNodes.push({
+        key: '/scrap',
+        label: 'Scrap',
+        href: '/scrap',
+        icon: Recycle,
+        external: true,
+        active: Boolean(pathname?.startsWith('/scrap')),
+      })
+    }
     if (commonNodes.length > 0) groups.push({ key: 'common', label: 'Common', nodes: commonNodes })
 
     // ── Branches → Sections → Submenus (cascade), reusing the existing gating ──

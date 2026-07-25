@@ -17,7 +17,7 @@ export const DEFAULT_SCRAP_GROUPS: ScrapGroup[] = [
   { id: 'grp-3', name: 'MG', code: 'MG' },
   { id: 'grp-4', name: 'AM KIA', code: 'AM KIA' },
   { id: 'grp-5', name: 'SMAM TATA', code: 'SMAM TATA' },
-  { id: 'grp-6', name: 'DIAMOND', code: 'DIAMOND' },
+  { id: 'grp-6', name: 'DIAMOND HONDA', code: 'DIAMOND HONDA' },
   { id: 'grp-7', name: 'BAJAJ', code: 'BAJAJ' },
   { id: 'grp-8', name: 'KTM', code: 'KTM' },
 ]
@@ -7449,6 +7449,9 @@ export const INITIAL_SCRAP_TRANSACTIONS: ScrapTransaction[] = [
     "paymentHandoverToName": "PLATINUM - Sanjeev Talwar",
     "remarks": "AM HYUNDAI-PLATINUM-POONCH",
     "status": "COMPLETED",
+    "sentToAccounts": true,
+    "accountsReceivedAt": "2026-07-13T10:00:00Z",
+    "accountsNote": "Revenue received directly into accounts.",
     "attachments": [],
     "createdAt": "2026-07-13T10:00:00Z",
     "updatedAt": "2026-07-13T10:00:00Z"
@@ -7482,6 +7485,9 @@ export const INITIAL_SCRAP_TRANSACTIONS: ScrapTransaction[] = [
     "paymentHandoverToName": "PLATINUM - Sanjeev Talwar",
     "remarks": "AM TATA-POONCH",
     "status": "COMPLETED",
+    "sentToAccounts": true,
+    "accountsReceivedAt": "2026-07-13T10:00:00Z",
+    "accountsNote": "Revenue sent directly to accounts — not for shareholder distribution.",
     "attachments": [],
     "createdAt": "2026-07-13T10:00:00Z",
     "updatedAt": "2026-07-13T10:00:00Z"
@@ -7614,6 +7620,9 @@ export const INITIAL_SCRAP_TRANSACTIONS: ScrapTransaction[] = [
     "paymentHandoverToName": "MG-NARESH",
     "remarks": "MG CHANNI",
     "status": "COMPLETED",
+    "sentToAccounts": true,
+    "accountsReceivedAt": "2026-07-18T10:00:00Z",
+    "accountsNote": "Revenue received directly into accounts.",
     "attachments": [],
     "createdAt": "2026-07-18T10:00:00Z",
     "updatedAt": "2026-07-18T10:00:00Z"
@@ -7844,6 +7853,9 @@ export const INITIAL_SCRAP_TRANSACTIONS: ScrapTransaction[] = [
     "paymentHandoverToName": "HONDA-ARJUN",
     "remarks": "DIAMOND HONDA GANGYAL",
     "status": "COMPLETED",
+    "sentToAccounts": true,
+    "accountsReceivedAt": "2026-07-18T10:00:00Z",
+    "accountsNote": "Revenue received directly into accounts.",
     "attachments": [],
     "createdAt": "2026-07-18T10:00:00Z",
     "updatedAt": "2026-07-18T10:00:00Z"

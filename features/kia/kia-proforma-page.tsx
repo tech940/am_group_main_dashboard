@@ -23,6 +23,7 @@ import {
   YAxis,
 } from 'recharts'
 import {
+  Activity,
   AlertTriangle,
   ArrowLeft,
   BarChart3,
@@ -1826,7 +1827,13 @@ function DetailsView({ options, mode }: { options: OptionsPayload; mode: 'all' |
           canViewPii={canViewPii}
           action={(row) => (
             <div className="flex gap-2">
-              {mode === 'pending-approval' && <Button className={cn('rounded-xl', proformaPrimaryButton)} onClick={() => setVerifying(row)}>VERIFY</Button>}
+              {mode === 'pending-approval' &&
+                String(row.approvalStatus).toUpperCase() !== 'NOT APPROVED' &&
+                String(row.approvalStatus).toUpperCase() !== 'DECLINED' && (
+                  <Button className={cn('rounded-xl', proformaPrimaryButton)} onClick={() => setVerifying(row)}>
+                    VERIFY
+                  </Button>
+                )}
               {row.approvalStatus === 'APPROVED' && row.linkPreview && (
                 <Button
                   className="rounded-xl bg-indigo-600 px-4 text-xs font-black text-white hover:bg-indigo-700 h-8"
@@ -2443,10 +2450,31 @@ function ProformaPreviewDrawer({
   onClose: () => void
   onVerify: (row: KiaProformaRow) => void
 }) {
+  const [activities, setActivities] = useState<any[]>([])
+  const [loadingActivities, setLoadingActivities] = useState(false)
+
+  useEffect(() => {
+    if (!row) return
+    const bookingId = row.linkedBookingId || row.id
+    setLoadingActivities(true)
+    fetch(`/api/brands/kia/bookings/${bookingId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.activities) {
+          setActivities(data.activities)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingActivities(false))
+  }, [row])
+
   if (!row || typeof document === 'undefined') return null
 
   const money = (value: unknown) => formatCurrency(value)
-  const isPending = !['APPROVED', 'DECLINED', 'NOT APPROVED'].includes(String(row.approvalStatus).toUpperCase())
+  const upperStatus = String(row.approvalStatus || '').toUpperCase()
+  const isNotApproved = upperStatus.includes('NOT APPROVED') || upperStatus.includes('DECLINED')
+  const isApproved = upperStatus === 'APPROVED'
+  const isPending = !isNotApproved && !isApproved
 
   const priceFields: { label: string; value: string | number }[] = [
     { label: 'Ex-Showroom', value: row.exShowroom },
@@ -2496,11 +2524,56 @@ function ProformaPreviewDrawer({
             </button>
           </div>
           <div className="relative mt-3">
-            <Chip tone={approvalTone(row.approvalStatus)}>{row.approvalStatus}</Chip>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-black uppercase tracking-wider shadow-sm border',
+                isNotApproved
+                  ? 'bg-rose-600 text-white border-rose-500'
+                  : isApproved
+                    ? 'bg-emerald-600 text-white border-emerald-500'
+                    : 'bg-amber-500 text-white border-amber-400'
+              )}
+            >
+              {row.approvalStatus}
+            </span>
           </div>
         </div>
 
         <div className="kia-scroll flex-1 space-y-4 overflow-y-auto p-4">
+          {/* Approval Chain & Activity Log */}
+          <div className="kia-surface p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <IconTile icon={Activity} tone="accent" size="sm" />
+                <h3 className="text-sm font-extrabold tracking-tight text-[var(--kia-text)]">Approval Chain & Activity Log</h3>
+              </div>
+              <span className="text-[10px] font-bold text-[var(--kia-text-soft)]">{activities.length} events</span>
+            </div>
+            {loadingActivities ? (
+              <div className="flex items-center gap-2 text-xs font-semibold text-[var(--kia-text-soft)] py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-indigo-500" /> Loading audit history...
+              </div>
+            ) : activities.length === 0 ? (
+              <p className="text-xs font-semibold text-[var(--kia-text-faint)] italic py-2">No activity records logged yet for this booking/proforma.</p>
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {activities.map((act) => (
+                  <div key={act.id || act.createdAt} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-2.5 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-slate-900 dark:text-slate-100">{act.title || act.activityType}</span>
+                      <span className="text-[10px] font-bold text-slate-400">{formatDateTime(act.createdAt || act.created_at)}</span>
+                    </div>
+                    {act.description && <p className="mt-1 text-[11px] font-medium text-slate-600 dark:text-slate-400">{act.description}</p>}
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                      <span>By: {act.actorName || act.actor_name || 'System'}</span>
+                      {(act.actorRole || act.actor_role) && <span className="uppercase opacity-75">({(act.actorRole || act.actor_role).replace(/_/g, ' ')})</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Customer Details */}
           <div className="kia-surface p-4">
             <div className="mb-3 flex items-center gap-2.5">

@@ -35,6 +35,7 @@ import {
   Coins,
 } from 'lucide-react'
 import { useUserRole } from '@/lib/hooks/use-user-role'
+import { Badge } from '@/components/ui/badge'
 import { ScrapExecutiveDashboardView } from './ScrapExecutiveDashboardView'
 import { ScrapDistributionView } from './ScrapDistributionView'
 import { ScrapEntryFormView } from './ScrapEntryFormView'
@@ -65,8 +66,17 @@ export function ScrapErpShell() {
   const [paymentModes, setPaymentModes] = useState<ScrapPaymentMode[]>(DEFAULT_SCRAP_PAYMENT_MODES)
   const [handoverUsers, setHandoverUsers] = useState<ScrapHandoverUser[]>(DEFAULT_SCRAP_HANDOVER_USERS)
 
-  // Transactions State
-  const [transactions, setTransactions] = useState<ScrapTransaction[]>(INITIAL_SCRAP_TRANSACTIONS)
+  // Transactions State — strip any stale isDistributed from pre-July records (distribution starts 1 July 2026)
+  const [transactions, setTransactions] = useState<ScrapTransaction[]>(() =>
+    INITIAL_SCRAP_TRANSACTIONS.map((t) => {
+      const dateStr = (t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
+      if (dateStr < '2026-07-01' && (t as unknown as { isDistributed?: boolean }).isDistributed) {
+        const { isDistributed: _d, distributedAt: _da, distributedBy: _db, ...rest } = t as ScrapTransaction & { isDistributed?: boolean; distributedAt?: string; distributedBy?: string }
+        return rest
+      }
+      return { ...t }
+    })
+  )
   const [insights] = useState<ScrapAiInsight[]>(DEFAULT_AI_INSIGHTS)
 
   // Global Filter State
@@ -205,22 +215,27 @@ export function ScrapErpShell() {
     setDrilldownRows(filtered)
   }
 
-  const handleToggleDistribution = (id: string, currentStatus: boolean) => {
+  const handleToggleDistribution = (
+    id: string,
+    currentStatus: boolean,
+    customPayload?: Partial<ScrapTransaction>
+  ) => {
     const nextStatus = !currentStatus
+    const defaultPayload = {
+      isDistributed: nextStatus,
+      distributedAt: nextStatus ? new Date().toISOString() : undefined,
+    }
+    const payload = customPayload || defaultPayload
+
     setTransactions((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? { ...t, isDistributed: nextStatus, distributedAt: nextStatus ? new Date().toISOString() : undefined }
-          : t
-      )
+      prev.map((t) => (t.id === id ? { ...t, ...payload } : t))
     )
     fetch('/api/scrap-erp', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id,
-        isDistributed: nextStatus,
-        distributedAt: nextStatus ? new Date().toISOString() : null,
+        ...payload,
       }),
     }).catch((err) => {
       console.error('Failed to update distribution status:', err)
@@ -238,7 +253,7 @@ export function ScrapErpShell() {
             { key: 'entry', label: editingTxn ? `Editing #${editingTxn.transactionNumber}` : 'Scrap Entry', icon: PlusCircle },
             { key: 'grid', label: 'Record Grid', icon: TableIcon, count: filteredTransactions.length },
             { key: 'reports', label: 'Reports Hub', icon: BarChart3 },
-            { key: 'masters', label: 'Master Data', icon: Settings },
+            { key: 'masters', label: 'Master Settings', icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon
             const isActive = activeModule === tab.key
@@ -246,34 +261,40 @@ export function ScrapErpShell() {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveModule(tab.key as any)}
-                style={isActive ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)', borderColor: 'var(--dashboard-action-bg)' } : undefined}
+                onClick={() => setActiveModule(tab.key as typeof activeModule)}
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-bold transition-all shadow-xs cursor-pointer',
+                  'flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap',
                   isActive
-                    ? 'shadow-md font-black'
-                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    ? 'shadow-xs border border-border'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 )}
+                style={
+                  isActive
+                    ? { backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }
+                    : {}
+                }
               >
-                <Icon className="h-4 w-4" />
-                {tab.label}
+                <Icon className="h-4 w-4 shrink-0" />
+                <span>{tab.label}</span>
                 {tab.count !== undefined && (
-                  <span
-                    className={cn(
-                      'rounded-full px-2 py-0.5 text-[10px] font-black',
-                      isActive ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                    )}
-                  >
+                  <Badge variant="secondary" className="ml-1 text-[10px] font-black px-1.5 py-0.2">
                     {tab.count}
-                  </span>
+                  </Badge>
                 )}
               </button>
             )
           })}
         </div>
+
+        {/* User Role Pill */}
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-[11px] font-extrabold uppercase py-1 px-3 border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+            Role: {roleLower}
+          </Badge>
+        </div>
       </div>
 
-      {/* Active Module View */}
+      {/* Module Content Views */}
       {activeModule === 'dashboard' && (
         <ScrapExecutiveDashboardView
           transactions={filteredTransactions}
@@ -284,6 +305,7 @@ export function ScrapErpShell() {
       {activeModule === 'distribution' && canAccessDistribution && (
         <ScrapDistributionView
           transactions={filteredTransactions}
+          handoverUsers={handoverUsers}
           onDrilldown={handleOpenDrilldown}
           onToggleDistribution={handleToggleDistribution}
         />

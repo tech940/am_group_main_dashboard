@@ -8,11 +8,11 @@ export function useUserRole() {
   const { data: currentUser, isLoading: loading } = useQuery({
     queryKey: ['auth', 'user'],
     queryFn: async () => {
-      const response = await fetch('/api/auth/user')
+      const response = await fetch('/api/auth/user', { cache: 'no-store' })
       if (!response.ok) return null
       return await response.json() as { id?: string; role?: string; brand?: string }
     },
-    staleTime: DASHBOARD_STALE_TIME_MS,
+    staleTime: 60 * 1000,
   })
 
   const userId = currentUser?.id || null

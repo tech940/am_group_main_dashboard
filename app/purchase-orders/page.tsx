@@ -693,7 +693,7 @@ function PurchaseOrdersPageContent() {
         return
       }
       setUserRole(data.role || '')
-      if (data.role === 'md') {
+      if (data.role === 'md' || data.role === 'ea') {
         setApprovalBranchFilter(data.brand || 'all')
       }
     } catch (error) {
@@ -718,7 +718,7 @@ function PurchaseOrdersPageContent() {
 
       if (isApprovalRole(userRole)) {
         params.set('approvalFilter', approvalFilter)
-        if (userRole === 'md') {
+        if (userRole === 'md' || userRole === 'ea') {
           params.set('branchFilter', approvalBranchFilter)
         }
       }
@@ -1502,7 +1502,7 @@ function PurchaseOrdersPageContent() {
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
             {isApprovalQueue
               ? approvalFilter === 'all'
-                ? userRole === 'md' && approvalBranchFilter !== 'all'
+                ? (userRole === 'md' || userRole === 'ea') && approvalBranchFilter !== 'all'
                   ? `${getBranchLabel(approvalBranchFilter)} orders`
                   : 'All readable orders'
                 : `${APPROVAL_FILTER_OPTIONS.find((option) => option.value === approvalFilter)?.label || 'Approval'} queue`
@@ -2368,7 +2368,7 @@ function PurchaseOrdersPageContent() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 rounded-2xl border border-[var(--dashboard-primary-border)] bg-white/80 p-3 shadow-sm backdrop-blur-xl">
-                  {userRole === 'md' && (
+                  {(userRole === 'md' || userRole === 'ea') && (
                     <div className="mr-1 flex min-w-[220px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Branch</span>
                       <Select value={approvalBranchFilter} onValueChange={setApprovalBranchFilterPreference}>

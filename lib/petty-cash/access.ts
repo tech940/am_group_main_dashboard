@@ -47,17 +47,21 @@ export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined
 }
 
 export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {
-  // Super admin is a universal supervisor and may act on any stage.
-  if (role === 'developer' || role === 'manager' || role === 'general_manager') return true
+  if (!role) return false
+  const r = String(role).trim().toLowerCase()
+  if (r === 'developer') return true
+
+  const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
+
   switch (stage) {
     case 'ed_approval':
-      return role === 'ed' || role === 'sales_manager'
+      return r === 'ed'
     case 'ea_approval':
-      return role === 'ea'
+      return r === 'ea'
     case 'md_approval':
-      return role === 'md' || role === 'eba'
+      return r === 'md' || r === 'eba'
     case 'accounts':
-      return role === 'accounts'
+      return isAccounts
     default:
       return false
   }

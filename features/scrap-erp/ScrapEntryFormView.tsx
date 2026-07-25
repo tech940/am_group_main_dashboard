@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   ScrapTransaction,
@@ -13,6 +13,7 @@ import {
   ScrapHandoverUser,
   ScrapAttachment,
   ScrapGroup,
+  ScrapFormAttachment,
 } from '@/lib/scrap-erp/types'
 import {
   Building2,
@@ -34,6 +35,11 @@ import {
   X,
   Clock,
   Pencil,
+  Eye,
+  Download,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -126,10 +132,15 @@ export function ScrapEntryFormView({
   const [selectedHandoverUserId, setSelectedHandoverUserId] = useState<string>(handoverUsers[0]?.id || '')
   const [remarks, setRemarks] = useState<string>('')
 
-  // Attachment states
-  const [weightPicUrl, setWeightPicUrl] = useState<string>('')
-  const [tallyReceiptUrl, setTallyReceiptUrl] = useState<string>('')
-  const [scrapPicsUrls, setScrapPicsUrls] = useState<string[]>([])
+  // Attachment states (supporting multiple images / PDFs for all 3 categories)
+  const [weightDocs, setWeightDocs] = useState<ScrapFormAttachment[]>([])
+  const [tallyDocs, setTallyDocs] = useState<ScrapFormAttachment[]>([])
+  const [scrapDocs, setScrapDocs] = useState<ScrapFormAttachment[]>([])
+
+  // Document Preview Modal State
+  const [previewDoc, setPreviewDoc] = useState<ScrapFormAttachment | null>(null)
+  const [previewZoom, setPreviewZoom] = useState<number>(1)
+  const [previewRotation, setPreviewRotation] = useState<number>(0)
 
   // Draft Management State
   const [savedDrafts, setSavedDrafts] = useState<SavedDraftItem[]>([])
@@ -157,16 +168,41 @@ export function ScrapEntryFormView({
       setRemarks(initialData.remarks || '')
 
       if (initialData.attachments && initialData.attachments.length > 0) {
-        const wPic = initialData.attachments.find((a) => a.type === 'weight_picture')?.url || ''
-        const tReceipt = initialData.attachments.find((a) => a.type === 'tally_receipt')?.url || ''
-        const sPics = initialData.attachments.filter((a) => a.type === 'scrap_picture').map((a) => a.url)
-        setWeightPicUrl(wPic)
-        setTallyReceiptUrl(tReceipt)
-        setScrapPicsUrls(sPics)
+        const wAtts = initialData.attachments
+          .filter((a) => a.type === 'weight_picture')
+          .map((a, idx) => ({
+            id: a.id || `att-w-init-${idx}`,
+            url: a.url,
+            fileName: a.fileName || `Weight_Slip_Photo_${idx + 1}.webp`,
+            fileType: (a.url.includes('.pdf') || a.url.startsWith('data:application/pdf') ? 'pdf' : 'image') as 'pdf' | 'image',
+            type: 'weight_picture' as const,
+          }))
+        const tAtts = initialData.attachments
+          .filter((a) => a.type === 'tally_receipt')
+          .map((a, idx) => ({
+            id: a.id || `att-t-init-${idx}`,
+            url: a.url,
+            fileName: a.fileName || `Tally_Receipt_Voucher_${idx + 1}.pdf`,
+            fileType: (a.url.includes('.pdf') || a.url.startsWith('data:application/pdf') ? 'pdf' : 'image') as 'pdf' | 'image',
+            type: 'tally_receipt' as const,
+          }))
+        const sAtts = initialData.attachments
+          .filter((a) => a.type === 'scrap_picture')
+          .map((a, idx) => ({
+            id: a.id || `att-s-init-${idx}`,
+            url: a.url,
+            fileName: a.fileName || `Scrap_Material_Photo_${idx + 1}.webp`,
+            fileType: (a.url.includes('.pdf') || a.url.startsWith('data:application/pdf') ? 'pdf' : 'image') as 'pdf' | 'image',
+            type: 'scrap_picture' as const,
+          }))
+
+        setWeightDocs(wAtts)
+        setTallyDocs(tAtts)
+        setScrapDocs(sAtts)
       } else {
-        setWeightPicUrl('')
-        setTallyReceiptUrl('')
-        setScrapPicsUrls([])
+        setWeightDocs([])
+        setTallyDocs([])
+        setScrapDocs([])
       }
     }
   }, [initialData])
@@ -247,7 +283,20 @@ export function ScrapEntryFormView({
     }
   }, [groups, locations, departments, scrapTypes, paymentModes, handoverUsers])
 
-  // Auto Calculations (Safe for partial input)
+  // Available Description Options (includes master descriptions, scrap types, and current draft/initialData value)
+  const availableDescriptionOptions = useMemo(() => {
+    const set = new Set<string>()
+    descriptions.forEach((d) => {
+      if (d.name) set.add(d.name)
+    })
+    scrapTypes.forEach((st) => {
+      if (st.name) set.add(st.name)
+    })
+    if (descriptionInput && descriptionInput.trim()) {
+      set.add(descriptionInput.trim())
+    }
+    return Array.from(set)
+  }, [descriptions, scrapTypes, descriptionInput])
   const wt = parseFloat(weightQty) || 0
   const rate = parseFloat(ratePerUnit) || 0
   const calculatedTotal = Math.round(wt * rate * 100) / 100
@@ -257,33 +306,82 @@ export function ScrapEntryFormView({
 
   const selectedType = scrapTypes.find((t) => t.id === selectedTypeId) || scrapTypes[0]
 
-  // Image Upload Handler
-  const handleFileUploadMock = async (file: File, type: 'weight' | 'tally' | 'scrap') => {
-    try {
-      setIsSubmitting(true)
-      const { dataUrl } = await compressAndConvertToWebp(file)
-      if (type === 'weight') setWeightPicUrl(dataUrl)
-      else if (type === 'tally') setTallyReceiptUrl(dataUrl)
-      else if (type === 'scrap') {
-        if (scrapPicsUrls.length < 5) setScrapPicsUrls((prev) => [...prev, dataUrl])
+  const readFileAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = (err) => reject(err)
+      reader.readAsDataURL(file)
+    })
+  }
+
+  // Multi-File Upload Handler (supporting images, PDFs, documents)
+  const handleMultipleFileUpload = async (
+    files: FileList | File[],
+    sectionType: 'weight' | 'tally' | 'scrap'
+  ) => {
+    if (!files || files.length === 0) return
+    setIsSubmitting(true)
+
+    const fileArray = Array.from(files)
+    const newAttachments: ScrapFormAttachment[] = []
+
+    for (const file of fileArray) {
+      try {
+        const isImg = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(file.name)
+        const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+
+        let dataUrl = ''
+        if (isImg) {
+          try {
+            const res = await compressAndConvertToWebp(file)
+            dataUrl = res.dataUrl
+          } catch {
+            dataUrl = await readFileAsDataUrl(file)
+          }
+        } else {
+          dataUrl = await readFileAsDataUrl(file)
+        }
+
+        const attItem: ScrapFormAttachment = {
+          id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          url: dataUrl,
+          fileName: file.name,
+          fileType: isPdf ? 'pdf' : isImg ? 'image' : 'document',
+          type: sectionType === 'weight' ? 'weight_picture' : sectionType === 'tally' ? 'tally_receipt' : 'scrap_picture',
+          size: file.size,
+        }
+        newAttachments.push(attItem)
+      } catch (err) {
+        console.error('File upload error for:', file.name, err)
       }
-    } catch (err) {
-      console.error('Image compression error:', err)
-      const fallbackUrl = URL.createObjectURL(file)
-      if (type === 'weight') setWeightPicUrl(fallbackUrl)
-      else if (type === 'tally') setTallyReceiptUrl(fallbackUrl)
-      else if (type === 'scrap') {
-        if (scrapPicsUrls.length < 5) setScrapPicsUrls((prev) => [...prev, fallbackUrl])
-      }
-    } finally {
-      setIsSubmitting(false)
+    }
+
+    if (sectionType === 'weight') {
+      setWeightDocs((prev) => [...prev, ...newAttachments])
+    } else if (sectionType === 'tally') {
+      setTallyDocs((prev) => [...prev, ...newAttachments])
+    } else if (sectionType === 'scrap') {
+      setScrapDocs((prev) => [...prev, ...newAttachments])
+    }
+
+    setIsSubmitting(false)
+  }
+
+  const handleRemoveFile = (id: string, sectionType: 'weight' | 'tally' | 'scrap') => {
+    if (sectionType === 'weight') {
+      setWeightDocs((prev) => prev.filter((d) => d.id !== id))
+    } else if (sectionType === 'tally') {
+      setTallyDocs((prev) => prev.filter((d) => d.id !== id))
+    } else if (sectionType === 'scrap') {
+      setScrapDocs((prev) => prev.filter((d) => d.id !== id))
     }
   }
 
   // Save current form state as a Draft
   const handleSaveDraft = () => {
     const draftId = activeDraftId || `draft-${Date.now()}`
-    const newDraft: SavedDraftItem = {
+    const newDraft: SavedDraftItem & { weightDocs?: ScrapFormAttachment[]; tallyDocs?: ScrapFormAttachment[]; scrapDocs?: ScrapFormAttachment[] } = {
       id: draftId,
       savedAt: new Date().toISOString(),
       groupId: selectedGroupId,
@@ -299,9 +397,12 @@ export function ScrapEntryFormView({
       paymentModeId: selectedPaymentModeId,
       handoverUserId: selectedHandoverUserId,
       remarks,
-      weightPicUrl,
-      tallyReceiptUrl,
-      scrapPicsUrls,
+      weightPicUrl: weightDocs[0]?.url || '',
+      tallyReceiptUrl: tallyDocs[0]?.url || '',
+      scrapPicsUrls: scrapDocs.map((d) => d.url),
+      weightDocs,
+      tallyDocs,
+      scrapDocs,
     }
 
     const updated = [newDraft, ...savedDrafts.filter((d) => d.id !== draftId)]
@@ -317,7 +418,7 @@ export function ScrapEntryFormView({
   }
 
   // Load a Draft into form
-  const handleLoadDraft = (draft: SavedDraftItem) => {
+  const handleLoadDraft = (draft: SavedDraftItem & { weightDocs?: ScrapFormAttachment[]; tallyDocs?: ScrapFormAttachment[]; scrapDocs?: ScrapFormAttachment[] }) => {
     setActiveDraftId(draft.id)
     if (draft.groupId) setSelectedGroupId(draft.groupId)
     if (draft.locationId) setSelectedLocationId(draft.locationId)
@@ -332,9 +433,48 @@ export function ScrapEntryFormView({
     if (draft.paymentModeId) setSelectedPaymentModeId(draft.paymentModeId)
     if (draft.handoverUserId) setSelectedHandoverUserId(draft.handoverUserId)
     setRemarks(draft.remarks || '')
-    setWeightPicUrl(draft.weightPicUrl || '')
-    setTallyReceiptUrl(draft.tallyReceiptUrl || '')
-    setScrapPicsUrls(draft.scrapPicsUrls || [])
+
+    if (draft.weightDocs && Array.isArray(draft.weightDocs)) {
+      setWeightDocs(draft.weightDocs)
+    } else if (draft.weightPicUrl) {
+      setWeightDocs([{
+        id: `att-w-draft`,
+        url: draft.weightPicUrl,
+        fileName: 'Weight_Slip_Photo.webp',
+        fileType: draft.weightPicUrl.includes('.pdf') ? 'pdf' : 'image',
+        type: 'weight_picture'
+      }])
+    } else {
+      setWeightDocs([])
+    }
+
+    if (draft.tallyDocs && Array.isArray(draft.tallyDocs)) {
+      setTallyDocs(draft.tallyDocs)
+    } else if (draft.tallyReceiptUrl) {
+      setTallyDocs([{
+        id: `att-t-draft`,
+        url: draft.tallyReceiptUrl,
+        fileName: 'Tally_Receipt_Voucher.pdf',
+        fileType: draft.tallyReceiptUrl.includes('.pdf') ? 'pdf' : 'image',
+        type: 'tally_receipt'
+      }])
+    } else {
+      setTallyDocs([])
+    }
+
+    if (draft.scrapDocs && Array.isArray(draft.scrapDocs)) {
+      setScrapDocs(draft.scrapDocs)
+    } else if (draft.scrapPicsUrls && draft.scrapPicsUrls.length > 0) {
+      setScrapDocs(draft.scrapPicsUrls.map((url, idx) => ({
+        id: `att-s-draft-${idx}`,
+        url,
+        fileName: `Scrap_Photo_${idx + 1}.webp`,
+        fileType: url.includes('.pdf') ? 'pdf' : 'image',
+        type: 'scrap_picture'
+      })))
+    } else {
+      setScrapDocs([])
+    }
 
     setIsDraftModalOpen(false)
     setDraftToastMsg(`Loaded draft from ${new Date(draft.savedAt).toLocaleTimeString()}`)
@@ -361,9 +501,9 @@ export function ScrapEntryFormView({
     setDescriptionInput('')
     setSoldTo('')
     setRemarks('')
-    setWeightPicUrl('')
-    setTallyReceiptUrl('')
-    setScrapPicsUrls([])
+    setWeightDocs([])
+    setTallyDocs([])
+    setScrapDocs([])
     if (onCancelEdit) onCancelEdit()
   }
 
@@ -378,34 +518,29 @@ export function ScrapEntryFormView({
     const selectedPmObj = paymentModes.find((p) => p.id === selectedPaymentModeId)
     const selectedHoObj = handoverUsers.find((h) => h.id === selectedHandoverUserId)
 
-    const attachmentsList: ScrapAttachment[] = []
-    if (weightPicUrl) {
-      attachmentsList.push({
-        id: `att-w-${Date.now()}`,
+    const attachmentsList: ScrapAttachment[] = [
+      ...weightDocs.map((d) => ({
+        id: d.id,
         transactionId: initialData?.id || '',
-        type: 'weight_picture',
-        url: weightPicUrl,
-        fileName: 'Scrap_Weight_Pic.webp',
-      })
-    }
-    if (tallyReceiptUrl) {
-      attachmentsList.push({
-        id: `att-t-${Date.now()}`,
+        type: 'weight_picture' as const,
+        url: d.url,
+        fileName: d.fileName,
+      })),
+      ...tallyDocs.map((d) => ({
+        id: d.id,
         transactionId: initialData?.id || '',
-        type: 'tally_receipt',
-        url: tallyReceiptUrl,
-        fileName: tallyReceiptUrl.startsWith('data:image/') ? 'Tally_Receipt_Voucher.webp' : 'Tally_Receipt_Voucher.pdf',
-      })
-    }
-    scrapPicsUrls.forEach((url, idx) => {
-      attachmentsList.push({
-        id: `att-s-${Date.now()}-${idx}`,
+        type: 'tally_receipt' as const,
+        url: d.url,
+        fileName: d.fileName,
+      })),
+      ...scrapDocs.map((d) => ({
+        id: d.id,
         transactionId: initialData?.id || '',
-        type: 'scrap_picture',
-        url,
-        fileName: `Scrap_Material_Photo_${idx + 1}.webp`,
-      })
-    })
+        type: 'scrap_picture' as const,
+        url: d.url,
+        fileName: d.fileName,
+      })),
+    ]
 
     try {
       await onSubmit({
@@ -638,9 +773,9 @@ export function ScrapEntryFormView({
                     className="h-10 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 text-xs font-extrabold text-slate-900 dark:text-slate-100 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
                   >
                     <option value="">Select Description...</option>
-                    {descriptions.map((desc) => (
-                      <option key={desc.id} value={desc.name}>
-                        {desc.name}
+                    {availableDescriptionOptions.map((opt: string) => (
+                      <option key={opt} value={opt}>
+                        {opt}
                       </option>
                     ))}
                   </select>
@@ -821,68 +956,346 @@ export function ScrapEntryFormView({
             </div>
           </Card>
 
-          {/* Document Upload Box */}
+          {/* Verification Documents Upload Box */}
           <Card className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 rounded-2xl space-y-4 shadow-sm">
-            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-              <Upload className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100">
-                Verification Documents
-              </h3>
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Upload className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100">
+                  Verification Documents
+                </h3>
+              </div>
+              <Badge className="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-extrabold text-[10px]">
+                {weightDocs.length + tallyDocs.length + scrapDocs.length} Total Uploaded
+              </Badge>
             </div>
 
-            <div className="space-y-4">
-              {/* Weight Slip Picture */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black text-slate-800 dark:text-slate-200">1. Weight Slip Picture</Label>
+            <div className="space-y-5">
+              {/* Option 1: Weight Slip & Scale Documents */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <Label className="text-xs font-black text-slate-800 dark:text-slate-200">
+                      1. Weight Slip & Scale Documents
+                    </Label>
+                  </div>
+                  <Badge
+                    className={
+                      weightDocs.length > 0
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-extrabold text-[10px]'
+                        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 font-bold text-[10px]'
+                    }
+                  >
+                    {weightDocs.length === 0 ? '0 uploaded' : `${weightDocs.length} uploaded`}
+                  </Badge>
+                </div>
+
                 <label className="group flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/60 p-3 hover:border-emerald-500 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/30 cursor-pointer transition-all">
-                  <FileText className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mb-1" />
+                  <Upload className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mb-1 group-hover:scale-110 transition-transform" />
                   <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                    {weightPicUrl ? '✓ Weight Slip Selected (.webp)' : 'Upload Weight Slip Photo'}
+                    Upload Weight Slips (Photos, PDFs, Docs)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+                    Supports multiple images & PDF files
                   </span>
                   <input
                     type="file"
-                    accept="image/*"
-                    onChange={(e) => e.target.files?.[0] && handleFileUploadMock(e.target.files[0], 'weight')}
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx"
+                    onChange={(e) => e.target.files && handleMultipleFileUpload(e.target.files, 'weight')}
                     className="hidden"
                   />
                 </label>
+
+                {weightDocs.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {weightDocs.map((doc) => {
+                      const isPdf = doc.fileType === 'pdf' || doc.url.includes('.pdf') || doc.url.startsWith('data:application/pdf')
+                      const isImg = doc.fileType === 'image' || doc.url.startsWith('data:image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(doc.fileName)
+
+                      return (
+                        <div
+                          key={doc.id}
+                          className="group flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl p-2 hover:border-emerald-400 transition-all"
+                        >
+                          <div
+                            onClick={() => {
+                              setPreviewDoc(doc)
+                              setPreviewZoom(1)
+                              setPreviewRotation(0)
+                            }}
+                            className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer"
+                            title="Click to preview document"
+                          >
+                            {isImg ? (
+                              <div className="h-9 w-9 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600 shrink-0 bg-slate-100 flex items-center justify-center">
+                                <img src={doc.url} alt={doc.fileName} className="h-full w-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className="h-9 w-9 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0 font-black text-[10px]">
+                                PDF
+                              </div>
+                            )}
+
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                                {doc.fileName}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                                <Eye className="h-3 w-3 text-emerald-600" /> Click to Preview
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setPreviewDoc(doc)
+                                setPreviewZoom(1)
+                                setPreviewRotation(0)
+                              }}
+                              className="h-7 px-2 text-[10px] font-black text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950 rounded-lg cursor-pointer"
+                            >
+                              Preview
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveFile(doc.id, 'weight')}
+                              className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded-lg cursor-pointer"
+                              title="Remove file"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
-              {/* Tally Receipt */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black text-slate-800 dark:text-slate-200">2. Tally Receipt Voucher</Label>
+              {/* Option 2: Tally Receipt Voucher */}
+              <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <FileCheck className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                    <Label className="text-xs font-black text-slate-800 dark:text-slate-200">
+                      2. Tally Receipt Voucher & Accounting Docs
+                    </Label>
+                  </div>
+                  <Badge
+                    className={
+                      tallyDocs.length > 0
+                        ? 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 font-extrabold text-[10px]'
+                        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 font-bold text-[10px]'
+                    }
+                  >
+                    {tallyDocs.length === 0 ? '0 uploaded' : `${tallyDocs.length} uploaded`}
+                  </Badge>
+                </div>
+
                 <label className="group flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/60 p-3 hover:border-teal-500 hover:bg-teal-50/40 dark:hover:bg-teal-950/30 cursor-pointer transition-all">
-                  <FileCheck className="h-5 w-5 text-teal-600 dark:text-teal-400 mb-1" />
+                  <Upload className="h-5 w-5 text-teal-600 dark:text-teal-400 mb-1 group-hover:scale-110 transition-transform" />
                   <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                    {tallyReceiptUrl ? '✓ Tally Voucher Selected' : 'Upload Tally Receipt PDF/Pic'}
+                    Upload Tally Vouchers (PDFs, Receipts, Images)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+                    Supports multiple PDF & receipt files
                   </span>
                   <input
                     type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => e.target.files?.[0] && handleFileUploadMock(e.target.files[0], 'tally')}
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx"
+                    onChange={(e) => e.target.files && handleMultipleFileUpload(e.target.files, 'tally')}
                     className="hidden"
                   />
                 </label>
+
+                {tallyDocs.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {tallyDocs.map((doc) => {
+                      const isPdf = doc.fileType === 'pdf' || doc.url.includes('.pdf') || doc.url.startsWith('data:application/pdf')
+                      const isImg = doc.fileType === 'image' || doc.url.startsWith('data:image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(doc.fileName)
+
+                      return (
+                        <div
+                          key={doc.id}
+                          className="group flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl p-2 hover:border-teal-400 transition-all"
+                        >
+                          <div
+                            onClick={() => {
+                              setPreviewDoc(doc)
+                              setPreviewZoom(1)
+                              setPreviewRotation(0)
+                            }}
+                            className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer"
+                            title="Click to preview document"
+                          >
+                            {isImg ? (
+                              <div className="h-9 w-9 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600 shrink-0 bg-slate-100 flex items-center justify-center">
+                                <img src={doc.url} alt={doc.fileName} className="h-full w-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className="h-9 w-9 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0 font-black text-[10px]">
+                                PDF
+                              </div>
+                            )}
+
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block truncate group-hover:text-teal-600 dark:group-hover:text-teal-400">
+                                {doc.fileName}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                                <Eye className="h-3 w-3 text-teal-600" /> Click to Preview
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setPreviewDoc(doc)
+                                setPreviewZoom(1)
+                                setPreviewRotation(0)
+                              }}
+                              className="h-7 px-2 text-[10px] font-black text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-950 rounded-lg cursor-pointer"
+                            >
+                              Preview
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveFile(doc.id, 'tally')}
+                              className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded-lg cursor-pointer"
+                              title="Remove file"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
-              {/* Scrap Photos */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black text-slate-800 dark:text-slate-200">
-                  3. Scrap Photos ({scrapPicsUrls.length}/5)
-                </Label>
+              {/* Option 3: Scrap Photos */}
+              <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <ImageIcon className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                    <Label className="text-xs font-black text-slate-800 dark:text-slate-200">
+                      3. Scrap Material Photos & Proofs
+                    </Label>
+                  </div>
+                  <Badge
+                    className={
+                      scrapDocs.length > 0
+                        ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300 font-extrabold text-[10px]'
+                        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 font-bold text-[10px]'
+                    }
+                  >
+                    {scrapDocs.length === 0 ? '0 uploaded' : `${scrapDocs.length} uploaded`}
+                  </Badge>
+                </div>
+
                 <label className="group flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/60 p-3 hover:border-cyan-500 hover:bg-cyan-50/40 dark:hover:bg-cyan-950/30 cursor-pointer transition-all">
-                  <ImageIcon className="h-5 w-5 text-cyan-600 dark:text-cyan-400 mb-1" />
+                  <Upload className="h-5 w-5 text-cyan-600 dark:text-cyan-400 mb-1 group-hover:scale-110 transition-transform" />
                   <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                    {scrapPicsUrls.length > 0 ? `✓ ${scrapPicsUrls.length} Photo(s) Added (.webp)` : 'Upload Material Photos'}
+                    Upload Material Photos (Images, Proofs, PDFs)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+                    Supports multiple photos & verification docs
                   </span>
                   <input
                     type="file"
-                    accept="image/*"
-                    disabled={scrapPicsUrls.length >= 5}
-                    onChange={(e) => e.target.files?.[0] && handleFileUploadMock(e.target.files[0], 'scrap')}
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx"
+                    onChange={(e) => e.target.files && handleMultipleFileUpload(e.target.files, 'scrap')}
                     className="hidden"
                   />
                 </label>
+
+                {scrapDocs.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {scrapDocs.map((doc) => {
+                      const isPdf = doc.fileType === 'pdf' || doc.url.includes('.pdf') || doc.url.startsWith('data:application/pdf')
+                      const isImg = doc.fileType === 'image' || doc.url.startsWith('data:image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(doc.fileName)
+
+                      return (
+                        <div
+                          key={doc.id}
+                          className="group flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl p-2 hover:border-cyan-400 transition-all"
+                        >
+                          <div
+                            onClick={() => {
+                              setPreviewDoc(doc)
+                              setPreviewZoom(1)
+                              setPreviewRotation(0)
+                            }}
+                            className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer"
+                            title="Click to preview document"
+                          >
+                            {isImg ? (
+                              <div className="h-9 w-9 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600 shrink-0 bg-slate-100 flex items-center justify-center">
+                                <img src={doc.url} alt={doc.fileName} className="h-full w-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className="h-9 w-9 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0 font-black text-[10px]">
+                                PDF
+                              </div>
+                            )}
+
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block truncate group-hover:text-cyan-600 dark:group-hover:text-cyan-400">
+                                {doc.fileName}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                                <Eye className="h-3 w-3 text-cyan-600" /> Click to Preview
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setPreviewDoc(doc)
+                                setPreviewZoom(1)
+                                setPreviewRotation(0)
+                              }}
+                              className="h-7 px-2 text-[10px] font-black text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-950 rounded-lg cursor-pointer"
+                            >
+                              Preview
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveFile(doc.id, 'scrap')}
+                              className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded-lg cursor-pointer"
+                              title="Remove file"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Main Submit Button */}
@@ -890,7 +1303,7 @@ export function ScrapEntryFormView({
                 type="submit"
                 disabled={isSubmitting}
                 style={{ backgroundColor: 'var(--dashboard-action-bg)', color: 'var(--dashboard-action-fg)' }}
-                className="w-full rounded-2xl font-black text-xs h-12 shadow-md cursor-pointer transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 border-0"
+                className="w-full rounded-2xl font-black text-xs h-12 shadow-md cursor-pointer transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 border-0 mt-4"
               >
                 {initialData ? (
                   <>
@@ -906,6 +1319,101 @@ export function ScrapEntryFormView({
           </Card>
         </div>
       </div>
+
+      {/* Interactive Document & Image Preview Modal */}
+      <Dialog open={Boolean(previewDoc)} onOpenChange={(open) => !open && setPreviewDoc(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl p-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col">
+          <DialogHeader className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-row items-center justify-between shrink-0">
+            <div className="flex items-center gap-2.5">
+              {previewDoc?.fileType === 'pdf' || previewDoc?.url.includes('.pdf') || previewDoc?.url.startsWith('data:application/pdf') ? (
+                <div className="h-8 w-8 rounded-lg bg-red-100 dark:bg-red-950 text-red-600 flex items-center justify-center font-black text-xs">
+                  PDF
+                </div>
+              ) : (
+                <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center">
+                  <ImageIcon className="h-4 w-4" />
+                </div>
+              )}
+              <div>
+                <DialogTitle className="text-sm font-black text-slate-900 dark:text-slate-100 truncate max-w-md">
+                  {previewDoc?.fileName || 'Document Preview'}
+                </DialogTitle>
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  {previewDoc?.type === 'weight_picture' ? 'Weight Slip Document' : previewDoc?.type === 'tally_receipt' ? 'Tally Receipt Voucher' : 'Scrap Photo / Proof'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 pr-6">
+              {previewDoc && !(previewDoc.fileType === 'pdf' || previewDoc.url.includes('.pdf') || previewDoc.url.startsWith('data:application/pdf')) && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setPreviewZoom((z) => Math.min(z + 0.25, 3))}
+                    className="h-8 w-8 rounded-lg"
+                    title="Zoom In"
+                  >
+                    <ZoomIn className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setPreviewZoom((z) => Math.max(z - 0.25, 0.5))}
+                    className="h-8 w-8 rounded-lg"
+                    title="Zoom Out"
+                  >
+                    <ZoomOut className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setPreviewRotation((r) => (r + 90) % 360)}
+                    className="h-8 w-8 rounded-lg"
+                    title="Rotate 90°"
+                  >
+                    <RotateCw className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+
+              <a
+                href={previewDoc?.url}
+                download={previewDoc?.fileName}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-8 px-3 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold flex items-center gap-1 hover:opacity-90"
+              >
+                <Download className="h-3.5 w-3.5" /> Download
+              </a>
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-auto bg-slate-950/5 dark:bg-slate-950 p-4 flex items-center justify-center min-h-[400px]">
+            {previewDoc && (
+              previewDoc.fileType === 'pdf' || previewDoc.url.includes('.pdf') || previewDoc.url.startsWith('data:application/pdf') ? (
+                <iframe
+                  src={previewDoc.url}
+                  className="w-full h-[550px] rounded-xl border border-slate-200 dark:border-slate-800 bg-white"
+                  title={previewDoc.fileName}
+                />
+              ) : (
+                <div className="max-w-full max-h-[550px] overflow-auto flex items-center justify-center p-2">
+                  <img
+                    src={previewDoc.url}
+                    alt={previewDoc.fileName}
+                    className="max-h-[500px] object-contain transition-transform duration-200 rounded-lg shadow-md"
+                    style={{ transform: `scale(${previewZoom}) rotate(${previewRotation}deg)` }}
+                  />
+                </div>
+              )
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Saved Drafts List Modal */}
       <Dialog open={isDraftModalOpen} onOpenChange={setIsDraftModalOpen}>

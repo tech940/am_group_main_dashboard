@@ -1,9 +1,9 @@
 // Access control helper for Scrap Management.
-// Default allowed roles: MD, EA, Developer, Admin (super admins).
+// Allowed roles: MD, Developer, EBA.
 // Access can also be granted to individual users/roles via the Access Control map (scrap_erp.view).
 
 export const SCRAP_ERP_VIEW_ROLES = [
-  'admin', 'developer', 'md', 'ea', 'eba',
+  'developer', 'md', 'eba',
 ] as const
 
 export function canAccessScrapErp(role?: string | null, permissionMap?: Record<string, boolean> | null): boolean {
