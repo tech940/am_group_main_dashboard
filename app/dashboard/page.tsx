@@ -13,6 +13,8 @@ import Link from 'next/link'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Zap } from 'lucide-react'
 
+const BRAND_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg'
+
 /**
  * Operations Hub — a pure 3D scene. No metrics, no charts, no data widgets.
  *
@@ -33,52 +35,23 @@ import { Zap } from 'lucide-react'
  */
 
 
-// Background field. Each entry becomes a rigid body in the collision simulation below.
-// `r` is the collision radius: half the sprite for shapes, an estimate from label width for chips.
+// Background field: ONLY the floating capability words remain - every geometric shape
+// (cubes, rings, orbs, pyramid, dot particles) was removed by request. Each chip is still a rigid
+// body in the collision simulation; `r` approximates half the rendered label width.
 const FIELD: FieldItem[] = [
-  { id: 0,  kind: 'cube', size: 46, r: 25, depth: -220 },
-  { id: 1,  kind: 'ring', size: 62, r: 32, depth: -340 },
-  { id: 2,  kind: 'orb',  size: 30, r: 16, depth: -160 },
-  { id: 3,  kind: 'cube', size: 34, r: 19, depth: -420 },
-  { id: 4,  kind: 'pyr',  size: 40, r: 21, depth: -280 },
-  { id: 5,  kind: 'orb',  size: 22, r: 12, depth: -200 },
-  { id: 6,  kind: 'cube', size: 28, r: 16, depth: -300 },
-  { id: 7,  kind: 'chip', label: 'CRM',            em: true,  r: 40, depth: -180 },
-  { id: 8,  kind: 'chip', label: 'Growth',         em: false, r: 46, depth: -300 },
-  { id: 9,  kind: 'chip', label: 'Bookings',       em: false, r: 50, depth: -240 },
-  { id: 10, kind: 'chip', label: 'Analytics',      em: true,  r: 51, depth: -360 },
-  { id: 11, kind: 'chip', label: 'Inventory',      em: false, r: 51, depth: -200 },
-  { id: 12, kind: 'chip', label: 'Workshop',       em: false, r: 50, depth: -320 },
-  { id: 13, kind: 'chip', label: 'Finance',        em: true,  r: 46, depth: -160 },
-  { id: 14, kind: 'chip', label: 'Real-time data', em: false, r: 60, depth: -400 },
-  { id: 15, kind: 'chip', label: 'Multi-brand',    em: false, r: 55, depth: -280 },
-  { id: 16, kind: 'chip', label: 'Automation',     em: false, r: 54, depth: -340 },
+  { id: 0, label: 'CRM',            em: true,  r: 40, depth: -180 },
+  { id: 1, label: 'Growth',         em: false, r: 46, depth: -300 },
+  { id: 2, label: 'Bookings',       em: false, r: 50, depth: -240 },
+  { id: 3, label: 'Analytics',      em: true,  r: 51, depth: -360 },
+  { id: 4, label: 'Inventory',      em: false, r: 51, depth: -200 },
+  { id: 5, label: 'Workshop',       em: false, r: 50, depth: -320 },
+  { id: 6, label: 'Finance',        em: true,  r: 46, depth: -160 },
+  { id: 7, label: 'Real-time data', em: false, r: 60, depth: -400 },
+  { id: 8, label: 'Multi-brand',    em: false, r: 55, depth: -280 },
+  { id: 9, label: 'Automation',     em: false, r: 54, depth: -340 },
 ]
 
-type FieldItem = {
-  id: number
-  kind: 'cube' | 'ring' | 'orb' | 'pyr' | 'chip'
-  r: number
-  depth: number
-  size?: number
-  label?: string
-  em?: boolean
-}
-
-// Deterministic scatter — pre-rounded, unit-bearing strings (see hydration note above).
-const PARTICLES = Array.from({ length: 30 }, (_, i) => {
-  const a = (i * 137.508) % 360
-  const r = 10 + ((i * 41) % 88)
-  const size = 2 + (i % 3)
-  return {
-    id: i,
-    left: `${(50 + Math.cos((a * Math.PI) / 180) * r * 0.62).toFixed(3)}%`,
-    top: `${(50 + Math.sin((a * Math.PI) / 180) * r * 0.5).toFixed(3)}%`,
-    size: `${size}px`,
-    delay: (i % 11) * 0.4,
-    dur: 6 + (i % 6),
-  }
-})
+type FieldItem = { id: number; label: string; em: boolean; r: number; depth: number }
 
 const BEAMS = [
   { id: 0, x: -26, delay: 0,   dur: 3.2 },
@@ -227,6 +200,7 @@ export default function DashboardPortal() {
       sway?.stop()
     }
   }, [reduce, mx])
+  
 
   return (
     <MainLayout title="Operations Hub" subtitle="AM Group Corporate Gateway">
@@ -239,21 +213,16 @@ export default function DashboardPortal() {
           onPointerLeave={onLeave}
           className="hub-scene relative min-h-[calc(100vh-9rem)] overflow-hidden rounded-[2.5rem]"
         >
-          {/* ── Ambient — the orbs render everywhere but only DRIFT on desktop; on mobile they
-                 are static gradients, part of the "static assets only" rule. ─────────────── */}
+          {/* Ambient glows - STATIC by request: no moving background objects except text. */}
           <motion.div
             aria-hidden
             className="pointer-events-none absolute -left-32 top-0 h-[480px] w-[480px] rounded-full"
             style={{ background: 'radial-gradient(circle, var(--hub-glow), transparent 68%)', filter: 'blur(50px)', opacity: 0.4 }}
-            animate={animated && isDesktop ? { x: [0, 30, 0], y: [0, 24, 0] } : undefined}
-            transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
           />
           <motion.div
             aria-hidden
             className="pointer-events-none absolute -right-36 bottom-0 h-[440px] w-[440px] rounded-full"
             style={{ background: 'radial-gradient(circle, var(--hub-glow), transparent 70%)', filter: 'blur(56px)', opacity: 0.32 }}
-            animate={animated && isDesktop ? { x: [0, -28, 0], y: [0, -22, 0] } : undefined}
-            transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
           />
 
           {/* Grid floor */}
@@ -277,25 +246,6 @@ export default function DashboardPortal() {
           {/* Desktop-only: on a phone-sized canvas 17 colliding bodies pile onto the copy. */}
           {decor && isDesktop && <PhysicsField />}
 
-          {/* Particles (desktop-only: continuously animated) */}
-          {decor && isDesktop && (
-            <div aria-hidden className="pointer-events-none absolute inset-0">
-              {PARTICLES.map((p) => (
-                <motion.span
-                  key={p.id}
-                  className="absolute rounded-full"
-                  style={{
-                    left: p.left, top: p.top, width: p.size, height: p.size,
-                    backgroundColor: 'var(--hub-accent)',
-                    boxShadow: '0 0 10px var(--hub-glow)',
-                  }}
-                  animate={{ y: [0, -20, 0], opacity: [0.12, 0.55, 0.12] }}
-                  transition={{ duration: p.dur, repeat: Infinity, ease: 'easeInOut', delay: p.delay }}
-                />
-              ))}
-            </div>
-          )}
-
           {/* ── Copy ────────────────────────────────────────────────────── */}
           <motion.div
             initial={animated ? { opacity: 0, y: 20 } : false}
@@ -310,7 +260,7 @@ export default function DashboardPortal() {
                 borderColor: 'var(--hub-line)', color: 'var(--hub-accent)',
               }}
             >
-              <Zap className="h-3 w-3" /> AM Group Operating System
+             AM Group Operating System
             </span>
 
             <h1
@@ -330,7 +280,7 @@ export default function DashboardPortal() {
             </h1>
 
             <p className="mt-4 max-w-md text-[14px] font-medium leading-relaxed" style={{ color: 'var(--kia-text-soft)' }}>
-              Sales, service, inventory and finance — unified across KIA, Hyundai and Platinum.
+              Sales, service, inventory and finance - unified across KIA, Hyundai and Platinum.
               <span className="hidden lg:inline"> Move your cursor to rotate the campus.</span>
             </p>
           </motion.div>
@@ -348,9 +298,31 @@ export default function DashboardPortal() {
             </div>
           </div>
 
-          {/* ── Featured vehicle, anchored to the copy column ──────────────── */}
-          <div className="pointer-events-none absolute left-[2%] top-[46%] hidden xl:block">
-            <CarModel animated={animated} />
+          {/* Brand medallion: the AM Group logo, where the holo car used to float */}
+          <div className="pointer-events-none absolute left-[5%] top-[42%] hidden xl:block">
+            <div className="relative grid h-[190px] w-[190px] place-items-center">
+              <span
+                aria-hidden
+                className="absolute inset-0 rounded-full"
+                style={{ background: 'radial-gradient(circle, var(--lume-halo), transparent 70%)', filter: 'blur(20px)' }}
+              />
+              <span
+                aria-hidden
+                className="absolute inset-0 rounded-full border-2"
+                style={{ borderColor: 'color-mix(in srgb, var(--lume-2) 38%, transparent)' }}
+              />
+              <span
+                aria-hidden
+                className="absolute inset-2 rounded-full border"
+                style={{
+                  borderColor: 'var(--hub-line)',
+                  backgroundColor: 'color-mix(in srgb, var(--kia-surface) 90%, transparent)',
+                  boxShadow: '0 24px 60px -24px var(--lume-halo), inset 0 1px 0 rgba(255,255,255,.8)',
+                }}
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={BRAND_LOGO_URL} alt="AM Group" className="relative h-[150px] w-[150px] rounded-full object-contain" />
+            </div>
           </div>
 
           {/* ── Day/night: a 90s ambient tint cycle. pointer-events-none so the plot links
@@ -487,43 +459,15 @@ const PLOTS = {
   city:    { dx: 168,  dy: -330 },
 }
 
-/* ── Assembly intro ──────────────────────────────────────────────────────
-   On mount the campus builds itself: the ground surfaces first, then each plot's buildings rise up
-   THROUGH it in sequence. preserve-3d depth-sorts intersecting geometry, so anything still below
-   the ground plane is genuinely occluded by it — the rise reads as construction, not clipping.
-   Pure translateZ (no opacity — animated opacity forces preserve-3d flat and would squash the
-   boxes; no scale — 2D scale would squish footprints while leaving heights alone). */
-function Rise({ delay, from = -170, children }: { delay: number; from?: number; children: React.ReactNode }) {
-  const reduce = useReducedMotion()
-  // `absolute inset-0` is load-bearing: a transformed element becomes the containing block for its
-  // absolutely-positioned descendants, and the Boxes inside anchor with left-1/2 top-1/2. As a
-  // static zero-height div this wrapper collapsed that anchor to (centre, 0) — which silently
-  // shifted the ground and roads half a scene away from the buildings. inset-0 makes the wrapper
-  // exactly match its parent's box (the 900px scene, or a 0x0 plot anchor), keeping centres intact.
-  return (
-    <motion.div
-      className="hub-3d absolute inset-0"
-      initial={reduce ? false : { z: from }}
-      animate={{ z: 0 }}
-      transition={{ duration: 1.15, delay, ease: [0.16, 1, 0.3, 1] }}
-    >
-      {children}
-    </motion.div>
-  )
-}
-
-function Plot({ dx, dy, delay = 0, children }: {
-  dx: number; dy: number; delay?: number; children: React.ReactNode
-}) {
+function Plot({ dx, dy, children }: { dx: number; dy: number; children: React.ReactNode }) {
   // Zero-size anchor: Box positions itself from its parent's centre, so a 0x0 div at (dx,dy) makes
-  // that point the plot origin. The Rise wrapper is static-positioned, so children still anchor to
-  // this element while its transform (the intro rise) applies to them.
+  // that point the plot origin.
   return (
     <div
       className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
       style={{ transform: `translate3d(${dx}px, ${dy}px, 0px)` }}
     >
-      <Rise delay={delay}>{children}</Rise>
+      {children}
     </div>
   )
 }
@@ -573,16 +517,17 @@ function Road({ dx, dy, w, d }: { dx: number; dy: number; w: number; d: number }
 }
 
 /* ── ServiceLoop: a car drives in, waits at the bay, gets serviced, leaves renewed ──
-   One 13s keyframe timeline shared by every element (car path, flash, sparks, status chip), so the
+   One 21s keyframe timeline shared by every element (car path, flash, sparks, status chip), so the
    choreography can never drift apart. The path runs along campus y=-128 — chosen against every
    plot footprint: it skims the empty top strip of the yard pad, clears the entrance pylon (ends at
    y≈-149) and the service road, then swings into the middle bay at (-276, -104).
 
    The "before" car is dull grey; at the flash peak it steps to the glowing "after" car. The swap is
-   a STEP (duplicated keyframe times), not a fade — animated opacity between 0 and 1 forces
-   transform-style to flat mid-fade, which would squash the 3D boxes; at rest values of exactly 0/1
-   preserve-3d is unaffected, and the white flash covers the single transition frame.            */
-const LOOP_T = 13
+   a SCALE step under the flash. ⚠️ Never animate opacity on any ancestor of the 3D boxes: an
+   opacity animation makes the ancestor a grouping element for its whole lifetime (Motion pins
+   will-change), which forces transform-style flat and pancakes the car — even while the value
+   sits at exactly 1. That was the "punched/meshed cars" bug. Transforms never group.          */
+const LOOP_T = 21
 const LOOP_TIMES = [0, 0.27, 0.31, 0.39, 0.445, 0.5, 0.55, 0.62, 0.92, 1]
 const LOOP_X =   [470, -180, -276, -276, -276, -276, -276, -180, 470, 470]
 const LOOP_Y =   [-128, -128, -104, -104, -104, -104, -104, -128, -128, -128]
@@ -601,12 +546,16 @@ function ServiceLoop() {
         animate={{ x: LOOP_X, y: LOOP_Y, rotateZ: LOOP_ROT }}
         transition={{ ...loop, times: LOOP_TIMES }}
       >
+        {/* The before/after swap is a SCALE step, never opacity: an ancestor with animated opacity
+            is a grouping element (Motion also pins will-change:opacity for the animation's whole
+            life), which forces transform-style flat and pancakes the 3D car — that was the
+            "punched/meshed cars" bug. Scale is a transform; transforms never group. */}
         {/* before: dull grey, no cabin glow */}
         <motion.div
           className="hub-3d"
           initial={false}
-          animate={{ opacity: [1, 1, 0, 0] }}
-          transition={{ ...loop, times: [0, 0.44, 0.45, 1] }}
+          animate={{ scale: [1, 1, 0, 0] }}
+          transition={{ ...loop, times: [0, 0.44, 0.445, 1] }}
         >
           <MiniCar bodyTop="#94a3b8" bodySide="#64748b" bodyDark="#475569" cabinGlow={false} />
         </motion.div>
@@ -614,8 +563,8 @@ function ServiceLoop() {
         <motion.div
           className="hub-3d"
           initial={false}
-          animate={{ opacity: [0, 0, 1, 1] }}
-          transition={{ ...loop, times: [0, 0.44, 0.45, 1] }}
+          animate={{ scale: [0, 0, 1, 1] }}
+          transition={{ ...loop, times: [0, 0.44, 0.445, 1] }}
         >
           <span
             aria-hidden
@@ -706,7 +655,7 @@ function ServiceLoop() {
    truck backs out the way it came (cab faces -x, so reversing out is the honest move), and near
    the loop's end a scan-ring pulse covers the car's step-reset back onto the returning truck. */
 const DROP = { x: 30, y: -42 } // the empty New Stock slot (yard dx -140)
-const TRUCK_T = 16
+const TRUCK_T = 26
 const TRUCK_TIMES = [0, 0.25, 0.42, 0.7, 1]
 const TRUCK_X = [470, DROP.x, DROP.x, 470, 470]
 const CARGO_TIMES = [0, 0.25, 0.3, 0.4, 1]
@@ -754,13 +703,16 @@ function NewStockDelivery() {
         aria-hidden
         className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
         initial={false}
-        animate={{ x: CARGO_X, y: CARGO_Y, z: CARGO_Z, opacity: [1, 1, 1, 1, 1, 0, 0] }}
+        // Hidden via a SCALE step, never opacity: animated opacity on this ancestor would force
+        // transform-style flat (Motion pins will-change for the animation's life) and pancake the
+        // 3D car — the "punched/meshed" bug.
+        animate={{ x: CARGO_X, y: CARGO_Y, z: CARGO_Z, scale: [1, 1, 1, 1, 1, 0, 0] }}
         transition={{
           ...loop,
           x: { ...loop, times: CARGO_TIMES },
           y: { ...loop, times: CARGO_TIMES },
           z: { ...loop, times: CARGO_TIMES },
-          opacity: { ...loop, times: [0, 0.25, 0.3, 0.4, 0.85, 0.855, 1] },
+          scale: { ...loop, times: [0, 0.25, 0.3, 0.4, 0.85, 0.855, 1] },
         }}
       >
         <MiniCar />
@@ -789,7 +741,7 @@ function NewStockDelivery() {
    it empty, same mechanic as the delivery drop): it pulls out, drives the showroom road, pauses
    for the handover flash + "Delivered" chip, then turns south and exits the campus — sold. It
    steps back into the slot under a restock pulse before the loop restarts. */
-const HAND_T = 19
+const HAND_T = 31
 const HAND_TIMES = [0, 0.12, 0.32, 0.42, 0.48, 0.685, 0.7, 0.81, 0.825, 1]
 const HAND_X = [30, 30, -120, -120, -120, -120, -120, 30, 30, 30]
 const HAND_Y = [182, 182, 186, 186, 230, 470, 470, 182, 182, 182]
@@ -805,13 +757,15 @@ function CustomerHandover() {
         aria-hidden
         className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
         initial={false}
-        animate={{ x: HAND_X, y: HAND_Y, rotateZ: HAND_ROT, opacity: [1, 1, 1, 1, 1, 1, 0, 0, 1, 1] }}
+        // Same rule as the cargo: hide with a SCALE step — animated opacity here would flatten the
+        // 3D car into a pancake.
+        animate={{ x: HAND_X, y: HAND_Y, rotateZ: HAND_ROT, scale: [1, 1, 1, 1, 1, 1, 0, 0, 1, 1] }}
         transition={{
           ...loop,
           x: { ...loop, times: HAND_TIMES },
           y: { ...loop, times: HAND_TIMES },
           rotateZ: { ...loop, times: HAND_TIMES },
-          opacity: { ...loop, times: [0, 0.12, 0.32, 0.42, 0.48, 0.68, 0.685, 0.815, 0.82, 1] },
+          scale: { ...loop, times: [0, 0.12, 0.32, 0.42, 0.48, 0.68, 0.685, 0.815, 0.82, 1] },
         }}
       >
         <MiniCar />
@@ -1093,36 +1047,22 @@ const PLOT_LINKS = [
   { key: 'yard', ...{ dx: 170, dy: 70 }, w: 410, d: 410, href: '/brands/kia/stock-report', hint: 'Open Stock Report', hintZ: 64 },
 ] as const
 
-// How long the assembly intro runs before traffic (vehicle loops, helicopter, data pulses) starts.
-// Last plot: delay 1.0s + 1.15s rise = settled at ~2.15s.
-const INTRO_MS = 2400
-
 function Campus({ active, setActive, decor }: {
   active: string | null; setActive: (v: string | null) => void; decor: boolean
 }) {
   const [hovered, setHovered] = useState<string | null>(null)
-  // Traffic mounts AFTER the intro. Mount-gating (rather than transition delays) means every loop's
-  // animation starts at its first keyframe on mount — no need to hand-maintain explicit initial
-  // poses against 2.4s of pre-delay limbo on a dozen motion elements.
-  const [trafficOn, setTrafficOn] = useState(false)
-  useEffect(() => {
-    const t = window.setTimeout(() => setTrafficOn(true), INTRO_MS)
-    return () => window.clearTimeout(t)
-  }, [])
-  const traffic = decor && trafficOn
+  // The scene loads fully assembled (the build-in intro was removed by request); traffic runs
+  // whenever decor does.
+  const traffic = decor
 
   return (
     <>
       {/* the single shared ground everything stands on */}
-      <Rise delay={0} from={-80}>
-        <Box w={920} d={920} h={16} dx={-40} dy={-70} dz={-34} radius={48} />
-      </Rise>
+      <Box w={920} d={920} h={16} dx={-40} dy={-70} dz={-34} radius={48} />
 
       {/* service roads linking the plots to the yard */}
-      <Rise delay={0.45} from={-60}>
-        <Road dx={-90} dy={186} w={150} d={40} />
-        <Road dx={-90} dy={-150} w={150} d={40} />
-      </Rise>
+      <Road dx={-90} dy={186} w={150} d={40} />
+      <Road dx={-90} dy={-150} w={150} d={40} />
 
       {/* Footprint links FIRST in the DOM: the yard's row-label buttons render later, so they win
           hit-testing over the yard link while everything else falls through to the footprints. */}
@@ -1135,15 +1075,15 @@ function Campus({ active, setActive, decor }: {
         />
       ))}
 
-      <Plot {...PLOTS.city} delay={0.55}><CityBody /></Plot>
+      <Plot {...PLOTS.city}><CityBody /></Plot>
 
-      <Plot {...PLOTS.service} delay={0.7}><ServiceCentreBody /></Plot>
+      <Plot {...PLOTS.service}><ServiceCentreBody /></Plot>
       <PlotLabel dx={PLOTS.service.dx} dy={PLOTS.service.dy + 132}>Service Centre</PlotLabel>
 
-      <Plot {...PLOTS.showroom} delay={0.85}><ShowroomBody /></Plot>
+      <Plot {...PLOTS.showroom}><ShowroomBody /></Plot>
       <PlotLabel dx={PLOTS.showroom.dx} dy={PLOTS.showroom.dy + 132}>Showroom</PlotLabel>
 
-      <Plot {...PLOTS.yard} delay={1}>
+      <Plot {...PLOTS.yard}>
         <StockYard active={active} setActive={setActive} decor={decor} delivery={decor} />
       </Plot>
 
@@ -1586,98 +1526,6 @@ function CityBody() {
   )
 }
 
-/* ── Holographic car ─────────────────────────────────────────────────────
-   Stacked boxes can't make a car read as a car. This is an SVG sedan profile drawn as a glowing
-   wireframe — a projection standing upright above an isometric turntable, which is exactly how the
-   reference reads: hologram on a lit plinth, not a solid model.                                   */
-function CarModel({ animated }: { animated: boolean }) {
-  const stroke = 'var(--lume-2)'
-  return (
-    <motion.div
-      className="relative"
-      animate={animated ? { y: [0, -10, 0] } : undefined}
-      transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      {/* No plinth: the isometric turntable that used to sit under this projection extended down
-          into the skyline below and read as a stray white circle on top of the buildings. The car
-          now floats on its own under-glow, which also keeps the two elements from colliding. */}
-
-      {/* the projection */}
-      <svg
-        viewBox="0 0 420 190"
-        className="relative block w-[280px]"
-        style={{ filter: 'drop-shadow(0 0 10px var(--lume-halo))' }}
-        aria-hidden
-      >
-        <defs>
-          <linearGradient id="carGlass" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--lume-2)" stopOpacity="0.42" />
-            <stop offset="100%" stopColor="var(--lume-1)" stopOpacity="0.08" />
-          </linearGradient>
-          <linearGradient id="carBody" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--lume-2)" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="var(--lume-1)" stopOpacity="0.04" />
-          </linearGradient>
-          <radialGradient id="carUnder">
-            <stop offset="0%" stopColor="var(--lume-2)" stopOpacity="0.55" />
-            <stop offset="100%" stopColor="var(--lume-2)" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        {/* under-glow */}
-        <ellipse cx="210" cy="150" rx="180" ry="16" fill="url(#carUnder)" />
-
-        {/* body */}
-        <motion.path
-          d="M 26 140 C 16 139 10 131 13 121 C 16 111 27 105 41 102 L 88 94
-             C 108 75 133 61 163 54 C 197 46 247 46 281 54 C 309 60 333 73 353 89
-             L 389 99 C 403 104 409 113 406 124 C 403 134 395 140 385 140 Z"
-          fill="url(#carBody)" stroke={stroke} strokeWidth="2.2" strokeLinejoin="round"
-          initial={animated ? { pathLength: 0, opacity: 0 } : false}
-          animate={animated ? { pathLength: 1, opacity: 1 } : false}
-          transition={{ duration: 1.8, ease: [0.16, 1, 0.3, 1] }}
-        />
-
-        {/* greenhouse / glass */}
-        <motion.path
-          d="M 120 92 C 140 71 162 59 188 54 C 221 48 252 50 278 57 C 300 63 318 75 330 90 Z"
-          fill="url(#carGlass)" stroke={stroke} strokeWidth="1.8" strokeLinejoin="round"
-          initial={animated ? { pathLength: 0 } : false}
-          animate={animated ? { pathLength: 1 } : false}
-          transition={{ duration: 1.6, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        />
-        {/* B-pillar + door cut + shoulder crease */}
-        <path d="M 216 50 L 216 92" stroke={stroke} strokeWidth="1.4" opacity="0.75" />
-        <path d="M 216 92 L 214 128" stroke={stroke} strokeWidth="1.2" opacity="0.5" />
-        <path d="M 96 112 L 330 108" stroke={stroke} strokeWidth="1.2" opacity="0.45" />
-
-        {/* wheels */}
-        {[112, 322].map((cx) => (
-          <g key={cx}>
-            <circle cx={cx} cy="140" r="31" fill="none" stroke={stroke} strokeWidth="2.2" />
-            <circle cx={cx} cy="140" r="17" fill="none" stroke={stroke} strokeWidth="1.5" opacity="0.7" />
-            <circle cx={cx} cy="140" r="5" fill={stroke} opacity="0.85" />
-          </g>
-        ))}
-
-        {/* headlight (front, right) + taillight (rear, left) */}
-        <ellipse cx="396" cy="112" rx="11" ry="5" fill="#ffffff" opacity="0.95" />
-        <ellipse cx="396" cy="112" rx="22" ry="10" fill="var(--lume-2)" opacity="0.3" />
-        <ellipse cx="22" cy="120" rx="8" ry="4" fill="#f43f5e" opacity="0.85" />
-
-        {/* holographic scan line */}
-        {animated && (
-          <motion.rect
-            x="0" width="420" height="2.5" fill="var(--lume-edge)" opacity="0.55"
-            animate={{ y: [40, 148, 40] }}
-            transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
-          />
-        )}
-      </svg>
-    </motion.div>
-  )
-}
-
 /* ── Bottom-left cluster: a small companion assembly, gently breathing ───── */
 /* ── PhysicsField ────────────────────────────────────────────────────────
    The background objects used to run on fixed `x: [from, to]` keyframes, so they slid straight
@@ -1811,9 +1659,7 @@ function PhysicsField() {
         if (inner) {
           const f = b.flash
           inner.style.transform =
-            FIELD[i].kind === 'chip'
-              ? `rotateX(56deg) rotateZ(-42deg) scale(${(1 + f * 0.16).toFixed(3)})`
-              : `rotateX(${b.spin.toFixed(1)}deg) rotateY(${(b.spin * 1.3).toFixed(1)}deg) scale(${(1 + f * 0.3).toFixed(3)})`
+            `rotateX(56deg) rotateZ(-42deg) scale(${(1 + f * 0.16).toFixed(3)})`
           inner.style.filter = f > 0.02 ? `drop-shadow(0 0 ${(6 + f * 26).toFixed(0)}px var(--lume-halo))` : 'none'
         }
       }
@@ -1846,103 +1692,28 @@ function PhysicsField() {
 }
 
 function FieldSprite({ item }: { item: FieldItem }) {
-  if (item.kind === 'chip') {
-    return (
-      <span
-        className="inline-flex items-center gap-2 whitespace-nowrap rounded-[12px] border px-3.5 py-2"
-        style={{
-          backgroundColor: item.em
-            ? 'color-mix(in srgb, var(--lume-2) 14%, var(--kia-surface))'
-            : 'color-mix(in srgb, var(--kia-surface) 92%, var(--lume-2))',
-          borderColor: 'var(--hub-line)',
-          boxShadow: item.em ? '0 10px 26px -12px var(--lume-halo)' : 'none',
-          opacity: item.em ? '0.72' : '0.5',
-        }}
-      >
-        <span
-          className="block h-1.5 w-1.5 shrink-0 rounded-full"
-          style={{ backgroundColor: 'var(--lume-2)', boxShadow: '0 0 8px var(--lume-halo)' }}
-        />
-        <span
-          className="text-[13px] font-bold tracking-tight"
-          style={{ color: item.em ? 'var(--lume-2)' : 'var(--kia-text-soft)' }}
-        >
-          {item.label}
-        </span>
-      </span>
-    )
-  }
-
-  const size = item.size || 32
-
-  if (item.kind === 'cube') {
-    return (
-      <div className="hub-3d relative" style={{ width: `${size}px`, height: `${size}px` }}>
-        <MiniCube size={size} />
-      </div>
-    )
-  }
-
-  if (item.kind === 'ring') {
-    return (
-      <span
-        className="block rounded-full border-2"
-        style={{
-          width: `${size}px`, height: `${size}px`,
-          borderColor: 'var(--lume-2)', opacity: '0.6',
-          boxShadow: '0 0 22px var(--lume-halo)',
-        }}
-      />
-    )
-  }
-
-  if (item.kind === 'orb') {
-    return (
-      <span
-        className="block rounded-full"
-        style={{
-          width: `${size}px`, height: `${size}px`,
-          background: 'radial-gradient(circle at 32% 28%, #ffffff, var(--lume-2) 46%, var(--lume-1) 72%, transparent 76%)',
-          boxShadow: '0 0 26px var(--lume-halo)', opacity: '0.8',
-        }}
-      />
-    )
-  }
-
   return (
     <span
-      className="block"
+      className="inline-flex items-center gap-2 whitespace-nowrap rounded-[12px] border px-3.5 py-2"
       style={{
-        width: `${size}px`, height: `${size}px`,
-        background: 'linear-gradient(160deg, var(--lume-2), transparent 70%)',
-        clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)',
-        opacity: '0.5', filter: 'drop-shadow(0 0 12px var(--lume-halo))',
+        backgroundColor: item.em
+          ? 'color-mix(in srgb, var(--lume-2) 14%, var(--kia-surface))'
+          : 'color-mix(in srgb, var(--kia-surface) 92%, var(--lume-2))',
+        borderColor: 'var(--hub-line)',
+        boxShadow: item.em ? '0 10px 26px -12px var(--lume-halo)' : 'none',
+        opacity: item.em ? '0.72' : '0.5',
       }}
-    />
-  )
-}
-
-function MiniCube({ size }: { size: number }) {
-  const t = size / 2
-  const faces = [
-    `rotateY(0deg) translateZ(${t}px)`, `rotateY(90deg) translateZ(${t}px)`,
-    `rotateY(180deg) translateZ(${t}px)`, `rotateY(-90deg) translateZ(${t}px)`,
-    `rotateX(90deg) translateZ(${t}px)`, `rotateX(-90deg) translateZ(${t}px)`,
-  ]
-  return (
-    <>
-      {faces.map((tr, i) => (
-        <span
-          key={i}
-          className="absolute inset-0 rounded-[8px] border"
-          style={{
-            transform: tr,
-            background: 'linear-gradient(135deg, color-mix(in srgb, var(--lume-1) 26%, transparent), color-mix(in srgb, var(--lume-2) 22%, transparent))',
-            borderColor: 'var(--lume-edge)',
-            boxShadow: 'inset 0 0 18px var(--lume-halo), 0 0 14px var(--lume-halo)',
-          }}
-        />
-      ))}
-    </>
+    >
+      <span
+        className="block h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ backgroundColor: 'var(--lume-2)', boxShadow: '0 0 8px var(--lume-halo)' }}
+      />
+      <span
+        className="text-[13px] font-bold tracking-tight"
+        style={{ color: item.em ? 'var(--lume-2)' : 'var(--kia-text-soft)' }}
+      >
+        {item.label}
+      </span>
+    </span>
   )
 }
