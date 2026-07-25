@@ -13,8 +13,17 @@ async function authorize() {
   const accessResponse = await requireBrandApiAccess('kia')
   if (accessResponse) return { response: accessResponse, appUser: null }
   const appUser = await getAuthenticatedAppUser()
-  const permission = await requirePermission(appUser, 'kia.proforma.view')
-  if (!permission.allowed) return { response: NextResponse.json({ error: permission.reason }, { status: 403 }), appUser }
+
+  const permission = await requirePermission(appUser, 'kia.bookings.view')
+  if (!permission.allowed) {
+    const fallback1 = await requirePermission(appUser, 'kia.proforma.view')
+    if (!fallback1.allowed) {
+      const fallback2 = await requirePermission(appUser, 'kia.stock_report.view')
+      if (!fallback2.allowed) {
+        return { response: NextResponse.json({ error: permission.reason }, { status: 403 }), appUser }
+      }
+    }
+  }
   return { response: null, appUser }
 }
 
@@ -55,7 +64,22 @@ export async function GET(request: Request) {
       filters.push(`sm.order_dealer = '${dealerCode.replace(/'/g, "''")}'`)
     }
     if (model !== 'All') {
-      filters.push(`sm.model ILIKE '%${model.replace(/'/g, "''")}%'`)
+      const escapedModel = model.replace(/'/g, "''")
+      const baseKeyword = escapedModel
+        .replace(/^(new|all new|the new)\s+/i, '')
+        .replace(/\s+(petrol|diesel|ev|hev|mhev)$/i, '')
+        .trim()
+
+      filters.push(`(
+        sm.model ILIKE '%${escapedModel}%' OR 
+        sm.model ILIKE '%${baseKeyword}%'
+      )`)
+
+      if (/petrol/i.test(escapedModel)) {
+        filters.push(`(sm.variant ILIKE '%petrol%' OR sm.variant ILIKE '%g1.%')`)
+      } else if (/diesel/i.test(escapedModel)) {
+        filters.push(`(sm.variant ILIKE '%diesel%' OR sm.variant ILIKE '%d1.%')`)
+      }
     }
 
     if (status !== 'All') {
@@ -149,14 +173,14 @@ export async function GET(request: Request) {
       transfers: 0,
     }
 
-    // 2. Fetch total count for pagination (join transfers too, since the
-    // TRANSFERRED filter references vt.id in the WHERE clause)
+    // 2. Fetch total count for pagination (join transfers and local statuses too)
     const totalCountResult = await db.execute(sql.raw(`
       SELECT COUNT(*)::int as count
       FROM kia_stock_management sm
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
       LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
+      LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
       WHERE ${whereClause}
     `))
     const totalRows = Number(totalCountResult[0]?.count || 0)
@@ -197,6 +221,7 @@ export async function GET(request: Request) {
       LEFT JOIN kia_vehicle_allocations va ON va.vin_number = sm.vin_number AND va.released_at IS NULL
       LEFT JOIN kia_bookings kb ON kb.id = va.booking_id AND kb.deleted_at IS NULL
       LEFT JOIN kia_vehicle_transfers vt ON UPPER(vt.vin_number) = UPPER(sm.vin_number) AND LOWER(vt.transfer_status) IN ('transferred', 'requested')
+      LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
       LEFT JOIN users u ON u.id = vt.requested_by
       WHERE ${whereClause}
       ORDER BY sm.stock_age::int DESC NULLS LAST, sm.id DESC

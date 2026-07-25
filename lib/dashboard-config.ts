@@ -59,6 +59,7 @@ export const FINANCE_BANK_OPTIONS = [
   'M&M',
   'MARBLE MARKET',
   'PNB BANK',
+  'Punjabi Nation Bank',
   'POWER GRID',
   'Punjab & Sind Bank',
   'RBI',

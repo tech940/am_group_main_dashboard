@@ -1937,7 +1937,7 @@ export function KiaBookingsClient({
   const globalDiscountsQuery = useQuery({
     queryKey: ['kia-global-discounts'],
     queryFn: () => fetchJson<{ success: boolean; discounts: any[] }>('/api/brands/kia/bookings/discounts', 'kia-global-discounts'),
-    enabled: ['md', 'ceo', 'developer', 'admin', 'sales_manager', 'general_manager'].includes(currentUserRole),
+    enabled: ['md', 'ceo', 'developer', 'admin', 'sales_manager', 'general_manager', 'edp'].includes(currentUserRole),
     retry: 1,
     refetchOnWindowFocus: false,
   })
@@ -2714,7 +2714,7 @@ export function KiaBookingsClient({
             )}
           </Button>
 
-          {['md', 'ceo', 'developer', 'admin', 'sales_manager', 'general_manager'].includes(currentUserRole) && (
+          {['md', 'ceo', 'developer', 'admin', 'sales_manager', 'general_manager', 'edp'].includes(currentUserRole) && (
             <Button
               variant={crmViewMode === 'discounts' ? 'default' : 'outline'}
               className={cn("h-10 rounded-2xl px-4 text-sm font-bold sm:h-11 border-slate-200", crmViewMode === 'discounts' && "bg-slate-950 hover:bg-slate-800 text-white")}

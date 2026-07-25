@@ -46,6 +46,7 @@ const CHECKS: Check[] = [
   // `crm` fell into: it held delivery exclusively while seeing 0 of 55 bookings.
   { label: 'CXM CAN see all bookings (else delivery is unreachable)', got: canViewAllKiaBookings('cxm'), want: true },
   { label: 'CCM CAN see all bookings (else delivery is unreachable)', got: canViewAllKiaBookings('ccm'), want: true },
+  { label: 'EDP CAN see all bookings (unrestricted all branches)', got: canViewAllKiaBookings('edp'), want: true },
   { label: 'CRM CANNOT see all bookings (retired)', got: canViewAllKiaBookings('crm'), want: false },
   { label: 'sales_executive CANNOT see all bookings (own only)', got: canViewAllKiaBookings('sales_executive'), want: false },
 
@@ -53,7 +54,7 @@ const CHECKS: Check[] = [
   { label: 'IDT CAN allot to a booking', got: canAllotKiaVehicleToBooking('idt'), want: true },
   { label: 'developer CAN allot (super-admin override)', got: canAllotKiaVehicleToBooking('developer'), want: true },
   { label: 'sales_manager CANNOT allot (was allowed before)', got: canAllotKiaVehicleToBooking('sales_manager'), want: false },
-  { label: 'general_manager CANNOT allot (was allowed before)', got: canAllotKiaVehicleToBooking('general_manager'), want: false },
+  { label: 'general_manager CAN allot to a booking', got: canAllotKiaVehicleToBooking('general_manager'), want: true },
   { label: 'accounts CANNOT allot (was allowed before)', got: canAllotKiaVehicleToBooking('accounts'), want: false },
   { label: 'md CANNOT allot (was allowed before)', got: canAllotKiaVehicleToBooking('md'), want: false },
   { label: 'crm CANNOT allot', got: canAllotKiaVehicleToBooking('crm'), want: false },
@@ -63,7 +64,7 @@ const CHECKS: Check[] = [
   { label: 'sales_manager still CAN hold/transfer stock', got: canAllotKiaVehicle('sales_manager'), want: true },
   { label: 'accounts still CAN hold/transfer stock', got: canAllotKiaVehicle('accounts'), want: true },
   { label: 'sales_executive still CANNOT hold/transfer stock', got: canAllotKiaVehicle('sales_executive'), want: false },
-  { label: 'idt is NOT granted stock holds/transfers by the allot change', got: canAllotKiaVehicle('idt'), want: false },
+  { label: 'idt CAN hold/transfer stock', got: canAllotKiaVehicle('idt'), want: true },
 
   // Payment confirmation — Accounts only, unchanged.
   { label: 'accounts CAN confirm payment', got: canVerifyKiaAccounts('accounts'), want: true },

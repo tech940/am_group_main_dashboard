@@ -275,11 +275,14 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   }, [search, dealerCode, model, status, page])
 
   // Query stock data
-  const { data, isLoading, isError, refetch } = useQuery<StockPayload>({
+  const { data, isLoading, isError, error, refetch } = useQuery<StockPayload>({
     queryKey: ['kia-proforma-stock', queryParams],
     queryFn: async () => {
       const response = await fetch(`/api/brands/kia/proforma/stock?${queryParams}`)
-      if (!response.ok) throw new Error('Failed to load stock data')
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null)
+        throw new Error(errorPayload?.error || 'Failed to load stock data')
+      }
       return response.json()
     },
     staleTime: 5 * 1000,
@@ -309,19 +312,25 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
   const getMatchingBookings = (row: StockRow) => {
     if (row.allocation_id) return []
     return bookingsList.filter((b) => {
+      // 1. Model Match (strict base model comparison)
       const bModelStr = String(b.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
       const rModelStr = String(row.model || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(thenew|allnew|new)/, '').replace(/(petrol|diesel|ev|hev|mhev)$/, '').trim()
-      const modelMatches =
-        !bModelStr ||
-        !rModelStr ||
-        bModelStr === rModelStr ||
-        bModelStr.includes(rModelStr) ||
-        rModelStr.includes(bModelStr)
+      if (!bModelStr || !rModelStr) return false
+      const modelMatches = bModelStr === rModelStr || bModelStr.includes(rModelStr) || rModelStr.includes(bModelStr)
       if (!modelMatches) return false
 
+      // 2. Variant Match (strict variant / trim comparison)
       const bVar = String(b.variant || '').toLowerCase().replace(/[^a-z0-9]/g, '')
       const rVar = String(row.variant || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-      return !bVar || !rVar || bVar.includes(rVar) || rVar.includes(bVar)
+      if (!bVar || !rVar) return false
+      const variantMatches = bVar === rVar || bVar.includes(rVar) || rVar.includes(bVar)
+      if (!variantMatches) return false
+
+      // 3. Color Match (strict exterior color comparison)
+      const bColor = String(b.color || (b.metadata as any)?.color || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const rColor = String(row.color || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      if (!bColor || !rColor) return false
+      return bColor === rColor || bColor.includes(rColor) || rColor.includes(bColor)
     })
   }
 
@@ -908,7 +917,11 @@ export function KiaStockManagementDashboard({ currentUserRole }: { currentUserRo
           {isLoading ? (
             <PremiumTableSkeleton rows={8} columns={10} />
           ) : isError ? (
-            <PremiumEmptyState illustration="error" title="Failed to load stock data" description="Refresh the page to retry, or check the server logs if it repeats." />
+            <PremiumEmptyState
+              illustration="error"
+              title="Failed to load stock data"
+              description={error instanceof Error ? error.message : "Refresh the page to retry, or check the server logs if it repeats."}
+            />
           ) : data?.rows.length === 0 ? (
             <PremiumEmptyState illustration="garage" title="No stock vehicles found" description="Adjust your search query or filters to browse available inventory." />
           ) : (

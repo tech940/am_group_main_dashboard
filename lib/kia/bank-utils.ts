@@ -27,10 +27,12 @@ const BANK_NAME_MAP: Record<string, string> = {
   // BOM variations
   'bom': 'BOM',
 
-  // PNB variations
+  // PNB / Punjabi Nation Bank variations
   'pnb': 'PNB BANK',
   'pnb bank': 'PNB BANK',
   'punjab national bank': 'PNB BANK',
+  'punjabi nation bank': 'PNB BANK',
+  'punjabi national bank': 'PNB BANK',
 
   // Canara variations
   'canara': 'CANARA',

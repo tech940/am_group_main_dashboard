@@ -41,11 +41,17 @@ async function loadKiaOptionsData() {
         trim_description: normalizedValue(row.trimDescription),
       }))
 
-    const banks = allPriceDetails
-      .map((row) => ({
+    const extraDefaultBanks = [
+      { bank_name: 'PNB BANK', bank_branch: 'PNB - Shastri Nagar' },
+    ]
+
+    const banks = [
+      ...allPriceDetails.map((row) => ({
         bank_name: normalizeBankName(row.bankName || row.hyp),
         bank_branch: normalizedValue(row.bankBranch),
-      }))
+      })),
+      ...extraDefaultBanks,
+    ]
       .filter((row) => row.bank_name && row.bank_branch)
       .filter((row, index, source) => source.findIndex((candidate) => (
         candidate.bank_name === row.bank_name && candidate.bank_branch === row.bank_branch

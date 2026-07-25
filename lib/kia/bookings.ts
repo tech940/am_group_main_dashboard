@@ -595,10 +595,17 @@ function listFilters(input: BookingListInput) {
               WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
                 AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
                 AND (sm.model ILIKE '%' || kia_bookings.model || '%' OR kia_bookings.model ILIKE '%' || sm.model || '%')
+                AND coalesce(sm.variant, '') <> ''
+                AND coalesce(kia_bookings.variant, '') <> ''
                 AND (
-                  coalesce(sm.variant, '') = ''
-                  OR sm.variant ILIKE '%' || kia_bookings.variant || '%'
+                  sm.variant ILIKE '%' || kia_bookings.variant || '%'
                   OR kia_bookings.variant ILIKE '%' || sm.variant || '%'
+                )
+                AND coalesce(sm.exterior_color_name, '') <> ''
+                AND coalesce(kia_bookings.color, coalesce(kia_bookings.metadata->>'color', '')) <> ''
+                AND (
+                  sm.exterior_color_name ILIKE '%' || coalesce(kia_bookings.color, kia_bookings.metadata->>'color') || '%'
+                  OR coalesce(kia_bookings.color, kia_bookings.metadata->>'color') ILIKE '%' || sm.exterior_color_name || '%'
                 )
                 AND NOT EXISTS (
                   SELECT 1 FROM kia_vehicle_allocations aa
@@ -1517,8 +1524,10 @@ export async function getKiaBookingMatchingVehicles(id: string) {
   const [booking] = await db.select().from(kiaBookings).where(and(eq(kiaBookings.id, id), isNull(kiaBookings.deletedAt))).limit(1)
   if (!booking) throw new Error('Booking not found')
 
+  const bookingColor = text(booking.color || (booking.metadata as Record<string, unknown> | null)?.color)
   const modelPattern = `%${booking.model}%`
   const variantPattern = `%${booking.variant}%`
+  const colorPattern = `%${bookingColor}%`
 
   return rows(await analyticsDb.execute(sql`
     WITH active_allocations AS (
@@ -1543,24 +1552,20 @@ export async function getKiaBookingMatchingVehicles(id: string) {
       FROM kia_stock_management sm
       LEFT JOIN kia_stock_local_statuses ls ON ls.vin_number = sm.vin_number
       WHERE lower(trim(coalesce(sm.stock_status::text, ''))) IN ('free stock', 'in transit')
-        -- Exclude retailed vehicles AND vehicles on hold (#12) — a held VIN is not matchable.
         AND coalesce(ls.local_status, '') NOT IN ('retail', 'hold_customer', 'hold_dealer')
         AND NOT EXISTS (SELECT 1 FROM active_allocations aa WHERE aa.vin_number = sm.vin_number)
-        -- Model match is BIDIRECTIONAL — either side may contain the other — exactly like the variant
-        -- match below and like the not-in-stock predicate the list uses.
-        --
-        -- It used to be one-sided (sm.model ILIKE '%' || booking.model || '%'), which silently returned
-        -- ZERO allottable vehicles for any booking whose model carries a fuel suffix: a booking for
-        -- "SONET PETROL" cannot be contained in a DMS model of "SONET", so nothing matched. Measured
-        -- on live data: 3 of the 4 approved bookings (NEW SELTOS DIESEL, SONET PETROL, NEW SELTOS
-        -- PETROL) found 0 vehicles where 28-32 were actually free. IDT simply could not allot them.
         AND (sm.model ILIKE ${modelPattern} OR ${text(booking.model)} ILIKE '%' || sm.model || '%')
-        -- #1 Only the proforma's variant is matchable (either side contained in the other; an empty
-        -- vehicle variant is left in, matching the server's allot guard which can't gate a blank).
+        AND coalesce(sm.variant, '') <> ''
+        AND coalesce(${text(booking.variant)}, '') <> ''
         AND (
-          coalesce(sm.variant, '') = ''
-          OR sm.variant ILIKE ${variantPattern}
+          sm.variant ILIKE ${variantPattern}
           OR ${text(booking.variant)} ILIKE '%' || sm.variant || '%'
+        )
+        AND coalesce(sm.exterior_color_name, '') <> ''
+        AND coalesce(${text(bookingColor)}, '') <> ''
+        AND (
+          sm.exterior_color_name ILIKE ${colorPattern}
+          OR ${text(bookingColor)} ILIKE '%' || sm.exterior_color_name || '%'
         )
       ORDER BY sm.vin_number, sm.uploaded_at DESC NULLS LAST, sm.id DESC
     ),
@@ -1581,13 +1586,18 @@ export async function getKiaBookingMatchingVehicles(id: string) {
       WHERE ls.local_status = 'bbnd'
         AND NOT EXISTS (SELECT 1 FROM active_allocations aa WHERE aa.vin_number = ls.vin_number)
         AND NOT EXISTS (SELECT 1 FROM dms d WHERE d.vin_number = ls.vin_number)
-        -- Bidirectional for the same reason as the DMS branch above: a one-sided match hides every
-        -- BBND vehicle from a fuel-suffixed booking model.
         AND (ls.model ILIKE ${modelPattern} OR ${text(booking.model)} ILIKE '%' || ls.model || '%')
+        AND coalesce(ls.variant, '') <> ''
+        AND coalesce(${text(booking.variant)}, '') <> ''
         AND (
-          coalesce(ls.variant, '') = ''
-          OR ls.variant ILIKE ${variantPattern}
+          ls.variant ILIKE ${variantPattern}
           OR ${text(booking.variant)} ILIKE '%' || ls.variant || '%'
+        )
+        AND coalesce(ls.color, '') <> ''
+        AND coalesce(${text(bookingColor)}, '') <> ''
+        AND (
+          ls.color ILIKE ${colorPattern}
+          OR ${text(bookingColor)} ILIKE '%' || ls.color || '%'
         )
     )
     SELECT *

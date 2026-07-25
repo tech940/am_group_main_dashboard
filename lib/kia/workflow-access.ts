@@ -124,6 +124,7 @@ export function canViewAllKiaBookings(role?: string | null) {
     r === 'finance_head' ||
     r === 'idt' ||
     r === 'cxm' ||
-    r === 'ccm'
+    r === 'ccm' ||
+    r === 'edp'
   )
 }
