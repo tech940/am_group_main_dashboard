@@ -3,11 +3,13 @@
 import React, { useState, useRef, useEffect, useCallback, useSyncExternalStore } from 'react'
 import {
   motion,
+  animate,
   useMotionValue,
   useSpring,
   useTransform,
   useReducedMotion,
 } from 'motion/react'
+import Link from 'next/link'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Zap } from 'lucide-react'
 
@@ -125,11 +127,54 @@ const CSS = `
 .hub-emissive {
   background: linear-gradient(135deg, var(--lume-1) 0%, var(--lume-2) 52%, var(--lume-3) 100%);
 }
+
+/* Clickable plot footprints. The buildings themselves inherit pointer-events:none from the campus
+   wrapper, so hit-testing passes straight through a building to the footprint link beneath it —
+   clicking a roof opens the same section as clicking the forecourt. */
+.hub-plotlink {
+  background: transparent;
+  border-radius: 18px;
+  transition: background .25s var(--kia-ease-out), box-shadow .25s var(--kia-ease-out);
+}
+.hub-plotlink:hover,
+.hub-plotlink:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--lume-2) 11%, transparent);
+  box-shadow: 0 0 44px var(--lume-halo);
+}
+
+/* Day/night. The first cut was a full-screen multiply film — on a near-white scene that just looks
+   like a broken grey shadow (it dimmed the entire canvas uniformly). Dusk is now an edge VIGNETTE:
+   the centre of the scene stays clean, only the periphery cools and darkens slightly, plus a faint
+   cool cast at the top. Peak alpha ~0.14, normal blending. Reads as atmosphere, never as a shadow. */
+@keyframes hub-daynight {
+  0%, 100% { opacity: 0; }
+  42%, 58% { opacity: 1; }
+}
+.hub-night {
+  background:
+    radial-gradient(120% 90% at 50% 32%, transparent 44%, rgba(15, 23, 42, .14) 100%),
+    linear-gradient(180deg, rgba(37, 99, 235, .05), transparent 38%);
+  animation: hub-daynight 90s ease-in-out infinite;
+}
+/* Elements that brighten in step with the dusk cycle: same keyframes + duration as .hub-night,
+   mounted in the same commit, so the timelines stay in sync without any JS coordination. */
+.hub-night-sync {
+  opacity: 0;
+  animation: hub-daynight 90s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-plotlink { transition-duration: .001ms !important; }
+  .hub-night { animation: none; opacity: 0; }
+  .hub-night-sync { animation: none; }
+}
 `
 
 export default function DashboardPortal() {
   const reduce = useReducedMotion()
   const isClient = useSyncExternalStore(NEVER_CHANGES, onClient, onServer)
+  const isDesktop = useIsDesktop()
   const animated = !reduce
   const decor = animated && isClient
 
@@ -154,6 +199,35 @@ export default function DashboardPortal() {
 
   const onLeave = useCallback(() => { mx.set(0); my.set(0) }, [mx, my])
 
+  // Idle cinematography: after 6s without pointer movement the camera starts a slow sway, so the
+  // scene is never frozen even untouched. It drives the same mx motion value the mouse parallax
+  // uses (through the same spring), and any pointer activity stops it instantly. The keyframe loop
+  // starts AND ends at the value it began from, so each 22s cycle wraps seamlessly.
+  useEffect(() => {
+    if (reduce) return
+    let sway: ReturnType<typeof animate> | null = null
+    let timer = 0
+    const startSway = () => {
+      const from = mx.get()
+      sway = animate(mx, [from, 0.16, -0.16, from], {
+        duration: 22, repeat: Infinity, ease: 'easeInOut',
+      })
+    }
+    const reset = () => {
+      sway?.stop()
+      sway = null
+      window.clearTimeout(timer)
+      timer = window.setTimeout(startSway, 6000)
+    }
+    window.addEventListener('pointermove', reset)
+    reset()
+    return () => {
+      window.removeEventListener('pointermove', reset)
+      window.clearTimeout(timer)
+      sway?.stop()
+    }
+  }, [reduce, mx])
+
   return (
     <MainLayout title="Operations Hub" subtitle="AM Group Corporate Gateway">
       <div className="hub kia-premium relative mx-auto w-full max-w-[1400px] pb-8">
@@ -165,19 +239,20 @@ export default function DashboardPortal() {
           onPointerLeave={onLeave}
           className="hub-scene relative min-h-[calc(100vh-9rem)] overflow-hidden rounded-[2.5rem]"
         >
-          {/* ── Ambient ─────────────────────────────────────────────────── */}
+          {/* ── Ambient — the orbs render everywhere but only DRIFT on desktop; on mobile they
+                 are static gradients, part of the "static assets only" rule. ─────────────── */}
           <motion.div
             aria-hidden
             className="pointer-events-none absolute -left-32 top-0 h-[480px] w-[480px] rounded-full"
             style={{ background: 'radial-gradient(circle, var(--hub-glow), transparent 68%)', filter: 'blur(50px)', opacity: 0.4 }}
-            animate={animated ? { x: [0, 30, 0], y: [0, 24, 0] } : undefined}
+            animate={animated && isDesktop ? { x: [0, 30, 0], y: [0, 24, 0] } : undefined}
             transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
           />
           <motion.div
             aria-hidden
             className="pointer-events-none absolute -right-36 bottom-0 h-[440px] w-[440px] rounded-full"
             style={{ background: 'radial-gradient(circle, var(--hub-glow), transparent 70%)', filter: 'blur(56px)', opacity: 0.32 }}
-            animate={animated ? { x: [0, -28, 0], y: [0, -22, 0] } : undefined}
+            animate={animated && isDesktop ? { x: [0, -28, 0], y: [0, -22, 0] } : undefined}
             transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
           />
 
@@ -199,10 +274,11 @@ export default function DashboardPortal() {
           </div>
 
           {/* ── Background field: real collision physics, not fixed paths ─── */}
-          {decor && <PhysicsField />}
+          {/* Desktop-only: on a phone-sized canvas 17 colliding bodies pile onto the copy. */}
+          {decor && isDesktop && <PhysicsField />}
 
-          {/* Particles */}
-          {decor && (
+          {/* Particles (desktop-only: continuously animated) */}
+          {decor && isDesktop && (
             <div aria-hidden className="pointer-events-none absolute inset-0">
               {PARTICLES.map((p) => (
                 <motion.span
@@ -255,7 +331,7 @@ export default function DashboardPortal() {
 
             <p className="mt-4 max-w-md text-[14px] font-medium leading-relaxed" style={{ color: 'var(--kia-text-soft)' }}>
               Sales, service, inventory and finance — unified across KIA, Hyundai and Platinum.
-              Move your cursor to rotate the stack.
+              <span className="hidden lg:inline"> Move your cursor to rotate the campus.</span>
             </p>
           </motion.div>
 
@@ -277,11 +353,15 @@ export default function DashboardPortal() {
             <CarModel animated={animated} />
           </div>
 
-          {/* Mobile / tablet: the yard alone — the full campus is unreadable this small */}
-          <div className="relative z-10 mt-6 flex justify-center pb-8 lg:hidden">
-            <div className="hub-3d relative h-[360px] w-[320px]" style={{ transform: 'rotateX(58deg) rotateZ(-45deg) scale(0.58)' }}>
-              <StockYard active={active} setActive={setActive} decor={decor} />
-            </div>
+          {/* ── Day/night: a 90s ambient tint cycle. pointer-events-none so the plot links
+                 underneath stay clickable; z-10 keeps it under the copy (z-20). ─────────── */}
+          {decor && isDesktop && <div aria-hidden className="hub-night pointer-events-none absolute inset-0 z-10" />}
+
+          {/* Mobile / tablet: live CSS-3D + animation loops are too heavy and too cramped on a
+              phone, so below lg the campus is a single STATIC SVG vignette — same isometric
+              projection, same theme tokens, zero animation, zero 3D compositing. */}
+          <div className="relative z-10 mt-2 px-2 pb-8 lg:hidden">
+            <MobileCampusIllustration />
           </div>
         </div>
       </div>
@@ -289,10 +369,108 @@ export default function DashboardPortal() {
   )
 }
 
+/* ── MobileCampusIllustration: the campus as a STATIC asset ──────────────
+   Plain SVG polygons computed with the same 2:1 isometric projection the live scene uses, filled
+   with the same theme tokens — so it reads as the desktop campus's sibling, but costs nothing:
+   no animation, no preserve-3d compositing, no rAF. Rendered below lg only. */
+function isoPt(x: number, y: number, z: number) {
+  return `${((x - y) * 0.866).toFixed(1)},${((x + y) * 0.5 - z).toFixed(1)}`
+}
+
+function IsoBox({ x, y, z = 0, w, d, h, glow }: {
+  x: number; y: number; z?: number; w: number; d: number; h: number; glow?: boolean
+}) {
+  // With this projection the viewer sees the top plus the two faces pointing down-screen
+  // (+x and +y). Sides first, lit top last.
+  return (
+    <>
+      <polygon
+        points={[isoPt(x + w, y, z), isoPt(x + w, y + d, z), isoPt(x + w, y + d, z + h), isoPt(x + w, y, z + h)].join(' ')}
+        fill="var(--slab-side)" stroke="var(--hub-line)" strokeWidth="0.6"
+      />
+      <polygon
+        points={[isoPt(x, y + d, z), isoPt(x + w, y + d, z), isoPt(x + w, y + d, z + h), isoPt(x, y + d, z + h)].join(' ')}
+        fill="var(--slab-dark)" stroke="var(--hub-line)" strokeWidth="0.6"
+      />
+      <polygon
+        points={[isoPt(x, y, z + h), isoPt(x + w, y, z + h), isoPt(x + w, y + d, z + h), isoPt(x, y + d, z + h)].join(' ')}
+        fill={glow ? 'url(#mLume)' : 'var(--slab-top)'} stroke="var(--hub-line)" strokeWidth="0.6"
+      />
+    </>
+  )
+}
+
+function MobileCampusIllustration() {
+  return (
+    <svg viewBox="-185 -45 415 300" className="mx-auto block w-full max-w-[420px]" aria-hidden>
+      <defs>
+        <linearGradient id="mLume" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="var(--lume-1)" />
+          <stop offset="55%" stopColor="var(--lume-2)" />
+          <stop offset="100%" stopColor="var(--lume-3)" />
+        </linearGradient>
+        <radialGradient id="mHalo">
+          <stop offset="0%" stopColor="var(--lume-halo)" />
+          <stop offset="100%" stopColor="transparent" />
+        </radialGradient>
+      </defs>
+
+      {/* ambient glow behind the campus */}
+      <ellipse cx="20" cy="120" rx="200" ry="120" fill="url(#mHalo)" opacity="0.5" />
+
+      {/* ground */}
+      <IsoBox x={0} y={0} z={-8} w={260} d={200} h={8} />
+
+      {/* showroom + emissive canopy */}
+      <IsoBox x={30} y={28} w={90} d={70} h={38} />
+      <IsoBox x={22} y={20} z={38} w={106} d={86} h={8} glow />
+
+      {/* service centre + emissive roof */}
+      <IsoBox x={36} y={122} w={72} d={56} h={28} />
+      <IsoBox x={30} y={116} z={28} w={84} d={68} h={7} glow />
+
+      {/* city towers */}
+      <IsoBox x={168} y={18} w={46} d={46} h={106} />
+      <IsoBox x={168} y={18} z={106} w={46} d={46} h={6} glow />
+      <IsoBox x={202} y={64} w={34} d={34} h={66} />
+
+      {/* stock cars on the lot */}
+      {[
+        { x: 150, y: 152 }, { x: 184, y: 144 }, { x: 152, y: 178 },
+      ].map((c, i) => (
+        <g key={i}>
+          <IsoBox x={c.x} y={c.y} w={26} d={13} h={7} />
+          <IsoBox x={c.x + 5} y={c.y + 2} z={7} w={13} d={9} h={5} glow />
+        </g>
+      ))}
+
+      {/* light mast with its pool */}
+      <ellipse cx="76" cy="194" rx="34" ry="14" fill="url(#mHalo)" opacity="0.6" />
+      <IsoBox x={236} y={148} w={5} d={5} h={52} />
+      <IsoBox x={232} y={144} z={52} w={13} d={13} h={4} glow />
+    </svg>
+  )
+}
+
 /* ── client-only gate (lint-clean; no setState in an effect) ─────────────── */
 const NEVER_CHANGES = () => () => {}
 const onClient = () => true
 const onServer = () => false
+
+/* ── desktop gate (Tailwind lg = 1024px) ──────────────────────────────────
+   The physics field must be UNMOUNTED on small screens, not display:none-hidden: its rAF loop
+   would keep simulating 17 bodies against a 0-width box behind a hidden panel. SSR snapshot is
+   false; useSyncExternalStore re-renders with the real match right after hydration. */
+const lgQuery = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null
+const subscribeLg = (cb: () => void) => {
+  lgQuery?.addEventListener('change', cb)
+  return () => lgQuery?.removeEventListener('change', cb)
+}
+const getLg = () => lgQuery?.matches ?? false
+const getLgServer = () => false
+function useIsDesktop() {
+  return useSyncExternalStore(subscribeLg, getLg, getLgServer)
+}
 
 /* ── Campus: ONE isometric ground plane carrying every building ───────────
    Previously each model owned its own rotation root and its own ground pad, positioned by an
@@ -309,15 +487,43 @@ const PLOTS = {
   city:    { dx: 168,  dy: -330 },
 }
 
-function Plot({ dx, dy, children }: { dx: number; dy: number; children: React.ReactNode }) {
+/* ── Assembly intro ──────────────────────────────────────────────────────
+   On mount the campus builds itself: the ground surfaces first, then each plot's buildings rise up
+   THROUGH it in sequence. preserve-3d depth-sorts intersecting geometry, so anything still below
+   the ground plane is genuinely occluded by it — the rise reads as construction, not clipping.
+   Pure translateZ (no opacity — animated opacity forces preserve-3d flat and would squash the
+   boxes; no scale — 2D scale would squish footprints while leaving heights alone). */
+function Rise({ delay, from = -170, children }: { delay: number; from?: number; children: React.ReactNode }) {
+  const reduce = useReducedMotion()
+  // `absolute inset-0` is load-bearing: a transformed element becomes the containing block for its
+  // absolutely-positioned descendants, and the Boxes inside anchor with left-1/2 top-1/2. As a
+  // static zero-height div this wrapper collapsed that anchor to (centre, 0) — which silently
+  // shifted the ground and roads half a scene away from the buildings. inset-0 makes the wrapper
+  // exactly match its parent's box (the 900px scene, or a 0x0 plot anchor), keeping centres intact.
+  return (
+    <motion.div
+      className="hub-3d absolute inset-0"
+      initial={reduce ? false : { z: from }}
+      animate={{ z: 0 }}
+      transition={{ duration: 1.15, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+function Plot({ dx, dy, delay = 0, children }: {
+  dx: number; dy: number; delay?: number; children: React.ReactNode
+}) {
   // Zero-size anchor: Box positions itself from its parent's centre, so a 0x0 div at (dx,dy) makes
-  // that point the plot origin.
+  // that point the plot origin. The Rise wrapper is static-positioned, so children still anchor to
+  // this element while its transform (the intro rise) applies to them.
   return (
     <div
       className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
       style={{ transform: `translate3d(${dx}px, ${dy}px, 0px)` }}
     >
-      {children}
+      <Rise delay={delay}>{children}</Rise>
     </div>
   )
 }
@@ -577,35 +783,388 @@ function NewStockDelivery() {
   )
 }
 
+/* ── CustomerHandover: a sold car leaves the Ready row and is delivered at the showroom ──
+   Third and final vehicle loop, on a 19s period — 13, 16 and 19 share no common factor, so the
+   three loops drift phase forever. The car IS the first Ready for Delivery slot (StockYard leaves
+   it empty, same mechanic as the delivery drop): it pulls out, drives the showroom road, pauses
+   for the handover flash + "Delivered" chip, then turns south and exits the campus — sold. It
+   steps back into the slot under a restock pulse before the loop restarts. */
+const HAND_T = 19
+const HAND_TIMES = [0, 0.12, 0.32, 0.42, 0.48, 0.685, 0.7, 0.81, 0.825, 1]
+const HAND_X = [30, 30, -120, -120, -120, -120, -120, 30, 30, 30]
+const HAND_Y = [182, 182, 186, 186, 230, 470, 470, 182, 182, 182]
+const HAND_ROT = [0, 0, 0, 0, 90, 90, 90, 0, 0, 0]
+const HANDOVER = { x: -120, y: 186 } // the handover point on the showroom road
+
+function CustomerHandover() {
+  const loop = { duration: HAND_T, repeat: Infinity, ease: 'linear' as const }
+  return (
+    <>
+      {/* the sold car */}
+      <motion.div
+        aria-hidden
+        className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+        initial={false}
+        animate={{ x: HAND_X, y: HAND_Y, rotateZ: HAND_ROT, opacity: [1, 1, 1, 1, 1, 1, 0, 0, 1, 1] }}
+        transition={{
+          ...loop,
+          x: { ...loop, times: HAND_TIMES },
+          y: { ...loop, times: HAND_TIMES },
+          rotateZ: { ...loop, times: HAND_TIMES },
+          opacity: { ...loop, times: [0, 0.12, 0.32, 0.42, 0.48, 0.68, 0.685, 0.815, 0.82, 1] },
+        }}
+      >
+        <MiniCar />
+      </motion.div>
+
+      {/* handover flash — mint, to read as success rather than work */}
+      <motion.span
+        aria-hidden
+        className="absolute left-1/2 top-1/2 block rounded-full border-2"
+        style={{
+          width: '84px', height: '84px',
+          marginLeft: `${HANDOVER.x - 42}px`, marginTop: `${HANDOVER.y - 42}px`,
+          borderColor: 'var(--lume-3)', boxShadow: '0 0 28px var(--lume-halo)',
+        }}
+        initial={false}
+        animate={{ opacity: [0, 0, 0.9, 0, 0], scale: [0.4, 0.4, 1, 1.7, 1.7] }}
+        transition={{ ...loop, times: [0, 0.34, 0.38, 0.44, 1] }}
+      />
+
+      {/* billboarded "Delivered" chip — same three-layer pattern as the service chip */}
+      <div
+        aria-hidden
+        className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+        style={{ transform: `translate3d(${HANDOVER.x}px, ${HANDOVER.y - 52}px, 44px)` }}
+      >
+        <motion.div
+          className="hub-3d grid place-items-center"
+          initial={false}
+          animate={{ scale: [0, 0, 1, 1, 0, 0] }}
+          transition={{ ...loop, times: [0, 0.32, 0.35, 0.44, 0.47, 1] }}
+        >
+          <span
+            className="whitespace-nowrap rounded-full border px-2.5 py-1 text-[10.5px] font-extrabold uppercase tracking-[0.12em]"
+            style={{
+              transform: 'rotateZ(45deg) rotateX(-58deg)',
+              backgroundColor: 'var(--kia-surface)',
+              borderColor: 'color-mix(in srgb, var(--lume-3) 60%, transparent)',
+              color: 'var(--lume-3)',
+              boxShadow: '0 8px 22px -10px var(--lume-halo)',
+            }}
+          >
+            Delivered
+          </span>
+        </motion.div>
+      </div>
+
+      {/* restock pulse over the Ready slot, covering the car's step-reset */}
+      <motion.span
+        aria-hidden
+        className="absolute left-1/2 top-1/2 block rounded-full border-2"
+        style={{
+          width: '70px', height: '70px',
+          marginLeft: `${30 - 35}px`, marginTop: `${182 - 35}px`,
+          borderColor: 'var(--lume-2)', boxShadow: '0 0 24px var(--lume-halo)',
+        }}
+        initial={false}
+        animate={{ opacity: [0, 0, 0.8, 0, 0], scale: [0.4, 0.4, 1, 1.6, 1.6] }}
+        transition={{ ...loop, times: [0, 0.8, 0.83, 0.88, 1] }}
+      />
+    </>
+  )
+}
+
+/* A clickable plot footprint. Lies flat in the ground plane over the whole plot; the buildings
+   inherit pointer-events:none from the campus wrapper, so hit-testing passes straight through a
+   roof to this link — clicking a building opens its section. */
+function PlotLink({ dx, dy, w, d, href, label, onHover }: {
+  dx: number; dy: number; w: number; d: number; href: string; label: string
+  onHover: (v: string | null) => void
+}) {
+  return (
+    <div
+      className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+      style={{ transform: `translate3d(${dx}px, ${dy}px, 2px)` }}
+    >
+      <Link
+        href={href}
+        prefetch={false}
+        aria-label={label}
+        className="hub-plotlink pointer-events-auto absolute block cursor-pointer"
+        style={{ width: `${w}px`, height: `${d}px`, marginLeft: `${-w / 2}px`, marginTop: `${-d / 2}px` }}
+        onPointerEnter={() => onHover(label)}
+        onPointerLeave={() => onHover(null)}
+        onFocus={() => onHover(label)}
+        onBlur={() => onHover(null)}
+      />
+    </div>
+  )
+}
+
+/** Billboarded "Open …" hint floating above a plot while it is hovered. */
+function PlotHint({ dx, dy, z, children }: { dx: number; dy: number; z: number; children: React.ReactNode }) {
+  return (
+    <div
+      aria-hidden
+      className="hub-3d absolute left-1/2 top-1/2 grid h-0 w-0 place-items-center"
+      style={{ transform: `translate3d(${dx}px, ${dy}px, ${z}px)` }}
+    >
+      <span
+        className="whitespace-nowrap rounded-full border px-3 py-1.5 text-[11.5px] font-extrabold tracking-tight"
+        style={{
+          transform: 'rotateZ(45deg) rotateX(-58deg)',
+          backgroundColor: 'color-mix(in srgb, var(--lume-2) 14%, var(--kia-surface))',
+          borderColor: 'color-mix(in srgb, var(--lume-2) 60%, transparent)',
+          color: 'var(--lume-2)',
+          boxShadow: '0 10px 30px -12px var(--lume-halo)',
+        }}
+      >
+        {children} →
+      </span>
+    </div>
+  )
+}
+
+/* ── Helicopter: the scene's only actor above the ground plane ───────────
+   Parked on the city tower's helipad, it periodically lifts off, patrols the whole campus at
+   cruise altitude (z=300 — above the pylon beams at ~294 and the holo panel sits higher still),
+   and returns. Heading (rotateZ) advances monotonically through the circuit and ends at the start
+   angle +360, so the loop-boundary snap is numerically large but visually invisible. */
+const HELI_T = 36
+const HELI_TIMES = [0, 0.1, 0.15, 0.3, 0.46, 0.62, 0.76, 0.86, 0.9, 1]
+const HELI_X = [154, 154, 154, 350, 160, -180, -60, 154, 154, 154]
+const HELI_Y = [-390, -390, -390, -120, 180, 60, -260, -390, -390, -390]
+const HELI_Z = [190, 190, 300, 300, 300, 300, 300, 300, 190, 190]
+const HELI_ROT = [54, 54, 54, 122, 199, 291, 329, 414, 414, 414]
+
+function Helicopter() {
+  const loop = { duration: HELI_T, repeat: Infinity, ease: 'easeInOut' as const }
+  return (
+    <motion.div
+      aria-hidden
+      className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+      initial={{ x: 154, y: -390, z: 190, rotateZ: 54 }}
+      animate={{ x: HELI_X, y: HELI_Y, z: HELI_Z, rotateZ: HELI_ROT }}
+      transition={{ ...loop, times: HELI_TIMES }}
+    >
+      {/* skids */}
+      <Box w={12} d={2} h={2} dy={-5} dz={0} radius={1} bodyTop="#94a3b8" bodySide="#64748b" bodyDark="#475569" />
+      <Box w={12} d={2} h={2} dy={5} dz={0} radius={1} bodyTop="#94a3b8" bodySide="#64748b" bodyDark="#475569" />
+      {/* cabin + tail boom */}
+      <Box w={14} d={10} h={8} dz={2} radius={4} glowTop />
+      <Box w={12} d={3} h={3} dx={-12} dz={6} radius={1} />
+      {/* rotor: static-lift wrapper + spinning blade — the kia-spin keyframe REPLACES transform,
+          so the translateZ that holds the rotor at mast height must live on a parent. */}
+      <span aria-hidden className="absolute left-1/2 top-1/2 block" style={{ transform: 'translateZ(13px)' }}>
+        <span
+          data-kia-motion=""
+          className="block rounded-full"
+          style={{
+            width: '34px', height: '2.5px', marginLeft: '-17px', marginTop: '-1px',
+            background: 'linear-gradient(90deg, transparent, var(--lume-2), transparent)',
+            animation: 'kia-spin .22s linear infinite', opacity: '0.85',
+          }}
+        />
+      </span>
+      {/* tail beacon */}
+      <span
+        aria-hidden
+        data-kia-motion=""
+        className="absolute left-1/2 top-1/2 block animate-pulse rounded-full"
+        style={{
+          width: '4px', height: '4px', marginLeft: '-20px', marginTop: '-2px',
+          transform: 'translateZ(9px)',
+          background: '#f43f5e', boxShadow: '0 0 8px rgba(244,63,94,.8)',
+        }}
+      />
+    </motion.div>
+  )
+}
+
+/* ── HoloPanel + DataPulses: why the campus exists ───────────────────────
+   A translucent "AM OS · LIVE" panel floats high above the campus centre, and pulses of light rise
+   into it from every building — the dealership below feeding the system above. The viz is
+   deliberately ABSTRACT (unlabelled bars + a sparkline path): it suggests telemetry without
+   fabricating a single figure. */
+function HoloPanel() {
+  const bars = [14, 22, 17, 26, 20]
+  return (
+    <div
+      aria-hidden
+      className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+      style={{ transform: 'translate3d(-40px, -70px, 330px)' }}
+    >
+      <motion.div
+        className="hub-3d grid place-items-center"
+        initial={false}
+        animate={{ z: [0, 14, 0] }}
+        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        <div
+          className="w-[216px] rounded-2xl border p-3"
+          style={{
+            transform: 'rotateZ(45deg) rotateX(-58deg)',
+            backgroundColor: 'color-mix(in srgb, var(--kia-surface) 72%, transparent)',
+            borderColor: 'var(--lume-edge)',
+            boxShadow: '0 0 40px var(--lume-halo), 0 18px 50px -20px var(--lume-halo)',
+          }}
+        >
+          <div className="flex items-center gap-1.5">
+            <span
+              data-kia-motion=""
+              className="block h-1.5 w-1.5 animate-pulse rounded-full"
+              style={{ backgroundColor: 'var(--lume-3)', boxShadow: '0 0 8px var(--lume-halo)' }}
+            />
+            <span className="text-[9.5px] font-extrabold uppercase tracking-[0.18em]" style={{ color: 'var(--lume-2)' }}>
+              AM OS · Live
+            </span>
+          </div>
+          <div className="mt-2 flex items-end gap-1.5" style={{ height: '28px' }}>
+            {bars.map((h, i) => (
+              <motion.span
+                key={i}
+                className="w-[10px] rounded-sm"
+                style={{
+                  height: `${h}px`, transformOrigin: 'bottom',
+                  background: 'linear-gradient(to top, var(--lume-1), var(--lume-2))',
+                  opacity: 0.85,
+                }}
+                initial={false}
+                animate={{ scaleY: [1, 0.72, 1, 0.88, 1] }}
+                transition={{ duration: 4 + i * 0.7, repeat: Infinity, ease: 'easeInOut', delay: i * 0.35 }}
+              />
+            ))}
+          </div>
+          <svg viewBox="0 0 190 26" className="mt-2 block w-full" aria-hidden>
+            <motion.path
+              d="M 2 20 L 28 14 L 52 17 L 78 9 L 104 13 L 132 6 L 160 10 L 188 3"
+              fill="none" stroke="var(--lume-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              initial={false}
+              animate={{ pathLength: [0, 1] }}
+              transition={{ duration: 5, repeat: Infinity, repeatDelay: 1.2, ease: 'easeInOut' }}
+            />
+          </svg>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+const PULSE_EMITTERS = [
+  { x: -268, y: 186, z: 86 },   // showroom canopy
+  { x: -268, y: -170, z: 76 },  // service centre roof
+  { x: 170, y: -162, z: 148 },  // yard entrance pylon
+  { x: 154, y: -390, z: 212 },  // city tower antenna
+]
+
+function DataPulses() {
+  return (
+    <>
+      {PULSE_EMITTERS.map((e, i) => (
+        <motion.span
+          key={i}
+          aria-hidden
+          className="absolute left-1/2 top-1/2 block rounded-full"
+          style={{
+            width: '5px', height: '5px', marginLeft: '-2.5px', marginTop: '-2.5px',
+            backgroundColor: 'var(--lume-2)', boxShadow: '0 0 10px var(--lume-halo)',
+          }}
+          initial={{ x: e.x, y: e.y, z: e.z, opacity: 0 }}
+          animate={{
+            x: [e.x, e.x, -40, -40],
+            y: [e.y, e.y, -70, -70],
+            z: [e.z, e.z, 322, 322],
+            opacity: [0, 1, 1, 0],
+          }}
+          transition={{
+            duration: 3.4, times: [0, 0.15, 0.85, 1],
+            repeat: Infinity, repeatDelay: 1.3, delay: i * 1.1, ease: 'easeIn',
+          }}
+        />
+      ))}
+    </>
+  )
+}
+
+const PLOT_LINKS = [
+  { key: 'showroom', ...{ dx: -268, dy: 186 }, w: 214, d: 214, href: '/brands/kia/proforma', hint: 'Open Bookings', hintZ: 120 },
+  { key: 'service', ...{ dx: -268, dy: -170 }, w: 214, d: 214, href: '/brands/kia/business-excellence', hint: 'Open Service', hintZ: 112 },
+  { key: 'yard', ...{ dx: 170, dy: 70 }, w: 410, d: 410, href: '/brands/kia/stock-report', hint: 'Open Stock Report', hintZ: 64 },
+] as const
+
+// How long the assembly intro runs before traffic (vehicle loops, helicopter, data pulses) starts.
+// Last plot: delay 1.0s + 1.15s rise = settled at ~2.15s.
+const INTRO_MS = 2400
+
 function Campus({ active, setActive, decor }: {
   active: string | null; setActive: (v: string | null) => void; decor: boolean
 }) {
+  const [hovered, setHovered] = useState<string | null>(null)
+  // Traffic mounts AFTER the intro. Mount-gating (rather than transition delays) means every loop's
+  // animation starts at its first keyframe on mount — no need to hand-maintain explicit initial
+  // poses against 2.4s of pre-delay limbo on a dozen motion elements.
+  const [trafficOn, setTrafficOn] = useState(false)
+  useEffect(() => {
+    const t = window.setTimeout(() => setTrafficOn(true), INTRO_MS)
+    return () => window.clearTimeout(t)
+  }, [])
+  const traffic = decor && trafficOn
+
   return (
     <>
       {/* the single shared ground everything stands on */}
-      <Box w={920} d={920} h={16} dx={-40} dy={-70} dz={-34} radius={48} />
+      <Rise delay={0} from={-80}>
+        <Box w={920} d={920} h={16} dx={-40} dy={-70} dz={-34} radius={48} />
+      </Rise>
 
       {/* service roads linking the plots to the yard */}
-      <Road dx={-90} dy={186} w={150} d={40} />
-      <Road dx={-90} dy={-150} w={150} d={40} />
+      <Rise delay={0.45} from={-60}>
+        <Road dx={-90} dy={186} w={150} d={40} />
+        <Road dx={-90} dy={-150} w={150} d={40} />
+      </Rise>
 
-      <Plot {...PLOTS.city}><CityBody /></Plot>
+      {/* Footprint links FIRST in the DOM: the yard's row-label buttons render later, so they win
+          hit-testing over the yard link while everything else falls through to the footprints. */}
+      {PLOT_LINKS.map((p) => (
+        <PlotLink
+          key={p.key}
+          dx={p.dx} dy={p.dy} w={p.w} d={p.d}
+          href={p.href} label={p.hint}
+          onHover={setHovered}
+        />
+      ))}
 
-      <Plot {...PLOTS.service}><ServiceCentreBody /></Plot>
+      <Plot {...PLOTS.city} delay={0.55}><CityBody /></Plot>
+
+      <Plot {...PLOTS.service} delay={0.7}><ServiceCentreBody /></Plot>
       <PlotLabel dx={PLOTS.service.dx} dy={PLOTS.service.dy + 132}>Service Centre</PlotLabel>
 
-      <Plot {...PLOTS.showroom}><ShowroomBody /></Plot>
+      <Plot {...PLOTS.showroom} delay={0.85}><ShowroomBody /></Plot>
       <PlotLabel dx={PLOTS.showroom.dx} dy={PLOTS.showroom.dy + 132}>Showroom</PlotLabel>
 
-      <Plot {...PLOTS.yard}>
+      <Plot {...PLOTS.yard} delay={1}>
         <StockYard active={active} setActive={setActive} decor={decor} delivery={decor} />
       </Plot>
 
+      {/* hover hints, above everything on their plot */}
+      {PLOT_LINKS.map((p) => (
+        hovered === p.hint ? <PlotHint key={p.key} dx={p.dx} dy={p.dy} z={p.hintZ}>{p.hint}</PlotHint> : null
+      ))}
+
       {/* the animated service visit — a car drives in, waits, gets serviced, leaves renewed */}
-      {decor && <ServiceLoop />}
+      {traffic && <ServiceLoop />}
 
       {/* the transporter bringing new stock to the yard */}
-      {decor && <NewStockDelivery />}
+      {traffic && <NewStockDelivery />}
+
+      {/* a sold car leaves the Ready row, gets handed over at the showroom, and drives off */}
+      {traffic && <CustomerHandover />}
+
+      {/* the patrol helicopter, and the system the whole campus feeds */}
+      {traffic && <Helicopter />}
+      {traffic && <HoloPanel />}
+      {traffic && <DataPulses />}
     </>
   )
 }
@@ -651,8 +1210,9 @@ function StockYard({ active, setActive, decor, delivery }: {
       {/* bays of vehicles */}
       {YARD_ROWS.map((row) => {
         const on = active === row.label
-        // The first New Stock slot (dx -140 → campus x=30) is the delivery loop's drop target.
-        const cols = delivery && row.label === 'New Stock'
+        // Two first-column slots belong to the vehicle loops: New Stock receives the transporter's
+        // drop, Ready for Delivery is where the handover car parks between departures.
+        const cols = delivery && (row.label === 'New Stock' || row.label === 'Ready for Delivery')
           ? YARD_COLS.filter((dx) => dx !== -140)
           : YARD_COLS
         return (
@@ -715,12 +1275,35 @@ function StockYard({ active, setActive, decor, delivery }: {
               opacity: '0.5',
             }}
           />
+          {/* stronger pool that fades in on the dusk cycle (same 90s timeline as .hub-night) */}
+          <span
+            aria-hidden
+            className="hub-night-sync absolute left-1/2 top-1/2 block rounded-full"
+            style={{
+              width: '130px', height: '130px',
+              marginLeft: `${p.dx - 65}px`, marginTop: `${p.dy - 65}px`,
+              transform: 'translateZ(3px)',
+              background: 'radial-gradient(circle, var(--lume-halo), transparent 62%)',
+            }}
+          />
         </div>
       ))}
 
       {/* entrance pylon with its light beam */}
       <Box w={26} d={26} h={128} dx={0} dy={-232} dz={0} radius={5} />
       <Box w={44} d={44} h={16} dx={0} dy={-232} dz={128} radius={6} glowTop />
+
+      {/* parked forklift — amber body, mast + forks facing away from the Ready row */}
+      <Box w={18} d={13} h={11} dx={-182} dy={150} dz={0} radius={3}
+        bodyTop="#f59e0b" bodySide="#d97706" bodyDark="#b45309" />
+      <Box w={8} d={11} h={8} dx={-179} dy={150} dz={11} radius={2}
+        bodyTop="#334155" bodySide="#1e293b" bodyDark="#0f172a" />
+      <Box w={3} d={11} h={20} dx={-193} dy={150} dz={0} radius={1}
+        bodyTop="#64748b" bodySide="#475569" bodyDark="#334155" />
+      <Box w={9} d={2} h={2} dx={-199} dy={146} dz={0} radius={1}
+        bodyTop="#94a3b8" bodySide="#64748b" bodyDark="#475569" />
+      <Box w={9} d={2} h={2} dx={-199} dy={154} dz={0} radius={1}
+        bodyTop="#94a3b8" bodySide="#64748b" bodyDark="#475569" />
       {decor && BEAMS.map((b) => (
         <motion.span
           key={b.id}
@@ -894,6 +1477,12 @@ function ServiceCentreBody() {
           bodyTop="#334155" bodySide="#1e293b" bodyDark="#0f172a" />
         <Box w={22} d={22} h={8} dx={-52} dy={72} dz={8} radius={11}
           bodyTop="#334155" bodySide="#1e293b" bodyDark="#0f172a" />
+
+        {/* rooftop AC units */}
+        <Box w={14} d={14} h={8} dx={-52} dy={-48} dz={72} radius={3}
+          bodyTop="#e2e8f0" bodySide="#cbd5e1" bodyDark="#94a3b8" />
+        <Box w={10} d={10} h={6} dx={-4} dy={-12} dz={72} radius={3}
+          bodyTop="#e2e8f0" bodySide="#cbd5e1" bodyDark="#94a3b8" />
     </>
   )
 }
@@ -957,6 +1546,41 @@ function CityBody() {
       <Box w={210} d={210} h={10} dz={-10} radius={12} />
       {BUILDINGS.map((b, i) => (
         <Box key={i} {...b} windows glowTop={b.glow} radius={4} />
+      ))}
+
+      {/* helipad on the tallest tower — the helicopter parks here between patrols */}
+      <Box w={34} d={34} h={3} dx={-14} dy={-60} dz={186} radius={17}
+        bodyTop="#e2e8f0" bodySide="#cbd5e1" bodyDark="#94a3b8" />
+      <span
+        aria-hidden
+        className="absolute left-1/2 top-1/2 block rounded-full border-2"
+        style={{
+          width: '24px', height: '24px', marginLeft: '-26px', marginTop: '-72px',
+          transform: 'translateZ(190px)',
+          borderColor: 'var(--lume-2)', opacity: '0.65',
+        }}
+      />
+
+      {/* antenna (second tower) + aviation beacons (CSS pulse; data-kia-motion so the
+          global reduced-motion block kills the blink) */}
+      <Box w={3} d={3} h={22} dx={-30} dy={34} dz={152} radius={1}
+        bodyTop="#94a3b8" bodySide="#64748b" bodyDark="#475569" />
+      {[
+        { dx: -30, dy: 34, z: 178 },
+        { dx: 78, dy: 24, z: 116 },
+      ].map((b, i) => (
+        <span
+          key={i}
+          aria-hidden
+          data-kia-motion=""
+          className="absolute left-1/2 top-1/2 block animate-pulse rounded-full"
+          style={{
+            width: '5px', height: '5px',
+            marginLeft: `${b.dx - 2.5}px`, marginTop: `${b.dy - 2.5}px`,
+            transform: `translateZ(${b.z}px)`,
+            background: '#f43f5e', boxShadow: '0 0 10px rgba(244,63,94,.8)',
+          }}
+        />
       ))}
     </>
   )

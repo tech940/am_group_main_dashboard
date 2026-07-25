@@ -1,21 +1,64 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { canAccessScrapErp } from '@/lib/scrap-erp/access'
-import { INITIAL_SCRAP_TRANSACTIONS } from '@/lib/scrap-erp/mock-data'
 import { ScrapTransaction } from '@/lib/scrap-erp/types'
+import { db } from '@/lib/db'
+import { sql } from 'drizzle-orm'
 
-// In-memory global store initialized with seed transactions
-// Distribution is only valid from 1 July 2026 onwards — strip any stale isDistributed from earlier records.
 const DISTRIBUTION_START_DATE = '2026-07-01'
-let globalTransactions: ScrapTransaction[] = INITIAL_SCRAP_TRANSACTIONS.map((t) => {
-  const dateStr = (t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
-  if (dateStr < DISTRIBUTION_START_DATE && t.isDistributed) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { isDistributed, distributedAt, distributedBy, ...rest } = t as ScrapTransaction & { isDistributed?: boolean; distributedAt?: string; distributedBy?: string }
-    return rest
+
+function mapDbRowToTransaction(row: any): ScrapTransaction {
+  const soldDate = row.sold_date ? String(row.sold_date).slice(0, 10) : ''
+  const timestamp = row.timestamp ? new Date(row.timestamp).toISOString() : new Date().toISOString()
+  const createdAt = row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString()
+  const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString()
+  const accountsReceivedAt = row.accounts_received_at ? new Date(row.accounts_received_at).toISOString() : undefined
+
+  const dateStr = (soldDate || timestamp || createdAt).slice(0, 10)
+  const isDistributed = dateStr >= DISTRIBUTION_START_DATE ? Boolean(row.is_distributed) : false
+
+  const rawStatus = String(row.status || 'COMPLETED').toUpperCase()
+  const status: 'COMPLETED' | 'FLAGGED' | 'DRAFT' =
+    rawStatus === 'FLAGGED' ? 'FLAGGED' : rawStatus === 'DRAFT' ? 'DRAFT' : 'COMPLETED'
+
+  return {
+    id: String(row.id),
+    transactionNumber: String(row.transaction_number || ''),
+    timestamp,
+    groupId: row.group_id ? String(row.group_id) : 'grp-1',
+    groupName: String(row.group_name || 'JAM'),
+    locationId: row.location_id ? String(row.location_id) : 'loc-1',
+    locationName: String(row.location_name || ''),
+    departmentId: row.department_id ? String(row.department_id) : 'dept-1',
+    departmentName: String(row.department_name || ''),
+    scrapTypeId: row.scrap_type_id ? String(row.scrap_type_id) : 'type-1',
+    scrapTypeName: String(row.scrap_type_name || ''),
+    unit: String(row.unit || 'Kg'),
+    description: String(row.description || ''),
+    weightQty: Number(row.weight_qty || 0),
+    ratePerUnit: Number(row.rate_per_unit || 0),
+    calculatedTotal: Number(row.calculated_total || 0),
+    amountReceived: Number(row.amount_received || 0),
+    outstandingAmount: Number(row.outstanding_amount || 0),
+    soldById: String(row.sold_by_id || 'emp-1'),
+    soldByName: String(row.sold_by_name || ''),
+    soldTo: String(row.sold_to || ''),
+    soldDate,
+    paymentModeId: String(row.payment_mode_id || 'pm-1'),
+    paymentModeName: String(row.payment_mode_name || ''),
+    paymentHandoverToId: String(row.payment_handover_to_id || 'ho-1'),
+    paymentHandoverToName: String(row.payment_handover_to_name || ''),
+    remarks: row.remarks ? String(row.remarks) : '',
+    status,
+    attachments: Array.isArray(row.attachments) ? row.attachments : [],
+    isDistributed,
+    sentToAccounts: Boolean(row.sent_to_accounts),
+    accountsReceivedAt,
+    accountsNote: row.accounts_note ? String(row.accounts_note) : undefined,
+    createdAt,
+    updatedAt,
   }
-  return { ...t }
-})
+}
 
 export async function GET(request: Request) {
   const appUser = await getAuthenticatedAppUser()
@@ -30,10 +73,16 @@ export async function GET(request: Request) {
     const department = searchParams.get('department')
     const scrapType = searchParams.get('scrapType')
 
-    let filtered = [...globalTransactions]
+    const dbRows = await db.execute(sql.raw(`
+      SELECT *
+      FROM scrap_transactions
+      ORDER BY created_at DESC, timestamp DESC
+    `))
+
+    let transactions = (dbRows as any[]).map(mapDbRowToTransaction)
 
     if (search) {
-      filtered = filtered.filter(
+      transactions = transactions.filter(
         (tx) =>
           tx.transactionNumber.toLowerCase().includes(search) ||
           tx.locationName.toLowerCase().includes(search) ||
@@ -47,19 +96,19 @@ export async function GET(request: Request) {
     }
 
     if (location && location !== 'all') {
-      filtered = filtered.filter((tx) => tx.locationId === location || tx.locationName === location)
+      transactions = transactions.filter((tx) => tx.locationId === location || tx.locationName === location)
     }
     if (department && department !== 'all') {
-      filtered = filtered.filter((tx) => tx.departmentId === department || tx.departmentName === department)
+      transactions = transactions.filter((tx) => tx.departmentId === department || tx.departmentName === department)
     }
     if (scrapType && scrapType !== 'all') {
-      filtered = filtered.filter((tx) => tx.scrapTypeId === scrapType || tx.scrapTypeName === scrapType)
+      transactions = transactions.filter((tx) => tx.scrapTypeId === scrapType || tx.scrapTypeName === scrapType)
     }
 
     return NextResponse.json({
       success: true,
-      transactions: filtered,
-      totalCount: filtered.length,
+      transactions,
+      totalCount: transactions.length,
     })
   } catch (error) {
     console.error('Error in GET /api/scrap-erp:', error)
@@ -77,47 +126,77 @@ export async function POST(request: Request) {
     const amountReceived = Number(body.amountReceived !== undefined ? body.amountReceived : calculatedTotal)
     const outstandingAmount = Math.max(0, calculatedTotal - amountReceived)
 
-    const nextNumber = `SCRAP-${new Date().getFullYear()}-${String(globalTransactions.length + 482).padStart(4, '0')}`
-
-    const newTransaction: ScrapTransaction = {
-      id: `tx-${Date.now()}`,
-      transactionNumber: nextNumber,
-      timestamp: body.timestamp || new Date().toISOString(),
-      groupId: body.groupId || 'grp-1',
-      groupName: body.groupName || 'JAM',
-      locationId: body.locationId || 'loc-1',
-      locationName: body.locationName || 'Dealership Location',
-      departmentId: body.departmentId || 'dept-1',
-      departmentName: body.departmentName || 'SERVICE',
-      scrapTypeId: body.scrapTypeId || 'type-1',
-      scrapTypeName: body.scrapTypeName || 'PLASTIC',
-      unit: body.unit || 'Kg',
-      description: body.description || 'Scrap Disposal Entry',
-      weightQty,
-      ratePerUnit,
-      calculatedTotal,
-      amountReceived,
-      outstandingAmount,
-      soldById: body.soldById || 'emp-1',
-      soldByName: body.soldByName || 'Staff Member',
-      soldTo: body.soldTo || 'Local Vendor',
-      soldDate: body.soldDate || new Date().toISOString().split('T')[0],
-      paymentModeId: body.paymentModeId || 'pm-1',
-      paymentModeName: body.paymentModeName || 'CASH',
-      paymentHandoverToId: body.paymentHandoverToId || 'ho-1',
-      paymentHandoverToName: body.paymentHandoverToName || 'Accounts Team',
-      remarks: body.remarks || '',
-      status: outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED',
-      attachments: body.attachments || [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    // Compute next transaction number SCRAP-2026-0XXX
+    const maxNumRes = await db.execute(sql.raw(`
+      SELECT transaction_number FROM scrap_transactions 
+      WHERE transaction_number LIKE 'SCRAP-2026-%' 
+      ORDER BY transaction_number DESC LIMIT 1
+    `))
+    let nextSeq = 236
+    if (maxNumRes.length > 0) {
+      const match = String(maxNumRes[0].transaction_number).match(/SCRAP-2026-(\d+)/)
+      if (match) {
+        nextSeq = Number(match[1]) + 1
+      }
     }
+    const nextNumber = `SCRAP-2026-${String(nextSeq).padStart(4, '0')}`
 
-    globalTransactions = [newTransaction, ...globalTransactions]
+    const status = outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED'
+    const soldDate = body.soldDate || new Date().toISOString().split('T')[0]
+    const timestamp = body.timestamp || new Date().toISOString()
+    const groupName = body.groupName || 'JAM'
+    const locationName = body.locationName || 'Dealership Location'
+    const departmentName = body.departmentName || 'SERVICE'
+    const scrapTypeName = body.scrapTypeName || 'PLASTIC'
+    const unit = body.unit || 'Kg'
+    const description = body.description || 'Scrap Disposal Entry'
+    const soldByName = body.soldByName || 'Staff Member'
+    const soldTo = body.soldTo || 'Local Vendor'
+    const paymentModeName = body.paymentModeName || 'CASH'
+    const paymentHandoverToName = body.paymentHandoverToName || 'Accounts Team'
+    const remarks = body.remarks || ''
+
+    const inserted = await db.execute(sql.raw(`
+      INSERT INTO scrap_transactions (
+        transaction_number, timestamp, group_name, location_name, department_name,
+        scrap_type_name, unit, description, weight_qty, rate_per_unit,
+        calculated_total, amount_received, outstanding_amount, sold_by_name,
+        sold_to, sold_date, payment_mode_name, payment_handover_to_name,
+        remarks, status, is_distributed, sent_to_accounts, created_at, updated_at
+      ) VALUES (
+        '${nextNumber}',
+        '${timestamp}',
+        '${groupName.replace(/'/g, "''")}',
+        '${locationName.replace(/'/g, "''")}',
+        '${departmentName.replace(/'/g, "''")}',
+        '${scrapTypeName.replace(/'/g, "''")}',
+        '${unit.replace(/'/g, "''")}',
+        '${description.replace(/'/g, "''")}',
+        ${weightQty},
+        ${ratePerUnit},
+        ${calculatedTotal},
+        ${amountReceived},
+        ${outstandingAmount},
+        '${soldByName.replace(/'/g, "''")}',
+        '${soldTo.replace(/'/g, "''")}',
+        '${soldDate}',
+        '${paymentModeName.replace(/'/g, "''")}',
+        '${paymentHandoverToName.replace(/'/g, "''")}',
+        '${remarks.replace(/'/g, "''")}',
+        '${status}',
+        FALSE,
+        FALSE,
+        NOW(),
+        NOW()
+      )
+      RETURNING *
+    `))
+
+    const newTx = mapDbRowToTransaction(inserted[0])
 
     return NextResponse.json({
       success: true,
-      transaction: newTransaction,
+      transaction: newTx,
       message: 'Scrap transaction recorded successfully',
     })
   } catch (error) {
@@ -135,46 +214,55 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Transaction ID or number is required' }, { status: 400 })
     }
 
-    const index = globalTransactions.findIndex((t) => t.id === id || t.transactionNumber === transactionNumber)
-    if (index === -1) {
+    const whereClause = id
+      ? `id = '${String(id).replace(/'/g, "''")}'`
+      : `transaction_number = '${String(transactionNumber).replace(/'/g, "''")}'`
+
+    const existingRes = await db.execute(sql.raw(`SELECT * FROM scrap_transactions WHERE ${whereClause} LIMIT 1`))
+    if (existingRes.length === 0) {
       return NextResponse.json({ error: 'Transaction record not found' }, { status: 404 })
     }
 
-    const existing = globalTransactions[index]
-    const existingDateStr = (existing.soldDate || existing.timestamp || existing.createdAt || '').slice(0, 10)
+    const existing = existingRes[0]
+    const existingDateStr = (existing.sold_date || existing.timestamp || existing.created_at || '').toString().slice(0, 10)
     const isPreJuly = existingDateStr < DISTRIBUTION_START_DATE
 
-    // Strip isDistributed / distributedAt from body if this is a pre-July record — distribution only from July 2026
-    const sanitizedBody = { ...body }
-    if (isPreJuly) {
-      delete sanitizedBody.isDistributed
-      delete sanitizedBody.distributedAt
-      delete sanitizedBody.distributedBy
-    }
-
-    const weightQty = sanitizedBody.weightQty !== undefined ? Number(sanitizedBody.weightQty) : existing.weightQty
-    const ratePerUnit = sanitizedBody.ratePerUnit !== undefined ? Number(sanitizedBody.ratePerUnit) : existing.ratePerUnit
+    const weightQty = body.weightQty !== undefined ? Number(body.weightQty) : Number(existing.weight_qty || 0)
+    const ratePerUnit = body.ratePerUnit !== undefined ? Number(body.ratePerUnit) : Number(existing.rate_per_unit || 0)
     const calculatedTotal = Math.round(weightQty * ratePerUnit * 100) / 100
-    const amountReceived = sanitizedBody.amountReceived !== undefined ? Number(sanitizedBody.amountReceived) : calculatedTotal
+    const amountReceived = body.amountReceived !== undefined ? Number(body.amountReceived) : Math.round(Number(existing.amount_received || 0) * 100) / 100
     const outstandingAmount = Math.max(0, calculatedTotal - amountReceived)
+    const status = outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED'
 
-    const updatedTransaction: ScrapTransaction = {
-      ...existing,
-      ...sanitizedBody,
-      weightQty,
-      ratePerUnit,
-      calculatedTotal,
-      amountReceived,
-      outstandingAmount,
-      status: outstandingAmount >= 1 ? 'FLAGGED' : 'COMPLETED',
-      updatedAt: new Date().toISOString(),
-    }
+    const isDistributed = isPreJuly ? false : (body.isDistributed !== undefined ? Boolean(body.isDistributed) : Boolean(existing.is_distributed))
+    const sentToAccounts = body.sentToAccounts !== undefined ? Boolean(body.sentToAccounts) : Boolean(existing.sent_to_accounts)
+    const paymentHandoverToName = body.paymentHandoverToName !== undefined ? String(body.paymentHandoverToName) : String(existing.payment_handover_to_name || '')
+    const accountsNote = body.accountsNote !== undefined ? String(body.accountsNote) : String(existing.accounts_note || '')
 
-    globalTransactions[index] = updatedTransaction
+    const updatedRes = await db.execute(sql.raw(`
+      UPDATE scrap_transactions
+      SET
+        weight_qty = ${weightQty},
+        rate_per_unit = ${ratePerUnit},
+        calculated_total = ${calculatedTotal},
+        amount_received = ${amountReceived},
+        outstanding_amount = ${outstandingAmount},
+        status = '${status}',
+        is_distributed = ${isDistributed ? 'TRUE' : 'FALSE'},
+        sent_to_accounts = ${sentToAccounts ? 'TRUE' : 'FALSE'},
+        payment_handover_to_name = '${paymentHandoverToName.replace(/'/g, "''")}',
+        accounts_note = '${accountsNote.replace(/'/g, "''")}',
+        ${body.accountsReceivedAt ? `accounts_received_at = '${new Date(body.accountsReceivedAt).toISOString()}',` : ''}
+        updated_at = NOW()
+      WHERE ${whereClause}
+      RETURNING *
+    `))
+
+    const updatedTx = mapDbRowToTransaction(updatedRes[0])
 
     return NextResponse.json({
       success: true,
-      transaction: updatedTransaction,
+      transaction: updatedTx,
       message: 'Scrap transaction updated successfully',
     })
   } catch (error) {
