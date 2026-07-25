@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useCallback, useSyncExternalStore } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useSyncExternalStore } from 'react'
 import {
   motion,
   useMotionValue,
@@ -31,32 +31,37 @@ import { Zap } from 'lucide-react'
  */
 
 
-// Shapes that travel across the full width, continuously.
-const TRAVELERS = [
-  { id: 0, kind: 'cube',  top: '14%', size: 46, dur: 30, delay: 0,   depth: -220, dir: 1 },
-  { id: 1, kind: 'ring',  top: '62%', size: 62, dur: 44, delay: 6,   depth: -340, dir: -1 },
-  { id: 2, kind: 'orb',   top: '34%', size: 30, dur: 36, delay: 12,  depth: -160, dir: 1 },
-  { id: 3, kind: 'cube',  top: '78%', size: 34, dur: 52, delay: 3,   depth: -420, dir: -1 },
-  { id: 4, kind: 'pyr',   top: '24%', size: 40, dur: 40, delay: 18,  depth: -280, dir: 1 },
-  { id: 5, kind: 'orb',   top: '86%', size: 22, dur: 34, delay: 24,  depth: -200, dir: -1 },
-] as const
+// Background field. Each entry becomes a rigid body in the collision simulation below.
+// `r` is the collision radius: half the sprite for shapes, an estimate from label width for chips.
+const FIELD: FieldItem[] = [
+  { id: 0,  kind: 'cube', size: 46, r: 25, depth: -220 },
+  { id: 1,  kind: 'ring', size: 62, r: 32, depth: -340 },
+  { id: 2,  kind: 'orb',  size: 30, r: 16, depth: -160 },
+  { id: 3,  kind: 'cube', size: 34, r: 19, depth: -420 },
+  { id: 4,  kind: 'pyr',  size: 40, r: 21, depth: -280 },
+  { id: 5,  kind: 'orb',  size: 22, r: 12, depth: -200 },
+  { id: 6,  kind: 'cube', size: 28, r: 16, depth: -300 },
+  { id: 7,  kind: 'chip', label: 'CRM',            em: true,  r: 40, depth: -180 },
+  { id: 8,  kind: 'chip', label: 'Growth',         em: false, r: 46, depth: -300 },
+  { id: 9,  kind: 'chip', label: 'Bookings',       em: false, r: 50, depth: -240 },
+  { id: 10, kind: 'chip', label: 'Analytics',      em: true,  r: 51, depth: -360 },
+  { id: 11, kind: 'chip', label: 'Inventory',      em: false, r: 51, depth: -200 },
+  { id: 12, kind: 'chip', label: 'Workshop',       em: false, r: 50, depth: -320 },
+  { id: 13, kind: 'chip', label: 'Finance',        em: true,  r: 46, depth: -160 },
+  { id: 14, kind: 'chip', label: 'Real-time data', em: false, r: 60, depth: -400 },
+  { id: 15, kind: 'chip', label: 'Multi-brand',    em: false, r: 55, depth: -280 },
+  { id: 16, kind: 'chip', label: 'Automation',     em: false, r: 54, depth: -340 },
+]
 
-// Capability words that drift across the scene as small isometric chips. Staggered lanes, mixed
-// directions and non-harmonic durations so they never sync up or clump.
-const TEXT_TRAVELERS = [
-  { id: 0, label: 'CRM',           top: '8%',  dur: 46, delay: 0,  depth: -180, dir: 1,  em: true },
-  { id: 1, label: 'Growth',        top: '20%', dur: 62, delay: 9,  depth: -300, dir: -1, em: false },
-  { id: 2, label: 'Bookings',      top: '31%', dur: 54, delay: 20, depth: -240, dir: 1,  em: false },
-  { id: 3, label: 'Analytics',     top: '44%', dur: 70, delay: 5,  depth: -360, dir: -1, em: true },
-  { id: 4, label: 'Inventory',     top: '55%', dur: 50, delay: 30, depth: -200, dir: 1,  em: false },
-  { id: 5, label: 'Workshop',      top: '66%', dur: 66, delay: 14, depth: -320, dir: -1, em: false },
-  { id: 6, label: 'Finance',       top: '76%', dur: 44, delay: 26, depth: -160, dir: 1,  em: true },
-  { id: 7, label: 'Real-time data', top: '88%', dur: 74, delay: 2,  depth: -400, dir: -1, em: false },
-  { id: 8, label: 'Multi-brand',   top: '14%', dur: 58, delay: 34, depth: -280, dir: -1, em: false },
-  { id: 9, label: 'Service',       top: '60%', dur: 48, delay: 41, depth: -220, dir: 1,  em: false },
-  { id: 10, label: 'Automation',   top: '38%', dur: 68, delay: 47, depth: -340, dir: 1,  em: false },
-  { id: 11, label: 'Insights',     top: '82%', dur: 56, delay: 17, depth: -260, dir: -1, em: true },
-] as const
+type FieldItem = {
+  id: number
+  kind: 'cube' | 'ring' | 'orb' | 'pyr' | 'chip'
+  r: number
+  depth: number
+  size?: number
+  label?: string
+  em?: boolean
+}
 
 // Deterministic scatter — pre-rounded, unit-bearing strings (see hydration note above).
 const PARTICLES = Array.from({ length: 30 }, (_, i) => {
@@ -193,23 +198,8 @@ export default function DashboardPortal() {
             />
           </div>
 
-          {/* ── Shapes travelling across the screen, continuously ────────── */}
-          {decor && (
-            <div aria-hidden className="hub-scene pointer-events-none absolute inset-0">
-              {TRAVELERS.map((t) => (
-                <Traveler key={t.id} {...t} />
-              ))}
-            </div>
-          )}
-
-          {/* ── Capability words drifting across, same idea as the shapes ── */}
-          {decor && (
-            <div aria-hidden className="hub-scene pointer-events-none absolute inset-0">
-              {TEXT_TRAVELERS.map((t) => (
-                <TravelingChip key={t.id} {...t} />
-              ))}
-            </div>
-          )}
+          {/* ── Background field: real collision physics, not fixed paths ─── */}
+          {decor && <PhysicsField />}
 
           {/* Particles */}
           {decor && (
@@ -376,6 +366,217 @@ function Road({ dx, dy, w, d }: { dx: number; dy: number; w: number; d: number }
   )
 }
 
+/* ── ServiceLoop: a car drives in, waits at the bay, gets serviced, leaves renewed ──
+   One 13s keyframe timeline shared by every element (car path, flash, sparks, status chip), so the
+   choreography can never drift apart. The path runs along campus y=-128 — chosen against every
+   plot footprint: it skims the empty top strip of the yard pad, clears the entrance pylon (ends at
+   y≈-149) and the service road, then swings into the middle bay at (-276, -104).
+
+   The "before" car is dull grey; at the flash peak it steps to the glowing "after" car. The swap is
+   a STEP (duplicated keyframe times), not a fade — animated opacity between 0 and 1 forces
+   transform-style to flat mid-fade, which would squash the 3D boxes; at rest values of exactly 0/1
+   preserve-3d is unaffected, and the white flash covers the single transition frame.            */
+const LOOP_T = 13
+const LOOP_TIMES = [0, 0.27, 0.31, 0.39, 0.445, 0.5, 0.55, 0.62, 0.92, 1]
+const LOOP_X =   [470, -180, -276, -276, -276, -276, -276, -180, 470, 470]
+const LOOP_Y =   [-128, -128, -104, -104, -104, -104, -104, -128, -128, -128]
+const LOOP_ROT = [0, 0, 90, 90, 90, 90, 90, 0, 0, 0]
+const BAY = { x: -276, y: -104 } // parked position at the middle service bay
+
+function ServiceLoop() {
+  const loop = { duration: LOOP_T, repeat: Infinity, ease: 'linear' as const }
+  return (
+    <>
+      {/* the travelling car */}
+      <motion.div
+        aria-hidden
+        className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+        initial={false}
+        animate={{ x: LOOP_X, y: LOOP_Y, rotateZ: LOOP_ROT }}
+        transition={{ ...loop, times: LOOP_TIMES }}
+      >
+        {/* before: dull grey, no cabin glow */}
+        <motion.div
+          className="hub-3d"
+          initial={false}
+          animate={{ opacity: [1, 1, 0, 0] }}
+          transition={{ ...loop, times: [0, 0.44, 0.45, 1] }}
+        >
+          <MiniCar bodyTop="#94a3b8" bodySide="#64748b" bodyDark="#475569" cabinGlow={false} />
+        </motion.div>
+        {/* after: factory-fresh, glowing cabin + under-halo */}
+        <motion.div
+          className="hub-3d"
+          initial={false}
+          animate={{ opacity: [0, 0, 1, 1] }}
+          transition={{ ...loop, times: [0, 0.44, 0.45, 1] }}
+        >
+          <span
+            aria-hidden
+            className="absolute left-1/2 top-1/2 block rounded-full"
+            style={{
+              width: '84px', height: '84px', marginLeft: '-42px', marginTop: '-42px',
+              transform: 'translateZ(1px)',
+              background: 'radial-gradient(circle, var(--lume-halo), transparent 68%)',
+            }}
+          />
+          <MiniCar />
+        </motion.div>
+      </motion.div>
+
+      {/* service flash — a ground shockwave at the bay, peaking exactly at the car swap */}
+      <motion.span
+        aria-hidden
+        className="absolute left-1/2 top-1/2 block rounded-full border-2"
+        style={{
+          width: '90px', height: '90px',
+          marginLeft: `${BAY.x - 45}px`, marginTop: `${BAY.y - 45}px`,
+          borderColor: 'var(--lume-2)', boxShadow: '0 0 30px var(--lume-halo)',
+        }}
+        initial={false}
+        animate={{ opacity: [0, 0, 0.9, 0, 0], scale: [0.3, 0.3, 1, 1.7, 1.7] }}
+        transition={{ ...loop, times: [0, 0.4, 0.445, 0.52, 1] }}
+      />
+
+      {/* sparks kicked out while the work happens */}
+      {[{ ox: -30, oy: -14 }, { ox: 26, oy: -20 }, { ox: 8, oy: 24 }].map((sp, i) => (
+        <motion.span
+          key={i}
+          aria-hidden
+          className="absolute left-1/2 top-1/2 block h-[5px] w-[5px] rounded-full"
+          style={{
+            marginLeft: `${BAY.x - 2}px`, marginTop: `${BAY.y - 2}px`,
+            backgroundColor: 'var(--lume-2)', boxShadow: '0 0 10px var(--lume-2)',
+          }}
+          initial={false}
+          animate={{
+            opacity: [0, 0, 1, 0, 0],
+            x: [0, 0, sp.ox, sp.ox * 1.6, sp.ox * 1.6],
+            y: [0, 0, sp.oy, sp.oy * 1.6, sp.oy * 1.6],
+          }}
+          transition={{ ...loop, times: [0, 0.4 + i * 0.012, 0.45 + i * 0.012, 0.5 + i * 0.012, 1] }}
+        />
+      ))}
+
+      {/* Billboarded status chip. Animated by SCALE, not opacity (opacity mid-fade forces
+          preserve-3d flat and would skew the billboard). Three layers so no element carries BOTH a
+          static string transform and a Motion-animated one — Motion replaces the whole transform,
+          which would clobber the anchor offset or the billboard rotation. */}
+      <div
+        aria-hidden
+        className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+        style={{ transform: `translate3d(${BAY.x}px, ${BAY.y - 52}px, 44px)` }}
+      >
+        <motion.div
+          className="hub-3d grid place-items-center"
+          initial={false}
+          animate={{ scale: [0, 0, 1, 1, 0, 0] }}
+          transition={{ ...loop, times: [0, 0.32, 0.35, 0.52, 0.55, 1] }}
+        >
+          <span
+            className="whitespace-nowrap rounded-full border px-2.5 py-1 text-[10.5px] font-extrabold uppercase tracking-[0.12em]"
+            style={{
+              transform: 'rotateZ(45deg) rotateX(-58deg)',
+              backgroundColor: 'var(--kia-surface)',
+              borderColor: 'color-mix(in srgb, var(--lume-2) 55%, transparent)',
+              color: 'var(--lume-2)',
+              boxShadow: '0 8px 22px -10px var(--lume-halo)',
+            }}
+          >
+            Service in progress
+          </span>
+        </motion.div>
+      </div>
+    </>
+  )
+}
+
+/* ── NewStockDelivery: a transporter brings a car for the New Stock row ──────
+   Same single-timeline pattern as ServiceLoop, on a 16s period (13 vs 16 share no small multiple,
+   so the two loops drift phase and the scene never looks mechanical). Lane is campus y=-80 —
+   between the service car's lane (-128) and the New Stock row (-42) — checked clear of the masts
+   (they end at y≈-105) and the entrance pylon. The truck stops over the row's FIRST slot, which
+   StockYard leaves empty when `delivery` is on; the carried car slides off sideways into it, the
+   truck backs out the way it came (cab faces -x, so reversing out is the honest move), and near
+   the loop's end a scan-ring pulse covers the car's step-reset back onto the returning truck. */
+const DROP = { x: 30, y: -42 } // the empty New Stock slot (yard dx -140)
+const TRUCK_T = 16
+const TRUCK_TIMES = [0, 0.25, 0.42, 0.7, 1]
+const TRUCK_X = [470, DROP.x, DROP.x, 470, 470]
+const CARGO_TIMES = [0, 0.25, 0.3, 0.4, 1]
+const CARGO_X = [470, DROP.x, DROP.x, DROP.x, DROP.x]
+const CARGO_Y = [-80, -80, -80, DROP.y, DROP.y]
+const CARGO_Z = [14, 14, 14, 0, 0]
+
+function NewStockDelivery() {
+  const loop = { duration: TRUCK_T, repeat: Infinity, ease: 'linear' as const }
+  const tyre = { bodyTop: '#475569', bodySide: '#1e293b', bodyDark: '#0f172a' }
+  return (
+    <>
+      {/* the transporter */}
+      <motion.div
+        aria-hidden
+        className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+        initial={false}
+        animate={{ x: TRUCK_X, y: [-80, -80, -80, -80, -80] }}
+        transition={{ ...loop, times: TRUCK_TIMES }}
+      >
+        {/* six wheels */}
+        {[-24, 2, 24].map((wx) => (
+          <React.Fragment key={wx}>
+            <Box w={10} d={6} h={10} dx={wx} dy={-13} dz={0} radius={3} {...tyre} />
+            <Box w={10} d={6} h={10} dx={wx} dy={13} dz={0} radius={3} {...tyre} />
+          </React.Fragment>
+        ))}
+        {/* flatbed + cab (cab at the -x end: it drives in nose-first, backs out) */}
+        <Box w={66} d={26} h={8} dx={4} dz={6} radius={4} />
+        <Box w={20} d={26} h={20} dx={-36} dz={4} radius={5} glowTop />
+        {/* rear marker light */}
+        <span
+          aria-hidden
+          className="absolute left-1/2 top-1/2 block rounded-full"
+          style={{
+            width: '4px', height: '10px', marginLeft: '35px', marginTop: '-5px',
+            transform: 'translateZ(10px)',
+            background: '#f43f5e', boxShadow: '0 0 8px rgba(244,63,94,.7)', opacity: '0.85',
+          }}
+        />
+      </motion.div>
+
+      {/* the cargo: rides the flatbed in perfect sync, then slides off into the slot */}
+      <motion.div
+        aria-hidden
+        className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+        initial={false}
+        animate={{ x: CARGO_X, y: CARGO_Y, z: CARGO_Z, opacity: [1, 1, 1, 1, 1, 0, 0] }}
+        transition={{
+          ...loop,
+          x: { ...loop, times: CARGO_TIMES },
+          y: { ...loop, times: CARGO_TIMES },
+          z: { ...loop, times: CARGO_TIMES },
+          opacity: { ...loop, times: [0, 0.25, 0.3, 0.4, 0.85, 0.855, 1] },
+        }}
+      >
+        <MiniCar />
+      </motion.div>
+
+      {/* intake scan — covers the cargo's step-reset, reads as "registered into inventory" */}
+      <motion.span
+        aria-hidden
+        className="absolute left-1/2 top-1/2 block rounded-full border-2"
+        style={{
+          width: '70px', height: '70px',
+          marginLeft: `${DROP.x - 35}px`, marginTop: `${DROP.y - 35}px`,
+          borderColor: 'var(--lume-3)', boxShadow: '0 0 24px var(--lume-halo)',
+        }}
+        initial={false}
+        animate={{ opacity: [0, 0, 0.85, 0, 0], scale: [0.4, 0.4, 1, 1.6, 1.6] }}
+        transition={{ ...loop, times: [0, 0.84, 0.86, 0.9, 1] }}
+      />
+    </>
+  )
+}
+
 function Campus({ active, setActive, decor }: {
   active: string | null; setActive: (v: string | null) => void; decor: boolean
 }) {
@@ -397,8 +598,14 @@ function Campus({ active, setActive, decor }: {
       <PlotLabel dx={PLOTS.showroom.dx} dy={PLOTS.showroom.dy + 132}>Showroom</PlotLabel>
 
       <Plot {...PLOTS.yard}>
-        <StockYard active={active} setActive={setActive} decor={decor} />
+        <StockYard active={active} setActive={setActive} decor={decor} delivery={decor} />
       </Plot>
+
+      {/* the animated service visit — a car drives in, waits, gets serviced, leaves renewed */}
+      {decor && <ServiceLoop />}
+
+      {/* the transporter bringing new stock to the yard */}
+      {decor && <NewStockDelivery />}
     </>
   )
 }
@@ -414,8 +621,12 @@ const YARD_POLES = [
   { dx: -186, dy: 186 },  { dx: 186, dy: 186 },
 ]
 
-function StockYard({ active, setActive, decor }: {
+function StockYard({ active, setActive, decor, delivery }: {
   active: string | null; setActive: (v: string | null) => void; decor: boolean
+  // When the delivery loop is running, the first New Stock slot is left empty for it to fill —
+  // the animated delivered car occupies exactly that position. Mobile (no campus, no loop)
+  // omits the prop and renders the full row.
+  delivery?: boolean
 }) {
   return (
     <>
@@ -440,9 +651,13 @@ function StockYard({ active, setActive, decor }: {
       {/* bays of vehicles */}
       {YARD_ROWS.map((row) => {
         const on = active === row.label
+        // The first New Stock slot (dx -140 → campus x=30) is the delivery loop's drop target.
+        const cols = delivery && row.label === 'New Stock'
+          ? YARD_COLS.filter((dx) => dx !== -140)
+          : YARD_COLS
         return (
           <div key={row.label} className="hub-3d">
-            {YARD_COLS.map((dx) => (
+            {cols.map((dx) => (
               <YardCar key={dx} dx={dx} dy={row.dy} lit={on} />
             ))}
             {/* Billboarded row label. The wrapper MUST carry preserve-3d (hub-3d) — without it the
@@ -616,8 +831,13 @@ function Box({
 }
 
 /* ── Small solid car, used inside the showroom and on the workshop lift ──── */
-function MiniCar({ dx = 0, dy = 0, dz = 0 }: { dx?: number; dy?: number; dz?: number }) {
+function MiniCar({ dx = 0, dy = 0, dz = 0, bodyTop, bodySide, bodyDark, cabinGlow = true }: {
+  dx?: number; dy?: number; dz?: number
+  // Optional body override so the service loop can show a dull "before" car; defaults unchanged.
+  bodyTop?: string; bodySide?: string; bodyDark?: string; cabinGlow?: boolean
+}) {
   const tyre = { bodyTop: '#475569', bodySide: '#1e293b', bodyDark: '#0f172a' }
+  const body = bodyTop ? { bodyTop, bodySide, bodyDark } : {}
   return (
     <>
       {/* wheels */}
@@ -626,8 +846,8 @@ function MiniCar({ dx = 0, dy = 0, dz = 0 }: { dx?: number; dy?: number; dz?: nu
       <Box w={10} d={6} h={10} dx={dx - 18} dy={dy + 13} dz={dz} radius={3} {...tyre} />
       <Box w={10} d={6} h={10} dx={dx + 18} dy={dy + 13} dz={dz} radius={3} {...tyre} />
       {/* body + cabin */}
-      <Box w={56} d={28} h={12} dx={dx} dy={dy} dz={dz + 5} radius={6} />
-      <Box w={30} d={23} h={10} dx={dx - 3} dy={dy} dz={dz + 17} radius={5} glowTop />
+      <Box w={56} d={28} h={12} dx={dx} dy={dy} dz={dz + 5} radius={6} {...body} />
+      <Box w={30} d={23} h={10} dx={dx - 3} dy={dy} dz={dz + 17} radius={5} glowTop={cabinGlow} {...body} />
       {/* headlight */}
       <span
         aria-hidden
@@ -834,107 +1054,247 @@ function CarModel({ animated }: { animated: boolean }) {
   )
 }
 
-/* ── A capability word drifting across the scene as a small isometric block ─ */
-function TravelingChip({ label, top, dur, delay, depth, dir, em }: {
-  label: string; top: string; dur: number; delay: number; depth: number; dir: number; em: boolean
-}) {
-  const from = dir > 0 ? '-22vw' : '112vw'
-  const to = dir > 0 ? '112vw' : '-22vw'
+/* ── Bottom-left cluster: a small companion assembly, gently breathing ───── */
+/* ── PhysicsField ────────────────────────────────────────────────────────
+   The background objects used to run on fixed `x: [from, to]` keyframes, so they slid straight
+   through one another — collisions were impossible by construction. This replaces that with a real
+   simulation: every body carries position + velocity, the loop integrates, resolves wall bounces and
+   pairwise elastic collisions, and adds a scatter impulse + flash on every impact.
+
+   Runs entirely outside React. Positions live in a ref and are written straight to node.style inside
+   one rAF loop — 60fps of setState across 17 bodies would melt the page. */
+type Body = {
+  x: number; y: number
+  vx: number; vy: number
+  spin: number; spinV: number
+  flash: number
+  r: number
+}
+
+const SPEED_MIN = 16     // px/s — below this a body is nudged back up so nothing stalls
+const SPEED_MAX = 78     // px/s — ceiling so a chain of impacts cannot fling anything off-screen
+const RESTITUTION = 1.06 // slightly >1: impacts add a little energy, which reads as "scatter"
+
+function PhysicsField() {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const nodeRefs = useRef<(HTMLDivElement | null)[]>([])
+  const innerRefs = useRef<(HTMLDivElement | null)[]>([])
+  const bodiesRef = useRef<Body[]>([])
+
+  useEffect(() => {
+    const wrap = wrapRef.current
+    if (!wrap) return
+
+    let W = wrap.clientWidth || 1200
+    let H = wrap.clientHeight || 800
+
+    // Deterministic seeding — golden-angle headings on a loose grid so nothing starts overlapped.
+    const cols = 5
+    const rows = Math.ceil(FIELD.length / cols)
+    bodiesRef.current = FIELD.map((f, i) => {
+      const cx = ((i % cols) + 0.5) / cols
+      const cy = (Math.floor(i / cols) + 0.5) / rows
+      const ang = i * 2.3999632
+      const sp = 26 + (i % 5) * 9
+      return {
+        x: cx * W, y: cy * H,
+        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+        spin: (i * 37) % 360, spinV: ((i % 7) - 3) * 6,
+        flash: 0, r: f.r,
+      }
+    })
+
+    const ro = new ResizeObserver(() => {
+      W = wrap.clientWidth || W
+      H = wrap.clientHeight || H
+    })
+    ro.observe(wrap)
+
+    let raf = 0
+    let last = 0
+
+    const step = (now: number) => {
+      raf = requestAnimationFrame(step)
+      if (!last) { last = now; return }
+      // Clamp dt: a backgrounded tab resumes with one enormous frame that would teleport every body.
+      const dt = Math.min((now - last) / 1000, 0.032)
+      last = now
+      const B = bodiesRef.current
+
+      for (const b of B) {
+        b.x += b.vx * dt
+        b.y += b.vy * dt
+        b.spin += b.spinV * dt
+        b.flash *= 0.9
+
+        if (b.x - b.r < 0) { b.x = b.r; b.vx = Math.abs(b.vx) }
+        else if (b.x + b.r > W) { b.x = W - b.r; b.vx = -Math.abs(b.vx) }
+        if (b.y - b.r < 0) { b.y = b.r; b.vy = Math.abs(b.vy) }
+        else if (b.y + b.r > H) { b.y = H - b.r; b.vy = -Math.abs(b.vy) }
+      }
+
+      // Pairwise collisions. 17 bodies is 136 checks per frame — cheap enough to brute force.
+      for (let i = 0; i < B.length; i++) {
+        for (let j = i + 1; j < B.length; j++) {
+          const a = B[i]
+          const c = B[j]
+          const dx = c.x - a.x
+          const dy = c.y - a.y
+          const min = a.r + c.r
+          const d2 = dx * dx + dy * dy
+          if (d2 >= min * min || d2 === 0) continue
+
+          const d = Math.sqrt(d2)
+          const nx = dx / d
+          const ny = dy / d
+
+          // Separate them, or they re-collide every frame and stick together.
+          const overlap = (min - d) / 2
+          a.x -= nx * overlap; a.y -= ny * overlap
+          c.x += nx * overlap; c.y += ny * overlap
+
+          // Equal-mass elastic response along the contact normal.
+          const rvn = (c.vx - a.vx) * nx + (c.vy - a.vy) * ny
+          if (rvn >= 0) continue
+          const imp = (-(1 + RESTITUTION) * rvn) / 2
+          a.vx -= imp * nx; a.vy -= imp * ny
+          c.vx += imp * nx; c.vy += imp * ny
+
+          // Scatter: tangential kick + spin, so an impact reads as a knock, not a mirror bounce.
+          const tx = -ny
+          const ty = nx
+          a.vx -= tx * 5; a.vy -= ty * 5
+          c.vx += tx * 5; c.vy += ty * 5
+          a.spinV += 24; c.spinV -= 24
+          a.flash = 1; c.flash = 1
+        }
+      }
+
+      for (let i = 0; i < B.length; i++) {
+        const b = B[i]
+        const sp = Math.hypot(b.vx, b.vy)
+        if (sp > SPEED_MAX) { b.vx = (b.vx / sp) * SPEED_MAX; b.vy = (b.vy / sp) * SPEED_MAX }
+        else if (sp < SPEED_MIN && sp > 0) { b.vx = (b.vx / sp) * SPEED_MIN; b.vy = (b.vy / sp) * SPEED_MIN }
+        if (b.spinV > 90) b.spinV = 90
+        if (b.spinV < -90) b.spinV = -90
+
+        const node = nodeRefs.current[i]
+        if (node) {
+          node.style.transform =
+            `translate3d(${(b.x - b.r).toFixed(1)}px, ${(b.y - b.r).toFixed(1)}px, ${FIELD[i].depth}px)`
+        }
+        const inner = innerRefs.current[i]
+        if (inner) {
+          const f = b.flash
+          inner.style.transform =
+            FIELD[i].kind === 'chip'
+              ? `rotateX(56deg) rotateZ(-42deg) scale(${(1 + f * 0.16).toFixed(3)})`
+              : `rotateX(${b.spin.toFixed(1)}deg) rotateY(${(b.spin * 1.3).toFixed(1)}deg) scale(${(1 + f * 0.3).toFixed(3)})`
+          inner.style.filter = f > 0.02 ? `drop-shadow(0 0 ${(6 + f * 26).toFixed(0)}px var(--lume-halo))` : 'none'
+        }
+      }
+    }
+
+    raf = requestAnimationFrame(step)
+    return () => { cancelAnimationFrame(raf); ro.disconnect() }
+  }, [])
+
   return (
-    <motion.div
-      className="absolute"
-      style={{ top, left: '0px', transform: `translateZ(${depth}px)` }}
-      initial={{ x: from }}
-      animate={{ x: [from, to], y: [0, -14, 0, 14, 0] }}
-      transition={{
-        x: { duration: dur, repeat: Infinity, ease: 'linear', delay },
-        y: { duration: dur / 5, repeat: Infinity, ease: 'easeInOut' },
-      }}
-    >
-      {/* Tilted into the same isometric plane as the slabs so the words read as part of the scene
-          rather than as UI floating on top of it. */}
+    <div ref={wrapRef} aria-hidden className="hub-scene pointer-events-none absolute inset-0 overflow-hidden">
+      {FIELD.map((f, i) => (
+        <div
+          key={f.id}
+          ref={(el) => { nodeRefs.current[i] = el }}
+          className="absolute left-0 top-0"
+          style={{ willChange: 'transform' }}
+        >
+          <div
+            ref={(el) => { innerRefs.current[i] = el }}
+            className="hub-3d grid place-items-center"
+            style={{ width: `${f.r * 2}px`, height: `${f.r * 2}px` }}
+          >
+            <FieldSprite item={f} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function FieldSprite({ item }: { item: FieldItem }) {
+  if (item.kind === 'chip') {
+    return (
       <span
-        className="inline-flex items-center gap-2 rounded-[12px] border px-3.5 py-2 whitespace-nowrap"
+        className="inline-flex items-center gap-2 whitespace-nowrap rounded-[12px] border px-3.5 py-2"
         style={{
-          transform: 'rotateX(56deg) rotateZ(-42deg)',
-          backgroundColor: em
-            ? 'color-mix(in srgb, var(--hub-accent) 14%, var(--kia-surface))'
-            : 'color-mix(in srgb, var(--kia-surface) 92%, var(--hub-accent))',
+          backgroundColor: item.em
+            ? 'color-mix(in srgb, var(--lume-2) 14%, var(--kia-surface))'
+            : 'color-mix(in srgb, var(--kia-surface) 92%, var(--lume-2))',
           borderColor: 'var(--hub-line)',
-          boxShadow: em ? '0 10px 26px -12px var(--hub-glow)' : 'none',
-          opacity: em ? '0.62' : '0.42',
+          boxShadow: item.em ? '0 10px 26px -12px var(--lume-halo)' : 'none',
+          opacity: item.em ? '0.72' : '0.5',
         }}
       >
         <span
           className="block h-1.5 w-1.5 shrink-0 rounded-full"
-          style={{ backgroundColor: 'var(--hub-accent)', boxShadow: '0 0 8px var(--hub-glow)' }}
+          style={{ backgroundColor: 'var(--lume-2)', boxShadow: '0 0 8px var(--lume-halo)' }}
         />
         <span
           className="text-[13px] font-bold tracking-tight"
-          style={{ color: em ? 'var(--hub-accent)' : 'var(--kia-text-soft)' }}
+          style={{ color: item.em ? 'var(--lume-2)' : 'var(--kia-text-soft)' }}
         >
-          {label}
+          {item.label}
         </span>
       </span>
-    </motion.div>
-  )
-}
+    )
+  }
 
-/* ── Bottom-left cluster: a small companion assembly, gently breathing ───── */
-/* ── A shape that travels across the whole screen, forever ───────────────── */
-function Traveler({ kind, top, size, dur, delay, depth, dir }: {
-  kind: 'cube' | 'ring' | 'orb' | 'pyr'
-  top: string; size: number; dur: number; delay: number; depth: number; dir: number
-}) {
-  const from = dir > 0 ? '-14vw' : '114vw'
-  const to = dir > 0 ? '114vw' : '-14vw'
-  return (
-    <motion.div
-      className="hub-3d absolute"
-      style={{ top, left: '0px', width: `${size}px`, height: `${size}px`, transform: `translateZ(${depth}px)` }}
-      initial={{ x: from }}
-      animate={{ x: [from, to], y: [0, -18, 0, 18, 0] }}
-      transition={{
-        x: { duration: dur, repeat: Infinity, ease: 'linear', delay },
-        y: { duration: dur / 4, repeat: Infinity, ease: 'easeInOut' },
-      }}
-    >
-      <motion.div
-        className="hub-3d h-full w-full"
-        animate={{ rotateX: [0, 360], rotateY: [0, 360] }}
-        transition={{
-          rotateX: { duration: 18 + size % 7, repeat: Infinity, ease: 'linear' },
-          rotateY: { duration: 24 + size % 5, repeat: Infinity, ease: 'linear' },
+  const size = item.size || 32
+
+  if (item.kind === 'cube') {
+    return (
+      <div className="hub-3d relative" style={{ width: `${size}px`, height: `${size}px` }}>
+        <MiniCube size={size} />
+      </div>
+    )
+  }
+
+  if (item.kind === 'ring') {
+    return (
+      <span
+        className="block rounded-full border-2"
+        style={{
+          width: `${size}px`, height: `${size}px`,
+          borderColor: 'var(--lume-2)', opacity: '0.6',
+          boxShadow: '0 0 22px var(--lume-halo)',
         }}
-      >
-        {kind === 'cube' && <MiniCube size={size} />}
-        {kind === 'ring' && (
-          <span
-            className="absolute inset-0 rounded-full border-2"
-            style={{ borderColor: 'var(--lume-2)', opacity: '0.6', boxShadow: '0 0 22px var(--lume-halo)' }}
-          />
-        )}
-        {kind === 'orb' && (
-          <span
-            className="absolute inset-0 rounded-full"
-            style={{
-              background: 'radial-gradient(circle at 32% 28%, #ffffff, var(--lume-2) 46%, var(--lume-1) 72%, transparent 76%)',
-              boxShadow: '0 0 26px var(--hub-glow)', opacity: '0.75',
-            }}
-          />
-        )}
-        {kind === 'pyr' && (
-          <span
-            className="absolute inset-0"
-            style={{
-              background: 'linear-gradient(160deg, var(--hub-accent), transparent 70%)',
-              clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)',
-              opacity: '0.42', filter: 'drop-shadow(0 0 12px var(--hub-glow))',
-            }}
-          />
-        )}
-      </motion.div>
-    </motion.div>
+      />
+    )
+  }
+
+  if (item.kind === 'orb') {
+    return (
+      <span
+        className="block rounded-full"
+        style={{
+          width: `${size}px`, height: `${size}px`,
+          background: 'radial-gradient(circle at 32% 28%, #ffffff, var(--lume-2) 46%, var(--lume-1) 72%, transparent 76%)',
+          boxShadow: '0 0 26px var(--lume-halo)', opacity: '0.8',
+        }}
+      />
+    )
+  }
+
+  return (
+    <span
+      className="block"
+      style={{
+        width: `${size}px`, height: `${size}px`,
+        background: 'linear-gradient(160deg, var(--lume-2), transparent 70%)',
+        clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)',
+        opacity: '0.5', filter: 'drop-shadow(0 0 12px var(--lume-halo))',
+      }}
+    />
   )
 }
 
