@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   ScrapTransaction,
   ScrapLocation,
@@ -91,6 +91,27 @@ export function ScrapErpShell() {
     handoverUsers: [],
     searchQuery: '',
   })
+
+  // Fetch live database transactions on mount & module switches
+  useEffect(() => {
+    let isMounted = true
+    async function loadScrapTransactions() {
+      try {
+        const res = await fetch('/api/scrap-erp')
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.success && Array.isArray(data.transactions) && isMounted) {
+          setTransactions(data.transactions)
+        }
+      } catch (err) {
+        console.error('Failed to load live scrap transactions:', err)
+      }
+    }
+    loadScrapTransactions()
+    return () => {
+      isMounted = false
+    }
+  }, [activeModule])
 
   // Modal Gallery & Details State
   const [selectedGalleryTxn, setSelectedGalleryTxn] = useState<ScrapTransaction | null>(null)

@@ -10,8 +10,10 @@ import {
   useReducedMotion,
 } from 'motion/react'
 import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
 import { MainLayout } from '@/components/layout/main-layout'
-import { Zap } from 'lucide-react'
+// type-only import: the module itself is server-only, the type is erased at compile time
+import type { KiaYardStats } from '@/lib/kia/home-yard-stats'
 
 const BRAND_LOGO_URL = 'https://crreoeautoqzcgtlwlsd.supabase.co/storage/v1/object/public/Logos/logo.svg'
 
@@ -149,9 +151,52 @@ export default function DashboardPortal() {
   const isClient = useSyncExternalStore(NEVER_CHANGES, onClient, onServer)
   const isDesktop = useIsDesktop()
   const animated = !reduce
-  const decor = animated && isClient
+
+  // Power gate: the whole animated layer (physics sim, 3 vehicle loops, helicopter, walkers,
+  // pulses, dusk cycle) unmounts when the hero is scrolled out of view OR the tab is hidden —
+  // otherwise it all keeps burning CPU behind other content. State flips only inside the
+  // IntersectionObserver / visibilitychange callbacks (async, lint-clean); the static campus
+  // stays mounted so scrolling back never shows a hole.
+  const [sceneActive, setSceneActive] = useState(true)
+  const sceneRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sceneRef.current
+    if (!el) return
+    let inView = true
+    let tabVisible = !document.hidden
+    const apply = () => setSceneActive(inView && tabVisible)
+    const io = new IntersectionObserver((entries) => {
+      inView = entries[0]?.isIntersecting ?? true
+      apply()
+    }, { threshold: 0.04 })
+    io.observe(el)
+    const onVis = () => { tabVisible = !document.hidden; apply() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      io.disconnect()
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
+
+  const decor = animated && isClient && sceneActive
 
   const [active, setActive] = useState<string | null>(null)
+
+  // Real counts for the yard rows (New Stock / Demo Fleet / Ready for Delivery), from the same
+  // definitions as the Stock Report, Demo Cars List and allotment flow. The endpoint is gated on
+  // kia.stock_report.view; a 403 lands in the error branch and the labels simply render without
+  // numbers, so ungranted roles see exactly what they saw before.
+  const yardStatsQuery = useQuery<KiaYardStats>({
+    queryKey: ['kia-home-yard-stats'],
+    enabled: isClient && isDesktop,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const res = await fetch('/api/brands/kia/home/yard-stats')
+      if (!res.ok) throw new Error('yard stats unavailable')
+      return res.json()
+    },
+  })
+  const yardCounts = yardStatsQuery.data
 
   const mx = useMotionValue(0)
   const my = useMotionValue(0)
@@ -159,7 +204,6 @@ export default function DashboardPortal() {
   const sy = useSpring(my, { stiffness: 70, damping: 20, mass: 0.7 })
   const rotZ = useTransform(sx, [-0.5, 0.5], [-52, -38])
   const rotX = useTransform(sy, [-0.5, 0.5], [64, 52])
-  const sceneRef = useRef<HTMLDivElement>(null)
 
   const onMove = useCallback((e: React.PointerEvent) => {
     if (reduce) return
@@ -177,7 +221,8 @@ export default function DashboardPortal() {
   // uses (through the same spring), and any pointer activity stops it instantly. The keyframe loop
   // starts AND ends at the value it began from, so each 22s cycle wraps seamlessly.
   useEffect(() => {
-    if (reduce) return
+    // Also parked while the scene is off-screen/hidden — no point swaying an invisible campus.
+    if (reduce || !sceneActive) return
     let sway: ReturnType<typeof animate> | null = null
     let timer = 0
     const startSway = () => {
@@ -199,7 +244,7 @@ export default function DashboardPortal() {
       window.clearTimeout(timer)
       sway?.stop()
     }
-  }, [reduce, mx])
+  }, [reduce, mx, sceneActive])
   
 
   return (
@@ -293,7 +338,7 @@ export default function DashboardPortal() {
                 className="hub-3d relative h-[900px] w-[900px]"
                 style={animated ? { rotateX: rotX, rotateZ: rotZ } : { transform: 'rotateX(58deg) rotateZ(-45deg)' }}
               >
-                <Campus active={active} setActive={setActive} decor={decor} />
+                <Campus active={active} setActive={setActive} decor={decor} counts={yardCounts} />
               </motion.div>
             </div>
           </div>
@@ -829,6 +874,96 @@ function CustomerHandover() {
   )
 }
 
+/* ── CampusPeople: tiny walkers entering and leaving the venues ──────────
+   Each walker strolls its path over the first ~62% of its loop, then "enters the building": hidden
+   via a SCALE step (never opacity — an animated-opacity ancestor flattens preserve-3d children; see
+   the ServiceLoop note) and quietly resets to its start point while invisible. Durations are all
+   different and offset from the vehicle periods, so the foot traffic never syncs with the cars.
+   Paths are checked against building footprints AND both vehicle lanes (truck y=-80 stops at x=30;
+   the sold car's southbound run occupies x -134..-106). */
+const WALKERS: { path: [number, number][]; dur: number; delay: number; shirt: string }[] = [
+  // showroom: door on the east glass face (~-196, 193)
+  { path: [[-92, 216], [-150, 204], [-196, 193]], dur: 18, delay: 0, shirt: 'var(--lume-1)' },
+  { path: [[-198, 190], [-140, 201], [-86, 215]], dur: 21, delay: 7, shirt: '#64748b' },
+  // service centre: door on the south face beside the bays (~-224, -138)
+  { path: [[-150, -84], [-224, -136]], dur: 17, delay: 3, shirt: 'var(--lume-2)' },
+  { path: [[-228, -140], [-170, -98], [-120, -82]], dur: 20, delay: 11, shirt: '#94a3b8' },
+  // city offices: tallest tower's lobby (~158, -366), approached from the plate's south edge
+  { path: [[180, -218], [172, -292], [158, -366]], dur: 22, delay: 5, shirt: '#475569' },
+  { path: [[154, -368], [168, -298], [178, -222]], dur: 19, delay: 14, shirt: 'var(--lume-1)' },
+]
+
+function Person({ shirt }: { shirt: string }) {
+  return (
+    <>
+      {/* contact shadow */}
+      <span
+        aria-hidden
+        className="absolute left-1/2 top-1/2 block rounded-full"
+        style={{
+          width: '10px', height: '7px', marginLeft: '-5px', marginTop: '-3.5px',
+          transform: 'translateZ(0.5px)',
+          background: 'rgba(15,23,42,.16)', filter: 'blur(1.5px)',
+        }}
+      />
+      {/* torso (shirt) + head (skin sides, hair top) */}
+      <Box w={5} d={5} h={9} radius={2}
+        bodyTop={shirt}
+        bodySide={`color-mix(in srgb, ${shirt} 82%, #0f172a)`}
+        bodyDark={`color-mix(in srgb, ${shirt} 68%, #0f172a)`}
+      />
+      <Box w={4} d={4} h={4} dz={9} radius={2}
+        bodyTop="#1e293b" bodySide="#eab892" bodyDark="#d9a06f" />
+    </>
+  )
+}
+
+function Walker({ path, dur, delay, shirt }: {
+  path: [number, number][]; dur: number; delay: number; shirt: string
+}) {
+  const walkEnd = 0.62
+  const xs = path.map((p) => p[0])
+  const ys = path.map((p) => p[1])
+  const posTimes = [...path.map((_, i) => (i / (path.length - 1)) * walkEnd), 1]
+  const loop = { duration: dur, repeat: Infinity, ease: 'linear' as const, delay }
+  return (
+    <motion.div
+      aria-hidden
+      className="hub-3d absolute left-1/2 top-1/2 h-0 w-0"
+      // Explicit initial: with a start delay, a keyframe animation applies NO transform until it
+      // begins — without this the walker would stand at the campus centre during its delay.
+      initial={{ x: xs[0], y: ys[0], scale: 1 }}
+      animate={{ x: [...xs, xs[xs.length - 1]], y: [...ys, ys[ys.length - 1]], scale: [1, 1, 0, 0] }}
+      transition={{
+        ...loop,
+        x: { ...loop, times: posTimes },
+        y: { ...loop, times: posTimes },
+        scale: { ...loop, times: [0, walkEnd, walkEnd + 0.01, 1] },
+      }}
+    >
+      {/* gait bob, independent high-frequency loop */}
+      <motion.div
+        className="hub-3d"
+        initial={false}
+        animate={{ z: [0, 1.6, 0] }}
+        transition={{ duration: 0.55, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        <Person shirt={shirt} />
+      </motion.div>
+    </motion.div>
+  )
+}
+
+function CampusPeople() {
+  return (
+    <>
+      {WALKERS.map((w, i) => (
+        <Walker key={i} {...w} />
+      ))}
+    </>
+  )
+}
+
 /* A clickable plot footprint. Lies flat in the ground plane over the whole plot; the buildings
    inherit pointer-events:none from the campus wrapper, so hit-testing passes straight through a
    roof to this link — clicking a building opens its section. */
@@ -1047,8 +1182,9 @@ const PLOT_LINKS = [
   { key: 'yard', ...{ dx: 170, dy: 70 }, w: 410, d: 410, href: '/brands/kia/stock-report', hint: 'Open Stock Report', hintZ: 64 },
 ] as const
 
-function Campus({ active, setActive, decor }: {
+function Campus({ active, setActive, decor, counts }: {
   active: string | null; setActive: (v: string | null) => void; decor: boolean
+  counts?: KiaYardStats
 }) {
   const [hovered, setHovered] = useState<string | null>(null)
   // The scene loads fully assembled (the build-in intro was removed by request); traffic runs
@@ -1084,7 +1220,7 @@ function Campus({ active, setActive, decor }: {
       <PlotLabel dx={PLOTS.showroom.dx} dy={PLOTS.showroom.dy + 132}>Showroom</PlotLabel>
 
       <Plot {...PLOTS.yard}>
-        <StockYard active={active} setActive={setActive} decor={decor} delivery={decor} />
+        <StockYard active={active} setActive={setActive} decor={decor} delivery={decor} counts={counts} />
       </Plot>
 
       {/* hover hints, above everything on their plot */}
@@ -1105,6 +1241,9 @@ function Campus({ active, setActive, decor }: {
       {traffic && <Helicopter />}
       {traffic && <HoloPanel />}
       {traffic && <DataPulses />}
+
+      {/* foot traffic in and out of the showroom, service centre and offices */}
+      {traffic && <CampusPeople />}
     </>
   )
 }
@@ -1120,12 +1259,21 @@ const YARD_POLES = [
   { dx: -186, dy: 186 },  { dx: 186, dy: 186 },
 ]
 
-function StockYard({ active, setActive, decor, delivery }: {
+// Which stat feeds which row label.
+const YARD_COUNT_KEY: Record<string, keyof KiaYardStats> = {
+  'New Stock': 'newStock',
+  'Demo Fleet': 'demoFleet',
+  'Ready for Delivery': 'readyForDelivery',
+}
+
+function StockYard({ active, setActive, decor, delivery, counts }: {
   active: string | null; setActive: (v: string | null) => void; decor: boolean
   // When the delivery loop is running, the first New Stock slot is left empty for it to fill —
   // the animated delivered car occupies exactly that position. Mobile (no campus, no loop)
   // omits the prop and renders the full row.
   delivery?: boolean
+  // Real counts (kia.stock_report.view holders only); undefined renders plain labels.
+  counts?: KiaYardStats
 }) {
   return (
     <>
@@ -1192,6 +1340,17 @@ function StockYard({ active, setActive, decor, delivery }: {
                 }}
               >
                 {row.label}
+                {counts && (
+                  <span
+                    className="ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-black"
+                    style={{
+                      backgroundColor: 'color-mix(in srgb, var(--lume-2) 14%, var(--kia-surface))',
+                      color: 'var(--lume-1)',
+                    }}
+                  >
+                    {counts[YARD_COUNT_KEY[row.label]]}
+                  </span>
+                )}
               </button>
             </div>
           </div>
@@ -1658,8 +1817,12 @@ function PhysicsField() {
         const inner = innerRefs.current[i]
         if (inner) {
           const f = b.flash
+          // perspective() FIRST in the list: the moving outer wrapper is transform-style:flat, so
+          // without a local perspective the rotateX degenerates to an orthographic 2D skew and the
+          // chip reads as a flattened sticker. Local (per-chip) perspective keeps the foreshortening
+          // while leaving the collision sim's screen-space coordinates untouched.
           inner.style.transform =
-            `rotateX(56deg) rotateZ(-42deg) scale(${(1 + f * 0.16).toFixed(3)})`
+            `perspective(680px) rotateX(56deg) rotateZ(-42deg) scale(${(1 + f * 0.16).toFixed(3)})`
           inner.style.filter = f > 0.02 ? `drop-shadow(0 0 ${(6 + f * 26).toFixed(0)}px var(--lume-halo))` : 'none'
         }
       }
@@ -1700,7 +1863,11 @@ function FieldSprite({ item }: { item: FieldItem }) {
           ? 'color-mix(in srgb, var(--lume-2) 14%, var(--kia-surface))'
           : 'color-mix(in srgb, var(--kia-surface) 92%, var(--lume-2))',
         borderColor: 'var(--hub-line)',
-        boxShadow: item.em ? '0 10px 26px -12px var(--lume-halo)' : 'none',
+        // Layered shadows sell the thickness the tilt alone can't: a bright top-edge inset (lit
+        // face), a hard 2px bottom edge (the card's side), and a soft drop onto the canvas.
+        boxShadow: item.em
+          ? 'inset 0 1px 0 rgba(255,255,255,.8), 0 2px 0 color-mix(in srgb, var(--lume-1) 22%, #ffffff), 0 10px 26px -12px var(--lume-halo), 0 6px 12px rgba(15,23,42,.10)'
+          : 'inset 0 1px 0 rgba(255,255,255,.7), 0 2px 0 color-mix(in srgb, var(--lume-1) 14%, #ffffff), 0 6px 12px rgba(15,23,42,.08)',
         opacity: item.em ? '0.72' : '0.5',
       }}
     >
