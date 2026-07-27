@@ -930,6 +930,12 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
     if (!req.vpApproval || req.vpApproval === '') return 'Pending ED'
 
+    // ED approved — EA must see it first (non-blocking: MD can also act)
+    if (req.vpApproval === 'APPROVED' && (!req.eaApproval || req.eaApproval === '')) {
+      return 'Pending EA'
+    }
+
+    // EA approved (or EA was bypassed by MD) — now it's MD's turn
     if (req.vpApproval === 'APPROVED' && (!req.managementApproval || req.managementApproval === '')) {
       return 'Pending MD'
     }
@@ -952,12 +958,11 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return null
     }
 
-    if (['md', 'ceo'].includes(effectiveRole)) {
-      return 'md'
-    }
     if (pendingLabel === 'Pending ED') return 'sales_manager'
-    if (effectiveRole === 'ea' && req.vpApproval === 'APPROVED' && (!req.eaApproval || req.eaApproval === '')) return 'ea'
-    if (pendingLabel === 'Pending MD') return 'md'
+    // EA gets action button when it's EA's turn
+    if (effectiveRole === 'ea' && pendingLabel === 'Pending EA') return 'ea'
+    // MD/CEO can act on both Pending EA (non-blocking) and Pending MD
+    if (['md', 'ceo'].includes(effectiveRole) && (pendingLabel === 'Pending EA' || pendingLabel === 'Pending MD')) return 'md'
     if (pendingLabel === 'Pending Accounts') return 'accounts'
     return null
   }
@@ -979,6 +984,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
       return false
     }
 
+    // MD/CEO: see both Pending EA (non-blocking) and Pending MD items
     if (['md', 'ceo'].includes(effectiveRole)) {
       return row.vpApproval === 'APPROVED' && (!row.managementApproval || row.managementApproval === '')
     }
@@ -986,7 +992,8 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
     if (pendingLabel === 'Pending ED' && effectiveRole === 'ed') {
       return true
     }
-    if (effectiveRole === 'ea' && row.vpApproval === 'APPROVED' && (!row.eaApproval || row.eaApproval === '') && (!row.managementApproval || row.managementApproval === '')) {
+    // EA sees items where ED approved but EA hasn't acted yet (and MD hasn't bypassed)
+    if (effectiveRole === 'ea' && pendingLabel === 'Pending EA') {
       return true
     }
     if (pendingLabel === 'Pending Accounts' && ['accounts', 'finance_head'].includes(effectiveRole)) {

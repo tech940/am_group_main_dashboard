@@ -49,7 +49,7 @@ export function canCreatePettyCashExpense(role: PettyCashRole | null | undefined
 export function canApprovePettyCashStage(role: PettyCashRole | null | undefined, stage: string) {
   if (!role) return false
   const r = String(role).trim().toLowerCase()
-  if (r === 'developer') return true
+  if (r === 'developer' || r === 'admin') return true
 
   const isAccounts = r === 'accounts' || r === 'accounts_head' || r === 'accounts_team' || r === 'finance_head' || r === 'finance_team'
 

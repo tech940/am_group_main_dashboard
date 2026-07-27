@@ -141,8 +141,10 @@ export async function POST(request: NextRequest) {
         createdBy: appUser.id,
         assignedTo: appUser.role === 'purchase_manager' ? appUser.id : null,
         brand: branch,
-        currentStage: 'md_approval',
-        status: 'awaiting_md_approval',
+        // EA sees every new order first. EA approval is non-blocking — MD can also
+        // act on orders in awaiting_ea_approval, but EA is always notified.
+        currentStage: 'ea_approval',
+        status: 'awaiting_ea_approval',
         department: String(formData.department || ''),
         subDepartment: String(formData.subDepartment || ''),
         specifyOther: formData.specifyOther ? String(formData.specifyOther) : null,
@@ -164,12 +166,12 @@ export async function POST(request: NextRequest) {
           action: 'submit',
           stage: 'initial_submission',
           previousStatus: null,
-          newStatus: 'awaiting_md_approval',
+          newStatus: 'awaiting_ea_approval',
           remarks: formData.specialInstructions ? String(formData.specialInstructions) : null,
           metadata: {
             ...formData,
             branch,
-            resultingStage: 'md_approval',
+            resultingStage: 'ea_approval',
           },
         })
 
@@ -178,8 +180,8 @@ export async function POST(request: NextRequest) {
         message: 'Purchase order created successfully',
         orderId: newOrder.id,
         orderNumber: newOrder.orderNumber,
-        newStage: 'md_approval',
-        newStatus: 'awaiting_md_approval',
+        newStage: 'ea_approval',
+        newStatus: 'awaiting_ea_approval',
       })
     }
 
@@ -266,8 +268,9 @@ export async function POST(request: NextRequest) {
           vendorDetails: hasVendorOptions ? vendorOptions : order.vendorDetails,
           billImages: hasBillImages ? billImages : order.billImages,
           grnImages: nextGrnImages,
-          currentStage: shouldAdvanceLegacyVendorFlow ? 'md_approval' : order.currentStage,
-          status: shouldAdvanceLegacyVendorFlow ? 'awaiting_md_approval' : order.status,
+          // After vendor info is submitted, route to EA first (non-blocking)
+          currentStage: shouldAdvanceLegacyVendorFlow ? 'ea_approval' : order.currentStage,
+          status: shouldAdvanceLegacyVendorFlow ? 'awaiting_ea_approval' : order.status,
           assignedTo: order.assignedTo || appUser.id,
         }
         newStage = updateData.currentStage || order.currentStage
@@ -275,6 +278,8 @@ export async function POST(request: NextRequest) {
         break
       }
       case 'ea_approval': {
+        // EA approval is non-blocking: EA can approve/deny/hold, but MD can also
+        // act on awaiting_ea_approval orders directly (skipping EA if needed).
         if (!['awaiting_ea_approval', 'ea_denied', 'md_denied', 'ea_on_hold', 'md_on_hold'].includes(order.status)) {
           return NextResponse.json({ error: 'This order is not awaiting EA approval' }, { status: 409 })
         }
@@ -347,7 +352,9 @@ export async function POST(request: NextRequest) {
         break
       }
       case 'md_approval': {
-        if (!['awaiting_md_approval', 'md_denied', 'md_on_hold'].includes(order.status)) {
+        // MD can act on orders that are awaiting EA approval too (EA is non-blocking).
+        // This lets MD approve/deny without waiting for EA while EA can still act if they want.
+        if (!['awaiting_md_approval', 'md_denied', 'md_on_hold', 'awaiting_ea_approval', 'ea_on_hold'].includes(order.status)) {
           return NextResponse.json({ error: 'This order is not awaiting MD approval' }, { status: 409 })
         }
 

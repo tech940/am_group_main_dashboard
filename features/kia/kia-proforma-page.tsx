@@ -6,7 +6,7 @@ import { toast } from '@/hooks/use-toast'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { DASHBOARD_STALE_TIME_MS, DASHBOARD_GC_TIME_MS } from '@/components/providers/query-provider'
 import Link from 'next/link'
 import {
@@ -2111,19 +2111,19 @@ function GMEditForm({
   }))
   const [idDocUploading, setIdDocUploading] = useState<'pan' | 'aadhaar' | 'employee_id' | null>(null)
   const updateDoc = <K extends keyof ProformaDocForm>(key: K, value: ProformaDocForm[K]) => setDocForm((c) => ({ ...c, [key]: value }))
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     if (!row.linkedBookingId) return
     let cancelled = false
-    fetch(`/api/brands/kia/bookings/${row.linkedBookingId}`)
-      .then((r) => (r.ok ? r.json() : null))
+    fetchBookingDetailCached(queryClient, row.linkedBookingId)
       .then((data) => {
         if (cancelled || !data) return
         setDocForm((c) => ({ ...c, ...pickProformaDocs((data.booking?.metadata || {}) as Record<string, unknown>) }))
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [row.linkedBookingId])
+  }, [row.linkedBookingId, queryClient])
 
   async function handleIdDocUpload(docType: 'pan' | 'aadhaar' | 'employee_id', e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -2452,21 +2452,27 @@ function ProformaPreviewDrawer({
 }) {
   const [activities, setActivities] = useState<any[]>([])
   const [loadingActivities, setLoadingActivities] = useState(false)
+  const queryClient = useQueryClient()
 
+  // Depend on the STABLE id string, never on `row` itself: the row object is re-derived by the
+  // parent, so an object-identity dependency refetched the full booking detail on every parent
+  // re-render for as long as this panel stayed open — a silent invocation drip that survived every
+  // other fix. The cached fetch also makes reopening the same row free for 5 minutes.
+  const activitiesBookingId = row ? String(row.linkedBookingId || row.id) : null
   useEffect(() => {
-    if (!row) return
-    const bookingId = row.linkedBookingId || row.id
+    if (!activitiesBookingId) return
+    let cancelled = false
     setLoadingActivities(true)
-    fetch(`/api/brands/kia/bookings/${bookingId}`)
-      .then((res) => (res.ok ? res.json() : null))
+    fetchBookingDetailCached(queryClient, activitiesBookingId)
       .then((data) => {
-        if (data?.activities) {
+        if (!cancelled && data?.activities) {
           setActivities(data.activities)
         }
       })
       .catch(() => {})
-      .finally(() => setLoadingActivities(false))
-  }, [row])
+      .finally(() => { if (!cancelled) setLoadingActivities(false) })
+    return () => { cancelled = true }
+  }, [activitiesBookingId, queryClient])
 
   if (!row || typeof document === 'undefined') return null
 
@@ -2831,14 +2837,33 @@ function PieCard({ title, data }: { title: string; data: { name: string; value: 
   )
 }
 
+// Shared, cached booking-detail fetch for every proforma surface. Uses the SAME React Query cache
+// key as the bookings drawer, so a booking viewed anywhere in the app is fetched once and reused
+// for 5 minutes. The raw fetch() calls this replaces bypassed every cache layer (the session
+// fetch-cache excludes /bookings paths on purpose) and re-fired on every mount — and in the
+// activities panel on every parent render via an object-identity dependency — which held
+// /api/brands/kia/bookings/[id] at hundreds of invocations per hour even after the follow-ups
+// prefetch storm was fixed. fetchQuery also dedupes concurrent same-key requests.
+function fetchBookingDetailCached(queryClient: QueryClient, bookingId: string) {
+  return queryClient.fetchQuery({
+    queryKey: ['kia-booking-detail', bookingId],
+    queryFn: async () => {
+      const res = await fetch(`/api/brands/kia/bookings/${bookingId}`)
+      if (!res.ok) throw new Error('Failed to load booking detail')
+      return res.json()
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
 function useBookingPrefill(bookingId: string | null) {
+  const queryClient = useQueryClient()
   const [prefill, setPrefill] = useState<BookingPrefill | null>(null)
   const [loading, setLoading] = useState(false)
   useEffect(() => {
     if (!bookingId) { setPrefill(null); return }
     setLoading(true)
-    fetch(`/api/brands/kia/bookings/${bookingId}`)
-      .then((response) => response.ok ? response.json() : null)
+    fetchBookingDetailCached(queryClient, bookingId)
       .then((data) => {
         if (!data?.booking) return
         const b = data.booking
@@ -2865,7 +2890,7 @@ function useBookingPrefill(bookingId: string | null) {
       })
       .catch(() => setPrefill(null))
       .finally(() => setLoading(false))
-  }, [bookingId])
+  }, [bookingId, queryClient])
   return { prefill, loading }
 }
 

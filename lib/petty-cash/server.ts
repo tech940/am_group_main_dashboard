@@ -829,9 +829,9 @@ export async function applyPettyCashRequestWorkflow(appUser: AppUser, rawInput: 
   if (input.stage === 'ed_approval') {
     if (!['submitted', 'ed_pending', 'ed_on_hold'].includes(request.status)) throw new Error('Request is not awaiting ED approval')
     if (input.action === 'approve') {
-      updateData = { ...updateData, status: 'md_pending', currentStage: 'md_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: null }
-      newStatus = 'md_pending'
-      newStage = 'md_approval'
+      updateData = { ...updateData, status: 'ea_pending', currentStage: 'ea_approval', edApprovedBy: appUser.id, edApprovedAt: now, edRemarks: null }
+      newStatus = 'ea_pending'
+      newStage = 'ea_approval'
     } else if (input.action === 'hold') {
       updateData = { ...updateData, status: 'ed_on_hold', currentStage: 'ed_approval', edRemarks: input.remarks || null }
       newStatus = 'ed_on_hold'

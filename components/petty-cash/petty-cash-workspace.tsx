@@ -96,18 +96,27 @@ const OPEN_REQUEST_STATUSES = ['draft', 'submitted', ...PENDING_STATUSES]
 
 function canActOnRequest(role: string, request: PettyCashRequest) {
   const status = request.status
-  if (role === 'developer' || role === 'manager' || role === 'general_manager') return PENDING_STATUSES.includes(status)
-  if (role === 'ed' || role === 'sales_manager') return status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold'
-  if (role === 'ea') return status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved'
-  if (role === 'md') return status === 'md_pending' || status === 'md_on_hold'
-  if (role === 'accounts') return status === 'accounts_pending' || status === 'accounts_on_hold'
+  const r = String(role || '').trim().toLowerCase()
+  const isSuperAdmin = r === 'developer' || r === 'admin' || r === 'manager' || r === 'general_manager'
+  if (isSuperAdmin) return PENDING_STATUSES.includes(status)
+  if (r === 'ed' || r === 'sales_manager') return status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold'
+  if (r === 'ea') return status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved'
+  if (r === 'md' || r === 'eba') {
+    return status === 'md_pending' || status === 'md_on_hold' || status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved'
+  }
+  if (r === 'accounts') return status === 'accounts_pending' || status === 'accounts_on_hold'
   return false
 }
 
-function stageForRequest(request: PettyCashRequest): ApprovalStage {
+function stageForRequest(request: PettyCashRequest, role?: string): ApprovalStage {
   const status = request.status
+  const r = String(role || '').trim().toLowerCase()
+  const isMdOrDev = r === 'md' || r === 'eba' || r === 'developer' || r === 'admin'
   if (status === 'submitted' || status === 'ed_pending' || status === 'ed_on_hold') return 'ed_approval'
-  if (status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved') return 'ea_approval'
+  if (status === 'ea_pending' || status === 'ea_on_hold' || status === 'ed_approved') {
+    if (isMdOrDev) return 'md_approval'
+    return 'ea_approval'
+  }
   if (status === 'md_pending' || status === 'md_on_hold') return 'md_approval'
   return 'accounts'
 }
@@ -870,7 +879,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
           if (!workflowDialog) return
           const { request, action } = workflowDialog
           setWorkflowDialog(null)
-          await applyRequestWorkflow(request.id, stageForRequest(request), action, remarks)
+          await applyRequestWorkflow(request.id, stageForRequest(request, userRole), action, remarks)
         }}
       />
       <PettyCashDetailDialog target={detailTarget} onClose={() => setDetailTarget(null)} categories={categoryOptions} />
@@ -939,7 +948,7 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<Fil
               <div className="flex items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()}>
                 {withActions && canActOnRequest(userRole, request) && (
                   <>
-                    <button type="button" onClick={() => void applyRequestWorkflow(request.id, stageForRequest(request), 'approve')} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                    <button type="button" onClick={() => void applyRequestWorkflow(request.id, stageForRequest(request, userRole), 'approve')} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
                       <CheckCircle2 className="h-3.5 w-3.5" /> Approve
                     </button>
                     <button type="button" onClick={() => setWorkflowDialog({ request, action: 'hold' })} disabled={submitting} className="flex h-8 items-center gap-1 rounded-lg border border-amber-200 px-2.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50">
