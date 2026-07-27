@@ -26,7 +26,8 @@ import {
   CheckCheck,
   Timer,
   MessageCircle,
-  Download
+  Download,
+  BarChart3
 } from 'lucide-react'
 import { canRevealKiaFollowupPhone } from '@/lib/kia/pii'
 import { MainLayout } from '@/components/layout/main-layout'
@@ -45,11 +46,11 @@ type Followup = {
   reason: string; priority: string; notes: string | null; source: string; outcome: string | null
   completedAt: string | null; createdAt: string
   notInterestedReason: string | null
-  bucket: 'not_connected' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled'
+  bucket: 'not_connected' | 'customer_concerns' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled'
   overdue: boolean
   customerPhone: string | null
 }
-type Counts = { not_connected: number; pending: number; next_day: number; scheduled: number; cancelled: number; rescheduled: number; overdue: number }
+type Counts = { not_connected: number; customer_concerns: number; pending: number; next_day: number; scheduled: number; cancelled: number; rescheduled: number; overdue: number }
 type ListResponse = { rows: Followup[]; counts: Counts; now: string }
 type BookingHit = { id: string; customerName: string; model: string; variant: string; bookingNumber: string | null; dealer: string | null; status: string; consultantName: string | null }
 
@@ -72,12 +73,14 @@ const REASONS = [
   { value: 'payment_pending', label: 'Payment pending' },
   { value: 'document_pending', label: 'Documents' },
   { value: 'delivery', label: 'Delivery' },
+  { value: 'customer_concern', label: 'Customer Concern' },
   { value: 'general', label: 'General' },
 ]
 const OUTCOMES = [
   { value: 'reached', label: 'Reached / spoke' },
   { value: 'no_answer', label: 'No answer' },
   { value: 'rescheduled', label: 'Rescheduled' },
+  { value: 'customer_concern', label: 'Customer Concern' },
   { value: 'not_interested', label: 'Not interested' },
   { value: 'converted', label: 'Converted 🎉' },
   { value: 'done', label: 'Done / resolved' },
@@ -89,6 +92,7 @@ const RESCHEDULE_REASONS = [
   { value: 'no_answer', label: 'No answer — retry' },
   { value: 'payment_delay', label: 'Payment delay' },
   { value: 'document_pending', label: 'Documents pending' },
+  { value: 'customer_concern', label: 'Customer Concern' },
   { value: '__custom__', label: '✏️ Custom reason…' },
 ]
 const NOT_INTERESTED_REASONS = [
@@ -104,10 +108,12 @@ const REASON_LABEL: Record<string, string> = Object.fromEntries(REASONS.map((r) 
 const BUCKETS = [
   { key: 'pending', label: 'Pending Call', tone: 'text-amber-600', hint: 'Open follow-ups' },
   { key: 'not_connected', label: 'Not Connected', tone: 'text-rose-600', hint: 'Last call failed' },
+  { key: 'customer_concerns', label: 'Customer Concerns', tone: 'text-amber-600', hint: 'Logged customer concerns' },
   { key: 'rescheduled', label: 'Rescheduled', tone: 'text-violet-600', hint: 'Rescheduled open touches' },
   { key: 'next_day', label: 'Next Day', tone: 'text-indigo-600', hint: 'Due tomorrow' },
   { key: 'scheduled', label: 'Scheduled', tone: 'text-teal-600', hint: 'Future follow-ups' },
   { key: 'cancelled', label: 'Cancelled', tone: 'text-slate-500', hint: 'Cancelled bookings' },
+  { key: 'analytics', label: 'Analytics', tone: 'text-indigo-600', hint: 'Performance & completion metrics' },
 ] as const
 
 const MIN_REMARK_LENGTH = 10
@@ -268,7 +274,9 @@ function getActivityMeta(type: string, description: string | null) {
 export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string }) {
   const [mine, setMine] = useState(false)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [reason, setReason] = useState('all')
+  const [rescheduleReason, setRescheduleReason] = useState('all')
   const [dealer, setDealer] = useState('all')
   const [model, setModel] = useState('all')
   const [bookingStatus, setBookingStatus] = useState('all')
@@ -277,11 +285,19 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<Followup['bucket']>('pending')
+  const [activeTab, setActiveTab] = useState<Followup['bucket'] | 'analytics'>('pending')
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null)
   const [sidebarTab, setSidebarTab] = useState<'details' | 'activity' | 'remarks'>('details')
   const [remarkText, setRemarkText] = useState('')
   const [addingRemark, setAddingRemark] = useState(false)
+
+  // Search Debouncing (350ms)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search)
+    }, 350)
+    return () => clearTimeout(handler)
+  }, [search])
 
   // Details Modal trigger state
   const [detailBookingOpen, setDetailBookingOpen] = useState(false)
@@ -295,6 +311,38 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   const [calling, setCalling] = useState<Followup | null>(null)
   const [completing, setCompleting] = useState<Followup | null>(null)
   const [rescheduling, setRescheduling] = useState<Followup | null>(null)
+
+  // Customer Concern Dialog State
+  const [concerningFollowup, setConcerningFollowup] = useState<Followup | null>(null)
+  const [concernText, setConcernText] = useState('')
+  const [isSubmittingConcern, setIsSubmittingConcern] = useState(false)
+
+  const handleSubmitConcern = async () => {
+    if (!concerningFollowup || !concernText.trim()) return
+    setIsSubmittingConcern(true)
+    try {
+      const formattedNote = `[CUSTOMER CONCERN] ${concernText.trim()}`
+      await patch(concerningFollowup.id, {
+        action: 'update',
+        reason: 'customer_concern',
+        outcome: 'customer_concern',
+        notes: formattedNote,
+      }, 'Customer Concern Logged Successfully')
+
+      await fetch(`/api/brands/kia/bookings/${concerningFollowup.bookingId}/remarks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remark: formattedNote }),
+      }).catch(() => {})
+
+      setConcerningFollowup(null)
+      setConcernText('')
+    } catch (e) {
+      toast({ title: 'Failed to log concern', description: e instanceof Error ? e.message : '', variant: 'error' })
+    } finally {
+      setIsSubmittingConcern(false)
+    }
+  }
 
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -311,12 +359,37 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
 
   const canCall = canRevealKiaFollowupPhone(currentUserRole)
 
+  // Quick Status Action Handler for the + Icon
+  const handleQuickStatusAction = async (
+    f: Followup,
+    action: 'delivered' | 'cancelled' | 'fake_booking' | 'pending' | 'demo_vehicle' | 'repeated_booking'
+  ) => {
+    try {
+      if (action === 'delivered') {
+        await patch(f.id, { action: 'complete', outcome: 'converted', notes: 'Delivered' }, 'Marked as Delivered & Completed')
+      } else if (action === 'cancelled') {
+        await patch(f.id, { action: 'cancel', notes: 'Booking Cancelled' }, 'Booking Cancelled')
+      } else if (action === 'fake_booking') {
+        await patch(f.id, { action: 'update', notes: 'Fake Booking', reason: 'fake_booking' }, 'Marked as Fake Booking')
+      } else if (action === 'pending') {
+        await patch(f.id, { action: 'update', notes: 'Status set to Pending', reason: 'pending' }, 'Status set to Pending')
+      } else if (action === 'demo_vehicle') {
+        await patch(f.id, { action: 'update', notes: 'Demo Vehicle', reason: 'demo_vehicle' }, 'Marked as Demo Vehicle')
+      } else if (action === 'repeated_booking') {
+        await patch(f.id, { action: 'update', notes: 'Repeated Booking', reason: 'repeated_booking' }, 'Marked as Repeated Booking')
+      }
+    } catch (e) {
+      toast({ title: 'Action Failed', description: e instanceof Error ? e.message : '', variant: 'error' })
+    }
+  }
+
   // Build params helper — shared by list query + export
   const buildParams = () => {
     const params = new URLSearchParams()
     if (mine) params.set('mine', '1')
-    if (search) params.set('search', search)
+    if (debouncedSearch) params.set('search', debouncedSearch)
     if (reason !== 'all') params.set('reason', reason)
+    if (rescheduleReason !== 'all') params.set('rescheduleReason', rescheduleReason)
     if (dealer !== 'all') params.set('dealer', dealer)
     if (model !== 'all') params.set('model', model)
     if (bookingStatus !== 'all') params.set('bookingStatus', bookingStatus)
@@ -331,6 +404,7 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   const activeFilterCount = [
     mine,
     reason !== 'all',
+    rescheduleReason !== 'all',
     dealer !== 'all',
     model !== 'all',
     bookingStatus !== 'all',
@@ -361,13 +435,13 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   }
 
   const clearAllFilters = () => {
-    setMine(false); setSearch(''); setReason('all'); setDealer('all')
+    setMine(false); setSearch(''); setDebouncedSearch(''); setReason('all'); setRescheduleReason('all'); setDealer('all')
     setModel('all'); setBookingStatus('all'); setPriority('all')
     setDateField('due_date'); setStartDate(''); setEndDate('')
   }
 
   const query = useQuery<ListResponse>({
-    queryKey: ['kia-followups', mine, search, reason, dealer, model, bookingStatus, priority, dateField, startDate, endDate],
+    queryKey: ['kia-followups', mine, debouncedSearch, reason, rescheduleReason, dealer, model, bookingStatus, priority, dateField, startDate, endDate],
     queryFn: async () => {
       const params = buildParams()
       const res = await fetch(`/api/brands/kia/follow-ups?${params.toString()}`, { cache: 'no-store' })
@@ -472,13 +546,14 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
   }, [data?.rows, alertedIds])
 
   const grouped = useMemo(() => {
-    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], pending: [], next_day: [], scheduled: [], cancelled: [], rescheduled: [] }
+    const g: Record<Followup['bucket'], Followup[]> = { not_connected: [], customer_concerns: [], pending: [], next_day: [], scheduled: [], cancelled: [], rescheduled: [] }
     for (const r of data?.rows || []) g[r.bucket].push(r)
     return g
   }, [data])
 
   const filteredRows = useMemo(() => {
-    return grouped[activeTab] || []
+    if (activeTab === 'analytics') return []
+    return grouped[activeTab as Followup['bucket']] || []
   }, [grouped, activeTab])
 
   const paginatedRows = useMemo(() => {
@@ -934,6 +1009,23 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                       </Select>
                     </div>
 
+                    {/* Reschedule Reason / Remarks */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Reschedule Reason / Remarks</label>
+                      <Select value={rescheduleReason} onValueChange={setRescheduleReason}>
+                        <SelectTrigger className={cn('h-9 w-52 rounded-xl text-xs font-semibold bg-white', rescheduleReason !== 'all' ? 'border-indigo-400 text-indigo-700' : 'border-slate-200')}>
+                          <SelectValue placeholder="All Remarks / Reasons" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Remarks / Reasons</SelectItem>
+                          {RESCHEDULE_REASONS.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                          <SelectItem value="fake_booking">Fake Booking</SelectItem>
+                          <SelectItem value="demo_vehicle">Demo Vehicle</SelectItem>
+                          <SelectItem value="repeated_booking">Repeated Booking</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
                     {/* Mine toggle */}
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned To</label>
@@ -990,36 +1082,44 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
           </div>
 
           {/* Tabs bar */}
-          <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-2xl border-x border-t border-slate-100">
+          <div className="flex border-b border-slate-200 bg-white px-4 pt-2 rounded-t-2xl border-x border-t border-slate-100 flex-wrap">
             {BUCKETS.map((b) => {
-              const count = data?.counts[b.key] ?? 0
+              const isAnalytics = b.key === 'analytics'
+              const count = isAnalytics ? null : (data?.counts[b.key as keyof Counts] ?? 0)
               const isActive = activeTab === b.key
               return (
                 <button
                   key={b.key}
-                  onClick={() => setActiveTab(b.key)}
+                  onClick={() => setActiveTab(b.key as typeof activeTab)}
                   className={cn(
-                    'border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition-all -mb-px flex items-center gap-1.5',
+                    'border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition-all -mb-px flex items-center gap-1.5 cursor-pointer',
                     isActive
                       ? 'border-indigo-600 text-indigo-600'
                       : 'border-transparent text-slate-400 hover:text-slate-600'
                   )}
                 >
+                  {b.key === 'analytics' && <BarChart3 className="h-3.5 w-3.5" />}
                   {b.label}
-                  <span className={cn(
-                    'rounded-full px-1.5 py-0.5 text-[9px] font-black',
-                    isActive ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
-                  )}>
-                    {count}
-                  </span>
+                  {count !== null && (
+                    <span
+                      className={cn(
+                        'rounded-full px-1.5 py-0.5 text-[9px] font-black',
+                        isActive ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
                 </button>
               )
             })}
           </div>
 
-          {/* Table Container */}
+          {/* Container */}
           <div className="bg-white rounded-b-2xl border-x border-b border-slate-100 shadow-sm overflow-hidden min-h-[300px]">
-            {query.isLoading ? (
+            {activeTab === 'analytics' ? (
+              <FollowupsAnalyticsView dealer={dealer} />
+            ) : query.isLoading ? (
               <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>
             ) : query.isError ? (
               <div className="p-6 text-sm font-bold text-rose-700 bg-rose-50/50">{(query.error as Error)?.message || 'Failed to load.'}</div>
@@ -1156,32 +1256,62 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                                 <Calendar className="h-4 w-4" />
                               </Button>
 
+                              <Button
+                                onClick={() => setConcerningFollowup(f)}
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 rounded-lg text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                                title="Log Customer Concern"
+                              >
+                                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                              </Button>
+
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <button className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-                                    <X className="h-4 w-4 rotate-45" />
+                                  <button
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                                    title="Quick Actions"
+                                  >
+                                    <Plus className="h-4 w-4" />
                                   </button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="font-bold">
-                                  {!isDone && (
-                                    <>
-                                      <DropdownMenuItem onClick={() => setCompleting(f)} className="text-emerald-600 focus:text-emerald-700 cursor-pointer">
-                                        <Check className="mr-2 h-4 w-4" /> Complete follow-up
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        onClick={async () => {
-                                          try {
-                                            await patch(f.id, { action: 'cancel' }, 'Follow-up cancelled')
-                                          } catch (e) {
-                                            toast({ title: 'Failed', description: e instanceof Error ? e.message : '', variant: 'error' })
-                                          }
-                                        }}
-                                        className="text-rose-600 focus:text-rose-700 cursor-pointer"
-                                      >
-                                        <X className="mr-2 h-4 w-4" /> Cancel follow-up
-                                      </DropdownMenuItem>
-                                    </>
-                                  )}
+                                <DropdownMenuContent align="end" className="font-bold w-48 shadow-lg">
+                                  <DropdownMenuItem
+                                    onClick={() => handleQuickStatusAction(f, 'delivered')}
+                                    className="text-emerald-600 focus:text-emerald-700 cursor-pointer flex items-center gap-2"
+                                  >
+                                    <CheckCheck className="h-4 w-4 text-emerald-600" /> Delivered
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleQuickStatusAction(f, 'cancelled')}
+                                    className="text-rose-600 focus:text-rose-700 cursor-pointer flex items-center gap-2"
+                                  >
+                                    <X className="h-4 w-4 text-rose-600" /> Booking Cancelled
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleQuickStatusAction(f, 'fake_booking')}
+                                    className="text-amber-600 focus:text-amber-700 cursor-pointer flex items-center gap-2"
+                                  >
+                                    <AlertTriangle className="h-4 w-4 text-amber-600" /> Fake Booking
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleQuickStatusAction(f, 'pending')}
+                                    className="text-indigo-600 focus:text-indigo-700 cursor-pointer flex items-center gap-2"
+                                  >
+                                    <Timer className="h-4 w-4 text-indigo-600" /> Pending
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleQuickStatusAction(f, 'demo_vehicle')}
+                                    className="text-blue-600 focus:text-blue-700 cursor-pointer flex items-center gap-2"
+                                  >
+                                    <SlidersHorizontal className="h-4 w-4 text-blue-600" /> Demo Vehicle
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleQuickStatusAction(f, 'repeated_booking')}
+                                    className="text-violet-600 focus:text-violet-700 cursor-pointer flex items-center gap-2"
+                                  >
+                                    <Copy className="h-4 w-4 text-violet-600" /> Repeated Booking
+                                  </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </div>
@@ -1629,6 +1759,46 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
           setCalling(f)
         }}
       />
+
+      {/* Customer Concern Dialog */}
+      <Dialog open={!!concerningFollowup} onOpenChange={(open) => { if (!open) setConcerningFollowup(null) }}>
+        <DialogContent className="sm:max-w-md font-bold rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <AlertTriangle className="h-5 w-5 text-amber-500" /> Log Customer Concern
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Record a customer complaint, issue, or special concern for {concerningFollowup?.customerName} ({concerningFollowup?.bookingNumber || 'Booking'})
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Concern Details / Remark</label>
+              <textarea
+                rows={4}
+                value={concernText}
+                onChange={(e) => setConcernText(e.target.value)}
+                placeholder="Describe the exact concern raised by the customer (e.g. delay in delivery date, pricing discrepancy, accessory issue)..."
+                className="w-full rounded-xl border border-slate-200 p-3 text-xs focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setConcerningFollowup(null)} className="rounded-xl text-xs">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitConcern}
+              disabled={isSubmittingConcern || !concernText.trim()}
+              className="rounded-xl bg-amber-600 text-xs text-white hover:bg-amber-700 font-black gap-1.5 cursor-pointer"
+            >
+              {isSubmittingConcern ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5" />} Log Concern
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   )
 }
@@ -2261,5 +2431,239 @@ function AlarmAlertPopup({
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function FollowupsAnalyticsView({ dealer }: { dealer: string }) {
+  const [days, setDays] = useState<number>(30)
+
+  const query = useQuery({
+    queryKey: ['kia-followups-analytics', days, dealer],
+    queryFn: async () => {
+      const params = new URLSearchParams({ days: String(days) })
+      if (dealer && dealer !== 'all') params.set('dealer', dealer)
+      const res = await fetch(`/api/brands/kia/call-analytics?${params.toString()}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error('Failed to load analytics')
+      return res.json()
+    },
+  })
+
+  const data = query.data
+
+  if (query.isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+      </div>
+    )
+  }
+
+  if (query.isError || !data) {
+    return (
+      <div className="p-8 text-center text-rose-600 font-bold bg-rose-50/50 rounded-2xl border border-rose-100">
+        Failed to load follow-up analytics. Please try again.
+      </div>
+    )
+  }
+
+  const { followups, consultantLeaderboard, outcomes, sources } = data
+
+  return (
+    <div className="p-6 space-y-6 bg-slate-50/50 rounded-b-2xl">
+      {/* Top Header & Time Filter */}
+      <div className="flex items-center justify-between flex-wrap gap-4 border-b border-slate-200/80 pb-4">
+        <div>
+          <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-indigo-600" /> Follow-up Performance Analytics
+          </h3>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Real-time completion metrics, outcome breakdown, and staff conversion leaderboards
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Timeframe:</span>
+          {[7, 30, 90].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={cn(
+                'px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border',
+                days === d
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+              )}
+            >
+              Last {d} Days
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-4 border border-slate-200/80 bg-white rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-400">Completion Rate</span>
+            <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600">
+              <CheckCheck className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-3xl font-black text-slate-900 mt-2">{followups.completionRate}%</p>
+          <p className="text-xs text-emerald-600 font-bold mt-1">
+            {followups.completed} of {followups.created} completed
+          </p>
+        </Card>
+
+        <Card className="p-4 border border-slate-200/80 bg-white rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-400">Total Created</span>
+            <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600">
+              <CalendarClock className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-3xl font-black text-slate-900 mt-2">{followups.created}</p>
+          <p className="text-xs text-slate-500 font-medium mt-1">New touches initiated</p>
+        </Card>
+
+        <Card className="p-4 border border-slate-200/80 bg-white rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-400">Pending Open</span>
+            <div className="p-2 rounded-xl bg-amber-50 border border-amber-100 text-amber-600">
+              <Timer className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-3xl font-black text-slate-900 mt-2">{followups.pending}</p>
+          <p className="text-xs text-amber-600 font-bold mt-1">Awaiting staff action</p>
+        </Card>
+
+        <Card className="p-4 border border-slate-200/80 bg-white rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-400">Overdue</span>
+            <div className="p-2 rounded-xl bg-rose-50 border border-rose-100 text-rose-600">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-3xl font-black text-slate-900 mt-2">{followups.overdue}</p>
+          <p className="text-xs text-rose-600 font-bold mt-1">Past scheduled due time</p>
+        </Card>
+      </div>
+
+      {/* Outcome Breakdown & Sources */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Outcome Breakdown */}
+        <Card className="p-5 border border-slate-200/80 bg-white rounded-2xl shadow-xs space-y-4">
+          <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4 text-indigo-600" /> Follow-up Outcome Breakdown
+          </h4>
+          <div className="space-y-3">
+            {outcomes && outcomes.length > 0 ? (
+              outcomes.map((item: { key: string; count: number }) => {
+                const total = followups.completed || 1
+                const percent = Math.round((item.count / total) * 100)
+                return (
+                  <div key={item.key} className="space-y-1">
+                    <div className="flex justify-between text-xs font-bold text-slate-700">
+                      <span className="capitalize">{item.key.replace(/_/g, ' ')}</span>
+                      <span>{item.count} ({percent}%)</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={cn(
+                          'h-full rounded-full transition-all duration-500',
+                          item.key === 'converted' ? 'bg-emerald-500' : item.key === 'no_answer' ? 'bg-rose-500' : 'bg-indigo-500'
+                        )}
+                        style={{ width: `${Math.min(100, percent)}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })
+            ) : (
+              <p className="text-xs text-slate-400 font-bold">No outcome data available for this range.</p>
+            )}
+          </div>
+        </Card>
+
+        {/* Source Breakdown */}
+        <Card className="p-5 border border-slate-200/80 bg-white rounded-2xl shadow-xs space-y-4">
+          <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-indigo-600" /> Follow-up Source Channel
+          </h4>
+          <div className="space-y-3">
+            {sources && sources.length > 0 ? (
+              sources.map((item: { key: string; count: number }) => {
+                const total = followups.created || 1
+                const percent = Math.round((item.count / total) * 100)
+                return (
+                  <div key={item.key} className="space-y-1">
+                    <div className="flex justify-between text-xs font-bold text-slate-700">
+                      <span className="capitalize">{item.key.replace(/_/g, ' ')}</span>
+                      <span>{item.count} ({percent}%)</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-teal-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, percent)}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })
+            ) : (
+              <p className="text-xs text-slate-400 font-bold">No source data available for this range.</p>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* Staff Leaderboard */}
+      <Card className="p-5 border border-slate-200/80 bg-white rounded-2xl shadow-xs space-y-4">
+        <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
+          <User className="h-4 w-4 text-indigo-600" /> Staff Follow-up Performance Leaderboard
+        </h4>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                <th className="p-3">Staff / Consultant</th>
+                <th className="p-3">Assigned</th>
+                <th className="p-3">Completed</th>
+                <th className="p-3">Overdue</th>
+                <th className="p-3">Conversions 🎉</th>
+                <th className="p-3 text-right">Completion Rate</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs font-bold">
+              {consultantLeaderboard && consultantLeaderboard.length > 0 ? (
+                consultantLeaderboard.map((row: any) => {
+                  const rate = row.assigned > 0 ? Math.round((row.completed / row.assigned) * 100) : 0
+                  return (
+                    <tr key={row.consultant} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="p-3 text-slate-900 font-black">{row.consultant}</td>
+                      <td className="p-3 text-slate-600">{row.assigned}</td>
+                      <td className="p-3 text-emerald-600">{row.completed}</td>
+                      <td className="p-3 text-rose-600">{row.overdue}</td>
+                      <td className="p-3 text-indigo-600 font-black">{row.converted}</td>
+                      <td className="p-3 text-right">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {rate}%
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })
+              ) : (
+                <tr>
+                  <td colSpan={6} className="p-6 text-center text-slate-400">
+                    No leaderboard data recorded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
   )
 }

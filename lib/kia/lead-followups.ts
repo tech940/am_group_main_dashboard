@@ -103,7 +103,7 @@ function istDayBoundaries(base = new Date()) {
  * - `pending` — every other open follow-up, overdue first. The `overdue` flag on each row drives the
  *   red indicator.
  */
-export type FollowupBucket = 'not_connected' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled'
+export type FollowupBucket = 'not_connected' | 'customer_concerns' | 'pending' | 'next_day' | 'scheduled' | 'cancelled' | 'rescheduled'
 
 export type FollowupRow = {
   id: string
@@ -223,6 +223,7 @@ export async function listFollowups(appUser: AppUser, input: {
   mine?: boolean; 
   search?: string | null; 
   reason?: string | null; 
+  rescheduleReason?: string | null;
   dealer?: string | null;
   allowedDealers?: string[] | null;
   startDate?: string | null;
@@ -255,6 +256,15 @@ export async function listFollowups(appUser: AppUser, input: {
     where.push(eq(kiaLeadFollowups.reason, input.reason))
   }
 
+  if (input.rescheduleReason && input.rescheduleReason !== 'all') {
+    const rVal = input.rescheduleReason.trim()
+    where.push(or(
+      eq(kiaLeadFollowups.reason, rVal),
+      eq(kiaLeadFollowups.outcome, rVal),
+      ilike(kiaLeadFollowups.notes, `%${rVal}%`),
+    )!)
+  }
+
   if (input.priority && input.priority !== 'all' && PRIORITIES.has(input.priority)) {
     where.push(eq(kiaLeadFollowups.priority, input.priority))
   }
@@ -269,14 +279,15 @@ export async function listFollowups(appUser: AppUser, input: {
 
   const allowedDealers = input.allowedDealers !== undefined ? input.allowedDealers : getUserDealerScope(appUser, 'kia')
   if (allowedDealers && allowedDealers.length) {
-    where.push(inArray(kiaLeadFollowups.dealerCode, allowedDealers))
+    where.push(or(inArray(kiaLeadFollowups.dealerCode, allowedDealers), inArray(kiaBookings.dealerCode, allowedDealers))!)
   } else if (input.dealer && input.dealer !== 'all') {
-    where.push(eq(kiaLeadFollowups.dealerCode, input.dealer))
+    where.push(or(eq(kiaLeadFollowups.dealerCode, input.dealer), eq(kiaBookings.dealerCode, input.dealer))!)
   }
 
   if (search) {
     where.push(or(
       ilike(kiaBookings.customerName, `%${search}%`),
+      ilike(kiaBookings.customerPhone, `%${search}%`),
       ilike(kiaBookings.model, `%${search}%`),
       ilike(kiaBookings.bookingNumber, `%${search}%`),
       ilike(kiaBookings.consultantName, `%${search}%`),
@@ -299,6 +310,14 @@ export async function listFollowups(appUser: AppUser, input: {
   if (input.reason && input.reason !== 'all' && REASONS.has(input.reason)) {
     cancelledWhere.push(eq(kiaLeadFollowups.reason, input.reason))
   }
+  if (input.rescheduleReason && input.rescheduleReason !== 'all') {
+    const rVal = input.rescheduleReason.trim()
+    cancelledWhere.push(or(
+      eq(kiaLeadFollowups.reason, rVal),
+      eq(kiaLeadFollowups.outcome, rVal),
+      ilike(kiaLeadFollowups.notes, `%${rVal}%`),
+    )!)
+  }
   if (input.priority && input.priority !== 'all' && PRIORITIES.has(input.priority)) {
     cancelledWhere.push(eq(kiaLeadFollowups.priority, input.priority))
   }
@@ -306,13 +325,14 @@ export async function listFollowups(appUser: AppUser, input: {
     cancelledWhere.push(ilike(kiaBookings.model, `%${input.model}%`))
   }
   if (allowedDealers && allowedDealers.length) {
-    cancelledWhere.push(inArray(kiaLeadFollowups.dealerCode, allowedDealers))
+    cancelledWhere.push(or(inArray(kiaLeadFollowups.dealerCode, allowedDealers), inArray(kiaBookings.dealerCode, allowedDealers))!)
   } else if (input.dealer && input.dealer !== 'all') {
-    cancelledWhere.push(eq(kiaLeadFollowups.dealerCode, input.dealer))
+    cancelledWhere.push(or(eq(kiaLeadFollowups.dealerCode, input.dealer), eq(kiaBookings.dealerCode, input.dealer))!)
   }
   if (search) {
     cancelledWhere.push(or(
       ilike(kiaBookings.customerName, `%${search}%`),
+      ilike(kiaBookings.customerPhone, `%${search}%`),
       ilike(kiaBookings.model, `%${search}%`),
       ilike(kiaBookings.bookingNumber, `%${search}%`),
       ilike(kiaBookings.consultantName, `%${search}%`),
@@ -343,7 +363,7 @@ export async function listFollowups(appUser: AppUser, input: {
     cancelledWhere.push(lte(dateColumn, end))
   }
 
-  const [pending, nextDay, scheduled, notConnected, cancelled, rescheduled, noAnswerRetry] = await Promise.all([
+  const [pending, nextDay, scheduled, notConnected, cancelled, rescheduled, noAnswerRetry, customerConcerns] = await Promise.all([
     // Open follow-ups due today and overdue, excluding explicitly rescheduled ones.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
@@ -382,30 +402,23 @@ export async function listFollowups(appUser: AppUser, input: {
       ))
       .orderBy(kiaLeadFollowups.dueAt)
       .limit(300),
-    // Not Connected: two cases —
-    //   A) latest completed follow-up had outcome='no_answer' and nothing is pending (classic not-connected)
-    //   B) a pending rescheduled retry exists BECAUSE the last completed attempt was 'no_answer'
-    //      (the CRE re-scheduled a retry-after-no-answer — it should show here, not in the Rescheduled queue)
+    // Not Connected: matches any follow-up where outcome/reason = 'no_answer' OR notes contain 'no answer' / 'not answer' / 'not reachable' / 'did not answer'
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
       .where(and(
         ...where,
-        eq(kiaLeadFollowups.status, 'done'),
-        eq(kiaLeadFollowups.outcome, 'no_answer'),
-        sql`NOT EXISTS (
-          SELECT 1 FROM kia_lead_followups nxt
-          WHERE nxt.booking_id = kia_lead_followups.booking_id
-            AND nxt.status = 'pending'
-        )`,
-        // Only if this IS the latest completed attempt for the booking.
-        sql`kia_lead_followups.completed_at = (
-          SELECT max(latest.completed_at) FROM kia_lead_followups latest
-          WHERE latest.booking_id = kia_lead_followups.booking_id AND latest.status = 'done'
-        )`,
+        or(
+          eq(kiaLeadFollowups.outcome, 'no_answer'),
+          eq(kiaLeadFollowups.reason, 'no_answer'),
+          ilike(kiaLeadFollowups.notes, '%no answer%'),
+          ilike(kiaLeadFollowups.notes, '%not answer%'),
+          ilike(kiaLeadFollowups.notes, '%not reachable%'),
+          ilike(kiaLeadFollowups.notes, '%did not answer%'),
+        ),
       ))
-      .orderBy(desc(kiaLeadFollowups.completedAt))
-      .limit(300),
+      .orderBy(desc(kiaLeadFollowups.completedAt), desc(kiaLeadFollowups.createdAt))
+      .limit(500),
     // Cancelled: follow-ups for bookings that are cancelled
     db.select(displaySelection)
       .from(kiaLeadFollowups)
@@ -416,7 +429,6 @@ export async function listFollowups(appUser: AppUser, input: {
       .orderBy(desc(kiaLeadFollowups.dueAt))
       .limit(300),
     // Dedicated bucket for rescheduled followups — EXCLUDING retries-after-no_answer
-    // (those belong in the Not Connected queue so agents know the customer hasn't been reached).
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
@@ -424,7 +436,6 @@ export async function listFollowups(appUser: AppUser, input: {
         ...where,
         eq(kiaLeadFollowups.status, 'pending'),
         eq(kiaLeadFollowups.source, 'rescheduled'),
-        // Exclude those where the booking's last completed attempt was a no_answer
         sql`NOT EXISTS (
           SELECT 1 FROM kia_lead_followups last_done
           WHERE last_done.booking_id = kia_lead_followups.booking_id
@@ -438,8 +449,7 @@ export async function listFollowups(appUser: AppUser, input: {
       ))
       .orderBy(kiaLeadFollowups.dueAt)
       .limit(500),
-    // Retry-after-no-answer: pending rescheduled rows where the booking's latest completed attempt
-    // was 'no_answer'. Returned separately so we can merge into not_connected below.
+    // Retry-after-no-answer: pending rescheduled rows where the booking's latest completed attempt was 'no_answer'.
     db.select(displaySelection)
       .from(kiaLeadFollowups)
       .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
@@ -460,13 +470,27 @@ export async function listFollowups(appUser: AppUser, input: {
       ))
       .orderBy(kiaLeadFollowups.dueAt)
       .limit(300),
+    // Customer Concerns: follow-ups with reason/outcome = 'customer_concern' OR notes ILIKE '%concern%'
+    db.select(displaySelection)
+      .from(kiaLeadFollowups)
+      .innerJoin(kiaBookings, eq(kiaBookings.id, kiaLeadFollowups.bookingId))
+      .where(and(
+        ...where,
+        or(
+          eq(kiaLeadFollowups.reason, 'customer_concern'),
+          eq(kiaLeadFollowups.outcome, 'customer_concern'),
+          ilike(kiaLeadFollowups.notes, '%[CUSTOMER CONCERN]%'),
+        ),
+      ))
+      .orderBy(desc(kiaLeadFollowups.updatedAt), desc(kiaLeadFollowups.createdAt))
+      .limit(500),
   ])
 
   // Decided ONCE, here, from the viewer's role — then every row goes through toRow with it.
   const canSeePhone = canRevealKiaFollowupPhone(appUser.role)
   const rows = [
+    ...customerConcerns.map((r) => toRow(r as Record<string, unknown>, now, 'customer_concerns', canSeePhone)),
     ...notConnected.map((r) => toRow(r as Record<string, unknown>, now, 'not_connected', canSeePhone)),
-    // Retry-after-no-answer: pending rescheduled rows that should display in the Not Connected bucket
     ...noAnswerRetry.map((r) => toRow(r as Record<string, unknown>, now, 'not_connected', canSeePhone)),
     ...pending.map((r) => toRow(r as Record<string, unknown>, now, 'pending', canSeePhone)),
     ...nextDay.map((r) => toRow(r as Record<string, unknown>, now, 'next_day', canSeePhone)),
@@ -475,6 +499,7 @@ export async function listFollowups(appUser: AppUser, input: {
     ...rescheduled.map((r) => toRow(r as Record<string, unknown>, now, 'rescheduled', canSeePhone)),
   ]
   const counts = {
+    customer_concerns: customerConcerns.length,
     not_connected: notConnected.length + noAnswerRetry.length,
     pending: pending.length,
     next_day: nextDay.length,

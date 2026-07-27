@@ -19,6 +19,7 @@ export async function GET(request: Request) {
       mine: url.searchParams.get('mine') === '1',
       search: url.searchParams.get('search'),
       reason: url.searchParams.get('reason'),
+      rescheduleReason: url.searchParams.get('rescheduleReason'),
       dealer: url.searchParams.get('dealer'),
       startDate: url.searchParams.get('startDate'),
       endDate: url.searchParams.get('endDate'),
