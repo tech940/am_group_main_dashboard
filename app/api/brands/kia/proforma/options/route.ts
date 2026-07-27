@@ -43,6 +43,7 @@ async function loadKiaOptionsData() {
 
     const extraDefaultBanks = [
       { bank_name: 'PNB BANK', bank_branch: 'PNB - Shastri Nagar' },
+      { bank_name: 'JK GRAMEEN', bank_branch: 'JK Grameen Bank Jagti' },
     ]
 
     const banks = [

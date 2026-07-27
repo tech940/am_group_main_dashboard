@@ -3165,7 +3165,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     <Badge className="bg-blue-50 hover:bg-blue-50 border border-blue-100 text-blue-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider rounded-full">{detailRow.approvalType}</Badge>
                   </div>
                   
-                  <div className="flex flex-col sm:flex-row justify-between sm:items-end gap-4 mt-1 pr-10">
+                  <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4 mt-1 pr-10">
                     <div>
                       <DialogTitle className="text-xl sm:text-2xl font-black tracking-tight text-slate-950">
                         Vendor Payment Request Details
@@ -3174,9 +3174,36 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         Payment request identification and approval timeline tracking.
                       </DialogDescription>
                     </div>
-                    <div className="text-left sm:text-right">
-                      <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">Request Amount</span>
-                      <span className="text-xl sm:text-2xl font-black text-slate-900 font-sans tracking-tight">₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}</span>
+
+                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                      <div className="text-left sm:text-right mr-1 sm:mr-3">
+                        <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">Request Amount</span>
+                        <span className="text-xl sm:text-2xl font-black text-slate-900 font-sans tracking-tight">₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}</span>
+                      </div>
+
+                      {/* Top Action Buttons: Show Remarks & Export Voucher */}
+                      <Button
+                        onClick={() => setShowTimeline(!showTimeline)}
+                        className={cn(
+                          "h-9 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 px-3.5 cursor-pointer transition-all border",
+                          showTimeline
+                            ? "bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200"
+                            : "bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-xs"
+                        )}
+                        variant="outline"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>{showTimeline ? 'Hide Remarks' : `Show Remarks (${remarksCount})`}</span>
+                      </Button>
+                      
+                      <Button
+                        onClick={() => handlePrintVoucher(detailRow, pendingLabel)}
+                        className="h-9 rounded-xl text-xs font-black border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 px-3.5 cursor-pointer"
+                        variant="outline"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Export</span>
+                      </Button>
                     </div>
                   </div>
                 </DialogHeader>
@@ -3280,13 +3307,13 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         {renderOverviewItem('GL Account', detailRow.glName ? `${detailRow.glName} (${detailRow.glCode})` : '—', Database)}
                         {renderOverviewItem('GST Details', detailRow.gst || '—', Percent)}
                         {renderOverviewItem('Reference / Invoice No.', detailRow.invoiceNumber || '—', FileText)}
-                        {detailRow.uploadBillUrl1 && renderOverviewItem('Primary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl1!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Bill 1</button>, FileText)}
-                        {detailRow.uploadBillUrl2 && renderOverviewItem('Secondary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl2!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Bill 2</button>, FileText)}
-                        {detailRow.uploadDocUrl && renderOverviewItem('Support Document', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadDocUrl!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Support Doc</button>, FileText)}
-                        {detailRow.invoiceDocUrl && renderOverviewItem('Uploaded Invoice', <button type="button" onClick={() => setPreviewDocUrl(detailRow.invoiceDocUrl!)} className="text-emerald-700 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-emerald-600" />View Invoice</button>, FileText)}
+                        {detailRow.uploadBillUrl1 && renderOverviewItem('Primary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl1!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Bill 1</span></button>, FileText)}
+                        {detailRow.uploadBillUrl2 && renderOverviewItem('Secondary Bill', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadBillUrl2!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Bill 2</span></button>, FileText)}
+                        {detailRow.uploadDocUrl && renderOverviewItem('Support Document', <button type="button" onClick={() => setPreviewDocUrl(detailRow.uploadDocUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Support Doc</span></button>, FileText)}
+                        {detailRow.invoiceDocUrl && renderOverviewItem('Uploaded Invoice', <button type="button" onClick={() => setPreviewDocUrl(detailRow.invoiceDocUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-sm hover:shadow-emerald-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Invoice</span></button>, FileText)}
                         {detailRow.paymentStatus === 'PAID' && renderOverviewItem('Payment Status', <span className="text-emerald-700 font-black">PAID / भुगतान किया</span>, CheckCircle2)}
                         {detailRow.paymentStatus === 'PAID' && renderOverviewItem('UTR / Txn ID', detailRow.utrNumber || '—', Key)}
-                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentProofUrl && renderOverviewItem('Payment Proof', <button type="button" onClick={() => setPreviewDocUrl(detailRow.paymentProofUrl!)} className="text-slate-900 font-bold hover:underline text-left cursor-pointer flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-700" />View Proof</button>, FileText)}
+                        {detailRow.paymentStatus === 'PAID' && detailRow.paymentProofUrl && renderOverviewItem('Payment Proof', <button type="button" onClick={() => setPreviewDocUrl(detailRow.paymentProofUrl!)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-sm hover:shadow-indigo-200/50 transition-all cursor-pointer"><Eye className="w-3.5 h-3.5" /><span>View Proof</span></button>, FileText)}
                         {detailRow.paymentStatus === 'PAID' && detailRow.paymentCompletedAt && renderOverviewItem('Paid On / By', `${new Date(detailRow.paymentCompletedAt).toLocaleDateString('en-IN')} by ${detailRow.paymentCompletedBy || '—'}`, User)}
                         {renderOverviewItem('Remarks (Submitter)', detailRow.remarks || '—', MessageSquare, 'col-span-1 sm:col-span-2 md:col-span-4 bg-amber-50/40 border-amber-100/80')}
                       </div>
@@ -3376,95 +3403,7 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                       )
                     })()}
 
-                    {/* Actions Available For You Card */}
-                    {isUserEligibleForPendingStage && !isApproved && !isRejected && (
-                      <div className="bg-white border border-slate-100 rounded-3xl p-6 space-y-4 shadow-sm animate-in fade-in duration-200">
-                        <div className="flex items-center gap-2 text-slate-800">
-                          <ShieldCheck className="w-4 h-4 text-slate-700" />
-                          <span className="text-xs font-black uppercase tracking-wider">Actions Available For You</span>
-                        </div>
 
-                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex gap-3 items-center">
-                          <Info className="w-4 h-4 text-slate-700 shrink-0" />
-                          <p className="text-xs font-semibold text-slate-800">
-                            You are currently in the <span className="font-bold">{pendingLabel.replace('Pending ', '')}</span> stage. Please review the request details and take appropriate action.
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-3">
-                          <button
-                            type="button"
-                            disabled={actionMutation.isPending}
-                            onClick={() => {
-                              if (pendingStageKey === 'accounts' || pendingStageKey === 'payment_done') {
-                                setActionStage(pendingStageKey)
-                                setActionDecision('APPROVE')
-                              } else {
-                                actionMutation.mutate({
-                                  id: detailRow.id,
-                                  action: 'APPROVE',
-                                  stage: pendingStageKey!,
-                                  remarks: remarkText || ''
-                                })
-                              }
-                            }}
-                            className="text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
-                            style={{ backgroundColor: '#059669', color: '#ffffff' }}
-                          >
-                            {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <>
-                                <Check className="w-4 h-4" />
-                                <span>{pendingStageKey === 'payment_done' ? 'Record Payment' : 'Approve & Forward'}</span>
-                              </>
-                            )}
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={actionMutation.isPending}
-                            onClick={() => {
-                              setActionStage(pendingStageKey!)
-                              setActionDecision('SEND_BACK')
-                            }}
-                            className="text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
-                            style={{ backgroundColor: '#d97706', color: '#ffffff' }}
-                          >
-                            <CornerUpLeft className="w-4 h-4" />
-                            <span>Send Back</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={actionMutation.isPending}
-                            onClick={() => {
-                              setActionStage(pendingStageKey!)
-                              setActionDecision('REJECT')
-                            }}
-                            className="text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
-                            style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
-                          >
-                            <X className="w-4 h-4" />
-                            <span>Reject Request</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={actionMutation.isPending}
-                            onClick={() => {
-                              setActionStage(pendingStageKey!)
-                              setActionDecision('HOLD')
-                            }}
-                            className="text-white text-xs font-black rounded-2xl h-12 px-6 flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
-                            style={{ backgroundColor: '#475569', color: '#ffffff' }}
-                          >
-                            <Clock className="w-4 h-4" />
-                            <span>Hold Request</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   {/* Right Column - Activity Panel */}
@@ -3597,36 +3536,85 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                     <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span>Created by {detailRow.name} on {new Date(detailRow.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto justify-end">
-                    <Button
-                      onClick={() => setShowTimeline(!showTimeline)}
-                      className={cn(
-                        "h-10 rounded-2xl text-xs font-black flex items-center justify-center gap-1.5 px-5 cursor-pointer transition-all w-full sm:w-auto",
-                        showTimeline
-                          ? "bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200"
-                          : "bg-indigo-50 border border-indigo-100 text-indigo-700 hover:bg-indigo-100"
-                      )}
-                      variant="outline"
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                      <span>{showTimeline ? 'Hide Remarks' : `Show Remarks (${remarksCount})`}</span>
-                    </Button>
-                    <Button
-                      onClick={() => handlePrintVoucher(detailRow, pendingLabel)}
-                      className="h-10 rounded-2xl text-xs font-black border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 px-5 cursor-pointer w-full sm:w-auto"
-                      variant="outline"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Export Voucher</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setDetailRow(null)}
-                      className="h-10 rounded-2xl text-xs font-black border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 px-5 cursor-pointer w-full sm:w-auto"
-                    >
-                      <X className="w-4 h-4" />
-                      <span>Close</span>
-                    </Button>
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                    {isUserEligibleForPendingStage && !isApproved && !isRejected ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={actionMutation.isPending}
+                          onClick={() => {
+                            if (pendingStageKey === 'accounts' || pendingStageKey === 'payment_done') {
+                              setActionStage(pendingStageKey)
+                              setActionDecision('APPROVE')
+                            } else {
+                              actionMutation.mutate({
+                                id: detailRow.id,
+                                action: 'APPROVE',
+                                stage: pendingStageKey!,
+                                remarks: remarkText || ''
+                              })
+                            }
+                          }}
+                          className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+                          style={{ backgroundColor: '#059669', color: '#ffffff' }}
+                        >
+                          {actionMutation.isPending && actionMutation.variables?.action === 'APPROVE' ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4" />
+                              <span>{pendingStageKey === 'payment_done' ? 'Record Payment' : 'Approve & Forward'}</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={actionMutation.isPending}
+                          onClick={() => {
+                            setActionStage(pendingStageKey!)
+                            setActionDecision('SEND_BACK')
+                          }}
+                          className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                          style={{ backgroundColor: '#d97706', color: '#ffffff' }}
+                        >
+                          <CornerUpLeft className="w-4 h-4" />
+                          <span>Send Back</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={actionMutation.isPending}
+                          onClick={() => {
+                            setActionStage(pendingStageKey!)
+                            setActionDecision('REJECT')
+                          }}
+                          className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                          style={{ backgroundColor: '#e11d48', color: '#ffffff' }}
+                        >
+                          <X className="w-4 h-4" />
+                          <span>Reject Request</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={actionMutation.isPending}
+                          onClick={() => {
+                            setActionStage(pendingStageKey!)
+                            setActionDecision('HOLD')
+                          }}
+                          className="text-white text-xs font-black rounded-xl h-10 px-5 flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none border-none"
+                          style={{ backgroundColor: '#475569', color: '#ffffff' }}
+                        >
+                          <Clock className="w-4 h-4" />
+                          <span>Hold Request</span>
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-xs font-extrabold text-slate-500 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200">
+                        Status: {pendingLabel}
+                      </span>
+                    )}
                   </div>
                 </div>
               </>

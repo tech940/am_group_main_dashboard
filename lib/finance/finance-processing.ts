@@ -43,9 +43,18 @@ export async function loadFinanceBankOptions(): Promise<{ banks: FinanceBankRow[
   return getCachedData('finance:bank-options', async () => {
     const priceRows = await db.select({ bankName: kiaPriceDetails.bankName, hyp: kiaPriceDetails.hyp, bankBranch: kiaPriceDetails.bankBranch })
       .from(kiaPriceDetails)
-    const banks: FinanceBankRow[] = priceRows
-      .map((r) => ({ bank_name: text(r.bankName) || text(r.hyp), bank_branch: text(r.bankBranch) }))
-      .filter((r) => r.bank_name && r.bank_branch)
+
+    // Extra branches that are not yet in the Excel price sheet but should appear in the dropdown
+    const extraBanks: FinanceBankRow[] = [
+      { bank_name: 'JK GRAMEEN', bank_branch: 'JK Grameen Bank Jagti' },
+    ]
+
+    const banks: FinanceBankRow[] = [
+      ...priceRows
+        .map((r) => ({ bank_name: text(r.bankName) || text(r.hyp), bank_branch: text(r.bankBranch) }))
+        .filter((r) => r.bank_name && r.bank_branch),
+      ...extraBanks,
+    ]
       .filter((r, i, s) => s.findIndex((c) => c.bank_name === r.bank_name && c.bank_branch === r.bank_branch) === i)
       .sort((a, b) => a.bank_name.localeCompare(b.bank_name) || a.bank_branch.localeCompare(b.bank_branch))
     return { banks }

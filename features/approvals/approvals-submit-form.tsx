@@ -22,6 +22,7 @@ import {
   Hash
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { validateEmailDomain } from '@/lib/email-validator'
 
 // Category/Approval Type to GL Code mapping
 const APPROVAL_TYPE_TO_GL_CODE: Record<string, string> = {
@@ -491,8 +492,11 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
     e.preventDefault()
     setErrorMsg('')
 
-    // Basic Validation
-    if (!form.email.trim()) return setErrorMsg('Email Address is required.')
+    // Email Validation & Typo Domain Check
+    const emailCheck = validateEmailDomain(form.email)
+    if (!emailCheck.valid) {
+      return setErrorMsg(emailCheck.error || 'Please enter a valid email address.')
+    }
     if (!form.name.trim()) return setErrorMsg('Name is required.')
     if (!form.location) return setErrorMsg('Location is required.')
     if (!form.dealerCode) return setErrorMsg('Dealer Code is required.')
@@ -675,12 +679,23 @@ export function ApprovalsSubmitForm({ brand }: { brand: string }) {
                     name="email"
                     autoComplete="email"
                     required
-                    placeholder="Enter your email address"
+                    placeholder="Enter your email address (e.g. name@gmail.com)"
                     value={form.email}
                     onChange={e => handleTextChange('email', e.target.value)}
                     className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 bg-slate-50/50 text-sm font-semibold text-slate-800"
                   />
                 </div>
+                {(() => {
+                  if (!form.email.trim()) return null
+                  const check = validateEmailDomain(form.email)
+                  if (check.valid) return null
+                  return (
+                    <p className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl flex items-center gap-1.5 mt-1.5 animate-in fade-in duration-200">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>{check.error}</span>
+                    </p>
+                  )
+                })()}
               </div>
             </div>
           </div>

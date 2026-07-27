@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { kiaApprovalRequests, approvalsCommonData } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
+import { validateEmailDomain } from '@/lib/email-validator'
 
 export async function POST(
   request: NextRequest,
@@ -34,6 +35,11 @@ export async function POST(
       glAccountId,
       gst,
     } = body
+
+    const emailCheck = validateEmailDomain(email)
+    if (!emailCheck.valid) {
+      return NextResponse.json({ error: emailCheck.error }, { status: 400 })
+    }
 
     if (!email || !email.trim()) {
       return NextResponse.json({ error: 'Email Address is required' }, { status: 400 })

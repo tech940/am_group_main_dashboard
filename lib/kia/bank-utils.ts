@@ -10,6 +10,8 @@ const BANK_NAME_MAP: Record<string, string> = {
   // Grameen variations
   'jk grameen bank': 'JK GRAMEEN',
   'jk grameen': 'JK GRAMEEN',
+  'jk grameen bank jagti': 'JK GRAMEEN',
+  'grameen bank jagti': 'JK GRAMEEN',
 
   // SBI variations
   'sbi': 'SBI',
