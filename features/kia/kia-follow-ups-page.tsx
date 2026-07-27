@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarClock,
@@ -564,22 +564,38 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
 
   const totalPages = Math.ceil(filteredRows.length / pageSize)
 
-  // Prefetch booking details for all visible rows so sidebar opens instantly
+  // Warm the detail cache ONLY for the row the user is about to open — hover-intent + pointerdown,
+  // never every visible row. The previous "prefetch all rows so the sidebar opens instantly" effect
+  // re-fired on every paginatedRows identity change (each keystroke, tab, filter, page, refetch) and
+  // put /api/brands/kia/bookings/[id] at ~950 invocations against 45 list loads in a couple of
+  // hours; its ~20 parallel detail fetches per burst (×3 pooled statements each) also drove the
+  // 4-5% error spikes (pooler saturation). Same fix as the bookings table's hover storm.
   const queryClient = useQueryClient()
-  useEffect(() => {
-    if (!paginatedRows.length) return
-    for (const row of paginatedRows) {
-      void queryClient.prefetchQuery({
-        queryKey: ['kia-booking-detail', row.bookingId],
-        queryFn: async () => {
-          const res = await fetch(`/api/brands/kia/bookings/${row.bookingId}`, { cache: 'no-store' })
-          if (!res.ok) return null
-          return res.json()
-        },
-        staleTime: 2 * 60 * 1000, // treat as fresh for 2 minutes
-      })
-    }
-  }, [paginatedRows, queryClient])
+  const prefetchBookingDetail = useCallback((bookingId: string | null | undefined) => {
+    if (!bookingId) return
+    void queryClient.prefetchQuery({
+      queryKey: ['kia-booking-detail', bookingId],
+      queryFn: async () => {
+        const res = await fetch(`/api/brands/kia/bookings/${bookingId}`, { cache: 'no-store' })
+        // Throw on failure: prefetchQuery swallows the error, and we must NOT cache null — the old
+        // version did, which left the sidebar rendering an empty payload until staleness.
+        if (!res.ok) throw new Error('Failed to load detail')
+        return res.json()
+      },
+      staleTime: 60_000,
+    })
+  }, [queryClient])
+  // One shared hover-intent timer for the whole table: entering a row arms it, leaving cancels it,
+  // so sweeping the pointer down the list fires nothing. Pointerdown warms immediately on a real
+  // click (it precedes click by ~100ms), so the sidebar still opens on a warm/in-flight cache.
+  const hoverIntentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleRowPrefetch = useCallback((bookingId: string | null | undefined) => {
+    if (hoverIntentTimer.current) clearTimeout(hoverIntentTimer.current)
+    hoverIntentTimer.current = setTimeout(() => prefetchBookingDetail(bookingId), 220)
+  }, [prefetchBookingDetail])
+  const cancelRowPrefetch = useCallback(() => {
+    if (hoverIntentTimer.current) clearTimeout(hoverIntentTimer.current)
+  }, [])
 
   // Reset page when tab/filters change
   useEffect(() => {
@@ -1156,6 +1172,9 @@ export function KiaFollowUpsPage({ currentUserRole }: { currentUserRole: string 
                       return (
                         <tr
                           key={f.id}
+                          onMouseEnter={() => scheduleRowPrefetch(f.bookingId)}
+                          onMouseLeave={cancelRowPrefetch}
+                          onPointerDown={() => prefetchBookingDetail(f.bookingId)}
                           onClick={() => {
                             setSelectedBookingId(f.bookingId)
                           }}
