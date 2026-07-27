@@ -7,6 +7,8 @@ import { sql } from 'drizzle-orm'
 
 const DISTRIBUTION_START_DATE = '2026-07-01'
 
+export const dynamic = 'force-dynamic'
+
 function mapDbRowToTransaction(row: any): ScrapTransaction {
   const soldDate = row.sold_date ? String(row.sold_date).slice(0, 10) : ''
   const timestamp = row.timestamp ? new Date(row.timestamp).toISOString() : new Date().toISOString()
@@ -60,10 +62,25 @@ function mapDbRowToTransaction(row: any): ScrapTransaction {
   }
 }
 
+import fs from 'fs'
+
+function logToFile(msg: string) {
+  try {
+    fs.appendFileSync('c:\\Users\\sahil\\Downloads\\am_group_main_dashboard\\scrap-api-log.txt', `[${new Date().toISOString()}] ${msg}\n`)
+  } catch (e) {}
+}
+
 export async function GET(request: Request) {
+  logToFile('GET /api/scrap-erp called')
+  logToFile(`ENV DATABASE_URL: ${process.env.DATABASE_URL}`)
   const appUser = await getAuthenticatedAppUser()
-  if (!appUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!appUser) {
+    logToFile('GET /api/scrap-erp: Unauthorized')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  logToFile(`GET /api/scrap-erp: User authenticated. Email: ${appUser.email}, Role: ${appUser.role}`)
   if (!canAccessScrapErp(appUser.role)) {
+    logToFile(`GET /api/scrap-erp: Forbidden. Role ${appUser.role} does not have access`)
     return NextResponse.json({ error: 'You do not have access to Scrap ERP.' }, { status: 403 })
   }
   try {
@@ -105,12 +122,14 @@ export async function GET(request: Request) {
       transactions = transactions.filter((tx) => tx.scrapTypeId === scrapType || tx.scrapTypeName === scrapType)
     }
 
+    logToFile(`GET /api/scrap-erp success. Total mapped: ${transactions.length}`)
     return NextResponse.json({
       success: true,
       transactions,
       totalCount: transactions.length,
     })
-  } catch (error) {
+  } catch (error: any) {
+    logToFile(`GET /api/scrap-erp exception: ${String(error.message || error)}`)
     console.error('Error in GET /api/scrap-erp:', error)
     return NextResponse.json({ error: 'Failed to fetch scrap transactions' }, { status: 500 })
   }

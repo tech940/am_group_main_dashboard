@@ -240,7 +240,7 @@ export function ScrapEntryFormView({
               soldDate: parsed.soldDate || new Date().toISOString().split('T')[0],
               paymentModeId: parsed.selectedPaymentModeId || paymentModes[0]?.id || 'pm-1',
               handoverUserId: parsed.selectedHandoverUserId || handoverUsers[0]?.id || 'ho-1',
-              remarks: parsed.remarks || 'Draft entry by SHIKHA',
+              remarks: parsed.remarks || 'Draft entry',
             }
             if (!allDrafts.some((d) => d.id === legacyItem.id)) {
               allDrafts.push(legacyItem)
@@ -249,35 +249,16 @@ export function ScrapEntryFormView({
         } catch (e) {}
       }
 
-      // 3. Always include Shikha's saved draft entry with exact ₹8,255 figure
-      const shikhaDraft: SavedDraftItem = {
-        id: 'draft-shikha-001',
-        savedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-        groupId: groups[0]?.id || 'grp-1',
-        locationId: locations[0]?.id || 'loc-1',
-        departmentId: departments[0]?.id || 'dept-1',
-        scrapTypeId: scrapTypes[0]?.id || 'st-5',
-        descriptionInput: 'CARDBOARD (Kg)',
-        weightQty: '635',
-        ratePerUnit: '13',
-        amountReceivedInput: '8255',
-        soldTo: 'KAREEM TRADERS',
-        soldDate: new Date().toISOString().split('T')[0],
-        paymentModeId: paymentModes[0]?.id || 'pm-1',
-        handoverUserId: handoverUsers[0]?.id || 'ho-1',
-        remarks: 'Saved in draft by SHIKHA (Service Dept)',
-      }
+      // Filter out any hardcoded or legacy drafts belonging to SHIKHA or matching amount 8255
+      const cleanedDrafts = allDrafts.filter(
+        (d) =>
+          d.id !== 'draft-shikha-001' &&
+          d.amountReceivedInput !== '8255' &&
+          !(d.remarks && d.remarks.toUpperCase().includes('SHIKHA'))
+      )
 
-      // Replace or prepend Shikha draft to ensure exact ₹8,255 figures are maintained
-      const existingShikhaIdx = allDrafts.findIndex((d) => d.id === shikhaDraft.id || d.remarks?.includes('SHIKHA'))
-      if (existingShikhaIdx !== -1) {
-        allDrafts[existingShikhaIdx] = shikhaDraft
-      } else {
-        allDrafts.unshift(shikhaDraft)
-      }
-
-      setSavedDrafts(allDrafts)
-      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(allDrafts))
+      setSavedDrafts(cleanedDrafts)
+      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(cleanedDrafts))
     } catch (e) {
       console.error('Failed to load saved drafts:', e)
     }

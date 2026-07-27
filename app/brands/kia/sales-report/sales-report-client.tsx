@@ -21,6 +21,7 @@ import {
   Search,
   Target,
   TrendingUp,
+  Trophy,
   XCircle,
   Clock,
 } from 'lucide-react'
@@ -354,12 +355,14 @@ function ChartCard({
   title,
   subtitle,
   action,
+  titleIcon,
   children,
   className,
 }: {
   title: string
   subtitle?: string
   action?: ReactNode
+  titleIcon?: ReactNode
   children: ReactNode
   className?: string
 }) {
@@ -368,7 +371,10 @@ function ChartCard({
       <div className="h-1.5 bg-[linear-gradient(90deg,#c5162f_0%,#071a2b_40%,#18a7d0_100%)]" />
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 p-5 pb-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#c5162f]">{title}</p>
+          <div className="flex items-center gap-1.5">
+            {titleIcon}
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#c5162f]">{title}</p>
+          </div>
           {subtitle ? <p className="mt-1 text-[13px] font-medium text-slate-500">{subtitle}</p> : null}
         </div>
         {action}
@@ -1418,7 +1424,7 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                   Updated {formatDateTime(freshness?.sourceUpdatedAt || null)}
                 </p>
                 <div className="mt-1 flex items-center gap-2 text-[28px] font-black text-[#071a2b]">
-                  <span className="text-base">🗓️</span>
+                  <CalendarDays className="h-6 w-6 shrink-0 text-[#18a7d0]" />
                   <span>{headerLoading ? 'Loading period...' : activePeriodLabel}</span>
                 </div>
               </div>
@@ -1723,7 +1729,7 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                 <Card className={cn(PRIMARY_SURFACE, 'border-rose-100/50 shadow-md')}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-black text-slate-900 flex items-center gap-2">
-                      <span className="text-base">🚗</span> Missed by Model
+                      <CarFront className="h-4 w-4 text-rose-500" /> Missed by Model
                     </CardTitle>
                     <CardDescription className="text-[11px] text-slate-400">Models with delayed follow-ups</CardDescription>
                   </CardHeader>
@@ -2095,7 +2101,7 @@ export function KiaSalesReportPage({ initialSearchParams, currentUserRole }: { i
                   height: 360,
                 })}
               </ChartCard>
-              <ChartCard title="🏆 Leaderboard" subtitle="Booking leaders ranked by output">
+              <ChartCard title="Leaderboard" subtitle="Booking leaders ranked by output" titleIcon={<Trophy className="h-4 w-4 text-amber-500" />}>
                 {topConsultantList.length ? (
                   <div className="space-y-3">
                     {topConsultantList.map((item, index) => (

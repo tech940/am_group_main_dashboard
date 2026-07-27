@@ -52,8 +52,10 @@ import {
   ClipboardList,
   Database,
   Activity,
-  CornerUpLeft
+  CornerUpLeft,
+  Printer
 } from 'lucide-react'
+import { printPaymentOrder } from '@/lib/kia/print-payment-order'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -2489,6 +2491,17 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
 
                               <button
                                 type="button"
+                                title="Print payment order"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  printPaymentOrder(row)
+                                }}
+                                className="h-8 w-8 rounded-xl border border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 flex items-center justify-center transition-all shadow-sm"
+                              >
+                                <Printer className="w-3.5 h-3.5 text-slate-500" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   setDetailRow(row)
@@ -3187,6 +3200,15 @@ export function KiaApprovalsClient({ currentUser }: { currentUser: CurrentUser }
                         <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">Request Amount</span>
                         <span className="text-xl sm:text-2xl font-black text-slate-900 font-sans tracking-tight">₹{Number(detailRow.amount || 0).toLocaleString('en-IN')}</span>
                       </div>
+
+                      {/* Print: A4 voucher via the system print dialog (any printer the OS knows) */}
+                      <Button
+                        onClick={() => printPaymentOrder(detailRow)}
+                        variant="outline"
+                        className="h-9 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 px-3.5 cursor-pointer transition-all border bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-xs"
+                      >
+                        <Printer className="w-3.5 h-3.5" /> Print
+                      </Button>
 
                       {/* Top Action Buttons: Show Remarks & Export Voucher */}
                       <Button

@@ -96,10 +96,16 @@ export function ScrapErpShell() {
   useEffect(() => {
     let isMounted = true
     async function loadScrapTransactions() {
+      console.log('loadScrapTransactions: fetching from /api/scrap-erp...')
       try {
-        const res = await fetch('/api/scrap-erp')
-        if (!res.ok) return
+        const res = await fetch('/api/scrap-erp', { cache: 'no-store' })
+        console.log('loadScrapTransactions: API response status:', res.status, 'ok:', res.ok)
+        if (!res.ok) {
+          console.error('loadScrapTransactions: HTTP error response:', res.statusText)
+          return
+        }
         const data = await res.json()
+        console.log('loadScrapTransactions: API returned success:', data.success, 'count:', data.transactions?.length)
         if (data.success && Array.isArray(data.transactions) && isMounted) {
           setTransactions(data.transactions)
         }

@@ -270,6 +270,7 @@ export const INITIAL_SCRAP_TRANSACTIONS: ScrapTransaction[] = [
     "paymentHandoverToName": "PLATINUM - Sanjeev Talwar",
     "status": "COMPLETED",
     "attachments": [],
+    "sentToAccounts": true,
     "createdAt": "2026-03-31T10:00:00Z",
     "updatedAt": "2026-03-31T10:00:00Z"
   },
@@ -334,6 +335,7 @@ export const INITIAL_SCRAP_TRANSACTIONS: ScrapTransaction[] = [
     "paymentHandoverToName": "PLATINUM - Sanjeev Talwar",
     "status": "COMPLETED",
     "attachments": [],
+    "sentToAccounts": true,
     "createdAt": "2026-03-31T10:00:00Z",
     "updatedAt": "2026-03-31T10:00:00Z"
   },
@@ -881,6 +883,7 @@ export const INITIAL_SCRAP_TRANSACTIONS: ScrapTransaction[] = [
     "paymentHandoverToName": "PLATINUM - Sanjeev Talwar",
     "status": "COMPLETED",
     "attachments": [],
+    "sentToAccounts": true,
     "createdAt": "2026-03-31T10:00:00Z",
     "updatedAt": "2026-03-31T10:00:00Z"
   },
@@ -1108,6 +1111,7 @@ export const INITIAL_SCRAP_TRANSACTIONS: ScrapTransaction[] = [
     "paymentHandoverToName": "Jammu Auto Mart-AMIT",
     "status": "COMPLETED",
     "attachments": [],
+    "sentToAccounts": true,
     "createdAt": "2026-04-08T10:00:00Z",
     "updatedAt": "2026-04-08T10:00:00Z"
   },

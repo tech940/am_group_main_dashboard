@@ -131,9 +131,14 @@ export function ScrapExecutiveDashboardView({
       const amt = Number(t.amountReceived || 0)
       const wt = Number(t.weightQty || 0)
       const pm = (t.paymentModeName || '').toLowerCase()
-      if (pm.includes('cash')) cash += amt
-      else if (pm.includes('cheque')) cheque += amt
-      else online += amt
+      
+      // Payment Mode Breakdown calculations only start from July 2026
+      const dateStr = (t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
+      if (dateStr >= '2026-07-01') {
+        if (pm.includes('cash')) cash += amt
+        else if (pm.includes('cheque')) cheque += amt
+        else online += amt
+      }
 
       // Location Breakdown
       const locName = t.locationName || 'Other Location'

@@ -54,6 +54,10 @@ export function ScrapDistributionView({
     customPayload?: Partial<ScrapTransaction>
   ) => void
 }) {
+  console.log('ScrapDistributionView received transactions count:', transactions.length)
+  console.log('ScrapDistributionView sentToAccounts count:', transactions.filter(t => (t as any).sentToAccounts).length)
+  console.log('ScrapDistributionView sentToAccounts items:', transactions.filter(t => (t as any).sentToAccounts).map(t => ({ num: t.transactionNumber, date: t.soldDate, sent: (t as any).sentToAccounts })))
+
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'distributed' | 'accounts'>('all')
 
@@ -85,8 +89,11 @@ export function ScrapDistributionView({
 
   const julyAndNewTxns = useMemo(() => {
     const list = transactions.filter((t) => {
+      const isSentToAccounts = Boolean((t as ScrapTransaction & { sentToAccounts?: boolean }).sentToAccounts)
+      const isDistributed = Boolean(t.isDistributed)
+      
       const dateStr = (t.soldDate || t.timestamp || t.createdAt || '').slice(0, 10)
-      return dateStr >= DISTRIBUTION_START_DATE
+      return dateStr >= DISTRIBUTION_START_DATE || isSentToAccounts || isDistributed
     })
 
     return [...list].sort((a, b) => {
@@ -336,16 +343,16 @@ export function ScrapDistributionView({
                     COLLECTED (₹)
                   </th>
                   <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-sky-300 border-l border-slate-800 dark:border-slate-700">
-                    SANJAY SHARE
+                    SANJAY SIR
                   </th>
                   <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-emerald-300 border-l border-slate-800 dark:border-slate-700">
-                    ANKUR SHARE
+                    ANKUR SIR
                   </th>
                   <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-amber-300 border-l border-slate-800 dark:border-slate-700">
-                    SANJEEV SHARE
+                    SANJEEV SIR
                   </th>
                   <th className="py-3 px-3 text-center font-black uppercase text-[10px] tracking-wider text-violet-300 border-l border-slate-800 dark:border-slate-700">
-                    TARUN SHARE
+                    TARUN SIR
                   </th>
                   <th className="py-3 px-4 text-center font-black uppercase text-[10px] tracking-wider text-slate-100 border-l border-slate-800 dark:border-slate-700">
                     DISTRIBUTION ACTION

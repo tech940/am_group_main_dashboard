@@ -9,6 +9,7 @@ import {
   ArrowDownUp,
   BarChart3,
   CarFront,
+  ChevronDown,
   CircleDollarSign,
   Download,
   Filter,
@@ -51,6 +52,7 @@ import type {
   SalesReportMetricPoint,
   SalesReportSummaryPayload,
 } from '@/lib/kia/sales-report-types'
+import { getKiaBranchLabel } from '@/lib/kia/dealer-branch'
 import { cn } from '@/lib/utils'
 
 type SearchParamsInput = Record<string, string | string[] | undefined>
@@ -739,7 +741,13 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
   }
 
   const summaryMonthReady = effectiveSelectedYear !== null && effectiveSelectedMonth !== null
-  const headerLoading = freshnessQuery.isLoading || (summaryMonthReady && summaryQuery.isLoading && !summary)
+  // isFetching, NOT isLoading. `placeholderData: previousData` means data is always present after the
+  // first load, so isLoading is permanently false and a dealer/month switch refetched SILENTLY —
+  // leaving the PREVIOUS dealer's numbers on screen, looking authoritative, for the 10-20s the
+  // summary takes. That is the "changing the dealer doesn't change the data" report: the filter was
+  // correct, the UI just never admitted it was still loading.
+  const summaryUpdating = freshnessQuery.isFetching || (summaryMonthReady && summaryQuery.isFetching)
+  const headerLoading = summaryUpdating
   const pageError = freshnessQuery.error || summaryQuery.error
 
   return (
@@ -827,9 +835,7 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[10px] font-black text-slate-600">i</span>
                     About these metrics & assumptions
                   </div>
-                  <span className="transition group-open:rotate-180">
-                    <svg fill="none" height="24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="24" className="h-4 w-4 text-slate-500"><path d="M6 9l6 6 6-6"></path></svg>
-                  </span>
+                  <ChevronDown className="h-4 w-4 text-slate-500 transition group-open:rotate-180" />
                 </summary>
                 <div className="mt-3 grid gap-2.5 border-t border-slate-200/70 pt-3 text-xs text-slate-700">
                   {summary?.assumptions.map((item, idx) => (
@@ -856,7 +862,21 @@ export function KiaSalesReportPage({ initialSearchParams }: { initialSearchParam
           </div>
         ) : null}
 
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as PageTab)} className="space-y-4">
+        {summaryUpdating ? (
+          <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--dashboard-primary-border)] bg-[var(--dashboard-primary-soft)] px-4 py-2.5">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--dashboard-primary)]" />
+            <p className="text-xs font-bold text-[var(--dashboard-primary-dark)]">
+              Loading {selectedDealerCode ? getKiaBranchLabel(selectedDealerCode) : 'all dealerships'}
+              {' '}&mdash; figures below are from the previous selection until this finishes.
+            </p>
+          </div>
+        ) : null}
+
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as PageTab)}
+          className={cn('space-y-4 transition-opacity', summaryUpdating && 'pointer-events-none opacity-40')}
+        >
           <TabsList className="flex h-auto flex-wrap justify-start gap-2 rounded-[2rem] border border-[var(--dashboard-primary-border)] bg-white/80 p-2 shadow-sm">
             {PAGE_TABS.map((tab) => (
               <TabsTrigger key={tab.key} value={tab.key} className={getTabTriggerClass(activeTab === tab.key)}>

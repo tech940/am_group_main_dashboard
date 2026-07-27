@@ -706,12 +706,33 @@ function rowNumericIdScore(row: Row) {
   return 0
 }
 
+/**
+ * The row's own dealer, resolved exactly like buildDirectDealerExpression does in SQL: the first
+ * non-empty value across the table's dealer columns.
+ */
+function rowDealerKey(config: TableConfig, row: Row) {
+  for (const column of config.dealerColumns) {
+    const value = upperText(row[column])
+    if (value) return value
+  }
+  return ''
+}
+
 function buildDeduplicationKey(config: TableConfig, row: Row) {
+  // ⚠️ EVERY key is namespaced by dealer. KIA's DMS issues enquiry/booking/invoice numbers PER
+  // DEALER, so E202604793 (and B…/K…) exists at BOTH JK402 and JK501 as two different records.
+  // Without this prefix the two collapsed into one under "All dealers", so the total silently
+  // equalled the larger branch instead of the sum — measured Jul 2026: enquiries showed 618 (JK402)
+  // instead of 791, losing all 173 of JK501's; bookings 62 instead of 86; retails 36 instead of 47.
+  // Per-dealer views are unaffected (one dealer => constant prefix).
+  const dealer = rowDealerKey(config, row)
+
   if (config.key === 'enquiry') {
     const enquiryNo = upperText(row.enquiry_no)
-    if (enquiryNo) return `enquiry:${enquiryNo}`
+    if (enquiryNo) return `enquiry:${dealer}:${enquiryNo}`
     return [
       'enquiry',
+      dealer,
       displayDate(row.enquiry_date) || safeText(row.enquiry_date),
       upperText(row.customer_id),
       upperText(row.name_of_the_customer),
@@ -723,9 +744,10 @@ function buildDeduplicationKey(config: TableConfig, row: Row) {
 
   if (config.key === 'booking') {
     const bookingNo = upperText(row.booking_no)
-    if (bookingNo) return `booking:${bookingNo}`
+    if (bookingNo) return `booking:${dealer}:${bookingNo}`
     return [
       'booking',
+      dealer,
       displayDate(row.booking_date) || safeText(row.booking_date),
       upperText(row.customer_id),
       upperText(row.name_of_the_customer),
@@ -737,9 +759,10 @@ function buildDeduplicationKey(config: TableConfig, row: Row) {
 
   if (config.key === 'sales') {
     const invoiceNo = upperText(row.invoice_no)
-    if (invoiceNo) return `sales:${invoiceNo}`
+    if (invoiceNo) return `sales:${dealer}:${invoiceNo}`
     return [
       'sales',
+      dealer,
       upperText(getFirstText(row, ['vin_number', 'vin_no'])),
       displayDate(row.delivery_date) || displayDate(row.invoice_date) || safeText(row.delivery_date) || safeText(row.invoice_date),
       upperText(row.customerid),
@@ -750,6 +773,7 @@ function buildDeduplicationKey(config: TableConfig, row: Row) {
 
   return [
     'accessories',
+    dealer,
     upperText(getFirstText(row, ['csr_bill_no', 'accessories_invoice_no'])),
     displayDate(row.csr_date) || safeText(row.csr_date),
     upperText(getFirstText(row, ['vin', 'reg_no'])),
