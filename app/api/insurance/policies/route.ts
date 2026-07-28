@@ -20,6 +20,8 @@ import {
 } from '@/lib/insurance/brands'
 
 export const dynamic = 'force-dynamic'
+// Vercel kills a Node function at ~10s by default; a cold pooler connection alone costs ~1.8s.
+export const maxDuration = 30
 
 /** Columns the register table and the policy inspector read, in display order. */
 const ROW_KEYS: InsuranceColumnKey[] = [

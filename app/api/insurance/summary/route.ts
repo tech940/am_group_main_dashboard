@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
 import { getAuthenticatedAppUser } from '@/lib/auth/app-user'
 import { isSuperAdminRole } from '@/lib/auth/roles'
+import { createDbGate } from '@/lib/db/concurrency'
 import {
   FILTER_PARAM_COLUMNS,
   INSURANCE_BRANDS,
@@ -19,6 +20,10 @@ import {
 } from '@/lib/insurance/brands'
 
 export const dynamic = 'force-dynamic'
+// Vercel kills a Node function at ~10s by default. This route legitimately takes a few seconds on a
+// cold pooler connection, and being killed mid-flight is what the browser saw as a request that
+// never resolved.
+export const maxDuration = 60
 
 function safeNum(val: any): number {
   const n = Number(val)
@@ -101,6 +106,15 @@ export async function GET(request: Request) {
 
     const whereClause = whereConditions.join(' AND ')
 
+    // ⚠️ CONCURRENCY IS CAPPED — do not go back to a bare Promise.all here.
+    //
+    // These 15 queries used to fire at once. That works locally (dev talks to Supabase SESSION mode
+    // on :5432) and STALLS FOREVER in production, which goes through the transaction pooler on
+    // :6543 with a small shared server pool. Measured against the live pooler with 15 GROUP BY
+    // queries over this table: concurrency 15 and 6 never completed (killed at 45s), 4 took 2.4s,
+    // 3 took 0.97s. A single query is 186ms — the work was never the problem, the fan-out was.
+    const gate = createDbGate()
+
     // Parallel execution of analytical queries
     const [
       kpisRes,
@@ -120,7 +134,7 @@ export async function GET(request: Request) {
       ncbResetRes,
     ] = await Promise.all([
       // 1. Executive KPIs
-      db.execute(sql.raw(`
+      gate(() => db.execute(sql.raw(`
         SELECT 
           COUNT(*)::int as total_policies,
           MIN(${issueDate}) as min_date,
@@ -139,10 +153,10 @@ export async function GET(request: Request) {
           ${countEq('column64vbStatus', 'NOT VERIFIED')} as not_verified_64vb_count
         FROM ${tableName}
         WHERE ${whereClause}
-      `)),
+      `))),
 
       // 2. Monthly Trend (Full Mon YYYY chronological)
-      db.execute(sql.raw(`
+      gate(() => db.execute(sql.raw(`
         SELECT 
           to_char(${issueDate}, 'YYYY-MM') as month_key,
           to_char(${issueDate}, 'Mon YYYY') as month_label,
@@ -153,10 +167,10 @@ export async function GET(request: Request) {
         WHERE ${whereClause} AND ${issueDate} IS NOT NULL
         GROUP BY month_key, month_label
         ORDER BY month_key ASC
-      `)),
+      `))),
 
       // 3. Insurance Company Breakdown
-      db.execute(sql.raw(`
+      gate(() => db.execute(sql.raw(`
         SELECT 
           COALESCE(${C('insuranceCompany')}, 'Unspecified') as company,
           COUNT(*)::int as policies,
@@ -167,10 +181,10 @@ export async function GET(request: Request) {
         WHERE ${whereClause}
         GROUP BY company
         ORDER BY gross_premium DESC
-      `)),
+      `))),
 
       // 4. Policy Type Breakdown
-      db.execute(sql.raw(`
+      gate(() => db.execute(sql.raw(`
         SELECT 
           COALESCE(${C('policyType')}, 'Unspecified') as type,
           COUNT(*)::int as count,
@@ -179,10 +193,10 @@ export async function GET(request: Request) {
         WHERE ${whereClause}
         GROUP BY type
         ORDER BY count DESC
-      `)),
+      `))),
 
       // 5. Payment Mode Breakdown
-      db.execute(sql.raw(`
+      gate(() => db.execute(sql.raw(`
         SELECT 
           COALESCE(${C('paymentMode')}, 'Unspecified') as mode,
           COUNT(*)::int as count,
@@ -191,10 +205,10 @@ export async function GET(request: Request) {
         WHERE ${whereClause}
         GROUP BY mode
         ORDER BY count DESC
-      `)),
+      `))),
 
       // 6. Financer Breakdown (Top 10)
-      skipIf(
+      gate(() => skipIf(
         hasCol(brand, 'financerName'),
         () => db.execute(sql.raw(`
         SELECT 
@@ -207,10 +221,10 @@ export async function GET(request: Request) {
         ORDER BY count DESC
         LIMIT 10
       `)),
-      ),
+      )),
 
       // 7. Executive Performance
-      skipIf(
+      gate(() => skipIf(
         hasCol(brand, 'rmName') || hasCol(brand, 'dpName'),
         () => db.execute(sql.raw(`
         SELECT 
@@ -224,10 +238,10 @@ export async function GET(request: Request) {
         ORDER BY gross_premium DESC
         LIMIT 15
       `)),
-      ),
+      )),
 
       // 8. Vehicle Model Breakdown
-      db.execute(sql.raw(`
+      gate(() => db.execute(sql.raw(`
         SELECT 
           COALESCE(${C('modelName')}, 'Unspecified') as model,
           COUNT(*)::int as count,
@@ -238,10 +252,10 @@ export async function GET(request: Request) {
         GROUP BY model
         ORDER BY count DESC
         LIMIT 15
-      `)),
+      `))),
 
       // 9. Dealer-wise Analytics (Dealer Code)
-      skipIf(
+      gate(() => skipIf(
         brand.capabilities.hasMultiDealer,
         () => db.execute(sql.raw(`
         SELECT 
@@ -258,10 +272,10 @@ export async function GET(request: Request) {
         GROUP BY ${C('dealerCode')}
         ORDER BY gross_premium DESC
       `)),
-      ),
+      )),
 
       // 10. Sub-User Branch Breakdown
-      skipIf(
+      gate(() => skipIf(
         hasCol(brand, 'subUser'),
         () => db.execute(sql.raw(`
         SELECT 
@@ -274,10 +288,10 @@ export async function GET(request: Request) {
         GROUP BY ${C('subUser')}
         ORDER BY gross_premium DESC
       `)),
-      ),
+      )),
 
       // 11. Fuel Type Breakdown
-      db.execute(sql.raw(`
+      gate(() => db.execute(sql.raw(`
         SELECT 
           COALESCE(${C('fuelType')}, 'Unspecified') as fuel,
           COUNT(*)::int as count,
@@ -286,10 +300,10 @@ export async function GET(request: Request) {
         WHERE ${whereClause}
         GROUP BY fuel
         ORDER BY count DESC
-      `)),
+      `))),
 
       // 12. Add-on Coverage Opt-ins
-      skipIf(
+      gate(() => skipIf(
         hasCol(brand, 'addonOpted'),
         () => db.execute(sql.raw(`
         SELECT 
@@ -302,10 +316,10 @@ export async function GET(request: Request) {
         FROM ${tableName}
         WHERE ${whereClause}
       `)),
-      ),
+      )),
 
       // 13. Deep Policy Type Analytics (per type: full breakdown)
-      db.execute(sql.raw(`
+      gate(() => db.execute(sql.raw(`
         SELECT 
           COALESCE(${C('policyType')}, 'Unspecified') as type,
           COUNT(*)::int as total_count,
@@ -323,10 +337,10 @@ export async function GET(request: Request) {
         WHERE ${whereClause}
         GROUP BY type
         ORDER BY total_count DESC
-      `)),
+      `))),
 
       // 14. Policy Type Monthly/Quarterly Trend (for stacked area chart)
-      db.execute(sql.raw(`
+      gate(() => db.execute(sql.raw(`
         SELECT 
           to_char(${issueDate}, 'YYYY-MM') as month_key,
           to_char(${issueDate}, 'Mon YY') as month_label,
@@ -337,7 +351,7 @@ export async function GET(request: Request) {
         WHERE ${whereClause} AND ${issueDate} IS NOT NULL
         GROUP BY month_key, month_label, type
         ORDER BY month_key ASC
-      `)),
+      `))),
 
       // 15. Claim incidence, via NCB reset.
       //
@@ -356,7 +370,7 @@ export async function GET(request: Request) {
       // the filter inside the window instead looks correct and is not: with year=2026 selected, the
       // previous policy falls outside the window, every prev_ncb is NULL, and the card reports
       // "0 of 0" — measured. The filter chooses which renewals to COUNT, never what to compare against.
-      skipIf(
+      gate(() => skipIf(
         hasCol(brand, 'currentNcbPercentage'),
         () => db.execute(sql.raw(`
         WITH scope AS (
@@ -378,7 +392,7 @@ export async function GET(request: Request) {
             AND (ev.prev_exp IS NULL OR ev.${C('policyStartDate')} <= ev.prev_exp + 90))::int AS ncb_reset_count
         FROM ev JOIN scope s ON s.id = ev.id
       `)),
-      ),
+      )),
     ])
 
     const kpiData = kpisRes[0] || {}

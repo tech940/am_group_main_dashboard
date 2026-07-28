@@ -10,8 +10,10 @@ import {
   resolveBrand,
   type InsuranceColumnKey,
 } from '@/lib/insurance/brands'
+import { createDbGate, mapWithConcurrency } from '@/lib/db/concurrency'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 /**
  * Dropdown option lists, per brand.
@@ -63,8 +65,11 @@ export async function GET(request: Request) {
     // the client decides whether a one-option dropdown is worth showing.
     const live = OPTION_QUERIES.filter((q) => hasCol(brand, q.column))
 
-    const results = await Promise.all([
-      ...live.map((q) =>
+    // ⚠️ CONCURRENCY IS CAPPED — see lib/db/concurrency.ts. Up to 11 DISTINCT scans over the same
+    // table used to fire at once. That is fine locally (dev uses session mode on :5432) and stalls
+    // in production, which goes through the transaction pooler's small shared server pool.
+    const results = await mapWithConcurrency([
+      ...live.map((q) => () =>
         db.execute(
           sql.raw(
             `SELECT DISTINCT ${col(brand, q.column)} AS value FROM ${tableName} ` +
@@ -73,12 +78,13 @@ export async function GET(request: Request) {
           ),
         ),
       ),
-      db.execute(
-        sql.raw(
-          `SELECT DISTINCT date_part('year', ${col(brand, 'policyIssueDate')})::int as yr ` +
-            `FROM ${tableName} WHERE ${col(brand, 'policyIssueDate')} IS NOT NULL ORDER BY yr DESC`,
+      () =>
+        db.execute(
+          sql.raw(
+            `SELECT DISTINCT date_part('year', ${col(brand, 'policyIssueDate')})::int as yr ` +
+              `FROM ${tableName} WHERE ${col(brand, 'policyIssueDate')} IS NOT NULL ORDER BY yr DESC`,
+          ),
         ),
-      ),
     ])
 
     const years = results[results.length - 1] as Record<string, unknown>[]

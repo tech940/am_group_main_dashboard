@@ -4,7 +4,27 @@ import { env } from '@/config/env-config'
 import { recordSqlTiming } from '@/lib/api/timing'
 
 const STATEMENT_TIMEOUT_MS = 12_000
-const DEFAULT_POOL_MAX = 6
+
+/**
+ * Raised 6 -> 10 on 2026-07-28, after a production-only outage where the insurance section hung
+ * forever while working fine locally (dev talks to session mode on :5432; prod goes through the
+ * transaction pooler on :6543).
+ *
+ * Measured against the live pooler, 15 concurrent GROUP BY queries over a 34 MB table:
+ *   pool  6 -> never completed (killed at 30s)
+ *   pool 10 -> 1,940 ms
+ *   pool 20 -> 2,022 ms
+ *   pool 30 -> 1,966 ms
+ *
+ * NOT raised further on purpose. This pool is PER LAMBDA INSTANCE, and Vercel runs many at once,
+ * while Postgres here has max_connections = 60 (20 in use at the time of measuring). At 20 per
+ * instance, three concurrent instances exhaust the entire database and take auth down with them —
+ * a far worse outage than one slow section. At 10, four instances still fit inside the headroom.
+ *
+ * Raising this is NOT a substitute for bounding fan-out at the call site: see lib/db/concurrency.ts.
+ * A bigger pool only moves the cliff; the gate removes it.
+ */
+const DEFAULT_POOL_MAX = 10
 
 function positiveInteger(value: string | undefined, fallback: number) {
   const parsed = Number(value)
